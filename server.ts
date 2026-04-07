@@ -388,26 +388,6 @@ app.put("/api/employees/:id", async (req, res) => {
   }
 });
 
-    // Primeiro remove relações antigas
-    await prisma.employeePayrollComponent.deleteMany({
-      where: { employeeId: id }
-    });
-
-    const employee = await prisma.employee.update({
-      where: { id },
-      data: {
-        ...data,
-        EmployeePayrollComponent: {
-          create: (componentIds || []).map((compId: string) => ({
-            PayrollComponent: { connect: { id: compId } }
-          }))
-        }
-      },
-      include: { Role: true, EmployeePayrollComponent: { include: { PayrollComponent: true } } }
-    });
-    res.json(employee);
-  });
-
   // --- API: Materials (Matérias-Primas e Insumos) ---
   app.get("/api/materials", async (req, res) => {
     const materials = await prisma.material.findMany({
