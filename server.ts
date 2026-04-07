@@ -19,6 +19,28 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // --- API: Test DB Connection ---
+  app.get("/api/test-db", async (req, res) => {
+    console.log("Testing database connection and schema...");
+    try {
+      const results = {
+        machines: await prisma.machine.count(),
+        roles: await prisma.role.count(),
+        employees: await prisma.employee.count(),
+        materials: await prisma.material.count(),
+        products: await prisma.product.count(),
+        indirectCosts: await prisma.indirectCost.count(),
+        taxRules: await prisma.taxRule.count(),
+        pricing: await prisma.productPricing.count(),
+        simulations: await prisma.simulation.count(),
+      };
+      res.json({ status: "success", counts: results });
+    } catch (error) {
+      console.error("Database test failed:", error);
+      res.status(500).json({ status: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   // --- API: Dashboard Gerencial ---
   app.get("/api/dashboard", async (req, res, next) => {
     console.log("Fetching dashboard data...");
@@ -546,21 +568,22 @@ async function startServer() {
   app.get("/api/pricing/:productId/:taxRuleId/calculate", async (req, res) => {
     const { productId, taxRuleId } = req.params;
 
-    // 1. Buscar dados do produto (custos)
-    const costRes = await fetch(`http://localhost:3000/api/products/${productId}/cost-analysis`);
-    const costData = await costRes.json();
+    try {
+      // 1. Buscar dados do produto (custos) - Chamada direta da função interna
+      const costData = await getProductCostAnalysis(productId);
+      if (!costData) return res.status(404).json({ error: "Produto não encontrado para análise de custo" });
 
-    // 2. Buscar premissas de preço
-    const pricing = await prisma.productPricing.findUnique({
-      where: { productId_taxRuleId: { productId, taxRuleId } },
-      include: { taxRule: { include: { components: true } } }
-    });
+      // 2. Buscar premissas de preço
+      const pricing = await prisma.productPricing.findUnique({
+        where: { productId_taxRuleId: { productId, taxRuleId } },
+        include: { taxRule: { include: { components: true } } }
+      });
 
-    if (!pricing) return res.status(404).json({ error: "Configuração de preço não encontrada" });
+      if (!pricing) return res.status(404).json({ error: "Configuração de preço não encontrada" });
 
-    const ciu = Number(costData.summary.costPerUnit);
-    const cif = Number(costData.summary.totalCIF_Unit);
-    const opex = Number(costData.summary.totalOPEX_Unit);
+      const summary = (costData as any).summary || costData;
+      const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
+      const opex = Number(summary.totalOPEX_Unit);
     
     // Custo Fabril Completo = CIU (que já inclui CIF)
     const custoFabril = ciu;
@@ -587,27 +610,31 @@ async function startServer() {
     const contributionMargin = suggestedPrice - totalTaxes - totalCommission - freight - custoFabril;
     const operationalMargin = contributionMargin - opex;
 
-    res.json({
-      product: costData.name,
-      sku: costData.sku,
-      ciu,
-      custoFabril,
-      custoGerencial,
-      premissas: {
-        taxRate: taxRate * 100,
-        commRate: commRate * 100,
-        marginRate: marginRate * 100,
-        freight,
-      },
-      resultados: {
-        suggestedPrice,
-        totalTaxes,
-        totalCommission,
-        contributionMargin,
-        operationalMargin,
-        markup: suggestedPrice / custoFabril,
-      }
-    });
+      res.json({
+        product: costData.name,
+        sku: costData.sku,
+        ciu,
+        custoFabril,
+        custoGerencial,
+        premissas: {
+          taxRate: taxRate * 100,
+          commRate: commRate * 100,
+          marginRate: marginRate * 100,
+          freight,
+        },
+        resultados: {
+          suggestedPrice,
+          totalTaxes,
+          totalCommission,
+          contributionMargin,
+          operationalMargin,
+          markup: suggestedPrice / custoFabril,
+        }
+      });
+    } catch (error) {
+      console.error("Pricing calculation error:", error);
+      res.status(500).json({ error: "Erro ao calcular preço" });
+    }
   });
 
   // --- API: Simulations (What-if Analysis) ---
@@ -632,14 +659,49 @@ async function startServer() {
 
   app.get("/api/simulations/:id/compare", async (req, res) => {
     const { id } = req.params;
-    const sim = await prisma.simulation.findUnique({ where: { id } });
-    if (!sim) return res.status(404).json({ error: "Simulação não encontrada" });
+    try {
+      const sim = await prisma.simulation.findUnique({ where: { id } });
+      if (!sim) return res.status(404).json({ error: "Simulação não encontrada" });
 
-    // 1. Buscar Dados Oficiais (Base)
-    const pricingRes = await fetch(`http://localhost:3000/api/pricing/${sim.productId}/${sim.taxRuleId}/calculate`);
-    const base = await pricingRes.json();
+      // 1. Buscar Dados Oficiais (Base) - Chamada direta da função interna
+      const baseData = await getProductCostAnalysis(sim.productId);
+      if (!baseData) return res.status(404).json({ error: "Produto base não encontrado" });
 
-    // 2. Aplicar Ajustes (Simulação)
+      // Buscar premissas de preço oficiais
+      const pricing = await prisma.productPricing.findUnique({
+        where: { productId_taxRuleId: { productId: sim.productId, taxRuleId: sim.taxRuleId } },
+        include: { taxRule: { include: { components: true } } }
+      });
+
+      if (!pricing) return res.status(404).json({ error: "Configuração de preço base não encontrada" });
+
+      // Simular o retorno do endpoint de cálculo para manter compatibilidade
+      const taxRateBase = pricing.taxRule.components.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
+      const ciuBase = Number((baseData as any).totalIndustrialCost);
+      const opexBase = Number((baseData as any).totalOPEX_Unit);
+      const freightBase = Number(pricing.freightOut);
+      const commRateBase = Number(pricing.commission) / 100;
+      const marginRateBase = Number(pricing.desiredMargin) / 100;
+      const otherRateBase = Number(pricing.otherVariables) / 100;
+
+      const divisorBase = 1 - taxRateBase - commRateBase - otherRateBase - marginRateBase;
+      const suggestedPriceBase = divisorBase > 0 ? (ciuBase + freightBase) / divisorBase : 0;
+
+      const base = {
+        ciu: ciuBase,
+        custoGerencial: ciuBase + opexBase,
+        premissas: {
+          taxRate: taxRateBase * 100,
+          commRate: commRateBase * 100,
+          marginRate: marginRateBase * 100,
+          freight: freightBase,
+        },
+        resultados: {
+          suggestedPrice: suggestedPriceBase
+        }
+      };
+
+      // 2. Aplicar Ajustes (Simulação)
     const matAdj = 1 + (Number(sim.materialAdj) / 100);
     const laborAdj = 1 + (Number(sim.laborAdj) / 100);
     const indirectAdj = 1 + (Number(sim.indirectAdj) / 100);
@@ -680,7 +742,11 @@ async function startServer() {
         ciuPct: ((simCIU / base.ciu) - 1) * 100,
       }
     });
-  });
+  } catch (error) {
+    console.error("Simulation comparison error:", error);
+    res.status(500).json({ error: "Erro ao comparar simulação" });
+  }
+});
 
   // --- Helper: Cálculo de Custo de Produto ---
   async function getProductCostAnalysis(productId: string) {
