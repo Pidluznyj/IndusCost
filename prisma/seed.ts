@@ -118,7 +118,7 @@ async function main() {
     await prisma.employee.create({
       data: {
         ...emp,
-        components: {
+        EmployeePayrollComponent: {
           create: [
             { payrollComponentId: compFGTS.id },
             { payrollComponentId: compINSS.id },
@@ -194,7 +194,7 @@ async function main() {
       update: mat,
       create: {
         ...mat,
-        priceHistory: {
+        MaterialPriceHistory: {
           create: [
             { price: mat.currentCost * 0.9, freight: mat.freight, effectiveDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
             { price: mat.currentCost, freight: mat.freight },
@@ -323,7 +323,7 @@ async function main() {
     {
       name: "Venda Interna SP (Indústria)",
       operation: "VENDA",
-      components: {
+      TaxComponent: {
         create: [
           { name: "ICMS SP", percentage: 18.00, baseType: "GROSS_PRICE" },
           { name: "PIS", percentage: 1.65, baseType: "GROSS_PRICE" },
@@ -335,7 +335,7 @@ async function main() {
     {
       name: "Venda Interestadual (Sul/Sudeste)",
       operation: "VENDA",
-      components: {
+      TaxComponent: {
         create: [
           { name: "ICMS Inter", percentage: 12.00, baseType: "GROSS_PRICE" },
           { name: "PIS", percentage: 1.65, baseType: "GROSS_PRICE" },
@@ -346,7 +346,7 @@ async function main() {
     {
       name: "Exportação",
       operation: "VENDA",
-      components: {
+      TaxComponent: {
         create: [
           { name: "ICMS Exp", percentage: 0.00, baseType: "GROSS_PRICE" },
           { name: "PIS Exp", percentage: 0.00, baseType: "GROSS_PRICE" },

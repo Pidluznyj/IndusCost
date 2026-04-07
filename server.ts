@@ -46,10 +46,10 @@ async function startServer() {
     console.log("Fetching dashboard data...");
     try {
       const [employees, machines, products, pricings, indirectCosts] = await Promise.all([
-        prisma.employee.findMany({ include: { components: { include: { payrollComponent: true } } } }),
-        prisma.machine.findMany({ include: { costs: true } }),
+        prisma.employee.findMany({ include: { EmployeePayrollComponent: { include: { PayrollComponent: true } } } }),
+        prisma.machine.findMany({ include: { MachineCostComponent: true } }),
         prisma.product.findMany(),
-        prisma.productPricing.findMany({ include: { taxRule: { include: { components: true } } } }),
+        prisma.productPricing.findMany({ include: { TaxRule: { include: { TaxComponent: true } } } }),
         prisma.indirectCost.findMany({ where: { status: "ACTIVE" } })
       ]);
 
@@ -58,8 +58,8 @@ async function startServer() {
         const role = await prisma.role.findUnique({ where: { id: emp.roleId } });
         const salary = Number(role?.baseSalary || 0);
         let load = 0;
-        emp.components.forEach(rel => {
-          const c = rel.payrollComponent;
+        emp.EmployeePayrollComponent.forEach(rel => {
+          const c = rel.PayrollComponent;
           load += c.calculationType === "PERCENTAGE" ? (salary * Number(c.value)) / 100 : Number(c.value);
         });
         return { id: emp.id, name: emp.name, totalCost: salary + load };
@@ -69,7 +69,7 @@ async function startServer() {
       // 2. HM por Máquina
       const machineHM = machines.map(m => {
         const dep = (Number(m.acquisitionValue) - Number(m.residualValue)) / (m.usefulLifeMonths || 1);
-        const other = m.costs.reduce((acc, c) => acc + Number(c.monthlyEstimatedCost), 0);
+        const other = m.MachineCostComponent.reduce((acc, c) => acc + Number(c.monthlyEstimatedCost), 0);
         return { id: m.id, code: m.code, hmCost: (dep + other) / 176 };
       });
 
@@ -81,8 +81,8 @@ async function startServer() {
         const pricing = pricings.find(pr => pr.productId === (analysis as any).productId);
         if (!pricing) return { ...analysis, marginPct: 0, marginAbs: 0, suggestedPrice: 0 };
 
-        const taxRule = pricing.taxRule;
-        const taxRate = taxRule?.components?.reduce((acc: number, c: any) => acc + Number(c.percentage), 0) / 100 || 0;
+        const taxRule = pricing.TaxRule;
+        const taxRate = taxRule?.TaxComponent?.reduce((acc: number, c: any) => acc + Number(c.percentage), 0) / 100 || 0;
         const commRate = Number(pricing.commission) / 100;
         const marginRate = Number(pricing.desiredMargin) / 100;
         const otherRate = Number(pricing.otherVariables) / 100;
@@ -167,9 +167,9 @@ async function startServer() {
   app.get("/api/employees", async (req, res) => {
     const employees = await prisma.employee.findMany({
       include: { 
-        role: true,
-        components: {
-          include: { payrollComponent: true }
+        Role: true,
+        EmployeePayrollComponent: {
+          include: { PayrollComponent: true }
         }
       },
       orderBy: { name: "asc" },
@@ -182,8 +182,8 @@ async function startServer() {
       let totalCharges = 0;
       let totalProvisions = 0;
 
-      emp.components.forEach((rel) => {
-        const comp = rel.payrollComponent;
+      emp.EmployeePayrollComponent.forEach((rel) => {
+        const comp = rel.PayrollComponent;
         const value = Number(comp.value);
         const amount = comp.calculationType === "PERCENTAGE" 
           ? (salary * value) / 100 
@@ -235,13 +235,13 @@ async function startServer() {
         monthlyHours,
         productivity,
         status: status || "ACTIVE",
-        components: {
+        EmployeePayrollComponent: {
           create: (componentIds || []).map((id: string) => ({
-            payrollComponent: { connect: { id } }
+            PayrollComponent: { connect: { id } }
           }))
         }
       },
-      include: { role: true, components: { include: { payrollComponent: true } } }
+      include: { Role: true, EmployeePayrollComponent: { include: { PayrollComponent: true } } }
     });
     res.json(employee);
   });
@@ -259,13 +259,13 @@ async function startServer() {
       where: { id },
       data: {
         ...data,
-        components: {
+        EmployeePayrollComponent: {
           create: (componentIds || []).map((compId: string) => ({
-            payrollComponent: { connect: { id: compId } }
+            PayrollComponent: { connect: { id: compId } }
           }))
         }
       },
-      include: { role: true, components: { include: { payrollComponent: true } } }
+      include: { Role: true, EmployeePayrollComponent: { include: { PayrollComponent: true } } }
     });
     res.json(employee);
   });
@@ -273,7 +273,7 @@ async function startServer() {
   // --- API: Materials (Matérias-Primas e Insumos) ---
   app.get("/api/materials", async (req, res) => {
     const materials = await prisma.material.findMany({
-      include: { priceHistory: { orderBy: { effectiveDate: "desc" }, take: 5 } },
+      include: { MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 5 } },
       orderBy: { code: "asc" },
     });
 
@@ -318,7 +318,7 @@ async function startServer() {
         freight,
         standardLoss,
         conversionFactor,
-        priceHistory: {
+        MaterialPriceHistory: {
           create: {
             price: currentCost,
             freight: freight,
@@ -360,8 +360,8 @@ async function startServer() {
   app.get("/api/products", async (req, res) => {
     const products = await prisma.product.findMany({
       include: {
-        bom: { include: { material: true } },
-        routing: { include: { machine: true, role: true } },
+        ProductBOM: { include: { Material: true } },
+        ProductRouting: { include: { Machine: true, Role: true } },
       },
       orderBy: { sku: "asc" },
     });
@@ -373,8 +373,8 @@ async function startServer() {
     const product = await prisma.product.findUnique({
       where: { id },
       include: {
-        bom: { include: { material: true } },
-        routing: { include: { machine: true, role: true } },
+        ProductBOM: { include: { Material: true } },
+        ProductRouting: { include: { Machine: true, Role: true } },
       },
     });
     res.json(product);
@@ -390,7 +390,7 @@ async function startServer() {
         description,
         version,
         defaultLotSize,
-        bom: {
+        ProductBOM: {
           create: (bom || []).map((item: any) => ({
             materialId: item.materialId,
             quantity: item.quantity,
@@ -398,7 +398,7 @@ async function startServer() {
             notes: item.notes,
           }))
         },
-        routing: {
+        ProductRouting: {
           create: (routing || []).map((step: any) => ({
             sequence: step.sequence,
             description: step.description,
@@ -411,7 +411,7 @@ async function startServer() {
           }))
         }
       },
-      include: { bom: true, routing: true }
+      include: { ProductBOM: true, ProductRouting: true }
     });
     res.json(product);
   });
@@ -435,7 +435,7 @@ async function startServer() {
           description,
           version,
           defaultLotSize,
-          bom: {
+          ProductBOM: {
             create: (bom || []).map((item: any) => ({
               materialId: item.materialId,
               quantity: item.quantity,
@@ -443,7 +443,7 @@ async function startServer() {
               notes: item.notes,
             }))
           },
-          routing: {
+          ProductRouting: {
             create: (routing || []).map((step: any) => ({
               sequence: step.sequence,
               description: step.description,
@@ -456,7 +456,7 @@ async function startServer() {
             }))
           }
         },
-        include: { bom: true, routing: true }
+        include: { ProductBOM: true, ProductRouting: true }
       });
     });
 
@@ -492,7 +492,7 @@ async function startServer() {
   // --- API: Tax Rules (Módulo Tributário) ---
   app.get("/api/tax-rules", async (req, res) => {
     const rules = await prisma.taxRule.findMany({
-      include: { components: true },
+      include: { TaxComponent: true },
       orderBy: { name: "asc" },
     });
     res.json(rules);
@@ -505,7 +505,7 @@ async function startServer() {
         name,
         description,
         operation,
-        components: {
+        TaxComponent: {
           create: (components || []).map((c: any) => ({
             name: c.name,
             percentage: c.percentage,
@@ -514,7 +514,7 @@ async function startServer() {
           }))
         }
       },
-      include: { components: true }
+      include: { TaxComponent: true }
     });
     res.json(rule);
   });
@@ -532,7 +532,7 @@ async function startServer() {
           description,
           operation,
           status,
-          components: {
+          TaxComponent: {
             create: (components || []).map((c: any) => ({
               name: c.name,
               percentage: c.percentage,
@@ -541,7 +541,7 @@ async function startServer() {
             }))
           }
         },
-        include: { components: true }
+        include: { TaxComponent: true }
       });
     });
     res.json(rule);
@@ -550,7 +550,7 @@ async function startServer() {
   // --- API: Product Pricing (Formação de Preço) ---
   app.get("/api/pricing", async (req, res) => {
     const pricings = await prisma.productPricing.findMany({
-      include: { product: true, taxRule: { include: { components: true } } },
+      include: { Product: true, TaxRule: { include: { TaxComponent: true } } },
     });
     res.json(pricings);
   });
@@ -576,7 +576,7 @@ async function startServer() {
       // 2. Buscar premissas de preço
       const pricing = await prisma.productPricing.findUnique({
         where: { productId_taxRuleId: { productId, taxRuleId } },
-        include: { taxRule: { include: { components: true } } }
+        include: { TaxRule: { include: { TaxComponent: true } } }
       });
 
       if (!pricing) return res.status(404).json({ error: "Configuração de preço não encontrada" });
@@ -590,7 +590,7 @@ async function startServer() {
     // Custo Gerencial Total = CIU + OPEX
     const custoGerencial = ciu + opex;
 
-    const taxRate = pricing.taxRule.components.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
+    const taxRate = pricing.TaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
     const commRate = Number(pricing.commission) / 100;
     const marginRate = Number(pricing.desiredMargin) / 100;
     const otherRate = Number(pricing.otherVariables) / 100;
@@ -670,13 +670,13 @@ async function startServer() {
       // Buscar premissas de preço oficiais
       const pricing = await prisma.productPricing.findUnique({
         where: { productId_taxRuleId: { productId: sim.productId, taxRuleId: sim.taxRuleId } },
-        include: { taxRule: { include: { components: true } } }
+        include: { TaxRule: { include: { TaxComponent: true } } }
       });
 
       if (!pricing) return res.status(404).json({ error: "Configuração de preço base não encontrada" });
 
       // Simular o retorno do endpoint de cálculo para manter compatibilidade
-      const taxRateBase = pricing.taxRule.components.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
+      const taxRateBase = pricing.TaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
       const ciuBase = Number((baseData as any).totalIndustrialCost);
       const opexBase = Number((baseData as any).totalOPEX_Unit);
       const freightBase = Number(pricing.freightOut);
@@ -754,11 +754,11 @@ async function startServer() {
       prisma.product.findUnique({
         where: { id: productId },
         include: {
-          bom: { include: { material: true } },
-          routing: { 
+          ProductBOM: { include: { Material: true } },
+          ProductRouting: { 
             include: { 
-              machine: { include: { costs: true } }, 
-              role: true
+              Machine: { include: { MachineCostComponent: true } }, 
+              Role: true
             } 
           },
         },
@@ -769,19 +769,19 @@ async function startServer() {
     if (!product) return null;
 
     // Buscar componentes de folha padrão (usaremos os do primeiro funcionário desse cargo ou um padrão)
-    const rolesWithComponents = await Promise.all(product.routing.map(async (step) => {
+    const rolesWithComponents = await Promise.all(product.ProductRouting.map(async (step) => {
       const emp = await prisma.employee.findFirst({
         where: { roleId: step.roleId },
-        include: { components: { include: { payrollComponent: true } } }
+        include: { EmployeePayrollComponent: { include: { PayrollComponent: true } } }
       });
-      return { roleId: step.roleId, components: emp?.components || [] };
+      return { roleId: step.roleId, components: emp?.EmployeePayrollComponent || [] };
     }));
 
     const lotSize = Number(product.defaultLotSize) || 1;
 
     // 1. Materiais
-    const materialItems = product.bom.map((item) => {
-      const mat = item.material;
+    const materialItems = product.ProductBOM.map((item) => {
+      const mat = item.Material;
       const landedCost = Number(mat.currentCost) + Number(mat.freight);
       const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
       const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
@@ -790,13 +790,13 @@ async function startServer() {
     const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
 
     // 2. Operações
-    const operationItems = product.routing.map((step) => {
-      const machine = step.machine;
-      const role = step.role;
+    const operationItems = product.ProductRouting.map((step) => {
+      const machine = step.Machine;
+      const role = step.Role;
       const roleData = rolesWithComponents.find(rc => rc.roleId === step.roleId);
 
       const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
-      const otherMonthlyCosts = machine.costs.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
+      const otherMonthlyCosts = machine.MachineCostComponent.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
       const machineHourCost = (depreciationMonthly + otherMonthlyCosts) / 176;
 
       const salary = Number(role.baseSalary);
@@ -804,7 +804,7 @@ async function startServer() {
       const payrollComponents = roleData?.components || [];
       if (payrollComponents.length > 0) {
         payrollComponents.forEach((rel: any) => {
-          const comp = rel.payrollComponent;
+          const comp = rel.PayrollComponent;
           const val = Number(comp.value);
           totalPayrollLoad += comp.calculationType === "PERCENTAGE" ? (salary * val) / 100 : val;
         });
@@ -867,11 +867,11 @@ async function startServer() {
       prisma.product.findUnique({
         where: { id },
         include: {
-          bom: { include: { material: true } },
-          routing: { 
+          ProductBOM: { include: { Material: true } },
+          ProductRouting: { 
             include: { 
-              machine: { include: { costs: true } }, 
-              role: true
+              Machine: { include: { MachineCostComponent: true } }, 
+              Role: true
             } 
           },
         },
@@ -880,8 +880,8 @@ async function startServer() {
     ]);
 
     const lotSize = Number(product!.defaultLotSize) || 1;
-    const materialItems = product!.bom.map((item) => {
-      const mat = item.material;
+    const materialItems = product!.ProductBOM.map((item) => {
+      const mat = item.Material;
       const currentCost = Number(mat.currentCost);
       const freight = Number(mat.freight);
       const matStandardLoss = Number(mat.standardLoss) / 100;
@@ -904,11 +904,11 @@ async function startServer() {
       };
     });
 
-    const operationItems = await Promise.all(product!.routing.map(async (step) => {
-      const machine = step.machine;
-      const role = step.role;
+    const operationItems = await Promise.all(product!.ProductRouting.map(async (step) => {
+      const machine = step.Machine;
+      const role = step.Role;
       const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
-      const otherMonthlyCosts = machine.costs.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
+      const otherMonthlyCosts = machine.MachineCostComponent.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
       const machineHourCost = (depreciationMonthly + otherMonthlyCosts) / 176;
       const salary = Number(role.baseSalary);
       let totalPayrollLoad = 0;
@@ -916,12 +916,12 @@ async function startServer() {
       // Buscar componentes de folha para este cargo (usando o primeiro funcionário como referência)
       const empRef = await prisma.employee.findFirst({
         where: { roleId: role.id },
-        include: { components: { include: { payrollComponent: true } } }
+        include: { EmployeePayrollComponent: { include: { PayrollComponent: true } } }
       });
-      const payrollComponents = empRef?.components || [];
+      const payrollComponents = empRef?.EmployeePayrollComponent || [];
 
       payrollComponents.forEach((rel: any) => {
-        const comp = rel.payrollComponent;
+        const comp = rel.PayrollComponent;
         totalPayrollLoad += comp.calculationType === "PERCENTAGE" ? (salary * Number(comp.value)) / 100 : Number(comp.value);
       });
       const hhCost = (salary + totalPayrollLoad) / Number(role.monthlyHours || 220);

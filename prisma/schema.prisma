@@ -17,8 +17,8 @@ model Machine {
   acquisitionValue Decimal  @db.Decimal(18, 2)
   residualValue    Decimal  @db.Decimal(18, 2)
   usefulLifeMonths Int
-  costs            MachineCostComponent[]
-  routings         ProductRouting[]
+  MachineCostComponent MachineCostComponent[]
+  ProductRouting       ProductRouting[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -26,7 +26,7 @@ model Machine {
 model MachineCostComponent {
   id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   machineId           String   @db.Uuid
-  machine             Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  Machine             Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
   name                String
   monthlyEstimatedCost Decimal  @db.Decimal(18, 2)
   isVariable          Boolean  @default(false)
@@ -37,8 +37,8 @@ model Role {
   name           String   @unique
   baseSalary     Decimal  @db.Decimal(18, 2)
   monthlyHours   Int      @default(220)
-  employees      Employee[]
-  routings       ProductRouting[]
+  Employee       Employee[]
+  ProductRouting ProductRouting[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -47,7 +47,7 @@ model Employee {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name           String
   roleId         String   @db.Uuid
-  role           Role     @relation(fields: [roleId], references: [id])
+  Role           Role     @relation(fields: [roleId], references: [id])
   department     String
   costCenter     String
   classification String
@@ -55,7 +55,7 @@ model Employee {
   monthlyHours   Int
   productivity   Decimal  @default(100) @db.Decimal(5, 2)
   status         String   @default("ACTIVE")
-  components     EmployeePayrollComponent[]
+  EmployeePayrollComponent EmployeePayrollComponent[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -73,9 +73,9 @@ model PayrollComponent {
 
 model EmployeePayrollComponent {
   employeeId       String   @db.Uuid
-  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  Employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   payrollComponentId String @db.Uuid
-  payrollComponent PayrollComponent @relation(fields: [payrollComponentId], references: [id], onDelete: Cascade)
+  PayrollComponent PayrollComponent @relation(fields: [payrollComponentId], references: [id], onDelete: Cascade)
 
   @@id([employeeId, payrollComponentId])
 }
@@ -96,8 +96,8 @@ model Material {
   standardLoss     Decimal  @default(0) @db.Decimal(5, 2)
   conversionFactor Decimal  @default(1) @db.Decimal(10, 4)
   status           String   @default("ACTIVE")
-  priceHistory     MaterialPriceHistory[]
-  bomItems         ProductBOM[]
+  MaterialPriceHistory MaterialPriceHistory[]
+  ProductBOM           ProductBOM[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -105,7 +105,7 @@ model Material {
 model MaterialPriceHistory {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   materialId   String   @db.Uuid
-  material     Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  Material     Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
   price        Decimal  @db.Decimal(18, 2)
   freight      Decimal  @default(0) @db.Decimal(18, 2)
   effectiveDate DateTime @default(now())
@@ -121,10 +121,10 @@ model Product {
   version        String   @default("1.0.0")
   status         String   @default("ACTIVE")
   defaultLotSize Decimal  @default(1) @db.Decimal(18, 2)
-  bom            ProductBOM[]
-  routing        ProductRouting[]
-  calculations   CostCalculationLog[]
-  pricings       ProductPricing[]
+  ProductBOM           ProductBOM[]
+  ProductRouting       ProductRouting[]
+  CostCalculationLog   CostCalculationLog[]
+  ProductPricing       ProductPricing[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -132,9 +132,9 @@ model Product {
 model ProductBOM {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId      String   @db.Uuid
-  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  Product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   materialId     String   @db.Uuid
-  material       Material @relation(fields: [materialId], references: [id])
+  Material       Material @relation(fields: [materialId], references: [id])
   quantity       Decimal  @db.Decimal(18, 4)
   lossPercentage Decimal  @default(0) @db.Decimal(5, 2)
   notes          String?
@@ -143,13 +143,13 @@ model ProductBOM {
 model ProductRouting {
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId         String   @db.Uuid
-  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  Product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   sequence          Int
   description       String?
   machineId         String   @db.Uuid
-  machine           Machine  @relation(fields: [machineId], references: [id])
+  Machine           Machine  @relation(fields: [machineId], references: [id])
   roleId            String   @db.Uuid
-  role              Role     @relation(fields: [roleId], references: [id])
+  Role              Role     @relation(fields: [roleId], references: [id])
   setupTimeMin      Decimal  @default(0) @db.Decimal(10, 2)
   operationTimeMin  Decimal  @default(0) @db.Decimal(10, 2)
   efficiencyExpected Decimal  @default(100) @db.Decimal(5, 2)
@@ -178,8 +178,8 @@ model TaxRule {
   description String?
   operation   String
   status      String         @default("ACTIVE")
-  components  TaxComponent[]
-  pricings    ProductPricing[]
+  TaxComponent   TaxComponent[]
+  ProductPricing ProductPricing[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 }
@@ -187,7 +187,7 @@ model TaxRule {
 model TaxComponent {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   taxRuleId   String   @db.Uuid
-  taxRule     TaxRule  @relation(fields: [taxRuleId], references: [id], onDelete: Cascade)
+  TaxRule     TaxRule  @relation(fields: [taxRuleId], references: [id], onDelete: Cascade)
   name        String
   percentage  Decimal  @db.Decimal(5, 2)
   isRecoverable Boolean @default(false)
@@ -199,9 +199,9 @@ model TaxComponent {
 model ProductPricing {
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId         String   @db.Uuid
-  product           Product  @relation(fields: [productId], references: [id])
+  Product           Product  @relation(fields: [productId], references: [id])
   taxRuleId         String   @db.Uuid
-  taxRule           TaxRule  @relation(fields: [taxRuleId], references: [id])
+  TaxRule           TaxRule  @relation(fields: [taxRuleId], references: [id])
   desiredMargin     Decimal  @default(15.0) @db.Decimal(5, 2)
   commission        Decimal  @default(0.0) @db.Decimal(5, 2)
   freightOut        Decimal  @default(0.0) @db.Decimal(18, 2)
@@ -235,7 +235,7 @@ model Simulation {
 model CostCalculationLog {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId      String   @db.Uuid
-  product        Product  @relation(fields: [productId], references: [id])
+  Product        Product  @relation(fields: [productId], references: [id])
   calculatedAt   DateTime @default(now())
   versionTag     String?
   totalCiu       Decimal  @db.Decimal(18, 2)
