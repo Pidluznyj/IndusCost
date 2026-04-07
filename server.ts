@@ -9,7 +9,8 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const port = process.env.PORT || 3000;
+  const host = process.env.HOST || "0.0.0.0";
 
   app.use(express.json());
 
@@ -937,8 +938,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  app.listen(Number(port), host, () => {
+    console.log(`Server running on http://${host}:${port}`);
   });
 }
 
