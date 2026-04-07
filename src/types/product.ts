@@ -30,8 +30,8 @@ export interface Product {
   version: string;
   status: "ACTIVE" | "DRAFT" | "OBSOLETE";
   defaultLotSize: number;
-  bom: ProductBOM[];
-  routing: ProductRouting[];
+  ProductBOM: ProductBOM[];
+  ProductRouting: ProductRouting[];
   createdAt: string;
   updatedAt: string;
 }

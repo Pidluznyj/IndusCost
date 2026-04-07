@@ -500,12 +500,12 @@ export const MaterialModule = () => {
             
             <div className="p-6">
               <div className="space-y-4">
-                {viewingHistory.priceHistory && viewingHistory.priceHistory.length > 0 ? (
-                  viewingHistory.priceHistory.map((history, idx) => (
+                {viewingHistory.MaterialPriceHistory && viewingHistory.MaterialPriceHistory.length > 0 ? (
+                  viewingHistory.MaterialPriceHistory.map((history, idx) => (
                     <div key={history.id} className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-accent/30 transition-colors">
                       <div className="flex items-center gap-4">
                         <div className="h-8 w-8 rounded-full bg-accent flex items-center justify-center text-xs font-bold">
-                          {viewingHistory.priceHistory!.length - idx}
+                          {viewingHistory.MaterialPriceHistory!.length - idx}
                         </div>
                         <div>
                           <p className="text-sm font-bold">{formatCurrency(history.price)}</p>

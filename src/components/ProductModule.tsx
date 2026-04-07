@@ -94,8 +94,8 @@ export const ProductModule = () => {
         description: product.description || "",
         version: product.version,
         defaultLotSize: Number(product.defaultLotSize),
-        bom: product.bom.map(b => ({ ...b, quantity: Number(b.quantity), lossPercentage: Number(b.lossPercentage) })),
-        routing: product.routing.map(r => ({ 
+        bom: product.ProductBOM.map(b => ({ ...b, quantity: Number(b.quantity), lossPercentage: Number(b.lossPercentage) })),
+        routing: product.ProductRouting.map(r => ({ 
           ...r, 
           setupTimeMin: Number(r.setupTimeMin), 
           operationTimeMin: Number(r.operationTimeMin),
@@ -247,14 +247,14 @@ export const ProductModule = () => {
                       <Layers className="h-3 w-3" />
                       <span className="text-[10px] font-bold uppercase">Componentes</span>
                     </div>
-                    <p className="text-lg font-black">{product.bom.length}</p>
+                    <p className="text-lg font-black">{product.ProductBOM.length}</p>
                   </div>
                   <div className="p-3 rounded-xl bg-accent/20 border border-border/50">
                     <div className="flex items-center gap-2 text-muted-foreground mb-1">
                       <Settings className="h-3 w-3" />
                       <span className="text-[10px] font-bold uppercase">Operações</span>
                     </div>
-                    <p className="text-lg font-black">{product.routing.length}</p>
+                    <p className="text-lg font-black">{product.ProductRouting.length}</p>
                   </div>
                 </div>
 

@@ -85,7 +85,7 @@ export const EmployeeModule = () => {
         salary: Number(employee.salary),
         monthlyHours: employee.monthlyHours,
         productivity: Number(employee.productivity),
-        componentIds: employee.components.map(c => c.payrollComponent.id),
+        componentIds: employee.EmployeePayrollComponent.map(c => c.PayrollComponent.id),
       });
     } else {
       setEditingEmployee(null);
@@ -166,7 +166,7 @@ export const EmployeeModule = () => {
 
   const filteredEmployees = employees.filter(emp => 
     emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.role.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    emp.Role.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.department.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -246,7 +246,7 @@ export const EmployeeModule = () => {
                       </div>
                     </td>
                     <td className="p-4">
-                      <p className="text-sm font-medium">{emp.role.name}</p>
+                      <p className="text-sm font-medium">{emp.Role.name}</p>
                       <p className="text-xs text-muted-foreground">{emp.department}</p>
                     </td>
                     <td className="p-4">
@@ -565,7 +565,7 @@ export const EmployeeModule = () => {
             <div className="p-6 border-b border-border flex items-center justify-between bg-primary text-primary-foreground">
               <div>
                 <h3 className="text-xl font-bold">{viewingCosts.name}</h3>
-                <p className="text-xs opacity-80">{viewingCosts.role.name} • {viewingCosts.department}</p>
+                <p className="text-xs opacity-80">{viewingCosts.Role.name} • {viewingCosts.department}</p>
               </div>
               <button onClick={() => setViewingCosts(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                 <X className="h-5 w-5" />

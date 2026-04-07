@@ -32,7 +32,7 @@ interface TaxRule {
   description?: string;
   operation: string;
   status: string;
-  components: TaxComponent[];
+  TaxComponent: TaxComponent[];
 }
 
 export const TaxModule = () => {
@@ -72,7 +72,7 @@ export const TaxModule = () => {
         name: rule.name,
         description: rule.description || "",
         operation: rule.operation,
-        components: rule.components.map(c => ({ ...c, percentage: Number(c.percentage) })),
+        components: rule.TaxComponent.map(c => ({ ...c, percentage: Number(c.percentage) })),
       });
     } else {
       setEditingRule(null);
@@ -158,7 +158,7 @@ export const TaxModule = () => {
           </div>
         ) : (
           rules.filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase())).map((rule) => {
-            const totalTax = rule.components.reduce((acc, c) => acc + Number(c.percentage), 0);
+            const totalTax = rule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0);
             return (
               <motion.div 
                 key={rule.id}
@@ -189,7 +189,7 @@ export const TaxModule = () => {
                   </div>
 
                   <div className="space-y-2">
-                    {rule.components.map((comp, idx) => (
+                    {rule.TaxComponent.map((comp, idx) => (
                       <div key={idx} className="flex items-center justify-between text-[10px] font-medium p-2 rounded-lg bg-accent/20">
                         <span className="text-muted-foreground">{comp.name}</span>
                         <span className="font-bold">{formatNumber(Number(comp.percentage))}%</span>

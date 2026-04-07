@@ -20,7 +20,7 @@ export interface Material {
   standardLoss: number;
   conversionFactor: number;
   status: "ACTIVE" | "INACTIVE";
-  priceHistory?: MaterialPriceHistory[];
+  MaterialPriceHistory?: MaterialPriceHistory[];
   calculations?: {
     landedCost: number;
     effectiveCost: number;

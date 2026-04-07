@@ -17,7 +17,7 @@ export interface Employee {
   id: string;
   name: string;
   roleId: string;
-  role: Role;
+  Role: Role;
   department: string;
   costCenter: string;
   classification: string;
@@ -25,7 +25,7 @@ export interface Employee {
   monthlyHours: number;
   productivity: number;
   status: "ACTIVE" | "INACTIVE";
-  components: { payrollComponent: PayrollComponent }[];
+  EmployeePayrollComponent: { PayrollComponent: PayrollComponent }[];
   costs?: {
     salary: number;
     totalBenefits: number;

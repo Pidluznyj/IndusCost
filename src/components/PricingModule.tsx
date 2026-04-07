@@ -132,7 +132,7 @@ export const PricingModule = () => {
             >
               <div className="p-5 border-b border-border bg-accent/30">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{pricing.taxRule.name}</span>
+                  <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{pricing.TaxRule.name}</span>
                   <button 
                     onClick={() => {
                       setFormData({
@@ -150,8 +150,8 @@ export const PricingModule = () => {
                     <Edit2 className="h-3 w-3" />
                   </button>
                 </div>
-                <h3 className="font-bold text-sm">{pricing.product.name}</h3>
-                <p className="text-[10px] font-mono text-muted-foreground">{pricing.product.sku}</p>
+                <h3 className="font-bold text-sm">{pricing.Product.name}</h3>
+                <p className="text-[10px] font-mono text-muted-foreground">{pricing.Product.sku}</p>
               </div>
               
               <div className="p-5 space-y-4">
