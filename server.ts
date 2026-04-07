@@ -1,0 +1,945 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import path from "path";
+import { fileURLToPath } from "url";
+import { prisma } from "./src/lib/prisma.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json());
+
+  // --- API: Test ---
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // --- API: Dashboard Gerencial ---
+  app.get("/api/dashboard", async (req, res, next) => {
+    console.log("Fetching dashboard data...");
+    try {
+      const [employees, machines, products, pricings, indirectCosts] = await Promise.all([
+        prisma.employee.findMany({ include: { components: { include: { payrollComponent: true } } } }),
+        prisma.machine.findMany({ include: { costs: true } }),
+        prisma.product.findMany(),
+        prisma.productPricing.findMany({ include: { taxRule: { include: { components: true } } } }),
+        prisma.indirectCost.findMany({ where: { status: "ACTIVE" } })
+      ]);
+
+      // 1. Custo por Colaborador
+      const employeeCosts = await Promise.all(employees.map(async emp => {
+        const role = await prisma.role.findUnique({ where: { id: emp.roleId } });
+        const salary = Number(role?.baseSalary || 0);
+        let load = 0;
+        emp.components.forEach(rel => {
+          const c = rel.payrollComponent;
+          load += c.calculationType === "PERCENTAGE" ? (salary * Number(c.value)) / 100 : Number(c.value);
+        });
+        return { id: emp.id, name: emp.name, totalCost: salary + load };
+      }));
+      const avgEmployeeCost = employeeCosts.length > 0 ? employeeCosts.reduce((acc, e) => acc + e.totalCost, 0) / employeeCosts.length : 0;
+
+      // 2. HM por Máquina
+      const machineHM = machines.map(m => {
+        const dep = (Number(m.acquisitionValue) - Number(m.residualValue)) / (m.usefulLifeMonths || 1);
+        const other = m.costs.reduce((acc, c) => acc + Number(c.monthlyEstimatedCost), 0);
+        return { id: m.id, code: m.code, hmCost: (dep + other) / 176 };
+      });
+
+      // 3. Análise de Produtos (Top 5 e Bottom 5)
+      const productAnalyses = await Promise.all(products.map(p => getProductCostAnalysis(p.id)));
+      const validAnalyses = productAnalyses.filter(a => a !== null);
+
+      const productPerformance = validAnalyses.map(analysis => {
+        const pricing = pricings.find(pr => pr.productId === (analysis as any).productId);
+        if (!pricing) return { ...analysis, marginPct: 0, marginAbs: 0, suggestedPrice: 0 };
+
+        const taxRule = pricing.taxRule;
+        const taxRate = taxRule?.components?.reduce((acc: number, c: any) => acc + Number(c.percentage), 0) / 100 || 0;
+        const commRate = Number(pricing.commission) / 100;
+        const marginRate = Number(pricing.desiredMargin) / 100;
+        const otherRate = Number(pricing.otherVariables) / 100;
+        const freight = Number(pricing.freightOut);
+
+        const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+        const suggestedPrice = divisor > 0 ? ((analysis as any).totalIndustrialCost + freight) / divisor : 0;
+        
+        const totalTaxes = suggestedPrice * taxRate;
+        const totalComm = suggestedPrice * commRate;
+        const marginAbs = suggestedPrice - totalTaxes - totalComm - freight - (analysis as any).totalGerencialCost;
+
+        return {
+          ...analysis,
+          suggestedPrice,
+          marginAbs,
+          marginPct: suggestedPrice > 0 ? (marginAbs / suggestedPrice) * 100 : 0
+        };
+      });
+
+      // 4. Impactos Globais
+      const totalCIF = indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
+      const totalOPEX = indirectCosts.filter(c => c.category !== "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
+
+      res.json({
+        kpis: {
+          totalEmployees: employees.length,
+          avgEmployeeCost,
+          totalMachines: machines.length,
+          avgHM: machineHM.length > 0 ? machineHM.reduce((acc, m) => acc + m.hmCost, 0) / machineHM.length : 0,
+          totalCIF,
+          totalOPEX
+        },
+        productPerformance: productPerformance.sort((a, b) => b.marginPct - a.marginPct),
+        costComposition: {
+          mp: validAnalyses.length > 0 ? validAnalyses.reduce((acc, a: any) => acc + a.totalMaterialCost, 0) / validAnalyses.length : 0,
+          hh: validAnalyses.length > 0 ? validAnalyses.reduce((acc, a: any) => acc + a.totalHH_Unit, 0) / validAnalyses.length : 0,
+          hm: validAnalyses.length > 0 ? validAnalyses.reduce((acc, a: any) => acc + a.totalHM_Unit, 0) / validAnalyses.length : 0,
+          cif: validAnalyses.length > 0 ? validAnalyses.reduce((acc, a: any) => acc + a.totalCIF_Unit, 0) / validAnalyses.length : 0,
+          opex: validAnalyses.length > 0 ? validAnalyses.reduce((acc, a: any) => acc + a.totalOPEX_Unit, 0) / validAnalyses.length : 0,
+        }
+      });
+    } catch (err) {
+      console.error("Dashboard route error:", err);
+      next(err);
+    }
+  });
+
+  // --- API: Roles (Cargos) ---
+  app.get("/api/roles", async (req, res) => {
+    const roles = await prisma.role.findMany({
+      orderBy: { name: "asc" },
+    });
+    res.json(roles);
+  });
+
+  app.post("/api/roles", async (req, res) => {
+    const { name, baseSalary, monthlyHours } = req.body;
+    const role = await prisma.role.create({
+      data: { name, baseSalary, monthlyHours },
+    });
+    res.json(role);
+  });
+
+  // --- API: Payroll Components ---
+  app.get("/api/payroll-components", async (req, res) => {
+    const components = await prisma.payrollComponent.findMany({
+      orderBy: { name: "asc" },
+    });
+    res.json(components);
+  });
+
+  app.post("/api/payroll-components", async (req, res) => {
+    const { name, type, calculationType, value } = req.body;
+    const component = await prisma.payrollComponent.create({
+      data: { name, type, calculationType, value },
+    });
+    res.json(component);
+  });
+
+  // --- API: Employees (Funcionários) ---
+  app.get("/api/employees", async (req, res) => {
+    const employees = await prisma.employee.findMany({
+      include: { 
+        role: true,
+        components: {
+          include: { payrollComponent: true }
+        }
+      },
+      orderBy: { name: "asc" },
+    });
+
+    // Lógica de Cálculo de Custo (Motor de Custeio HH)
+    const employeesWithCosts = employees.map((emp) => {
+      const salary = Number(emp.salary);
+      let totalBenefits = 0;
+      let totalCharges = 0;
+      let totalProvisions = 0;
+
+      emp.components.forEach((rel) => {
+        const comp = rel.payrollComponent;
+        const value = Number(comp.value);
+        const amount = comp.calculationType === "PERCENTAGE" 
+          ? (salary * value) / 100 
+          : value;
+
+        if (comp.type === "BENEFIT") totalBenefits += amount;
+        if (comp.type === "CHARGE") totalCharges += amount;
+        if (comp.type === "PROVISION") totalProvisions += amount;
+      });
+
+      const totalMonthlyCost = salary + totalBenefits + totalCharges + totalProvisions;
+      const costPerContractedHour = totalMonthlyCost / emp.monthlyHours;
+      const productiveHours = emp.monthlyHours * (Number(emp.productivity) / 100);
+      const costPerProductiveHour = totalMonthlyCost / (productiveHours || 1);
+
+      return {
+        ...emp,
+        costs: {
+          salary,
+          totalBenefits,
+          totalCharges,
+          totalProvisions,
+          totalMonthlyCost,
+          costPerContractedHour,
+          costPerProductiveHour,
+          productiveHours
+        }
+      };
+    });
+
+    res.json(employeesWithCosts);
+  });
+
+  app.post("/api/employees", async (req, res) => {
+    const { 
+      name, roleId, department, costCenter, 
+      classification, salary, monthlyHours, productivity, status,
+      componentIds // Array de IDs de componentes
+    } = req.body;
+
+    const employee = await prisma.employee.create({
+      data: {
+        name,
+        roleId,
+        department,
+        costCenter,
+        classification,
+        salary,
+        monthlyHours,
+        productivity,
+        status: status || "ACTIVE",
+        components: {
+          create: (componentIds || []).map((id: string) => ({
+            payrollComponent: { connect: { id } }
+          }))
+        }
+      },
+      include: { role: true, components: { include: { payrollComponent: true } } }
+    });
+    res.json(employee);
+  });
+
+  app.put("/api/employees/:id", async (req, res) => {
+    const { id } = req.params;
+    const { componentIds, ...data } = req.body;
+
+    // Primeiro remove relações antigas
+    await prisma.employeePayrollComponent.deleteMany({
+      where: { employeeId: id }
+    });
+
+    const employee = await prisma.employee.update({
+      where: { id },
+      data: {
+        ...data,
+        components: {
+          create: (componentIds || []).map((compId: string) => ({
+            payrollComponent: { connect: { id: compId } }
+          }))
+        }
+      },
+      include: { role: true, components: { include: { payrollComponent: true } } }
+    });
+    res.json(employee);
+  });
+
+  // --- API: Materials (Matérias-Primas e Insumos) ---
+  app.get("/api/materials", async (req, res) => {
+    const materials = await prisma.material.findMany({
+      include: { priceHistory: { orderBy: { effectiveDate: "desc" }, take: 5 } },
+      orderBy: { code: "asc" },
+    });
+
+    // Lógica de Cálculo de Custo Posto Fábrica e com Perda
+    const materialsWithCalculations = materials.map((mat) => {
+      const currentCost = Number(mat.currentCost);
+      const freight = Number(mat.freight);
+      const standardLoss = Number(mat.standardLoss) / 100;
+
+      const landedCost = currentCost + freight;
+      const effectiveCost = landedCost / (1 - standardLoss);
+
+      return {
+        ...mat,
+        calculations: {
+          landedCost,
+          effectiveCost,
+        }
+      };
+    });
+
+    res.json(materialsWithCalculations);
+  });
+
+  app.post("/api/materials", async (req, res) => {
+    const { 
+      code, description, unit, category, supplier, 
+      currentCost, averageCost, standardCost, freight, 
+      standardLoss, conversionFactor 
+    } = req.body;
+
+    const material = await prisma.material.create({
+      data: {
+        code,
+        description,
+        unit,
+        category,
+        supplier,
+        currentCost,
+        averageCost,
+        standardCost,
+        freight,
+        standardLoss,
+        conversionFactor,
+        priceHistory: {
+          create: {
+            price: currentCost,
+            freight: freight,
+          }
+        }
+      }
+    });
+    res.json(material);
+  });
+
+  app.put("/api/materials/:id", async (req, res) => {
+    const { id } = req.params;
+    const { currentCost, freight, ...data } = req.body;
+
+    // Se o custo ou frete mudou, registra no histórico
+    const oldMaterial = await prisma.material.findUnique({ where: { id } });
+    if (oldMaterial && (Number(oldMaterial.currentCost) !== currentCost || Number(oldMaterial.freight) !== freight)) {
+      await prisma.materialPriceHistory.create({
+        data: {
+          materialId: id,
+          price: currentCost,
+          freight: freight,
+        }
+      });
+    }
+
+    const material = await prisma.material.update({
+      where: { id },
+      data: {
+        ...data,
+        currentCost,
+        freight,
+      }
+    });
+    res.json(material);
+  });
+
+  // --- API: Products (Engenharia / BOM / Routing) ---
+  app.get("/api/products", async (req, res) => {
+    const products = await prisma.product.findMany({
+      include: {
+        bom: { include: { material: true } },
+        routing: { include: { machine: true, role: true } },
+      },
+      orderBy: { sku: "asc" },
+    });
+    res.json(products);
+  });
+
+  app.get("/api/products/:id", async (req, res) => {
+    const { id } = req.params;
+    const product = await prisma.product.findUnique({
+      where: { id },
+      include: {
+        bom: { include: { material: true } },
+        routing: { include: { machine: true, role: true } },
+      },
+    });
+    res.json(product);
+  });
+
+  app.post("/api/products", async (req, res) => {
+    const { sku, name, description, version, defaultLotSize, bom, routing } = req.body;
+
+    const product = await prisma.product.create({
+      data: {
+        sku,
+        name,
+        description,
+        version,
+        defaultLotSize,
+        bom: {
+          create: (bom || []).map((item: any) => ({
+            materialId: item.materialId,
+            quantity: item.quantity,
+            lossPercentage: item.lossPercentage,
+            notes: item.notes,
+          }))
+        },
+        routing: {
+          create: (routing || []).map((step: any) => ({
+            sequence: step.sequence,
+            description: step.description,
+            machineId: step.machineId,
+            roleId: step.roleId,
+            setupTimeMin: step.setupTimeMin,
+            operationTimeMin: step.operationTimeMin,
+            efficiencyExpected: step.efficiencyExpected,
+            notes: step.notes,
+          }))
+        }
+      },
+      include: { bom: true, routing: true }
+    });
+    res.json(product);
+  });
+
+  app.put("/api/products/:id", async (req, res) => {
+    const { id } = req.params;
+    const { sku, name, description, version, defaultLotSize, bom, routing } = req.body;
+
+    // Transação para atualizar tudo
+    const product = await prisma.$transaction(async (tx) => {
+      // 1. Limpar BOM e Routing antigos
+      await tx.productBOM.deleteMany({ where: { productId: id } });
+      await tx.productRouting.deleteMany({ where: { productId: id } });
+
+      // 2. Atualizar Produto e recriar relações
+      return await tx.product.update({
+        where: { id },
+        data: {
+          sku,
+          name,
+          description,
+          version,
+          defaultLotSize,
+          bom: {
+            create: (bom || []).map((item: any) => ({
+              materialId: item.materialId,
+              quantity: item.quantity,
+              lossPercentage: item.lossPercentage,
+              notes: item.notes,
+            }))
+          },
+          routing: {
+            create: (routing || []).map((step: any) => ({
+              sequence: step.sequence,
+              description: step.description,
+              machineId: step.machineId,
+              roleId: step.roleId,
+              setupTimeMin: step.setupTimeMin,
+              operationTimeMin: step.operationTimeMin,
+              efficiencyExpected: step.efficiencyExpected,
+              notes: step.notes,
+            }))
+          }
+        },
+        include: { bom: true, routing: true }
+      });
+    });
+
+    res.json(product);
+  });
+
+  // --- API: Indirect Costs (OPEX) ---
+  app.get("/api/indirect-costs", async (req, res) => {
+    const costs = await prisma.indirectCost.findMany({
+      orderBy: { category: "asc" },
+    });
+    res.json(costs);
+  });
+
+  app.post("/api/indirect-costs", async (req, res) => {
+    const { description, category, monthlyValue, costCenter, allocationCriteria } = req.body;
+    const cost = await prisma.indirectCost.create({
+      data: { description, category, monthlyValue, costCenter, allocationCriteria }
+    });
+    res.json(cost);
+  });
+
+  app.put("/api/indirect-costs/:id", async (req, res) => {
+    const { id } = req.params;
+    const { description, category, monthlyValue, costCenter, allocationCriteria, status } = req.body;
+    const cost = await prisma.indirectCost.update({
+      where: { id },
+      data: { description, category, monthlyValue, costCenter, allocationCriteria, status }
+    });
+    res.json(cost);
+  });
+
+  // --- API: Tax Rules (Módulo Tributário) ---
+  app.get("/api/tax-rules", async (req, res) => {
+    const rules = await prisma.taxRule.findMany({
+      include: { components: true },
+      orderBy: { name: "asc" },
+    });
+    res.json(rules);
+  });
+
+  app.post("/api/tax-rules", async (req, res) => {
+    const { name, description, operation, components } = req.body;
+    const rule = await prisma.taxRule.create({
+      data: {
+        name,
+        description,
+        operation,
+        components: {
+          create: (components || []).map((c: any) => ({
+            name: c.name,
+            percentage: c.percentage,
+            isRecoverable: c.isRecoverable,
+            baseType: c.baseType,
+          }))
+        }
+      },
+      include: { components: true }
+    });
+    res.json(rule);
+  });
+
+  app.put("/api/tax-rules/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name, description, operation, components, status } = req.body;
+
+    const rule = await prisma.$transaction(async (tx) => {
+      await tx.taxComponent.deleteMany({ where: { taxRuleId: id } });
+      return await tx.taxRule.update({
+        where: { id },
+        data: {
+          name,
+          description,
+          operation,
+          status,
+          components: {
+            create: (components || []).map((c: any) => ({
+              name: c.name,
+              percentage: c.percentage,
+              isRecoverable: c.isRecoverable,
+              baseType: c.baseType,
+            }))
+          }
+        },
+        include: { components: true }
+      });
+    });
+    res.json(rule);
+  });
+
+  // --- API: Product Pricing (Formação de Preço) ---
+  app.get("/api/pricing", async (req, res) => {
+    const pricings = await prisma.productPricing.findMany({
+      include: { product: true, taxRule: { include: { components: true } } },
+    });
+    res.json(pricings);
+  });
+
+  app.post("/api/pricing", async (req, res) => {
+    const { productId, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
+    const pricing = await prisma.productPricing.upsert({
+      where: { productId_taxRuleId: { productId, taxRuleId } },
+      update: { desiredMargin, commission, freightOut, otherVariables },
+      create: { productId, taxRuleId, desiredMargin, commission, freightOut, otherVariables },
+    });
+    res.json(pricing);
+  });
+
+  app.get("/api/pricing/:productId/:taxRuleId/calculate", async (req, res) => {
+    const { productId, taxRuleId } = req.params;
+
+    // 1. Buscar dados do produto (custos)
+    const costRes = await fetch(`http://localhost:3000/api/products/${productId}/cost-analysis`);
+    const costData = await costRes.json();
+
+    // 2. Buscar premissas de preço
+    const pricing = await prisma.productPricing.findUnique({
+      where: { productId_taxRuleId: { productId, taxRuleId } },
+      include: { taxRule: { include: { components: true } } }
+    });
+
+    if (!pricing) return res.status(404).json({ error: "Configuração de preço não encontrada" });
+
+    const ciu = Number(costData.summary.costPerUnit);
+    const cif = Number(costData.summary.totalCIF_Unit);
+    const opex = Number(costData.summary.totalOPEX_Unit);
+    
+    // Custo Fabril Completo = CIU (que já inclui CIF)
+    const custoFabril = ciu;
+    // Custo Gerencial Total = CIU + OPEX
+    const custoGerencial = ciu + opex;
+
+    const taxRate = pricing.taxRule.components.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
+    const commRate = Number(pricing.commission) / 100;
+    const marginRate = Number(pricing.desiredMargin) / 100;
+    const otherRate = Number(pricing.otherVariables) / 100;
+    const freight = Number(pricing.freightOut);
+
+    // Cálculo do Preço de Venda (Markup Divisor)
+    // PV = (Custo + Frete) / (1 - Impostos - Comissões - Outros - Margem)
+    const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+    
+    if (divisor <= 0) return res.status(400).json({ error: "Margem e impostos excedem 100% do preço." });
+
+    const suggestedPrice = (custoFabril + freight) / divisor;
+    const totalTaxes = suggestedPrice * taxRate;
+    const totalCommission = suggestedPrice * commRate;
+    const totalOther = suggestedPrice * otherRate;
+
+    const contributionMargin = suggestedPrice - totalTaxes - totalCommission - freight - custoFabril;
+    const operationalMargin = contributionMargin - opex;
+
+    res.json({
+      product: costData.name,
+      sku: costData.sku,
+      ciu,
+      custoFabril,
+      custoGerencial,
+      premissas: {
+        taxRate: taxRate * 100,
+        commRate: commRate * 100,
+        marginRate: marginRate * 100,
+        freight,
+      },
+      resultados: {
+        suggestedPrice,
+        totalTaxes,
+        totalCommission,
+        contributionMargin,
+        operationalMargin,
+        markup: suggestedPrice / custoFabril,
+      }
+    });
+  });
+
+  // --- API: Simulations (What-if Analysis) ---
+  app.get("/api/simulations", async (req, res) => {
+    const simulations = await prisma.simulation.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(simulations);
+  });
+
+  app.post("/api/simulations", async (req, res) => {
+    const data = req.body;
+    const simulation = await prisma.simulation.create({ data });
+    res.json(simulation);
+  });
+
+  app.delete("/api/simulations/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.simulation.delete({ where: { id } });
+    res.json({ success: true });
+  });
+
+  app.get("/api/simulations/:id/compare", async (req, res) => {
+    const { id } = req.params;
+    const sim = await prisma.simulation.findUnique({ where: { id } });
+    if (!sim) return res.status(404).json({ error: "Simulação não encontrada" });
+
+    // 1. Buscar Dados Oficiais (Base)
+    const pricingRes = await fetch(`http://localhost:3000/api/pricing/${sim.productId}/${sim.taxRuleId}/calculate`);
+    const base = await pricingRes.json();
+
+    // 2. Aplicar Ajustes (Simulação)
+    const matAdj = 1 + (Number(sim.materialAdj) / 100);
+    const laborAdj = 1 + (Number(sim.laborAdj) / 100);
+    const indirectAdj = 1 + (Number(sim.indirectAdj) / 100);
+    const efficiencyAdj = 1 + (Number(sim.efficiencyAdj) / 100);
+    const marginAdj = 1 + (Number(sim.marginAdj) / 100);
+
+    // Recalcular Custo Industrial Simulado
+    const simCIU_Materials = base.ciu * 0.6 * matAdj; // Estimativa: 60% do CIU é material
+    const simCIU_Conversion = base.ciu * 0.3 * laborAdj / efficiencyAdj; // Estimativa: 30% é conversão
+    const simCIU_CIF = base.ciu * 0.1 * indirectAdj; // Estimativa: 10% é CIF
+    
+    const simCIU = simCIU_Materials + simCIU_Conversion + simCIU_CIF;
+    const simOPEX = base.custoGerencial - base.ciu;
+    const simCustoGerencial = simCIU + (simOPEX * indirectAdj);
+
+    // Recalcular Preço Sugerido Simulado
+    const taxRate = base.premissas.taxRate / 100;
+    const commRate = base.premissas.commRate / 100;
+    const marginRate = (base.premissas.marginRate * marginAdj) / 100;
+    const freight = base.premissas.freight;
+
+    const divisor = 1 - taxRate - commRate - marginRate;
+    const simSuggestedPrice = (simCIU + freight) / divisor;
+
+    res.json({
+      base,
+      simulated: {
+        ciu: simCIU,
+        custoGerencial: simCustoGerencial,
+        suggestedPrice: simSuggestedPrice,
+        marginRate: marginRate * 100,
+        markup: simSuggestedPrice / simCIU,
+      },
+      delta: {
+        price: simSuggestedPrice - base.resultados.suggestedPrice,
+        pricePct: ((simSuggestedPrice / base.resultados.suggestedPrice) - 1) * 100,
+        ciu: simCIU - base.ciu,
+        ciuPct: ((simCIU / base.ciu) - 1) * 100,
+      }
+    });
+  });
+
+  // --- Helper: Cálculo de Custo de Produto ---
+  async function getProductCostAnalysis(productId: string) {
+    const [product, indirectCosts] = await Promise.all([
+      prisma.product.findUnique({
+        where: { id: productId },
+        include: {
+          bom: { include: { material: true } },
+          routing: { 
+            include: { 
+              machine: { include: { costs: true } }, 
+              role: true
+            } 
+          },
+        },
+      }),
+      prisma.indirectCost.findMany({ where: { status: "ACTIVE" } })
+    ]);
+
+    if (!product) return null;
+
+    // Buscar componentes de folha padrão (usaremos os do primeiro funcionário desse cargo ou um padrão)
+    const rolesWithComponents = await Promise.all(product.routing.map(async (step) => {
+      const emp = await prisma.employee.findFirst({
+        where: { roleId: step.roleId },
+        include: { components: { include: { payrollComponent: true } } }
+      });
+      return { roleId: step.roleId, components: emp?.components || [] };
+    }));
+
+    const lotSize = Number(product.defaultLotSize) || 1;
+
+    // 1. Materiais
+    const materialItems = product.bom.map((item) => {
+      const mat = item.material;
+      const landedCost = Number(mat.currentCost) + Number(mat.freight);
+      const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
+      const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
+      return { unitCost: matEffectiveCost * requiredQty };
+    });
+    const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
+
+    // 2. Operações
+    const operationItems = product.routing.map((step) => {
+      const machine = step.machine;
+      const role = step.role;
+      const roleData = rolesWithComponents.find(rc => rc.roleId === step.roleId);
+
+      const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
+      const otherMonthlyCosts = machine.costs.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
+      const machineHourCost = (depreciationMonthly + otherMonthlyCosts) / 176;
+
+      const salary = Number(role.baseSalary);
+      let totalPayrollLoad = 0;
+      const payrollComponents = roleData?.components || [];
+      if (payrollComponents.length > 0) {
+        payrollComponents.forEach((rel: any) => {
+          const comp = rel.payrollComponent;
+          const val = Number(comp.value);
+          totalPayrollLoad += comp.calculationType === "PERCENTAGE" ? (salary * val) / 100 : val;
+        });
+      } else {
+        totalPayrollLoad = salary * 0.8;
+      }
+      const hhCost = (salary + totalPayrollLoad) / Number(role.monthlyHours || 220);
+
+      const setupTimeH = Number(step.setupTimeMin) / 60;
+      const opTimeH = Number(step.operationTimeMin) / 60;
+      const efficiency = Number(step.efficiencyExpected) / 100;
+      const effectiveOpTimeH = opTimeH / efficiency;
+
+      return {
+        totalHH: (setupTimeH / lotSize + effectiveOpTimeH) * hhCost,
+        totalHM: (setupTimeH / lotSize + effectiveOpTimeH) * machineHourCost,
+        totalTimeH: (setupTimeH / lotSize + effectiveOpTimeH)
+      };
+    });
+
+    const totalHH_Unit = operationItems.reduce((acc, item) => acc + item.totalHH, 0);
+    const totalHM_Unit = operationItems.reduce((acc, item) => acc + item.totalHM, 0);
+    const totalTimeH_Unit = operationItems.reduce((acc, item) => acc + item.totalTimeH, 0);
+
+    // 3. CIF/OPEX
+    const totalFactoryHH_Monthly = 8448; 
+    const totalCIF_Monthly = indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
+    const totalOPEX_Monthly = indirectCosts.filter(c => c.category !== "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
+    
+    const cifRatePerHour = totalCIF_Monthly / totalFactoryHH_Monthly;
+    const opexRatePerHour = totalOPEX_Monthly / totalFactoryHH_Monthly;
+    
+    const totalCIF_Unit = totalTimeH_Unit * cifRatePerHour;
+    const totalOPEX_Unit = totalTimeH_Unit * opexRatePerHour;
+
+    const totalIndustrialCost = totalMaterialCost + totalHH_Unit + totalHM_Unit + totalCIF_Unit;
+
+    return {
+      productId: product.id,
+      sku: product.sku,
+      name: product.name,
+      totalMaterialCost,
+      totalHH_Unit,
+      totalHM_Unit,
+      totalCIF_Unit,
+      totalOPEX_Unit,
+      totalIndustrialCost,
+      totalGerencialCost: totalIndustrialCost + totalOPEX_Unit
+    };
+  }
+
+  // --- API: Product Cost Analysis (Motor de Cálculo CIU com CIF) ---
+  app.get("/api/products/:id/cost-analysis", async (req, res) => {
+    const { id } = req.params;
+    const analysis = await getProductCostAnalysis(id);
+    if (!analysis) return res.status(404).json({ error: "Produto não encontrado" });
+
+    // Re-calculando detalhes para o endpoint específico (mantendo compatibilidade com a UI atual)
+    const [product, indirectCosts] = await Promise.all([
+      prisma.product.findUnique({
+        where: { id },
+        include: {
+          bom: { include: { material: true } },
+          routing: { 
+            include: { 
+              machine: { include: { costs: true } }, 
+              role: true
+            } 
+          },
+        },
+      }),
+      prisma.indirectCost.findMany({ where: { status: "ACTIVE" } })
+    ]);
+
+    const lotSize = Number(product!.defaultLotSize) || 1;
+    const materialItems = product!.bom.map((item) => {
+      const mat = item.material;
+      const currentCost = Number(mat.currentCost);
+      const freight = Number(mat.freight);
+      const matStandardLoss = Number(mat.standardLoss) / 100;
+      const bomLoss = Number(item.lossPercentage) / 100;
+      const landedCost = currentCost + freight;
+      const matEffectiveCost = landedCost / (1 - matStandardLoss);
+      const requiredQty = Number(item.quantity) / (1 - bomLoss);
+      const totalItemCost = matEffectiveCost * requiredQty;
+      return {
+        materialCode: mat.code,
+        description: mat.description,
+        unit: mat.unit,
+        basePrice: currentCost,
+        freight,
+        landedCost,
+        matLoss: matStandardLoss * 100,
+        bomLoss: bomLoss * 100,
+        requiredQty,
+        unitCost: totalItemCost,
+      };
+    });
+
+    const operationItems = await Promise.all(product!.routing.map(async (step) => {
+      const machine = step.machine;
+      const role = step.role;
+      const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
+      const otherMonthlyCosts = machine.costs.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
+      const machineHourCost = (depreciationMonthly + otherMonthlyCosts) / 176;
+      const salary = Number(role.baseSalary);
+      let totalPayrollLoad = 0;
+      
+      // Buscar componentes de folha para este cargo (usando o primeiro funcionário como referência)
+      const empRef = await prisma.employee.findFirst({
+        where: { roleId: role.id },
+        include: { components: { include: { payrollComponent: true } } }
+      });
+      const payrollComponents = empRef?.components || [];
+
+      payrollComponents.forEach((rel: any) => {
+        const comp = rel.payrollComponent;
+        totalPayrollLoad += comp.calculationType === "PERCENTAGE" ? (salary * Number(comp.value)) / 100 : Number(comp.value);
+      });
+      const hhCost = (salary + totalPayrollLoad) / Number(role.monthlyHours || 220);
+      const setupTimeH = Number(step.setupTimeMin) / 60;
+      const opTimeH = Number(step.operationTimeMin) / 60;
+      const efficiency = Number(step.efficiencyExpected) / 100;
+      const effectiveOpTimeH = opTimeH / efficiency;
+      return {
+        sequence: step.sequence,
+        description: step.description,
+        machineCode: machine.code,
+        machineHourCost,
+        hhCost,
+        setupTimeMin: Number(step.setupTimeMin),
+        opTimeMin: Number(step.operationTimeMin),
+        efficiency: efficiency * 100,
+        setupCostPerUnit: (setupTimeH * (hhCost + machineHourCost)) / lotSize,
+        opCostPerUnit: effectiveOpTimeH * (hhCost + machineHourCost),
+        totalStepCost: ((setupTimeH / lotSize) + effectiveOpTimeH) * (hhCost + machineHourCost),
+        totalHH: (setupTimeH / lotSize + effectiveOpTimeH) * hhCost,
+        totalHM: (setupTimeH / lotSize + effectiveOpTimeH) * machineHourCost,
+      };
+    }));
+
+    res.json({
+      ...analysis,
+      summary: {
+        totalMaterialCost: analysis.totalMaterialCost,
+        totalConversionCost: analysis.totalHH_Unit + analysis.totalHM_Unit,
+        totalCIF_Unit: analysis.totalCIF_Unit,
+        totalOPEX_Unit: analysis.totalOPEX_Unit,
+        totalIndustrialCost: analysis.totalIndustrialCost,
+        costPerUnit: analysis.totalIndustrialCost,
+      },
+      details: {
+        materials: materialItems,
+        operations: operationItems,
+        indirects: {
+          cifRatePerHour: analysis.totalCIF_Unit / (operationItems.reduce((acc, i) => acc + (i.setupTimeMin/60/lotSize) + (i.opTimeMin/60/(i.efficiency/100)), 0)),
+          opexRatePerHour: analysis.totalOPEX_Unit / (operationItems.reduce((acc, i) => acc + (i.setupTimeMin/60/lotSize) + (i.opTimeMin/60/(i.efficiency/100)), 0)),
+          totalCIF_Monthly: indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0),
+          totalOPEX_Monthly: indirectCosts.filter(c => c.category !== "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0)
+        }
+      },
+      audit: { calculatedAt: new Date().toISOString(), version: product!.version }
+    });
+  });
+
+  app.patch("/api/employees/:id/status", async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    const employee = await prisma.employee.update({
+      where: { id },
+      data: { status },
+    });
+    res.json(employee);
+  });
+
+  // Global Error Handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Express Error:", err);
+    res.status(500).json({ 
+      error: err.message || "Internal Server Error",
+      stack: process.env.NODE_ENV !== "production" ? err.stack : undefined
+    });
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
