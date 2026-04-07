@@ -163,92 +163,230 @@ async function startServer() {
     res.json(component);
   });
 
-  // --- API: Employees (Funcionários) ---
-  app.get("/api/employees", async (req, res) => {
-    const employees = await prisma.employee.findMany({
-      include: { 
+  
+// --- API: Employees (Funcionários) ---
+app.get("/api/employees", async (req, res) => {
+  const employees = await prisma.employee.findMany({
+    include: {
+      Role: true,
+      EmployeePayrollComponent: {
+        include: { PayrollComponent: true }
+      }
+    },
+    orderBy: { name: "asc" },
+  });
+
+  // Lógica de Cálculo de Custo (Motor de Custeio HH)
+  const employeesWithCosts = employees.map((emp) => {
+    const salary = Number(emp.salary);
+    let totalBenefits = 0;
+    let totalCharges = 0;
+    let totalProvisions = 0;
+
+    emp.EmployeePayrollComponent.forEach((rel) => {
+      const comp = rel.PayrollComponent;
+      const value = Number(comp.value);
+      const amount =
+        comp.calculationType === "PERCENTAGE"
+          ? (salary * value) / 100
+          : value;
+
+      if (comp.type === "BENEFIT") totalBenefits += amount;
+      if (comp.type === "CHARGE") totalCharges += amount;
+      if (comp.type === "PROVISION") totalProvisions += amount;
+    });
+
+    const totalMonthlyCost = salary + totalBenefits + totalCharges + totalProvisions;
+    const costPerContractedHour = totalMonthlyCost / emp.monthlyHours;
+    const productiveHours = emp.monthlyHours * (Number(emp.productivity) / 100);
+    const costPerProductiveHour = totalMonthlyCost / (productiveHours || 1);
+
+    return {
+      ...emp,
+      costs: {
+        salary,
+        totalBenefits,
+        totalCharges,
+        totalProvisions,
+        totalMonthlyCost,
+        costPerContractedHour,
+        costPerProductiveHour,
+        productiveHours
+      }
+    };
+  });
+
+  res.json(employeesWithCosts);
+});
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function normalizeOptionalText(value: unknown): string | null {
+  return isNonEmptyString(value) ? value.trim() : null;
+}
+
+function normalizeRequiredText(value: unknown): string {
+  return isNonEmptyString(value) ? value.trim() : "";
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isUuid(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+function sanitizeUuidArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0 && isUuid(item));
+}
+
+app.post("/api/employees", async (req, res) => {
+  try {
+    const {
+      name,
+      roleId,
+      department,
+      costCenter,
+      classification,
+      salary,
+      monthlyHours,
+      productivity,
+      status,
+      componentIds
+    } = req.body;
+
+    const cleanName = normalizeRequiredText(name);
+    const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
+    const cleanComponentIds = sanitizeUuidArray(componentIds);
+
+    if (!cleanName) {
+      return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
+    }
+
+    if (!cleanRoleId) {
+      return res.status(400).json({ error: "Selecione um cargo válido." });
+    }
+
+    const employee = await prisma.employee.create({
+      data: {
+        name: cleanName,
+        roleId: cleanRoleId,
+        department: normalizeOptionalText(department),
+        costCenter: normalizeOptionalText(costCenter),
+        classification: normalizeOptionalText(classification),
+        salary: toNumber(salary, 0),
+        monthlyHours: toNumber(monthlyHours, 0),
+        productivity: toNumber(productivity, 0),
+        status: normalizeOptionalText(status) ?? "ACTIVE",
+        EmployeePayrollComponent:
+          cleanComponentIds.length > 0
+            ? {
+                create: cleanComponentIds.map((id) => ({
+                  PayrollComponent: { connect: { id } }
+                }))
+              }
+            : undefined
+      },
+      include: {
         Role: true,
         EmployeePayrollComponent: {
           include: { PayrollComponent: true }
         }
-      },
-      orderBy: { name: "asc" },
+      }
     });
 
-    // Lógica de Cálculo de Custo (Motor de Custeio HH)
-    const employeesWithCosts = employees.map((emp) => {
-      const salary = Number(emp.salary);
-      let totalBenefits = 0;
-      let totalCharges = 0;
-      let totalProvisions = 0;
-
-      emp.EmployeePayrollComponent.forEach((rel) => {
-        const comp = rel.PayrollComponent;
-        const value = Number(comp.value);
-        const amount = comp.calculationType === "PERCENTAGE" 
-          ? (salary * value) / 100 
-          : value;
-
-        if (comp.type === "BENEFIT") totalBenefits += amount;
-        if (comp.type === "CHARGE") totalCharges += amount;
-        if (comp.type === "PROVISION") totalProvisions += amount;
-      });
-
-      const totalMonthlyCost = salary + totalBenefits + totalCharges + totalProvisions;
-      const costPerContractedHour = totalMonthlyCost / emp.monthlyHours;
-      const productiveHours = emp.monthlyHours * (Number(emp.productivity) / 100);
-      const costPerProductiveHour = totalMonthlyCost / (productiveHours || 1);
-
-      return {
-        ...emp,
-        costs: {
-          salary,
-          totalBenefits,
-          totalCharges,
-          totalProvisions,
-          totalMonthlyCost,
-          costPerContractedHour,
-          costPerProductiveHour,
-          productiveHours
-        }
-      };
+    res.json(employee);
+  } catch (error) {
+    console.error("Create employee error:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Erro ao criar funcionário"
     });
+  }
+});
 
-    res.json(employeesWithCosts);
-  });
-
-  app.post("/api/employees", async (req, res) => {
-    const { 
-      name, roleId, department, costCenter, 
-      classification, salary, monthlyHours, productivity, status,
-      componentIds // Array de IDs de componentes
+app.put("/api/employees/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      componentIds,
+      name,
+      roleId,
+      department,
+      costCenter,
+      classification,
+      salary,
+      monthlyHours,
+      productivity,
+      status
     } = req.body;
 
-    const employee = await prisma.employee.create({
-      data: {
-        name,
-        roleId,
-        department,
-        costCenter,
-        classification,
-        salary,
-        monthlyHours,
-        productivity,
-        status: status || "ACTIVE",
-        EmployeePayrollComponent: {
-          create: (componentIds || []).map((id: string) => ({
-            PayrollComponent: { connect: { id } }
-          }))
-        }
-      },
-      include: { Role: true, EmployeePayrollComponent: { include: { PayrollComponent: true } } }
-    });
-    res.json(employee);
-  });
+    if (!isUuid(id)) {
+      return res.status(400).json({ error: "ID de funcionário inválido." });
+    }
 
-  app.put("/api/employees/:id", async (req, res) => {
-    const { id } = req.params;
-    const { componentIds, ...data } = req.body;
+    const cleanName = normalizeRequiredText(name);
+    const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
+    const cleanComponentIds = sanitizeUuidArray(componentIds);
+
+    if (!cleanName) {
+      return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
+    }
+
+    if (!cleanRoleId) {
+      return res.status(400).json({ error: "Selecione um cargo válido." });
+    }
+
+    await prisma.employeePayrollComponent.deleteMany({
+      where: { employeeId: id }
+    });
+
+    const employee = await prisma.employee.update({
+      where: { id },
+      data: {
+        name: cleanName,
+        roleId: cleanRoleId,
+        department: normalizeOptionalText(department),
+        costCenter: normalizeOptionalText(costCenter),
+        classification: normalizeOptionalText(classification),
+        salary: toNumber(salary, 0),
+        monthlyHours: toNumber(monthlyHours, 0),
+        productivity: toNumber(productivity, 0),
+        status: normalizeOptionalText(status) ?? "ACTIVE",
+        EmployeePayrollComponent:
+          cleanComponentIds.length > 0
+            ? {
+                create: cleanComponentIds.map((compId) => ({
+                  PayrollComponent: { connect: { id: compId } }
+                }))
+              }
+            : undefined
+      },
+      include: {
+        Role: true,
+        EmployeePayrollComponent: {
+          include: { PayrollComponent: true }
+        }
+      }
+    });
+
+    res.json(employee);
+  } catch (error) {
+    console.error("Update employee error:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Erro ao atualizar funcionário"
+    });
+  }
+});
 
     // Primeiro remove relações antigas
     await prisma.employeePayrollComponent.deleteMany({
