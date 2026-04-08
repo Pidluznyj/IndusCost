@@ -66,6 +66,7 @@ export const ProductModule = () => {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
   const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost">("info");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Form State
   const [formData, setFormData] = useState<CreateProductInput>({
@@ -197,6 +198,7 @@ export const ProductModule = () => {
       });
 
       if (res.ok) {
+        setSelectedIds(prev => prev.filter(i => i !== id));
         fetchData();
       } else {
         const error = await res.json();
@@ -205,6 +207,58 @@ export const ProductModule = () => {
     } catch (error) {
       console.error("Erro ao excluir:", error);
       alert("Erro de conexão ao tentar excluir o item.");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    
+    if (!confirm(`Deseja realmente excluir os ${selectedIds.length} itens selecionados?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/products/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds })
+      });
+
+      const result = await res.json();
+
+      if (res.ok) {
+        if (result.blocked > 0) {
+          const blockedDetails = result.details
+            .filter((d: any) => d.status === "blocked")
+            .map((d: any) => `- ${d.name}: ${d.reason}`)
+            .join("\n");
+          
+          alert(`${result.deleted} itens excluídos.\n${result.blocked} itens não puderam ser excluídos:\n${blockedDetails}`);
+        } else {
+          alert(`${result.deleted} itens excluídos com sucesso.`);
+        }
+        setSelectedIds([]);
+        fetchData();
+      } else {
+        alert(result.error || "Erro ao processar exclusão em massa.");
+      }
+    } catch (error) {
+      console.error("Bulk delete error:", error);
+      alert("Erro de conexão ao tentar excluir itens.");
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredItems.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredItems.map(i => i.id));
     }
   };
 
@@ -325,6 +379,17 @@ export const ProductModule = () => {
           />
         </div>
         <div className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
+            <motion.button
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              onClick={handleBulkDelete}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-600 font-bold hover:bg-red-500/20 transition-all border border-red-500/20 text-sm"
+            >
+              <Trash2 className="h-4 w-4" />
+              Excluir ({selectedIds.length})
+            </motion.button>
+          )}
           <button 
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -359,6 +424,19 @@ export const ProductModule = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-accent/50 border-b border-border">
+                <th className="p-4 w-10">
+                  <input 
+                    type="checkbox" 
+                    className="rounded border-border text-primary focus:ring-primary"
+                    checked={filteredItems.length > 0 && selectedIds.length === filteredItems.length}
+                    ref={el => {
+                      if (el) {
+                        el.indeterminate = selectedIds.length > 0 && selectedIds.length < filteredItems.length;
+                      }
+                    }}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
                 <th className="p-4 font-semibold text-sm">Item</th>
                 <th className="p-4 font-semibold text-sm">Tipo</th>
                 <th className="p-4 font-semibold text-sm">Versão</th>
@@ -370,20 +448,31 @@ export const ProductModule = () => {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center">
+                  <td colSpan={7} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
                     Nenhum item encontrado.
                   </td>
                 </tr>
               ) : (
                 filteredItems.map((item) => (
-                  <tr key={item.id} className="hover:bg-accent/30 transition-colors group">
+                  <tr key={item.id} className={cn(
+                    "hover:bg-accent/30 transition-colors group",
+                    selectedIds.includes(item.id) && "bg-primary/5"
+                  )}>
+                    <td className="p-4">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-border text-primary focus:ring-primary"
+                        checked={selectedIds.includes(item.id)}
+                        onChange={() => toggleSelect(item.id)}
+                      />
+                    </td>
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <div className={cn(

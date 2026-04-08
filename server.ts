@@ -1143,6 +1143,80 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  app.post("/api/products/bulk-delete", async (req, res) => {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "Lista de IDs inválida." });
+    }
+
+    const results = {
+      total: ids.length,
+      deleted: 0,
+      blocked: 0,
+      details: [] as any[]
+    };
+
+    try {
+      for (const id of ids) {
+        const product = await prisma.product.findUnique({
+          where: { id },
+          include: {
+            UsedInBOM: { include: { ParentProduct: true } },
+            ProposalItem: { include: { Proposal: true } }
+          }
+        });
+
+        if (!product) {
+          results.blocked++;
+          results.details.push({ id, name: "Desconhecido", status: "blocked", reason: "Produto não encontrado." });
+          continue;
+        }
+
+        if (product.UsedInBOM.length > 0) {
+          const parentNames = product.UsedInBOM.map(b => b.ParentProduct.name).join(", ");
+          results.blocked++;
+          results.details.push({ 
+            id, 
+            name: product.name, 
+            status: "blocked", 
+            reason: `Utilizado na estrutura de: ${parentNames}.` 
+          });
+          continue;
+        }
+
+        if (product.ProposalItem.length > 0) {
+          results.blocked++;
+          results.details.push({ 
+            id, 
+            name: product.name, 
+            status: "blocked", 
+            reason: "Possui histórico em propostas comerciais." 
+          });
+          continue;
+        }
+
+        try {
+          await prisma.$transaction([
+            prisma.productPricing.deleteMany({ where: { productId: id } }),
+            prisma.costCalculationLog.deleteMany({ where: { productId: id } }),
+            prisma.product.delete({ where: { id } })
+          ]);
+          results.deleted++;
+          results.details.push({ id, name: product.name, status: "deleted" });
+        } catch (err) {
+          results.blocked++;
+          results.details.push({ id, name: product.name, status: "blocked", reason: "Erro interno ao excluir." });
+        }
+      }
+
+      res.json({ success: true, ...results });
+    } catch (error) {
+      console.error("Bulk delete error:", error);
+      res.status(500).json({ error: "Erro ao processar exclusão em massa." });
+    }
+  });
+
   // --- API: Indirect Costs (OPEX) ---
   app.get("/api/indirect-costs", async (req, res) => {
     const costs = await prisma.indirectCost.findMany({
