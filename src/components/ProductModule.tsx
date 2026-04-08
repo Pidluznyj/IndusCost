@@ -27,6 +27,73 @@ import { Product, CreateProductInput, ProductBOM, ProductRouting } from "@/src/t
 import { Material } from "@/src/types/material";
 import { motion, AnimatePresence } from "motion/react";
 
+interface BOMTreeNodeProps {
+  node: any;
+  level?: number;
+}
+
+const BOMTreeNode: React.FC<BOMTreeNodeProps> = ({ node, level = 0 }) => {
+  const [isExpanded, setIsExpanded] = React.useState(true);
+  const hasChildren = node.children && node.children.length > 0;
+
+  return (
+    <div className="select-none">
+      <div 
+        className={cn(
+          "flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer group",
+          level === 0 ? "bg-accent/30 border border-border mb-2" : ""
+        )}
+        onClick={() => hasChildren && setIsExpanded(!isExpanded)}
+        style={{ marginLeft: `${level * 24}px` }}
+      >
+        {hasChildren ? (
+          isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <div className="w-4" />
+        )}
+        
+        <div className={cn(
+          "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
+          node.type === "MATERIAL" ? "bg-orange-100 text-orange-600" : 
+          node.type === "COMPONENT" ? "bg-purple-100 text-purple-600" : "bg-primary/10 text-primary"
+        )}>
+          {node.type === "MATERIAL" ? <Package className="h-4 w-4" /> : 
+           node.type === "COMPONENT" ? <Layers className="h-4 w-4" /> : <Target className="h-4 w-4" />}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold truncate">{node.name || node.item?.name || node.item?.description}</span>
+            <span className="text-[10px] font-mono text-muted-foreground">({node.sku || node.item?.sku || node.item?.code})</span>
+            {node.type && (
+              <span className={cn(
+                "text-[8px] font-bold px-1.5 py-0.5 rounded uppercase border",
+                node.type === "MATERIAL" ? "bg-orange-50 text-orange-600 border-orange-100" : "bg-purple-50 text-purple-600 border-purple-100"
+              )}>
+                {node.type === "MATERIAL" ? "MP" : "COMP"}
+              </span>
+            )}
+          </div>
+          {node.quantity && (
+            <p className="text-[10px] text-muted-foreground">
+              Qtd: <span className="font-bold text-foreground">{formatNumber(node.quantity)}</span> • 
+              Perda: <span className="font-bold text-orange-600">{formatNumber(node.lossPercentage)}%</span>
+            </p>
+          )}
+        </div>
+      </div>
+
+      {hasChildren && isExpanded && (
+        <div className="space-y-1 mt-1">
+          {node.children.map((child: any, idx: number) => (
+            <BOMTreeNode key={idx} node={child} level={level + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ProductModule = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -38,6 +105,21 @@ export const ProductModule = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing">("info");
   const [viewingCostAnalysis, setViewingCostAnalysis] = useState<any | null>(null);
+  const [viewingTree, setViewingTree] = useState<any>(null);
+  const [treeLoading, setTreeLoading] = useState(false);
+
+  const fetchTree = async (productId: string) => {
+    setTreeLoading(true);
+    try {
+      const res = await fetch(`/api/products/${productId}/tree`);
+      const data = await res.json();
+      setViewingTree(data);
+    } catch (error) {
+      console.error("Erro ao buscar árvore BOM:", error);
+    } finally {
+      setTreeLoading(false);
+    }
+  };
   const [error, setError] = useState<{
     message: string;
     code?: string;
@@ -66,6 +148,7 @@ export const ProductModule = () => {
     sku: "",
     name: "",
     description: "",
+    type: "PRODUCT",
     version: "1.0.0",
     defaultLotSize: 1,
     bom: [],
@@ -102,12 +185,18 @@ export const ProductModule = () => {
     if (product) {
       setEditingProduct(product);
       setFormData({
+        id: product.id,
         sku: product.sku,
         name: product.name,
         description: product.description || "",
+        type: product.type,
         version: product.version,
         defaultLotSize: Number(product.defaultLotSize),
-        bom: product.ProductBOM.map(b => ({ ...b, quantity: Number(b.quantity), lossPercentage: Number(b.lossPercentage) })),
+        bom: product.ProductBOM.map(b => ({ 
+          ...b, 
+          quantity: Number(b.quantity), 
+          lossPercentage: Number(b.lossPercentage) 
+        })),
         routing: product.ProductRouting.map(r => ({ 
           ...r, 
           setupTimeMin: Number(r.setupTimeMin), 
@@ -121,6 +210,7 @@ export const ProductModule = () => {
         sku: "",
         name: "",
         description: "",
+        type: "PRODUCT",
         version: "1.0.0",
         defaultLotSize: 1,
         bom: [],
@@ -168,7 +258,7 @@ export const ProductModule = () => {
   const addBOMItem = () => {
     setFormData({
       ...formData,
-      bom: [...formData.bom, { materialId: "", quantity: 0, lossPercentage: 0 }]
+      bom: [...formData.bom, { materialId: "", childProductId: "", quantity: 0, lossPercentage: 0 }]
     });
   };
 
@@ -333,6 +423,9 @@ export const ProductModule = () => {
                   </div>
                 </th>
                 <th className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Tipo
+                </th>
+                <th className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   Unid.
                 </th>
                 <th className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -384,6 +477,14 @@ export const ProductModule = () => {
                       <p className="text-sm font-bold">{product.name}</p>
                       <p className="text-[10px] text-muted-foreground">v{product.version}</p>
                     </td>
+                    <td className="p-3">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded text-[10px] font-bold border",
+                        product.type === "PRODUCT" ? "bg-blue-50 text-blue-700 border-blue-100" : "bg-purple-50 text-purple-700 border-purple-100"
+                      )}>
+                        {product.type === "PRODUCT" ? "PRODUTO" : "COMPONENTE"}
+                      </span>
+                    </td>
                     <td className="p-3 text-xs text-muted-foreground">
                       UN
                     </td>
@@ -415,13 +516,23 @@ export const ProductModule = () => {
                       </span>
                     </td>
                     <td className="p-3 text-right">
-                      <button 
-                        onClick={() => fetchCostAnalysis(product.id)}
-                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1 justify-end ml-auto"
-                      >
-                        <Calculator className="h-3 w-3" />
-                        Calcular
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => fetchTree(product.id)}
+                          className="text-[10px] font-bold text-muted-foreground hover:text-primary flex items-center gap-1"
+                          title="Ver Árvore BOM"
+                        >
+                          <Layers className="h-3 w-3" />
+                          Estrutura
+                        </button>
+                        <button 
+                          onClick={() => fetchCostAnalysis(product.id)}
+                          className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                        >
+                          <Calculator className="h-3 w-3" />
+                          Calcular
+                        </button>
+                      </div>
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -726,6 +837,19 @@ export const ProductModule = () => {
                         />
                       </div>
                       <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de Item</label>
+                        <select
+                          className="w-full p-3 rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none"
+                          value={formData.type}
+                          onChange={(e) => setFormData({...formData, type: e.target.value as any})}
+                        >
+                          <option value="PRODUCT">Produto Final</option>
+                          <option value="COMPONENT">Componente / Subconjunto</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Versão</label>
                         <input
                           required
@@ -733,6 +857,16 @@ export const ProductModule = () => {
                           className="w-full p-3 rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none"
                           value={formData.version}
                           onChange={(e) => setFormData({...formData, version: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Lote Padrão</label>
+                        <input
+                          required
+                          type="number"
+                          className="w-full p-3 rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none"
+                          value={formData.defaultLotSize}
+                          onChange={(e) => setFormData({...formData, defaultLotSize: Number(e.target.value)})}
                         />
                       </div>
                     </div>
@@ -786,21 +920,45 @@ export const ProductModule = () => {
                       {formData.bom.map((item, idx) => (
                         <div key={idx} className="grid grid-cols-12 gap-3 p-4 rounded-xl border border-border bg-accent/5 items-end group relative">
                           <div className="col-span-5 space-y-1.5">
-                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Material</label>
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Item (Material ou Componente)</label>
                             <select
                               required
                               className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                              value={item.materialId}
+                              value={item.materialId ? `MAT:${item.materialId}` : item.childProductId ? `COMP:${item.childProductId}` : ""}
                               onChange={(e) => {
+                                const val = e.target.value;
                                 const newBOM = [...formData.bom];
-                                newBOM[idx].materialId = e.target.value;
+                                if (val.startsWith("MAT:")) {
+                                  newBOM[idx].materialId = val.replace("MAT:", "");
+                                  newBOM[idx].childProductId = "";
+                                } else if (val.startsWith("COMP:")) {
+                                  newBOM[idx].childProductId = val.replace("COMP:", "");
+                                  newBOM[idx].materialId = "";
+                                } else {
+                                  newBOM[idx].materialId = "";
+                                  newBOM[idx].childProductId = "";
+                                }
                                 setFormData({ ...formData, bom: newBOM });
                               }}
                             >
                               <option value="">Selecione...</option>
-                              {materials.map(m => (
-                                <option key={m.id} value={m.id}>{m.description} ({m.unit})</option>
-                              ))}
+                              
+                              {/* Regra: Se for Produto Final, só pode Componentes. Se for Componente, pode ambos. */}
+                              {formData.type === "COMPONENT" && (
+                                <optgroup label="Matérias-Primas">
+                                  {materials.map(m => (
+                                    <option key={m.id} value={`MAT:${m.id}`}>{m.description} ({m.unit})</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              
+                              <optgroup label="Componentes / Subconjuntos">
+                                {products
+                                  .filter(p => p.type === "COMPONENT" && p.id !== formData.id)
+                                  .map(p => (
+                                    <option key={p.id} value={`COMP:${p.id}`}>{p.name} ({p.sku})</option>
+                                  ))}
+                              </optgroup>
                             </select>
                           </div>
                           <div className="col-span-2 space-y-1.5">
@@ -1023,6 +1181,54 @@ export const ProductModule = () => {
                     {editingProduct ? "Salvar Alterações" : "Finalizar Engenharia"}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+        {/* Modal: BOM Tree View */}
+        {viewingTree && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-card w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-border flex items-center justify-between bg-accent/50">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                    <Layers className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold">Estrutura de Produto (BOM)</h3>
+                    <p className="text-xs text-muted-foreground">Visão multinível recursiva da engenharia.</p>
+                  </div>
+                </div>
+                <button onClick={() => setViewingTree(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                {treeLoading ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground italic">Mapeando estrutura recursiva...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <BOMTreeNode node={viewingTree} />
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-accent/30 border-t border-border flex justify-end">
+                <button 
+                  onClick={() => setViewingTree(null)}
+                  className="px-6 py-2 rounded-xl bg-background border border-border text-sm font-bold hover:bg-accent transition-all"
+                >
+                  Fechar
+                </button>
               </div>
             </motion.div>
           </div>

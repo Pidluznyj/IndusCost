@@ -1,8 +1,13 @@
 import { Material } from "./material";
+
+export type ItemType = "PRODUCT" | "COMPONENT";
+
 export interface ProductBOM {
   id?: string;
-  materialId: string;
+  materialId?: string;
   material?: Material;
+  childProductId?: string;
+  childProduct?: Product;
   quantity: number;
   lossPercentage: number;
   notes?: string;
@@ -27,6 +32,7 @@ export interface Product {
   sku: string;
   name: string;
   description?: string;
+  type: ItemType;
   version: string;
   status: "ACTIVE" | "DRAFT" | "OBSOLETE";
   defaultLotSize: number;
@@ -40,6 +46,7 @@ export interface CreateProductInput {
   sku: string;
   name: string;
   description?: string;
+  type: ItemType;
   version: string;
   defaultLotSize: number;
   bom: ProductBOM[];

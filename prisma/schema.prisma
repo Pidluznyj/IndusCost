@@ -113,15 +113,26 @@ model MaterialPriceHistory {
 
 // --- Engenharia ---
 
+enum ItemType {
+  PRODUCT
+  COMPONENT
+}
+
 model Product {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   sku            String   @unique
   name           String
   description    String?
+  type           ItemType @default(PRODUCT)
   version        String   @default("1.0.0")
   status         String   @default("ACTIVE")
   defaultLotSize Decimal  @default(1) @db.Decimal(18, 2)
-  ProductBOM           ProductBOM[]
+  
+  // BOM as Parent
+  ProductBOM           ProductBOM[] @relation("ParentProduct")
+  // BOM as Child (for components)
+  UsedInBOM            ProductBOM[] @relation("ChildProduct")
+  
   ProductRouting       ProductRouting[]
   CostCalculationLog   CostCalculationLog[]
   ProductPricing       ProductPricing[]
@@ -132,9 +143,14 @@ model Product {
 model ProductBOM {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId      String   @db.Uuid
-  Product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  materialId     String   @db.Uuid
-  Material       Material @relation(fields: [materialId], references: [id])
+  ParentProduct  Product  @relation("ParentProduct", fields: [productId], references: [id], onDelete: Cascade)
+  
+  materialId     String?  @db.Uuid
+  Material       Material? @relation(fields: [materialId], references: [id])
+  
+  childProductId String?  @db.Uuid
+  ChildProduct   Product? @relation("ChildProduct", fields: [childProductId], references: [id])
+  
   quantity       Decimal  @db.Decimal(18, 4)
   lossPercentage Decimal  @default(0) @db.Decimal(5, 2)
   notes          String?

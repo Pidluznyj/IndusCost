@@ -582,11 +582,79 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json({ success: true });
   });
 
+  // --- Helper Functions for Recursive BOM ---
+  async function checkBOMCycle(parentId: string, childProductId: string): Promise<boolean> {
+    if (parentId === childProductId) return true;
+    
+    const children = await prisma.productBOM.findMany({
+      where: { productId: childProductId },
+      select: { childProductId: true }
+    });
+
+    for (const child of children) {
+      if (child.childProductId) {
+        if (child.childProductId === parentId) return true;
+        const hasCycle = await checkBOMCycle(parentId, child.childProductId);
+        if (hasCycle) return true;
+      }
+    }
+    return false;
+  }
+
+  async function getFullBOMTree(productId: string): Promise<any> {
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        ProductBOM: {
+          include: {
+            Material: true,
+            ChildProduct: true
+          }
+        }
+      }
+    });
+
+    if (!product) return null;
+
+    const children = await Promise.all((product.ProductBOM || []).map(async (item) => {
+      if (item.childProductId) {
+        const subTree = await getFullBOMTree(item.childProductId);
+        return {
+          id: item.id,
+          type: "COMPONENT",
+          item: subTree,
+          quantity: item.quantity,
+          lossPercentage: item.lossPercentage,
+          notes: item.notes
+        };
+      } else {
+        return {
+          id: item.id,
+          type: "MATERIAL",
+          item: item.Material,
+          quantity: item.quantity,
+          lossPercentage: item.lossPercentage,
+          notes: item.notes
+        };
+      }
+    }));
+
+    return {
+      ...product,
+      children
+    };
+  }
+
   // --- API: Products (Engenharia / BOM / Routing) ---
   app.get("/api/products", async (req, res) => {
     const products = await prisma.product.findMany({
       include: {
-        ProductBOM: { include: { Material: true } },
+        ProductBOM: { 
+          include: { 
+            Material: true,
+            ChildProduct: true
+          } 
+        },
         ProductRouting: { include: { Machine: true, Role: true } },
       },
       orderBy: { sku: "asc" },
@@ -599,40 +667,48 @@ app.delete("/api/employees/:id", async (req, res) => {
     const product = await prisma.product.findUnique({
       where: { id },
       include: {
-        ProductBOM: { include: { Material: true } },
+        ProductBOM: { 
+          include: { 
+            Material: true,
+            ChildProduct: true
+          } 
+        },
         ProductRouting: { include: { Machine: true, Role: true } },
       },
     });
     res.json(product);
   });
 
+  app.get("/api/products/:id/tree", async (req, res) => {
+    const { id } = req.params;
+    const tree = await getFullBOMTree(id);
+    if (!tree) return res.status(404).json({ error: "Produto não encontrado" });
+    res.json(tree);
+  });
+
   app.post("/api/products", async (req, res) => {
-    const { sku, name, description, version, defaultLotSize, bom, routing } = req.body;
+    const { sku, name, description, type, version, defaultLotSize, bom, routing } = req.body;
 
-    // Normalização do SKU: trim e uppercase para evitar duplicatas por grafia
     const normalizedSku = sku?.toString().trim().toUpperCase();
-
     if (!normalizedSku) {
-      return res.status(400).json({ error: "O SKU é obrigatório para o cadastro do produto." });
+      return res.status(400).json({ error: "O SKU é obrigatório." });
     }
 
     try {
-      // 1. Verificação proativa antes da tentativa de criação
-      const existing = await prisma.product.findUnique({
-        where: { sku: normalizedSku }
-      });
-
+      const existing = await prisma.product.findUnique({ where: { sku: normalizedSku } });
       if (existing) {
-        return res.status(409).json({
-          error: "Já existe um produto cadastrado com este SKU.",
-          code: "SKU_ALREADY_EXISTS",
-          action: "Verifique na lista de produtos se este item já foi cadastrado anteriormente (talvez com espaços ou letras minúsculas). Se for um novo produto, utilize um SKU diferente.",
-          existingProduct: {
-            id: existing.id,
-            sku: existing.sku,
-            name: existing.name
+        return res.status(409).json({ error: "SKU já existe.", code: "SKU_ALREADY_EXISTS" });
+      }
+
+      // Validações de BOM
+      for (const item of (bom || [])) {
+        if (item.childProductId) {
+          const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
+          if (!child) return res.status(400).json({ error: "Componente não encontrado." });
+          if (type === "PRODUCT" && child.type !== "COMPONENT") {
+            return res.status(400).json({ error: "Produtos só aceitam Componentes." });
           }
-        });
+        }
       }
 
       const product = await prisma.product.create({
@@ -640,11 +716,13 @@ app.delete("/api/employees/:id", async (req, res) => {
           sku: normalizedSku,
           name,
           description,
+          type: type || "PRODUCT",
           version,
           defaultLotSize,
           ProductBOM: {
             create: (bom || []).map((item: any) => ({
               materialId: item.materialId,
+              childProductId: item.childProductId,
               quantity: item.quantity,
               lossPercentage: item.lossPercentage,
               notes: item.notes,
@@ -667,76 +745,52 @@ app.delete("/api/employees/:id", async (req, res) => {
       });
       res.json(product);
     } catch (error) {
-      // 2. Tratamento de erro de concorrência (Unique constraint violation)
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const existing = await prisma.product.findUnique({
-          where: { sku: normalizedSku }
-        });
-        
-        return res.status(409).json({
-          error: "Conflito de SKU detectado durante o processamento.",
-          code: "SKU_ALREADY_EXISTS",
-          action: "Este SKU pode ter sido registrado por outro usuário ou em uma tentativa simultânea. Verifique a lista de produtos.",
-          existingProduct: existing ? {
-            id: existing.id,
-            sku: existing.sku,
-            name: existing.name
-          } : undefined
-        });
-      }
-      
       console.error("Product creation error:", error);
-      res.status(500).json({ error: "Erro interno ao processar o cadastro do produto." });
+      res.status(500).json({ error: "Erro ao criar produto." });
     }
   });
 
   app.put("/api/products/:id", async (req, res) => {
     const { id } = req.params;
-    const { sku, name, description, version, defaultLotSize, bom, routing } = req.body;
-
+    const { sku, name, description, type, version, defaultLotSize, bom, routing } = req.body;
     const normalizedSku = sku?.toString().trim().toUpperCase();
 
     try {
       if (normalizedSku) {
         const existing = await prisma.product.findFirst({
-          where: { 
-            sku: normalizedSku,
-            id: { not: id }
-          }
+          where: { sku: normalizedSku, id: { not: id } }
         });
+        if (existing) return res.status(409).json({ error: "SKU já existe." });
+      }
 
-        if (existing) {
-          return res.status(409).json({
-            error: "Conflito de SKU ao atualizar o produto.",
-            code: "SKU_ALREADY_EXISTS",
-            action: "Já existe outro produto utilizando este SKU. Revise a informação ou utilize um SKU único.",
-            existingProduct: {
-              id: existing.id,
-              sku: existing.sku,
-              name: existing.name
-            }
-          });
+      for (const item of (bom || [])) {
+        if (item.childProductId) {
+          if (await checkBOMCycle(id, item.childProductId)) {
+            return res.status(400).json({ error: "Ciclo detectado!" });
+          }
+          const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
+          if (type === "PRODUCT" && child?.type !== "COMPONENT") {
+            return res.status(400).json({ error: "Produtos só aceitam Componentes." });
+          }
         }
       }
 
-      // Transação para atualizar tudo
       const product = await prisma.$transaction(async (tx) => {
-        // 1. Limpar BOM e Routing antigos
         await tx.productBOM.deleteMany({ where: { productId: id } });
         await tx.productRouting.deleteMany({ where: { productId: id } });
-
-        // 2. Atualizar Produto e recriar relações
         return await tx.product.update({
           where: { id },
           data: {
             sku: normalizedSku || sku,
             name,
             description,
+            type,
             version,
             defaultLotSize,
             ProductBOM: {
               create: (bom || []).map((item: any) => ({
                 materialId: item.materialId,
+                childProductId: item.childProductId,
                 quantity: item.quantity,
                 lossPercentage: item.lossPercentage,
                 notes: item.notes,
@@ -758,30 +812,10 @@ app.delete("/api/employees/:id", async (req, res) => {
           include: { ProductBOM: true, ProductRouting: true }
         });
       });
-
       res.json(product);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const existing = await prisma.product.findFirst({
-          where: { 
-            sku: normalizedSku,
-            id: { not: id }
-          }
-        });
-        
-        return res.status(409).json({
-          error: "Conflito de SKU detectado durante a atualização.",
-          code: "SKU_ALREADY_EXISTS",
-          action: "Outro produto acaba de ser registrado com este SKU. Verifique a lista de produtos.",
-          existingProduct: existing ? {
-            id: existing.id,
-            sku: existing.sku,
-            name: existing.name
-          } : undefined
-        });
-      }
       console.error("Product update error:", error);
-      res.status(500).json({ error: "Erro interno ao atualizar o produto." });
+      res.status(500).json({ error: "Erro ao atualizar produto." });
     }
   });
 
