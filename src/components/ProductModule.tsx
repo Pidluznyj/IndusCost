@@ -45,6 +45,12 @@ export const ProductModule = () => {
     existingProduct?: { id: string; sku: string; name: string };
   } | null>(null);
 
+  // Grid State
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Product | "cost"; direction: "asc" | "desc" }>({ key: "sku", direction: "asc" });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(15);
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+
   const fetchCostAnalysis = async (productId: string) => {
     try {
       const res = await fetch(`/api/products/${productId}/cost-analysis`);
@@ -197,107 +203,300 @@ export const ProductModule = () => {
     setFormData({ ...formData, routing: newRouting });
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         p.sku.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === "ALL" || p.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    const aValue = a[sortConfig.key as keyof Product];
+    const bValue = b[sortConfig.key as keyof Product];
+
+    if (aValue === undefined || bValue === undefined) return 0;
+
+    if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
+    if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  const totalPages = Math.ceil(sortedProducts.length / itemsPerPage);
+  const paginatedProducts = sortedProducts.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
+  const handleSort = (key: keyof Product | "cost") => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc"
+    }));
+  };
+
+  const SortIcon = ({ column }: { column: keyof Product | "cost" }) => {
+    if (sortConfig.key !== column) return <ChevronDown className="h-3 w-3 opacity-20" />;
+    return sortConfig.direction === "asc" ? <ChevronDown className="h-3 w-3 rotate-180" /> : <ChevronDown className="h-3 w-3" />;
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por SKU ou nome do produto..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+    <div className="space-y-4">
+      {/* Header Actions & Filters */}
+      <div className="bg-card border border-border rounded-xl p-4 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <Package className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold">Engenharia de Produtos</h2>
+              <p className="text-xs text-muted-foreground">Gestão de estruturas (BOM) e roteiros industriais.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-bold hover:opacity-90 transition-all text-sm shadow-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Novo Produto
+            </button>
+          </div>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Engenharia
-        </button>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2 border-t border-border/50">
+          <div className="relative col-span-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Buscar por SKU ou nome..."
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm transition-all"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+            />
+          </div>
+          <div>
+            <select 
+              className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+            >
+              <option value="ALL">Todos os Status</option>
+              <option value="ACTIVE">Ativos</option>
+              <option value="DRAFT">Rascunhos</option>
+              <option value="OBSOLETE">Obsoletos</option>
+            </select>
+          </div>
+          <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+            <span>Mostrar</span>
+            <select 
+              className="p-1 rounded border border-border bg-background outline-none"
+              value={itemsPerPage}
+              onChange={(e) => setItemsPerPage(Number(e.target.value))}
+            >
+              <option value={10}>10</option>
+              <option value={15}>15</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+            <span>por página</span>
+          </div>
+        </div>
       </div>
 
-      {/* Product List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {loading ? (
-          <div className="col-span-full p-12 text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-            <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="col-span-full p-12 text-center border-2 border-dashed border-border rounded-2xl text-muted-foreground">
-            Nenhum produto cadastrado.
-          </div>
-        ) : (
-          filteredProducts.map((product) => (
-            <motion.div 
-              key={product.id}
-              layoutId={product.id}
-              className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-all group"
-            >
-              <div className="p-5 border-b border-border bg-accent/30 flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                    <Package className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm">{product.name}</h3>
-                    <p className="text-[10px] font-mono text-muted-foreground">{product.sku} • v{product.version}</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => handleOpenModal(product)}
-                  className="p-2 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
+      {/* Product Grid / Table */}
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
+            <thead>
+              <tr className="bg-accent/50 border-b border-border">
+                <th 
+                  className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground cursor-pointer hover:bg-accent/80 transition-colors"
+                  onClick={() => handleSort("sku")}
                 >
-                  <Edit2 className="h-4 w-4" />
-                </button>
-              </div>
-              
-              <div className="p-5 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-xl bg-accent/20 border border-border/50">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                      <Layers className="h-3 w-3" />
-                      <span className="text-[10px] font-bold uppercase">Componentes</span>
-                    </div>
-                    <p className="text-lg font-black">{product.ProductBOM.length}</p>
+                  <div className="flex items-center gap-2">
+                    SKU <SortIcon column="sku" />
                   </div>
-                  <div className="p-3 rounded-xl bg-accent/20 border border-border/50">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                      <Settings className="h-3 w-3" />
-                      <span className="text-[10px] font-bold uppercase">Operações</span>
-                    </div>
-                    <p className="text-lg font-black">{product.ProductRouting.length}</p>
+                </th>
+                <th 
+                  className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground cursor-pointer hover:bg-accent/80 transition-colors"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-2">
+                    Produto <SortIcon column="name" />
                   </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <button 
-                    onClick={() => fetchCostAnalysis(product.id)}
-                    className="flex items-center gap-2 text-xs font-bold text-primary hover:underline"
+                </th>
+                <th className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Unid.
+                </th>
+                <th className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Categoria
+                </th>
+                <th className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground text-center">
+                  Estrutura
+                </th>
+                <th 
+                  className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground cursor-pointer hover:bg-accent/80 transition-colors text-center"
+                  onClick={() => handleSort("status")}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    Status <SortIcon column="status" />
+                  </div>
+                </th>
+                <th className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground text-right">
+                  Custo (CIU)
+                </th>
+                <th className="p-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground text-right">
+                  Ações
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="p-12 text-center">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                    <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
+                  </td>
+                </tr>
+              ) : paginatedProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-12 text-center text-muted-foreground italic text-sm">
+                    Nenhum produto encontrado com os filtros aplicados.
+                  </td>
+                </tr>
+              ) : (
+                paginatedProducts.map((product) => (
+                  <tr 
+                    key={product.id} 
+                    className="hover:bg-accent/20 transition-colors group"
                   >
-                    <DollarSign className="h-3 w-3" />
-                    Análise de Custo
+                    <td className="p-3 font-mono text-[11px] font-bold text-primary">
+                      {product.sku}
+                    </td>
+                    <td className="p-3">
+                      <p className="text-sm font-bold">{product.name}</p>
+                      <p className="text-[10px] text-muted-foreground">v{product.version}</p>
+                    </td>
+                    <td className="p-3 text-xs text-muted-foreground">
+                      UN
+                    </td>
+                    <td className="p-3 text-xs">
+                      <span className="px-2 py-0.5 rounded bg-accent text-muted-foreground text-[10px] font-medium">
+                        Industrial
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center justify-center gap-2">
+                        <span title="Componentes (BOM)" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-100">
+                          <Layers className="h-3 w-3" />
+                          {product.ProductBOM.length}
+                        </span>
+                        <span title="Operações (Roteiro)" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 text-[10px] font-bold border border-purple-100">
+                          <Settings className="h-3 w-3" />
+                          {product.ProductRouting.length}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                        product.status === "ACTIVE" ? "bg-green-50 text-green-700 border-green-100" : 
+                        product.status === "DRAFT" ? "bg-orange-50 text-orange-700 border-orange-100" :
+                        "bg-gray-50 text-gray-700 border-gray-100"
+                      )}>
+                        {product.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right">
+                      <button 
+                        onClick={() => fetchCostAnalysis(product.id)}
+                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1 justify-end ml-auto"
+                      >
+                        <Calculator className="h-3 w-3" />
+                        Calcular
+                      </button>
+                    </td>
+                    <td className="p-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button 
+                          onClick={() => handleOpenModal(product)}
+                          title="Editar"
+                          className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if(confirm("Deseja realmente excluir este produto?")) {
+                              fetch(`/api/products/${product.id}`, { method: "DELETE" }).then(() => fetchData());
+                            }
+                          }}
+                          title="Excluir"
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Footer */}
+        <div className="p-4 bg-accent/10 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-xs text-muted-foreground font-medium">
+            Mostrando <span className="text-foreground font-bold">{paginatedProducts.length}</span> de <span className="text-foreground font-bold">{filteredProducts.length}</span> registros
+          </p>
+          
+          <div className="flex items-center gap-2">
+            <button 
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => prev - 1)}
+              className="p-2 rounded-lg border border-border bg-background hover:bg-accent disabled:opacity-50 transition-colors"
+            >
+              <ChevronRight className="h-4 w-4 rotate-180" />
+            </button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum = currentPage;
+                if (totalPages <= 5) pageNum = i + 1;
+                else if (currentPage <= 3) pageNum = i + 1;
+                else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                else pageNum = currentPage - 2 + i;
+
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={cn(
+                      "h-8 w-8 rounded-lg text-xs font-bold transition-all",
+                      currentPage === pageNum ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-accent text-muted-foreground"
+                    )}
+                  >
+                    {pageNum}
                   </button>
-                  <span className={cn(
-                    "text-[10px] font-bold px-2 py-0.5 rounded-full",
-                    product.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-orange-500/10 text-orange-600"
-                  )}>
-                    {product.status}
-                  </span>
-                </div>
-              </div>
-            </motion.div>
-          ))
-        )}
+                );
+              })}
+            </div>
+            <button 
+              disabled={currentPage === totalPages || totalPages === 0}
+              onClick={() => setCurrentPage(prev => prev + 1)}
+              className="p-2 rounded-lg border border-border bg-background hover:bg-accent disabled:opacity-50 transition-colors"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Modal: Cost Analysis */}
