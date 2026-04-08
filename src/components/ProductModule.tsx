@@ -186,6 +186,28 @@ export const ProductModule = () => {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm("Tem certeza que deseja excluir este item? Esta ação não pode ser desfeita.")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/products/${id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        fetchData();
+      } else {
+        const error = await res.json();
+        alert(error.error || "Erro ao excluir item.");
+      }
+    } catch (error) {
+      console.error("Erro ao excluir:", error);
+      alert("Erro de conexão ao tentar excluir o item.");
+    }
+  };
+
   const filteredItems = items.filter(item => 
     item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.sku.toLowerCase().includes(searchTerm.toLowerCase())
@@ -420,6 +442,7 @@ export const ProductModule = () => {
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button 
+                          onClick={() => handleDelete(item.id)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-red-500 transition-all"
                         >
                           <Trash2 className="h-4 w-4" />

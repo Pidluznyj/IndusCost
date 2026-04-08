@@ -1039,8 +1039,55 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   app.delete("/api/products/:id", async (req, res) => {
     const { id } = req.params;
-    await prisma.product.delete({ where: { id } });
-    res.json({ success: true });
+
+    try {
+      const product = await prisma.product.findUnique({
+        where: { id },
+        include: {
+          UsedInBOM: {
+            include: {
+              ParentProduct: true
+            }
+          },
+          ProposalItem: {
+            include: {
+              Proposal: true
+            }
+          }
+        }
+      });
+
+      if (!product) {
+        return res.status(404).json({ error: "Produto não encontrado." });
+      }
+
+      // Check if used in other BOMs
+      if (product.UsedInBOM.length > 0) {
+        const parentNames = product.UsedInBOM.map(b => b.ParentProduct.name).join(", ");
+        return res.status(409).json({ 
+          error: `Não é possível excluir este item pois ele é utilizado na estrutura de: ${parentNames}.` 
+        });
+      }
+
+      // Check if used in Proposals
+      if (product.ProposalItem.length > 0) {
+        return res.status(409).json({ 
+          error: "Não é possível excluir este item pois ele já possui histórico em propostas comerciais." 
+        });
+      }
+
+      // Transactional delete of dependencies and product
+      await prisma.$transaction([
+        prisma.productPricing.deleteMany({ where: { productId: id } }),
+        prisma.costCalculationLog.deleteMany({ where: { productId: id } }),
+        prisma.product.delete({ where: { id } })
+      ]);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Erro ao excluir produto:", error);
+      res.status(500).json({ error: "Erro interno ao excluir o produto." });
+    }
   });
 
   // --- API: Indirect Costs (OPEX) ---
