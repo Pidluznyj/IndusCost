@@ -8,9 +8,10 @@ import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
 import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
+import crypto from "crypto";
 
 const upload = multer({ storage: multer.memoryStorage() });
-
+const importCache = new Map<string, any>();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -19,7 +20,8 @@ async function startServer() {
   const port = process.env.PORT || 3000;
   const host = process.env.HOST || "0.0.0.0";
 
-  app.use(express.json());
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
   // --- API: Test ---
   app.get("/api/health", (req, res) => {
@@ -513,7 +515,13 @@ app.delete("/api/employees/:id", async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const result = await ServerImporter.parseExcel(req.file.buffer, MaterialImportConfig);
-      res.json(result);
+      const importId = crypto.randomUUID();
+      importCache.set(importId, result.data);
+      
+      // Cleanup after 30 mins
+      setTimeout(() => importCache.delete(importId), 30 * 60 * 1000);
+      
+      res.json({ ...result, importId });
     } catch (error) {
       console.error("Import preview error:", error);
       res.status(500).json({ error: "Erro ao processar planilha" });
@@ -521,8 +529,15 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   app.post("/api/materials/import/confirm", async (req, res) => {
-    const { data } = req.body;
-    if (!Array.isArray(data)) return res.status(400).json({ error: "Dados inválidos" });
+    const { data: bodyData, importId } = req.body;
+    let data = bodyData;
+
+    if (importId && importCache.has(importId)) {
+      data = importCache.get(importId);
+      importCache.delete(importId);
+    }
+
+    if (!Array.isArray(data)) return res.status(400).json({ error: "Dados inválidos ou sessão de importação expirada." });
 
     try {
       const codes = data.map(d => d.code);
@@ -758,7 +773,13 @@ app.delete("/api/employees/:id", async (req, res) => {
         }
       });
 
-      res.json(results);
+      const importId = crypto.randomUUID();
+      importCache.set(importId, results);
+      
+      // Cleanup after 30 mins
+      setTimeout(() => importCache.delete(importId), 30 * 60 * 1000);
+      
+      res.json({ ...results, importId });
     } catch (error) {
       console.error("Import preview error:", error);
       res.status(500).json({ error: "Erro ao processar planilha" });
@@ -766,80 +787,112 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   app.post("/api/products/import/confirm", async (req, res) => {
-    const { cadastro, estrutura } = req.body;
+    const { cadastro: bodyCadastro, estrutura: bodyEstrutura, importId } = req.body;
+    let cadastro = bodyCadastro;
+    let estrutura = bodyEstrutura;
+
+    if (importId && importCache.has(importId)) {
+      const cached = importCache.get(importId);
+      cadastro = cached["CADASTRO"].data;
+      estrutura = cached["ESTRUTURA"].data;
+      importCache.delete(importId);
+    }
     
+    if (!cadastro || !estrutura) {
+      return res.status(400).json({ success: false, error: "Dados de cadastro ou estrutura ausentes ou sessão expirada." });
+    }
+
     try {
-      // 1. Create Products/Components
-      const skus = cadastro.map((d: any) => d.sku);
-      const existing = await prisma.product.findMany({
-        where: { sku: { in: skus } },
-        select: { sku: true }
-      });
-      const existingSkus = new Set(existing.map(e => e.sku));
-      const toCreate = cadastro.filter((d: any) => !existingSkus.has(d.sku));
-
-      if (toCreate.length > 0) {
-        await prisma.product.createMany({
-          data: toCreate.map((d: any) => ({
-            sku: d.sku,
-            name: d.name,
-            description: d.description || null,
-            type: d.type,
-            version: d.version || "1.0.0",
-            defaultLotSize: d.defaultLotSize || 1,
-            status: d.status || "ACTIVE"
-          }))
+      const result = await prisma.$transaction(async (tx) => {
+        // 1. Create Products/Components
+        const skus = cadastro.map((d: any) => d.sku);
+        const existing = await tx.product.findMany({
+          where: { sku: { in: skus } },
+          select: { sku: true }
         });
-      }
+        const existingSkus = new Set(existing.map(e => e.sku));
+        const toCreate = cadastro.filter((d: any) => !existingSkus.has(d.sku));
 
-      // 2. Create BOMs
-      const allSkus = [...new Set([...skus, ...estrutura.map((e: any) => e.parentSku), ...estrutura.filter((e: any) => e.childType === "COMPONENT").map((e: any) => e.childIdentifier)])];
-      const products = await prisma.product.findMany({
-        where: { sku: { in: allSkus as string[] } },
-        select: { id: true, sku: true }
-      });
-      const skuToId = new Map(products.map(p => [p.sku, p.id]));
-
-      const materials = await prisma.material.findMany({
-        where: { code: { in: estrutura.filter((e: any) => e.childType === "MATERIAL").map((e: any) => e.childIdentifier) } },
-        select: { id: true, code: true }
-      });
-      const matCodeToId = new Map(materials.map(m => [m.code, m.id]));
-
-      const bomData = [];
-      for (const item of estrutura) {
-        const parentId = skuToId.get(item.parentSku);
-        if (!parentId) continue;
-
-        let materialId = null;
-        let childProductId = null;
-
-        if (item.childType === "MATERIAL") {
-          materialId = matCodeToId.get(item.childIdentifier);
-        } else {
-          childProductId = skuToId.get(item.childIdentifier);
-        }
-
-        if (materialId || childProductId) {
-          bomData.push({
-            productId: parentId,
-            materialId,
-            childProductId,
-            quantity: item.quantity,
-            lossPercentage: item.lossPercentage || 0,
-            notes: item.notes || null
+        if (toCreate.length > 0) {
+          await tx.product.createMany({
+            data: toCreate.map((d: any) => ({
+              sku: d.sku,
+              name: d.name,
+              description: d.description || null,
+              type: d.type,
+              version: d.version || "1.0.0",
+              defaultLotSize: d.defaultLotSize !== undefined ? Number(d.defaultLotSize) : 1,
+              status: d.status || "ACTIVE"
+            }))
           });
         }
-      }
 
-      if (bomData.length > 0) {
-        await prisma.productBOM.createMany({ data: bomData });
-      }
+        // 2. Create BOMs
+        // Refresh product list to get IDs (including newly created ones)
+        const allSkus = [...new Set([
+          ...skus, 
+          ...estrutura.map((e: any) => e.parentSku), 
+          ...estrutura.filter((e: any) => e.childType === "COMPONENT").map((e: any) => e.childIdentifier)
+        ])];
+        
+        const products = await tx.product.findMany({
+          where: { sku: { in: allSkus as string[] } },
+          select: { id: true, sku: true }
+        });
+        const skuToId = new Map(products.map(p => [p.sku, p.id]));
 
-      res.json({ success: true, productsCreated: toCreate.length, bomCreated: bomData.length });
+        const materials = await tx.material.findMany({
+          where: { code: { in: estrutura.filter((e: any) => e.childType === "MATERIAL").map((e: any) => e.childIdentifier) } },
+          select: { id: true, code: true }
+        });
+        const matCodeToId = new Map(materials.map(m => [m.code, m.id]));
+
+        const bomData = [];
+        for (const item of estrutura) {
+          const parentId = skuToId.get(item.parentSku);
+          if (!parentId) continue;
+
+          let materialId = null;
+          let childProductId = null;
+
+          if (item.childType === "MATERIAL") {
+            materialId = matCodeToId.get(item.childIdentifier);
+          } else {
+            childProductId = skuToId.get(item.childIdentifier);
+          }
+
+          // Only add if we found the child (material or component)
+          if (materialId || childProductId) {
+            bomData.push({
+              productId: parentId,
+              materialId,
+              childProductId,
+              quantity: Number(item.quantity),
+              lossPercentage: item.lossPercentage !== undefined ? Number(item.lossPercentage) : 0,
+              notes: item.notes || null
+            });
+          }
+        }
+
+        if (bomData.length > 0) {
+          await tx.productBOM.createMany({ data: bomData });
+        }
+
+        return { 
+          productsCreated: toCreate.length, 
+          bomCreated: bomData.length,
+          skipped: existingSkus.size
+        };
+      });
+
+      res.json({ success: true, ...result });
     } catch (error) {
       console.error("Import confirm error:", error);
-      res.status(500).json({ error: "Erro ao salvar dados" });
+      res.status(500).json({ 
+        success: false, 
+        error: "Erro ao salvar dados no banco de dados. Verifique se há SKUs duplicados ou dados inválidos.",
+        details: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
@@ -1418,29 +1471,14 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     const lotSize = Number(product.defaultLotSize) || 1;
 
-    // 1. Materiais / Componentes
-    const materialItems = await Promise.all(product.ProductBOM.map(async (item) => {
-      const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage || 0) / 100));
-
-      if (item.Material) {
-        const mat = item.Material;
-        const landedCost = Number(mat.currentCost || 0) + Number(mat.freight || 0);
-        const stdLoss = Number(mat.standardLoss || 0);
-        const matEffectiveCost = landedCost / (1 - (stdLoss / 100));
-        return { unitCost: matEffectiveCost * requiredQty };
-      }
-
-      if (item.childProductId) {
-        const childAnalysis = await getProductCostAnalysis(item.childProductId);
-        if (!childAnalysis) {
-          throw new Error(`Componente filho não encontrado no cálculo: ${item.childProductId}`);
-        }
-        const childUnitCost = Number((childAnalysis as any).ciu || 0);
-        return { unitCost: childUnitCost * requiredQty };
-      }
-
-      return { unitCost: 0 };
-    }));
+    // 1. Materiais
+    const materialItems = product.ProductBOM.map((item) => {
+      const mat = item.Material;
+      const landedCost = Number(mat.currentCost) + Number(mat.freight);
+      const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
+      const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
+      return { unitCost: matEffectiveCost * requiredQty };
+    });
     const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
 
     // 2. Operações

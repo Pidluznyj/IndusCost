@@ -39,8 +39,10 @@ export const DataImportDialog = ({
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [previewData, setPreviewData] = useState<ImportResult<any> | Record<string, ImportResult<any>> | null>(null);
+  const [importId, setImportId] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<{ count?: number; skipped?: number; productsCreated?: number; bomCreated?: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,6 +54,7 @@ export const DataImportDialog = ({
   const handleUpload = async () => {
     if (!file) return;
     setLoading(true);
+    setError(null);
     const formData = new FormData();
     formData.append("file", file);
 
@@ -60,14 +63,24 @@ export const DataImportDialog = ({
         method: "POST",
         body: formData
       });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Erro ao processar planilha.");
+      }
+
       const data = await res.json();
       setPreviewData(data);
+      if (data.importId) {
+        setImportId(data.importId);
+      }
       if (data && !data.data && typeof data === "object") {
-        setActiveSheet(Object.keys(data)[0]);
+        setActiveSheet(Object.keys(data).filter(k => k !== "importId")[0]);
       }
       setStep("preview");
     } catch (error) {
       console.error("Upload error:", error);
+      setError(error instanceof Error ? error.message : "Erro desconhecido ao processar arquivo.");
     } finally {
       setLoading(false);
     }
@@ -76,12 +89,20 @@ export const DataImportDialog = ({
   const handleConfirm = async () => {
     if (!previewData) return;
     
-    const isMulti = !("data" in previewData);
-    const payload = isMulti 
-      ? Object.entries(previewData as Record<string, ImportResult<any>>).reduce((acc, [k, v]) => ({ ...acc, [k.toLowerCase()]: v.data }), {})
-      : { data: (previewData as ImportResult<any>).data };
+    let payload: any = {};
+    
+    if (importId) {
+      payload = { importId };
+    } else {
+      // Fallback for older APIs or if importId is missing
+      const isMulti = !("data" in previewData);
+      payload = isMulti 
+        ? Object.entries(previewData as Record<string, ImportResult<any>>).reduce((acc, [k, v]) => ({ ...acc, [k.toLowerCase()]: v.data }), {})
+        : { data: (previewData as ImportResult<any>).data };
+    }
 
     setLoading(true);
+    setError(null);
 
     try {
       const res = await fetch(confirmUrl, {
@@ -89,12 +110,29 @@ export const DataImportDialog = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const result = await res.json();
+      
+      let result;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        result = await res.json();
+      } else {
+        const text = await res.text();
+        if (res.status === 413) {
+          throw new Error("O arquivo é muito grande para ser processado. Tente importar em lotes menores.");
+        }
+        throw new Error(`Erro do servidor (${res.status}): ${text.substring(0, 100)}`);
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || "Erro ao confirmar importação.");
+      }
+
       setImportResult(result);
       setStep("success");
       onSuccess();
     } catch (error) {
       console.error("Confirm error:", error);
+      setError(error instanceof Error ? error.message : "Erro desconhecido ao salvar dados.");
     } finally {
       setLoading(false);
     }
@@ -104,8 +142,10 @@ export const DataImportDialog = ({
     setStep("upload");
     setFile(null);
     setPreviewData(null);
+    setImportId(null);
     setActiveSheet(null);
     setImportResult(null);
+    setError(null);
   };
 
   if (!isOpen) return null;
@@ -143,6 +183,13 @@ export const DataImportDialog = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
+          {error && (
+            <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+              <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0" />
+              <p className="text-sm text-red-600 font-medium">{error}</p>
+            </div>
+          )}
+          
           <AnimatePresence mode="wait">
             {step === "upload" && (
               <motion.div 
@@ -353,8 +400,12 @@ export const DataImportDialog = ({
                         <p className="text-3xl font-black text-primary">{importResult.productsCreated}</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-xs font-bold text-muted-foreground uppercase">Linhas de Estrutura</p>
-                        <p className="text-3xl font-black text-orange-500">{importResult.bomCreated}</p>
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Estruturas</p>
+                        <p className="text-3xl font-black text-blue-500">{importResult.bomCreated}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Ignorados</p>
+                        <p className="text-3xl font-black text-orange-500">{importResult.skipped}</p>
                       </div>
                     </>
                   ) : (
