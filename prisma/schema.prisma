@@ -106,11 +106,6 @@ model MaterialPriceHistory {
   Material      Material  @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
-enum ItemType {
-  PRODUCT
-  COMPONENT
-}
-
 model Product {
   id                                            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   sku                                           String               @unique
@@ -230,110 +225,89 @@ model Simulation {
   updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
-// --- Módulo Comercial e Propostas ---
-
 model Customer {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyName     String
-  tradeName       String?
-  taxId           String   @unique // CNPJ/CPF
-  stateTaxId      String?  // Inscrição Estadual
-  contactName     String?
-  email           String?
-  phone           String?
-  address         String?
-  city            String?
-  state           String?
-  zipCode         String?
-  country         String   @default("Brasil")
-  segment         String?
-  notes           String?
-  status          String   @default("ACTIVE")
-  proposals       Proposal[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-}
-
-enum ProposalStatus {
-  DRAFT
-  ANALYSIS
-  SENT
-  APPROVED
-  REJECTED
-  EXPIRED
-  CANCELED
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyName String
+  tradeName   String?
+  taxId       String     @unique
+  stateTaxId  String?
+  contactName String?
+  email       String?
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  country     String     @default("Brasil")
+  segment     String?
+  notes       String?
+  status      String     @default("ACTIVE")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+  proposals   Proposal[]
 }
 
 model Proposal {
-  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  number            Int            @unique @default(autoincrement())
-  title             String?
-  customerId        String         @db.Uuid
-  Customer          Customer       @relation(fields: [customerId], references: [id])
-  status            ProposalStatus @default(DRAFT)
-  responsible       String?
-  companyIssuer     String?
-  validityDays      Int            @default(15)
-  paymentTerms      String?
-  paymentMethod     String?
-  deliveryTimeDays  Int?
-  freightCondition  String?        @default("CIF")
-  deliveryLocation  String?
-  notes             String?
-  internalNotes     String?
-  
-  // Totais Consolidados (Snapshot)
-  totalItems        Int            @default(0)
-  totalGrossValue   Decimal        @default(0) @db.Decimal(18, 2)
-  totalDiscount     Decimal        @default(0) @db.Decimal(18, 2)
-  totalNetValue     Decimal        @default(0) @db.Decimal(18, 2)
-  totalCost         Decimal        @default(0) @db.Decimal(18, 2)
-  totalMarginValue  Decimal        @default(0) @db.Decimal(18, 2)
-  totalMarginPerc   Decimal        @default(0) @db.Decimal(5, 2)
-  totalTaxes        Decimal        @default(0) @db.Decimal(18, 2)
-  totalCommission   Decimal        @default(0) @db.Decimal(18, 2)
-  totalFreight      Decimal        @default(0) @db.Decimal(18, 2)
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number           Int            @unique @default(autoincrement())
+  title            String?
+  customerId       String         @db.Uuid
+  status           ProposalStatus @default(DRAFT)
+  responsible      String?
+  companyIssuer    String?
+  validityDays     Int            @default(15)
+  paymentTerms     String?
+  paymentMethod    String?
+  deliveryTimeDays Int?
+  freightCondition String?        @default("CIF")
+  deliveryLocation String?
+  notes            String?
+  internalNotes    String?
+  totalItems       Int            @default(0)
+  totalGrossValue  Decimal        @default(0) @db.Decimal(18, 2)
+  totalDiscount    Decimal        @default(0) @db.Decimal(18, 2)
+  totalNetValue    Decimal        @default(0) @db.Decimal(18, 2)
+  totalCost        Decimal        @default(0) @db.Decimal(18, 2)
+  totalMarginValue Decimal        @default(0) @db.Decimal(18, 2)
+  totalMarginPerc  Decimal        @default(0) @db.Decimal(5, 2)
+  totalTaxes       Decimal        @default(0) @db.Decimal(18, 2)
+  totalCommission  Decimal        @default(0) @db.Decimal(18, 2)
+  totalFreight     Decimal        @default(0) @db.Decimal(18, 2)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @default(now()) @updatedAt
+  Customer         Customer       @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items            ProposalItem[]
 
-  items             ProposalItem[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  @@index([customerId])
 }
 
 model ProposalItem {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  proposalId        String   @db.Uuid
-  Proposal          Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  productId         String   @db.Uuid
-  Product           Product  @relation(fields: [productId], references: [id])
-  
-  quantity          Decimal  @db.Decimal(18, 4)
-  unit              String?
-  
-  // Snapshot de Custos e Preços no momento da proposta
-  unitCost          Decimal  @db.Decimal(18, 2) // Custo Industrial/Base
-  suggestedPrice    Decimal  @db.Decimal(18, 2) // Preço sugerido pelo sistema
-  negotiatedPrice   Decimal  @db.Decimal(18, 2) // Preço final negociado
-  
-  discountPerc      Decimal  @default(0) @db.Decimal(5, 2)
-  discountValue     Decimal  @default(0) @db.Decimal(18, 2)
-  
-  marginValue       Decimal  @db.Decimal(18, 2)
-  marginPerc        Decimal  @db.Decimal(5, 2)
-  
-  taxesPerc         Decimal  @default(0) @db.Decimal(5, 2)
-  taxesValue        Decimal  @default(0) @db.Decimal(18, 2)
-  
-  commissionPerc    Decimal  @default(0) @db.Decimal(5, 2)
-  commissionValue   Decimal  @default(0) @db.Decimal(18, 2)
-  
-  freightValue      Decimal  @default(0) @db.Decimal(18, 2)
-  
-  notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-}
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  proposalId      String   @db.Uuid
+  productId       String   @db.Uuid
+  quantity        Decimal  @db.Decimal(18, 4)
+  unit            String?
+  unitCost        Decimal  @db.Decimal(18, 2)
+  suggestedPrice  Decimal  @db.Decimal(18, 2)
+  negotiatedPrice Decimal  @db.Decimal(18, 2)
+  discountPerc    Decimal  @default(0) @db.Decimal(5, 2)
+  discountValue   Decimal  @default(0) @db.Decimal(18, 2)
+  marginValue     Decimal  @db.Decimal(18, 2)
+  marginPerc      Decimal  @db.Decimal(5, 2)
+  taxesPerc       Decimal  @default(0) @db.Decimal(5, 2)
+  taxesValue      Decimal  @default(0) @db.Decimal(18, 2)
+  commissionPerc  Decimal  @default(0) @db.Decimal(5, 2)
+  commissionValue Decimal  @default(0) @db.Decimal(18, 2)
+  freightValue    Decimal  @default(0) @db.Decimal(18, 2)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+  Product         Product  @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Proposal        Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-// --- Histórico de Cálculos ---
+  @@index([productId])
+  @@index([proposalId])
+}
 
 model CostCalculationLog {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -348,5 +322,17 @@ model CostCalculationLog {
   Product        Product   @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
+enum ItemType {
+  PRODUCT
+  COMPONENT
+}
 
-
+enum ProposalStatus {
+  DRAFT
+  ANALYSIS
+  SENT
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELED
+}
