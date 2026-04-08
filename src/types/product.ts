@@ -1,6 +1,6 @@
 import { Material } from "./material";
 
-export type ItemType = "PRODUCT" | "COMPONENT";
+export type ItemType = "PRODUCT" | "COMPONENT" | "MATERIAL";
 
 export interface ProductBOM {
   id?: string;

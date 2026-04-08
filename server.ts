@@ -705,10 +705,21 @@ app.delete("/api/employees/:id", async (req, res) => {
         if (item.childProductId) {
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
           if (!child) return res.status(400).json({ error: "Componente não encontrado." });
+          
           if (type === "PRODUCT" && child.type !== "COMPONENT") {
-            return res.status(400).json({ error: "Produtos só aceitam Componentes." });
+            return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
+          }
+          if (type === "MATERIAL") {
+            return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
           }
         }
+        if (item.materialId && type === "PRODUCT") {
+          return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
+        }
+      }
+
+      if (type === "MATERIAL" && (routing || []).length > 0) {
+        return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
       }
 
       const product = await prisma.product.create({
@@ -770,9 +781,19 @@ app.delete("/api/employees/:id", async (req, res) => {
           }
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
           if (type === "PRODUCT" && child?.type !== "COMPONENT") {
-            return res.status(400).json({ error: "Produtos só aceitam Componentes." });
+            return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
+          }
+          if (type === "MATERIAL") {
+            return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
           }
         }
+        if (item.materialId && type === "PRODUCT") {
+          return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
+        }
+      }
+
+      if (type === "MATERIAL" && (routing || []).length > 0) {
+        return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
       }
 
       const product = await prisma.$transaction(async (tx) => {
