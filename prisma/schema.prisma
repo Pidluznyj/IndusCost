@@ -1,4 +1,3 @@
-// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,244 +7,227 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- Cadastros Base ---
-
 model Machine {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code             String   @unique
-  name             String
-  acquisitionValue Decimal  @db.Decimal(18, 2)
-  residualValue    Decimal  @db.Decimal(18, 2)
-  usefulLifeMonths Int
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                 String                 @unique
+  name                 String
+  acquisitionValue     Decimal                @db.Decimal(18, 2)
+  residualValue        Decimal                @db.Decimal(18, 2)
+  usefulLifeMonths     Int
+  createdAt            DateTime?              @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   MachineCostComponent MachineCostComponent[]
   ProductRouting       ProductRouting[]
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
 }
 
 model MachineCostComponent {
-  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  machineId           String   @db.Uuid
-  Machine             Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
-  name                String
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  machineId            String   @db.Uuid
+  name                 String
   monthlyEstimatedCost Decimal  @db.Decimal(18, 2)
-  isVariable          Boolean  @default(false)
+  isVariable           Boolean? @default(false)
+  Machine              Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model Role {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name           String   @unique
-  baseSalary     Decimal  @db.Decimal(18, 2)
-  monthlyHours   Int      @default(220)
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String           @unique
+  baseSalary     Decimal          @db.Decimal(18, 2)
+  monthlyHours   Int?             @default(220)
+  createdAt      DateTime?        @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime?        @default(now()) @updatedAt @db.Timestamptz(6)
   Employee       Employee[]
   ProductRouting ProductRouting[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
 }
 
 model Employee {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name           String
-  roleId         String   @db.Uuid
-  Role           Role     @relation(fields: [roleId], references: [id])
-  department     String
-  costCenter     String
-  classification String
-  salary         Decimal  @db.Decimal(18, 2)
-  monthlyHours   Int
-  productivity   Decimal  @default(100) @db.Decimal(5, 2)
-  status         String   @default("ACTIVE")
+  id                       String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                     String
+  roleId                   String                     @db.Uuid
+  department               String
+  costCenter               String
+  classification           String
+  salary                   Decimal                    @db.Decimal(18, 2)
+  monthlyHours             Int
+  productivity             Decimal?                   @default(100.00) @db.Decimal(5, 2)
+  status                   String?                    @default("ACTIVE")
+  createdAt                DateTime?                  @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
+  Role                     Role                       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   EmployeePayrollComponent EmployeePayrollComponent[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
 }
 
 model PayrollComponent {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name            String   @unique
+  id              String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String                     @unique
   type            String
   calculationType String
-  value           Decimal  @db.Decimal(18, 2)
+  value           Decimal                    @db.Decimal(18, 2)
+  createdAt       DateTime?                  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
   employees       EmployeePayrollComponent[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
 }
 
 model EmployeePayrollComponent {
-  employeeId       String   @db.Uuid
-  Employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  payrollComponentId String @db.Uuid
-  PayrollComponent PayrollComponent @relation(fields: [payrollComponentId], references: [id], onDelete: Cascade)
+  employeeId         String           @db.Uuid
+  payrollComponentId String           @db.Uuid
+  Employee           Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  PayrollComponent   PayrollComponent @relation(fields: [payrollComponentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([employeeId, payrollComponentId])
 }
 
-// --- Suprimentos ---
-
 model Material {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code             String   @unique
-  description      String
-  unit             String
-  category         String
-  supplier         String?
-  currentCost      Decimal  @db.Decimal(18, 2)
-  averageCost      Decimal  @db.Decimal(18, 2)
-  standardCost     Decimal  @db.Decimal(18, 2)
-  freight          Decimal  @default(0) @db.Decimal(18, 2)
-  standardLoss     Decimal  @default(0) @db.Decimal(5, 2)
-  conversionFactor Decimal  @default(1) @db.Decimal(10, 4)
-  status           String   @default("ACTIVE")
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                 String                 @unique
+  description          String
+  unit                 String
+  category             String
+  supplier             String?
+  currentCost          Decimal                @db.Decimal(18, 2)
+  averageCost          Decimal                @db.Decimal(18, 2)
+  standardCost         Decimal                @db.Decimal(18, 2)
+  freight              Decimal?               @default(0) @db.Decimal(18, 2)
+  standardLoss         Decimal?               @default(0) @db.Decimal(5, 2)
+  conversionFactor     Decimal?               @default(1) @db.Decimal(10, 4)
+  status               String?                @default("ACTIVE")
+  createdAt            DateTime?              @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   MaterialPriceHistory MaterialPriceHistory[]
   ProductBOM           ProductBOM[]
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
 }
 
 model MaterialPriceHistory {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  materialId   String   @db.Uuid
-  Material     Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
-  price        Decimal  @db.Decimal(18, 2)
-  freight      Decimal  @default(0) @db.Decimal(18, 2)
-  effectiveDate DateTime @default(now())
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId    String    @db.Uuid
+  price         Decimal   @db.Decimal(18, 2)
+  freight       Decimal?  @default(0) @db.Decimal(18, 2)
+  effectiveDate DateTime? @default(now()) @db.Timestamptz(6)
+  Material      Material  @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
-
-// --- Engenharia ---
 
 enum ItemType {
   PRODUCT
   COMPONENT
-  MATERIAL
 }
 
 model Product {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sku            String   @unique
-  name           String
-  description    String?
-  type           ItemType @default(PRODUCT)
-  version        String   @default("1.0.0")
-  status         String   @default("ACTIVE")
-  defaultLotSize Decimal  @default(1) @db.Decimal(18, 2)
-  
-  // BOM as Parent
-  ProductBOM           ProductBOM[] @relation("ParentProduct")
-  // BOM as Child (for components)
-  UsedInBOM            ProductBOM[] @relation("ChildProduct")
-  
-  ProductRouting       ProductRouting[]
-  CostCalculationLog   CostCalculationLog[]
-  ProductPricing       ProductPricing[]
-  ProposalItem         ProposalItem[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                                            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sku                                           String               @unique
+  name                                          String
+  description                                   String?
+  version                                       String?              @default("1.0.0")
+  status                                        String?              @default("ACTIVE")
+  defaultLotSize                                Decimal?             @default(1) @db.Decimal(18, 2)
+  createdAt                                     DateTime?            @default(now()) @db.Timestamptz(6)
+  updatedAt                                     DateTime?            @default(now()) @updatedAt @db.Timestamptz(6)
+  type                                          ItemType             @default(PRODUCT)
+  CostCalculationLog                            CostCalculationLog[]
+  ProductBOM_ProductBOM_childProductIdToProduct ProductBOM[]         @relation("ProductBOM_childProductIdToProduct")
+  ProductBOM                                    ProductBOM[]         @relation("ParentProduct")
+  ProductPricing                                ProductPricing[]
+  ProductRouting                                ProductRouting[]
+  ProposalItem                                  ProposalItem[]
+
+  @@index([type], map: "idx_Product_type")
 }
 
 model ProductBOM {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId      String   @db.Uuid
-  ParentProduct  Product  @relation("ParentProduct", fields: [productId], references: [id], onDelete: Cascade)
-  
-  materialId     String?  @db.Uuid
-  Material       Material? @relation(fields: [materialId], references: [id])
-  
-  childProductId String?  @db.Uuid
-  ChildProduct   Product? @relation("ChildProduct", fields: [childProductId], references: [id])
-  
-  quantity       Decimal  @db.Decimal(18, 4)
-  lossPercentage Decimal  @default(0) @db.Decimal(5, 2)
-  notes          String?
+  id                                         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId                                  String    @db.Uuid
+  materialId                                 String?   @db.Uuid
+  quantity                                   Decimal   @db.Decimal(18, 4)
+  lossPercentage                             Decimal?  @default(0) @db.Decimal(5, 2)
+  notes                                      String?
+  childProductId                             String?   @db.Uuid
+  Product_ProductBOM_childProductIdToProduct Product?  @relation("ProductBOM_childProductIdToProduct", fields: [childProductId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Material                                   Material? @relation(fields: [materialId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ParentProduct                              Product   @relation("ParentProduct", fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([childProductId], map: "idx_ProductBOM_childProductId")
+  @@index([productId], map: "idx_ProductBOM_productId")
 }
 
 model ProductRouting {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId         String   @db.Uuid
-  Product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sequence          Int
-  description       String?
-  machineId         String   @db.Uuid
-  Machine           Machine  @relation(fields: [machineId], references: [id])
-  roleId            String   @db.Uuid
-  Role              Role     @relation(fields: [roleId], references: [id])
-  setupTimeMin      Decimal  @default(0) @db.Decimal(10, 2)
-  operationTimeMin  Decimal  @default(0) @db.Decimal(10, 2)
-  efficiencyExpected Decimal  @default(100) @db.Decimal(5, 2)
-  notes             String?
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId          String   @db.Uuid
+  sequence           Int
+  description        String?
+  machineId          String   @db.Uuid
+  roleId             String   @db.Uuid
+  setupTimeMin       Decimal? @default(0) @db.Decimal(10, 2)
+  operationTimeMin   Decimal? @default(0) @db.Decimal(10, 2)
+  efficiencyExpected Decimal? @default(100) @db.Decimal(5, 2)
+  notes              String?
+  Machine            Machine  @relation(fields: [machineId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Role               Role     @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
-
-// --- Custos Indiretos e OPEX ---
 
 model IndirectCost {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  description       String
-  category          String
-  monthlyValue      Decimal  @db.Decimal(18, 2)
-  costCenter        String?
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  description        String
+  category           String
+  monthlyValue       Decimal   @db.Decimal(18, 2)
+  costCenter         String?
   allocationCriteria String
-  status            String   @default("ACTIVE")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  status             String?   @default("ACTIVE")
+  createdAt          DateTime? @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
-// --- Módulo Tributário ---
-
 model TaxRule {
-  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String         @unique
-  description String?
-  operation   String
-  status      String         @default("ACTIVE")
-  TaxComponent   TaxComponent[]
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String           @unique
+  description    String?
+  operation      String
+  status         String?          @default("ACTIVE")
+  createdAt      DateTime?        @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime?        @default(now()) @updatedAt @db.Timestamptz(6)
   ProductPricing ProductPricing[]
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  TaxComponent   TaxComponent[]
 }
 
 model TaxComponent {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  taxRuleId   String   @db.Uuid
-  TaxRule     TaxRule  @relation(fields: [taxRuleId], references: [id], onDelete: Cascade)
-  name        String
-  percentage  Decimal  @db.Decimal(5, 2)
-  isRecoverable Boolean @default(false)
-  baseType    String   @default("GROSS_PRICE")
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taxRuleId     String   @db.Uuid
+  name          String
+  percentage    Decimal  @db.Decimal(5, 2)
+  isRecoverable Boolean? @default(false)
+  baseType      String?  @default("GROSS_PRICE")
+  TaxRule       TaxRule  @relation(fields: [taxRuleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
-// --- Formação de Preço ---
-
 model ProductPricing {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId         String   @db.Uuid
-  Product           Product  @relation(fields: [productId], references: [id])
-  taxRuleId         String   @db.Uuid
-  TaxRule           TaxRule  @relation(fields: [taxRuleId], references: [id])
-  desiredMargin     Decimal  @default(15.0) @db.Decimal(5, 2)
-  commission        Decimal  @default(0.0) @db.Decimal(5, 2)
-  freightOut        Decimal  @default(0.0) @db.Decimal(18, 2)
-  otherVariables    Decimal  @default(0.0) @db.Decimal(5, 2)
-  status            String   @default("ACTIVE")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId      String    @db.Uuid
+  taxRuleId      String    @db.Uuid
+  desiredMargin  Decimal?  @default(15.0) @db.Decimal(5, 2)
+  commission     Decimal?  @default(0.0) @db.Decimal(5, 2)
+  freightOut     Decimal?  @default(0.0) @db.Decimal(18, 2)
+  otherVariables Decimal?  @default(0.0) @db.Decimal(5, 2)
+  status         String?   @default("ACTIVE")
+  createdAt      DateTime? @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
+  Product        Product   @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  TaxRule        TaxRule   @relation(fields: [taxRuleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([productId, taxRuleId])
 }
 
-// --- Módulo de Simulações ---
-
 model Simulation {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name              String
-  description       String?
-  productId         String   @db.Uuid
-  taxRuleId         String   @db.Uuid
-  materialAdj       Decimal  @default(0) @db.Decimal(5, 2)
-  laborAdj          Decimal  @default(0) @db.Decimal(5, 2)
-  indirectAdj       Decimal  @default(0) @db.Decimal(5, 2)
-  efficiencyAdj     Decimal  @default(0) @db.Decimal(5, 2)
-  marginAdj         Decimal  @default(0) @db.Decimal(5, 2)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  description   String?
+  productId     String    @db.Uuid
+  taxRuleId     String    @db.Uuid
+  materialAdj   Decimal?  @default(0) @db.Decimal(5, 2)
+  laborAdj      Decimal?  @default(0) @db.Decimal(5, 2)
+  indirectAdj   Decimal?  @default(0) @db.Decimal(5, 2)
+  efficiencyAdj Decimal?  @default(0) @db.Decimal(5, 2)
+  marginAdj     Decimal?  @default(0) @db.Decimal(5, 2)
+  createdAt     DateTime? @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
 // --- Módulo Comercial e Propostas ---
@@ -354,14 +336,17 @@ model ProposalItem {
 // --- Histórico de Cálculos ---
 
 model CostCalculationLog {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId      String   @db.Uuid
-  Product        Product  @relation(fields: [productId], references: [id])
-  calculatedAt   DateTime @default(now())
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId      String    @db.Uuid
+  calculatedAt   DateTime? @default(now()) @db.Timestamptz(6)
   versionTag     String?
-  totalCiu       Decimal  @db.Decimal(18, 2)
-  totalCfc       Decimal  @db.Decimal(18, 2)
-  totalCgt       Decimal  @db.Decimal(18, 2)
-  suggestedPrice Decimal  @db.Decimal(18, 2)
+  totalCiu       Decimal   @db.Decimal(18, 2)
+  totalCfc       Decimal   @db.Decimal(18, 2)
+  totalCgt       Decimal   @db.Decimal(18, 2)
+  suggestedPrice Decimal   @db.Decimal(18, 2)
   inputSnapshot  String
+  Product        Product   @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
+
+
+

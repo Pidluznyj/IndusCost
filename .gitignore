@@ -7,3 +7,5 @@ coverage/
 .env*
 !.env.example
 prisma/dev.db
+
+server.ts.bak.*

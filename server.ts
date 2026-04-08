@@ -607,8 +607,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       include: {
         ProductBOM: {
           include: {
-            Material: true,
-            ChildProduct: true
+            Material: true
           }
         }
       }
@@ -652,7 +651,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         ProductBOM: { 
           include: { 
             Material: true,
-            ChildProduct: true
+            Product_ProductBOM_childProductIdToProduct: true
           } 
         },
         ProductRouting: { include: { Machine: true, Role: true } },
@@ -670,7 +669,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         ProductBOM: { 
           include: { 
             Material: true,
-            ChildProduct: true
+            Product_ProductBOM_childProductIdToProduct: true
           } 
         },
         ProductRouting: { include: { Machine: true, Role: true } },
@@ -700,26 +699,33 @@ app.delete("/api/employees/:id", async (req, res) => {
         return res.status(409).json({ error: "SKU já existe.", code: "SKU_ALREADY_EXISTS" });
       }
 
-      // Validações de BOM
+      if (type === "MATERIAL") {
+        return res.status(400).json({ error: "Matérias-primas devem ser cadastradas no módulo de materiais." });
+      }
+
+      if ((type || "PRODUCT") === "PRODUCT" && (bom || []).length === 0) {
+        return res.status(400).json({ error: "Produto final deve possuir ao menos 1 componente." });
+      }
+
       for (const item of (bom || [])) {
         if (item.childProductId) {
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
-          if (!child) return res.status(400).json({ error: "Componente não encontrado." });
-          
-          if (type === "PRODUCT" && child.type !== "COMPONENT") {
-            return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
+          if (!child) {
+            return res.status(400).json({ error: "Componente não encontrado." });
           }
-          if (type === "MATERIAL") {
-            return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
-          }
-        }
-        if (item.materialId && type === "PRODUCT") {
-          return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
-        }
-      }
 
-      if (type === "MATERIAL" && (routing || []).length > 0) {
-        return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
+          if ((type || "PRODUCT") === "PRODUCT" && child.type !== "COMPONENT") {
+            return res.status(400).json({ error: "Produtos finais só aceitam componentes como filhos diretos." });
+          }
+        }
+
+        if (item.materialId && (type || "PRODUCT") === "PRODUCT") {
+          return res.status(400).json({ error: "Produtos finais não podem conter matérias-primas diretamente. Use componentes." });
+        }
+
+        if (!item.materialId && !item.childProductId) {
+          return res.status(400).json({ error: "Cada item da BOM deve ter materialId ou childProductId." });
+        }
       }
 
       const product = await prisma.product.create({
@@ -774,26 +780,37 @@ app.delete("/api/employees/:id", async (req, res) => {
         if (existing) return res.status(409).json({ error: "SKU já existe." });
       }
 
+      if (type === "MATERIAL") {
+        return res.status(400).json({ error: "Matérias-primas devem ser cadastradas no módulo de materiais." });
+      }
+
+      if ((type || "PRODUCT") === "PRODUCT" && (bom || []).length === 0) {
+        return res.status(400).json({ error: "Produto final deve possuir ao menos 1 componente." });
+      }
+
       for (const item of (bom || [])) {
         if (item.childProductId) {
           if (await checkBOMCycle(id, item.childProductId)) {
             return res.status(400).json({ error: "Ciclo detectado!" });
           }
-          const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
-          if (type === "PRODUCT" && child?.type !== "COMPONENT") {
-            return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
-          }
-          if (type === "MATERIAL") {
-            return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
-          }
-        }
-        if (item.materialId && type === "PRODUCT") {
-          return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
-        }
-      }
 
-      if (type === "MATERIAL" && (routing || []).length > 0) {
-        return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
+          const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
+          if (!child) {
+            return res.status(400).json({ error: "Componente não encontrado." });
+          }
+
+          if ((type || "PRODUCT") === "PRODUCT" && child.type !== "COMPONENT") {
+            return res.status(400).json({ error: "Produtos finais só aceitam componentes como filhos diretos." });
+          }
+        }
+
+        if (item.materialId && (type || "PRODUCT") === "PRODUCT") {
+          return res.status(400).json({ error: "Produtos finais não podem conter matérias-primas diretamente. Use componentes." });
+        }
+
+        if (!item.materialId && !item.childProductId) {
+          return res.status(400).json({ error: "Cada item da BOM deve ter materialId ou childProductId." });
+        }
       }
 
       const product = await prisma.$transaction(async (tx) => {
@@ -805,14 +822,14 @@ app.delete("/api/employees/:id", async (req, res) => {
             sku: normalizedSku || sku,
             name,
             description,
-            type,
+            type: type || "PRODUCT",
             version,
             defaultLotSize,
             ProductBOM: {
               create: (bom || []).map((item: any) => ({
                 materialId: item.materialId,
                 childProductId: item.childProductId,
-                quantity: item.quantity,
+                  quantity: item.quantity,
                 lossPercentage: item.lossPercentage,
                 notes: item.notes,
               }))
