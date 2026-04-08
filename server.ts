@@ -4,6 +4,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./src/lib/prisma.js";
+import multer from "multer";
+import { ServerImporter } from "./src/lib/importer/serverImporter.js";
+import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -491,6 +496,73 @@ app.delete("/api/employees/:id", async (req, res) => {
 });
 
   // --- API: Materials (Matérias-Primas e Insumos) ---
+  app.get("/api/materials/import/template", (req, res) => {
+    try {
+      const buffer = ServerImporter.generateTemplate(MaterialImportConfig);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=template_materiais.xlsx");
+      res.send(buffer);
+    } catch (error) {
+      console.error("Template generation error:", error);
+      res.status(500).json({ error: "Erro ao gerar template" });
+    }
+  });
+
+  app.post("/api/materials/import/preview", upload.single("file"), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
+    try {
+      const result = await ServerImporter.parseExcel(req.file.buffer, MaterialImportConfig);
+      res.json(result);
+    } catch (error) {
+      console.error("Import preview error:", error);
+      res.status(500).json({ error: "Erro ao processar planilha" });
+    }
+  });
+
+  app.post("/api/materials/import/confirm", async (req, res) => {
+    const { data } = req.body;
+    if (!Array.isArray(data)) return res.status(400).json({ error: "Dados inválidos" });
+
+    try {
+      const codes = data.map(d => d.code);
+      const existing = await prisma.material.findMany({
+        where: { code: { in: codes } },
+        select: { code: true }
+      });
+      const existingCodes = new Set(existing.map(e => e.code));
+
+      const toCreate = data.filter(d => !existingCodes.has(d.code));
+      
+      if (toCreate.length > 0) {
+        await prisma.material.createMany({
+          data: toCreate.map(d => ({
+            code: d.code,
+            description: d.description,
+            unit: d.unit,
+            category: d.category,
+            supplier: d.supplier || null,
+            currentCost: d.currentCost || 0,
+            averageCost: d.averageCost || 0,
+            standardCost: d.standardCost || 0,
+            freight: d.freight || 0,
+            standardLoss: d.standardLoss || 0,
+            conversionFactor: d.conversionFactor || 1,
+            status: d.status || "ACTIVE"
+          }))
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        count: toCreate.length,
+        skipped: existingCodes.size 
+      });
+    } catch (error) {
+      console.error("Import confirm error:", error);
+      res.status(500).json({ error: "Erro ao salvar dados no banco" });
+    }
+  });
+
   app.get("/api/materials", async (req, res) => {
     const materials = await prisma.material.findMany({
       include: { MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 5 } },
@@ -607,7 +679,8 @@ app.delete("/api/employees/:id", async (req, res) => {
       include: {
         ProductBOM: {
           include: {
-            Material: true
+            Material: true,
+            ChildProduct: true
           }
         }
       }
@@ -651,7 +724,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         ProductBOM: { 
           include: { 
             Material: true,
-            Product_ProductBOM_childProductIdToProduct: true
+            ChildProduct: true
           } 
         },
         ProductRouting: { include: { Machine: true, Role: true } },
@@ -669,7 +742,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         ProductBOM: { 
           include: { 
             Material: true,
-            Product_ProductBOM_childProductIdToProduct: true
+            ChildProduct: true
           } 
         },
         ProductRouting: { include: { Machine: true, Role: true } },
@@ -699,33 +772,26 @@ app.delete("/api/employees/:id", async (req, res) => {
         return res.status(409).json({ error: "SKU já existe.", code: "SKU_ALREADY_EXISTS" });
       }
 
-      if (type === "MATERIAL") {
-        return res.status(400).json({ error: "Matérias-primas devem ser cadastradas no módulo de materiais." });
-      }
-
-      if ((type || "PRODUCT") === "PRODUCT" && (bom || []).length === 0) {
-        return res.status(400).json({ error: "Produto final deve possuir ao menos 1 componente." });
-      }
-
+      // Validações de BOM
       for (const item of (bom || [])) {
         if (item.childProductId) {
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
-          if (!child) {
-            return res.status(400).json({ error: "Componente não encontrado." });
+          if (!child) return res.status(400).json({ error: "Componente não encontrado." });
+          
+          if (type === "PRODUCT" && child.type !== "COMPONENT") {
+            return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
           }
-
-          if ((type || "PRODUCT") === "PRODUCT" && child.type !== "COMPONENT") {
-            return res.status(400).json({ error: "Produtos finais só aceitam componentes como filhos diretos." });
+          if (type === "MATERIAL") {
+            return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
           }
         }
-
-        if (item.materialId && (type || "PRODUCT") === "PRODUCT") {
-          return res.status(400).json({ error: "Produtos finais não podem conter matérias-primas diretamente. Use componentes." });
+        if (item.materialId && type === "PRODUCT") {
+          return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
         }
+      }
 
-        if (!item.materialId && !item.childProductId) {
-          return res.status(400).json({ error: "Cada item da BOM deve ter materialId ou childProductId." });
-        }
+      if (type === "MATERIAL" && (routing || []).length > 0) {
+        return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
       }
 
       const product = await prisma.product.create({
@@ -780,37 +846,26 @@ app.delete("/api/employees/:id", async (req, res) => {
         if (existing) return res.status(409).json({ error: "SKU já existe." });
       }
 
-      if (type === "MATERIAL") {
-        return res.status(400).json({ error: "Matérias-primas devem ser cadastradas no módulo de materiais." });
-      }
-
-      if ((type || "PRODUCT") === "PRODUCT" && (bom || []).length === 0) {
-        return res.status(400).json({ error: "Produto final deve possuir ao menos 1 componente." });
-      }
-
       for (const item of (bom || [])) {
         if (item.childProductId) {
           if (await checkBOMCycle(id, item.childProductId)) {
             return res.status(400).json({ error: "Ciclo detectado!" });
           }
-
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
-          if (!child) {
-            return res.status(400).json({ error: "Componente não encontrado." });
+          if (type === "PRODUCT" && child?.type !== "COMPONENT") {
+            return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
           }
-
-          if ((type || "PRODUCT") === "PRODUCT" && child.type !== "COMPONENT") {
-            return res.status(400).json({ error: "Produtos finais só aceitam componentes como filhos diretos." });
+          if (type === "MATERIAL") {
+            return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
           }
         }
-
-        if (item.materialId && (type || "PRODUCT") === "PRODUCT") {
-          return res.status(400).json({ error: "Produtos finais não podem conter matérias-primas diretamente. Use componentes." });
+        if (item.materialId && type === "PRODUCT") {
+          return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
         }
+      }
 
-        if (!item.materialId && !item.childProductId) {
-          return res.status(400).json({ error: "Cada item da BOM deve ter materialId ou childProductId." });
-        }
+      if (type === "MATERIAL" && (routing || []).length > 0) {
+        return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
       }
 
       const product = await prisma.$transaction(async (tx) => {
@@ -822,14 +877,14 @@ app.delete("/api/employees/:id", async (req, res) => {
             sku: normalizedSku || sku,
             name,
             description,
-            type: type || "PRODUCT",
+            type,
             version,
             defaultLotSize,
             ProductBOM: {
               create: (bom || []).map((item: any) => ({
                 materialId: item.materialId,
                 childProductId: item.childProductId,
-                  quantity: item.quantity,
+                quantity: item.quantity,
                 lossPercentage: item.lossPercentage,
                 notes: item.notes,
               }))
@@ -1191,29 +1246,14 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     const lotSize = Number(product.defaultLotSize) || 1;
 
-    // 1. Materiais / Componentes
-    const materialItems = await Promise.all(product.ProductBOM.map(async (item) => {
-      const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage || 0) / 100));
-
-      if (item.Material) {
-        const mat = item.Material;
-        const landedCost = Number(mat.currentCost || 0) + Number(mat.freight || 0);
-        const stdLoss = Number(mat.standardLoss || 0);
-        const matEffectiveCost = landedCost / (1 - (stdLoss / 100));
-        return { unitCost: matEffectiveCost * requiredQty };
-      }
-
-      if (item.childProductId) {
-        const childAnalysis = await getProductCostAnalysis(item.childProductId);
-        if (!childAnalysis) {
-          throw new Error(`Componente filho não encontrado no cálculo: ${item.childProductId}`);
-        }
-        const childUnitCost = Number((childAnalysis as any).ciu || 0);
-        return { unitCost: childUnitCost * requiredQty };
-      }
-
-      return { unitCost: 0 };
-    }));
+    // 1. Materiais
+    const materialItems = product.ProductBOM.map((item) => {
+      const mat = item.Material;
+      const landedCost = Number(mat.currentCost) + Number(mat.freight);
+      const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
+      const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
+      return { unitCost: matEffectiveCost * requiredQty };
+    });
     const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
 
     // 2. Operações

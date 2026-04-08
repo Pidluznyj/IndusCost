@@ -19,12 +19,15 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { Material, CreateMaterialInput } from "@/src/types/material";
 import { motion } from "motion/react";
+import { DataImportDialog } from "./shared/DataImportDialog";
+import { MaterialImportConfig } from "../lib/importer/MaterialConfig";
 
 export const MaterialModule = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Material | null>(null);
 
@@ -151,6 +154,13 @@ export const MaterialModule = () => {
         </div>
         <div className="flex items-center gap-2">
           <button 
+            onClick={() => setIsImportOpen(true)}
+            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Download className="h-4 w-4" />
+            Importar
+          </button>
+          <button 
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
           >
@@ -159,6 +169,17 @@ export const MaterialModule = () => {
           </button>
         </div>
       </div>
+
+      {/* Import Dialog */}
+      <DataImportDialog 
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onSuccess={fetchData}
+        config={MaterialImportConfig}
+        templateUrl="/api/materials/import/template"
+        previewUrl="/api/materials/import/preview"
+        confirmUrl="/api/materials/import/confirm"
+      />
 
       {/* Table */}
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
