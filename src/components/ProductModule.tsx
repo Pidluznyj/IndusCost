@@ -22,12 +22,15 @@ import {
   Box,
   FileText,
   History,
-  CheckCircle2
+  CheckCircle2,
+  Download
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting } from "@/src/types/product";
 import { Material } from "@/src/types/material";
 import { motion, AnimatePresence } from "motion/react";
+import { DataImportDialog } from "./shared/DataImportDialog";
+import { ProductImportConfig } from "../lib/importer/ProductConfig";
 
 /* -------------------------------------------------------------------------- */
 /*                                Sub-Components                              */
@@ -60,6 +63,7 @@ export const ProductModule = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
   const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost">("info");
 
@@ -300,6 +304,13 @@ export const ProductModule = () => {
         </div>
         <div className="flex items-center gap-2">
           <button 
+            onClick={() => setIsImportOpen(true)}
+            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Download className="h-4 w-4" />
+            Importar
+          </button>
+          <button 
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
           >
@@ -308,6 +319,17 @@ export const ProductModule = () => {
           </button>
         </div>
       </div>
+
+      {/* Import Dialog */}
+      <DataImportDialog 
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onSuccess={fetchData}
+        config={ProductImportConfig}
+        templateUrl="/api/products/import/template"
+        previewUrl="/api/products/import/preview"
+        confirmUrl="/api/products/import/confirm"
+      />
 
       {/* Table */}
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">

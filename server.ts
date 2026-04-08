@@ -7,6 +7,7 @@ import { prisma } from "./src/lib/prisma.js";
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
 import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
+import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -718,6 +719,130 @@ app.delete("/api/employees/:id", async (req, res) => {
   }
 
   // --- API: Products (Engenharia / BOM / Routing) ---
+  // --- API: Products Import ---
+  app.get("/api/products/import/template", (req, res) => {
+    try {
+      const buffer = ServerImporter.generateTemplateMulti(EngineeringImportConfigs);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=template_engenharia.xlsx");
+      res.send(buffer);
+    } catch (error) {
+      console.error("Template generation error:", error);
+      res.status(500).json({ error: "Erro ao gerar template" });
+    }
+  });
+
+  app.post("/api/products/import/preview", upload.single("file"), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
+    try {
+      const results = await ServerImporter.parseExcelMulti(req.file.buffer, EngineeringImportConfigs);
+      
+      const cadastro = results["CADASTRO"];
+      const estrutura = results["ESTRUTURA"];
+      
+      const fileSkus = new Set(cadastro.data.map(d => d.sku));
+      
+      // Cross-sheet validation
+      estrutura.data.forEach((item, idx) => {
+        const rowNum = idx + 2;
+        const parentInFile = cadastro.data.find(d => d.sku === item.parentSku);
+        
+        if (parentInFile && parentInFile.type === "PRODUCT" && item.childType === "MATERIAL") {
+          estrutura.errors.push({
+            row: rowNum,
+            column: "Tipo Filho",
+            message: "Produtos finais não podem receber materiais diretamente. Use componentes."
+          });
+          estrutura.invalidRows++;
+          estrutura.validRows--;
+        }
+      });
+
+      res.json(results);
+    } catch (error) {
+      console.error("Import preview error:", error);
+      res.status(500).json({ error: "Erro ao processar planilha" });
+    }
+  });
+
+  app.post("/api/products/import/confirm", async (req, res) => {
+    const { cadastro, estrutura } = req.body;
+    
+    try {
+      // 1. Create Products/Components
+      const skus = cadastro.map((d: any) => d.sku);
+      const existing = await prisma.product.findMany({
+        where: { sku: { in: skus } },
+        select: { sku: true }
+      });
+      const existingSkus = new Set(existing.map(e => e.sku));
+      const toCreate = cadastro.filter((d: any) => !existingSkus.has(d.sku));
+
+      if (toCreate.length > 0) {
+        await prisma.product.createMany({
+          data: toCreate.map((d: any) => ({
+            sku: d.sku,
+            name: d.name,
+            description: d.description || null,
+            type: d.type,
+            version: d.version || "1.0.0",
+            defaultLotSize: d.defaultLotSize || 1,
+            status: d.status || "ACTIVE"
+          }))
+        });
+      }
+
+      // 2. Create BOMs
+      const allSkus = [...new Set([...skus, ...estrutura.map((e: any) => e.parentSku), ...estrutura.filter((e: any) => e.childType === "COMPONENT").map((e: any) => e.childIdentifier)])];
+      const products = await prisma.product.findMany({
+        where: { sku: { in: allSkus as string[] } },
+        select: { id: true, sku: true }
+      });
+      const skuToId = new Map(products.map(p => [p.sku, p.id]));
+
+      const materials = await prisma.material.findMany({
+        where: { code: { in: estrutura.filter((e: any) => e.childType === "MATERIAL").map((e: any) => e.childIdentifier) } },
+        select: { id: true, code: true }
+      });
+      const matCodeToId = new Map(materials.map(m => [m.code, m.id]));
+
+      const bomData = [];
+      for (const item of estrutura) {
+        const parentId = skuToId.get(item.parentSku);
+        if (!parentId) continue;
+
+        let materialId = null;
+        let childProductId = null;
+
+        if (item.childType === "MATERIAL") {
+          materialId = matCodeToId.get(item.childIdentifier);
+        } else {
+          childProductId = skuToId.get(item.childIdentifier);
+        }
+
+        if (materialId || childProductId) {
+          bomData.push({
+            productId: parentId,
+            materialId,
+            childProductId,
+            quantity: item.quantity,
+            lossPercentage: item.lossPercentage || 0,
+            notes: item.notes || null
+          });
+        }
+      }
+
+      if (bomData.length > 0) {
+        await prisma.productBOM.createMany({ data: bomData });
+      }
+
+      res.json({ success: true, productsCreated: toCreate.length, bomCreated: bomData.length });
+    } catch (error) {
+      console.error("Import confirm error:", error);
+      res.status(500).json({ error: "Erro ao salvar dados" });
+    }
+  });
+
   app.get("/api/products", async (req, res) => {
     const products = await prisma.product.findMany({
       include: {

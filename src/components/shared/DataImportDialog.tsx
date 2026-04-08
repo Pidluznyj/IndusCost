@@ -38,8 +38,9 @@ export const DataImportDialog = ({
   const [step, setStep] = useState<"upload" | "preview" | "success">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [previewData, setPreviewData] = useState<ImportResult<any> | null>(null);
-  const [importResult, setImportResult] = useState<{ count: number; skipped: number } | null>(null);
+  const [previewData, setPreviewData] = useState<ImportResult<any> | Record<string, ImportResult<any>> | null>(null);
+  const [activeSheet, setActiveSheet] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<{ count?: number; skipped?: number; productsCreated?: number; bomCreated?: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,6 +62,9 @@ export const DataImportDialog = ({
       });
       const data = await res.json();
       setPreviewData(data);
+      if (data && !data.data && typeof data === "object") {
+        setActiveSheet(Object.keys(data)[0]);
+      }
       setStep("preview");
     } catch (error) {
       console.error("Upload error:", error);
@@ -70,14 +74,20 @@ export const DataImportDialog = ({
   };
 
   const handleConfirm = async () => {
-    if (!previewData || previewData.data.length === 0) return;
+    if (!previewData) return;
+    
+    const isMulti = !("data" in previewData);
+    const payload = isMulti 
+      ? Object.entries(previewData as Record<string, ImportResult<any>>).reduce((acc, [k, v]) => ({ ...acc, [k.toLowerCase()]: v.data }), {})
+      : { data: (previewData as ImportResult<any>).data };
+
     setLoading(true);
 
     try {
       const res = await fetch(confirmUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: previewData.data })
+        body: JSON.stringify(payload)
       });
       const result = await res.json();
       setImportResult(result);
@@ -94,10 +104,19 @@ export const DataImportDialog = ({
     setStep("upload");
     setFile(null);
     setPreviewData(null);
+    setActiveSheet(null);
     setImportResult(null);
   };
 
   if (!isOpen) return null;
+
+  const currentPreview = activeSheet && previewData && !("data" in previewData) 
+    ? (previewData as Record<string, ImportResult<any>>)[activeSheet] 
+    : (previewData as ImportResult<any>);
+
+  const totalValidRows = previewData && !("data" in previewData)
+    ? Object.values(previewData as Record<string, ImportResult<any>>).reduce((acc, v) => acc + v.validRows, 0)
+    : (previewData as ImportResult<any>)?.validRows || 0;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
@@ -207,7 +226,7 @@ export const DataImportDialog = ({
               </motion.div>
             )}
 
-            {step === "preview" && previewData && (
+            {step === "preview" && currentPreview && (
               <motion.div 
                 key="preview"
                 initial={{ opacity: 0, x: 20 }}
@@ -223,27 +242,47 @@ export const DataImportDialog = ({
                   <div className="flex items-center gap-4">
                     <div className="text-center">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase">Total</p>
-                      <p className="text-sm font-bold">{previewData.totalRows}</p>
+                      <p className="text-sm font-bold">{currentPreview.totalRows}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-[10px] font-bold text-green-600 uppercase">Válidos</p>
-                      <p className="text-sm font-bold text-green-600">{previewData.validRows}</p>
+                      <p className="text-sm font-bold text-green-600">{currentPreview.validRows}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-[10px] font-bold text-red-600 uppercase">Erros</p>
-                      <p className="text-sm font-bold text-red-600">{previewData.invalidRows}</p>
+                      <p className="text-sm font-bold text-red-600">{currentPreview.invalidRows}</p>
                     </div>
                   </div>
                 </div>
 
-                {previewData.errors.length > 0 && (
+                {/* Sheet Tabs */}
+                {activeSheet && previewData && !("data" in previewData) && (
+                  <div className="flex items-center gap-2 border-b border-border">
+                    {Object.keys(previewData as Record<string, ImportResult<any>>).map(sheet => (
+                      <button
+                        key={sheet}
+                        onClick={() => setActiveSheet(sheet)}
+                        className={cn(
+                          "px-4 py-2 text-xs font-bold border-b-2 transition-all",
+                          activeSheet === sheet 
+                            ? "border-primary text-primary bg-primary/5" 
+                            : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                        )}
+                      >
+                        {sheet} ({ (previewData as Record<string, ImportResult<any>>)[sheet].validRows })
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {currentPreview.errors.length > 0 && (
                   <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 space-y-2">
                     <p className="text-xs font-bold text-red-600 flex items-center gap-2">
                       <AlertCircle className="h-3 w-3" />
-                      Erros Encontrados ({previewData.errors.length})
+                      Erros Encontrados ({currentPreview.errors.length})
                     </p>
                     <div className="max-h-32 overflow-y-auto space-y-1">
-                      {previewData.errors.map((err, i) => (
+                      {currentPreview.errors.map((err, i) => (
                         <p key={i} className="text-[10px] text-red-500">
                           Linha {err.row}: {err.column ? `[${err.column}] ` : ""}{err.message}
                         </p>
@@ -257,34 +296,35 @@ export const DataImportDialog = ({
                     <table className="w-full text-left text-xs border-collapse">
                       <thead className="sticky top-0 bg-accent z-10">
                         <tr>
-                          {config.columns.map(col => (
-                            <th key={col.key} className="p-2 font-bold border-b border-border">{col.label}</th>
+                          {/* Use keys from the first row of data if available, or fallback to config if it matches activeSheet */}
+                          {Object.keys(currentPreview.data[0] || {}).map(key => (
+                            <th key={key} className="p-2 font-bold border-b border-border uppercase">{key}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {previewData.data.slice(0, 50).map((row, i) => (
+                        {currentPreview.data.slice(0, 50).map((row, i) => (
                           <tr key={i} className="hover:bg-accent/30">
-                            {config.columns.map(col => (
-                              <td key={col.key} className="p-2">{row[col.key]}</td>
+                            {Object.keys(row).map(key => (
+                              <td key={key} className="p-2">{String(row[key])}</td>
                             ))}
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  {previewData.data.length > 50 && (
+                  {currentPreview.data.length > 50 && (
                     <div className="p-2 text-center bg-accent/20 text-[10px] text-muted-foreground">
-                      Mostrando apenas as primeiras 50 linhas de {previewData.data.length}
+                      Mostrando apenas as primeiras 50 linhas de {currentPreview.data.length}
                     </div>
                   )}
                 </div>
 
-                {previewData.validRows === 0 && (
+                {currentPreview.validRows === 0 && (
                   <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center gap-3">
                     <AlertTriangle className="h-5 w-5 text-orange-500" />
                     <p className="text-xs text-orange-600 font-medium">
-                      Nenhuma linha válida encontrada para importação. Verifique os erros acima.
+                      Nenhuma linha válida encontrada nesta aba. Verifique os erros acima.
                     </p>
                   </div>
                 )}
@@ -306,14 +346,29 @@ export const DataImportDialog = ({
                   <p className="text-muted-foreground">Os dados foram processados com sucesso.</p>
                 </div>
                 <div className="flex items-center justify-center gap-8">
-                  <div className="text-center">
-                    <p className="text-xs font-bold text-muted-foreground uppercase">Importados</p>
-                    <p className="text-3xl font-black text-primary">{importResult.count}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs font-bold text-muted-foreground uppercase">Ignorados (Duplicados)</p>
-                    <p className="text-3xl font-black text-orange-500">{importResult.skipped}</p>
-                  </div>
+                  {importResult.productsCreated !== undefined ? (
+                    <>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Itens Criados</p>
+                        <p className="text-3xl font-black text-primary">{importResult.productsCreated}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Linhas de Estrutura</p>
+                        <p className="text-3xl font-black text-orange-500">{importResult.bomCreated}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Importados</p>
+                        <p className="text-3xl font-black text-primary">{importResult.count}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Ignorados</p>
+                        <p className="text-3xl font-black text-orange-500">{importResult.skipped}</p>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <button 
                   onClick={onClose}
@@ -347,12 +402,12 @@ export const DataImportDialog = ({
                 </button>
               ) : (
                 <button 
-                  disabled={!previewData || previewData.validRows === 0 || loading}
+                  disabled={!previewData || totalValidRows === 0 || loading}
                   onClick={handleConfirm}
                   className="flex items-center gap-2 bg-green-600 text-white px-8 py-2 rounded-lg font-bold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Confirmar Importação ({previewData?.validRows})
+                  Confirmar Importação ({totalValidRows})
                 </button>
               )}
             </div>
