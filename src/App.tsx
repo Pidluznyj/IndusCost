@@ -2,12 +2,15 @@ import React, { useState } from "react";
 import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
+import { MachineModule } from "./components/MachineModule";
 import { MaterialModule } from "./components/MaterialModule";
 import { ProductModule } from "./components/ProductModule";
 import { IndirectCostModule } from "./components/IndirectCostModule";
 import { TaxModule } from "./components/TaxModule";
 import { PricingModule } from "./components/PricingModule";
 import { SimulationModule } from "./components/SimulationModule";
+import { SettingsModule } from "./components/SettingsModule";
+import { ReportsModule } from "./components/ReportsModule";
 import { 
   TrendingUp, 
   Users, 
@@ -47,6 +50,16 @@ export default function App() {
             <p className="text-muted-foreground">Gestão de pessoas e custos de mão de obra direta.</p>
           </div>
           <EmployeeModule />
+        </div>
+      )}
+
+      {activeTab === "machines" && (
+        <div className="space-y-8">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-3xl font-bold tracking-tight">Centro de Trabalho (Máquinas)</h2>
+            <p className="text-muted-foreground">Gestão de ativos produtivos e custos de depreciação/operação.</p>
+          </div>
+          <MachineModule />
         </div>
       )}
 
@@ -107,6 +120,26 @@ export default function App() {
             <p className="text-muted-foreground">Analise o impacto de variações de mercado e eficiência.</p>
           </div>
           <SimulationModule />
+        </div>
+      )}
+
+      {activeTab === "reports" && (
+        <div className="space-y-8">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-3xl font-bold tracking-tight">Relatórios e BI</h2>
+            <p className="text-muted-foreground">Analise indicadores e exporte dados estratégicos.</p>
+          </div>
+          <ReportsModule />
+        </div>
+      )}
+
+      {activeTab === "settings" && (
+        <div className="space-y-8">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-3xl font-bold tracking-tight">Configurações do Sistema</h2>
+            <p className="text-muted-foreground">Gerencie cargos, encargos e parâmetros globais.</p>
+          </div>
+          <SettingsModule />
         </div>
       )}
     </Layout>

@@ -147,6 +147,63 @@ async function startServer() {
     res.json(role);
   });
 
+  // --- API: Machines (Máquinas e Centros de Trabalho) ---
+  app.get("/api/machines", async (req, res) => {
+    const machines = await prisma.machine.findMany({
+      include: { MachineCostComponent: true },
+      orderBy: { code: "asc" },
+    });
+    res.json(machines);
+  });
+
+  app.post("/api/machines", async (req, res) => {
+    const { code, name, acquisitionValue, residualValue, usefulLifeMonths, components } = req.body;
+    const machine = await prisma.machine.create({
+      data: {
+        code,
+        name,
+        acquisitionValue,
+        residualValue,
+        usefulLifeMonths,
+        MachineCostComponent: {
+          create: (components || []).map((c: any) => ({
+            name: c.name,
+            monthlyEstimatedCost: c.monthlyEstimatedCost,
+          }))
+        }
+      },
+      include: { MachineCostComponent: true }
+    });
+    res.json(machine);
+  });
+
+  app.put("/api/machines/:id", async (req, res) => {
+    const { id } = req.params;
+    const { code, name, acquisitionValue, residualValue, usefulLifeMonths, components } = req.body;
+
+    const machine = await prisma.$transaction(async (tx) => {
+      await tx.machineCostComponent.deleteMany({ where: { machineId: id } });
+      return await tx.machine.update({
+        where: { id },
+        data: {
+          code,
+          name,
+          acquisitionValue,
+          residualValue,
+          usefulLifeMonths,
+          MachineCostComponent: {
+            create: (components || []).map((c: any) => ({
+              name: c.name,
+              monthlyEstimatedCost: c.monthlyEstimatedCost,
+            }))
+          }
+        },
+        include: { MachineCostComponent: true }
+      });
+    });
+    res.json(machine);
+  });
+
   // --- API: Payroll Components ---
   app.get("/api/payroll-components", async (req, res) => {
     const components = await prisma.payrollComponent.findMany({
