@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./src/lib/prisma.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -147,6 +148,22 @@ async function startServer() {
     res.json(role);
   });
 
+  app.put("/api/roles/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name, baseSalary, monthlyHours } = req.body;
+    const role = await prisma.role.update({
+      where: { id },
+      data: { name, baseSalary, monthlyHours },
+    });
+    res.json(role);
+  });
+
+  app.delete("/api/roles/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.role.delete({ where: { id } });
+    res.json({ success: true });
+  });
+
   // --- API: Machines (Máquinas e Centros de Trabalho) ---
   app.get("/api/machines", async (req, res) => {
     const machines = await prisma.machine.findMany({
@@ -204,6 +221,12 @@ async function startServer() {
     res.json(machine);
   });
 
+  app.delete("/api/machines/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.machine.delete({ where: { id } });
+    res.json({ success: true });
+  });
+
   // --- API: Payroll Components ---
   app.get("/api/payroll-components", async (req, res) => {
     const components = await prisma.payrollComponent.findMany({
@@ -218,6 +241,22 @@ async function startServer() {
       data: { name, type, calculationType, value },
     });
     res.json(component);
+  });
+
+  app.put("/api/payroll-components/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name, type, calculationType, value } = req.body;
+    const component = await prisma.payrollComponent.update({
+      where: { id },
+      data: { name, type, calculationType, value },
+    });
+    res.json(component);
+  });
+
+  app.delete("/api/payroll-components/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.payrollComponent.delete({ where: { id } });
+    res.json({ success: true });
   });
 
   
@@ -445,6 +484,12 @@ app.put("/api/employees/:id", async (req, res) => {
   }
 });
 
+app.delete("/api/employees/:id", async (req, res) => {
+  const { id } = req.params;
+  await prisma.employee.delete({ where: { id } });
+  res.json({ success: true });
+});
+
   // --- API: Materials (Matérias-Primas e Insumos) ---
   app.get("/api/materials", async (req, res) => {
     const materials = await prisma.material.findMany({
@@ -531,6 +576,12 @@ app.put("/api/employees/:id", async (req, res) => {
     res.json(material);
   });
 
+  app.delete("/api/materials/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.material.delete({ where: { id } });
+    res.json({ success: true });
+  });
+
   // --- API: Products (Engenharia / BOM / Routing) ---
   app.get("/api/products", async (req, res) => {
     const products = await prisma.product.findMany({
@@ -558,54 +609,35 @@ app.put("/api/employees/:id", async (req, res) => {
   app.post("/api/products", async (req, res) => {
     const { sku, name, description, version, defaultLotSize, bom, routing } = req.body;
 
-    const product = await prisma.product.create({
-      data: {
-        sku,
-        name,
-        description,
-        version,
-        defaultLotSize,
-        ProductBOM: {
-          create: (bom || []).map((item: any) => ({
-            materialId: item.materialId,
-            quantity: item.quantity,
-            lossPercentage: item.lossPercentage,
-            notes: item.notes,
-          }))
-        },
-        ProductRouting: {
-          create: (routing || []).map((step: any) => ({
-            sequence: step.sequence,
-            description: step.description,
-            machineId: step.machineId,
-            roleId: step.roleId,
-            setupTimeMin: step.setupTimeMin,
-            operationTimeMin: step.operationTimeMin,
-            efficiencyExpected: step.efficiencyExpected,
-            notes: step.notes,
-          }))
-        }
-      },
-      include: { ProductBOM: true, ProductRouting: true }
-    });
-    res.json(product);
-  });
+    // Normalização do SKU: trim e uppercase para evitar duplicatas por grafia
+    const normalizedSku = sku?.toString().trim().toUpperCase();
 
-  app.put("/api/products/:id", async (req, res) => {
-    const { id } = req.params;
-    const { sku, name, description, version, defaultLotSize, bom, routing } = req.body;
+    if (!normalizedSku) {
+      return res.status(400).json({ error: "O SKU é obrigatório para o cadastro do produto." });
+    }
 
-    // Transação para atualizar tudo
-    const product = await prisma.$transaction(async (tx) => {
-      // 1. Limpar BOM e Routing antigos
-      await tx.productBOM.deleteMany({ where: { productId: id } });
-      await tx.productRouting.deleteMany({ where: { productId: id } });
+    try {
+      // 1. Verificação proativa antes da tentativa de criação
+      const existing = await prisma.product.findUnique({
+        where: { sku: normalizedSku }
+      });
 
-      // 2. Atualizar Produto e recriar relações
-      return await tx.product.update({
-        where: { id },
+      if (existing) {
+        return res.status(409).json({
+          error: "Já existe um produto cadastrado com este SKU.",
+          code: "SKU_ALREADY_EXISTS",
+          action: "Verifique na lista de produtos se este item já foi cadastrado anteriormente (talvez com espaços ou letras minúsculas). Se for um novo produto, utilize um SKU diferente.",
+          existingProduct: {
+            id: existing.id,
+            sku: existing.sku,
+            name: existing.name
+          }
+        });
+      }
+
+      const product = await prisma.product.create({
         data: {
-          sku,
+          sku: normalizedSku,
           name,
           description,
           version,
@@ -633,9 +665,130 @@ app.put("/api/employees/:id", async (req, res) => {
         },
         include: { ProductBOM: true, ProductRouting: true }
       });
-    });
+      res.json(product);
+    } catch (error) {
+      // 2. Tratamento de erro de concorrência (Unique constraint violation)
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existing = await prisma.product.findUnique({
+          where: { sku: normalizedSku }
+        });
+        
+        return res.status(409).json({
+          error: "Conflito de SKU detectado durante o processamento.",
+          code: "SKU_ALREADY_EXISTS",
+          action: "Este SKU pode ter sido registrado por outro usuário ou em uma tentativa simultânea. Verifique a lista de produtos.",
+          existingProduct: existing ? {
+            id: existing.id,
+            sku: existing.sku,
+            name: existing.name
+          } : undefined
+        });
+      }
+      
+      console.error("Product creation error:", error);
+      res.status(500).json({ error: "Erro interno ao processar o cadastro do produto." });
+    }
+  });
 
-    res.json(product);
+  app.put("/api/products/:id", async (req, res) => {
+    const { id } = req.params;
+    const { sku, name, description, version, defaultLotSize, bom, routing } = req.body;
+
+    const normalizedSku = sku?.toString().trim().toUpperCase();
+
+    try {
+      if (normalizedSku) {
+        const existing = await prisma.product.findFirst({
+          where: { 
+            sku: normalizedSku,
+            id: { not: id }
+          }
+        });
+
+        if (existing) {
+          return res.status(409).json({
+            error: "Conflito de SKU ao atualizar o produto.",
+            code: "SKU_ALREADY_EXISTS",
+            action: "Já existe outro produto utilizando este SKU. Revise a informação ou utilize um SKU único.",
+            existingProduct: {
+              id: existing.id,
+              sku: existing.sku,
+              name: existing.name
+            }
+          });
+        }
+      }
+
+      // Transação para atualizar tudo
+      const product = await prisma.$transaction(async (tx) => {
+        // 1. Limpar BOM e Routing antigos
+        await tx.productBOM.deleteMany({ where: { productId: id } });
+        await tx.productRouting.deleteMany({ where: { productId: id } });
+
+        // 2. Atualizar Produto e recriar relações
+        return await tx.product.update({
+          where: { id },
+          data: {
+            sku: normalizedSku || sku,
+            name,
+            description,
+            version,
+            defaultLotSize,
+            ProductBOM: {
+              create: (bom || []).map((item: any) => ({
+                materialId: item.materialId,
+                quantity: item.quantity,
+                lossPercentage: item.lossPercentage,
+                notes: item.notes,
+              }))
+            },
+            ProductRouting: {
+              create: (routing || []).map((step: any) => ({
+                sequence: step.sequence,
+                description: step.description,
+                machineId: step.machineId,
+                roleId: step.roleId,
+                setupTimeMin: step.setupTimeMin,
+                operationTimeMin: step.operationTimeMin,
+                efficiencyExpected: step.efficiencyExpected,
+                notes: step.notes,
+              }))
+            }
+          },
+          include: { ProductBOM: true, ProductRouting: true }
+        });
+      });
+
+      res.json(product);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existing = await prisma.product.findFirst({
+          where: { 
+            sku: normalizedSku,
+            id: { not: id }
+          }
+        });
+        
+        return res.status(409).json({
+          error: "Conflito de SKU detectado durante a atualização.",
+          code: "SKU_ALREADY_EXISTS",
+          action: "Outro produto acaba de ser registrado com este SKU. Verifique a lista de produtos.",
+          existingProduct: existing ? {
+            id: existing.id,
+            sku: existing.sku,
+            name: existing.name
+          } : undefined
+        });
+      }
+      console.error("Product update error:", error);
+      res.status(500).json({ error: "Erro interno ao atualizar o produto." });
+    }
+  });
+
+  app.delete("/api/products/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.product.delete({ where: { id } });
+    res.json({ success: true });
   });
 
   // --- API: Indirect Costs (OPEX) ---
@@ -662,6 +815,12 @@ app.put("/api/employees/:id", async (req, res) => {
       data: { description, category, monthlyValue, costCenter, allocationCriteria, status }
     });
     res.json(cost);
+  });
+
+  app.delete("/api/indirect-costs/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.indirectCost.delete({ where: { id } });
+    res.json({ success: true });
   });
 
   // --- API: Tax Rules (Módulo Tributário) ---
@@ -720,6 +879,12 @@ app.put("/api/employees/:id", async (req, res) => {
       });
     });
     res.json(rule);
+  });
+
+  app.delete("/api/tax-rules/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.taxRule.delete({ where: { id } });
+    res.json({ success: true });
   });
 
   // --- API: Product Pricing (Formação de Preço) ---

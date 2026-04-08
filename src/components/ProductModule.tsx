@@ -38,6 +38,12 @@ export const ProductModule = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing">("info");
   const [viewingCostAnalysis, setViewingCostAnalysis] = useState<any | null>(null);
+  const [error, setError] = useState<{
+    message: string;
+    code?: string;
+    action?: string;
+    existingProduct?: { id: string; sku: string; name: string };
+  } | null>(null);
 
   const fetchCostAnalysis = async (productId: string) => {
     try {
@@ -86,6 +92,7 @@ export const ProductModule = () => {
   }, []);
 
   const handleOpenModal = (product?: Product) => {
+    setError(null);
     if (product) {
       setEditingProduct(product);
       setFormData({
@@ -120,6 +127,7 @@ export const ProductModule = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     const method = editingProduct ? "PUT" : "POST";
     const url = editingProduct ? `/api/products/${editingProduct.id}` : "/api/products";
 
@@ -129,12 +137,25 @@ export const ProductModule = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
+      
+      const data = await res.json();
+
       if (res.ok) {
         setIsModalOpen(false);
         fetchData();
+      } else if (res.status === 409) {
+        setError({
+          message: data.error,
+          code: data.code,
+          action: data.action,
+          existingProduct: data.existingProduct
+        });
+      } else {
+        setError({ message: data.error || "Erro ao salvar produto" });
       }
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      setError({ message: "Erro de conexão com o servidor" });
     }
   };
 
@@ -465,6 +486,32 @@ export const ProductModule = () => {
               </div>
               
               <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
+                {/* Error Message */}
+                <AnimatePresence>
+                  {error && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mb-6 overflow-hidden"
+                    >
+                      <div className="p-4 rounded-xl bg-red-50 border border-red-100 flex gap-3">
+                        <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-bold text-red-900">{error.message}</p>
+                          {error.action && <p className="text-xs text-red-700">{error.action}</p>}
+                          {error.existingProduct && (
+                            <div className="mt-2 p-2 rounded-lg bg-white/50 border border-red-200 text-[10px]">
+                              <p className="font-bold text-red-800">Produto Conflitante:</p>
+                              <p className="text-red-700">{error.existingProduct.name} ({error.existingProduct.sku})</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {/* Tab: Info */}
                 {activeFormTab === "info" && (
                   <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="space-y-6 max-w-2xl mx-auto">
