@@ -1418,14 +1418,29 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     const lotSize = Number(product.defaultLotSize) || 1;
 
-    // 1. Materiais
-    const materialItems = product.ProductBOM.map((item) => {
-      const mat = item.Material;
-      const landedCost = Number(mat.currentCost) + Number(mat.freight);
-      const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
-      const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
-      return { unitCost: matEffectiveCost * requiredQty };
-    });
+    // 1. Materiais / Componentes
+    const materialItems = await Promise.all(product.ProductBOM.map(async (item) => {
+      const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage || 0) / 100));
+
+      if (item.Material) {
+        const mat = item.Material;
+        const landedCost = Number(mat.currentCost || 0) + Number(mat.freight || 0);
+        const stdLoss = Number(mat.standardLoss || 0);
+        const matEffectiveCost = landedCost / (1 - (stdLoss / 100));
+        return { unitCost: matEffectiveCost * requiredQty };
+      }
+
+      if (item.childProductId) {
+        const childAnalysis = await getProductCostAnalysis(item.childProductId);
+        if (!childAnalysis) {
+          throw new Error(`Componente filho não encontrado no cálculo: ${item.childProductId}`);
+        }
+        const childUnitCost = Number((childAnalysis as any).ciu || 0);
+        return { unitCost: childUnitCost * requiredQty };
+      }
+
+      return { unitCost: 0 };
+    }));
     const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
 
     // 2. Operações
