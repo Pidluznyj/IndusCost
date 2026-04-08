@@ -1375,6 +1375,185 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(employee);
   });
 
+  app.get("/api/products/:id/pricing-snapshot", async (req, res) => {
+    const { id } = req.params;
+    const { taxRuleId } = req.query;
+
+    try {
+      const analysis = await getProductCostAnalysis(id);
+      if (!analysis) return res.status(404).json({ error: "Produto não encontrado" });
+
+      let pricing = null;
+      if (taxRuleId) {
+        pricing = await prisma.productPricing.findFirst({
+          where: { productId: id, taxRuleId: taxRuleId as string },
+          include: { TaxRule: { include: { TaxComponent: true } } }
+        });
+      }
+
+      if (!pricing) {
+        pricing = await prisma.productPricing.findFirst({
+          where: { productId: id },
+          include: { TaxRule: { include: { TaxComponent: true } } }
+        });
+      }
+
+      const taxRate = pricing?.TaxRule?.TaxComponent?.reduce((acc: number, c: any) => acc + Number(c.percentage), 0) / 100 || 0;
+      const commRate = Number(pricing?.commission || 0) / 100;
+      const marginRate = Number(pricing?.desiredMargin || 0) / 100;
+      const otherRate = Number(pricing?.otherVariables || 0) / 100;
+      const freight = Number(pricing?.freightOut || 0);
+
+      const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+      const suggestedPrice = divisor > 0 ? (analysis.totalIndustrialCost + freight) / divisor : 0;
+
+      res.json({
+        unitCost: analysis.totalIndustrialCost,
+        suggestedPrice,
+        taxesPerc: taxRate * 100,
+        commissionPerc: commRate * 100,
+        freightValue: freight,
+        marginPerc: marginRate * 100,
+      });
+    } catch (error) {
+      console.error("Pricing snapshot error:", error);
+      res.status(500).json({ error: "Erro ao gerar snapshot de preço" });
+    }
+  });
+
+  // --- API: Customers (Clientes) ---
+  app.get("/api/customers", async (req, res) => {
+    const customers = await prisma.customer.findMany({
+      orderBy: { companyName: "asc" },
+    });
+    res.json(customers);
+  });
+
+  app.post("/api/customers", async (req, res) => {
+    const customer = await prisma.customer.create({ data: req.body });
+    res.json(customer);
+  });
+
+  app.put("/api/customers/:id", async (req, res) => {
+    const { id } = req.params;
+    const customer = await prisma.customer.update({
+      where: { id },
+      data: req.body,
+    });
+    res.json(customer);
+  });
+
+  app.delete("/api/customers/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.customer.delete({ where: { id } });
+    res.json({ success: true });
+  });
+
+  // --- API: Proposals (Propostas Comerciais) ---
+  app.get("/api/proposals", async (req, res) => {
+    const proposals = await prisma.proposal.findMany({
+      include: { Customer: true },
+      orderBy: { number: "desc" },
+    });
+    res.json(proposals);
+  });
+
+  app.get("/api/proposals/:id", async (req, res) => {
+    const { id } = req.params;
+    const proposal = await prisma.proposal.findUnique({
+      where: { id },
+      include: { 
+        Customer: true,
+        items: { include: { Product: true } }
+      },
+    });
+    res.json(proposal);
+  });
+
+  app.post("/api/proposals", async (req, res) => {
+    const { items, ...proposalData } = req.body;
+    const proposal = await prisma.proposal.create({
+      data: {
+        ...proposalData,
+        items: {
+          create: items.map((item: any) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            unit: item.unit,
+            unitCost: item.unitCost,
+            suggestedPrice: item.suggestedPrice,
+            negotiatedPrice: item.negotiatedPrice,
+            discountPerc: item.discountPerc,
+            discountValue: item.discountValue,
+            marginValue: item.marginValue,
+            marginPerc: item.marginPerc,
+            taxesPerc: item.taxesPerc,
+            taxesValue: item.taxesValue,
+            commissionPerc: item.commissionPerc,
+            commissionValue: item.commissionValue,
+            freightValue: item.freightValue,
+            notes: item.notes,
+          }))
+        }
+      },
+      include: { items: true }
+    });
+    res.json(proposal);
+  });
+
+  app.put("/api/proposals/:id", async (req, res) => {
+    const { id } = req.params;
+    const { items, ...proposalData } = req.body;
+
+    const proposal = await prisma.$transaction(async (tx) => {
+      await tx.proposalItem.deleteMany({ where: { proposalId: id } });
+      return await tx.proposal.update({
+        where: { id },
+        data: {
+          ...proposalData,
+          items: {
+            create: items.map((item: any) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              unit: item.unit,
+              unitCost: item.unitCost,
+              suggestedPrice: item.suggestedPrice,
+              negotiatedPrice: item.negotiatedPrice,
+              discountPerc: item.discountPerc,
+              discountValue: item.discountValue,
+              marginValue: item.marginValue,
+              marginPerc: item.marginPerc,
+              taxesPerc: item.taxesPerc,
+              taxesValue: item.taxesValue,
+              commissionPerc: item.commissionPerc,
+              commissionValue: item.commissionValue,
+              freightValue: item.freightValue,
+              notes: item.notes,
+            }))
+          }
+        },
+        include: { items: true }
+      });
+    });
+    res.json(proposal);
+  });
+
+  app.patch("/api/proposals/:id/status", async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    const proposal = await prisma.proposal.update({
+      where: { id },
+      data: { status },
+    });
+    res.json(proposal);
+  });
+
+  app.delete("/api/proposals/:id", async (req, res) => {
+    const { id } = req.params;
+    await prisma.proposal.delete({ where: { id } });
+    res.json({ success: true });
+  });
+
   // Global Error Handler
   app.use((err: any, req: any, res: any, next: any) => {
     console.error("Express Error:", err);

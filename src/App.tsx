@@ -11,6 +11,8 @@ import { PricingModule } from "./components/PricingModule";
 import { SimulationModule } from "./components/SimulationModule";
 import { SettingsModule } from "./components/SettingsModule";
 import { ReportsModule } from "./components/ReportsModule";
+import { CustomerModule } from "./components/CustomerModule";
+import { ProposalModule } from "./components/ProposalModule";
 import { 
   TrendingUp, 
   Users, 
@@ -24,7 +26,9 @@ import {
   PieChart,
   Scale,
   Calculator,
-  Layers
+  Layers,
+  Briefcase,
+  UserCircle
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
@@ -110,6 +114,26 @@ export default function App() {
             <p className="text-muted-foreground">Simulador comercial de markup, impostos e margens líquidas.</p>
           </div>
           <PricingModule />
+        </div>
+      )}
+
+      {activeTab === "proposals" && (
+        <div className="space-y-8">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-3xl font-bold tracking-tight">Propostas Comerciais</h2>
+            <p className="text-muted-foreground">Gestão de propostas, orçamentos e negociações comerciais.</p>
+          </div>
+          <ProposalModule />
+        </div>
+      )}
+
+      {activeTab === "customers" && (
+        <div className="space-y-8">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-3xl font-bold tracking-tight">Clientes</h2>
+            <p className="text-muted-foreground">Gestão da carteira de clientes e contatos comerciais.</p>
+          </div>
+          <CustomerModule />
         </div>
       )}
 

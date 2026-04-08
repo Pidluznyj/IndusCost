@@ -116,6 +116,7 @@ model MaterialPriceHistory {
 enum ItemType {
   PRODUCT
   COMPONENT
+  MATERIAL
 }
 
 model Product {
@@ -136,6 +137,7 @@ model Product {
   ProductRouting       ProductRouting[]
   CostCalculationLog   CostCalculationLog[]
   ProductPricing       ProductPricing[]
+  ProposalItem         ProposalItem[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -242,6 +244,109 @@ model Simulation {
   indirectAdj       Decimal  @default(0) @db.Decimal(5, 2)
   efficiencyAdj     Decimal  @default(0) @db.Decimal(5, 2)
   marginAdj         Decimal  @default(0) @db.Decimal(5, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// --- Módulo Comercial e Propostas ---
+
+model Customer {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyName     String
+  tradeName       String?
+  taxId           String   @unique // CNPJ/CPF
+  stateTaxId      String?  // Inscrição Estadual
+  contactName     String?
+  email           String?
+  phone           String?
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?
+  country         String   @default("Brasil")
+  segment         String?
+  notes           String?
+  status          String   @default("ACTIVE")
+  proposals       Proposal[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum ProposalStatus {
+  DRAFT
+  ANALYSIS
+  SENT
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELED
+}
+
+model Proposal {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number            Int            @unique @default(autoincrement())
+  title             String?
+  customerId        String         @db.Uuid
+  Customer          Customer       @relation(fields: [customerId], references: [id])
+  status            ProposalStatus @default(DRAFT)
+  responsible       String?
+  companyIssuer     String?
+  validityDays      Int            @default(15)
+  paymentTerms      String?
+  paymentMethod     String?
+  deliveryTimeDays  Int?
+  freightCondition  String?        @default("CIF")
+  deliveryLocation  String?
+  notes             String?
+  internalNotes     String?
+  
+  // Totais Consolidados (Snapshot)
+  totalItems        Int            @default(0)
+  totalGrossValue   Decimal        @default(0) @db.Decimal(18, 2)
+  totalDiscount     Decimal        @default(0) @db.Decimal(18, 2)
+  totalNetValue     Decimal        @default(0) @db.Decimal(18, 2)
+  totalCost         Decimal        @default(0) @db.Decimal(18, 2)
+  totalMarginValue  Decimal        @default(0) @db.Decimal(18, 2)
+  totalMarginPerc   Decimal        @default(0) @db.Decimal(5, 2)
+  totalTaxes        Decimal        @default(0) @db.Decimal(18, 2)
+  totalCommission   Decimal        @default(0) @db.Decimal(18, 2)
+  totalFreight      Decimal        @default(0) @db.Decimal(18, 2)
+
+  items             ProposalItem[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+model ProposalItem {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  proposalId        String   @db.Uuid
+  Proposal          Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  productId         String   @db.Uuid
+  Product           Product  @relation(fields: [productId], references: [id])
+  
+  quantity          Decimal  @db.Decimal(18, 4)
+  unit              String?
+  
+  // Snapshot de Custos e Preços no momento da proposta
+  unitCost          Decimal  @db.Decimal(18, 2) // Custo Industrial/Base
+  suggestedPrice    Decimal  @db.Decimal(18, 2) // Preço sugerido pelo sistema
+  negotiatedPrice   Decimal  @db.Decimal(18, 2) // Preço final negociado
+  
+  discountPerc      Decimal  @default(0) @db.Decimal(5, 2)
+  discountValue     Decimal  @default(0) @db.Decimal(18, 2)
+  
+  marginValue       Decimal  @db.Decimal(18, 2)
+  marginPerc        Decimal  @db.Decimal(5, 2)
+  
+  taxesPerc         Decimal  @default(0) @db.Decimal(5, 2)
+  taxesValue        Decimal  @default(0) @db.Decimal(18, 2)
+  
+  commissionPerc    Decimal  @default(0) @db.Decimal(5, 2)
+  commissionValue   Decimal  @default(0) @db.Decimal(18, 2)
+  
+  freightValue      Decimal  @default(0) @db.Decimal(18, 2)
+  
+  notes             String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }

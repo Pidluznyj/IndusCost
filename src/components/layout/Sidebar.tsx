@@ -62,6 +62,8 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
     { id: "opex", icon: PieChart, label: "Custos Indiretos" },
     { id: "taxes", icon: Scale, label: "Tributos" },
     { id: "pricing", icon: Calculator, label: "Formação de Preço" },
+    { id: "proposals", icon: FileText, label: "Propostas" },
+    { id: "customers", icon: Users, label: "Clientes" },
     { id: "simulations", icon: Layers, label: "Simulações" },
     { id: "reports", icon: FileText, label: "Relatórios" },
     { id: "settings", icon: Settings, label: "Configurações" },
