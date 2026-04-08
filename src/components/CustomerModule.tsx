@@ -12,17 +12,21 @@ import {
   Phone,
   MapPin,
   Globe,
-  Tag
+  CheckCircle2,
+  Download
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { Customer } from "@/src/types/commercial";
 import { motion } from "motion/react";
+import { DataImportDialog } from "./shared/DataImportDialog";
+import { CustomerImportConfig } from "../lib/importer/CustomerConfig";
 
 export const CustomerModule = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
   // Form State
@@ -138,14 +142,34 @@ export const CustomerModule = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Novo Cliente
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsImportOpen(true)}
+            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Download className="h-4 w-4" />
+            Importar
+          </button>
+          <button 
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Novo Cliente
+          </button>
+        </div>
       </div>
+
+      {/* Import Dialog */}
+      <DataImportDialog 
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onSuccess={fetchData}
+        config={CustomerImportConfig}
+        templateUrl="/api/customers/import/template"
+        previewUrl="/api/customers/import/preview"
+        confirmUrl="/api/customers/import/confirm"
+      />
 
       {/* Table */}
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">

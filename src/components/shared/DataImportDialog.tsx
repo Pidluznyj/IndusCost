@@ -305,20 +305,22 @@ export const DataImportDialog = ({
                 {/* Sheet Tabs */}
                 {activeSheet && previewData && !("data" in previewData) && (
                   <div className="flex items-center gap-2 border-b border-border">
-                    {Object.keys(previewData as Record<string, ImportResult<any>>).map(sheet => (
-                      <button
-                        key={sheet}
-                        onClick={() => setActiveSheet(sheet)}
-                        className={cn(
-                          "px-4 py-2 text-xs font-bold border-b-2 transition-all",
-                          activeSheet === sheet 
-                            ? "border-primary text-primary bg-primary/5" 
-                            : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                        )}
-                      >
-                        {sheet} ({ (previewData as Record<string, ImportResult<any>>)[sheet].validRows })
-                      </button>
-                    ))}
+                    {Object.keys(previewData as Record<string, ImportResult<any>>)
+                      .filter(sheet => sheet !== "importId")
+                      .map(sheet => (
+                        <button
+                          key={sheet}
+                          onClick={() => setActiveSheet(sheet)}
+                          className={cn(
+                            "px-4 py-2 text-xs font-bold border-b-2 transition-all",
+                            activeSheet === sheet 
+                              ? "border-primary text-primary bg-primary/5" 
+                              : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                          )}
+                        >
+                          {sheet} ({ (previewData as Record<string, ImportResult<any>>)[sheet].validRows })
+                        </button>
+                      ))}
                   </div>
                 )}
 

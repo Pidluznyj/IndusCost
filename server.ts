@@ -8,6 +8,7 @@ import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
 import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
+import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -1545,14 +1546,27 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     const lotSize = Number(product.defaultLotSize) || 1;
 
-    // 1. Materiais
-    const materialItems = product.ProductBOM.map((item) => {
-      const mat = item.Material;
-      const landedCost = Number(mat.currentCost) + Number(mat.freight);
-      const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
-      const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
-      return { unitCost: matEffectiveCost * requiredQty };
-    });
+    // 1. Materiais / Componentes
+    const materialItems = await Promise.all(product.ProductBOM.map(async (item) => {
+      if (item.Material) {
+        const mat = item.Material;
+        const landedCost = Number(mat.currentCost) + Number(mat.freight);
+        const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
+        const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
+        return { unitCost: matEffectiveCost * requiredQty };
+      }
+      
+      if (item.childProductId) {
+        const childAnalysis = await getProductCostAnalysis(item.childProductId);
+        if (childAnalysis) {
+          const childUnitCost = childAnalysis.totalIndustrialCost;
+          const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
+          return { unitCost: childUnitCost * requiredQty };
+        }
+      }
+      
+      return { unitCost: 0 };
+    }));
     const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
 
     // 2. Operações
@@ -1646,29 +1660,55 @@ app.delete("/api/employees/:id", async (req, res) => {
     ]);
 
     const lotSize = Number(product!.defaultLotSize) || 1;
-    const materialItems = product!.ProductBOM.map((item) => {
-      const mat = item.Material;
-      const currentCost = Number(mat.currentCost);
-      const freight = Number(mat.freight);
-      const matStandardLoss = Number(mat.standardLoss) / 100;
-      const bomLoss = Number(item.lossPercentage) / 100;
-      const landedCost = currentCost + freight;
-      const matEffectiveCost = landedCost / (1 - matStandardLoss);
-      const requiredQty = Number(item.quantity) / (1 - bomLoss);
-      const totalItemCost = matEffectiveCost * requiredQty;
-      return {
-        materialCode: mat.code,
-        description: mat.description,
-        unit: mat.unit,
-        basePrice: currentCost,
-        freight,
-        landedCost,
-        matLoss: matStandardLoss * 100,
-        bomLoss: bomLoss * 100,
-        requiredQty,
-        unitCost: totalItemCost,
-      };
-    });
+    const materialItems = await Promise.all(product!.ProductBOM.map(async (item) => {
+      if (item.Material) {
+        const mat = item.Material;
+        const currentCost = Number(mat.currentCost);
+        const freight = Number(mat.freight);
+        const matStandardLoss = Number(mat.standardLoss) / 100;
+        const bomLoss = Number(item.lossPercentage) / 100;
+        const landedCost = currentCost + freight;
+        const matEffectiveCost = landedCost / (1 - matStandardLoss);
+        const requiredQty = Number(item.quantity) / (1 - bomLoss);
+        const totalItemCost = matEffectiveCost * requiredQty;
+        return {
+          materialCode: mat.code,
+          description: mat.description,
+          unit: mat.unit,
+          basePrice: currentCost,
+          freight,
+          landedCost,
+          matLoss: matStandardLoss * 100,
+          bomLoss: bomLoss * 100,
+          requiredQty,
+          unitCost: totalItemCost,
+        };
+      }
+
+      if (item.childProductId) {
+        const childAnalysis = await getProductCostAnalysis(item.childProductId);
+        const bomLoss = Number(item.lossPercentage) / 100;
+        const requiredQty = Number(item.quantity) / (1 - bomLoss);
+        const totalItemCost = (childAnalysis?.totalIndustrialCost || 0) * requiredQty;
+
+        return {
+          materialCode: childAnalysis?.sku || "N/A",
+          description: childAnalysis?.name || "Componente Filho",
+          unit: "UN",
+          basePrice: childAnalysis?.totalIndustrialCost || 0,
+          freight: 0,
+          landedCost: childAnalysis?.totalIndustrialCost || 0,
+          matLoss: 0,
+          bomLoss: bomLoss * 100,
+          requiredQty,
+          unitCost: totalItemCost,
+        };
+      }
+
+      return null;
+    }));
+
+    const validMaterialItems = materialItems.filter(Boolean);
 
     const operationItems = await Promise.all(product!.ProductRouting.map(async (step) => {
       const machine = step.Machine;
@@ -1723,7 +1763,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         costPerUnit: analysis.totalIndustrialCost,
       },
       details: {
-        materials: materialItems,
+        materials: validMaterialItems,
         operations: operationItems,
         indirects: {
           cifRatePerHour: analysis.totalCIF_Unit / (operationItems.reduce((acc, i) => acc + (i.setupTimeMin/60/lotSize) + (i.opTimeMin/60/(i.efficiency/100)), 0)),
@@ -1793,6 +1833,89 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   // --- API: Customers (Clientes) ---
+  // --- API: Customers (Clientes) ---
+  app.get("/api/customers/import/template", (req, res) => {
+    try {
+      const buffer = ServerImporter.generateTemplate(CustomerImportConfig);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=template_clientes.xlsx");
+      res.send(buffer);
+    } catch (error) {
+      console.error("Template generation error:", error);
+      res.status(500).json({ error: "Erro ao gerar template" });
+    }
+  });
+
+  app.post("/api/customers/import/preview", upload.single("file"), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
+    try {
+      const result = await ServerImporter.parseExcel(req.file.buffer, CustomerImportConfig);
+      const importId = crypto.randomUUID();
+      importCache.set(importId, result.data);
+      
+      // Cleanup after 30 mins
+      setTimeout(() => importCache.delete(importId), 30 * 60 * 1000);
+      
+      res.json({ ...result, importId });
+    } catch (error) {
+      console.error("Import preview error:", error);
+      res.status(500).json({ error: "Erro ao processar planilha" });
+    }
+  });
+
+  app.post("/api/customers/import/confirm", async (req, res) => {
+    const { data: bodyData, importId } = req.body;
+    let data = bodyData;
+
+    if (importId && importCache.has(importId)) {
+      data = importCache.get(importId);
+      importCache.delete(importId);
+    }
+
+    if (!Array.isArray(data)) return res.status(400).json({ error: "Dados inválidos ou sessão de importação expirada." });
+
+    try {
+      const taxIds = data.map(d => d.taxId);
+      const existing = await prisma.customer.findMany({
+        where: { taxId: { in: taxIds } },
+        select: { taxId: true }
+      });
+      const existingTaxIds = new Set(existing.map(e => e.taxId));
+
+      const toCreate = data.filter(d => !existingTaxIds.has(d.taxId));
+      
+      if (toCreate.length > 0) {
+        await prisma.customer.createMany({
+          data: toCreate.map(d => ({
+            companyName: d.companyName,
+            tradeName: d.tradeName || null,
+            taxId: d.taxId,
+            stateTaxId: d.stateTaxId || null,
+            contactName: d.contactName || null,
+            email: d.email || null,
+            phone: d.phone || null,
+            address: d.address || null,
+            city: d.city || null,
+            state: d.state || null,
+            zipCode: d.zipCode || null,
+            segment: d.segment || null,
+            notes: d.notes || null,
+            status: "ACTIVE"
+          }))
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        count: toCreate.length,
+        skipped: existingTaxIds.size 
+      });
+    } catch (error) {
+      console.error("Import confirm error:", error);
+      res.status(500).json({ error: "Erro ao salvar dados no banco" });
+    }
+  });
+
   app.get("/api/customers", async (req, res) => {
     const customers = await prisma.customer.findMany({
       orderBy: { companyName: "asc" },
