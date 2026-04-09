@@ -171,8 +171,6 @@ model ProductRouting {
   setupTimeMin      Decimal  @default(0) @db.Decimal(10, 2)
   operationTimeMin  Decimal  @default(0) @db.Decimal(10, 2)
   efficiencyExpected Decimal  @default(100) @db.Decimal(5, 2)
-  cycleTimeSeconds  Decimal? @db.Decimal(10, 2)
-  cavities          Int?     @default(1)
   notes             String?
 }
 

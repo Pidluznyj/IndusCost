@@ -34,8 +34,9 @@ interface PayrollComponent {
 export const SettingsModule = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
+  const [globals, setGlobals] = useState<{energyCost: number, workingHours: number, energyId?: string, hoursId?: string}>({energyCost: 0, workingHours: 176});
   const [loading, setLoading] = useState(true);
-  const [activeSubTab, setActiveSubTab] = useState<"roles" | "payroll">("roles");
+  const [activeSubTab, setActiveSubTab] = useState<"roles" | "payroll" | "globals">("roles");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
 
@@ -52,15 +53,36 @@ export const SettingsModule = () => {
     value: 0,
   });
 
+  const [globalForm, setGlobalForm] = useState({
+    energyCost: 0,
+    workingHours: 176,
+  });
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [rRes, cRes] = await Promise.all([
+      const [rRes, cRes, iRes] = await Promise.all([
         fetch("/api/roles"),
-        fetch("/api/payroll-components")
+        fetch("/api/payroll-components"),
+        fetch("/api/indirect-costs")
       ]);
       setRoles(await rRes.json());
       setComponents(await cRes.json());
+      
+      const indirects = await iRes.json();
+      const energy = indirects.find((c: any) => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
+      const hours = indirects.find((c: any) => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
+      
+      setGlobals({
+        energyCost: energy ? Number(energy.monthlyValue) : 0,
+        workingHours: hours ? Number(hours.monthlyValue) : 176,
+        energyId: energy?.id,
+        hoursId: hours?.id
+      });
+      setGlobalForm({
+        energyCost: energy ? Number(energy.monthlyValue) : 0,
+        workingHours: hours ? Number(hours.monthlyValue) : 176,
+      });
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
     } finally {
@@ -95,6 +117,46 @@ export const SettingsModule = () => {
       setComponentForm({ name: "", type: "BENEFIT", calculationType: "PERCENTAGE", value: 0 });
     }
     setIsModalOpen(true);
+  };
+
+  const handleSaveGlobals = async () => {
+    try {
+      // Save Energy Cost
+      const energyMethod = globals.energyId ? "PUT" : "POST";
+      const energyUrl = globals.energyId ? `/api/indirect-costs/${globals.energyId}` : "/api/indirect-costs";
+      await fetch(energyUrl, {
+        method: energyMethod,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: "ENERGY_COST",
+          category: "GLOBAL_PARAM",
+          monthlyValue: globalForm.energyCost,
+          costCenter: "Geral",
+          allocationCriteria: "Geral",
+          status: "ACTIVE"
+        }),
+      });
+
+      // Save Working Hours
+      const hoursMethod = globals.hoursId ? "PUT" : "POST";
+      const hoursUrl = globals.hoursId ? `/api/indirect-costs/${globals.hoursId}` : "/api/indirect-costs";
+      await fetch(hoursUrl, {
+        method: hoursMethod,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: "WORKING_HOURS",
+          category: "GLOBAL_PARAM",
+          monthlyValue: globalForm.workingHours,
+          costCenter: "Geral",
+          allocationCriteria: "Geral",
+          status: "ACTIVE"
+        }),
+      });
+
+      fetchData();
+    } catch (error) {
+      console.error("Erro ao salvar parâmetros globais:", error);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -143,14 +205,26 @@ export const SettingsModule = () => {
             Encargos e Benefícios
             {activeSubTab === "payroll" && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
           </button>
+          <button
+            onClick={() => setActiveSubTab("globals")}
+            className={cn(
+              "px-4 py-2 text-sm font-bold transition-all relative",
+              activeSubTab === "globals" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Parâmetros Globais
+            {activeSubTab === "globals" && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+          </button>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          {activeSubTab === "roles" ? "Novo Cargo" : "Novo Componente"}
-        </button>
+        {activeSubTab !== "globals" && (
+          <button 
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            {activeSubTab === "roles" ? "Novo Cargo" : "Novo Componente"}
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -195,7 +269,7 @@ export const SettingsModule = () => {
                 </div>
               </motion.div>
             ))
-          ) : (
+          ) : activeSubTab === "payroll" ? (
             components.map((comp) => (
               <motion.div 
                 key={comp.id}
@@ -238,6 +312,43 @@ export const SettingsModule = () => {
                 </div>
               </motion.div>
             ))
+          ) : (
+            <div className="col-span-1 md:col-span-2 lg:col-span-3 bg-card rounded-2xl border border-border overflow-hidden shadow-sm p-6">
+              <h3 className="text-lg font-bold mb-4">Parâmetros Globais da Empresa</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Custo de Energia (R$ / mês)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={globalForm.energyCost}
+                    onChange={(e) => setGlobalForm({ ...globalForm, energyCost: Number(e.target.value) })}
+                    className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                    placeholder="Ex: 5000.00"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Custo total estimado de energia elétrica da fábrica por mês.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Horas Trabalhadas (mês)</label>
+                  <input
+                    type="number"
+                    value={globalForm.workingHours}
+                    onChange={(e) => setGlobalForm({ ...globalForm, workingHours: Number(e.target.value) })}
+                    className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                    placeholder="Ex: 176"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Total de horas que a fábrica opera no mês (ex: 22 dias * 8 horas = 176).</p>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={handleSaveGlobals}
+                  className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-bold hover:opacity-90 transition-opacity"
+                >
+                  Salvar Parâmetros
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

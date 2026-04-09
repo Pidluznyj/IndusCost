@@ -51,7 +51,7 @@ const Badge = ({ children, variant = "default" }: { children: React.ReactNode, v
   );
 };
 
-const TreeNode = ({ node }: { node: any }) => {
+const TreeNode: React.FC<{ node: any }> = ({ node }) => {
   const isComponent = node.type === "COMPONENT";
   const name = isComponent ? node.item?.name : node.item?.description;
   const code = isComponent ? node.item?.sku : node.item?.code;

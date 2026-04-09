@@ -198,7 +198,7 @@ export const IndirectCostModule = () => {
                 </td>
               </tr>
             ) : (
-              costs.filter(c => c.description.toLowerCase().includes(searchTerm.toLowerCase())).map((cost) => {
+              costs.filter(c => c.category !== "GLOBAL_PARAM" && c.description.toLowerCase().includes(searchTerm.toLowerCase())).map((cost) => {
                 const cat = categories.find(cat => cat.id === cost.category);
                 const Icon = cat?.icon || HelpCircle;
                 return (

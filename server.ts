@@ -85,7 +85,7 @@ async function startServer() {
 
       // 3. Análise de Produtos (Top 5 e Bottom 5)
       const productAnalyses = await Promise.all(products.map(p => getProductCostAnalysis(p.id)));
-      const validAnalyses = productAnalyses.filter(a => a !== null);
+      const validAnalyses = productAnalyses.filter(a => a !== null && !(a as any).error);
 
       const productPerformance = validAnalyses.map(analysis => {
         const pricing = pricings.find(pr => pr.productId === (analysis as any).productId);
@@ -115,7 +115,7 @@ async function startServer() {
 
       // 4. Impactos Globais
       const totalCIF = indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
-      const totalOPEX = indirectCosts.filter(c => c.category !== "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
+      const totalOPEX = indirectCosts.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
 
       res.json({
         kpis: {
@@ -1569,16 +1569,31 @@ app.delete("/api/employees/:id", async (req, res) => {
     }));
     const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
 
+    const energyCostParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
+    const workingHoursParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
+    
+    if (!energyCostParam || !workingHoursParam) {
+      return { error: "CONFIG_MISSING", message: "Parâmetros globais de Energia ou Horas Trabalhadas não configurados." };
+    }
+    
+    const energyCost = Number(energyCostParam.monthlyValue);
+    const workingHours = Number(workingHoursParam.monthlyValue);
+    
+    if (workingHours <= 0) {
+      return { error: "CONFIG_INVALID", message: "Horas Trabalhadas devem ser maiores que zero." };
+    }
+
     // 2. Operações
     const operationItems = product.ProductRouting.map((step) => {
       const machine = step.Machine;
       const role = step.Role;
       const roleData = rolesWithComponents.find(rc => rc.roleId === step.roleId);
 
-      // 1. Custo_Maquina_Hora
+      // 1. Custo_Maquina_Hora (Nova Lógica: Energia / Horas)
       const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
       const otherMonthlyCosts = machine.MachineCostComponent.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
-      const machineHourCost = (depreciationMonthly + otherMonthlyCosts) / 176;
+      
+      const machineHourCost = energyCost / workingHours;
 
       // 2. Custo_MO_Hora
       const salary = Number(role.baseSalary);
@@ -1641,7 +1656,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     // 3. CIF/OPEX
     const totalFactoryHH_Monthly = 8448; 
     const totalCIF_Monthly = indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
-    const totalOPEX_Monthly = indirectCosts.filter(c => c.category !== "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
+    const totalOPEX_Monthly = indirectCosts.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
     
     const cifRatePerHour = totalCIF_Monthly / totalFactoryHH_Monthly;
     const opexRatePerHour = totalOPEX_Monthly / totalFactoryHH_Monthly;
@@ -1667,11 +1682,13 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   // --- API: Product Cost Analysis (Motor de Cálculo CIU com CIF) ---
   app.get("/api/products/:id/cost-analysis", async (req, res) => {
-    const { id } = req.params;
-    const analysis = await getProductCostAnalysis(id);
-    if (!analysis) return res.status(404).json({ error: "Produto não encontrado" });
+    try {
+      const { id } = req.params;
+      const analysis = await getProductCostAnalysis(id);
+      if (!analysis) return res.status(404).json({ error: "Produto não encontrado" });
+      if ((analysis as any).error) return res.status(400).json(analysis);
 
-    // Re-calculando detalhes para o endpoint específico (mantendo compatibilidade com a UI atual)
+      // Re-calculando detalhes para o endpoint específico (mantendo compatibilidade com a UI atual)
     const [product, indirectCosts] = await Promise.all([
       prisma.product.findUnique({
         where: { id },
@@ -1742,10 +1759,25 @@ app.delete("/api/employees/:id", async (req, res) => {
     const operationItems = await Promise.all(product!.ProductRouting.map(async (step) => {
       const machine = step.Machine;
       const role = step.Role;
-      // 1. Custo_Maquina_Hora
+      // 1. Custo_Maquina_Hora (Nova Lógica: Energia / Horas)
       const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
       const otherMonthlyCosts = machine.MachineCostComponent.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
-      const machineHourCost = (depreciationMonthly + otherMonthlyCosts) / 176;
+      
+      const energyCostParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
+      const workingHoursParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
+      
+      if (!energyCostParam || !workingHoursParam) {
+        throw new Error("CONFIG_MISSING: Parâmetros globais de Energia ou Horas Trabalhadas não configurados.");
+      }
+      
+      const energyCost = Number(energyCostParam.monthlyValue);
+      const workingHours = Number(workingHoursParam.monthlyValue);
+      
+      if (workingHours <= 0) {
+        throw new Error("CONFIG_INVALID: Horas Trabalhadas devem ser maiores que zero.");
+      }
+      
+      const machineHourCost = energyCost / workingHours;
       
       // 2. Custo_MO_Hora
       const salary = Number(role.baseSalary);
@@ -1767,9 +1799,9 @@ app.delete("/api/employees/:id", async (req, res) => {
       // 3. Custo_Celula_Hora = Maquina + MO
       const cellHourCost = machineHourCost + hhCost;
 
-      // TODO: Campos 'cycleTimeSeconds' e 'cavities'
-      const cycleTimeSeconds = Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30;
-      const cavities = 1;
+      // Usa os campos reais do roteiro quando existirem; fallback provisório mantém compatibilidade
+      const cycleTimeSeconds = Number(step.cycleTimeSeconds) > 0 ? Number(step.cycleTimeSeconds) : (Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30);
+      const cavities = Number(step.cavities) >= 1 ? Number(step.cavities) : 1;
       const efficiency = Number(step.efficiencyExpected) > 0 ? Number(step.efficiencyExpected) / 100 : 1.0;
 
       // 4. Ciclos_Hora = 3600 / ciclo_seg
@@ -1830,11 +1862,15 @@ app.delete("/api/employees/:id", async (req, res) => {
           cifRatePerHour: analysis.totalCIF_Unit / (operationItems.reduce((acc, i) => acc + i.totalTimeH, 0) || 1),
           opexRatePerHour: analysis.totalOPEX_Unit / (operationItems.reduce((acc, i) => acc + i.totalTimeH, 0) || 1),
           totalCIF_Monthly: indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0),
-          totalOPEX_Monthly: indirectCosts.filter(c => c.category !== "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0)
+          totalOPEX_Monthly: indirectCosts.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0)
         }
       },
       audit: { calculatedAt: new Date().toISOString(), version: product!.version }
     });
+    } catch (error) {
+      console.error("Cost analysis error:", error);
+      res.status(500).json({ error: "Erro ao calcular análise de custo." });
+    }
   });
 
   app.patch("/api/employees/:id/status", async (req, res) => {
