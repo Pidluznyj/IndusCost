@@ -1598,11 +1598,11 @@ app.delete("/api/employees/:id", async (req, res) => {
       // 3. Custo_Celula_Hora = Maquina + MO
       const cellHourCost = machineHourCost + hhCost;
 
-      // TODO: Campos 'cycleTimeSeconds' e 'cavities' precisam ser criados no banco (ProductRouting).
-      // Usando defaults temporários baseados no operationTimeMin atual para manter compatibilidade.
-      // Se operationTimeMin for 0.5 min, cycleTime = 30s.
-      const cycleTimeSeconds = Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30;
-      const cavities = 1; // Fallback temporário
+      // Usa os campos reais do roteiro quando existirem; fallback provisório mantém compatibilidade
+      const cycleTimeSeconds = Number(step.cycleTimeSeconds) > 0
+        ? Number(step.cycleTimeSeconds)
+        : (Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30);
+      const cavities = Number(step.cavities) >= 1 ? Number(step.cavities) : 1;
       const efficiency = Number(step.efficiencyExpected) > 0 ? Number(step.efficiencyExpected) / 100 : 1.0;
 
       // 4. Ciclos_Hora = 3600 / ciclo_seg
@@ -1767,9 +1767,11 @@ app.delete("/api/employees/:id", async (req, res) => {
       // 3. Custo_Celula_Hora = Maquina + MO
       const cellHourCost = machineHourCost + hhCost;
 
-      // TODO: Campos 'cycleTimeSeconds' e 'cavities'
-      const cycleTimeSeconds = Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30;
-      const cavities = 1;
+      // Usa os campos reais do roteiro quando existirem; fallback provisório mantém compatibilidade
+      const cycleTimeSeconds = Number(step.cycleTimeSeconds) > 0
+        ? Number(step.cycleTimeSeconds)
+        : (Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30);
+      const cavities = Number(step.cavities) >= 1 ? Number(step.cavities) : 1;
       const efficiency = Number(step.efficiencyExpected) > 0 ? Number(step.efficiencyExpected) / 100 : 1.0;
 
       // 4. Ciclos_Hora = 3600 / ciclo_seg
