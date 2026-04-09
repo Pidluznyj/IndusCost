@@ -104,6 +104,8 @@ export const ProductModule = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [treeData, setTreeData] = useState<any>(null);
   const [loadingTree, setLoadingTree] = useState(false);
+  const [backendCostAnalysis, setBackendCostAnalysis] = useState<any>(null);
+  const [loadingCost, setLoadingCost] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<CreateProductInput>({
@@ -159,6 +161,19 @@ export const ProductModule = () => {
         .finally(() => setLoadingTree(false));
     }
   }, [activeFormTab, editingItem?.id]);
+
+  useEffect(() => {
+    if ((activeFormTab === "cost" || isModalOpen) && editingItem?.id) {
+      setLoadingCost(true);
+      fetch(`/api/products/${editingItem.id}/cost-analysis`)
+        .then(res => res.json())
+        .then(data => setBackendCostAnalysis(data))
+        .catch(err => console.error("Erro ao carregar custo:", err))
+        .finally(() => setLoadingCost(false));
+    } else if (!editingItem?.id) {
+      setBackendCostAnalysis(null);
+    }
+  }, [activeFormTab, isModalOpen, editingItem?.id]);
 
   const handleOpenModal = (item?: Product) => {
     if (item) {
@@ -381,36 +396,17 @@ export const ProductModule = () => {
   /*                               Cost Analysis                                */
   /* -------------------------------------------------------------------------- */
 
-  const costAnalysis = useMemo(() => {
-    let bomCost = 0;
-    formData.bom.forEach(item => {
-      let unitCost = 0;
-      if (item.materialId) {
-        const mat = materials.find(m => m.id === item.materialId);
-        unitCost = mat ? Number(mat.currentCost) : 0;
-      } else if (item.childProductId) {
-        const prod = items.find(p => p.id === item.childProductId);
-        // This is a simplification; real cost would be recursive
-        unitCost = 0; 
-      }
-      const qtyWithLoss = item.quantity * (1 + (item.lossPercentage / 100));
-      bomCost += unitCost * qtyWithLoss;
-    });
-
-    let routingCost = 0;
-    formData.routing.forEach(step => {
-      const machine = machines.find(m => m.id === step.machineId);
-      const role = roles.find(r => r.id === step.roleId);
-      
-      const machineRate = machine ? Number(machine.hourlyRate) / 60 : 0;
-      const laborRate = role ? Number(role.hourlyRate) / 60 : 0;
-      
-      const totalTime = Number(step.setupTimeMin) + Number(step.operationTimeMin);
-      routingCost += totalTime * (machineRate + laborRate);
-    });
-
-    return { bomCost, routingCost, total: bomCost + routingCost };
-  }, [formData.bom, formData.routing, materials, items, machines, roles]);
+  const displayCost = useMemo(() => {
+    if (backendCostAnalysis) {
+      return {
+        bomCost: backendCostAnalysis.summary?.totalMaterialCost || 0,
+        routingCost: backendCostAnalysis.summary?.totalConversionCost || 0,
+        total: backendCostAnalysis.summary?.totalIndustrialCost || 0,
+        details: backendCostAnalysis.details || { materials: [], operations: [] }
+      };
+    }
+    return { bomCost: 0, routingCost: 0, total: 0, details: { materials: [], operations: [] } };
+  }, [backendCostAnalysis]);
 
   return (
     <div className="space-y-6">
@@ -1075,7 +1071,7 @@ export const ProductModule = () => {
                             <p className="text-xs font-bold text-blue-600 uppercase">Custo de Materiais (BOM)</p>
                             <Layers className="h-4 w-4 text-blue-500" />
                           </div>
-                          <p className="text-3xl font-black text-blue-700">{formatCurrency(costAnalysis.bomCost)}</p>
+                          <p className="text-3xl font-black text-blue-700">{formatCurrency(displayCost.bomCost)}</p>
                           <p className="text-[10px] text-blue-600/60">Baseado no custo atual dos materiais</p>
                         </div>
                         <div className="p-6 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col gap-2">
@@ -1083,7 +1079,7 @@ export const ProductModule = () => {
                             <p className="text-xs font-bold text-purple-600 uppercase">Custo de Processo (MOD/GIF)</p>
                             <Settings className="h-4 w-4 text-purple-500" />
                           </div>
-                          <p className="text-3xl font-black text-purple-700">{formatCurrency(costAnalysis.routingCost)}</p>
+                          <p className="text-3xl font-black text-purple-700">{formatCurrency(displayCost.routingCost)}</p>
                           <p className="text-[10px] text-purple-600/60">Baseado em taxas de máquina e mão de obra</p>
                         </div>
                         <div className="p-6 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col gap-2">
@@ -1091,7 +1087,7 @@ export const ProductModule = () => {
                             <p className="text-xs font-bold text-primary uppercase">Custo Total Industrial</p>
                             <TrendingUp className="h-4 w-4 text-primary" />
                           </div>
-                          <p className="text-3xl font-black text-primary">{formatCurrency(costAnalysis.total)}</p>
+                          <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
                           <p className="text-[10px] text-primary/60">Custo unitário estimado de produção</p>
                         </div>
                       </div>
@@ -1113,21 +1109,28 @@ export const ProductModule = () => {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-border">
-                                {formData.bom.map((item, idx) => {
-                                  const mat = materials.find(m => m.id === item.materialId);
-                                  const prod = items.find(p => p.id === item.childProductId);
-                                  const name = mat ? mat.description : prod ? prod.name : "Item não selecionado";
-                                  const unitCost = mat ? Number(mat.currentCost) : 0;
-                                  const qtyWithLoss = item.quantity * (1 + (item.lossPercentage / 100));
-                                  return (
+                                {loadingCost ? (
+                                  <tr>
+                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
+                                      Carregando análise do backend...
+                                    </td>
+                                  </tr>
+                                ) : displayCost.details.materials.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
+                                      Nenhum material ou componente na estrutura salva.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  displayCost.details.materials.map((item: any, idx: number) => (
                                     <tr key={idx}>
-                                      <td className="p-3 font-medium">{name}</td>
-                                      <td className="p-3 text-right">{formatNumber(qtyWithLoss, 4)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(unitCost)}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(unitCost * qtyWithLoss)}</td>
+                                      <td className="p-3 font-medium">{item.description}</td>
+                                      <td className="p-3 text-right">{formatNumber(item.requiredQty, 4)}</td>
+                                      <td className="p-3 text-right">{formatCurrency(item.basePrice)}</td>
+                                      <td className="p-3 text-right font-bold">{formatCurrency(item.unitCost)}</td>
                                     </tr>
-                                  );
-                                })}
+                                  ))
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -1149,21 +1152,28 @@ export const ProductModule = () => {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-border">
-                                {formData.routing.map((step, idx) => {
-                                  const machine = machines.find(m => m.id === step.machineId);
-                                  const role = roles.find(r => r.id === step.roleId);
-                                  const machineRate = machine ? Number(machine.hourlyRate) / 60 : 0;
-                                  const laborRate = role ? Number(role.hourlyRate) / 60 : 0;
-                                  const totalTime = Number(step.setupTimeMin) + Number(step.operationTimeMin);
-                                  return (
+                                {loadingCost ? (
+                                  <tr>
+                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
+                                      Carregando análise do backend...
+                                    </td>
+                                  </tr>
+                                ) : displayCost.details.operations.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
+                                      Nenhum processo no roteiro salvo.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  displayCost.details.operations.map((step: any, idx: number) => (
                                     <tr key={idx}>
                                       <td className="p-3 font-medium">{step.description || `Op. ${step.sequence}`}</td>
-                                      <td className="p-3 text-right">{totalTime}</td>
-                                      <td className="p-3 text-right">{formatCurrency(machineRate + laborRate)}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(totalTime * (machineRate + laborRate))}</td>
+                                      <td className="p-3 text-right">{formatNumber(step.totalTimeH * 60, 2)}</td>
+                                      <td className="p-3 text-right">{formatCurrency(step.opCostPerUnit / (step.totalTimeH * 60 || 1))}</td>
+                                      <td className="p-3 text-right font-bold">{formatCurrency(step.totalStepCost)}</td>
                                     </tr>
-                                  );
-                                })}
+                                  ))
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -1178,7 +1188,7 @@ export const ProductModule = () => {
                   <div className="flex items-center gap-6">
                     <div className="flex flex-col">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase">Custo Industrial</p>
-                      <p className="text-lg font-black text-primary">{formatCurrency(costAnalysis.total)}</p>
+                      <p className="text-lg font-black text-primary">{formatCurrency(displayCost.total)}</p>
                     </div>
                     <div className="h-8 w-px bg-border" />
                     <div className="flex flex-col">
