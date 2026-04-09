@@ -126,6 +126,23 @@ export const MachineModule = () => {
     }
   };
 
+  const handleDelete = async (machine: Machine) => {
+    if (!window.confirm(`Tem certeza que deseja excluir esta máquina?\n(${machine.name})`)) return;
+    
+    try {
+      const res = await fetch(`/api/machines/${machine.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errorData = await res.json();
+        window.alert(errorData.message || "Erro ao excluir máquina.");
+        return;
+      }
+      fetchData();
+    } catch (error) {
+      console.error("Erro ao deletar máquina:", error);
+      window.alert("Erro de conexão ao tentar excluir máquina.");
+    }
+  };
+
   const calculateHM = (machine: Machine) => {
     const dep = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
     const other = machine.MachineCostComponent.reduce((acc, c) => acc + Number(c.monthlyEstimatedCost), 0);
@@ -179,12 +196,22 @@ export const MachineModule = () => {
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{machine.code}</p>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => handleOpenModal(machine)}
-                    className="p-2 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
-                  >
-                    <Edit2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleOpenModal(machine)}
+                      className="p-2 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
+                      title="Editar"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(machine)}
+                      className="p-2 rounded-lg hover:bg-background text-muted-foreground hover:text-red-500 transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="p-5 space-y-4">

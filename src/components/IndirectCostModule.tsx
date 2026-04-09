@@ -104,6 +104,23 @@ export const IndirectCostModule = () => {
     }
   };
 
+  const handleDelete = async (cost: IndirectCost) => {
+    if (!window.confirm(`Tem certeza que deseja excluir este custo indireto: ${cost.description}?`)) return;
+    
+    try {
+      const res = await fetch(`/api/indirect-costs/${cost.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errorData = await res.json();
+        window.alert(errorData.message || "Erro ao excluir custo indireto.");
+        return;
+      }
+      fetchData();
+    } catch (error) {
+      console.error("Erro ao deletar custo indireto:", error);
+      window.alert("Erro de conexão ao tentar excluir custo indireto.");
+    }
+  };
+
   const categories = [
     { id: "CIF", label: "Custo Indireto de Fab. (CIF)", icon: FactoryIcon, color: "text-blue-600", bg: "bg-blue-50" },
     { id: "ADMINISTRATIVO", label: "Administrativo", icon: Building2, color: "text-purple-600", bg: "bg-purple-50" },
@@ -229,12 +246,20 @@ export const IndirectCostModule = () => {
                         {cost.status}
                       </span>
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right flex justify-end gap-2">
                       <button 
                         onClick={() => handleOpenModal(cost)}
                         className="p-2 rounded-lg hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
+                        title="Editar"
                       >
                         <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(cost)}
+                        className="p-2 rounded-lg hover:bg-accent text-muted-foreground hover:text-red-500 transition-colors"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </td>
                   </tr>

@@ -246,9 +246,23 @@ async function startServer() {
   });
 
   app.delete("/api/machines/:id", async (req, res) => {
-    const { id } = req.params;
-    await prisma.machine.delete({ where: { id } });
-    res.json({ success: true });
+    try {
+      const { id } = req.params;
+      
+      const inUse = await prisma.productRouting.findFirst({ where: { machineId: id } });
+      if (inUse) {
+        return res.status(400).json({ error: "IN_USE", message: "Não é possível excluir esta máquina porque ela está vinculada a roteiros de produção." });
+      }
+
+      await prisma.$transaction([
+        prisma.machineCostComponent.deleteMany({ where: { machineId: id } }),
+        prisma.machine.delete({ where: { id } })
+      ]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Erro ao deletar maquina:", err);
+      res.status(500).json({ error: "Erro ao excluir máquina." });
+    }
   });
 
   // --- API: Payroll Components ---
@@ -1264,9 +1278,20 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   app.delete("/api/indirect-costs/:id", async (req, res) => {
-    const { id } = req.params;
-    await prisma.indirectCost.delete({ where: { id } });
-    res.json({ success: true });
+    try {
+      const { id } = req.params;
+      
+      const target = await prisma.indirectCost.findUnique({ where: { id } });
+      if (target?.category === "GLOBAL_PARAM") {
+        return res.status(400).json({ error: "PROTECTED_PARAM", message: "Este registro é um parâmetro global do sistema e não pode ser excluído por esta tela." });
+      }
+      
+      await prisma.indirectCost.delete({ where: { id } });
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Erro ao deletar custo indireto:", err);
+      res.status(500).json({ error: "Erro ao excluir custo indireto." });
+    }
   });
 
   // --- API: Tax Rules (Módulo Tributário) ---
