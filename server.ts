@@ -1448,6 +1448,96 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  app.post("/api/pricing/simulate-batch", async (req, res) => {
+    const { productIds, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
+    
+    if (!Array.isArray(productIds) || productIds.length === 0) return res.status(400).json({ error: "Nenhum produto selecionado" });
+    
+    try {
+      const taxRule = await prisma.taxRule.findUnique({
+        where: { id: taxRuleId },
+        include: { TaxComponent: true }
+      });
+      if (!taxRule) return res.status(404).json({ error: "Regra fiscal não encontrada." });
+
+      const taxRate = taxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
+      const commRate = Number(commission || 0) / 100;
+      const marginRate = Number(desiredMargin || 0) / 100;
+      const otherRate = Number(otherVariables || 0) / 100;
+      const freight = Number(freightOut || 0);
+
+      const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+
+      const results = [];
+      let successCount = 0; let errorCount = 0;
+
+      for (const pid of productIds) {
+        try {
+          const costData = await getProductCostAnalysis(pid);
+          if (!costData || "error" in (costData as any)) {
+            errorCount++;
+            results.push({ productId: pid, status: "ERROR", message: (costData as any)?.message || "Custo inconclusivo ou sem roteiro" });
+            continue;
+          }
+
+          const summary = (costData as any).summary || costData;
+          const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
+          
+          if (divisor <= 0) {
+            errorCount++;
+            results.push({ productId: pid, sku: summary.sku, name: summary.name, status: "ERROR", message: "Margem e impostos excedem 100%." });
+            continue;
+          }
+
+          const suggestedPrice = (ciu + freight) / divisor;
+
+          successCount++;
+          results.push({
+            productId: pid,
+            sku: summary.sku,
+            name: summary.name,
+            ciu,
+            suggestedPrice,
+            marginRate: desiredMargin,
+            markup: ciu > 0 ? suggestedPrice / ciu : 0,
+            status: "SUCCESS"
+          });
+        } catch (err: any) {
+          errorCount++;
+          results.push({ productId: pid, status: "ERROR", message: err.message || "Erro genérico no motor" });
+        }
+      }
+
+      res.json({ summary: { total: productIds.length, success: successCount, error: errorCount }, results });
+    } catch (err) {
+      console.error("Batch simulate error:", err);
+      res.status(500).json({ error: "Falha catastrófica no motor de lote." });
+    }
+  });
+
+  app.post("/api/pricing/apply-batch", async (req, res) => {
+    const { validResults, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
+    
+    if (!Array.isArray(validResults) || validResults.length === 0) return res.status(400).json({ error: "Nenhum resultado válido fornecido" });
+
+    try {
+       let appliedCount = 0;
+       for (const item of validResults) {
+          if (item.status !== "SUCCESS") continue;
+          await prisma.productPricing.upsert({
+            where: { productId_taxRuleId: { productId: item.productId, taxRuleId } },
+            update: { desiredMargin, commission, freightOut, otherVariables },
+            create: { productId: item.productId, taxRuleId, desiredMargin, commission, freightOut, otherVariables }
+          });
+          appliedCount++;
+       }
+       res.json({ success: true, appliedCount });
+    } catch (err) {
+      console.error("Batch apply error:", err);
+      res.status(500).json({ error: "Erro ao aplicar premissas em banco." });
+    }
+  });
+
   // --- API: Simulations (What-if Analysis) ---
   app.get("/api/simulations", async (req, res) => {
     const simulations = await prisma.simulation.findMany({
