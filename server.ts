@@ -1014,6 +1014,8 @@ app.delete("/api/employees/:id", async (req, res) => {
               setupTimeMin: step.setupTimeMin,
               operationTimeMin: step.operationTimeMin,
               efficiencyExpected: step.efficiencyExpected,
+              cycleTimeSeconds: step.cycleTimeSeconds,
+              cavities: step.cavities,
               notes: step.notes,
             }))
           }
@@ -1092,6 +1094,8 @@ app.delete("/api/employees/:id", async (req, res) => {
                 setupTimeMin: step.setupTimeMin,
                 operationTimeMin: step.operationTimeMin,
                 efficiencyExpected: step.efficiencyExpected,
+                cycleTimeSeconds: step.cycleTimeSeconds,
+                cavities: step.cavities,
                 notes: step.notes,
               }))
             }
