@@ -1575,10 +1575,12 @@ app.delete("/api/employees/:id", async (req, res) => {
       const role = step.Role;
       const roleData = rolesWithComponents.find(rc => rc.roleId === step.roleId);
 
+      // 1. Custo_Maquina_Hora
       const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
       const otherMonthlyCosts = machine.MachineCostComponent.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
       const machineHourCost = (depreciationMonthly + otherMonthlyCosts) / 176;
 
+      // 2. Custo_MO_Hora
       const salary = Number(role.baseSalary);
       let totalPayrollLoad = 0;
       const payrollComponents = roleData?.components || [];
@@ -1593,15 +1595,42 @@ app.delete("/api/employees/:id", async (req, res) => {
       }
       const hhCost = (salary + totalPayrollLoad) / Number(role.monthlyHours || 220);
 
+      // 3. Custo_Celula_Hora = Maquina + MO
+      const cellHourCost = machineHourCost + hhCost;
+
+      // TODO: Campos 'cycleTimeSeconds' e 'cavities' precisam ser criados no banco (ProductRouting).
+      // Usando defaults temporários baseados no operationTimeMin atual para manter compatibilidade.
+      // Se operationTimeMin for 0.5 min, cycleTime = 30s.
+      const cycleTimeSeconds = Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30;
+      const cavities = 1; // Fallback temporário
+      const efficiency = Number(step.efficiencyExpected) > 0 ? Number(step.efficiencyExpected) / 100 : 1.0;
+
+      // 4. Ciclos_Hora = 3600 / ciclo_seg
+      const cyclesPerHour = 3600 / cycleTimeSeconds;
+
+      // 5. Peças_Hora = Ciclos_Hora × cavidades
+      const grossPiecesPerHour = cyclesPerHour * cavities;
+
+      // 6. Peças_Líquidas_Hora = Peças_Hora × eficiência
+      const netPiecesPerHour = grossPiecesPerHour * efficiency;
+
+      // 7. Custo_Transformacao_Unit = Custo_Celula_Hora / Peças_Líquidas_Hora
+      const unitTransformationCost = cellHourCost / netPiecesPerHour;
+
+      // Rateio de setup por peça
       const setupTimeH = Number(step.setupTimeMin) / 60;
-      const opTimeH = Number(step.operationTimeMin) / 60;
-      const efficiency = Number(step.efficiencyExpected) / 100;
-      const effectiveOpTimeH = opTimeH / efficiency;
+      const setupCostPerUnit = (setupTimeH * cellHourCost) / lotSize;
+
+      const totalStepCost = unitTransformationCost + setupCostPerUnit;
+
+      // Rateio proporcional para manter a estrutura de retorno atual (separando HH e HM)
+      const hhRatio = cellHourCost > 0 ? hhCost / cellHourCost : 0;
+      const hmRatio = cellHourCost > 0 ? machineHourCost / cellHourCost : 0;
 
       return {
-        totalHH: (setupTimeH / lotSize + effectiveOpTimeH) * hhCost,
-        totalHM: (setupTimeH / lotSize + effectiveOpTimeH) * machineHourCost,
-        totalTimeH: (setupTimeH / lotSize + effectiveOpTimeH)
+        totalHH: totalStepCost * hhRatio,
+        totalHM: totalStepCost * hmRatio,
+        totalTimeH: (1 / netPiecesPerHour) + (setupTimeH / lotSize)
       };
     });
 
@@ -1713,9 +1742,12 @@ app.delete("/api/employees/:id", async (req, res) => {
     const operationItems = await Promise.all(product!.ProductRouting.map(async (step) => {
       const machine = step.Machine;
       const role = step.Role;
+      // 1. Custo_Maquina_Hora
       const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
       const otherMonthlyCosts = machine.MachineCostComponent.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
       const machineHourCost = (depreciationMonthly + otherMonthlyCosts) / 176;
+      
+      // 2. Custo_MO_Hora
       const salary = Number(role.baseSalary);
       let totalPayrollLoad = 0;
       
@@ -1731,10 +1763,35 @@ app.delete("/api/employees/:id", async (req, res) => {
         totalPayrollLoad += comp.calculationType === "PERCENTAGE" ? (salary * Number(comp.value)) / 100 : Number(comp.value);
       });
       const hhCost = (salary + totalPayrollLoad) / Number(role.monthlyHours || 220);
+      
+      // 3. Custo_Celula_Hora = Maquina + MO
+      const cellHourCost = machineHourCost + hhCost;
+
+      // TODO: Campos 'cycleTimeSeconds' e 'cavities'
+      const cycleTimeSeconds = Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30;
+      const cavities = 1;
+      const efficiency = Number(step.efficiencyExpected) > 0 ? Number(step.efficiencyExpected) / 100 : 1.0;
+
+      // 4. Ciclos_Hora = 3600 / ciclo_seg
+      const cyclesPerHour = 3600 / cycleTimeSeconds;
+
+      // 5. Peças_Hora = Ciclos_Hora × cavidades
+      const grossPiecesPerHour = cyclesPerHour * cavities;
+
+      // 6. Peças_Líquidas_Hora = Peças_Hora × eficiência
+      const netPiecesPerHour = grossPiecesPerHour * efficiency;
+
+      // 7. Custo_Transformacao_Unit = Custo_Celula_Hora / Peças_Líquidas_Hora
+      const unitTransformationCost = cellHourCost / netPiecesPerHour;
+
       const setupTimeH = Number(step.setupTimeMin) / 60;
-      const opTimeH = Number(step.operationTimeMin) / 60;
-      const efficiency = Number(step.efficiencyExpected) / 100;
-      const effectiveOpTimeH = opTimeH / efficiency;
+      const setupCostPerUnit = (setupTimeH * cellHourCost) / lotSize;
+
+      const totalStepCost = unitTransformationCost + setupCostPerUnit;
+
+      const hhRatio = cellHourCost > 0 ? hhCost / cellHourCost : 0;
+      const hmRatio = cellHourCost > 0 ? machineHourCost / cellHourCost : 0;
+
       return {
         sequence: step.sequence,
         description: step.description,
@@ -1744,11 +1801,15 @@ app.delete("/api/employees/:id", async (req, res) => {
         setupTimeMin: Number(step.setupTimeMin),
         opTimeMin: Number(step.operationTimeMin),
         efficiency: efficiency * 100,
-        setupCostPerUnit: (setupTimeH * (hhCost + machineHourCost)) / lotSize,
-        opCostPerUnit: effectiveOpTimeH * (hhCost + machineHourCost),
-        totalStepCost: ((setupTimeH / lotSize) + effectiveOpTimeH) * (hhCost + machineHourCost),
-        totalHH: (setupTimeH / lotSize + effectiveOpTimeH) * hhCost,
-        totalHM: (setupTimeH / lotSize + effectiveOpTimeH) * machineHourCost,
+        setupCostPerUnit: setupCostPerUnit,
+        opCostPerUnit: unitTransformationCost,
+        totalStepCost: totalStepCost,
+        totalHH: totalStepCost * hhRatio,
+        totalHM: totalStepCost * hmRatio,
+        totalTimeH: (1 / netPiecesPerHour) + (setupTimeH / lotSize),
+        cycleTimeSeconds,
+        cavities,
+        netPiecesPerHour
       };
     }));
 
@@ -1766,8 +1827,8 @@ app.delete("/api/employees/:id", async (req, res) => {
         materials: validMaterialItems,
         operations: operationItems,
         indirects: {
-          cifRatePerHour: analysis.totalCIF_Unit / (operationItems.reduce((acc, i) => acc + (i.setupTimeMin/60/lotSize) + (i.opTimeMin/60/(i.efficiency/100)), 0)),
-          opexRatePerHour: analysis.totalOPEX_Unit / (operationItems.reduce((acc, i) => acc + (i.setupTimeMin/60/lotSize) + (i.opTimeMin/60/(i.efficiency/100)), 0)),
+          cifRatePerHour: analysis.totalCIF_Unit / (operationItems.reduce((acc, i) => acc + i.totalTimeH, 0) || 1),
+          opexRatePerHour: analysis.totalOPEX_Unit / (operationItems.reduce((acc, i) => acc + i.totalTimeH, 0) || 1),
           totalCIF_Monthly: indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0),
           totalOPEX_Monthly: indirectCosts.filter(c => c.category !== "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0)
         }
