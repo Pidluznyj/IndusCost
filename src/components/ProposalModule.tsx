@@ -1,3 +1,4 @@
+// src/components/ProposalModule.tsx
 import React, { useEffect, useState, useMemo } from "react";
 import { 
   Plus, 
@@ -6,140 +7,76 @@ import {
   Trash2, 
   X,
   Loader2,
-  Package,
-  Layers,
-  Cpu,
-  Settings,
-  ChevronRight,
-  ChevronDown,
-  Info,
-  Save,
-  AlertCircle,
-  TrendingUp,
-  DollarSign,
-  Clock,
-  ArrowRight,
-  Box,
   FileText,
-  History,
+  Calendar,
+  User,
   CheckCircle2,
-  Download
+  Clock,
+  AlertCircle,
+  ChevronRight,
+  Save,
+  ArrowLeft,
+  Package,
+  PlusCircle,
+  Calculator,
+  DollarSign,
+  Percent,
+  Truck,
+  Info,
+  ExternalLink,
+  Printer
 } from "lucide-react";
-import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
-import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting } from "@/src/types/product";
-import { Material } from "@/src/types/material";
+import { cn } from "@/src/lib/utils";
+import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
+import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
-import { DataImportDialog } from "./shared/DataImportDialog";
-import { ProductImportConfig } from "../lib/importer/ProductConfig";
 
-/* -------------------------------------------------------------------------- */
-/*                                Sub-Components                              */
-/* -------------------------------------------------------------------------- */
-
-const Badge = ({ children, variant = "default" }: { children: React.ReactNode, variant?: "default" | "success" | "warning" | "danger" | "info" }) => {
-  const variants = {
-    default: "bg-accent text-accent-foreground",
-    success: "bg-green-500/10 text-green-600",
-    warning: "bg-yellow-500/10 text-yellow-600",
-    danger: "bg-red-500/10 text-red-600",
-    info: "bg-blue-500/10 text-blue-600",
-  };
-  return (
-    <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider", variants[variant])}>
-      {children}
-    </span>
-  );
+const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
+  DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
+  ANALYSIS: { label: "Em Análise", color: "bg-blue-500/10 text-blue-600", icon: Clock },
+  SENT: { label: "Enviada", color: "bg-purple-500/10 text-purple-600", icon: ExternalLink },
+  APPROVED: { label: "Aprovada", color: "bg-green-500/10 text-green-600", icon: CheckCircle2 },
+  REJECTED: { label: "Rejeitada", color: "bg-red-500/10 text-red-600", icon: X },
+  EXPIRED: { label: "Expirada", color: "bg-orange-500/10 text-orange-600", icon: AlertCircle },
+  CANCELED: { label: "Cancelada", color: "bg-gray-500/10 text-gray-600", icon: Trash2 },
 };
-
-const TreeNode: React.FC<{ node: any }> = ({ node }) => {
-  const isComponent = node.type === "COMPONENT";
-  const name = isComponent ? node.item?.name : node.item?.description;
-  const code = isComponent ? node.item?.sku : node.item?.code;
-
-  return (
-    <div className="relative">
-      <div className="absolute -left-6 top-4 w-6 h-px bg-border" />
-      <div className="flex items-center gap-3 p-3 bg-accent/30 rounded-lg border border-border group hover:border-primary/30 transition-colors">
-        <div className={cn(
-          "h-8 w-8 rounded flex items-center justify-center",
-          isComponent ? "bg-purple-500/10 text-purple-600" : "bg-orange-500/10 text-orange-600"
-        )}>
-          {isComponent ? <Layers className="h-4 w-4" /> : <Box className="h-4 w-4" />}
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold">{name || "Desconhecido"}</p>
-            <p className="text-[10px] font-bold text-primary">Qtd: {Number(node.quantity)}</p>
-          </div>
-          <p className="text-[10px] text-muted-foreground font-mono">{code}</p>
-        </div>
-      </div>
-      
-      {isComponent && node.item?.children && node.item.children.length > 0 && (
-        <div className="ml-6 border-l-2 border-border pl-6 mt-2 space-y-2">
-          {node.item.children.map((childNode: any, cIdx: number) => (
-            <TreeNode key={cIdx} node={childNode} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-/* -------------------------------------------------------------------------- */
-/*                                Main Module                                 */
-/* -------------------------------------------------------------------------- */
 
 export const ProposalModule = () => {
-  const [items, setItems] = useState<Product[]>([]);
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [machines, setMachines] = useState<any[]>([]);
-  const [roles, setRoles] = useState<any[]>([]);
+  const [view, setView] = useState<"list" | "form">("list");
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isImportOpen, setIsImportOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<Product | null>(null);
-  const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost" | "tree">("info");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [treeData, setTreeData] = useState<any>(null);
-  const [loadingTree, setLoadingTree] = useState(false);
-  const [backendCostAnalysis, setBackendCostAnalysis] = useState<any>(null);
-  const [loadingCost, setLoadingCost] = useState(false);
+  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
 
   // Form State
-  const [formData, setFormData] = useState<CreateProductInput>({
-    sku: "",
-    name: "",
-    description: "",
-    type: "PRODUCT",
-    version: "1.0.0",
-    defaultLotSize: 1,
-    bom: [],
-    routing: [],
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [formData, setFormData] = useState<Partial<Proposal>>({
+    title: "",
+    customerId: "",
+    status: "DRAFT",
+    responsible: "",
+    validityDays: 15,
+    paymentTerms: "",
+    paymentMethod: "",
+    deliveryTimeDays: 7,
+    freightCondition: "CIF",
+    deliveryLocation: "",
+    notes: "",
+    items: []
   });
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [productsRes, materialsRes, machinesRes, rolesRes] = await Promise.all([
-        fetch("/api/products"),
-        fetch("/api/materials"),
-        fetch("/api/machines"),
-        fetch("/api/roles")
+      const [pRes, cRes, prRes] = await Promise.all([
+        fetch("/api/proposals"),
+        fetch("/api/customers"),
+        fetch("/api/products")
       ]);
-      
-      const [productsData, materialsData, machinesData, rolesData] = await Promise.all([
-        productsRes.json(),
-        materialsRes.json(),
-        machinesRes.json(),
-        rolesRes.json()
-      ]);
-
-      setItems(productsData);
-      setMaterials(materialsData);
-      setMachines(machinesData);
-      setRoles(rolesData);
+      setProposals(await pRes.json());
+      setCustomers(await cRes.json());
+      setProducts(await prRes.json());
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
     } finally {
@@ -151,101 +88,52 @@ export const ProposalModule = () => {
     fetchData();
   }, []);
 
-  useEffect(() => {
-    if (activeFormTab === "tree" && editingItem?.id) {
-      setLoadingTree(true);
-      fetch(`/api/products/${editingItem.id}/tree`)
-        .then(res => res.json())
-        .then(data => setTreeData(data))
-        .catch(err => console.error("Erro ao carregar árvore:", err))
-        .finally(() => setLoadingTree(false));
-    }
-  }, [activeFormTab, editingItem?.id]);
-
-  useEffect(() => {
-    if ((activeFormTab === "cost" || isModalOpen) && editingItem?.id) {
-      setLoadingCost(true);
-      fetch(`/api/products/${editingItem.id}/cost-analysis`)
-        .then(res => res.json())
-        .then(data => setBackendCostAnalysis(data))
-        .catch(err => console.error("Erro ao carregar custo:", err))
-        .finally(() => setLoadingCost(false));
-    } else if (!editingItem?.id) {
-      setBackendCostAnalysis(null);
-    }
-  }, [activeFormTab, isModalOpen, editingItem?.id]);
-
-  const handleOpenModal = (item?: Product) => {
-    if (item) {
-      setEditingItem(item);
-      setFormData({
-        sku: item.sku,
-        name: item.name,
-        description: item.description || "",
-        type: item.type,
-        version: item.version,
-        defaultLotSize: item.defaultLotSize,
-        bom: item.ProductBOM.map(b => ({
-          materialId: b.materialId,
-          childProductId: b.childProductId,
-          quantity: Number(b.quantity),
-          lossPercentage: Number(b.lossPercentage),
-          notes: b.notes
-        })),
-        routing: item.ProductRouting.map(r => ({
-          id: r.id,
-          sequence: r.sequence,
-          description: r.description,
-          machineId: r.machineId,
-          roleId: r.roleId,
-          setupTimeMin: Number(r.setupTimeMin),
-          operationTimeMin: Number(r.operationTimeMin),
-          efficiencyExpected: Number(r.efficiencyExpected),
-          cycleTimeSeconds: r.cycleTimeSeconds != null ? Number(r.cycleTimeSeconds) : undefined,
-          cavities: r.cavities != null ? Number(r.cavities) : undefined,
-          notes: r.notes
-        })),
-      });
-    } else {
-      setEditingItem(null);
-      setFormData({
-        sku: "",
-        name: "",
-        description: "",
-        type: "PRODUCT",
-        version: "1.0.0",
-        defaultLotSize: 1,
-        bom: [],
-        routing: [],
-      });
-    }
-    setActiveFormTab("info");
-    setIsModalOpen(true);
+  const handleCreateNew = () => {
+    setEditingProposal(null);
+    setFormData({
+      title: "",
+      customerId: "",
+      status: "DRAFT",
+      responsible: "",
+      validityDays: 15,
+      paymentTerms: "",
+      paymentMethod: "",
+      deliveryTimeDays: 7,
+      freightCondition: "CIF",
+      deliveryLocation: "",
+      notes: "",
+      items: []
+    });
+    setView("form");
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleEdit = async (id: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/proposals/${id}`);
+      const data = await res.json();
+      setEditingProposal(data);
+      setFormData(data);
+      setView("form");
+    } catch (error) {
+      console.error("Erro ao buscar proposta:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // Validation based on type
-    if (formData.type === "PRODUCT" && formData.bom.length === 0) {
-      alert("Um PRODUTO deve ter pelo menos um COMPONENTE em sua estrutura.");
+  const handleSave = async () => {
+    if (!formData.customerId) {
+      alert("Selecione um cliente.");
+      return;
+    }
+    if (!formData.items || formData.items.length === 0) {
+      alert("Adicione pelo menos um item à proposta.");
       return;
     }
 
-    // Validate routing fields
-    for (const step of formData.routing) {
-      if (step.cycleTimeSeconds === undefined || step.cycleTimeSeconds === null || !Number.isFinite(step.cycleTimeSeconds) || step.cycleTimeSeconds <= 0) {
-        alert("O tempo de ciclo deve ser um número válido maior que zero.");
-        return;
-      }
-      if (step.cavities === undefined || step.cavities === null || !Number.isFinite(step.cavities) || step.cavities < 1 || !Number.isInteger(step.cavities)) {
-        alert("O número de cavidades deve ser um número inteiro válido maior ou igual a 1.");
-        return;
-      }
-    }
-
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/products/${editingItem.id}` : "/api/products";
+    const method = editingProposal ? "PUT" : "POST";
+    const url = editingProposal ? `/api/proposals/${editingProposal.id}` : "/api/proposals";
 
     try {
       const res = await fetch(url, {
@@ -254,254 +142,501 @@ export const ProposalModule = () => {
         body: JSON.stringify(formData),
       });
       if (res.ok) {
-        setIsModalOpen(false);
+        setView("list");
         fetchData();
-      } else {
-        const error = await res.json();
-        alert(error.error || "Erro ao salvar item.");
       }
     } catch (error) {
-      console.error("Erro ao salvar:", error);
+      console.error("Erro ao salvar proposta:", error);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este item? Esta ação não pode ser desfeita.")) {
-      return;
-    }
-
+    if (!confirm("Excluir esta proposta permanentemente?")) return;
     try {
-      const res = await fetch(`/api/products/${id}`, {
-        method: "DELETE",
-      });
-
-      if (res.ok) {
-        setSelectedIds(prev => prev.filter(i => i !== id));
-        fetchData();
-      } else {
-        const error = await res.json();
-        alert(error.error || "Erro ao excluir item.");
-      }
+      await fetch(`/api/proposals/${id}`, { method: "DELETE" });
+      fetchData();
     } catch (error) {
-      console.error("Erro ao excluir:", error);
-      alert("Erro de conexão ao tentar excluir o item.");
+      console.error("Erro ao excluir proposta:", error);
     }
   };
 
-  const handleBulkDelete = async () => {
-    if (selectedIds.length === 0) return;
+  const addItem = async (productId: string) => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
+    try {
+      const res = await fetch(`/api/products/${productId}/pricing-snapshot`);
+      const snapshot = await res.json();
+
+      const newItem: ProposalItem = {
+        productId,
+        Product: product,
+        quantity: 1,
+        unit: "UN",
+        unitCost: snapshot.unitCost,
+        suggestedPrice: snapshot.suggestedPrice,
+        negotiatedPrice: snapshot.suggestedPrice,
+        discountPerc: 0,
+        discountValue: 0,
+        marginValue: snapshot.suggestedPrice - snapshot.unitCost,
+        marginPerc: snapshot.marginPerc,
+        taxesPerc: snapshot.taxesPerc,
+        taxesValue: snapshot.suggestedPrice * (snapshot.taxesPerc / 100),
+        commissionPerc: snapshot.commissionPerc,
+        commissionValue: snapshot.suggestedPrice * (snapshot.commissionPerc / 100),
+        freightValue: snapshot.freightValue,
+      };
+
+      setFormData(prev => ({
+        ...prev,
+        items: [...(prev.items || []), newItem]
+      }));
+    } catch (error) {
+      console.error("Erro ao adicionar item:", error);
+    }
+  };
+
+  const updateItem = (index: number, updates: Partial<ProposalItem>) => {
+    const newItems = [...(formData.items || [])];
+    const item = { ...newItems[index], ...updates };
+
+    // Recalcular valores do item
+    const gross = item.quantity * item.negotiatedPrice;
     
-    if (!confirm(`Deseja realmente excluir os ${selectedIds.length} itens selecionados?`)) {
-      return;
+    // Se mudou o desconto em %, atualiza o valor
+    if (updates.discountPerc !== undefined) {
+      item.discountValue = gross * (item.discountPerc / 100);
+    } 
+    // Se mudou o valor do desconto, atualiza a %
+    else if (updates.discountValue !== undefined) {
+      item.discountPerc = gross > 0 ? (item.discountValue / gross) * 100 : 0;
     }
 
-    try {
-      const res = await fetch("/api/products/bulk-delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selectedIds })
-      });
+    const net = gross - item.discountValue;
+    const totalCost = item.quantity * item.unitCost;
+    
+    item.taxesValue = net * (item.taxesPerc / 100);
+    item.commissionValue = net * (item.commissionPerc / 100);
+    
+    // Margem Líquida = Receita Líquida - Impostos - Comissões - Frete - Custo Industrial
+    item.marginValue = net - item.taxesValue - item.commissionValue - item.freightValue - totalCost;
+    item.marginPerc = net > 0 ? (item.marginValue / net) * 100 : 0;
 
-      const result = await res.json();
-
-      if (res.ok) {
-        if (result.blocked > 0) {
-          const blockedDetails = result.details
-            .filter((d: any) => d.status === "blocked")
-            .map((d: any) => `- ${d.name}: ${d.reason}`)
-            .join("\n");
-          
-          alert(`${result.deleted} itens excluídos.\n${result.blocked} itens não puderam ser excluídos:\n${blockedDetails}`);
-        } else {
-          alert(`${result.deleted} itens excluídos com sucesso.`);
-        }
-        setSelectedIds([]);
-        fetchData();
-      } else {
-        alert(result.error || "Erro ao processar exclusão em massa.");
-      }
-    } catch (error) {
-      console.error("Bulk delete error:", error);
-      alert("Erro de conexão ao tentar excluir itens.");
-    }
+    newItems[index] = item;
+    setFormData(prev => ({ ...prev, items: newItems }));
   };
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+  const removeItem = (index: number) => {
+    const newItems = [...(formData.items || [])];
+    newItems.splice(index, 1);
+    setFormData(prev => ({ ...prev, items: newItems }));
   };
 
-  const toggleSelectAll = () => {
-    if (selectedIds.length === filteredItems.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredItems.map(i => i.id));
-    }
-  };
+  // Totais Consolidados
+  const totals = useMemo(() => {
+    const items = formData.items || [];
+    const totalGross = items.reduce((acc, i) => acc + (i.quantity * i.negotiatedPrice), 0);
+    const totalDiscount = items.reduce((acc, i) => acc + i.discountValue, 0);
+    const totalNet = totalGross - totalDiscount;
+    const totalCost = items.reduce((acc, i) => acc + (i.quantity * i.unitCost), 0);
+    const totalTaxes = items.reduce((acc, i) => acc + i.taxesValue, 0);
+    const totalComm = items.reduce((acc, i) => acc + i.commissionValue, 0);
+    const totalFreight = items.reduce((acc, i) => acc + i.freightValue, 0);
+    
+    const totalMarginValue = totalNet - totalTaxes - totalComm - totalFreight - totalCost;
+    const totalMarginPerc = totalNet > 0 ? (totalMarginValue / totalNet) * 100 : 0;
 
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.sku.toLowerCase().includes(searchTerm.toLowerCase())
+    return {
+      totalItems: items.length,
+      totalGross,
+      totalDiscount,
+      totalNet,
+      totalCost,
+      totalTaxes,
+      totalComm,
+      totalFreight,
+      totalMarginValue,
+      totalMarginPerc
+    };
+  }, [formData.items]);
+
+  // Sincronizar totais com o formData para salvar
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      totalItems: totals.totalItems,
+      totalGrossValue: totals.totalGross,
+      totalDiscount: totals.totalDiscount,
+      totalNetValue: totals.totalNet,
+      totalCost: totals.totalCost,
+      totalTaxes: totals.totalTaxes,
+      totalCommission: totals.totalComm,
+      totalFreight: totals.totalFreight,
+      totalMarginValue: totals.totalMarginValue,
+      totalMarginPerc: totals.totalMarginPerc
+    }));
+  }, [totals]);
+
+  const filteredProposals = proposals.filter(p => 
+    (p.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.Customer?.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.number.toString().includes(searchTerm)
   );
 
-  /* -------------------------------------------------------------------------- */
-  /*                                BOM Helpers                                 */
-  /* -------------------------------------------------------------------------- */
+  if (view === "form") {
+    return (
+      <div className="space-y-6 pb-20">
+        {/* Form Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setView("list")}
+              className="p-2 rounded-full hover:bg-accent transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div>
+              <h3 className="text-2xl font-bold">
+                {editingProposal ? `Editar Proposta #${editingProposal.number}` : "Nova Proposta Comercial"}
+              </h3>
+              <p className="text-sm text-muted-foreground">Preencha os dados e configure os itens para gerar a proposta.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <select 
+              className={cn(
+                "px-4 py-2 rounded-lg border border-border font-bold text-sm outline-none",
+                STATUS_CONFIG[formData.status as ProposalStatus]?.color
+              )}
+              value={formData.status}
+              onChange={(e) => setFormData({...formData, status: e.target.value as ProposalStatus})}
+            >
+              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+            <button 
+              onClick={handleSave}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-2 rounded-lg font-bold hover:opacity-90 transition-opacity shadow-lg"
+            >
+              <Save className="h-4 w-4" />
+              Salvar Proposta
+            </button>
+          </div>
+        </div>
 
-  const addBOMItem = () => {
-    setFormData({
-      ...formData,
-      bom: [...formData.bom, { quantity: 1, lossPercentage: 0 }]
-    });
-  };
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Client & Conditions */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-6">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <User className="h-4 w-4" /> Cliente e Cabeçalho
+              </h4>
+              
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Título da Proposta</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Fornecimento de Peças - Projeto X"
+                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    value={formData.title}
+                    onChange={(e) => setFormData({...formData, title: e.target.value})}
+                  />
+                </div>
 
-  const removeBOMItem = (index: number) => {
-    const newBOM = [...formData.bom];
-    newBOM.splice(index, 1);
-    setFormData({ ...formData, bom: newBOM });
-  };
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Cliente</label>
+                  <select
+                    required
+                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    value={formData.customerId}
+                    onChange={(e) => setFormData({...formData, customerId: e.target.value})}
+                  >
+                    <option value="">Selecione um cliente...</option>
+                    {customers.map(c => (
+                      <option key={c.id} value={c.id}>{c.companyName}</option>
+                    ))}
+                  </select>
+                </div>
 
-  const updateBOMItem = (index: number, field: keyof ProductBOM, value: any) => {
-    const newBOM = [...formData.bom];
-    newBOM[index] = { ...newBOM[index], [field]: value };
-    
-    // Ensure XOR between material and child product
-    if (field === "materialId") newBOM[index].childProductId = undefined;
-    if (field === "childProductId") newBOM[index].materialId = undefined;
-    
-    setFormData({ ...formData, bom: newBOM });
-  };
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Responsável</label>
+                    <input
+                      type="text"
+                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                      value={formData.responsible}
+                      onChange={(e) => setFormData({...formData, responsible: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Validade (Dias)</label>
+                    <input
+                      type="number"
+                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                      value={formData.validityDays}
+                      onChange={(e) => setFormData({...formData, validityDays: parseInt(e.target.value)})}
+                    />
+                  </div>
+                </div>
+              </div>
 
-  /* -------------------------------------------------------------------------- */
-  /*                              Routing Helpers                               */
-  /* -------------------------------------------------------------------------- */
+              <hr className="border-border" />
 
-  const addRoutingStep = () => {
-    const nextSequence = formData.routing.length > 0 
-      ? Math.max(...formData.routing.map(r => r.sequence)) + 10 
-      : 10;
-    
-    setFormData({
-      ...formData,
-      routing: [...formData.routing, { 
-        sequence: nextSequence, 
-        machineId: "", 
-        roleId: "", 
-        setupTimeMin: 0, 
-        operationTimeMin: 0, 
-        efficiencyExpected: 100,
-        cycleTimeSeconds: 30,
-        cavities: 1
-      }]
-    });
-  };
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Truck className="h-4 w-4" /> Condições Comerciais
+              </h4>
 
-  const removeRoutingStep = (index: number) => {
-    const newRouting = [...formData.routing];
-    newRouting.splice(index, 1);
-    setFormData({ ...formData, routing: newRouting });
-  };
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Condição de Pagamento</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 30/60/90 dias"
+                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    value={formData.paymentTerms}
+                    onChange={(e) => setFormData({...formData, paymentTerms: e.target.value})}
+                  />
+                </div>
 
-  const updateRoutingStep = (index: number, field: keyof ProductRouting, value: any) => {
-    const newRouting = [...formData.routing];
-    newRouting[index] = { ...newRouting[index], [field]: value };
-    setFormData({ ...formData, routing: newRouting });
-  };
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Frete</label>
+                    <select
+                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                      value={formData.freightCondition}
+                      onChange={(e) => setFormData({...formData, freightCondition: e.target.value})}
+                    >
+                      <option value="CIF">CIF (Emitente)</option>
+                      <option value="FOB">FOB (Destinatário)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Prazo Entrega (Dias)</label>
+                    <input
+                      type="number"
+                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                      value={formData.deliveryTimeDays}
+                      onChange={(e) => setFormData({...formData, deliveryTimeDays: parseInt(e.target.value)})}
+                    />
+                  </div>
+                </div>
 
-  /* -------------------------------------------------------------------------- */
-  /*                               Cost Analysis                                */
-  /* -------------------------------------------------------------------------- */
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Local de Entrega</label>
+                  <input
+                    type="text"
+                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    value={formData.deliveryLocation}
+                    onChange={(e) => setFormData({...formData, deliveryLocation: e.target.value})}
+                  />
+                </div>
+              </div>
+            </div>
 
-  const displayCost = useMemo(() => {
-    if (backendCostAnalysis) {
-      return {
-        bomCost: backendCostAnalysis.summary?.totalMaterialCost || 0,
-        routingCost: backendCostAnalysis.summary?.totalConversionCost || 0,
-        total: backendCostAnalysis.summary?.totalIndustrialCost || 0,
-        details: backendCostAnalysis.details || { materials: [], operations: [] }
-      };
-    }
-    return { bomCost: 0, routingCost: 0, total: 0, details: { materials: [], operations: [] } };
-  }, [backendCostAnalysis]);
+            {/* Internal Notes */}
+            <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Notas Internas</h4>
+              <textarea
+                rows={4}
+                placeholder="Observações que não aparecem no PDF da proposta..."
+                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
+                value={formData.internalNotes}
+                onChange={(e) => setFormData({...formData, internalNotes: e.target.value})}
+              />
+            </div>
+          </div>
+
+          {/* Right Column: Items Grid */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[600px]">
+              <div className="p-4 border-b border-border bg-accent/30 flex items-center justify-between">
+                <h4 className="font-bold flex items-center gap-2">
+                  <Package className="h-4 w-4" /> Itens da Proposta
+                </h4>
+                <div className="flex items-center gap-2">
+                  <select 
+                    className="p-2 rounded-lg border border-border bg-background text-xs outline-none"
+                    onChange={(e) => e.target.value && addItem(e.target.value)}
+                    value=""
+                  >
+                    <option value="">+ Adicionar Produto...</option>
+                    {products.map(p => (
+                      <option key={p.id} value={p.id}>{p.sku} - {p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-accent/20 border-b border-border">
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Produto</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Qtd</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Custo Unit.</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Sugerido</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Negociado</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Desc %</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Margem %</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right">Total Líq.</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-center"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {formData.items?.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-accent/10 transition-colors group">
+                        <td className="p-3">
+                          <div className="max-w-[200px]">
+                            <p className="text-xs font-bold truncate">{item.Product?.sku}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">{item.Product?.name}</p>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="number"
+                            className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
+                            value={item.quantity}
+                            onChange={(e) => updateItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
+                          />
+                        </td>
+                        <td className="p-3 text-xs font-mono text-muted-foreground">
+                          {item.unitCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                        <td className="p-3 text-xs font-mono text-blue-600 font-medium">
+                          {item.suggestedPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="number"
+                            className="w-full p-1 rounded border border-border bg-background text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                            value={item.negotiatedPrice}
+                            onChange={(e) => updateItem(idx, { negotiatedPrice: parseFloat(e.target.value) || 0 })}
+                          />
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="number"
+                            className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
+                            value={item.discountPerc}
+                            onChange={(e) => updateItem(idx, { discountPerc: parseFloat(e.target.value) || 0 })}
+                          />
+                        </td>
+                        <td className="p-3">
+                          <div className={cn(
+                            "text-xs font-bold",
+                            item.marginPerc >= 20 ? "text-green-600" : item.marginPerc >= 10 ? "text-orange-600" : "text-red-600"
+                          )}>
+                            {item.marginPerc.toFixed(1)}%
+                          </div>
+                        </td>
+                        <td className="p-3 text-right text-xs font-bold font-mono">
+                          {((item.quantity * item.negotiatedPrice) - item.discountValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                        <td className="p-3 text-center">
+                          <button 
+                            onClick={() => removeItem(idx)}
+                            className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {(!formData.items || formData.items.length === 0) && (
+                      <tr>
+                        <td colSpan={9} className="p-12 text-center text-muted-foreground italic text-sm">
+                          Nenhum produto adicionado. Use o seletor acima para começar.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary Footer */}
+              <div className="p-6 bg-accent/30 border-t border-border grid grid-cols-2 md:grid-cols-4 gap-6">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Valor Bruto Total</p>
+                  <p className="text-lg font-bold font-mono">{totals.totalGross.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Descontos Concedidos</p>
+                  <p className="text-lg font-bold font-mono text-red-600">-{totals.totalDiscount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Receita Líquida</p>
+                  <p className="text-lg font-bold font-mono text-primary">{totals.totalNet.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="space-y-1 border-l border-border pl-6">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Margem de Contribuição</p>
+                  <div className="flex items-baseline gap-2">
+                    <p className={cn(
+                      "text-lg font-bold font-mono",
+                      totals.totalMarginPerc >= 20 ? "text-green-600" : totals.totalMarginPerc >= 10 ? "text-orange-600" : "text-red-600"
+                    )}>
+                      {totals.totalMarginPerc.toFixed(1)}%
+                    </p>
+                    <span className="text-xs text-muted-foreground">({totals.totalMarginValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* General Notes for PDF */}
+            <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Info className="h-4 w-4" /> Observações da Proposta (PDF)
+              </h4>
+              <textarea
+                rows={4}
+                placeholder="Condições especiais, validade, observações técnicas..."
+                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
+                value={formData.notes}
+                onChange={(e) => setFormData({...formData, notes: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header Actions */}
+      {/* List Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Buscar por SKU ou nome..."
+            placeholder="Buscar por número, cliente ou título..."
             className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-2">
-          {selectedIds.length > 0 && (
-            <motion.button
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              onClick={handleBulkDelete}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-600 font-bold hover:bg-red-500/20 transition-all border border-red-500/20 text-sm"
-            >
-              <Trash2 className="h-4 w-4" />
-              Excluir ({selectedIds.length})
-            </motion.button>
-          )}
-          <button 
-            onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-          >
-            <Download className="h-4 w-4" />
-            Importar
-          </button>
-          <button 
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Novo Item de Engenharia
-          </button>
-        </div>
+        <button 
+          onClick={handleCreateNew}
+          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+        >
+          <Plus className="h-4 w-4" />
+          Nova Proposta
+        </button>
       </div>
 
-      {/* Import Dialog */}
-      <DataImportDialog 
-        isOpen={isImportOpen}
-        onClose={() => setIsImportOpen(false)}
-        onSuccess={fetchData}
-        config={ProductImportConfig}
-        templateUrl="/api/products/import/template"
-        previewUrl="/api/products/import/preview"
-        confirmUrl="/api/products/import/confirm"
-      />
-
-      {/* Table */}
+      {/* Proposals List */}
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-accent/50 border-b border-border">
-                <th className="p-4 w-10">
-                  <input 
-                    type="checkbox" 
-                    className="rounded border-border text-primary focus:ring-primary"
-                    checked={filteredItems.length > 0 && selectedIds.length === filteredItems.length}
-                    ref={el => {
-                      if (el) {
-                        el.indeterminate = selectedIds.length > 0 && selectedIds.length < filteredItems.length;
-                      }
-                    }}
-                    onChange={toggleSelectAll}
-                  />
-                </th>
-                <th className="p-4 font-semibold text-sm">Item</th>
-                <th className="p-4 font-semibold text-sm">Tipo</th>
-                <th className="p-4 font-semibold text-sm">Versão</th>
-                <th className="p-4 font-semibold text-sm">Estrutura</th>
+                <th className="p-4 font-semibold text-sm">Nº / Título</th>
+                <th className="p-4 font-semibold text-sm">Cliente</th>
+                <th className="p-4 font-semibold text-sm">Data</th>
+                <th className="p-4 font-semibold text-sm">Valor Líquido</th>
+                <th className="p-4 font-semibold text-sm">Margem</th>
                 <th className="p-4 font-semibold text-sm">Status</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
@@ -511,89 +646,76 @@ export const ProposalModule = () => {
                 <tr>
                   <td colSpan={7} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                    <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
+                    <p className="mt-2 text-sm text-muted-foreground">Carregando propostas...</p>
                   </td>
                 </tr>
-              ) : filteredItems.length === 0 ? (
+              ) : filteredProposals.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                    Nenhum item encontrado.
+                    Nenhuma proposta encontrada.
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => (
-                  <tr key={item.id} className={cn(
-                    "hover:bg-accent/30 transition-colors group",
-                    selectedIds.includes(item.id) && "bg-primary/5"
-                  )}>
-                    <td className="p-4">
-                      <input 
-                        type="checkbox" 
-                        className="rounded border-border text-primary focus:ring-primary"
-                        checked={selectedIds.includes(item.id)}
-                        onChange={() => toggleSelect(item.id)}
-                      />
-                    </td>
+                filteredProposals.map((p) => (
+                  <tr key={p.id} className="hover:bg-accent/30 transition-colors group">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "h-9 w-9 rounded-lg flex items-center justify-center",
-                          item.type === "PRODUCT" ? "bg-blue-500/10 text-blue-600" : 
-                          item.type === "COMPONENT" ? "bg-purple-500/10 text-purple-600" : 
-                          "bg-orange-500/10 text-orange-600"
-                        )}>
-                          {item.type === "PRODUCT" ? <Package className="h-5 w-5" /> : 
-                           item.type === "COMPONENT" ? <Layers className="h-5 w-5" /> : 
-                           <Box className="h-5 w-5" />}
+                        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                          <FileText className="h-5 w-5" />
                         </div>
                         <div>
-                          <p className="font-medium text-sm">{item.name}</p>
-                          <p className="text-xs text-muted-foreground">{item.sku}</p>
+                          <p className="font-bold text-sm">#{p.number}</p>
+                          <p className="text-xs text-muted-foreground truncate max-w-[150px]">{p.title || "Sem título"}</p>
                         </div>
                       </div>
                     </td>
                     <td className="p-4">
-                      <Badge variant={
-                        item.type === "PRODUCT" ? "info" : 
-                        item.type === "COMPONENT" ? "default" : 
-                        "warning"
-                      }>
-                        {item.type === "PRODUCT" ? "Produto" : 
-                         item.type === "COMPONENT" ? "Componente" : 
-                         "Material"}
-                      </Badge>
-                    </td>
-                    <td className="p-4 text-sm text-muted-foreground">
-                      v{item.version}
+                      <p className="text-sm font-medium">{p.Customer?.companyName}</p>
+                      <p className="text-[10px] text-muted-foreground">{p.Customer?.taxId}</p>
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Layers className="h-3 w-3" />
-                          {item.ProductBOM.length} itens
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Settings className="h-3 w-3" />
-                          {item.ProductRouting.length} etapas
-                        </div>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Calendar className="h-3 w-3" /> {new Date(p.createdAt).toLocaleDateString('pt-BR')}
+                      </div>
+                    </td>
+                    <td className="p-4 font-mono text-sm font-bold">
+                      {Number(p.totalNetValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </td>
+                    <td className="p-4">
+                      <div className={cn(
+                        "text-xs font-bold",
+                        Number(p.totalMarginPerc) >= 20 ? "text-green-600" : Number(p.totalMarginPerc) >= 10 ? "text-orange-600" : "text-red-600"
+                      )}>
+                        {Number(p.totalMarginPerc).toFixed(1)}%
                       </div>
                     </td>
                     <td className="p-4">
-                      <Badge variant={item.status === "ACTIVE" ? "success" : "danger"}>
-                        {item.status === "ACTIVE" ? "Ativo" : "Inativo"}
-                      </Badge>
+                      <div className={cn(
+                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                        STATUS_CONFIG[p.status]?.color
+                      )}>
+                        {STATUS_CONFIG[p.status]?.label}
+                      </div>
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => handleOpenModal(item)}
+                          onClick={() => handleEdit(p.id)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                          title="Editar"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button 
-                          onClick={() => handleDelete(item.id)}
+                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-blue-500 transition-all"
+                          title="Gerar PDF"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(p.id)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-red-500 transition-all"
+                          title="Excluir"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -606,665 +728,6 @@ export const ProposalModule = () => {
           </table>
         </div>
       </div>
-
-      {/* Modal: Product Form */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
-            >
-              {/* Modal Header */}
-              <div className="p-6 border-b border-border flex items-center justify-between bg-accent/30">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                    {formData.type === "PRODUCT" ? <Package className="h-6 w-6" /> : 
-                     formData.type === "COMPONENT" ? <Layers className="h-6 w-6" /> : 
-                     <Box className="h-6 w-6" />}
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold">{editingItem ? "Editar Engenharia" : "Nova Engenharia"}</h3>
-                    <p className="text-xs text-muted-foreground">Defina a estrutura e o processo produtivo do item</p>
-                  </div>
-                </div>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Tabs Navigation */}
-              <div className="flex items-center px-6 border-b border-border bg-card/50">
-                {[
-                  { id: "info", label: "Informações", icon: Info },
-                  { id: "bom", label: "Estrutura (BOM)", icon: Layers },
-                  { id: "routing", label: "Processo (Roteiro)", icon: Settings },
-                  { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
-                  { id: "cost", label: "Análise de Custo", icon: DollarSign },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveFormTab(tab.id as any)}
-                    className={cn(
-                      "flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-all",
-                      activeFormTab === tab.id 
-                        ? "border-primary text-primary bg-primary/5" 
-                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                    )}
-                  >
-                    <tab.icon className="h-4 w-4" />
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-              
-              <form onSubmit={handleSubmit} className="flex-1 overflow-hidden flex flex-col">
-                <div className="flex-1 overflow-y-auto p-6">
-                  {/* Tab: Info */}
-                  {activeFormTab === "info" && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-6">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            <FileText className="h-4 w-4" /> Identificação
-                          </h4>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <label className="text-xs font-bold text-muted-foreground uppercase">SKU / Código</label>
-                              <input
-                                required
-                                type="text"
-                                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm font-mono"
-                                value={formData.sku}
-                                onChange={(e) => setFormData({...formData, sku: e.target.value})}
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="text-xs font-bold text-muted-foreground uppercase">Versão</label>
-                              <input
-                                required
-                                type="text"
-                                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                                value={formData.version}
-                                onChange={(e) => setFormData({...formData, version: e.target.value})}
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">Nome do Item</label>
-                            <input
-                              required
-                              type="text"
-                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                              value={formData.name}
-                              onChange={(e) => setFormData({...formData, name: e.target.value})}
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">Descrição</label>
-                            <textarea
-                              rows={3}
-                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
-                              value={formData.description}
-                              onChange={(e) => setFormData({...formData, description: e.target.value})}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-6">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            <Cpu className="h-4 w-4" /> Configurações
-                          </h4>
-                          <div className="space-y-4">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de Item</label>
-                            <div className="grid grid-cols-3 gap-3">
-                              {[
-                                { id: "PRODUCT", label: "Produto", icon: Package, desc: "Item final de venda" },
-                                { id: "COMPONENT", label: "Componente", icon: Layers, desc: "Sub-conjunto produzido" },
-                                { id: "MATERIAL", label: "Material", icon: Box, desc: "Insumo ou matéria-prima" },
-                              ].map((type) => (
-                                <button
-                                  key={type.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setFormData({
-                                      ...formData, 
-                                      type: type.id as ItemType,
-                                      // Reset BOM/Routing if switching to Material
-                                      bom: type.id === "MATERIAL" ? [] : formData.bom,
-                                      routing: type.id === "MATERIAL" ? [] : formData.routing
-                                    });
-                                  }}
-                                  className={cn(
-                                    "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-center group",
-                                    formData.type === type.id 
-                                      ? "border-primary bg-primary/5 text-primary" 
-                                      : "border-border hover:border-primary/50 hover:bg-accent"
-                                  )}
-                                >
-                                  <type.icon className={cn("h-6 w-6", formData.type === type.id ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
-                                  <div>
-                                    <p className="text-xs font-bold">{type.label}</p>
-                                    <p className="text-[10px] opacity-60 leading-tight">{type.desc}</p>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">Lote Padrão de Produção</label>
-                            <input
-                              required
-                              type="number"
-                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                              value={formData.defaultLotSize}
-                              onChange={(e) => setFormData({...formData, defaultLotSize: parseInt(e.target.value)})}
-                            />
-                            <p className="text-[10px] text-muted-foreground">Quantidade base para cálculos de custo e roteiro</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Tab: BOM */}
-                  {activeFormTab === "bom" && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      {formData.type === "MATERIAL" ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 bg-accent/20 rounded-2xl border-2 border-dashed border-border">
-                          <div className="h-16 w-16 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-500">
-                            <Box className="h-8 w-8" />
-                          </div>
-                          <div className="max-w-md">
-                            <h4 className="text-lg font-bold">Item do tipo Material</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Materiais são considerados "nós folha" na estrutura. Eles não possuem uma lista de materiais (BOM) própria, pois são comprados e não produzidos.
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                                <Layers className="h-4 w-4" /> Composição do Item
-                              </h4>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {formData.type === "PRODUCT" 
-                                  ? "Produtos só podem conter COMPONENTES." 
-                                  : "Componentes podem conter COMPONENTES e MATERIAIS."}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={addBOMItem}
-                              className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary/20 transition-colors"
-                            >
-                              <Plus className="h-4 w-4" />
-                              Adicionar Item
-                            </button>
-                          </div>
-
-                          <div className="space-y-3">
-                            {formData.bom.length === 0 ? (
-                              <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
-                                <p className="text-sm text-muted-foreground">Nenhum item adicionado à estrutura.</p>
-                              </div>
-                            ) : (
-                              formData.bom.map((item, idx) => (
-                                <div key={idx} className="grid grid-cols-12 gap-4 p-4 bg-accent/20 rounded-xl border border-border items-end group relative">
-                                  <div className="col-span-4 space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Item / Componente</label>
-                                    <select
-                                      className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                      value={item.materialId || item.childProductId || ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        const isMaterial = materials.some(m => m.id === val);
-                                        if (isMaterial) {
-                                          updateBOMItem(idx, "materialId", val);
-                                        } else {
-                                          updateBOMItem(idx, "childProductId", val);
-                                        }
-                                      }}
-                                    >
-                                      <option value="">Selecione um item...</option>
-                                      
-                                      {/* Only show components if parent is PRODUCT */}
-                                      <optgroup label="Componentes">
-                                        {items
-                                          .filter(i => i.type === "COMPONENT" && i.id !== editingItem?.id)
-                                          .map(i => (
-                                            <option key={i.id} value={i.id}>{i.sku} - {i.name}</option>
-                                          ))
-                                        }
-                                      </optgroup>
-
-                                      {/* Only show materials if parent is COMPONENT */}
-                                      {formData.type === "COMPONENT" && (
-                                        <optgroup label="Materiais">
-                                          {materials.map(m => (
-                                            <option key={m.id} value={m.id}>{m.code} - {m.description}</option>
-                                          ))}
-                                        </optgroup>
-                                      )}
-                                    </select>
-                                  </div>
-                                  <div className="col-span-2 space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Qtd. Líquida</label>
-                                    <input
-                                      type="number"
-                                      step="0.0001"
-                                      className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                      value={item.quantity}
-                                      onChange={(e) => updateBOMItem(idx, "quantity", parseFloat(e.target.value))}
-                                    />
-                                  </div>
-                                  <div className="col-span-2 space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Perda (%)</label>
-                                    <input
-                                      type="number"
-                                      step="0.1"
-                                      className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                      value={item.lossPercentage}
-                                      onChange={(e) => updateBOMItem(idx, "lossPercentage", parseFloat(e.target.value))}
-                                    />
-                                  </div>
-                                  <div className="col-span-3 space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Observações</label>
-                                    <input
-                                      type="text"
-                                      className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                      value={item.notes || ""}
-                                      onChange={(e) => updateBOMItem(idx, "notes", e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="col-span-1 flex justify-end pb-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => removeBOMItem(idx)}
-                                      className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Tab: Routing */}
-                  {activeFormTab === "routing" && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      {formData.type === "MATERIAL" ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 bg-accent/20 rounded-2xl border-2 border-dashed border-border">
-                          <div className="h-16 w-16 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
-                            <Settings className="h-8 w-8" />
-                          </div>
-                          <div className="max-w-md">
-                            <h4 className="text-lg font-bold">Processo não aplicável</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Materiais não possuem roteiro de produção interno, pois são itens adquiridos de fornecedores externos.
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                                <Settings className="h-4 w-4" /> Roteiro de Produção
-                              </h4>
-                              <p className="text-xs text-muted-foreground mt-1">Defina as etapas, máquinas e tempos necessários para produzir este item.</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={addRoutingStep}
-                              className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary/20 transition-colors"
-                            >
-                              <Plus className="h-4 w-4" />
-                              Adicionar Etapa
-                            </button>
-                          </div>
-
-                          <div className="space-y-4">
-                            {formData.routing.length === 0 ? (
-                              <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
-                                <p className="text-sm text-muted-foreground">Nenhuma etapa de produção definida.</p>
-                              </div>
-                            ) : (
-                              formData.routing
-                                .sort((a, b) => a.sequence - b.sequence)
-                                .map((step, idx) => (
-                                <div key={idx} className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-                                  <div className="bg-accent/30 px-4 py-2 border-b border-border flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                      <span className="bg-primary text-primary-foreground text-[10px] font-black px-2 py-0.5 rounded">
-                                        SEQ {step.sequence}
-                                      </span>
-                                      <input 
-                                        type="text"
-                                        placeholder="Descrição da operação..."
-                                        className="bg-transparent border-none outline-none text-sm font-bold placeholder:text-muted-foreground/50 w-64"
-                                        value={step.description || ""}
-                                        onChange={(e) => updateRoutingStep(idx, "description", e.target.value)}
-                                      />
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => removeRoutingStep(idx)}
-                                      className="text-muted-foreground hover:text-red-500 transition-colors"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                  <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-6">
-                                    <div className="space-y-1.5">
-                                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Máquina / Centro Custo</label>
-                                      <select
-                                        className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                        value={step.machineId}
-                                        onChange={(e) => updateRoutingStep(idx, "machineId", e.target.value)}
-                                      >
-                                        <option value="">Selecione...</option>
-                                        {machines.map(m => (
-                                          <option key={m.id} value={m.id}>{m.name}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Mão de Obra (Cargo)</label>
-                                      <select
-                                        className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                        value={step.roleId}
-                                        onChange={(e) => updateRoutingStep(idx, "roleId", e.target.value)}
-                                      >
-                                        <option value="">Selecione...</option>
-                                        {roles.map(r => (
-                                          <option key={r.id} value={r.id}>{r.name}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                      <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Setup (min)</label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                          value={step.setupTimeMin}
-                                          onChange={(e) => updateRoutingStep(idx, "setupTimeMin", parseFloat(e.target.value))}
-                                        />
-                                      </div>
-                                      <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Op. (min)</label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                          value={step.operationTimeMin}
-                                          onChange={(e) => updateRoutingStep(idx, "operationTimeMin", parseFloat(e.target.value))}
-                                        />
-                                      </div>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-4">
-                                      <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Ciclo (seg)</label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                          value={step.cycleTimeSeconds ?? ""}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            updateRoutingStep(idx, "cycleTimeSeconds", val === "" ? undefined : parseFloat(val));
-                                          }}
-                                          min="0.1"
-                                          step="0.1"
-                                        />
-                                      </div>
-                                      <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Cavidades</label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                          value={step.cavities ?? ""}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            updateRoutingStep(idx, "cavities", val === "" ? undefined : Number(val));
-                                          }}
-                                          min="1"
-                                          step="1"
-                                        />
-                                      </div>
-                                      <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Eficiência (%)</label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                          value={step.efficiencyExpected}
-                                          onChange={(e) => updateRoutingStep(idx, "efficiencyExpected", parseFloat(e.target.value))}
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Tab: Tree View */}
-                  {activeFormTab === "tree" && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      {formData.type === "MATERIAL" ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 bg-accent/20 rounded-2xl border-2 border-dashed border-border">
-                          <div className="h-16 w-16 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-500">
-                            <Box className="h-8 w-8" />
-                          </div>
-                          <div className="max-w-md">
-                            <h4 className="text-lg font-bold">Item do tipo Material</h4>
-                            <p className="text-sm text-muted-foreground">Materiais não possuem sub-estrutura.</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-card border border-border rounded-xl p-6">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-6 flex items-center gap-2">
-                            <ChevronRight className="h-4 w-4" /> Visualização Hierárquica
-                          </h4>
-                          
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
-                              {formData.type === "PRODUCT" ? <Package className="h-5 w-5 text-primary" /> : <Layers className="h-5 w-5 text-primary" />}
-                              <div>
-                                <p className="text-sm font-bold">{formData.name || "Novo Item"}</p>
-                                <p className="text-[10px] text-primary font-mono">{formData.sku || "SEM SKU"}</p>
-                              </div>
-                            </div>
-                            
-                            <div className="ml-6 border-l-2 border-border pl-6 space-y-4 pt-4">
-                              {loadingTree ? (
-                                <div className="flex items-center gap-2 text-muted-foreground">
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                  <span className="text-xs">Carregando estrutura completa...</span>
-                                </div>
-                              ) : !treeData || !treeData.children || treeData.children.length === 0 ? (
-                                <p className="text-xs text-muted-foreground italic">Nenhum item na estrutura salva.</p>
-                              ) : (
-                                treeData.children.map((node: any, idx: number) => (
-                                  <TreeNode key={idx} node={node} />
-                                ))
-                              )}
-                            </div>
-
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Tab: Cost Analysis */}
-                  {activeFormTab === "cost" && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-blue-600 uppercase">Custo de Materiais (BOM)</p>
-                            <Layers className="h-4 w-4 text-blue-500" />
-                          </div>
-                          <p className="text-3xl font-black text-blue-700">{formatCurrency(displayCost.bomCost)}</p>
-                          <p className="text-[10px] text-blue-600/60">Baseado no custo atual dos materiais</p>
-                        </div>
-                        <div className="p-6 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-purple-600 uppercase">Custo de Processo (MOD/GIF)</p>
-                            <Settings className="h-4 w-4 text-purple-500" />
-                          </div>
-                          <p className="text-3xl font-black text-purple-700">{formatCurrency(displayCost.routingCost)}</p>
-                          <p className="text-[10px] text-purple-600/60">Baseado em taxas de máquina e mão de obra</p>
-                        </div>
-                        <div className="p-6 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-primary uppercase">Custo Total Industrial</p>
-                            <TrendingUp className="h-4 w-4 text-primary" />
-                          </div>
-                          <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
-                          <p className="text-[10px] text-primary/60">Custo unitário estimado de produção</p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* BOM Breakdown */}
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            Detalhamento BOM
-                          </h4>
-                          <div className="bg-card rounded-xl border border-border overflow-hidden">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-accent/50 border-b border-border">
-                                <tr>
-                                  <th className="p-3 font-bold">Item</th>
-                                  <th className="p-3 font-bold text-right">Qtd</th>
-                                  <th className="p-3 font-bold text-right">Custo Unit.</th>
-                                  <th className="p-3 font-bold text-right">Total</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-border">
-                                {loadingCost ? (
-                                  <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Carregando análise do backend...
-                                    </td>
-                                  </tr>
-                                ) : displayCost.details.materials.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Nenhum material ou componente na estrutura salva.
-                                    </td>
-                                  </tr>
-                                ) : (
-                                  displayCost.details.materials.map((item: any, idx: number) => (
-                                    <tr key={idx}>
-                                      <td className="p-3 font-medium">{item.description}</td>
-                                      <td className="p-3 text-right">{formatNumber(item.requiredQty, 4)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(item.basePrice)}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(item.unitCost)}</td>
-                                    </tr>
-                                  ))
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-
-                        {/* Routing Breakdown */}
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            Detalhamento Processo
-                          </h4>
-                          <div className="bg-card rounded-xl border border-border overflow-hidden">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-accent/50 border-b border-border">
-                                <tr>
-                                  <th className="p-3 font-bold">Operação</th>
-                                  <th className="p-3 font-bold text-right">Tempo (min)</th>
-                                  <th className="p-3 font-bold text-right">Taxa/min</th>
-                                  <th className="p-3 font-bold text-right">Total</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-border">
-                                {loadingCost ? (
-                                  <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Carregando análise do backend...
-                                    </td>
-                                  </tr>
-                                ) : displayCost.details.operations.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Nenhum processo no roteiro salvo.
-                                    </td>
-                                  </tr>
-                                ) : (
-                                  displayCost.details.operations.map((step: any, idx: number) => (
-                                    <tr key={idx}>
-                                      <td className="p-3 font-medium">{step.description || `Op. ${step.sequence}`}</td>
-                                      <td className="p-3 text-right">{formatNumber(step.totalTimeH * 60, 2)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(step.opCostPerUnit / (step.totalTimeH * 60 || 1))}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(step.totalStepCost)}</td>
-                                    </tr>
-                                  ))
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Modal Footer */}
-                <div className="p-6 border-t border-border bg-accent/10 flex items-center justify-between">
-                  <div className="flex items-center gap-6">
-                    <div className="flex flex-col">
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase">Custo Industrial</p>
-                      <p className="text-lg font-black text-primary">{formatCurrency(displayCost.total)}</p>
-                    </div>
-                    <div className="h-8 w-px bg-border" />
-                    <div className="flex flex-col">
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase">Itens BOM</p>
-                      <p className="text-lg font-black">{formData.bom.length}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button 
-                      type="button"
-                      onClick={() => setIsModalOpen(false)}
-                      className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
-                    >
-                      Cancelar
-                    </button>
-                    <button 
-                      type="submit"
-                      className="flex items-center gap-2 px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm shadow-lg shadow-primary/20"
-                    >
-                      <Save className="h-4 w-4" />
-                      {editingItem ? "Salvar Alterações" : "Criar Item de Engenharia"}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };

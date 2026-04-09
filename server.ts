@@ -76,19 +76,34 @@ async function startServer() {
       }));
       const avgEmployeeCost = employeeCosts.length > 0 ? employeeCosts.reduce((acc, e) => acc + e.totalCost, 0) / employeeCosts.length : 0;
 
+      // Verificação de Parâmetros Globais para Custo Máquina
+      const energyCostParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
+      const workingHoursParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
+      
+      if (!energyCostParam || !workingHoursParam) {
+        return res.status(400).json({ error: "CONFIG_MISSING", message: "Parâmetros globais de energia e/ou horas trabalhadas não configurados." });
+      }
+
+      const globalEnergyCost = Number(energyCostParam.monthlyValue);
+      const globalWorkingHours = Number(workingHoursParam.monthlyValue);
+
+      if (globalWorkingHours <= 0) {
+        return res.status(400).json({ error: "CONFIG_MISSING", message: "Horas trabalhadas devem ser maiores que zero." });
+      }
+
+      const globalMachineHourCost = globalEnergyCost / globalWorkingHours;
+
       // 2. HM por Máquina
       const machineHM = machines.map(m => {
-        const dep = (Number(m.acquisitionValue) - Number(m.residualValue)) / (m.usefulLifeMonths || 1);
-        const other = m.MachineCostComponent.reduce((acc, c) => acc + Number(c.monthlyEstimatedCost), 0);
-        return { id: m.id, code: m.code, hmCost: (dep + other) / 176 };
+        return { id: m.id, code: m.code, hmCost: globalMachineHourCost };
       });
 
       // 3. Análise de Produtos (Top 5 e Bottom 5)
       const productAnalyses = await Promise.all(products.map(p => getProductCostAnalysis(p.id)));
-      const validAnalyses = productAnalyses.filter(a => a !== null && !(a as any).error);
+      const validAnalyses = productAnalyses.filter(a => a !== null && !("error" in a));
 
-      const productPerformance = validAnalyses.map(analysis => {
-        const pricing = pricings.find(pr => pr.productId === (analysis as any).productId);
+      const productPerformance = validAnalyses.map((analysis: any) => {
+        const pricing = pricings.find(pr => pr.productId === analysis.productId);
         if (!pricing) return { ...analysis, marginPct: 0, marginAbs: 0, suggestedPrice: 0 };
 
         const taxRule = pricing.TaxRule;
@@ -99,11 +114,11 @@ async function startServer() {
         const freight = Number(pricing.freightOut);
 
         const divisor = 1 - taxRate - commRate - otherRate - marginRate;
-        const suggestedPrice = divisor > 0 ? ((analysis as any).totalIndustrialCost + freight) / divisor : 0;
+        const suggestedPrice = divisor > 0 ? (analysis.totalIndustrialCost + freight) / divisor : 0;
         
         const totalTaxes = suggestedPrice * taxRate;
         const totalComm = suggestedPrice * commRate;
-        const marginAbs = suggestedPrice - totalTaxes - totalComm - freight - (analysis as any).totalGerencialCost;
+        const marginAbs = suggestedPrice - totalTaxes - totalComm - freight - analysis.totalGerencialCost;
 
         return {
           ...analysis,
@@ -1590,9 +1605,6 @@ app.delete("/api/employees/:id", async (req, res) => {
       const roleData = rolesWithComponents.find(rc => rc.roleId === step.roleId);
 
       // 1. Custo_Maquina_Hora (Nova Lógica: Energia / Horas)
-      const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
-      const otherMonthlyCosts = machine.MachineCostComponent.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
-      
       const machineHourCost = energyCost / workingHours;
 
       // 2. Custo_MO_Hora
@@ -1686,7 +1698,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       const { id } = req.params;
       const analysis = await getProductCostAnalysis(id);
       if (!analysis) return res.status(404).json({ error: "Produto não encontrado" });
-      if ((analysis as any).error) return res.status(400).json(analysis);
+      if ("error" in analysis) return res.status(400).json(analysis);
 
       // Re-calculando detalhes para o endpoint específico (mantendo compatibilidade com a UI atual)
     const [product, indirectCosts] = await Promise.all([
@@ -1760,9 +1772,6 @@ app.delete("/api/employees/:id", async (req, res) => {
       const machine = step.Machine;
       const role = step.Role;
       // 1. Custo_Maquina_Hora (Nova Lógica: Energia / Horas)
-      const depreciationMonthly = (Number(machine.acquisitionValue) - Number(machine.residualValue)) / (machine.usefulLifeMonths || 1);
-      const otherMonthlyCosts = machine.MachineCostComponent.reduce((acc: number, c: any) => acc + Number(c.monthlyEstimatedCost), 0);
-      
       const energyCostParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
       const workingHoursParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
       
