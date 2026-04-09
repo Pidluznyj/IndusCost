@@ -1376,6 +1376,24 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(pricing);
   });
 
+  app.delete("/api/pricing/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const target = await prisma.productPricing.findUnique({ where: { id } });
+      if (!target) return res.status(404).json({ error: "Formação de preço não encontrada no sistema." });
+      
+      await prisma.productPricing.delete({ where: { id } });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Erro ao excluir premissa de preço:", err);
+      if (err.code === 'P2003') {
+        return res.status(400).json({ error: "Não é possível excluir esta formação de preço porque ela possui vínculos ativos irreversíveis." });
+      }
+      res.status(500).json({ error: "Erro interno ao tentar apagar a formação." });
+    }
+  });
+
   app.get("/api/pricing/:productId/:taxRuleId/calculate", async (req, res) => {
     const { productId, taxRuleId } = req.params;
 

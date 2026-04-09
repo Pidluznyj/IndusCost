@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { 
-  Calculator, Plus, Search, Edit2, X, Loader2, DollarSign,
+  Calculator, Plus, Search, Edit2, Trash2, X, Loader2, DollarSign,
   TrendingUp, TrendingDown, Percent, Truck, Users, ShieldCheck, Save,
   BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight
 } from "lucide-react";
@@ -94,6 +94,23 @@ export const PricingModule = () => {
       }
     } catch (error) {
       console.error("Erro ao salvar premissas unitárias:", error);
+    }
+  };
+
+  const handleDeleteUnit = async (pricing: any) => {
+    if (!window.confirm(`Tem certeza que deseja excluir esta premissa de precificação do produto ${pricing.Product?.name}?`)) return;
+    
+    try {
+      const res = await fetch(`/api/pricing/${pricing.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errorData = await res.json();
+        window.alert(errorData.error || "Erro estrutural ao excluir a formação de preço.");
+        return;
+      }
+      fetchData();
+    } catch (error) {
+      console.error("Erro durante request de deleção:", error);
+      window.alert("Falha de conexão com a infraestrutura no momento de excluir.");
     }
   };
 
@@ -234,19 +251,29 @@ export const PricingModule = () => {
                   <div className="p-5 border-b border-border bg-accent/30">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{pricing.TaxRule.name}</span>
-                      <button 
-                        onClick={() => {
-                          setFormData({
-                            productId: pricing.productId, taxRuleId: pricing.taxRuleId,
-                            desiredMargin: Number(pricing.desiredMargin), commission: Number(pricing.commission),
-                            freightOut: Number(pricing.freightOut), otherVariables: Number(pricing.otherVariables),
-                          });
-                          setIsModalOpen(true);
-                        }}
-                        className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                      </button>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => {
+                            setFormData({
+                              productId: pricing.productId, taxRuleId: pricing.taxRuleId,
+                              desiredMargin: Number(pricing.desiredMargin), commission: Number(pricing.commission),
+                              freightOut: Number(pricing.freightOut), otherVariables: Number(pricing.otherVariables),
+                            });
+                            setIsModalOpen(true);
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
+                          title="Editar Premissa"
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteUnit(pricing)}
+                          className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-red-500 transition-colors"
+                          title="Excluir Formação"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                     <h3 className="font-bold text-sm">{pricing.Product.name}</h3>
                     <p className="text-[10px] font-mono text-muted-foreground">{pricing.Product.sku}</p>
