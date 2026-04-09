@@ -1882,19 +1882,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       });
       const existingTaxIds = new Set(existing.map(e => e.taxId));
 
-      const uniqueIncoming = new Map();
-      for (const row of data) {
-        const taxId = row?.taxId?.toString().trim();
-        if (!taxId) continue;
-        if (!uniqueIncoming.has(taxId)) {
-          uniqueIncoming.set(taxId, {
-            ...row,
-            taxId
-          });
-        }
-      }
-
-      const toCreate = Array.from(uniqueIncoming.values()).filter(d => !existingTaxIds.has(d.taxId));
+      const toCreate = data.filter(d => !existingTaxIds.has(d.taxId));
       
       if (toCreate.length > 0) {
         await prisma.customer.createMany({
@@ -1913,8 +1901,7 @@ app.delete("/api/employees/:id", async (req, res) => {
             segment: d.segment || null,
             notes: d.notes || null,
             status: "ACTIVE"
-          })),
-          skipDuplicates: true
+          }))
         });
       }
 
