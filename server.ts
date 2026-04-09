@@ -1376,6 +1376,35 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(pricing);
   });
 
+  app.post("/api/pricing/bulk-delete", async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+       return res.status(400).json({ error: "Nenhum ID fornecido para exclusão." });
+    }
+
+    let successCount = 0; let errorCount = 0;
+    const errorsList = [];
+
+    for (const id of ids) {
+       try {
+         await prisma.productPricing.delete({ where: { id } });
+         successCount++;
+       } catch (err: any) {
+         errorCount++;
+         if (err.code === 'P2003') {
+           errorsList.push({ id, message: "Bloqueio relacional ativo (Vínculo de Restrição)." });
+         } else {
+           errorsList.push({ id, message: err.message || "Erro genérico." });
+         }
+       }
+    }
+
+    res.json({
+       total: ids.length, success: successCount, error: errorCount,
+       details: errorsList
+    });
+  });
+
   app.delete("/api/pricing/:id", async (req, res) => {
     try {
       const { id } = req.params;

@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "motion/react";
 
 export const PricingModule = () => {
   const [viewMode, setViewMode] = useState<"UNIT" | "BATCH">("UNIT");
+  const [selectedPricings, setSelectedPricings] = useState<string[]>([]);
 
   const [pricings, setPricings] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -111,6 +112,46 @@ export const PricingModule = () => {
     } catch (error) {
       console.error("Erro durante request de deleção:", error);
       window.alert("Falha de conexão com a infraestrutura no momento de excluir.");
+    }
+  };
+
+  const togglePricingSelection = (id: string) => {
+    setSelectedPricings(prev => prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]);
+  };
+
+  const toggleAllPricings = () => {
+    if (selectedPricings.length > 0 && selectedPricings.length === pricings.length) {
+      setSelectedPricings([]);
+    } else {
+      setSelectedPricings(pricings.map((p: any) => p.id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedPricings.length === 0) return;
+    if (!window.confirm(`Confirma a exclusão Múltipla de ${selectedPricings.length} formações de preço?`)) return;
+
+    try {
+      const res = await fetch("/api/pricing/bulk-delete", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedPricings })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        window.alert(data.error || "Houve erro ao processar exclusões em lote.");
+        return;
+      }
+
+      if (data.error > 0) {
+        window.alert(`${data.success} apagados. Houveram ${data.error} falhas.\nExemplo de falha: ${data.details[0]?.message}`);
+      }
+      
+      setSelectedPricings([]);
+      fetchData();
+    } catch (err) {
+      console.error("Erro no bulk delete", err);
+      window.alert("Falha de conexão ao excluir lote.");
     }
   };
 
@@ -239,67 +280,83 @@ export const PricingModule = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {pricings.length === 0 ? (
-              <div className="col-span-full p-12 text-center border-2 border-dashed border-border rounded-2xl text-muted-foreground">
-                Nenhuma premissa configurada.
-              </div>
-            ) : (
-              pricings.map((pricing: any) => (
-                // TUDO IGUAL AO UNITÁRIO ANTERIOR
-                <motion.div key={pricing.id} className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-all">
-                  <div className="p-5 border-b border-border bg-accent/30">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{pricing.TaxRule.name}</span>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => {
-                            setFormData({
+     <div className="space-y-4">
+       {/* UI Header Customizado pro Lote selecionado */}
+       {selectedPricings.length > 0 && (
+         <div className="bg-red-50 text-red-900 border border-red-200 rounded-xl p-3 flex justify-between items-center animate-in fade-in slide-in-from-top-2">
+           <span className="text-sm font-bold">{selectedPricings.length} Formação(ões) selecionada(s)</span>
+           <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
+              Excluir Selecionados
+           </button>
+         </div>
+       )}
+
+       {/* Tabela de Leitura */}
+       <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-muted">
+                 <tr>
+                   <th className="p-4 w-10">
+                      <input type="checkbox" className="rounded accent-primary w-4 h-4 cursor-pointer" 
+                             checked={pricings.length > 0 && selectedPricings.length === pricings.length} 
+                             onChange={toggleAllPricings} />
+                   </th>
+                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground w-1/4">Produto</th>
+                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground">Inf. Trib</th>
+                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center">Precificação Base</th>
+                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center">Ações Lógicas</th>
+                 </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {pricings.length === 0 ? (
+                  <tr><td colSpan={5} className="p-12 text-center text-muted-foreground">Nenhuma premissa configurada.</td></tr>
+                ) : (
+                  pricings.map((pricing: any) => (
+                     <tr key={pricing.id} className="hover:bg-accent/20 cursor-pointer" onClick={(e) => {
+                        if((e.target as HTMLElement).closest('.btn-acoes')) return;
+                        togglePricingSelection(pricing.id);
+                     }}>
+                       <td className="p-4 text-center btn-acoes">
+                         <input type="checkbox" className="rounded accent-primary w-4 h-4 cursor-pointer" 
+                                checked={selectedPricings.includes(pricing.id)} 
+                                onChange={() => togglePricingSelection(pricing.id)} />
+                       </td>
+                       <td className="p-4">
+                         <p className="font-bold text-sm tracking-tight">{pricing.Product?.name}</p>
+                         <p className="text-[10px] font-mono text-muted-foreground">SKU: {pricing.Product?.sku}</p>
+                       </td>
+                       <td className="p-4">
+                         <span className="bg-primary/10 text-primary px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest">{pricing.TaxRule?.name}</span>
+                       </td>
+                       <td className="p-4 text-center">
+                         <div className="flex flex-col items-center gap-1">
+                            <span className="text-xs text-muted-foreground">Mg. <span className="font-bold text-green-600">{Number(pricing.desiredMargin)}%</span></span>
+                            <span className="text-xs text-muted-foreground">Comissão. <span className="font-bold text-orange-600">{Number(pricing.commission)}%</span></span>
+                         </div>
+                       </td>
+                       <td className="p-4 btn-acoes">
+                         <div className="flex gap-2 justify-center">
+                           <button title="Calcular Simulação Unitária" onClick={() => handleCalculateUnit(pricing.productId, pricing.taxRuleId)} className="p-2 text-primary bg-primary/10 hover:bg-primary hover:text-white rounded-lg transition-colors"><Calculator className="h-4 w-4" /></button>
+                           <button title="Editar Parametria" onClick={() => { 
+                             setFormData({
                               productId: pricing.productId, taxRuleId: pricing.taxRuleId,
                               desiredMargin: Number(pricing.desiredMargin), commission: Number(pricing.commission),
                               freightOut: Number(pricing.freightOut), otherVariables: Number(pricing.otherVariables),
-                            });
-                            setIsModalOpen(true);
-                          }}
-                          className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
-                          title="Editar Premissa"
-                        >
-                          <Edit2 className="h-3 w-3" />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteUnit(pricing)}
-                          className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-red-500 transition-colors"
-                          title="Excluir Formação"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </div>
-                    <h3 className="font-bold text-sm">{pricing.Product.name}</h3>
-                    <p className="text-[10px] font-mono text-muted-foreground">{pricing.Product.sku}</p>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground uppercase font-bold">Margem Alvo</p>
-                        <p className="text-lg font-black text-green-600">{formatNumber(pricing.desiredMargin)}%</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground uppercase font-bold">Comissão</p>
-                        <p className="text-lg font-black text-orange-600">{formatNumber(pricing.commission)}%</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => handleCalculateUnit(pricing.productId, pricing.taxRuleId)}
-                      className="w-full py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary hover:text-primary-foreground transition-all flex items-center justify-center gap-2"
-                    >
-                      <Calculator className="h-3 w-3" /> Calcular Preço
-                    </button>
-                  </div>
-                </motion.div>
-              ))
-            )}
+                             });
+                             setIsModalOpen(true);
+                            }} className="p-2 text-muted-foreground hover:bg-accent hover:text-primary rounded-lg transition-colors"><Edit2 className="h-4 w-4" /></button>
+                           <button title="Excluir Restrito" onClick={() => handleDeleteUnit(pricing)} className="p-2 text-muted-foreground hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"><Trash2 className="h-4 w-4" /></button>
+                         </div>
+                       </td>
+                     </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
+       </div>
+     </div>
         </div>
       ) : (
         // --- VIEW: BATCH ---
