@@ -51,12 +51,10 @@ const Badge = ({ children, variant = "default" }: { children: React.ReactNode, v
   );
 };
 
-const TreeNode = ({ item, items, materials }: { item: any, items: Product[], materials: Material[] }) => {
-  const mat = materials.find(m => m.id === item.materialId);
-  const prod = items.find(p => p.id === item.childProductId);
-  const name = mat ? mat.description : prod ? prod.name : "Item não selecionado";
-  const type = mat ? "MATERIAL" : prod ? prod.type : "UNKNOWN";
-  const code = mat?.code || prod?.sku;
+const TreeNode = ({ node }: { node: any }) => {
+  const isComponent = node.type === "COMPONENT";
+  const name = isComponent ? node.item?.name : node.item?.description;
+  const code = isComponent ? node.item?.sku : node.item?.code;
 
   return (
     <div className="relative">
@@ -64,23 +62,23 @@ const TreeNode = ({ item, items, materials }: { item: any, items: Product[], mat
       <div className="flex items-center gap-3 p-3 bg-accent/30 rounded-lg border border-border group hover:border-primary/30 transition-colors">
         <div className={cn(
           "h-8 w-8 rounded flex items-center justify-center",
-          type === "COMPONENT" ? "bg-purple-500/10 text-purple-600" : "bg-orange-500/10 text-orange-600"
+          isComponent ? "bg-purple-500/10 text-purple-600" : "bg-orange-500/10 text-orange-600"
         )}>
-          {type === "COMPONENT" ? <Layers className="h-4 w-4" /> : <Box className="h-4 w-4" />}
+          {isComponent ? <Layers className="h-4 w-4" /> : <Box className="h-4 w-4" />}
         </div>
         <div className="flex-1">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold">{name}</p>
-            <p className="text-[10px] font-bold text-primary">Qtd: {Number(item.quantity)}</p>
+            <p className="text-xs font-bold">{name || "Desconhecido"}</p>
+            <p className="text-[10px] font-bold text-primary">Qtd: {Number(node.quantity)}</p>
           </div>
           <p className="text-[10px] text-muted-foreground font-mono">{code}</p>
         </div>
       </div>
       
-      {prod && prod.ProductBOM && prod.ProductBOM.length > 0 && (
+      {isComponent && node.item?.children && node.item.children.length > 0 && (
         <div className="ml-6 border-l-2 border-border pl-6 mt-2 space-y-2">
-          {prod.ProductBOM.map((childBom: any, cIdx: number) => (
-            <TreeNode key={cIdx} item={childBom} items={items} materials={materials} />
+          {node.item.children.map((childNode: any, cIdx: number) => (
+            <TreeNode key={cIdx} node={childNode} />
           ))}
         </div>
       )}
@@ -102,8 +100,10 @@ export const ProductModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
-  const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost">("info");
+  const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost" | "tree">("info");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [treeData, setTreeData] = useState<any>(null);
+  const [loadingTree, setLoadingTree] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<CreateProductInput>({
@@ -148,6 +148,17 @@ export const ProductModule = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (activeFormTab === "tree" && editingItem?.id) {
+      setLoadingTree(true);
+      fetch(`/api/products/${editingItem.id}/tree`)
+        .then(res => res.json())
+        .then(data => setTreeData(data))
+        .catch(err => console.error("Erro ao carregar árvore:", err))
+        .finally(() => setLoadingTree(false));
+    }
+  }, [activeFormTab, editingItem?.id]);
 
   const handleOpenModal = (item?: Product) => {
     if (item) {
@@ -1035,11 +1046,16 @@ export const ProductModule = () => {
                             </div>
                             
                             <div className="ml-6 border-l-2 border-border pl-6 space-y-4 pt-4">
-                              {formData.bom.length === 0 ? (
-                                <p className="text-xs text-muted-foreground italic">Nenhum item na estrutura.</p>
+                              {loadingTree ? (
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  <span className="text-xs">Carregando estrutura completa...</span>
+                                </div>
+                              ) : !treeData || !treeData.children || treeData.children.length === 0 ? (
+                                <p className="text-xs text-muted-foreground italic">Nenhum item na estrutura salva.</p>
                               ) : (
-                                formData.bom.map((item, idx) => (
-                                  <TreeNode key={idx} item={item} items={items} materials={materials} />
+                                treeData.children.map((node: any, idx: number) => (
+                                  <TreeNode key={idx} node={node} />
                                 ))
                               )}
                             </div>
