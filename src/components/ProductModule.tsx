@@ -193,6 +193,7 @@ export const ProductModule = () => {
           notes: b.notes
         })),
         routing: item.ProductRouting.map(r => ({
+          id: r.id,
           sequence: r.sequence,
           description: r.description,
           machineId: r.machineId,
@@ -200,6 +201,8 @@ export const ProductModule = () => {
           setupTimeMin: Number(r.setupTimeMin),
           operationTimeMin: Number(r.operationTimeMin),
           efficiencyExpected: Number(r.efficiencyExpected),
+          cycleTimeSeconds: r.cycleTimeSeconds != null ? Number(r.cycleTimeSeconds) : undefined,
+          cavities: r.cavities != null ? Number(r.cavities) : undefined,
           notes: r.notes
         })),
       });
@@ -227,6 +230,18 @@ export const ProductModule = () => {
     if (formData.type === "PRODUCT" && formData.bom.length === 0) {
       alert("Um PRODUTO deve ter pelo menos um COMPONENTE em sua estrutura.");
       return;
+    }
+
+    // Validate routing fields
+    for (const step of formData.routing) {
+      if (step.cycleTimeSeconds === undefined || step.cycleTimeSeconds === null || !Number.isFinite(step.cycleTimeSeconds) || step.cycleTimeSeconds <= 0) {
+        alert("O tempo de ciclo deve ser um número válido maior que zero.");
+        return;
+      }
+      if (step.cavities === undefined || step.cavities === null || !Number.isFinite(step.cavities) || step.cavities < 1 || !Number.isInteger(step.cavities)) {
+        alert("O número de cavidades deve ser um número inteiro válido maior ou igual a 1.");
+        return;
+      }
     }
 
     const method = editingItem ? "PUT" : "POST";
@@ -375,7 +390,9 @@ export const ProductModule = () => {
         roleId: "", 
         setupTimeMin: 0, 
         operationTimeMin: 0, 
-        efficiencyExpected: 100 
+        efficiencyExpected: 100,
+        cycleTimeSeconds: 30,
+        cavities: 1
       }]
     });
   };
@@ -974,7 +991,7 @@ export const ProductModule = () => {
                                         ))}
                                       </select>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-2 gap-4">
                                       <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-muted-foreground uppercase">Setup (min)</label>
                                         <input
@@ -994,14 +1011,44 @@ export const ProductModule = () => {
                                         />
                                       </div>
                                     </div>
-                                    <div className="space-y-1.5">
-                                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Eficiência (%)</label>
-                                      <input
-                                        type="number"
-                                        className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                        value={step.efficiencyExpected}
-                                        onChange={(e) => updateRoutingStep(idx, "efficiencyExpected", parseFloat(e.target.value))}
-                                      />
+                                    <div className="grid grid-cols-3 gap-4">
+                                      <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Ciclo (seg)</label>
+                                        <input
+                                          type="number"
+                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                                          value={step.cycleTimeSeconds ?? ""}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            updateRoutingStep(idx, "cycleTimeSeconds", val === "" ? undefined : parseFloat(val));
+                                          }}
+                                          min="0.1"
+                                          step="0.1"
+                                        />
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Cavidades</label>
+                                        <input
+                                          type="number"
+                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                                          value={step.cavities ?? ""}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            updateRoutingStep(idx, "cavities", val === "" ? undefined : Number(val));
+                                          }}
+                                          min="1"
+                                          step="1"
+                                        />
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Eficiência (%)</label>
+                                        <input
+                                          type="number"
+                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                                          value={step.efficiencyExpected}
+                                          onChange={(e) => updateRoutingStep(idx, "efficiencyExpected", parseFloat(e.target.value))}
+                                        />
+                                      </div>
                                     </div>
                                   </div>
                                 </div>

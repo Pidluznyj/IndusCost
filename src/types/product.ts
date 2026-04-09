@@ -24,6 +24,8 @@ export interface ProductRouting {
   setupTimeMin: number;
   operationTimeMin: number;
   efficiencyExpected: number;
+  cycleTimeSeconds?: number;
+  cavities?: number;
   notes?: string;
 }
 
