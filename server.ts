@@ -975,6 +975,8 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
 
     try {
+      const effectiveType = type || "PRODUCT";
+
       const existing = await prisma.product.findUnique({ where: { sku: normalizedSku } });
       if (existing) {
         return res.status(409).json({ error: "SKU já existe.", code: "SKU_ALREADY_EXISTS" });
@@ -986,19 +988,17 @@ app.delete("/api/employees/:id", async (req, res) => {
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
           if (!child) return res.status(400).json({ error: "Componente não encontrado." });
           
-          if (type === "PRODUCT" && child.type !== "COMPONENT") {
+          if (effectiveType === "PRODUCT" && child.type !== "COMPONENT") {
             return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
           }
-          if (type === "MATERIAL") {
+          if (effectiveType === "MATERIAL") {
             return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
           }
         }
-        if (item.materialId && type === "PRODUCT") {
+        if (item.materialId && effectiveType === "PRODUCT") {
           return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
         }
       }
-
-      const effectiveType = type || "PRODUCT";
 
       if (effectiveType === "MATERIAL" && (routing || []).length > 0) {
         return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
@@ -1079,6 +1079,14 @@ app.delete("/api/employees/:id", async (req, res) => {
     const normalizedSku = sku?.toString().trim().toUpperCase();
 
     try {
+      // effectiveType: usa o tipo do banco se o payload não trouxer type
+      const currentProduct = await prisma.product.findUnique({
+        where: { id },
+        select: { type: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true }
+      });
+      if (!currentProduct) return res.status(404).json({ error: "Produto não encontrado." });
+      const effectiveType = type ?? currentProduct.type;
+
       if (normalizedSku) {
         const existing = await prisma.product.findFirst({
           where: { sku: normalizedSku, id: { not: id } }
@@ -1092,25 +1100,17 @@ app.delete("/api/employees/:id", async (req, res) => {
             return res.status(400).json({ error: "Ciclo detectado!" });
           }
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
-          if (type === "PRODUCT" && child?.type !== "COMPONENT") {
+          if (effectiveType === "PRODUCT" && child?.type !== "COMPONENT") {
             return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
           }
-          if (type === "MATERIAL") {
+          if (effectiveType === "MATERIAL") {
             return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
           }
         }
-        if (item.materialId && type === "PRODUCT") {
+        if (item.materialId && effectiveType === "PRODUCT") {
           return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
         }
       }
-
-      // effectiveType: usa o tipo do banco se o payload não trouxer type
-      const currentProduct = await prisma.product.findUnique({
-        where: { id },
-        select: { type: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true }
-      });
-      if (!currentProduct) return res.status(404).json({ error: "Produto não encontrado." });
-      const effectiveType = type ?? currentProduct.type;
 
       if (effectiveType === "MATERIAL" && (routing || []).length > 0)
         return res.status(400).json({ error: "Matérias-Primas não possuem roteiro de produção." });
