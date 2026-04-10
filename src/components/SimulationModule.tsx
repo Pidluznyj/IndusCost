@@ -20,6 +20,7 @@ import {
   Info
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { SearchableSelect } from "./shared/SearchableSelect";
 import { motion, AnimatePresence } from "motion/react";
 
 export const SimulationModule = () => {
@@ -343,36 +344,34 @@ export const SimulationModule = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase">Produto Base</label>
-                      <select
-                        required
-                        className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
-                        value={formData.productId}
-                        onChange={(e) => setFormData({...formData, productId: e.target.value})}
-                      >
-                        <option value="">Selecione...</option>
-                        {products.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Produto Base</label>
+                        <SearchableSelect
+                          placeholder="Selecione..."
+                          options={products.map(p => ({
+                            value: p.id,
+                            label: p.name,
+                            sublabel: p.sku,
+                            searchTerms: p.sku
+                          }))}
+                          value={formData.productId}
+                          onChange={(val) => setFormData({...formData, productId: val})}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Canal de Venda</label>
+                        <SearchableSelect
+                          placeholder="Selecione..."
+                          options={taxRules.map(r => ({
+                            value: r.id,
+                            label: r.name
+                          }))}
+                          value={formData.taxRuleId}
+                          onChange={(val) => setFormData({...formData, taxRuleId: val})}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase">Canal de Venda</label>
-                      <select
-                        required
-                        className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
-                        value={formData.taxRuleId}
-                        onChange={(e) => setFormData({...formData, taxRuleId: e.target.value})}
-                      >
-                        <option value="">Selecione...</option>
-                        {taxRules.map(r => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="space-y-4 pt-4 border-t border-border">

@@ -27,6 +27,7 @@ import {
   Printer
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { SearchableSelect } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
@@ -347,17 +348,17 @@ export const ProposalModule = () => {
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Cliente</label>
-                  <select
+                  <SearchableSelect
                     required
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                    value={formData.customerId}
-                    onChange={(e) => setFormData({...formData, customerId: e.target.value})}
-                  >
-                    <option value="">Selecione um cliente...</option>
-                    {customers.map(c => (
-                      <option key={c.id} value={c.id}>{c.companyName}</option>
-                    ))}
-                  </select>
+                    placeholder="Selecione um cliente..."
+                    options={customers.map(c => ({
+                      value: c.id,
+                      label: c.companyName,
+                      sublabel: c.taxId
+                    }))}
+                    value={formData.customerId || ""}
+                    onChange={(val) => setFormData({...formData, customerId: val})}
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -456,16 +457,19 @@ export const ProposalModule = () => {
                   <Package className="h-4 w-4" /> Itens da Proposta
                 </h4>
                 <div className="flex items-center gap-2">
-                  <select 
-                    className="p-2 rounded-lg border border-border bg-background text-xs outline-none"
-                    onChange={(e) => e.target.value && addItem(e.target.value)}
-                    value=""
-                  >
-                    <option value="">+ Adicionar Produto...</option>
-                    {products.map(p => (
-                      <option key={p.id} value={p.id}>{p.sku} - {p.name}</option>
-                    ))}
-                  </select>
+                  <div className="w-64">
+                    <SearchableSelect
+                      placeholder="+ Adicionar Produto..."
+                      options={products.map(p => ({
+                        value: p.id,
+                        label: p.name,
+                        sublabel: p.sku,
+                        searchTerms: p.sku
+                      }))}
+                      value=""
+                      onChange={(val) => val && addItem(val)}
+                    />
+                  </div>
                 </div>
               </div>
 

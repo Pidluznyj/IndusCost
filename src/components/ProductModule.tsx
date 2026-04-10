@@ -26,6 +26,7 @@ import {
   Download
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { SearchableSelect } from "./shared/SearchableSelect";
 import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting } from "@/src/types/product";
 import { Material } from "@/src/types/material";
 import { motion, AnimatePresence } from "motion/react";
@@ -1075,29 +1076,29 @@ export const ProductModule = () => {
                                   <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-6">
                                     <div className="space-y-1.5">
                                       <label className="text-[10px] font-bold text-muted-foreground uppercase">Máquina / Centro Custo</label>
-                                      <select
-                                        className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                        value={step.machineId}
-                                        onChange={(e) => updateRoutingStep(idx, "machineId", e.target.value)}
-                                      >
-                                        <option value="">Selecione...</option>
-                                        {machines.map(m => (
-                                          <option key={m.id} value={m.id}>{m.name}</option>
-                                        ))}
-                                      </select>
+                                      <SearchableSelect
+                                        placeholder="Selecione..."
+                                        options={machines.map(m => ({
+                                          value: m.id,
+                                          label: m.name,
+                                          sublabel: m.code,
+                                          searchTerms: m.code
+                                        }))}
+                                        value={step.machineId || ""}
+                                        onChange={(val) => updateRoutingStep(idx, "machineId", val)}
+                                      />
                                     </div>
                                     <div className="space-y-1.5">
                                       <label className="text-[10px] font-bold text-muted-foreground uppercase">Mão de Obra (Cargo)</label>
-                                      <select
-                                        className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                        value={step.roleId}
-                                        onChange={(e) => updateRoutingStep(idx, "roleId", e.target.value)}
-                                      >
-                                        <option value="">Selecione...</option>
-                                        {roles.map(r => (
-                                          <option key={r.id} value={r.id}>{r.name}</option>
-                                        ))}
-                                      </select>
+                                      <SearchableSelect
+                                        placeholder="Selecione..."
+                                        options={roles.map(r => ({
+                                          value: r.id,
+                                          label: r.name
+                                        }))}
+                                        value={step.roleId || ""}
+                                        onChange={(val) => updateRoutingStep(idx, "roleId", val)}
+                                      />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                       <div className="space-y-1.5">

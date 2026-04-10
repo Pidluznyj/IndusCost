@@ -56,9 +56,12 @@ async function startServer() {
     console.log("Fetching dashboard data...");
     try {
       const [employees, machines, products, pricings, indirectCosts] = await Promise.all([
-        prisma.employee.findMany({ include: { EmployeePayrollComponent: { include: { PayrollComponent: true } } } }),
+        prisma.employee.findMany({ 
+          where: { status: "ACTIVE" },
+          include: { EmployeePayrollComponent: { include: { PayrollComponent: true } } } 
+        }),
         prisma.machine.findMany({ include: { MachineCostComponent: true } }),
-        prisma.product.findMany(),
+        prisma.product.findMany({ where: { status: "ACTIVE" } }),
         prisma.productPricing.findMany({ include: { TaxRule: { include: { TaxComponent: true } } } }),
         prisma.indirectCost.findMany({ where: { status: "ACTIVE" } })
       ]);

@@ -5,6 +5,7 @@ import {
   BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { SearchableSelect } from "./shared/SearchableSelect";
 import { motion, AnimatePresence } from "motion/react";
 
 export const PricingModule = () => {
@@ -500,13 +501,15 @@ export const PricingModule = () => {
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">Canal Fiscal</label>
-                    <select
-                      className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
-                      value={batchFormData.taxRuleId} onChange={(e) => setBatchFormData({...batchFormData, taxRuleId: e.target.value})}
-                    >
-                      <option value="">Selecione a Regra...</option>
-                      {taxRules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
+                    <SearchableSelect
+                      placeholder="Selecione a Regra..."
+                      options={taxRules.map(r => ({
+                        value: r.id,
+                        label: r.name
+                      }))}
+                      value={batchFormData.taxRuleId}
+                      onChange={(val) => setBatchFormData({...batchFormData, taxRuleId: val})}
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -689,23 +692,29 @@ export const PricingModule = () => {
                 <form onSubmit={handleSubmitUnit} className="p-6 space-y-5">
                    <div className="space-y-1.5">
                      <label className="text-xs font-bold text-muted-foreground uppercase">Produto Alvo</label>
-                     <select
-                       required className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
-                       value={formData.productId} onChange={(e) => setFormData({...formData, productId: e.target.value})}
-                     >
-                       <option value="">Selecione...</option>
-                       {products.map((p: any) => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
-                     </select>
+                     <SearchableSelect
+                       placeholder="Selecione o produto..."
+                       options={products.map(p => ({
+                         value: p.id,
+                         label: p.name,
+                         sublabel: p.sku,
+                         searchTerms: p.sku
+                       }))}
+                       value={formData.productId}
+                       onChange={(val) => setFormData({...formData, productId: val})}
+                     />
                    </div>
                    <div className="space-y-1.5">
                      <label className="text-xs font-bold text-muted-foreground uppercase">Regra Fiscal</label>
-                     <select
-                       required className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
-                       value={formData.taxRuleId} onChange={(e) => setFormData({...formData, taxRuleId: e.target.value})}
-                     >
-                       <option value="">Selecione...</option>
-                       {taxRules.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                     </select>
+                     <SearchableSelect
+                       placeholder="Selecione a regra..."
+                       options={taxRules.map(r => ({
+                         value: r.id,
+                         label: r.name
+                       }))}
+                       value={formData.taxRuleId}
+                       onChange={(val) => setFormData({...formData, taxRuleId: val})}
+                     />
                    </div>
                    <div className="grid grid-cols-2 gap-4">
                      <div className="space-y-1.5">
