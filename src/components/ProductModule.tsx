@@ -115,6 +115,10 @@ export const ProductModule = () => {
     type: "PRODUCT",
     version: "1.0.0",
     defaultLotSize: 1,
+    cycleTimeSeconds: "",
+    cavities: "",
+    setupTimeMin: "",
+    efficiencyExpected: "",
     bom: [],
     routing: [],
   });
@@ -185,6 +189,10 @@ export const ProductModule = () => {
         type: item.type,
         version: item.version,
         defaultLotSize: item.defaultLotSize,
+        cycleTimeSeconds: item.cycleTimeSeconds ?? "",
+        cavities: item.cavities ?? "",
+        setupTimeMin: item.setupTimeMin ?? "",
+        efficiencyExpected: item.efficiencyExpected ?? "",
         bom: item.ProductBOM.map(b => ({
           materialId: b.materialId,
           childProductId: b.childProductId,
@@ -215,6 +223,10 @@ export const ProductModule = () => {
         type: "PRODUCT",
         version: "1.0.0",
         defaultLotSize: 1,
+        cycleTimeSeconds: "",
+        cavities: "",
+        setupTimeMin: "",
+        efficiencyExpected: "",
         bom: [],
         routing: [],
       });
@@ -244,14 +256,71 @@ export const ProductModule = () => {
       }
     }
 
+    // Validação do Processo Padrão do Componente
+    // Se o ciclo foi informado, TODOS os campos do processo devem ser válidos — sem fallback
+    if (formData.type === "COMPONENT" && formData.cycleTimeSeconds !== "" && formData.cycleTimeSeconds !== null && formData.cycleTimeSeconds !== undefined) {
+      const ct = Number(formData.cycleTimeSeconds);
+      if (!Number.isFinite(ct) || ct <= 0) {
+        alert("Processo Padrão: Ciclo (segundos) deve ser um número válido maior que zero.");
+        return;
+      }
+
+      // Cavidades: obrigatório quando ciclo está preenchido
+      if (formData.cavities === "" || formData.cavities === null || formData.cavities === undefined) {
+        alert("Processo Padrão: Cavidades é obrigatório quando o Ciclo está preenchido.");
+        return;
+      }
+      const cv = Number(formData.cavities);
+      if (!Number.isFinite(cv) || cv < 1) {
+        alert("Processo Padrão: Cavidades deve ser >= 1.");
+        return;
+      }
+
+      // Setup: obrigatório quando ciclo está preenchido
+      if (formData.setupTimeMin === "" || formData.setupTimeMin === null || formData.setupTimeMin === undefined) {
+        alert("Processo Padrão: Setup (minutos) é obrigatório quando o Ciclo está preenchido.");
+        return;
+      }
+      const st = Number(formData.setupTimeMin);
+      if (!Number.isFinite(st) || st < 0) {
+        alert("Processo Padrão: Setup (minutos) deve ser >= 0.");
+        return;
+      }
+
+      // Eficiência: obrigatório quando ciclo está preenchido
+      if (formData.efficiencyExpected === "" || formData.efficiencyExpected === null || formData.efficiencyExpected === undefined) {
+        alert("Processo Padrão: Eficiência (%) é obrigatório quando o Ciclo está preenchido.");
+        return;
+      }
+      const ef = Number(formData.efficiencyExpected);
+      if (!Number.isFinite(ef) || ef <= 0 || ef > 100) {
+        alert("Processo Padrão: Eficiência deve ser > 0 e <= 100.");
+        return;
+      }
+    }
+
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem ? `/api/products/${editingItem.id}` : "/api/products";
+
+    // Montagem segura do payload — string vazia vira null, nunca NaN
+    const rawCycle = formData.cycleTimeSeconds;
+    const rawCav = formData.cavities;
+    const rawSetup = formData.setupTimeMin;
+    const rawEff = formData.efficiencyExpected;
+
+    const payload = {
+      ...formData,
+      cycleTimeSeconds: rawCycle === "" || rawCycle === null || rawCycle === undefined ? null : Number(rawCycle),
+      cavities: rawCav === "" || rawCav === null || rawCav === undefined ? null : Number(rawCav),
+      setupTimeMin: rawSetup === "" || rawSetup === null || rawSetup === undefined ? null : Number(rawSetup),
+      efficiencyExpected: rawEff === "" || rawEff === null || rawEff === undefined ? null : Number(rawEff),
+    };
 
     try {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setIsModalOpen(false);
@@ -766,6 +835,59 @@ export const ProductModule = () => {
                           </div>
                         </div>
                       </div>
+                      
+                      {formData.type === "COMPONENT" && (
+                        <div className="mt-6 border border-border rounded-xl bg-card overflow-hidden">
+                          <div className="bg-muted px-4 py-3 border-b border-border">
+                            <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                              <Cpu className="h-4 w-4 text-primary"/> Processo Padrão de Produção
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Parâmetros formadores do Custo do Componente (Substitui Roteiro e Herda a Carga Indireta Global).</p>
+                          </div>
+                          <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-4 bg-muted/30">
+                            <div>
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Ciclo (Segundos)</label>
+                              <input 
+                                type="number" step="0.1"
+                                value={formData.cycleTimeSeconds ?? ""}
+                                onChange={(e) => setFormData({...formData, cycleTimeSeconds: e.target.value})}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                placeholder="Tempo limpo" 
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Cavidades (Molde)</label>
+                              <input 
+                                type="number"
+                                value={formData.cavities ?? ""}
+                                onChange={(e) => setFormData({...formData, cavities: e.target.value})}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                placeholder="1"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Setup (Min/Lote)</label>
+                              <input 
+                                type="number" step="0.1"
+                                value={formData.setupTimeMin ?? ""}
+                                onChange={(e) => setFormData({...formData, setupTimeMin: e.target.value})}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Eficiência (%)</label>
+                              <input 
+                                type="number"
+                                value={formData.efficiencyExpected ?? ""}
+                                onChange={(e) => setFormData({...formData, efficiencyExpected: e.target.value})}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                placeholder="Ex: 95" 
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
                     </div>
                   )}
 

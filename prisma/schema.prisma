@@ -129,6 +129,12 @@ model Product {
   status         String   @default("ACTIVE")
   defaultLotSize Decimal  @default(1) @db.Decimal(18, 2)
   
+  // -- Processo Padrão (Foco em COMPONENT) --
+  cycleTimeSeconds   Decimal? @db.Decimal(10, 2)
+  cavities           Int?
+  setupTimeMin       Decimal? @db.Decimal(10, 2)
+  efficiencyExpected Decimal? @db.Decimal(5, 2)
+  
   // BOM as Parent
   ProductBOM           ProductBOM[] @relation("ParentProduct")
   // BOM as Child (for components)
