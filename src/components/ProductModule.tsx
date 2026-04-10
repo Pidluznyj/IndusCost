@@ -1104,6 +1104,7 @@ export const ProductModule = () => {
                                         <label className="text-[10px] font-bold text-muted-foreground uppercase">Setup (min)</label>
                                         <input
                                           type="number"
+                                          step="0.00001"
                                           className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
                                           value={step.setupTimeMin}
                                           onChange={(e) => updateRoutingStep(idx, "setupTimeMin", parseFloat(e.target.value))}
@@ -1113,6 +1114,7 @@ export const ProductModule = () => {
                                         <label className="text-[10px] font-bold text-muted-foreground uppercase">Op. (min)</label>
                                         <input
                                           type="number"
+                                          step="0.00001"
                                           className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
                                           value={step.operationTimeMin}
                                           onChange={(e) => updateRoutingStep(idx, "operationTimeMin", parseFloat(e.target.value))}
@@ -1124,6 +1126,7 @@ export const ProductModule = () => {
                                         <label className="text-[10px] font-bold text-muted-foreground uppercase">Eficiência (%)</label>
                                         <input
                                           type="number"
+                                          step="0.00001"
                                           className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
                                           value={step.efficiencyExpected}
                                           onChange={(e) => updateRoutingStep(idx, "efficiencyExpected", parseFloat(e.target.value))}
@@ -1252,7 +1255,7 @@ export const ProductModule = () => {
                                   displayCost.details.materials.map((item: any, idx: number) => (
                                     <tr key={idx}>
                                       <td className="p-3 font-medium">{item.description}</td>
-                                      <td className="p-3 text-right">{formatNumber(item.requiredQty, 4)}</td>
+                                      <td className="p-3 text-right">{formatNumber(item.requiredQty, 5)}</td>
                                       <td className="p-3 text-right">{formatCurrency(item.basePrice)}</td>
                                       <td className="p-3 text-right font-bold">{formatCurrency(item.unitCost)}</td>
                                     </tr>
@@ -1313,9 +1316,9 @@ export const ProductModule = () => {
                                                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                                                     <div>
                                                       <p className="opacity-50 uppercase text-[8px] font-bold">Variáveis Entrada</p>
-                                                      <p>Ciclo: <b>{formatNumber(step.calculationDetails.cycle, 2)}s</b></p>
+                                                      <p>Ciclo: <b>{formatNumber(step.calculationDetails.cycle, 5)}s</b></p>
                                                       <p>Cav: <b>{step.calculationDetails.cavities}</b></p>
-                                                      <p>Eficiência: <b>{step.calculationDetails.efficiency}%</b></p>
+                                                      <p>Eficiência: <b>{formatNumber(step.calculationDetails.efficiency, 5)}%</b></p>
                                                     </div>
                                                     <div>
                                                       <p className="opacity-50 uppercase text-[8px] font-bold">Setup e Lote</p>
@@ -1326,7 +1329,7 @@ export const ProductModule = () => {
 
                                                   <div className="bg-accent/30 p-2 rounded-lg space-y-1">
                                                     <p className="opacity-50 uppercase text-[8px] font-bold">Fórmulas (Unitário)</p>
-                                                    <p>Pç/Hora Líq: <b>{formatNumber(step.calculationDetails.netPph, 2)}</b></p>
+                                                    <p>Pç/Hora Líq: <b>{formatNumber(step.calculationDetails.netPph, 5)}</b></p>
                                                     <p>Custo Transf: <b>{formatCurrency(step.calculationDetails.unitTransform)}</b></p>
                                                     <p>Custo Setup: <b>{formatCurrency(step.calculationDetails.setupCost)}</b></p>
                                                   </div>
@@ -1342,7 +1345,7 @@ export const ProductModule = () => {
                                           )}
                                         </div>
                                       </td>
-                                      <td className="p-3 text-right">{formatNumber(step.timeMin, 2)}</td>
+                                      <td className="p-3 text-right">{formatNumber(step.timeMin, 5)}</td>
                                       <td className="p-3 text-right">{formatCurrency(step.machineCost)}</td>
                                       <td className="p-3 text-right">{formatCurrency(step.laborCost)}</td>
                                       <td className="p-3 text-right font-bold">{formatCurrency(step.total)}</td>

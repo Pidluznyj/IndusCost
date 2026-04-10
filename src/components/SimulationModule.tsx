@@ -214,13 +214,13 @@ export const SimulationModule = () => {
                       <span className="px-2 py-0.5 rounded-full bg-muted text-[10px] font-bold">Atual</span>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-4xl font-black">{formatCurrency(comparing.base.resultados.suggestedPrice)}</p>
+                      <p className="text-4xl font-black">{formatCurrency(comparing.base.resultados.suggestedPrice, 5)}</p>
                       <p className="text-xs text-muted-foreground">Preço Sugerido Base</p>
                     </div>
                     <div className="pt-4 border-t border-border grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase">CIU Base</p>
-                        <p className="text-sm font-bold">{formatCurrency(comparing.base.ciu)}</p>
+                        <p className="text-sm font-bold">{formatCurrency(comparing.base.ciu, 5)}</p>
                       </div>
                       <div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase">Margem Base</p>
@@ -245,13 +245,13 @@ export const SimulationModule = () => {
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-4xl font-black text-primary">{formatCurrency(comparing.simulated.suggestedPrice)}</p>
+                      <p className="text-4xl font-black text-primary">{formatCurrency(comparing.simulated.suggestedPrice, 5)}</p>
                       <p className="text-xs text-primary/60">Novo Preço Sugerido</p>
                     </div>
                     <div className="pt-4 border-t border-primary/20 grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-[10px] font-bold text-primary uppercase">Novo CIU</p>
-                        <p className="text-sm font-bold">{formatCurrency(comparing.simulated.ciu)}</p>
+                        <p className="text-sm font-bold">{formatCurrency(comparing.simulated.ciu, 5)}</p>
                       </div>
                       <div>
                         <p className="text-[10px] font-bold text-primary uppercase">Nova Margem</p>
@@ -270,14 +270,14 @@ export const SimulationModule = () => {
                     <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex flex-col items-center text-center">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Variação de Custo</p>
                       <p className={cn("text-xl font-black", comparing.delta.ciu > 0 ? "text-red-600" : "text-green-600")}>
-                        {comparing.delta.ciu > 0 ? "+" : ""}{formatCurrency(comparing.delta.ciu)}
+                        {comparing.delta.ciu > 0 ? "+" : ""}{formatCurrency(comparing.delta.ciu, 5)}
                       </p>
                       <p className="text-[10px] text-muted-foreground">por unidade produzida</p>
                     </div>
                     <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex flex-col items-center text-center">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Variação de Preço</p>
                       <p className={cn("text-xl font-black", comparing.delta.price > 0 ? "text-red-600" : "text-green-600")}>
-                        {comparing.delta.price > 0 ? "+" : ""}{formatCurrency(comparing.delta.price)}
+                        {comparing.delta.price > 0 ? "+" : ""}{formatCurrency(comparing.delta.price, 5)}
                       </p>
                       <p className="text-[10px] text-muted-foreground">necessário para manter margem</p>
                     </div>

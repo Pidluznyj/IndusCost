@@ -220,7 +220,7 @@ export const MachineModule = () => {
                       <Clock className="h-4 w-4" />
                       <span className="text-xs">Custo Hora-Máquina</span>
                     </div>
-                    <span className="text-lg font-black text-primary">{formatCurrency(hm)}</span>
+                    <span className="text-lg font-black text-primary">{formatCurrency(hm, 5)}</span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
@@ -297,7 +297,7 @@ export const MachineModule = () => {
                     <input
                       required
                       type="number"
-                      step="0.01"
+                      step="0.00001"
                       className="w-full p-3 rounded-xl border border-border bg-background outline-none"
                       value={formData.acquisitionValue}
                       onChange={(e) => setFormData({...formData, acquisitionValue: parseFloat(e.target.value)})}
@@ -308,7 +308,7 @@ export const MachineModule = () => {
                     <input
                       required
                       type="number"
-                      step="0.01"
+                      step="0.00001"
                       className="w-full p-3 rounded-xl border border-border bg-background outline-none"
                       value={formData.residualValue}
                       onChange={(e) => setFormData({...formData, residualValue: parseFloat(e.target.value)})}
@@ -362,7 +362,7 @@ export const MachineModule = () => {
                           <input
                             required
                             type="number"
-                            step="0.01"
+                            step="0.00001"
                             className="w-full p-2 rounded-lg border border-border bg-background text-xs outline-none"
                             value={comp.monthlyEstimatedCost}
                             onChange={(e) => {

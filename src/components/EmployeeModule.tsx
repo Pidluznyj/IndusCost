@@ -258,8 +258,8 @@ export const EmployeeModule = () => {
                       <p className="text-[10px] text-muted-foreground">Total Empresa</p>
                     </td>
                     <td className="p-4 text-center">
-                      <p className="text-sm font-bold">{formatCurrency(emp.costs?.costPerProductiveHour || 0)}</p>
-                      <p className="text-[10px] text-muted-foreground">{emp.productivity}% prod.</p>
+                      <p className="text-sm font-bold">{formatCurrency(emp.costs?.costPerProductiveHour || 0, 5)}</p>
+                      <p className="text-[10px] text-muted-foreground">{formatNumber(emp.productivity, 2)}% prod.</p>
                     </td>
                     <td className="p-4">
                       <div className={cn(
@@ -397,7 +397,7 @@ export const EmployeeModule = () => {
                       <input
                         required
                         type="number"
-                        step="0.01"
+                        step="0.00001"
                         className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                         value={formData.salary}
                         onChange={(e) => setFormData({...formData, salary: parseFloat(e.target.value)})}
@@ -419,6 +419,7 @@ export const EmployeeModule = () => {
                         <input
                           required
                           type="number"
+                          step="0.00001"
                           className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                           value={formData.productivity}
                           onChange={(e) => setFormData({...formData, productivity: parseFloat(e.target.value)})}
@@ -537,7 +538,7 @@ export const EmployeeModule = () => {
                 <input
                   required
                   type="number"
-                  step="0.01"
+                  step="0.00001"
                   className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                   value={compFormData.value}
                   onChange={(e) => setCompFormData({...compFormData, value: parseFloat(e.target.value)})}
@@ -580,7 +581,7 @@ export const EmployeeModule = () => {
                 </div>
                 <div className="p-4 rounded-xl bg-accent/50 border border-border">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Custo Hora Produtiva</p>
-                  <p className="text-2xl font-black text-primary">{formatCurrency(viewingCosts.costs?.costPerProductiveHour || 0)}</p>
+                  <p className="text-2xl font-black text-primary">{formatCurrency(viewingCosts.costs?.costPerProductiveHour || 0, 5)}</p>
                 </div>
               </div>
 

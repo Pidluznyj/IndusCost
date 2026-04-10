@@ -185,14 +185,14 @@ export const TaxModule = () => {
                 <div className="p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">Carga Tributária Total</span>
-                    <span className="text-lg font-black text-primary">{formatNumber(totalTax)}%</span>
+                    <span className="text-lg font-black text-primary">{formatNumber(totalTax, 2)}%</span>
                   </div>
 
                   <div className="space-y-2">
                     {rule.TaxComponent.map((comp, idx) => (
                       <div key={idx} className="flex items-center justify-between text-[10px] font-medium p-2 rounded-lg bg-accent/20">
                         <span className="text-muted-foreground">{comp.name}</span>
-                        <span className="font-bold">{formatNumber(Number(comp.percentage))}%</span>
+                        <span className="font-bold">{formatNumber(Number(comp.percentage), 2)}%</span>
                       </div>
                     ))}
                   </div>
@@ -292,7 +292,7 @@ export const TaxModule = () => {
                           <input
                             required
                             type="number"
-                            step="0.01"
+                            step="0.00001"
                             className="w-full p-2 rounded-lg border border-border bg-background text-xs outline-none"
                             value={comp.percentage}
                             onChange={(e) => {
@@ -337,7 +337,7 @@ export const TaxModule = () => {
                     <span className="text-xs font-bold text-primary uppercase">Carga Tributária Consolidada</span>
                   </div>
                   <span className="text-xl font-black text-primary">
-                    {formatNumber(formData.components.reduce((acc, c) => acc + c.percentage, 0))}%
+                    {formatNumber(formData.components.reduce((acc, c) => acc + c.percentage, 0), 2)}%
                   </span>
                 </div>
 

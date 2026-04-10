@@ -14,8 +14,8 @@ model Machine {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code             String   @unique
   name             String
-  acquisitionValue Decimal  @db.Decimal(18, 2)
-  residualValue    Decimal  @db.Decimal(18, 2)
+  acquisitionValue Decimal  @db.Decimal(20, 6)
+  residualValue    Decimal  @db.Decimal(20, 6)
   usefulLifeMonths Int
   MachineCostComponent MachineCostComponent[]
   ProductRouting       ProductRouting[]
@@ -28,14 +28,14 @@ model MachineCostComponent {
   machineId           String   @db.Uuid
   Machine             Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
   name                String
-  monthlyEstimatedCost Decimal  @db.Decimal(18, 2)
+  monthlyEstimatedCost Decimal  @db.Decimal(20, 6)
   isVariable          Boolean  @default(false)
 }
 
 model Role {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name           String   @unique
-  baseSalary     Decimal  @db.Decimal(18, 2)
+  baseSalary     Decimal  @db.Decimal(20, 6)
   monthlyHours   Int      @default(220)
   Employee       Employee[]
   ProductRouting ProductRouting[]
@@ -51,9 +51,9 @@ model Employee {
   department     String
   costCenter     String
   classification String
-  salary         Decimal  @db.Decimal(18, 2)
+  salary         Decimal  @db.Decimal(20, 6)
   monthlyHours   Int
-  productivity   Decimal  @default(100) @db.Decimal(5, 2)
+  productivity   Decimal  @default(100) @db.Decimal(10, 6)
   status         String   @default("ACTIVE")
   EmployeePayrollComponent EmployeePayrollComponent[]
   createdAt      DateTime @default(now())
@@ -65,7 +65,7 @@ model PayrollComponent {
   name            String   @unique
   type            String
   calculationType String
-  value           Decimal  @db.Decimal(18, 2)
+  value           Decimal  @db.Decimal(20, 6)
   employees       EmployeePayrollComponent[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -89,12 +89,12 @@ model Material {
   unit             String
   category         String
   supplier         String?
-  currentCost      Decimal  @db.Decimal(18, 2)
-  averageCost      Decimal  @db.Decimal(18, 2)
-  standardCost     Decimal  @db.Decimal(18, 2)
-  freight          Decimal  @default(0) @db.Decimal(18, 2)
-  standardLoss     Decimal  @default(0) @db.Decimal(5, 2)
-  conversionFactor Decimal  @default(1) @db.Decimal(10, 4)
+  currentCost      Decimal  @db.Decimal(20, 6)
+  averageCost      Decimal  @db.Decimal(20, 6)
+  standardCost     Decimal  @db.Decimal(20, 6)
+  freight          Decimal  @default(0) @db.Decimal(20, 6)
+  standardLoss     Decimal  @default(0) @db.Decimal(10, 6)
+  conversionFactor Decimal  @default(1) @db.Decimal(20, 6)
   status           String   @default("ACTIVE")
   MaterialPriceHistory MaterialPriceHistory[]
   ProductBOM           ProductBOM[]
@@ -106,8 +106,8 @@ model MaterialPriceHistory {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   materialId   String   @db.Uuid
   Material     Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
-  price        Decimal  @db.Decimal(18, 2)
-  freight      Decimal  @default(0) @db.Decimal(18, 2)
+  price        Decimal  @db.Decimal(20, 6)
+  freight      Decimal  @default(0) @db.Decimal(20, 6)
   effectiveDate DateTime @default(now())
 }
 
@@ -127,13 +127,13 @@ model Product {
   type           ItemType @default(PRODUCT)
   version        String   @default("1.0.0")
   status         String   @default("ACTIVE")
-  defaultLotSize Decimal  @default(1) @db.Decimal(18, 2)
+  defaultLotSize Decimal  @default(1) @db.Decimal(20, 6)
   
   // -- Processo Padrão (Foco em COMPONENT) --
-  cycleTimeSeconds   Decimal? @db.Decimal(10, 2)
+  cycleTimeSeconds   Decimal? @db.Decimal(20, 6)
   cavities           Int?
-  setupTimeMin       Decimal? @db.Decimal(10, 2)
-  efficiencyExpected Decimal? @db.Decimal(5, 2)
+  setupTimeMin       Decimal? @db.Decimal(20, 6)
+  efficiencyExpected Decimal? @db.Decimal(10, 6)
   
   // BOM as Parent
   ProductBOM           ProductBOM[] @relation("ParentProduct")
@@ -159,8 +159,8 @@ model ProductBOM {
   childProductId String?  @db.Uuid
   ChildProduct   Product? @relation("ChildProduct", fields: [childProductId], references: [id])
   
-  quantity       Decimal  @db.Decimal(18, 4)
-  lossPercentage Decimal  @default(0) @db.Decimal(5, 2)
+  quantity       Decimal  @db.Decimal(20, 6)
+  lossPercentage Decimal  @default(0) @db.Decimal(10, 6)
   notes          String?
 }
 
@@ -174,10 +174,10 @@ model ProductRouting {
   Machine           Machine  @relation(fields: [machineId], references: [id])
   roleId            String   @db.Uuid
   Role              Role     @relation(fields: [roleId], references: [id])
-  setupTimeMin      Decimal  @default(0) @db.Decimal(10, 2)
-  operationTimeMin  Decimal  @default(0) @db.Decimal(10, 2)
-  efficiencyExpected Decimal  @default(100) @db.Decimal(5, 2)
-  cycleTimeSeconds  Decimal? @db.Decimal(10, 2)
+  setupTimeMin      Decimal  @default(0) @db.Decimal(20, 6)
+  operationTimeMin  Decimal  @default(0) @db.Decimal(20, 6)
+  efficiencyExpected Decimal  @default(100) @db.Decimal(10, 6)
+  cycleTimeSeconds  Decimal? @db.Decimal(20, 6)
   cavities          Int?     @default(1)
   notes             String?
 }
@@ -188,7 +188,7 @@ model IndirectCost {
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   description       String
   category          String
-  monthlyValue      Decimal  @db.Decimal(18, 2)
+  monthlyValue      Decimal  @db.Decimal(20, 6)
   costCenter        String?
   allocationCriteria String
   status            String   @default("ACTIVE")
@@ -215,7 +215,7 @@ model TaxComponent {
   taxRuleId   String   @db.Uuid
   TaxRule     TaxRule  @relation(fields: [taxRuleId], references: [id], onDelete: Cascade)
   name        String
-  percentage  Decimal  @db.Decimal(5, 2)
+  percentage  Decimal  @db.Decimal(10, 6)
   isRecoverable Boolean @default(false)
   baseType    String   @default("GROSS_PRICE")
 }
@@ -228,10 +228,10 @@ model ProductPricing {
   Product           Product  @relation(fields: [productId], references: [id])
   taxRuleId         String   @db.Uuid
   TaxRule           TaxRule  @relation(fields: [taxRuleId], references: [id])
-  desiredMargin     Decimal  @default(15.0) @db.Decimal(5, 2)
-  commission        Decimal  @default(0.0) @db.Decimal(5, 2)
-  freightOut        Decimal  @default(0.0) @db.Decimal(18, 2)
-  otherVariables    Decimal  @default(0.0) @db.Decimal(5, 2)
+  desiredMargin     Decimal  @default(15.0) @db.Decimal(10, 6)
+  commission        Decimal  @default(0.0) @db.Decimal(10, 6)
+  freightOut        Decimal  @default(0.0) @db.Decimal(20, 6)
+  otherVariables    Decimal  @default(0.0) @db.Decimal(10, 6)
   status            String   @default("ACTIVE")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -247,11 +247,11 @@ model Simulation {
   description       String?
   productId         String   @db.Uuid
   taxRuleId         String   @db.Uuid
-  materialAdj       Decimal  @default(0) @db.Decimal(5, 2)
-  laborAdj          Decimal  @default(0) @db.Decimal(5, 2)
-  indirectAdj       Decimal  @default(0) @db.Decimal(5, 2)
-  efficiencyAdj     Decimal  @default(0) @db.Decimal(5, 2)
-  marginAdj         Decimal  @default(0) @db.Decimal(5, 2)
+  materialAdj       Decimal  @default(0) @db.Decimal(10, 6)
+  laborAdj          Decimal  @default(0) @db.Decimal(10, 6)
+  indirectAdj       Decimal  @default(0) @db.Decimal(10, 6)
+  efficiencyAdj     Decimal  @default(0) @db.Decimal(10, 6)
+  marginAdj         Decimal  @default(0) @db.Decimal(10, 6)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -310,15 +310,15 @@ model Proposal {
   
   // Totais Consolidados (Snapshot)
   totalItems        Int            @default(0)
-  totalGrossValue   Decimal        @default(0) @db.Decimal(18, 2)
-  totalDiscount     Decimal        @default(0) @db.Decimal(18, 2)
-  totalNetValue     Decimal        @default(0) @db.Decimal(18, 2)
-  totalCost         Decimal        @default(0) @db.Decimal(18, 2)
-  totalMarginValue  Decimal        @default(0) @db.Decimal(18, 2)
-  totalMarginPerc   Decimal        @default(0) @db.Decimal(5, 2)
-  totalTaxes        Decimal        @default(0) @db.Decimal(18, 2)
-  totalCommission   Decimal        @default(0) @db.Decimal(18, 2)
-  totalFreight      Decimal        @default(0) @db.Decimal(18, 2)
+  totalGrossValue   Decimal        @default(0) @db.Decimal(20, 6)
+  totalDiscount     Decimal        @default(0) @db.Decimal(20, 6)
+  totalNetValue     Decimal        @default(0) @db.Decimal(20, 6)
+  totalCost         Decimal        @default(0) @db.Decimal(20, 6)
+  totalMarginValue  Decimal        @default(0) @db.Decimal(20, 6)
+  totalMarginPerc   Decimal        @default(0) @db.Decimal(10, 6)
+  totalTaxes        Decimal        @default(0) @db.Decimal(20, 6)
+  totalCommission   Decimal        @default(0) @db.Decimal(20, 6)
+  totalFreight      Decimal        @default(0) @db.Decimal(20, 6)
 
   items             ProposalItem[]
   createdAt         DateTime       @default(now())
@@ -332,27 +332,27 @@ model ProposalItem {
   productId         String   @db.Uuid
   Product           Product  @relation(fields: [productId], references: [id])
   
-  quantity          Decimal  @db.Decimal(18, 4)
+  quantity          Decimal  @db.Decimal(20, 6)
   unit              String?
   
   // Snapshot de Custos e Preços no momento da proposta
-  unitCost          Decimal  @db.Decimal(18, 2) // Custo Industrial/Base
-  suggestedPrice    Decimal  @db.Decimal(18, 2) // Preço sugerido pelo sistema
-  negotiatedPrice   Decimal  @db.Decimal(18, 2) // Preço final negociado
+  unitCost          Decimal  @db.Decimal(20, 6) // Custo Industrial/Base
+  suggestedPrice    Decimal  @db.Decimal(20, 6) // Preço sugerido pelo sistema
+  negotiatedPrice   Decimal  @db.Decimal(20, 6) // Preço final negociado
   
-  discountPerc      Decimal  @default(0) @db.Decimal(5, 2)
-  discountValue     Decimal  @default(0) @db.Decimal(18, 2)
+  discountPerc      Decimal  @default(0) @db.Decimal(10, 6)
+  discountValue     Decimal  @default(0) @db.Decimal(20, 6)
   
-  marginValue       Decimal  @db.Decimal(18, 2)
-  marginPerc        Decimal  @db.Decimal(5, 2)
+  marginValue       Decimal  @db.Decimal(20, 6)
+  marginPerc        Decimal  @db.Decimal(10, 6)
   
-  taxesPerc         Decimal  @default(0) @db.Decimal(5, 2)
-  taxesValue        Decimal  @default(0) @db.Decimal(18, 2)
+  taxesPerc         Decimal  @default(0) @db.Decimal(10, 6)
+  taxesValue        Decimal  @default(0) @db.Decimal(20, 6)
   
-  commissionPerc    Decimal  @default(0) @db.Decimal(5, 2)
-  commissionValue   Decimal  @default(0) @db.Decimal(18, 2)
+  commissionPerc    Decimal  @default(0) @db.Decimal(10, 6)
+  commissionValue   Decimal  @default(0) @db.Decimal(20, 6)
   
-  freightValue      Decimal  @default(0) @db.Decimal(18, 2)
+  freightValue      Decimal  @default(0) @db.Decimal(20, 6)
   
   notes             String?
   createdAt         DateTime @default(now())
@@ -367,9 +367,9 @@ model CostCalculationLog {
   Product        Product  @relation(fields: [productId], references: [id])
   calculatedAt   DateTime @default(now())
   versionTag     String?
-  totalCiu       Decimal  @db.Decimal(18, 2)
-  totalCfc       Decimal  @db.Decimal(18, 2)
-  totalCgt       Decimal  @db.Decimal(18, 2)
-  suggestedPrice Decimal  @db.Decimal(18, 2)
+  totalCiu       Decimal  @db.Decimal(20, 6)
+  totalCfc       Decimal  @db.Decimal(20, 6)
+  totalCgt       Decimal  @db.Decimal(20, 6)
+  suggestedPrice Decimal  @db.Decimal(20, 6)
   inputSnapshot  String
 }

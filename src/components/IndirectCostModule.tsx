@@ -236,7 +236,7 @@ export const IndirectCostModule = () => {
                       </span>
                     </td>
                     <td className="p-4 text-right font-bold text-base">
-                      {formatCurrency(cost.monthlyValue)}
+                      {formatCurrency(cost.monthlyValue, 2)}
                     </td>
                     <td className="p-4 text-center">
                       <span className={cn(
@@ -326,7 +326,7 @@ export const IndirectCostModule = () => {
                     <input
                       required
                       type="number"
-                      step="0.01"
+                      step="0.00001"
                       className="w-full p-3 rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none"
                       value={formData.monthlyValue}
                       onChange={(e) => setFormData({...formData, monthlyValue: parseFloat(e.target.value)})}

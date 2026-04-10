@@ -245,7 +245,7 @@ export const MaterialModule = () => {
                     </td>
                     <td className="p-4">
                       <p className="text-sm font-bold">{formatCurrency(mat.calculations?.effectiveCost || 0)}</p>
-                      <p className="text-[10px] text-muted-foreground">Perda: {mat.standardLoss}%</p>
+                      <p className="text-[10px] text-muted-foreground">Perda: {formatNumber(mat.standardLoss, 2)}%</p>
                     </td>
                     <td className="p-4">
                       <div className={cn(
@@ -386,7 +386,7 @@ export const MaterialModule = () => {
                         <input
                           required
                           type="number"
-                          step="0.0001"
+                          step="0.00001"
                           className="w-full p-2 rounded-lg border border-border bg-background font-bold text-primary focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                           value={formData.currentCost}
                           onChange={(e) => setFormData({...formData, currentCost: parseFloat(e.target.value)})}
@@ -397,7 +397,7 @@ export const MaterialModule = () => {
                         <input
                           required
                           type="number"
-                          step="0.0001"
+                          step="0.00001"
                           className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                           value={formData.standardCost}
                           onChange={(e) => setFormData({...formData, standardCost: parseFloat(e.target.value)})}
@@ -410,7 +410,7 @@ export const MaterialModule = () => {
                         <input
                           required
                           type="number"
-                          step="0.0001"
+                          step="0.00001"
                           className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                           value={formData.freight}
                           onChange={(e) => setFormData({...formData, freight: parseFloat(e.target.value)})}
@@ -421,7 +421,7 @@ export const MaterialModule = () => {
                         <input
                           required
                           type="number"
-                          step="0.1"
+                          step="0.00001"
                           className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                           value={formData.standardLoss}
                           onChange={(e) => setFormData({...formData, standardLoss: parseFloat(e.target.value)})}
@@ -433,7 +433,7 @@ export const MaterialModule = () => {
                         <label className="text-xs font-bold text-muted-foreground uppercase">Custo Médio (R$)</label>
                         <input
                           type="number"
-                          step="0.0001"
+                          step="0.00001"
                           className="w-full p-2 rounded-lg border border-border bg-background/50 focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                           value={formData.averageCost}
                           onChange={(e) => setFormData({...formData, averageCost: parseFloat(e.target.value)})}
@@ -444,7 +444,7 @@ export const MaterialModule = () => {
                         <input
                           required
                           type="number"
-                          step="0.001"
+                          step="0.00001"
                           className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                           value={formData.conversionFactor}
                           onChange={(e) => setFormData({...formData, conversionFactor: parseFloat(e.target.value)})}

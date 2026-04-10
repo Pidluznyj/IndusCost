@@ -463,10 +463,10 @@ export const PricingModule = () => {
                             )}
                           </td>
                           <td className="p-3 font-medium text-xs">
-                            {r.status === "SUCCESS" ? formatCurrency(r.ciu) : "-"}
+                            {r.status === "SUCCESS" ? formatCurrency(r.ciu, 5) : "-"}
                           </td>
                           <td className="p-3 font-black text-primary text-right text-base">
-                            {r.status === "SUCCESS" ? formatCurrency(r.suggestedPrice) : "-"}
+                            {r.status === "SUCCESS" ? formatCurrency(r.suggestedPrice, 5) : "-"}
                           </td>
                         </tr>
                       ))}
@@ -513,14 +513,18 @@ export const PricingModule = () => {
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Margem Líquida %</label>
                       <input
-                        type="number" className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
+                        type="number" 
+                        step="0.00001"
+                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
                         value={batchFormData.desiredMargin} onChange={(e) => setBatchFormData({...batchFormData, desiredMargin: parseFloat(e.target.value)})}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Comissão %</label>
                       <input
-                        type="number" className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
+                        type="number" 
+                        step="0.00001"
+                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
                         value={batchFormData.commission} onChange={(e) => setBatchFormData({...batchFormData, commission: parseFloat(e.target.value)})}
                       />
                     </div>
@@ -530,14 +534,18 @@ export const PricingModule = () => {
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Frete Fixo (R$)</label>
                       <input
-                        type="number" className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
+                        type="number" 
+                        step="0.00001"
+                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
                         value={batchFormData.freightOut} onChange={(e) => setBatchFormData({...batchFormData, freightOut: parseFloat(e.target.value)})}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Outros Var %</label>
                       <input
-                        type="number" className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
+                        type="number" 
+                        step="0.00001"
+                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
                         value={batchFormData.otherVariables} onChange={(e) => setBatchFormData({...batchFormData, otherVariables: parseFloat(e.target.value)})}
                       />
                     </div>
@@ -583,7 +591,7 @@ export const PricingModule = () => {
                        Preço Sugerido
                      </div>
                      <p className="text-5xl font-black text-primary mb-2">
-                       {formatCurrency(calculationResult.resultados.suggestedPrice)}
+                       {formatCurrency(calculationResult.resultados.suggestedPrice, 5)}
                      </p>
                      <div className="flex items-center gap-4 text-sm font-bold text-muted-foreground">
                        <span className="flex items-center gap-1">
@@ -591,7 +599,7 @@ export const PricingModule = () => {
                        </span>
                        <span className="h-4 w-px bg-border" />
                        <span className="flex items-center gap-1">
-                         <ShieldCheck className="h-4 w-4 text-blue-500" /> Margem: {calculationResult.premissas.marginRate}%
+                         <ShieldCheck className="h-4 w-4 text-blue-500" /> Margem: {formatNumber(calculationResult.premissas.marginRate, 2)}%
                        </span>
                      </div>
                    </div>
@@ -604,15 +612,15 @@ export const PricingModule = () => {
                        <div className="space-y-3">
                          <div className="flex items-center justify-between p-3 rounded-xl bg-accent/20 border border-border">
                            <span className="text-xs font-medium">Custo Industrial (CIU)</span>
-                           <span className="text-sm font-bold">{formatCurrency(calculationResult.ciu)}</span>
+                           <span className="text-sm font-bold">{formatCurrency(calculationResult.ciu, 5)}</span>
                          </div>
                          <div className="flex items-center justify-between p-3 rounded-xl bg-accent/20 border border-border">
                            <span className="text-xs font-medium">Custo Fabril Completo</span>
-                           <span className="text-sm font-bold">{formatCurrency(calculationResult.custoFabril)}</span>
+                           <span className="text-sm font-bold">{formatCurrency(calculationResult.custoFabril, 5)}</span>
                          </div>
                          <div className="flex items-center justify-between p-3 rounded-xl bg-accent/20 border border-border">
                            <span className="text-xs font-medium">Custo Gerencial Total</span>
-                           <span className="text-sm font-bold">{formatCurrency(calculationResult.custoGerencial)}</span>
+                           <span className="text-sm font-bold">{formatCurrency(calculationResult.custoGerencial, 5)}</span>
                          </div>
                        </div>
                      </div>
@@ -624,15 +632,15 @@ export const PricingModule = () => {
                        <div className="space-y-3">
                          <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
                            <span className="text-xs font-medium">Impostos ({calculationResult.premissas.taxRate}%)</span>
-                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.resultados.totalTaxes)}</span>
+                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.resultados.totalTaxes, 5)}</span>
                          </div>
                          <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
                            <span className="text-xs font-medium">Comissão ({calculationResult.premissas.commRate}%)</span>
-                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.resultados.totalCommission)}</span>
+                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.resultados.totalCommission, 5)}</span>
                          </div>
                          <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
                            <span className="text-xs font-medium">Frete Saída</span>
-                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.premissas.freight)}</span>
+                           <span className="text-sm font-bold">-{formatCurrency(calculationResult.premissas.freight, 5)}</span>
                          </div>
                        </div>
                      </div>
@@ -643,11 +651,11 @@ export const PricingModule = () => {
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                        <div className="p-4 rounded-xl bg-white border border-border">
                          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">M. Contribuição</p>
-                         <p className="text-xl font-black text-primary">{formatCurrency(calculationResult.resultados.contributionMargin)}</p>
+                         <p className="text-xl font-black text-primary">{formatCurrency(calculationResult.resultados.contributionMargin, 5)}</p>
                        </div>
                        <div className="p-4 rounded-xl bg-white border border-border">
                          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">M. Operacional</p>
-                         <p className="text-xl font-black text-green-600">{formatCurrency(calculationResult.resultados.operationalMargin)}</p>
+                         <p className="text-xl font-black text-green-600">{formatCurrency(calculationResult.resultados.operationalMargin, 5)}</p>
                        </div>
                      </div>
                    </div>
@@ -702,21 +710,21 @@ export const PricingModule = () => {
                    <div className="grid grid-cols-2 gap-4">
                      <div className="space-y-1.5">
                        <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1"><Percent className="h-3 w-3" /> Margem Liq %</label>
-                       <input required type="number" className="w-full p-3 rounded-xl border border-border" value={formData.desiredMargin} onChange={(e) => setFormData({...formData, desiredMargin: parseFloat(e.target.value)})} />
+                       <input required type="number" step="0.00001" className="w-full p-3 rounded-xl border border-border" value={formData.desiredMargin} onChange={(e) => setFormData({...formData, desiredMargin: parseFloat(e.target.value)})} />
                      </div>
                      <div className="space-y-1.5">
                        <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1"><Users className="h-3 w-3" /> Comissão %</label>
-                       <input required type="number" className="w-full p-3 rounded-xl border border-border" value={formData.commission} onChange={(e) => setFormData({...formData, commission: parseFloat(e.target.value)})} />
+                       <input required type="number" step="0.00001" className="w-full p-3 rounded-xl border border-border" value={formData.commission} onChange={(e) => setFormData({...formData, commission: parseFloat(e.target.value)})} />
                      </div>
                    </div>
                    <div className="grid grid-cols-2 gap-4">
                      <div className="space-y-1.5">
                        <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1"><Truck className="h-3 w-3" /> Frete Fixo R$</label>
-                       <input required type="number" className="w-full p-3 rounded-xl border border-border" value={formData.freightOut} onChange={(e) => setFormData({...formData, freightOut: parseFloat(e.target.value)})} />
+                       <input required type="number" step="0.00001" className="w-full p-3 rounded-xl border border-border" value={formData.freightOut} onChange={(e) => setFormData({...formData, freightOut: parseFloat(e.target.value)})} />
                      </div>
                      <div className="space-y-1.5">
                        <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1"><Percent className="h-3 w-3" /> Outros Var %</label>
-                       <input required type="number" className="w-full p-3 rounded-xl border border-border" value={formData.otherVariables} onChange={(e) => setFormData({...formData, otherVariables: parseFloat(e.target.value)})} />
+                       <input required type="number" step="0.00001" className="w-full p-3 rounded-xl border border-border" value={formData.otherVariables} onChange={(e) => setFormData({...formData, otherVariables: parseFloat(e.target.value)})} />
                      </div>
                    </div>
                    <div className="pt-4 flex gap-3">

@@ -323,7 +323,7 @@ export const SettingsModule = () => {
                   </div>
                   <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
                     <span>Custo p/ Hora (Base)</span>
-                    <span>{formatCurrency(Number(role.baseSalary) / role.monthlyHours)}</span>
+                    <span>{formatNumber(Number(role.baseSalary) / role.monthlyHours, 5)}</span>
                   </div>
                 </div>
               </motion.div>
@@ -379,7 +379,7 @@ export const SettingsModule = () => {
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Custo de Energia (R$ / mês)</label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="0.00001"
                     value={globalForm.energyCost}
                     onChange={(e) => setGlobalForm({ ...globalForm, energyCost: Number(e.target.value) })}
                     className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
@@ -391,6 +391,7 @@ export const SettingsModule = () => {
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Horas Máquina Disponíveis</label>
                   <input
                     type="number"
+                    step="0.00001"
                     value={globalForm.workingHours}
                     onChange={(e) => setGlobalForm({ ...globalForm, workingHours: Number(e.target.value) })}
                     className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
@@ -402,6 +403,7 @@ export const SettingsModule = () => {
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Capacidade Fabril Total</label>
                   <input
                     type="number"
+                    step="0.00001"
                     value={globalForm.factoryHours}
                     onChange={(e) => setGlobalForm({ ...globalForm, factoryHours: Number(e.target.value) })}
                     className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
@@ -421,15 +423,15 @@ export const SettingsModule = () => {
                   </div>
                   <input
                     type="number"
-                    step="0.01"
+                    step="0.00001"
                     value={globalForm.hhOverride}
                     onChange={(e) => setGlobalForm({ ...globalForm, hhOverride: e.target.value === "" ? "" : Number(e.target.value) })}
                     className="w-full p-3 bg-background border border-primary/20 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none font-bold text-primary placeholder:font-normal placeholder:text-muted-foreground/50"
-                    placeholder={`Automático: ${formatCurrency(globals.calculatedHh)}/h`}
+                    placeholder={`Automático: ${formatCurrency(globals.calculatedHh, 5)}/h`}
                   />
                   <p className="text-[10px] text-muted-foreground">
                     {globalForm.hhOverride === "" || globalForm.hhOverride === 0 
-                      ? `Usando cálculo automático da folha: ${formatCurrency(globals.calculatedHh)}/h`
+                      ? `Usando cálculo automático da folha: ${formatCurrency(globals.calculatedHh, 5)}/h`
                       : `Sobrescrevendo cálculo automático com valor manual.`}
                   </p>
                 </div>
@@ -493,7 +495,7 @@ export const SettingsModule = () => {
                         <input
                           required
                           type="number"
-                          step="0.01"
+                          step="0.00001"
                           className="w-full p-3 rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none"
                           value={roleForm.baseSalary}
                           onChange={(e) => setRoleForm({...roleForm, baseSalary: parseFloat(e.target.value)})}
@@ -554,7 +556,7 @@ export const SettingsModule = () => {
                       <input
                         required
                         type="number"
-                        step="0.01"
+                        step="0.00001"
                         className="w-full p-3 rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none"
                         value={componentForm.value}
                         onChange={(e) => setComponentForm({...componentForm, value: parseFloat(e.target.value)})}

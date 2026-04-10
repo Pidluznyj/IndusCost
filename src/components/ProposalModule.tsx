@@ -496,20 +496,22 @@ export const ProposalModule = () => {
                         <td className="p-3">
                           <input
                             type="number"
+                            step="0.00001"
                             className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
                             value={item.quantity}
                             onChange={(e) => updateItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
                           />
                         </td>
                         <td className="p-3 text-xs font-mono text-muted-foreground">
-                          {item.unitCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          {item.unitCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
                         </td>
                         <td className="p-3 text-xs font-mono text-blue-600 font-medium">
-                          {item.suggestedPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          {item.suggestedPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
                         </td>
                         <td className="p-3">
                           <input
                             type="number"
+                            step="0.00001"
                             className="w-full p-1 rounded border border-border bg-background text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
                             value={item.negotiatedPrice}
                             onChange={(e) => updateItem(idx, { negotiatedPrice: parseFloat(e.target.value) || 0 })}
@@ -518,6 +520,7 @@ export const ProposalModule = () => {
                         <td className="p-3">
                           <input
                             type="number"
+                            step="0.00001"
                             className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
                             value={item.discountPerc}
                             onChange={(e) => updateItem(idx, { discountPerc: parseFloat(e.target.value) || 0 })}
@@ -528,11 +531,11 @@ export const ProposalModule = () => {
                             "text-xs font-bold",
                             item.marginPerc >= 20 ? "text-green-600" : item.marginPerc >= 10 ? "text-orange-600" : "text-red-600"
                           )}>
-                            {item.marginPerc.toFixed(1)}%
+                            {item.marginPerc.toFixed(3)}%
                           </div>
                         </td>
                         <td className="p-3 text-right text-xs font-bold font-mono">
-                          {((item.quantity * item.negotiatedPrice) - item.discountValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          {((item.quantity * item.negotiatedPrice) - item.discountValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })}
                         </td>
                         <td className="p-3 text-center">
                           <button 
@@ -576,7 +579,7 @@ export const ProposalModule = () => {
                       "text-lg font-bold font-mono",
                       totals.totalMarginPerc >= 20 ? "text-green-600" : totals.totalMarginPerc >= 10 ? "text-orange-600" : "text-red-600"
                     )}>
-                      {totals.totalMarginPerc.toFixed(1)}%
+                      {totals.totalMarginPerc.toFixed(3)}%
                     </p>
                     <span className="text-xs text-muted-foreground">({totals.totalMarginValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span>
                   </div>
@@ -686,7 +689,7 @@ export const ProposalModule = () => {
                         "text-xs font-bold",
                         Number(p.totalMarginPerc) >= 20 ? "text-green-600" : Number(p.totalMarginPerc) >= 10 ? "text-orange-600" : "text-red-600"
                       )}>
-                        {Number(p.totalMarginPerc).toFixed(1)}%
+                        {Number(p.totalMarginPerc).toFixed(3)}%
                       </div>
                     </td>
                     <td className="p-4">
