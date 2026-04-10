@@ -244,18 +244,6 @@ export const ProductModule = () => {
       return;
     }
 
-    // Validate routing fields
-    for (const step of formData.routing) {
-      if (step.cycleTimeSeconds === undefined || step.cycleTimeSeconds === null || !Number.isFinite(step.cycleTimeSeconds) || step.cycleTimeSeconds <= 0) {
-        alert("O tempo de ciclo deve ser um número válido maior que zero.");
-        return;
-      }
-      if (step.cavities === undefined || step.cavities === null || !Number.isFinite(step.cavities) || step.cavities < 1 || !Number.isInteger(step.cavities)) {
-        alert("O número de cavidades deve ser um número inteiro válido maior ou igual a 1.");
-        return;
-      }
-    }
-
     // Validação do Processo Padrão do Componente
     // Se o ciclo foi informado, TODOS os campos do processo devem ser válidos — sem fallback
     if (formData.type === "COMPONENT" && formData.cycleTimeSeconds !== "" && formData.cycleTimeSeconds !== null && formData.cycleTimeSeconds !== undefined) {
@@ -451,7 +439,7 @@ export const ProductModule = () => {
       ? Math.max(...formData.routing.map(r => r.sequence)) + 10 
       : 10;
     
-    setFormData({
+      setFormData({
       ...formData,
       routing: [...formData.routing, { 
         sequence: nextSequence, 
@@ -459,9 +447,7 @@ export const ProductModule = () => {
         roleId: "", 
         setupTimeMin: 0, 
         operationTimeMin: 0, 
-        efficiencyExpected: 100,
-        cycleTimeSeconds: 30,
-        cavities: 1
+        efficiencyExpected: 100
       }]
     });
   };
@@ -488,10 +474,10 @@ export const ProductModule = () => {
         bomCost: backendCostAnalysis.summary?.totalMaterialCost || 0,
         routingCost: backendCostAnalysis.summary?.totalConversionCost || 0,
         total: backendCostAnalysis.summary?.totalIndustrialCost || 0,
-        details: backendCostAnalysis.details || { materials: [], operations: [] }
+        details: backendCostAnalysis.details || { materials: [], operations: [], processBreakdown: [] }
       };
     }
-    return { bomCost: 0, routingCost: 0, total: 0, details: { materials: [], operations: [] } };
+    return { bomCost: 0, routingCost: 0, total: 0, details: { materials: [], operations: [], processBreakdown: [] } };
   }, [backendCostAnalysis]);
 
   return (
@@ -1133,35 +1119,7 @@ export const ProductModule = () => {
                                         />
                                       </div>
                                     </div>
-                                    <div className="grid grid-cols-3 gap-4">
-                                      <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Ciclo (seg)</label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                          value={step.cycleTimeSeconds ?? ""}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            updateRoutingStep(idx, "cycleTimeSeconds", val === "" ? undefined : parseFloat(val));
-                                          }}
-                                          min="0.1"
-                                          step="0.1"
-                                        />
-                                      </div>
-                                      <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Cavidades</label>
-                                        <input
-                                          type="number"
-                                          className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                                          value={step.cavities ?? ""}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            updateRoutingStep(idx, "cavities", val === "" ? undefined : Number(val));
-                                          }}
-                                          min="1"
-                                          step="1"
-                                        />
-                                      </div>
+                                    <div className="grid grid-cols-2 gap-4">
                                       <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-muted-foreground uppercase">Eficiência (%)</label>
                                         <input
@@ -1305,7 +1263,7 @@ export const ProductModule = () => {
                           </div>
                         </div>
 
-                        {/* Routing Breakdown */}
+                        {/* Processing Breakdown */}
                         <div className="space-y-4">
                           <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                             Detalhamento Processo
@@ -1316,30 +1274,78 @@ export const ProductModule = () => {
                                 <tr>
                                   <th className="p-3 font-bold">Operação</th>
                                   <th className="p-3 font-bold text-right">Tempo (min)</th>
-                                  <th className="p-3 font-bold text-right">Taxa/min</th>
+                                  <th className="p-3 font-bold text-right">Custo Máq.</th>
+                                  <th className="p-3 font-bold text-right">Custo HH</th>
                                   <th className="p-3 font-bold text-right">Total</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-border">
                                 {loadingCost ? (
                                   <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
+                                    <td colSpan={5} className="p-4 text-center text-muted-foreground text-xs">
                                       Carregando análise do backend...
                                     </td>
                                   </tr>
-                                ) : displayCost.details.operations.length === 0 ? (
+                                ) : !displayCost.details.processBreakdown || displayCost.details.processBreakdown.length === 0 ? (
                                   <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Nenhum processo no roteiro salvo.
+                                    <td colSpan={5} className="p-4 text-center text-muted-foreground text-xs">
+                                      Nenhum processo configurado.
                                     </td>
                                   </tr>
                                 ) : (
-                                  displayCost.details.operations.map((step: any, idx: number) => (
-                                    <tr key={idx}>
-                                      <td className="p-3 font-medium">{step.description || `Op. ${step.sequence}`}</td>
-                                      <td className="p-3 text-right">{formatNumber(step.totalTimeH * 60, 2)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(step.opCostPerUnit / (step.totalTimeH * 60 || 1))}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(step.totalStepCost)}</td>
+                                  displayCost.details.processBreakdown.map((step: any, idx: number) => (
+                                    <tr key={idx} className="group relative">
+                                      <td className="p-3 font-medium">
+                                        <div className="flex items-center gap-2">
+                                          {step.description}
+                                          {step.calculationDetails && (
+                                            <div className="group/tooltip relative">
+                                              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help hover:text-primary transition-colors" />
+                                              <div className="fixed z-[99] invisible group-hover/tooltip:visible bg-popover text-popover-foreground border shadow-xl rounded-xl p-4 w-80 text-[11px] pointer-events-none -translate-x-1/2 left-1/2 bottom-full mb-2 animate-in fade-in zoom-in-95 duration-200">
+                                                <div className="space-y-3">
+                                                  <div className="flex items-center justify-between border-b pb-2 mb-2">
+                                                    <span className="font-bold uppercase text-[9px]">Memória de Cálculo</span>
+                                                    <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[8px] font-mono">
+                                                      {step.source === "STANDARD_PROCESS" ? "PROCESSO PADRÃO" : "ROTEIRO"}
+                                                    </span>
+                                                  </div>
+                                                  
+                                                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                                    <div>
+                                                      <p className="opacity-50 uppercase text-[8px] font-bold">Variáveis Entrada</p>
+                                                      <p>Ciclo: <b>{formatNumber(step.calculationDetails.cycle, 2)}s</b></p>
+                                                      <p>Cav: <b>{step.calculationDetails.cavities}</b></p>
+                                                      <p>Eficiência: <b>{step.calculationDetails.efficiency}%</b></p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="opacity-50 uppercase text-[8px] font-bold">Setup e Lote</p>
+                                                      <p>Lote Padrão: <b>{step.calculationDetails.lotSize}</b></p>
+                                                      <p>Tempo Setup: <b>{step.calculationDetails.setupTimeMin}min</b></p>
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="bg-accent/30 p-2 rounded-lg space-y-1">
+                                                    <p className="opacity-50 uppercase text-[8px] font-bold">Fórmulas (Unitário)</p>
+                                                    <p>Pç/Hora Líq: <b>{formatNumber(step.calculationDetails.netPph, 2)}</b></p>
+                                                    <p>Custo Transf: <b>{formatCurrency(step.calculationDetails.unitTransform)}</b></p>
+                                                    <p>Custo Setup: <b>{formatCurrency(step.calculationDetails.setupCost)}</b></p>
+                                                  </div>
+
+                                                  <div className="pt-2 border-t flex justify-between items-center text-[10px]">
+                                                    <span className="font-bold">TOTAL OPERAÇÃO</span>
+                                                    <span className="font-black text-primary text-base">{formatCurrency(step.total)}</span>
+                                                  </div>
+                                                </div>
+                                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-popover" />
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="p-3 text-right">{formatNumber(step.timeMin, 2)}</td>
+                                      <td className="p-3 text-right">{formatCurrency(step.machineCost)}</td>
+                                      <td className="p-3 text-right">{formatCurrency(step.laborCost)}</td>
+                                      <td className="p-3 text-right font-bold">{formatCurrency(step.total)}</td>
                                     </tr>
                                   ))
                                 )}

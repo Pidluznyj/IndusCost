@@ -1784,52 +1784,55 @@ app.delete("/api/employees/:id", async (req, res) => {
     opexRatePerHour: number;
   }
 
-  async function getProductCostAnalysis(productId: string, cache?: AnalysisCache) {
+  async function initAnalysisCache() {
+    const indirects = await prisma.indirectCost.findMany({ where: { status: "ACTIVE" } });
+    const factoryHoursParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "FACTORY_HOURS_MONTHLY");
+    const energyParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
+    const hoursParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
+    
+    const fhMonthlyRaw = Number(factoryHoursParam?.monthlyValue);
+    const energyRaw    = Number(energyParam?.monthlyValue);
+    const hoursRaw     = Number(hoursParam?.monthlyValue);
+
+    if (!factoryHoursParam || !Number.isFinite(fhMonthlyRaw) || fhMonthlyRaw <= 0)
+      throw new Error("CONFIG_MISSING: FACTORY_HOURS_MONTHLY inválido.");
+    if (!energyParam || !Number.isFinite(energyRaw))
+      throw new Error("CONFIG_MISSING: ENERGY_COST inválido.");
+    if (!hoursParam || !Number.isFinite(hoursRaw) || hoursRaw <= 0)
+      throw new Error("CONFIG_MISSING: WORKING_HOURS inválido.");
+
+    const allEmps = await prisma.employee.findMany({ include: { Role: true, EmployeePayrollComponent: { include: { PayrollComponent: true } } } });
+    let megaPayroll = 0;
+    allEmps.forEach(e => {
+        const sal = Number(e.salary || e.Role?.baseSalary || 0);
+        let loads = 0;
+        e.EmployeePayrollComponent.forEach(r => {
+            loads += r.PayrollComponent.calculationType === "PERCENTAGE" ? (sal * Number(r.PayrollComponent.value)) / 100 : Number(r.PayrollComponent.value);
+        });
+        megaPayroll += sal + loads;
+    });
+    
+    const globalHhCost = megaPayroll / fhMonthlyRaw;
+    const totalOpex = indirects.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
+
+    return { 
+      indirectCosts: indirects, 
+      factoryHoursMonthly: fhMonthlyRaw, 
+      energyCost: energyRaw, 
+      workingHours: hoursRaw, 
+      globalHhCost, 
+      opexRatePerHour: totalOpex / fhMonthlyRaw 
+    };
+  }
+
+  async function getProductCostAnalysis(productId: string, cache?: AnalysisCache, includeDetails = false) {
     if (!cache) {
-      const indirects = await prisma.indirectCost.findMany({ where: { status: "ACTIVE" } });
-      const factoryHoursParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "FACTORY_HOURS_MONTHLY");
-      const energyParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
-      const hoursParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
-      
-      // Validação estrita com Number.isFinite — nenhum NaN passa
-      const fhMonthlyRaw = Number(factoryHoursParam?.monthlyValue);
-      const energyRaw    = Number(energyParam?.monthlyValue);
-      const hoursRaw     = Number(hoursParam?.monthlyValue);
-
-      if (!factoryHoursParam || !Number.isFinite(fhMonthlyRaw) || fhMonthlyRaw <= 0)
-        return { error: "CONFIG_MISSING", message: "Parâmetro global FACTORY_HOURS_MONTHLY não configurado, inválido ou zero." };
-      if (!energyParam || !Number.isFinite(energyRaw))
-        return { error: "CONFIG_MISSING", message: "Parâmetro global ENERGY_COST não configurado ou inválido." };
-      if (!hoursParam || !Number.isFinite(hoursRaw) || hoursRaw <= 0)
-        return { error: "CONFIG_MISSING", message: "Parâmetro global WORKING_HOURS não configurado, inválido ou zero." };
-
-      const factoryHoursMonthly = fhMonthlyRaw;
-      const energyCost          = energyRaw;
-      const workingHours        = hoursRaw;
-
-      // HH Global: calculado UMA vez por árvore inteira
-      const allEmps = await prisma.employee.findMany({ include: { Role: true, EmployeePayrollComponent: { include: { PayrollComponent: true } } } });
-      let megaPayroll = 0;
-      allEmps.forEach(e => {
-          const sal = Number(e.salary || e.Role?.baseSalary || 0);
-          let loads = 0;
-          e.EmployeePayrollComponent.forEach(r => {
-              loads += r.PayrollComponent.calculationType === "PERCENTAGE" ? (sal * Number(r.PayrollComponent.value)) / 100 : Number(r.PayrollComponent.value);
-          });
-          megaPayroll += sal + loads;
-      });
-      const globalHhCost = megaPayroll / factoryHoursMonthly;
-      
-      const totalOpex = indirects.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
-
-      cache = { 
-        indirectCosts: indirects, 
-        factoryHoursMonthly, 
-        energyCost, 
-        workingHours, 
-        globalHhCost, 
-        opexRatePerHour: totalOpex / factoryHoursMonthly 
-      };
+      try {
+        const newCache = await initAnalysisCache();
+        return getProductCostAnalysis(productId, newCache, includeDetails);
+      } catch (e: any) {
+        return { error: "CONFIG_MISSING", message: e.message };
+      }
     }
 
     const product = await prisma.product.findUnique({
@@ -1868,24 +1871,23 @@ app.delete("/api/employees/:id", async (req, res) => {
     const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
 
     // 2. Operações (A Mágica da Prioridade)
-    let operationItems: Array<{ totalHH: number, totalHM: number, totalTimeH: number }> = [];
+    let operationItems: Array<{ 
+      totalHH: number, 
+      totalHM: number, 
+      totalTimeH: number,
+      breakdown?: any 
+    }> = [];
 
     if (product.type === "COMPONENT" && product.cycleTimeSeconds !== null && Number(product.cycleTimeSeconds) > 0) {
       // PRIORIDADE 1: Processo Padrão do Componente
-      // Validação estrita dos campos do processo padrão
       const cycle = Number(product.cycleTimeSeconds);
       const cav = Number(product.cavities);
       const eff = Number(product.efficiencyExpected);
       const setup = Number(product.setupTimeMin);
 
-      if (!Number.isFinite(cycle) || cycle <= 0)
-        return { error: "PROCESS_INVALID", message: `Componente [${product.sku}]: cycleTimeSeconds inválido (${product.cycleTimeSeconds}). Deve ser > 0.` };
-      if (!Number.isFinite(cav) || cav < 1)
-        return { error: "PROCESS_INVALID", message: `Componente [${product.sku}]: cavities inválido (${product.cavities}). Deve ser >= 1.` };
-      if (!Number.isFinite(eff) || eff <= 0 || eff > 100)
-        return { error: "PROCESS_INVALID", message: `Componente [${product.sku}]: efficiencyExpected inválido (${product.efficiencyExpected}). Deve ser > 0 e <= 100.` };
-      if (!Number.isFinite(setup) || setup < 0)
-        return { error: "PROCESS_INVALID", message: `Componente [${product.sku}]: setupTimeMin inválido (${product.setupTimeMin}). Deve ser >= 0.` };
+      if (!Number.isFinite(cycle) || cycle <= 0 || !Number.isFinite(cav) || cav < 1 || !Number.isFinite(eff) || eff <= 0 || !Number.isFinite(setup)) {
+        return { error: "PROCESS_INVALID", message: `Componente [${product.sku}]: Processo Padrão com dados inválidos.` };
+      }
 
       const effDecimal = eff / 100;
       const machineHourCost = cache.energyCost / cache.workingHours;
@@ -1901,12 +1903,26 @@ app.delete("/api/employees/:id", async (req, res) => {
       operationItems.push({
         totalHH: totalStepCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0),
         totalHM: totalStepCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
-        totalTimeH: (1/netPph) + (setupH/lotSize)
+        totalTimeH: (1/netPph) + (setupH/lotSize),
+        breakdown: {
+          source: "STANDARD_PROCESS",
+          description: "Processo Padrão do Componente",
+          timeMin: (1/netPph) * 60,
+          ratePerMin: cellHourCost / 60,
+          machineCost: unitTransform * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0) + (setupCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0)),
+          laborCost: unitTransform * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0) + (setupCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0)),
+          total: totalStepCost,
+          calculationDetails: {
+            cycle, cavities: cav, efficiency: eff, setupTimeMin: setup, lotSize,
+            workingHours: cache.workingHours, energyCost: cache.energyCost, factoryHoursMonthly: cache.factoryHoursMonthly,
+            globalHhCost: cache.globalHhCost, machineHourCost, cellHourCost,
+            netPph, unitTransform, setupCost, totalStepCost
+          }
+        }
       });
 
     } else if (product.ProductRouting.length > 0) {
-      // PRIORIDADE 2: Fallback Clássico (Product Routing)
-      // Recuperar Componentes do Funcionário apenas para os roles em uso
+      // PRIORIDADE 2: Roteiro
       const rolesWithComponents = await Promise.all(product.ProductRouting.map(async (step) => {
         const emp = await prisma.employee.findFirst({
           where: { roleId: step.roleId },
@@ -1917,12 +1933,11 @@ app.delete("/api/employees/:id", async (req, res) => {
 
       operationItems = product.ProductRouting.map((step) => {
         const roleData = rolesWithComponents.find(rc => rc.roleId === step.roleId);
-        
         const machineHourCost = cache.energyCost / cache.workingHours;
-        
         const salary = Number(step.Role?.baseSalary || 0);
         let totalPayrollLoad = 0;
         const payrollComponents = roleData?.components || [];
+        
         if (payrollComponents.length > 0) {
           payrollComponents.forEach((rel: any) => {
             const comp = rel.PayrollComponent;
@@ -1931,30 +1946,43 @@ app.delete("/api/employees/:id", async (req, res) => {
         } else {
           totalPayrollLoad = salary * 0.8;
         }
-        const hhCost = (salary + totalPayrollLoad) / Number(step.Role?.monthlyHours || 220);
 
+        const hhCost = (salary + totalPayrollLoad) / Number(step.Role?.monthlyHours || 220);
         const cellHourCost = machineHourCost + hhCost;
 
-        const cycleTimeSeconds = Number(step.cycleTimeSeconds) > 0 ? Number(step.cycleTimeSeconds) : (Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30);
-        const cavities = Number(step.cavities) >= 1 ? Number(step.cavities) : 1;
-        const efficiency = Number(step.efficiencyExpected) > 0 ? Number(step.efficiencyExpected) / 100 : 1.0;
+        const cycle = Number(step.cycleTimeSeconds) > 0 ? Number(step.cycleTimeSeconds) : (Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30);
+        const cav = Number(step.cavities) >= 1 ? Number(step.cavities) : 1;
+        const eff = Number(step.efficiencyExpected) > 0 ? Number(step.efficiencyExpected) : 100;
+        const effDecimal = eff / 100;
 
-        const cyclesPerHour = 3600 / cycleTimeSeconds;
-        const netPiecesPerHour = cyclesPerHour * cavities * efficiency;
-        const unitTransformationCost = cellHourCost / netPiecesPerHour;
-        const setupTimeH = Number(step.setupTimeMin) / 60;
-        const setupCostPerUnit = (setupTimeH * cellHourCost) / lotSize;
-        const totalStepCost = unitTransformationCost + setupCostPerUnit;
+        const netPph = (3600 / cycle) * cav * effDecimal;
+        const unitTransform = cellHourCost / netPph;
+        const setupH = Number(step.setupTimeMin) / 60;
+        const setupCost = (setupH * cellHourCost) / lotSize;
+        const totalStepCost = unitTransform + setupCost;
 
         return {
           totalHH: totalStepCost * (cellHourCost > 0 ? hhCost / cellHourCost : 0),
           totalHM: totalStepCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
-          totalTimeH: (1 / netPiecesPerHour) + (setupTimeH / lotSize)
+          totalTimeH: (1 / netPph) + (setupH / lotSize),
+          breakdown: {
+            source: "ROUTING",
+            description: step.description || `Op. ${step.sequence}`,
+            timeMin: (1/netPph) * 60,
+            ratePerMin: cellHourCost / 60,
+            machineCost: totalStepCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
+            laborCost: totalStepCost * (cellHourCost > 0 ? hhCost / cellHourCost : 0),
+            total: totalStepCost,
+            calculationDetails: {
+              cycle, cavities: cav, efficiency: eff, setupTimeMin: Number(step.setupTimeMin), lotSize,
+              hhCost, machineHourCost, cellHourCost, netPph, unitTransform, setupCost, totalStepCost
+            }
+          }
         };
       });
 
     } else if (product.type !== "MATERIAL") {
-      return { error: "ROUTING_MISSING", message: `Produto/Componente [${product.sku}] não possui Processo Padrão nem Roteiro Operacional.` };
+      return { error: "ROUTING_MISSING", message: `Produto/Componente [${product.sku}] sem processo.` };
     }
 
     const totalHH_Unit = operationItems.reduce((acc, item) => acc + item.totalHH, 0);
@@ -1976,7 +2004,7 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     const totalIndustrialCost = totalMaterialCost + totalHH_Unit + totalHM_Unit + totalCIF_Unit;
 
-    return {
+    const result: any = {
       productId: product.id,
       sku: product.sku,
       name: product.name,
@@ -1988,195 +2016,67 @@ app.delete("/api/employees/:id", async (req, res) => {
       totalIndustrialCost,
       totalGerencialCost: totalIndustrialCost + totalOPEX_Unit
     };
+
+    if (includeDetails) {
+      result.details = {
+        materials: await Promise.all(product.ProductBOM.map(async (item) => {
+          const bomLoss = Number(item.lossPercentage) / 100;
+          const requiredQty = Number(item.quantity) / (1 - bomLoss);
+          if (item.Material) {
+            const mat = item.Material;
+            const matStandardLoss = Number(mat.standardLoss) / 100;
+            const landedCost = Number(mat.currentCost) + Number(mat.freight);
+            const matEffectiveCost = landedCost / (1 - matStandardLoss);
+            return {
+              description: mat.description,
+              basePrice: Number(mat.currentCost),
+              requiredQty,
+              unitCost: matEffectiveCost * requiredQty
+            };
+          }
+          if (item.childProductId) {
+            const childResult = await getProductCostAnalysis(item.childProductId, cache);
+            return {
+              description: childResult?.name || "Componente",
+              basePrice: childResult?.totalIndustrialCost || 0,
+              requiredQty,
+              unitCost: (childResult?.totalIndustrialCost || 0) * requiredQty
+            };
+          }
+          return null;
+        })).then(items => items.filter(Boolean)),
+        processBreakdown: operationItems.map(oi => oi.breakdown).filter(Boolean)
+      };
+    }
+
+    return result;
   }
 
   // --- API: Product Cost Analysis (Motor de Cálculo CIU com CIF) ---
   app.get("/api/products/:id/cost-analysis", async (req, res) => {
     try {
       const { id } = req.params;
-      const analysis = await getProductCostAnalysis(id);
+      const analysis = await getProductCostAnalysis(id, undefined, true);
       if (!analysis) return res.status(404).json({ error: "Produto não encontrado" });
       if ("error" in analysis) return res.status(400).json(analysis);
 
-      // Re-calculando detalhes para o endpoint específico (mantendo compatibilidade com a UI atual)
-    const [product, indirectCosts] = await Promise.all([
-      prisma.product.findUnique({
-        where: { id },
-        include: {
-          ProductBOM: { include: { Material: true } },
-          ProductRouting: { 
-            include: { 
-              Machine: { include: { MachineCostComponent: true } }, 
-              Role: true
-            } 
-          },
+      // Mapeamento para garantir retrocompatibilidade com o frontend atual
+      res.json({
+        ...analysis,
+        summary: {
+          totalMaterialCost: analysis.totalMaterialCost,
+          totalConversionCost: analysis.totalHH_Unit + analysis.totalHM_Unit,
+          totalCIF_Unit: analysis.totalCIF_Unit,
+          totalOPEX_Unit: analysis.totalOPEX_Unit,
+          totalIndustrialCost: analysis.totalIndustrialCost,
+          totalGerencialCost: analysis.totalGerencialCost
         },
-      }),
-      prisma.indirectCost.findMany({ where: { status: "ACTIVE" } })
-    ]);
-
-    const lotSize = Number(product!.defaultLotSize) || 1;
-    const materialItems = await Promise.all(product!.ProductBOM.map(async (item) => {
-      if (item.Material) {
-        const mat = item.Material;
-        const currentCost = Number(mat.currentCost);
-        const freight = Number(mat.freight);
-        const matStandardLoss = Number(mat.standardLoss) / 100;
-        const bomLoss = Number(item.lossPercentage) / 100;
-        const landedCost = currentCost + freight;
-        const matEffectiveCost = landedCost / (1 - matStandardLoss);
-        const requiredQty = Number(item.quantity) / (1 - bomLoss);
-        const totalItemCost = matEffectiveCost * requiredQty;
-        return {
-          materialCode: mat.code,
-          description: mat.description,
-          unit: mat.unit,
-          basePrice: currentCost,
-          freight,
-          landedCost,
-          matLoss: matStandardLoss * 100,
-          bomLoss: bomLoss * 100,
-          requiredQty,
-          unitCost: totalItemCost,
-        };
-      }
-
-      if (item.childProductId) {
-        const childAnalysis = await getProductCostAnalysis(item.childProductId);  // TODO: endpoint detalhado - cache separado
-        const bomLoss = Number(item.lossPercentage) / 100;
-        const requiredQty = Number(item.quantity) / (1 - bomLoss);
-        const totalItemCost = (childAnalysis?.totalIndustrialCost || 0) * requiredQty;
-
-        return {
-          materialCode: childAnalysis?.sku || "N/A",
-          description: childAnalysis?.name || "Componente Filho",
-          unit: "UN",
-          basePrice: childAnalysis?.totalIndustrialCost || 0,
-          freight: 0,
-          landedCost: childAnalysis?.totalIndustrialCost || 0,
-          matLoss: 0,
-          bomLoss: bomLoss * 100,
-          requiredQty,
-          unitCost: totalItemCost,
-        };
-      }
-
-      return null;
-    }));
-
-    const validMaterialItems = materialItems.filter(Boolean);
-
-    const operationItems = await Promise.all(product!.ProductRouting.map(async (step) => {
-      const machine = step.Machine;
-      const role = step.Role;
-      // 1. Custo_Maquina_Hora (Nova Lógica: Energia / Horas)
-      const energyCostParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
-      const workingHoursParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
-      
-      if (!energyCostParam || !workingHoursParam) {
-        throw new Error("CONFIG_MISSING: Parâmetros globais de Energia ou Horas Trabalhadas não configurados.");
-      }
-      
-      const energyCost = Number(energyCostParam.monthlyValue);
-      const workingHours = Number(workingHoursParam.monthlyValue);
-      
-      if (workingHours <= 0) {
-        throw new Error("CONFIG_INVALID: Horas Trabalhadas devem ser maiores que zero.");
-      }
-      
-      const machineHourCost = energyCost / workingHours;
-      
-      // 2. Custo_MO_Hora
-      const salary = Number(role.baseSalary);
-      let totalPayrollLoad = 0;
-      
-      // Buscar componentes de folha para este cargo (usando o primeiro funcionário como referência)
-      const empRef = await prisma.employee.findFirst({
-        where: { roleId: role.id },
-        include: { EmployeePayrollComponent: { include: { PayrollComponent: true } } }
+        // O breakdown de materiais e operações agora vem direto dos details do motor
+        audit: { calculatedAt: new Date().toISOString() }
       });
-      const payrollComponents = empRef?.EmployeePayrollComponent || [];
-
-      payrollComponents.forEach((rel: any) => {
-        const comp = rel.PayrollComponent;
-        totalPayrollLoad += comp.calculationType === "PERCENTAGE" ? (salary * Number(comp.value)) / 100 : Number(comp.value);
-      });
-      const hhCost = (salary + totalPayrollLoad) / Number(role.monthlyHours || 220);
-      
-      // 3. Custo_Celula_Hora = Maquina + MO
-      const cellHourCost = machineHourCost + hhCost;
-
-      // Usa os campos reais do roteiro quando existirem; fallback provisório mantém compatibilidade
-      const cycleTimeSeconds = Number(step.cycleTimeSeconds) > 0 ? Number(step.cycleTimeSeconds) : (Number(step.operationTimeMin) > 0 ? Number(step.operationTimeMin) * 60 : 30);
-      const cavities = Number(step.cavities) >= 1 ? Number(step.cavities) : 1;
-      const efficiency = Number(step.efficiencyExpected) > 0 ? Number(step.efficiencyExpected) / 100 : 1.0;
-
-      // 4. Ciclos_Hora = 3600 / ciclo_seg
-      const cyclesPerHour = 3600 / cycleTimeSeconds;
-
-      // 5. Peças_Hora = Ciclos_Hora × cavidades
-      const grossPiecesPerHour = cyclesPerHour * cavities;
-
-      // 6. Peças_Líquidas_Hora = Peças_Hora × eficiência
-      const netPiecesPerHour = grossPiecesPerHour * efficiency;
-
-      // 7. Custo_Transformacao_Unit = Custo_Celula_Hora / Peças_Líquidas_Hora
-      const unitTransformationCost = cellHourCost / netPiecesPerHour;
-
-      const setupTimeH = Number(step.setupTimeMin) / 60;
-      const setupCostPerUnit = (setupTimeH * cellHourCost) / lotSize;
-
-      const totalStepCost = unitTransformationCost + setupCostPerUnit;
-
-      const hhRatio = cellHourCost > 0 ? hhCost / cellHourCost : 0;
-      const hmRatio = cellHourCost > 0 ? machineHourCost / cellHourCost : 0;
-
-      return {
-        sequence: step.sequence,
-        description: step.description,
-        machineCode: machine.code,
-        machineHourCost,
-        hhCost,
-        setupTimeMin: Number(step.setupTimeMin),
-        opTimeMin: Number(step.operationTimeMin),
-        efficiency: efficiency * 100,
-        setupCostPerUnit: setupCostPerUnit,
-        opCostPerUnit: unitTransformationCost,
-        totalStepCost: totalStepCost,
-        totalHH: totalStepCost * hhRatio,
-        totalHM: totalStepCost * hmRatio,
-        totalTimeH: (1 / netPiecesPerHour) + (setupTimeH / lotSize),
-        cycleTimeSeconds,
-        cavities,
-        netPiecesPerHour
-      };
-    }));
-
-    res.json({
-      ...analysis,
-      summary: {
-        totalMaterialCost: analysis.totalMaterialCost,
-        totalConversionCost: analysis.totalHH_Unit + analysis.totalHM_Unit,
-        totalCIF_Unit: analysis.totalCIF_Unit,
-        totalOPEX_Unit: analysis.totalOPEX_Unit,
-        totalIndustrialCost: analysis.totalIndustrialCost,
-        costPerUnit: analysis.totalIndustrialCost,
-      },
-      details: {
-        materials: validMaterialItems,
-        operations: operationItems,
-        indirects: {
-          cifRatePerHour: analysis.totalCIF_Unit / (operationItems.reduce((acc, i) => acc + i.totalTimeH, 0) || 1),
-          opexRatePerHour: analysis.totalOPEX_Unit / (operationItems.reduce((acc, i) => acc + i.totalTimeH, 0) || 1),
-          totalCIF_Monthly: indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0),
-          totalOPEX_Monthly: indirectCosts.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0)
-        }
-      },
-      audit: { calculatedAt: new Date().toISOString(), version: product!.version }
-    });
     } catch (error) {
-      console.error("Cost analysis error:", error);
-      res.status(500).json({ error: "Erro ao calcular análise de custo." });
+      console.error("Cost analysis endpoint error:", error);
+      res.status(500).json({ error: "Erro interno no cálculo da análise." });
     }
   });
 
