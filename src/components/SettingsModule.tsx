@@ -34,7 +34,25 @@ interface PayrollComponent {
 export const SettingsModule = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
-  const [globals, setGlobals] = useState<{energyCost: number, workingHours: number, factoryHours: number, energyId?: string, hoursId?: string, factoryId?: string}>({energyCost: 0, workingHours: 176, factoryHours: 8448});
+  const [globals, setGlobals] = useState<{
+    energyCost: number, 
+    workingHours: number, 
+    factoryHours: number, 
+    hhOverride: number | null,
+    calculatedHh: number,
+    hhSource: "AUTO" | "MANUAL",
+    energyId?: string, 
+    hoursId?: string, 
+    factoryId?: string,
+    hhOverrideId?: string
+  }>({
+    energyCost: 0, 
+    workingHours: 176, 
+    factoryHours: 8448, 
+    hhOverride: null, 
+    calculatedHh: 0, 
+    hhSource: "AUTO"
+  });
   const [loading, setLoading] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState<"roles" | "payroll" | "globals">("roles");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -57,36 +75,39 @@ export const SettingsModule = () => {
     energyCost: 0,
     workingHours: 176,
     factoryHours: 8448,
+    hhOverride: "" as string | number
   });
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [rRes, cRes, iRes] = await Promise.all([
+      const [rRes, cRes, gRes] = await Promise.all([
         fetch("/api/roles"),
         fetch("/api/payroll-components"),
-        fetch("/api/indirect-costs")
+        fetch("/api/settings/globals")
       ]);
       setRoles(await rRes.json());
       setComponents(await cRes.json());
       
-      const indirects = await iRes.json();
-      const energy = indirects.find((c: any) => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
-      const hours = indirects.find((c: any) => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
-      const factoryH = indirects.find((c: any) => c.category === "GLOBAL_PARAM" && c.description === "FACTORY_HOURS_MONTHLY");
+      const config = await gRes.json();
       
       setGlobals({
-        energyCost: energy ? Number(energy.monthlyValue) : 0,
-        workingHours: hours ? Number(hours.monthlyValue) : 176,
-        factoryHours: factoryH ? Number(factoryH.monthlyValue) : 8448,
-        energyId: energy?.id,
-        hoursId: hours?.id,
-        factoryId: factoryH?.id
+        energyCost: config.values.energyCost,
+        workingHours: config.values.workingHours,
+        factoryHours: config.values.factoryHours,
+        hhOverride: config.values.hhOverride,
+        calculatedHh: config.calculated.hhAuto,
+        hhSource: config.calculated.hhSource,
+        energyId: config.ids.energyId,
+        hoursId: config.ids.hoursId,
+        factoryId: config.ids.factoryId,
+        hhOverrideId: config.ids.hhOverrideId
       });
       setGlobalForm({
-        energyCost: energy ? Number(energy.monthlyValue) : 0,
-        workingHours: hours ? Number(hours.monthlyValue) : 176,
-        factoryHours: factoryH ? Number(factoryH.monthlyValue) : 8448,
+        energyCost: config.values.energyCost,
+        workingHours: config.values.workingHours,
+        factoryHours: config.values.factoryHours,
+        hhOverride: config.values.hhOverride ?? "",
       });
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
@@ -170,6 +191,23 @@ export const SettingsModule = () => {
           monthlyValue: globalForm.factoryHours,
           costCenter: "Geral",
           allocationCriteria: "Geral",
+          status: "ACTIVE"
+        }),
+      });
+
+      // Save HH Override
+      const hhVal = globalForm.hhOverride === "" ? 0 : Number(globalForm.hhOverride);
+      const hhMethod = globals.hhOverrideId ? "PUT" : "POST";
+      const hhUrl = globals.hhOverrideId ? `/api/indirect-costs/${globals.hhOverrideId}` : "/api/indirect-costs";
+      await fetch(hhUrl, {
+        method: hhMethod, 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: "HH_VALUE_OVERRIDE",
+          category: "GLOBAL_PARAM",
+          monthlyValue: hhVal,
+          costCenter: "Geral",
+          allocationCriteria: "Override",
           status: "ACTIVE"
         }),
       });
@@ -370,6 +408,30 @@ export const SettingsModule = () => {
                     placeholder="Ex: 8448"
                   />
                   <p className="text-[10px] text-muted-foreground">Horas mensais totais alocadas p/ rateio de CIF e OPEX.</p>
+                </div>
+                <div className="space-y-1.5 p-4 rounded-2xl bg-primary/5 border border-primary/10 lg:col-span-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-primary uppercase tracking-wider">Override Custo HH (R$/h)</label>
+                    <span className={cn(
+                      "text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase",
+                      globals.hhSource === "MANUAL" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"
+                    )}>
+                      {globals.hhSource === "MANUAL" ? "Manual Ativo" : "Automático"}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={globalForm.hhOverride}
+                    onChange={(e) => setGlobalForm({ ...globalForm, hhOverride: e.target.value === "" ? "" : Number(e.target.value) })}
+                    className="w-full p-3 bg-background border border-primary/20 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none font-bold text-primary placeholder:font-normal placeholder:text-muted-foreground/50"
+                    placeholder={`Automático: ${formatCurrency(globals.calculatedHh)}/h`}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {globalForm.hhOverride === "" || globalForm.hhOverride === 0 
+                      ? `Usando cálculo automático da folha: ${formatCurrency(globals.calculatedHh)}/h`
+                      : `Sobrescrevendo cálculo automático com valor manual.`}
+                  </p>
                 </div>
               </div>
               <div className="mt-6 flex justify-end">

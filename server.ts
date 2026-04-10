@@ -1789,6 +1789,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     const factoryHoursParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "FACTORY_HOURS_MONTHLY");
     const energyParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
     const hoursParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
+    const hhOverrideParam = indirects.find(c => c.category === "GLOBAL_PARAM" && c.description === "HH_VALUE_OVERRIDE");
     
     const fhMonthlyRaw = Number(factoryHoursParam?.monthlyValue);
     const energyRaw    = Number(energyParam?.monthlyValue);
@@ -1812,7 +1813,20 @@ app.delete("/api/employees/:id", async (req, res) => {
         megaPayroll += sal + loads;
     });
     
-    const globalHhCost = megaPayroll / fhMonthlyRaw;
+    const autoHhCost = megaPayroll / (fhMonthlyRaw || 1);
+    
+    let globalHhCost = 0;
+    let hhSource: "AUTO" | "MANUAL" = "AUTO";
+
+    const overrideVal = Number(hhOverrideParam?.monthlyValue);
+    if (hhOverrideParam && Number.isFinite(overrideVal) && overrideVal > 0) {
+      globalHhCost = overrideVal;
+      hhSource = "MANUAL";
+    } else {
+      globalHhCost = autoHhCost;
+      hhSource = "AUTO";
+    }
+
     const totalOpex = indirects.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
 
     return { 
@@ -1820,10 +1834,48 @@ app.delete("/api/employees/:id", async (req, res) => {
       factoryHoursMonthly: fhMonthlyRaw, 
       energyCost: energyRaw, 
       workingHours: hoursRaw, 
-      globalHhCost, 
+      globalHhCost,
+      hhSource,
+      autoHhCost,
       opexRatePerHour: totalOpex / fhMonthlyRaw 
     };
   }
+
+  // --- API: Global Settings Preview ---
+  app.get("/api/settings/globals", async (req, res) => {
+    try {
+      const cache = await initAnalysisCache();
+      const indirects = await prisma.indirectCost.findMany({ where: { category: "GLOBAL_PARAM" } });
+      
+      const energy = indirects.find(c => c.description === "ENERGY_COST");
+      const hours = indirects.find(c => c.description === "WORKING_HOURS");
+      const factoryH = indirects.find(c => c.description === "FACTORY_HOURS_MONTHLY");
+      const hhOverride = indirects.find(c => c.description === "HH_VALUE_OVERRIDE");
+
+      res.json({
+        values: {
+          energyCost: energy ? Number(energy.monthlyValue) : 0,
+          workingHours: hours ? Number(hours.monthlyValue) : 176,
+          factoryHours: factoryH ? Number(factoryH.monthlyValue) : 8448,
+          hhOverride: hhOverride ? Number(hhOverride.monthlyValue) : null,
+        },
+        ids: {
+          energyId: energy?.id,
+          hoursId: hours?.id,
+          factoryId: factoryH?.id,
+          hhOverrideId: hhOverride?.id
+        },
+        calculated: {
+          hhAuto: cache.autoHhCost,
+          hhEffective: cache.globalHhCost,
+          hhSource: cache.hhSource
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching global settings:", error);
+      res.status(500).json({ error: "Erro ao carregar configurações globais." });
+    }
+  });
 
   async function getProductCostAnalysis(productId: string, cache?: AnalysisCache, includeDetails = false) {
     if (!cache) {
