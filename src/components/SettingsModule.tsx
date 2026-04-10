@@ -34,7 +34,7 @@ interface PayrollComponent {
 export const SettingsModule = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
-  const [globals, setGlobals] = useState<{energyCost: number, workingHours: number, energyId?: string, hoursId?: string}>({energyCost: 0, workingHours: 176});
+  const [globals, setGlobals] = useState<{energyCost: number, workingHours: number, factoryHours: number, energyId?: string, hoursId?: string, factoryId?: string}>({energyCost: 0, workingHours: 176, factoryHours: 8448});
   const [loading, setLoading] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState<"roles" | "payroll" | "globals">("roles");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -56,6 +56,7 @@ export const SettingsModule = () => {
   const [globalForm, setGlobalForm] = useState({
     energyCost: 0,
     workingHours: 176,
+    factoryHours: 8448,
   });
 
   const fetchData = async () => {
@@ -72,16 +73,20 @@ export const SettingsModule = () => {
       const indirects = await iRes.json();
       const energy = indirects.find((c: any) => c.category === "GLOBAL_PARAM" && c.description === "ENERGY_COST");
       const hours = indirects.find((c: any) => c.category === "GLOBAL_PARAM" && c.description === "WORKING_HOURS");
+      const factoryH = indirects.find((c: any) => c.category === "GLOBAL_PARAM" && c.description === "FACTORY_HOURS_MONTHLY");
       
       setGlobals({
         energyCost: energy ? Number(energy.monthlyValue) : 0,
         workingHours: hours ? Number(hours.monthlyValue) : 176,
+        factoryHours: factoryH ? Number(factoryH.monthlyValue) : 8448,
         energyId: energy?.id,
-        hoursId: hours?.id
+        hoursId: hours?.id,
+        factoryId: factoryH?.id
       });
       setGlobalForm({
         energyCost: energy ? Number(energy.monthlyValue) : 0,
         workingHours: hours ? Number(hours.monthlyValue) : 176,
+        factoryHours: factoryH ? Number(factoryH.monthlyValue) : 8448,
       });
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
@@ -147,6 +152,22 @@ export const SettingsModule = () => {
           description: "WORKING_HOURS",
           category: "GLOBAL_PARAM",
           monthlyValue: globalForm.workingHours,
+          costCenter: "Geral",
+          allocationCriteria: "Geral",
+          status: "ACTIVE"
+        }),
+      });
+
+      // Save Factory Hours
+      const factoryMethod = globals.factoryId ? "PUT" : "POST";
+      const factoryUrl = globals.factoryId ? `/api/indirect-costs/${globals.factoryId}` : "/api/indirect-costs";
+      await fetch(factoryUrl, {
+        method: factoryMethod,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: "FACTORY_HOURS_MONTHLY",
+          category: "GLOBAL_PARAM",
+          monthlyValue: globalForm.factoryHours,
           costCenter: "Geral",
           allocationCriteria: "Geral",
           status: "ACTIVE"
@@ -315,7 +336,7 @@ export const SettingsModule = () => {
           ) : (
             <div className="col-span-1 md:col-span-2 lg:col-span-3 bg-card rounded-2xl border border-border overflow-hidden shadow-sm p-6">
               <h3 className="text-lg font-bold mb-4">Parâmetros Globais da Empresa</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Custo de Energia (R$ / mês)</label>
                   <input
@@ -326,10 +347,10 @@ export const SettingsModule = () => {
                     className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                     placeholder="Ex: 5000.00"
                   />
-                  <p className="text-[10px] text-muted-foreground">Custo total estimado de energia elétrica da fábrica por mês.</p>
+                  <p className="text-[10px] text-muted-foreground">Custo total estimado de energia da fábrica.</p>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Horas Trabalhadas (mês)</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Horas Máquina Disponíveis</label>
                   <input
                     type="number"
                     value={globalForm.workingHours}
@@ -337,7 +358,18 @@ export const SettingsModule = () => {
                     className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                     placeholder="Ex: 176"
                   />
-                  <p className="text-[10px] text-muted-foreground">Total de horas que a fábrica opera no mês (ex: 22 dias * 8 horas = 176).</p>
+                  <p className="text-[10px] text-muted-foreground">Divisor da Energia para Taxa HM.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Capacidade Fabril Total</label>
+                  <input
+                    type="number"
+                    value={globalForm.factoryHours}
+                    onChange={(e) => setGlobalForm({ ...globalForm, factoryHours: Number(e.target.value) })}
+                    className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                    placeholder="Ex: 8448"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Horas mensais totais alocadas p/ rateio de CIF e OPEX.</p>
                 </div>
               </div>
               <div className="mt-6 flex justify-end">

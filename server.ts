@@ -1832,7 +1832,11 @@ app.delete("/api/employees/:id", async (req, res) => {
     const totalTimeH_Unit = operationItems.reduce((acc, item) => acc + item.totalTimeH, 0);
 
     // 3. CIF/OPEX
-    const totalFactoryHH_Monthly = 8448; 
+    const factoryHoursParam = indirectCosts.find(c => c.category === "GLOBAL_PARAM" && c.description === "FACTORY_HOURS_MONTHLY");
+    if (!factoryHoursParam || Number(factoryHoursParam.monthlyValue) <= 0) {
+      return { error: "CONFIG_MISSING", message: "Parâmetro global FACTORY_HOURS_MONTHLY não configurado ou inválido." };
+    }
+    const totalFactoryHH_Monthly = Number(factoryHoursParam.monthlyValue); 
     const totalCIF_Monthly = indirectCosts.filter(c => c.category === "CIF").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
     const totalOPEX_Monthly = indirectCosts.filter(c => c.category !== "CIF" && c.category !== "GLOBAL_PARAM").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
     
