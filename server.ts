@@ -2147,6 +2147,33 @@ app.delete("/api/employees/:id", async (req, res) => {
     return typeof x === "object" && x !== null && "error" in x && typeof (x as { error: unknown }).error === "string";
   }
 
+  /** Avisos técnicos (cadastro/custeio suspeito). Não substituem erro fatal. */
+  type CostAnalysisWarning = {
+    code: string;
+    severity: "warning";
+    message: string;
+    context: "MATERIAL" | "CHILD_COMPONENT" | "BOM_LINE";
+    materialId?: string;
+    childProductId?: string;
+    bomLineId?: string;
+    sku?: string;
+    name?: string;
+  };
+
+  function mergeCostWarnings(
+    parent: CostAnalysisWarning[],
+    nested: unknown
+  ): void {
+    if (!nested || typeof nested !== "object" || !("warnings" in nested)) return;
+    const w = (nested as { warnings?: unknown }).warnings;
+    if (!Array.isArray(w)) return;
+    for (const x of w) {
+      if (x && typeof x === "object" && "message" in x && "code" in x) {
+        parent.push(x as CostAnalysisWarning);
+      }
+    }
+  }
+
   async function getProductCostAnalysis(
     productId: string,
     cache?: AnalysisCache,
@@ -2186,15 +2213,43 @@ app.delete("/api/employees/:id", async (req, res) => {
     try {
     const lotSize = Number(product.defaultLotSize) || 1;
 
-    // 1. Materiais / Componentes (Recurso) — recursão protegida contra ciclo; erros de filho propagam (nunca custo zero silencioso)
+    const warnings: CostAnalysisWarning[] = [];
+    /** Evita segunda passagem recursiva no bloco `details` (mesmo resultado da primeira). */
+    const bomLineChildAnalysisCache = new Map<string, Record<string, unknown>>();
+
+    // 1. Materiais / Componentes (Recurso) — recursão com pathStack; ciclo detectado; erros de filho propagam (nunca custo zero por falha silenciosa)
     const materialLineCosts: number[] = [];
     for (const item of product.ProductBOM) {
       if (item.Material) {
         const mat = item.Material;
         const landedCost = Number(mat.currentCost) + Number(mat.freight);
+        if (!Number.isFinite(landedCost) || landedCost <= 0) {
+          warnings.push({
+            code: "MATERIAL_ZERO_OR_INVALID_LANDED_COST",
+            severity: "warning",
+            message: `Matéria-prima [${mat.code}] (${mat.description}) com custo aterrissado zerado ou inválido — revisar cadastro de custo/frete.`,
+            context: "MATERIAL",
+            materialId: mat.id,
+            sku: mat.code,
+            name: mat.description,
+            bomLineId: item.id,
+          });
+        }
         const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
         const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
-        materialLineCosts.push(matEffectiveCost * requiredQty);
+        const lineTotal = matEffectiveCost * requiredQty;
+        if (lineTotal === 0 && landedCost > 0) {
+          warnings.push({
+            code: "BOM_LINE_ZERO_TOTAL_DESPITE_MATERIAL_COST",
+            severity: "warning",
+            message: `Linha BOM [${product.sku}] matéria [${mat.code}]: custo de linha zerado (quantidade/perdas?) — revisar.`,
+            context: "MATERIAL",
+            materialId: mat.id,
+            sku: mat.code,
+            bomLineId: item.id,
+          });
+        }
+        materialLineCosts.push(lineTotal);
         continue;
       }
 
@@ -2207,6 +2262,7 @@ app.delete("/api/employees/:id", async (req, res) => {
             parentProductId: product.id,
             parentSku: product.sku,
             childProductId: item.childProductId,
+            bomLineId: item.id,
           };
         }
         if (isCostAnalysisFailure(childAnalysis)) {
@@ -2216,16 +2272,38 @@ app.delete("/api/employees/:id", async (req, res) => {
             parentProductId: product.id,
             parentSku: product.sku,
             childProductId: item.childProductId,
+            bomLineId: item.id,
             cause: childAnalysis,
           };
         }
+        bomLineChildAnalysisCache.set(item.id, childAnalysis as Record<string, unknown>);
+        mergeCostWarnings(warnings, childAnalysis);
+
         const childUnitCost = childAnalysis.totalIndustrialCost;
+        if (!Number.isFinite(childUnitCost) || childUnitCost <= 0) {
+          warnings.push({
+            code: "CHILD_ZERO_OR_INVALID_INDUSTRIAL_COST",
+            severity: "warning",
+            message: `Componente filho [${childAnalysis.sku ?? "?"}] (${childAnalysis.name ?? "—"}) com custo industrial total zerado ou inválido — revisar processo/BOM/custeio do filho.`,
+            context: "CHILD_COMPONENT",
+            childProductId: item.childProductId,
+            sku: childAnalysis.sku,
+            name: childAnalysis.name,
+            bomLineId: item.id,
+          });
+        }
         const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
         materialLineCosts.push(childUnitCost * requiredQty);
         continue;
       }
 
-      materialLineCosts.push(0);
+      return {
+        error: "BOM_LINE_INCOMPLETE",
+        message: `Linha da BOM de [${product.sku}] sem material ou componente associado — estrutura inválida para custeio.`,
+        parentProductId: product.id,
+        parentSku: product.sku,
+        bomLineId: item.id,
+      };
     }
     const totalMaterialCost = materialLineCosts.reduce((acc, u) => acc + u, 0);
 
@@ -2375,7 +2453,9 @@ app.delete("/api/employees/:id", async (req, res) => {
       totalCIF_Unit,
       totalOPEX_Unit,
       totalIndustrialCost,
-      totalGerencialCost: totalIndustrialCost + totalOPEX_Unit
+      totalGerencialCost: totalIndustrialCost + totalOPEX_Unit,
+      warnings,
+      warningCount: warnings.length,
     };
 
     if (includeDetails) {
@@ -2402,31 +2482,22 @@ app.delete("/api/employees/:id", async (req, res) => {
           continue;
         }
         if (item.childProductId) {
-          const childResult = await getProductCostAnalysis(item.childProductId, cache, false, stack);
-          if (childResult === null) {
+          const childResult = bomLineChildAnalysisCache.get(item.id);
+          if (!childResult || isCostAnalysisFailure(childResult)) {
             return {
-              error: "CHILD_NOT_FOUND",
-              message: `Componente referenciado na BOM de [${product.sku}] não existe (ID órfão).`,
+              error: "INTERNAL_BOM_CACHE_MISS",
+              message: `Inconsistência ao montar detalhes da BOM de [${product.sku}] — recálculo de filho ausente (cache).`,
               parentProductId: product.id,
               parentSku: product.sku,
               childProductId: item.childProductId,
-            };
-          }
-          if (isCostAnalysisFailure(childResult)) {
-            return {
-              error: "CHILD_COST_FAILED",
-              message: `Falha ao custear componente filho na BOM de [${product.sku}] (detalhamento).`,
-              parentProductId: product.id,
-              parentSku: product.sku,
-              childProductId: item.childProductId,
-              cause: childResult,
+              bomLineId: item.id,
             };
           }
           materialsRows.push({
-            description: childResult.name,
-            basePrice: childResult.totalIndustrialCost,
+            description: String(childResult.name ?? "—"),
+            basePrice: Number(childResult.totalIndustrialCost ?? 0),
             requiredQty,
-            unitCost: childResult.totalIndustrialCost * requiredQty,
+            unitCost: Number(childResult.totalIndustrialCost ?? 0) * requiredQty,
           });
           continue;
         }

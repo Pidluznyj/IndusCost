@@ -524,12 +524,21 @@ export const ProductModule = () => {
       const routingCost = s?.totalConversionCost || 0;
       const cifCost = s?.totalCIF_Unit || 0;
       const total = s?.totalIndustrialCost || 0;
+      const warnings = Array.isArray(backendCostAnalysis.warnings)
+        ? backendCostAnalysis.warnings
+        : [];
+      const warningCount =
+        typeof backendCostAnalysis.warningCount === "number"
+          ? backendCostAnalysis.warningCount
+          : warnings.length;
       return {
         bomCost,
         routingCost,
         cifCost,
         total,
-        details: backendCostAnalysis.details || { materials: [], operations: [], processBreakdown: [] }
+        details: backendCostAnalysis.details || { materials: [], operations: [], processBreakdown: [] },
+        warnings,
+        warningCount,
       };
     }
     return {
@@ -537,7 +546,9 @@ export const ProductModule = () => {
       routingCost: 0,
       cifCost: 0,
       total: 0,
-      details: { materials: [], operations: [], processBreakdown: [] }
+      details: { materials: [], operations: [], processBreakdown: [] },
+      warnings: [] as unknown[],
+      warningCount: 0,
     };
   }, [backendCostAnalysis]);
 
@@ -1257,6 +1268,28 @@ export const ProductModule = () => {
                           </p>
                         </div>
                       </div>
+
+                      {!loadingCost && displayCost.warningCount > 0 && (
+                        <div
+                          className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-2"
+                          role="alert"
+                        >
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                            <div className="space-y-1 min-w-0">
+                              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                                A análise foi concluída, mas existem {displayCost.warningCount}{" "}
+                                {displayCost.warningCount === 1 ? "alerta" : "alertas"} que exigem revisão.
+                              </p>
+                              <ul className="text-xs text-amber-900/90 dark:text-amber-100/90 space-y-1 list-disc pl-4">
+                                {(displayCost.warnings as Array<{ message?: string }>).map((w, i) => (
+                                  <li key={i}>{typeof w?.message === "string" ? w.message : String(w)}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       <p className="text-[11px] text-muted-foreground text-center px-2">
                         Conciliação: materiais + conversão + CIF = CIU (mesmo motor de{" "}
