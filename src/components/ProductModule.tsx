@@ -1243,11 +1243,13 @@ export const ProductModule = () => {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-blue-600 uppercase">Custo de Materiais (BOM)</p>
+                            <p className="text-xs font-bold text-blue-600 uppercase">Custo da estrutura (BOM)</p>
                             <Layers className="h-4 w-4 text-blue-500" />
                           </div>
                           <p className="text-3xl font-black text-blue-700">{formatCurrency(displayCost.bomCost)}</p>
-                          <p className="text-[10px] text-blue-600/60">Baseado no custo atual dos materiais</p>
+                          <p className="text-[10px] text-blue-600/60">
+                            Soma das linhas da BOM (matérias-primas e/ou CIU dos componentes), conforme o motor.
+                          </p>
                         </div>
                         <div className="p-6 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
@@ -1264,7 +1266,7 @@ export const ProductModule = () => {
                           </div>
                           <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
                           <p className="text-[10px] text-primary/60">
-                            MP + conversão + CIF ({formatCurrency(displayCost.cifCost)})
+                            BOM + conversão + CIF ({formatCurrency(displayCost.cifCost)})
                           </p>
                         </div>
                       </div>
@@ -1292,7 +1294,7 @@ export const ProductModule = () => {
                       )}
 
                       <p className="text-[11px] text-muted-foreground text-center px-2">
-                        Conciliação: materiais + conversão + CIF = CIU (mesmo motor de{" "}
+                        Conciliação: estrutura (BOM) + conversão + CIF = CIU (mesmo motor de{" "}
                         <code className="text-[10px] bg-accent px-1 rounded">/api/products/:id/cost-analysis</code>).
                       </p>
 

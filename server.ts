@@ -2192,7 +2192,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     const product = await prisma.product.findUnique({
       where: { id: productId },
       include: {
-        ProductBOM: { include: { Material: true } },
+        ProductBOM: { orderBy: { id: "asc" }, include: { Material: true } },
         ProductRouting: { include: { Machine: { include: { MachineCostComponent: true } }, Role: true } },
       },
     });
@@ -2512,6 +2512,22 @@ app.delete("/api/employees/:id", async (req, res) => {
         }>,
         processBreakdown: operationItems.map((oi) => oi.breakdown).filter(Boolean),
       };
+
+      const detailMaterials = result.details.materials;
+      const lineSum = detailMaterials.reduce((acc, row) => acc + row.unitCost, 0);
+      if (
+        Number.isFinite(lineSum) &&
+        Number.isFinite(totalMaterialCost) &&
+        Math.abs(lineSum - totalMaterialCost) > 0.0001
+      ) {
+        warnings.push({
+          code: "BOM_DETAIL_TOTAL_DIVERGENCE",
+          severity: "warning",
+          message: `Soma do detalhamento da BOM (${lineSum.toFixed(6)}) difere do total consolidado (${totalMaterialCost.toFixed(6)}) — revisar arredondamento ou consistência das linhas.`,
+          context: "BOM_LINE",
+        });
+        result.warningCount = warnings.length;
+      }
     }
 
     return result;
