@@ -1,14 +1,16 @@
-# Roadmap de campos de banco — evolução comercial / CRM (IndusCost)
+# Roadmap de campos de banco — IndusCost (comercial, CRM e referência técnica)
 
-**Versão do documento:** 1.0  
-**Última revisão:** 2026-04-11  
+**Versão do documento:** 1.1  
+**Última revisão:** 2026-04-10  
 **Fonte de verdade do schema atual:** `prisma/schema.prisma` (PostgreSQL)
+
+**Escopo cumulativo:** além do backlog comercial/CRM, este documento passa a registrar **alterações técnicas validadas no código** (motor de custo, API, UI, roteamento) com classificação explícita de **impacto em banco** vs **somente aplicação**. Problemas de ambiente local (ex.: `DATABASE_URL` ausente) **não** são tratados como exigência de migration.
 
 ---
 
 ## 1. Objetivo do documento
 
-Este arquivo é o **guia oficial e cumulativo** de campos de banco de dados relacionados à **evolução comercial, CRM operacional e inteligência de vendas** no IndusCost.
+Este arquivo é o **guia oficial e cumulativo** de campos de banco de dados e de **decisões de persistência** relacionadas à evolução do IndusCost, com ênfase em **evolução comercial, CRM operacional e inteligência de vendas**, e referência cruzada a **engenharia/custeio** quando houver implicação de modelo ou tabelas existentes.
 
 Ele serve para:
 
@@ -29,7 +31,7 @@ Ele serve para:
 **Fluxo sugerido:**
 
 1. Identificar o domínio funcional (funil, cliente 360, follow-up, etc.).
-2. Registrar o campo (ou tabela) na secção **5** e no **checklist 11**, com status adequado.
+2. Registrar o campo (ou tabela) na secção **5** e no **checklist 12**, com status adequado.
 3. Após a migration, alterar o status do item para **já existe** e, se necessário, mover detalhes para a secção **4**.
 4. Incrementar **Versão do documento** e **Última revisão** no cabeçalho.
 
@@ -136,6 +138,19 @@ Campos relevantes para mix/análise: `id`, `sku`, `name`, `type` (enum `ItemType
 - **Probabilidade de fechamento** e **valor ponderado** por status: heurísticas em `src/lib/salesFunnel.ts` (derivado).
 - **Health score, segmento comercial, ABC, janela de recompra:** em `src/lib/customerCommercialIntel.ts` e APIs que agregam propostas (calculado / derivado).
 - **Curva ABC da carteira:** `groupBy` em propostas `APPROVED` no endpoint da visão comercial (calculado na leitura).
+
+### 4.6 `CostCalculationLog` (engenharia / custo — já no schema)
+
+| Campo | Tipo (Prisma) | Finalidade | Observação validada no código |
+|-------|----------------|------------|--------------------------------|
+| `id` | Uuid | PK | — |
+| `productId` | Uuid | Produto analisado | FK para `Product` |
+| `calculatedAt` | DateTime? | Momento do registro | — |
+| `versionTag` | String? | Versão/label | — |
+| `totalCiu`, `totalCfc`, `totalCgt`, `suggestedPrice` | Decimal | Totais persistidos no log | — |
+| `inputSnapshot` | String | Snapshot textual dos insumos | — |
+
+**Uso atual no código:** referências a `prisma.costCalculationLog.deleteMany` em fluxos de exclusão de produto (`server.ts`); **não** foi identificado preenchimento desta tabela em cada chamada GET de cost-analysis no estado atual do repositório. A tabela é **reaproveitável** para auditoria/snapshot futuro de custo, com política de escrita a definir (fora do escopo deste documento até haver requisito de produto).
 
 ---
 
@@ -302,7 +317,9 @@ Campos ideais para **`Opportunity`** (quando existir):
 
 ---
 
-## 7. Fase 1 — prioridade (campos / temas)
+## 7. Fase 1 — prioridade (campos / temas comerciais)
+
+> **Nota:** esta “Fase 1” refere-se ao **roadmap de dados comercial/CRM** (secções 5–6). É independente da **Fase 1 de navegação SPA** (rotas principais no frontend), já implementada no código e **sem impacto em banco** — ver secção 11.
 
 **Objetivo:** suportar funil e CRM sem multiplicar entidades.
 
@@ -311,7 +328,7 @@ Campos ideais para **`Opportunity`** (quando existir):
 - `Proposal.lossReason` (+ opcional `lossReasonDetail`) para perdas documentadas.
 - Manter KPIs como **calculados**; não obrigar cache em `Customer`.
 
-**Status:** itens marcados `falta criar` nas secções 5.1 e checklist 11.
+**Status:** itens marcados `falta criar` nas secções 5.1 e checklist 12.
 
 ---
 
@@ -341,10 +358,57 @@ Campos ideais para **`Opportunity`** (quando existir):
 - **`Customer.segment` já existe:** novos enums devem conviver sem sobrecarga semântica (renomear conceitos ou usar campo novo `commercialSegment`).
 - **`responsible` em texto:** alinhar futuro com usuários (FK) para auditoria e permissões.
 - **Proposal como único núcleo:** evitar criar `Opportunity` até haver requisito claro de multi-proposta ou funil desacoplado.
+- **Motor de custo / tooltips:** evoluções recentes **não** alteraram colunas de `Product`, `ProductBOM`, `Material` nem `Proposal`; metadados de explicação são **transitórios na API** salvo decisão futura de auditoria (ver changelog, secção 11, e priorização secção 13).
 
 ---
 
-## 11. Checklist incremental de campos futuros
+## 11. Changelog técnico-funcional
+
+Registros padronizados a partir da **validação do código** (`server.ts`, `src/`, `prisma/schema.prisma`). Legenda de status de item: **implementado** | **planejado** | **analisado** | **não requer banco** | **reavaliar**. Legenda impacto RN: **nenhum** | **indireto** | **reavaliar**. Legenda impacto DB: **nenhum** | **reutiliza existentes** | **precisa novos campos** | **precisa tabela nova**.
+
+### 11.1 Itens já implementados e validados
+
+| Título | Status | Módulos / arquivos | Resumo técnico | Impacto RN | Impacto DB | Campos / tabelas | Fase | Observações |
+|--------|--------|---------------------|----------------|------------|------------|------------------|------|-------------|
+| Motor de custo — proteção a ciclo na BOM | implementado | `server.ts` (`getProductCostAnalysis`, `pathStack` / `Set`) | Reentrância no mesmo `productId` retorna erro `BOM_CYCLE` em vez de recursão infinita | nenhum | nenhum | — | técnica | Sem migration |
+| Motor de custo — falha do componente filho | implementado | `server.ts` | `childProductId` com análise inválida retorna `CHILD_COST_FAILED` com `cause`; não há custo zero silencioso | nenhum | nenhum | — | técnica | — |
+| Motor de custo — linha BOM incompleta | implementado | `server.ts` | Linha sem material nem filho: `BOM_LINE_INCOMPLETE` | nenhum | nenhum | — | técnica | — |
+| Motor de custo — cache detalhes BOM | implementado | `server.ts` | `bomLineChildAnalysisCache`; miss → `INTERNAL_BOM_CACHE_MISS` | nenhum | nenhum | — | técnica | — |
+| Warnings — custo zero / suspeito | implementado | `server.ts` | `CostAnalysisWarning`, merge de warnings de filhos; códigos ex.: material landed inválido, filho CIU ≤ 0 | nenhum | nenhum | — | técnica | — |
+| API cost-analysis — payload | implementado | `server.ts` GET `/api/products/:id/cost-analysis` | Resposta inclui `warnings`, `warningCount`, `calculationExplainability` (textos derivados do mesmo cálculo) | nenhum | nenhum | — | técnica | Explicações não persistem em tabela |
+| API pricing-snapshot — metadados | implementado | `server.ts` GET `/api/products/:id/pricing-snapshot` | `calculationExplainability` para `unitCost` e `suggestedPrice` (markup divisor) | nenhum | nenhum | — | técnica | — |
+| Consolidação PRODUCT — UX e warning divergência | implementado | `server.ts`, `ProductModule.tsx` | `ProductBOM` com `orderBy: { id: "asc" }`; warning `BOM_DETAIL_TOTAL_DIVERGENCE` se soma do detalhe ≠ total; rótulos “estrutura (BOM)” | nenhum | nenhum | — | técnica | Sem mudança de fórmula de negócio |
+| Transparência de cálculo — UI | implementado | `src/lib/calculationExplainability.ts`, `src/types/calculation.ts`, `CalculatedValue.tsx`, `ProductModule.tsx`, `ProposalModule.tsx` | Tooltips com metadados; margem de linha explicada em `proposalLineExplain.ts` (alinhado ao cálculo em tela) | nenhum | nenhum | — | técnica | `ProposalItem.calculationExplainability` só em memória ao adicionar item |
+| Navegação SPA — Fase 1 (módulos principais) | implementado | `main.tsx`, `App.tsx`, `Layout.tsx`, `Sidebar.tsx`, `src/lib/mainNavigation.ts` | `react-router-dom`: rotas `/:segmento` alinhados ao menu; `/` e `*` → `/dashboard`; funil: `navigate("/proposals")` no evento existente | nenhum | nenhum | — | técnica | Histórico do browser entre módulos |
+
+### 11.2 Itens analisados / planejados (backlog comercial — não implementados como migration neste ciclo)
+
+| Título | Status | Onde está planejado | Resumo | Impacto RN | Impacto DB | Campos / tabelas | Fase doc | Observações |
+|--------|--------|---------------------|--------|------------|------------|------------------|----------|-------------|
+| Funil — datas, origem, motivo perda, próxima ação | planejado | Sec. 5.1, 7, checklist 12 | Campos em `Proposal` ou entidade futura | indireto | precisa novos campos | Ver tabela checklist | 1–2 | Detalhado nas linhas 1–9 do checklist |
+| Customer 360 — perfil comercial, dono, notas | planejado | Sec. 5.2 | Perfil / campos em `Customer` | indireto | precisa novos campos | Sec. 5.2 | 2 | — |
+| Health score persistido | reavaliar | Sec. 5.3 | Hoje calculado em app; persistir se precisar histórico/override | indireto | precisa novos campos ou tabela | Sec. 5.3 | 2–3 | — |
+| Follow-up — `CommercialActivity` | planejado | Sec. 5.5 | Tabela nova | indireto | precisa tabela nova | Sec. 5.5 | 2 | — |
+| Auditoria comercial — `CommercialAuditLog` | planejado | Sec. 5.8 | Tabela nova | indireto | precisa tabela nova | Sec. 5.8 | 2 | — |
+| Oportunidade desacoplada | planejado | Sec. 5.7 | `Opportunity` + opcional FK em `Proposal` | indireto | precisa tabela nova | Sec. 5.7 | 3 | Condicional a produto |
+| Snapshot de custo em log por execução | reavaliar | Sec. 4.6 | `CostCalculationLog` existe; política de escrita não ligada ao GET atual | indireto | reutiliza existentes | `CostCalculationLog` | técnica | Definir se/gravar ao calcular |
+
+### 11.3 Itens sem impacto em banco (apenas código / UX / contrato JSON)
+
+| Título | Status | Módulos / arquivos | Resumo |
+|--------|--------|---------------------|--------|
+| `SearchableSelect` | não requer banco | `src/components/shared/SearchableSelect.tsx` | Componente de UI; opções vindas de APIs/cadastros; sem alteração de schema neste changelog |
+| Preferências de usuário / favoritos de rota | analisado | — | Não implementado; seria tabela ou storage futuro — **fora** deste ciclo |
+| Relatórios — layout / impressão | analisado | `reports-print.css`, `ReportsModule` | Questões de CSS/print **não** exigem campo novo por si |
+| Ambiente — `DATABASE_URL` | analisado | Prisma / deploy | Configuração de ambiente; não é “campo novo” de negócio |
+
+### 11.4 Itens que exigirão novos campos ou tabelas (futuro)
+
+Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). Nada disso foi migrado no schema na revisão 1.1 deste documento.
+
+---
+
+## 12. Checklist incremental de campos futuros
 
 Usar esta lista como índice rápido; detalhes nas secções 4–5. Marcar no PR: `[roadmap]` quando item for implementado.
 
@@ -369,6 +433,21 @@ Usar esta lista como índice rápido; detalhes nas secções 4–5. Marcar no PR
 | 17 | ABC/Segmento | Cache `abcClass` / `commercialSegment` persistidos | 3 | opcional futuro |
 | 18 | Oportunidade | Modelo `Opportunity` + FK em `Proposal` | 3 | opcional futuro |
 | 19 | Pedido real | Modelo futuro `Order` / datas fiscais | 3 | opcional futuro |
+
+---
+
+## 13. Próximas alterações de banco sugeridas (priorização)
+
+Ordem sugerida para **quando** houver decisão de produto de persistir além do que já está no schema. Itens **já listados** nas secções 5–6 e 12; aqui só a prioridade macro.
+
+1. **Funil (Proposal):** `expectedCloseDate`, `source`, `lossReason` (+ detalhe) — maior aderência a CRM operacional sem nova entidade.
+2. **Follow-up:** tabela `CommercialActivity` (mínimo viável) — base para próximas ações e histórico de contato.
+3. **Auditoria:** `CommercialAuditLog` ou política equivalente — rastrear mudanças de status/valor/responsável.
+4. **Perfil comercial (Customer):** notas comerciais separadas, relacionamento, dono (texto ou FK futura).
+5. **Health / ABC / recompra:** persistir **apenas** se houver requisito de relatório SQL massivo, override manual ou histórico temporal; caso contrário manter **calculado** (secção 6).
+6. **Custeio:** avaliar uso de `CostCalculationLog` para gravar snapshots sob regra (ex.: ao fechar custo, ao publicar preço), com retenção e versão — **reavaliar** antes de migration adicional de colunas.
+
+**Não sugerido como prioridade de banco:** preferências de UI do usuário, estado de rota interna (abas, modais), metadados de tooltip JSON retornados pela API (salvo produto exija auditoria desses textos).
 
 ---
 

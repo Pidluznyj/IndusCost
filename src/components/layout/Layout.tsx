@@ -4,15 +4,13 @@ import { motion, AnimatePresence } from "motion/react";
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: string;
-  onTabChange: (tab: string) => void;
 }
 
-export const Layout = ({ children, activeTab, onTabChange }: LayoutProps) => {
+export const Layout = ({ children }: LayoutProps) => {
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans antialiased text-foreground">
       {/* Sidebar - Fixed on the left */}
-      <Sidebar activeTab={activeTab} onTabChange={onTabChange} />
+      <Sidebar />
 
       {/* Main Content - Scrollable area */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
