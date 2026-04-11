@@ -42,6 +42,38 @@ const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon
   CANCELED: { label: "Cancelada", color: "bg-gray-500/10 text-gray-600", icon: Trash2 },
 };
 
+function safeNum(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeProposalItem(
+  item: Partial<ProposalItem> & { productId: string }
+): ProposalItem {
+  return {
+    ...item,
+    productId: item.productId,
+    Product: item.Product,
+    id: item.id,
+    proposalId: item.proposalId,
+    quantity: safeNum(item.quantity, 1),
+    unit: item.unit ?? "UN",
+    unitCost: safeNum(item.unitCost),
+    suggestedPrice: safeNum(item.suggestedPrice),
+    negotiatedPrice: safeNum(item.negotiatedPrice),
+    discountPerc: safeNum(item.discountPerc),
+    discountValue: safeNum(item.discountValue),
+    marginValue: safeNum(item.marginValue),
+    marginPerc: safeNum(item.marginPerc),
+    taxesPerc: safeNum(item.taxesPerc),
+    taxesValue: safeNum(item.taxesValue),
+    commissionPerc: safeNum(item.commissionPerc),
+    commissionValue: safeNum(item.commissionValue),
+    freightValue: safeNum(item.freightValue),
+    notes: item.notes,
+  };
+}
+
 export const ProposalModule = () => {
   const [view, setView] = useState<"list" | "form">("list");
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -113,8 +145,11 @@ export const ProposalModule = () => {
     try {
       const res = await fetch(`/api/proposals/${id}`);
       const data = await res.json();
+      const items = Array.isArray(data.items)
+        ? data.items.map((it: ProposalItem) => normalizeProposalItem(it))
+        : [];
       setEditingProposal(data);
-      setFormData(data);
+      setFormData({ ...data, items });
       setView("form");
     } catch (error) {
       console.error("Erro ao buscar proposta:", error);
@@ -169,24 +204,30 @@ export const ProposalModule = () => {
       const res = await fetch(`/api/products/${productId}/pricing-snapshot`);
       const snapshot = await res.json();
 
-      const newItem: ProposalItem = {
+      const unitCost = safeNum(snapshot.unitCost);
+      const suggestedPrice = safeNum(snapshot.suggestedPrice);
+      const taxesPerc = safeNum(snapshot.taxesPerc);
+      const commissionPerc = safeNum(snapshot.commissionPerc);
+      const marginPercSnap = safeNum(snapshot.marginPerc);
+
+      const newItem = normalizeProposalItem({
         productId,
         Product: product,
         quantity: 1,
         unit: "UN",
-        unitCost: snapshot.unitCost,
-        suggestedPrice: snapshot.suggestedPrice,
-        negotiatedPrice: snapshot.suggestedPrice,
+        unitCost,
+        suggestedPrice,
+        negotiatedPrice: suggestedPrice,
         discountPerc: 0,
         discountValue: 0,
-        marginValue: snapshot.suggestedPrice - snapshot.unitCost,
-        marginPerc: snapshot.marginPerc,
-        taxesPerc: snapshot.taxesPerc,
-        taxesValue: snapshot.suggestedPrice * (snapshot.taxesPerc / 100),
-        commissionPerc: snapshot.commissionPerc,
-        commissionValue: snapshot.suggestedPrice * (snapshot.commissionPerc / 100),
-        freightValue: snapshot.freightValue,
-      };
+        marginValue: suggestedPrice - unitCost,
+        marginPerc: marginPercSnap,
+        taxesPerc,
+        taxesValue: suggestedPrice * (taxesPerc / 100),
+        commissionPerc,
+        commissionValue: suggestedPrice * (commissionPerc / 100),
+        freightValue: safeNum(snapshot.freightValue),
+      });
 
       setFormData(prev => ({
         ...prev,
@@ -199,31 +240,36 @@ export const ProposalModule = () => {
 
   const updateItem = (index: number, updates: Partial<ProposalItem>) => {
     const newItems = [...(formData.items || [])];
-    const item = { ...newItems[index], ...updates };
+    const merged = { ...newItems[index], ...updates };
+    let item = normalizeProposalItem(merged);
 
-    // Recalcular valores do item
-    const gross = item.quantity * item.negotiatedPrice;
-    
-    // Se mudou o desconto em %, atualiza o valor
+    const qty = safeNum(item.quantity);
+    const negotiated = safeNum(item.negotiatedPrice);
+    const unitCost = safeNum(item.unitCost);
+    const gross = qty * negotiated;
+
     if (updates.discountPerc !== undefined) {
-      item.discountValue = gross * (item.discountPerc / 100);
-    } 
-    // Se mudou o valor do desconto, atualiza a %
-    else if (updates.discountValue !== undefined) {
-      item.discountPerc = gross > 0 ? (item.discountValue / gross) * 100 : 0;
+      item.discountValue = safeNum(gross * (safeNum(item.discountPerc) / 100));
+    } else if (updates.discountValue !== undefined) {
+      const dv = safeNum(item.discountValue);
+      item.discountPerc = gross > 0 ? safeNum((dv / gross) * 100) : 0;
+      item.discountValue = dv;
     }
 
-    const net = gross - item.discountValue;
-    const totalCost = item.quantity * item.unitCost;
-    
-    item.taxesValue = net * (item.taxesPerc / 100);
-    item.commissionValue = net * (item.commissionPerc / 100);
-    
-    // Margem Líquida = Receita Líquida - Impostos - Comissões - Frete - Custo Industrial
-    item.marginValue = net - item.taxesValue - item.commissionValue - item.freightValue - totalCost;
-    item.marginPerc = net > 0 ? (item.marginValue / net) * 100 : 0;
+    const discountVal = safeNum(item.discountValue);
+    const net = gross - discountVal;
+    const totalCost = qty * unitCost;
 
-    newItems[index] = item;
+    item.taxesValue = safeNum(net * (safeNum(item.taxesPerc) / 100));
+    item.commissionValue = safeNum(net * (safeNum(item.commissionPerc) / 100));
+
+    const freight = safeNum(item.freightValue);
+    item.marginValue = safeNum(
+      net - item.taxesValue - item.commissionValue - freight - totalCost
+    );
+    item.marginPerc = net > 0 ? safeNum((item.marginValue / net) * 100) : 0;
+
+    newItems[index] = normalizeProposalItem(item);
     setFormData(prev => ({ ...prev, items: newItems }));
   };
 
@@ -236,13 +282,19 @@ export const ProposalModule = () => {
   // Totais Consolidados
   const totals = useMemo(() => {
     const items = formData.items || [];
-    const totalGross = items.reduce((acc, i) => acc + (i.quantity * i.negotiatedPrice), 0);
-    const totalDiscount = items.reduce((acc, i) => acc + i.discountValue, 0);
+    const totalGross = items.reduce(
+      (acc, i) => acc + safeNum(i.quantity) * safeNum(i.negotiatedPrice),
+      0
+    );
+    const totalDiscount = items.reduce((acc, i) => acc + safeNum(i.discountValue), 0);
     const totalNet = totalGross - totalDiscount;
-    const totalCost = items.reduce((acc, i) => acc + (i.quantity * i.unitCost), 0);
-    const totalTaxes = items.reduce((acc, i) => acc + i.taxesValue, 0);
-    const totalComm = items.reduce((acc, i) => acc + i.commissionValue, 0);
-    const totalFreight = items.reduce((acc, i) => acc + i.freightValue, 0);
+    const totalCost = items.reduce(
+      (acc, i) => acc + safeNum(i.quantity) * safeNum(i.unitCost),
+      0
+    );
+    const totalTaxes = items.reduce((acc, i) => acc + safeNum(i.taxesValue), 0);
+    const totalComm = items.reduce((acc, i) => acc + safeNum(i.commissionValue), 0);
+    const totalFreight = items.reduce((acc, i) => acc + safeNum(i.freightValue), 0);
     
     const totalMarginValue = totalNet - totalTaxes - totalComm - totalFreight - totalCost;
     const totalMarginPerc = totalNet > 0 ? (totalMarginValue / totalNet) * 100 : 0;
@@ -507,10 +559,10 @@ export const ProposalModule = () => {
                           />
                         </td>
                         <td className="p-3 text-xs font-mono text-muted-foreground">
-                          {item.unitCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
+                          {safeNum(item.unitCost).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
                         </td>
                         <td className="p-3 text-xs font-mono text-blue-600 font-medium">
-                          {item.suggestedPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
+                          {safeNum(item.suggestedPrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
                         </td>
                         <td className="p-3">
                           <input
@@ -533,13 +585,13 @@ export const ProposalModule = () => {
                         <td className="p-3">
                           <div className={cn(
                             "text-xs font-bold",
-                            item.marginPerc >= 20 ? "text-green-600" : item.marginPerc >= 10 ? "text-orange-600" : "text-red-600"
+                            safeNum(item.marginPerc) >= 20 ? "text-green-600" : safeNum(item.marginPerc) >= 10 ? "text-orange-600" : "text-red-600"
                           )}>
-                            {item.marginPerc.toFixed(3)}%
+                            {safeNum(item.marginPerc).toFixed(3)}%
                           </div>
                         </td>
                         <td className="p-3 text-right text-xs font-bold font-mono">
-                          {((item.quantity * item.negotiatedPrice) - item.discountValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })}
+                          {(safeNum(item.quantity) * safeNum(item.negotiatedPrice) - safeNum(item.discountValue)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })}
                         </td>
                         <td className="p-3 text-center">
                           <button 

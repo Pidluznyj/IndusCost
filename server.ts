@@ -1511,6 +1511,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       // 1. Buscar dados do produto (custos) - Chamada direta da função interna
       const costData = await getProductCostAnalysis(productId);
       if (!costData) return res.status(404).json({ error: "Produto não encontrado para análise de custo" });
+      if (isCostAnalysisFailure(costData)) return res.status(400).json(costData);
 
       // 2. Buscar premissas de preço
       const pricing = await prisma.productPricing.findUnique({
@@ -1695,6 +1696,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       // 1. Buscar Dados Oficiais (Base) - Chamada direta da função interna
       const baseData = await getProductCostAnalysis(sim.productId);
       if (!baseData) return res.status(404).json({ error: "Produto base não encontrado" });
+      if (isCostAnalysisFailure(baseData)) return res.status(400).json(baseData);
 
       // Buscar premissas de preço oficiais
       const pricing = await prisma.productPricing.findUnique({
@@ -1880,11 +1882,20 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  async function getProductCostAnalysis(productId: string, cache?: AnalysisCache, includeDetails = false) {
+  function isCostAnalysisFailure(x: unknown): x is { error: string; message?: string } {
+    return typeof x === "object" && x !== null && "error" in x && typeof (x as { error: unknown }).error === "string";
+  }
+
+  async function getProductCostAnalysis(
+    productId: string,
+    cache?: AnalysisCache,
+    includeDetails = false,
+    pathStack?: Set<string>
+  ) {
     if (!cache) {
       try {
         const newCache = await initAnalysisCache();
-        return getProductCostAnalysis(productId, newCache, includeDetails);
+        return getProductCostAnalysis(productId, newCache, includeDetails, pathStack);
       } catch (e: any) {
         return { error: "CONFIG_MISSING", message: e.message };
       }
@@ -1900,30 +1911,62 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     if (!product) return null;
 
+    const stack = pathStack ?? new Set<string>();
+    if (stack.has(productId)) {
+      return {
+        error: "BOM_CYCLE",
+        message:
+          "Ciclo estrutural na BOM: um produto/componente aparece mais de uma vez no caminho recursivo de custeio.",
+        cycleProductId: productId,
+      };
+    }
+
+    stack.add(productId);
+    try {
     const lotSize = Number(product.defaultLotSize) || 1;
 
-    // 1. Materiais / Componentes (Recurso)
-    const materialItems = await Promise.all(product.ProductBOM.map(async (item) => {
+    // 1. Materiais / Componentes (Recurso) — recursão protegida contra ciclo; erros de filho propagam (nunca custo zero silencioso)
+    const materialLineCosts: number[] = [];
+    for (const item of product.ProductBOM) {
       if (item.Material) {
         const mat = item.Material;
         const landedCost = Number(mat.currentCost) + Number(mat.freight);
         const matEffectiveCost = landedCost / (1 - (Number(mat.standardLoss) / 100));
         const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
-        return { unitCost: matEffectiveCost * requiredQty };
+        materialLineCosts.push(matEffectiveCost * requiredQty);
+        continue;
       }
-      
+
       if (item.childProductId) {
-        const childAnalysis = await getProductCostAnalysis(item.childProductId, cache);
-        if (childAnalysis && !childAnalysis.error) {
-          const childUnitCost = childAnalysis.totalIndustrialCost;
-          const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
-          return { unitCost: childUnitCost * requiredQty };
+        const childAnalysis = await getProductCostAnalysis(item.childProductId, cache, false, stack);
+        if (childAnalysis === null) {
+          return {
+            error: "CHILD_NOT_FOUND",
+            message: `Componente referenciado na BOM de [${product.sku}] não existe (ID órfão).`,
+            parentProductId: product.id,
+            parentSku: product.sku,
+            childProductId: item.childProductId,
+          };
         }
+        if (isCostAnalysisFailure(childAnalysis)) {
+          return {
+            error: "CHILD_COST_FAILED",
+            message: `Falha ao custear componente filho na BOM de [${product.sku}].`,
+            parentProductId: product.id,
+            parentSku: product.sku,
+            childProductId: item.childProductId,
+            cause: childAnalysis,
+          };
+        }
+        const childUnitCost = childAnalysis.totalIndustrialCost;
+        const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
+        materialLineCosts.push(childUnitCost * requiredQty);
+        continue;
       }
-      
-      return { unitCost: 0 };
-    }));
-    const totalMaterialCost = materialItems.reduce((acc, item) => acc + item.unitCost, 0);
+
+      materialLineCosts.push(0);
+    }
+    const totalMaterialCost = materialLineCosts.reduce((acc, u) => acc + u, 0);
 
     // 2. Operações (A Mágica da Prioridade)
     let operationItems: Array<{ 
@@ -2073,38 +2116,74 @@ app.delete("/api/employees/:id", async (req, res) => {
     };
 
     if (includeDetails) {
+      const materialsRows: Array<{
+        description: string;
+        basePrice: number;
+        requiredQty: number;
+        unitCost: number;
+      } | null> = [];
+      for (const item of product.ProductBOM) {
+        const bomLoss = Number(item.lossPercentage) / 100;
+        const requiredQty = Number(item.quantity) / (1 - bomLoss);
+        if (item.Material) {
+          const mat = item.Material;
+          const matStandardLoss = Number(mat.standardLoss) / 100;
+          const landedCost = Number(mat.currentCost) + Number(mat.freight);
+          const matEffectiveCost = landedCost / (1 - matStandardLoss);
+          materialsRows.push({
+            description: mat.description,
+            basePrice: Number(mat.currentCost),
+            requiredQty,
+            unitCost: matEffectiveCost * requiredQty,
+          });
+          continue;
+        }
+        if (item.childProductId) {
+          const childResult = await getProductCostAnalysis(item.childProductId, cache, false, stack);
+          if (childResult === null) {
+            return {
+              error: "CHILD_NOT_FOUND",
+              message: `Componente referenciado na BOM de [${product.sku}] não existe (ID órfão).`,
+              parentProductId: product.id,
+              parentSku: product.sku,
+              childProductId: item.childProductId,
+            };
+          }
+          if (isCostAnalysisFailure(childResult)) {
+            return {
+              error: "CHILD_COST_FAILED",
+              message: `Falha ao custear componente filho na BOM de [${product.sku}] (detalhamento).`,
+              parentProductId: product.id,
+              parentSku: product.sku,
+              childProductId: item.childProductId,
+              cause: childResult,
+            };
+          }
+          materialsRows.push({
+            description: childResult.name,
+            basePrice: childResult.totalIndustrialCost,
+            requiredQty,
+            unitCost: childResult.totalIndustrialCost * requiredQty,
+          });
+          continue;
+        }
+        materialsRows.push(null);
+      }
       result.details = {
-        materials: await Promise.all(product.ProductBOM.map(async (item) => {
-          const bomLoss = Number(item.lossPercentage) / 100;
-          const requiredQty = Number(item.quantity) / (1 - bomLoss);
-          if (item.Material) {
-            const mat = item.Material;
-            const matStandardLoss = Number(mat.standardLoss) / 100;
-            const landedCost = Number(mat.currentCost) + Number(mat.freight);
-            const matEffectiveCost = landedCost / (1 - matStandardLoss);
-            return {
-              description: mat.description,
-              basePrice: Number(mat.currentCost),
-              requiredQty,
-              unitCost: matEffectiveCost * requiredQty
-            };
-          }
-          if (item.childProductId) {
-            const childResult = await getProductCostAnalysis(item.childProductId, cache);
-            return {
-              description: childResult?.name || "Componente",
-              basePrice: childResult?.totalIndustrialCost || 0,
-              requiredQty,
-              unitCost: (childResult?.totalIndustrialCost || 0) * requiredQty
-            };
-          }
-          return null;
-        })).then(items => items.filter(Boolean)),
-        processBreakdown: operationItems.map(oi => oi.breakdown).filter(Boolean)
+        materials: materialsRows.filter(Boolean) as Array<{
+          description: string;
+          basePrice: number;
+          requiredQty: number;
+          unitCost: number;
+        }>,
+        processBreakdown: operationItems.map((oi) => oi.breakdown).filter(Boolean),
       };
     }
 
     return result;
+    } finally {
+      stack.delete(productId);
+    }
   }
 
   // --- API: Product Cost Analysis (Motor de Cálculo CIU com CIF) ---
@@ -2152,6 +2231,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     try {
       const analysis = await getProductCostAnalysis(id);
       if (!analysis) return res.status(404).json({ error: "Produto não encontrado" });
+      if (isCostAnalysisFailure(analysis)) return res.status(400).json(analysis);
 
       let pricing = null;
       if (taxRuleId) {
