@@ -12,7 +12,7 @@ import {
   ExternalLink,
   AlertTriangle,
 } from "lucide-react";
-import { cn } from "@/src/lib/utils";
+import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { Material } from "@/src/types/material";
 import {
@@ -45,6 +45,90 @@ const LINE_TYPE_LABEL = {
   INDIRETO: "Indireto / insumo / uso geral",
 } as const;
 
+function MaterialMpSummaryCard({ material: m, readOnly: ro }: { material: Material; readOnly: boolean }) {
+  const cat = m.category.replace(/_/g, " ");
+  const active = m.status === "ACTIVE";
+  return (
+    <div
+      className={cn(
+        "rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-3 text-sm",
+        ro && "opacity-95"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Material vinculado (cadastro Suprimentos)</p>
+          <p className="font-mono text-xs text-muted-foreground mt-0.5">{m.code}</p>
+          <p className="font-medium leading-snug">{m.description}</p>
+        </div>
+        <span
+          className={cn(
+            "text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0",
+            active ? "bg-green-500/15 text-green-800" : "bg-amber-500/15 text-amber-900"
+          )}
+        >
+          {active ? "Ativo no cadastro" : "Inativo no cadastro"}
+        </span>
+      </div>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        <div>
+          <dt className="text-muted-foreground">Unidade</dt>
+          <dd className="font-medium">{m.unit}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Categoria</dt>
+          <dd className="font-medium">{cat}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Custo atual</dt>
+          <dd className="font-medium">{formatCurrency(m.currentCost)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Custo médio</dt>
+          <dd className="font-medium">{formatCurrency(m.averageCost)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Custo padrão</dt>
+          <dd className="font-medium">{formatCurrency(m.standardCost)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Frete (cadastro)</dt>
+          <dd className="font-medium">{formatCurrency(m.freight ?? 0)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Fator de conversão</dt>
+          <dd className="font-medium">{formatNumber(m.conversionFactor ?? 1, 4)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Perda padrão</dt>
+          <dd className="font-medium">{formatNumber(m.standardLoss ?? 0, 2)}%</dd>
+        </div>
+        {m.supplier ? (
+          <div className="sm:col-span-2">
+            <dt className="text-muted-foreground">Fornecedor no cadastro</dt>
+            <dd className="font-medium">{m.supplier}</dd>
+          </div>
+        ) : null}
+        {m.calculations ? (
+          <>
+            <div>
+              <dt className="text-muted-foreground">Posto fábrica (ref. cadastro)</dt>
+              <dd className="font-medium">{formatCurrency(m.calculations.landedCost)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Efetivo c/ perda (ref. cadastro)</dt>
+              <dd className="font-medium">{formatCurrency(m.calculations.effectiveCost)}</dd>
+            </div>
+          </>
+        ) : null}
+      </dl>
+      <p className="text-[10px] text-muted-foreground border-t border-border/60 pt-2">
+        Valores acima vêm do cadastro de materiais. Esta solicitação <strong>não altera</strong> custos nem precificação automaticamente.
+      </p>
+    </div>
+  );
+}
+
 function formatDt(iso: string) {
   try {
     return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
@@ -55,6 +139,12 @@ function formatDt(iso: string) {
 
 function itemFromApi(row: PurchaseRequestRow["items"][0]): PurchaseItemDraft {
   const q = typeof row.quantity === "string" ? parseFloat(row.quantity) : Number(row.quantity);
+  const mo = row.minOrderQtySuggested;
+  let minOrderStr = "";
+  if (mo != null && String(mo).trim() !== "") {
+    const n = typeof mo === "string" ? parseFloat(mo) : Number(mo);
+    if (Number.isFinite(n) && n > 0) minOrderStr = String(n);
+  }
   return {
     tempId: row.id,
     lineType: row.lineType,
@@ -67,6 +157,9 @@ function itemFromApi(row: PurchaseRequestRow["items"][0]): PurchaseItemDraft {
     priority: row.priority || "",
     notes: row.notes || "",
     suggestedSupplier: row.suggestedSupplier || "",
+    supplierReference: row.supplierReference || "",
+    packagingPresentation: row.packagingPresentation || "",
+    minOrderQtySuggested: minOrderStr,
     lineStatus: row.lineStatus,
   };
 }
@@ -103,20 +196,23 @@ export const PurchaseModule = () => {
 
   const readOnly = formMode === "view";
 
-  const activeMaterials = useMemo(
-    () => materials.filter((m) => m.status === "ACTIVE"),
-    [materials]
-  );
+  /** Inclui materiais inativos já vinculados à linha para o seletor não ficar “órfão” na edição */
+  const mpSelectableMaterials = useMemo(() => {
+    const linked = new Set(
+      items.filter((i) => i.lineType === "MATERIA_PRIMA" && i.materialId).map((i) => i.materialId)
+    );
+    return materials.filter((m) => m.status === "ACTIVE" || linked.has(m.id));
+  }, [materials, items]);
 
-  const materialOptions: SelectOption[] = useMemo(
+  const materialOptionsMp: SelectOption[] = useMemo(
     () =>
-      activeMaterials.map((m) => ({
+      mpSelectableMaterials.map((m) => ({
         value: m.id,
-        label: m.description,
-        sublabel: m.code,
-        searchTerms: `${m.code} ${m.description} ${m.unit}`,
+        label: `${m.code} — ${m.description}`,
+        sublabel: `${m.category.replace(/_/g, " ")} · ${m.unit}`,
+        searchTerms: `${m.code} ${m.description} ${m.unit} ${m.category} ${m.supplier ?? ""}`,
       })),
-    [activeMaterials]
+    [mpSelectableMaterials]
   );
 
   const costCenterOptions: SelectOption[] = useMemo(() => {
@@ -133,6 +229,15 @@ export const PurchaseModule = () => {
     () => costCenters.find((c) => c.id === defaultCostCenterId),
     [costCenters, defaultCostCenterId]
   );
+
+  const refreshMaterials = useCallback(async () => {
+    try {
+      const mats = await fetchJsonOk<Material[]>("/api/materials");
+      setMaterials(Array.isArray(mats) ? mats : []);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao atualizar lista de materiais.");
+    }
+  }, []);
 
   const loadLists = useCallback(async () => {
     setLoadingList(true);
@@ -197,6 +302,17 @@ export const PurchaseModule = () => {
       setDefaultCostCenterId(row.defaultCostCenterId);
       setNotes(row.notes || "");
       setItems(row.items.length ? row.items.map(itemFromApi) : [emptyPurchaseItemDraft()]);
+      setMaterials((prev) => {
+        const ids = new Set(prev.map((x) => x.id));
+        const add: Material[] = [];
+        for (const line of row.items) {
+          if (line.material && !ids.has(line.material.id)) {
+            add.push(line.material as Material);
+            ids.add(line.material.id);
+          }
+        }
+        return add.length ? [...prev, ...add] : prev;
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Erro ao abrir solicitação.");
       setView("list");
@@ -220,6 +336,9 @@ export const PurchaseModule = () => {
         const next = { ...i, ...patch };
         if (patch.lineType === "INDIRETO") {
           next.materialId = "";
+          next.supplierReference = "";
+          next.packagingPresentation = "";
+          next.minOrderQtySuggested = "";
         }
         if (patch.materialId != null && next.lineType === "MATERIA_PRIMA") {
           const m = materials.find((x) => x.id === patch.materialId);
@@ -243,19 +362,26 @@ export const PurchaseModule = () => {
       justification,
       defaultCostCenterId,
       notes: notes.trim() || null,
-      items: items.map((it) => ({
-        lineType: it.lineType,
-        materialId: it.lineType === "MATERIA_PRIMA" ? it.materialId : null,
-        description: it.description.trim(),
-        quantity: it.quantity,
-        unit: it.unit.trim(),
-        costCenterId: it.costCenterId && it.costCenterId.length ? it.costCenterId : null,
-        desiredDate: it.desiredDate ? `${it.desiredDate}T12:00:00.000Z` : null,
-        priority: it.priority || null,
-        notes: it.notes.trim() || null,
-        suggestedSupplier: it.suggestedSupplier.trim() || null,
-        lineStatus: it.lineStatus,
-      })),
+      items: items.map((it) => {
+        const isMp = it.lineType === "MATERIA_PRIMA";
+        return {
+          lineType: it.lineType,
+          materialId: isMp ? it.materialId : null,
+          description: it.description.trim(),
+          quantity: it.quantity,
+          unit: it.unit.trim(),
+          costCenterId: it.costCenterId && it.costCenterId.length ? it.costCenterId : null,
+          desiredDate: it.desiredDate ? `${it.desiredDate}T12:00:00.000Z` : null,
+          priority: it.priority || null,
+          notes: it.notes.trim() || null,
+          suggestedSupplier: it.suggestedSupplier.trim() || null,
+          supplierReference: isMp ? it.supplierReference.trim() || null : null,
+          packagingPresentation: isMp ? it.packagingPresentation.trim() || null : null,
+          minOrderQtySuggested:
+            isMp && it.minOrderQtySuggested.trim() ? Number(it.minOrderQtySuggested) : null,
+          lineStatus: it.lineStatus,
+        };
+      }),
     };
     return body;
   };
@@ -273,6 +399,12 @@ export const PurchaseModule = () => {
       if (!it.unit.trim()) return `Item ${i + 1}: unidade é obrigatória.`;
       if (it.lineType === "MATERIA_PRIMA" && !it.materialId) {
         return `Item ${i + 1}: matéria-prima exige material cadastrado (pesquise e selecione ou use "Nova matéria-prima").`;
+      }
+      if (it.lineType === "MATERIA_PRIMA" && it.minOrderQtySuggested.trim()) {
+        const mq = parseFloat(it.minOrderQtySuggested);
+        if (!Number.isFinite(mq) || mq <= 0) {
+          return `Item ${i + 1}: quantidade mínima sugerida (MOQ) inválida.`;
+        }
       }
     }
     return null;
@@ -655,10 +787,17 @@ export const PurchaseModule = () => {
         )}
 
         <div className="space-y-6">
-          {items.map((it, idx) => (
+          {items.map((it, idx) => {
+            const selectedMaterial = it.materialId
+              ? materials.find((m) => m.id === it.materialId)
+              : undefined;
+            return (
             <div
               key={it.tempId}
-              className="rounded-xl border border-border/80 bg-accent/10 p-4 space-y-4"
+              className={cn(
+                "rounded-xl border border-border/80 bg-accent/10 p-4 space-y-4",
+                it.lineType === "MATERIA_PRIMA" && "border-l-4 border-l-primary/60"
+              )}
             >
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-sm font-semibold">Item {idx + 1}</span>
@@ -709,45 +848,120 @@ export const PurchaseModule = () => {
                 {it.lineType === "MATERIA_PRIMA" && (
                   <>
                     <div className="space-y-1.5 md:col-span-2">
-                      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
-                        <div className="flex-1 w-full space-y-1.5">
+                      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+                        <div className="flex-1 w-full space-y-1.5 min-w-0">
                           <label className="text-xs font-bold text-muted-foreground uppercase">
                             Material (cadastro Suprimentos) *
                           </label>
                           <SearchableSelect
-                            options={materialOptions}
+                            options={materialOptionsMp}
                             value={it.materialId}
                             onChange={(v) => updateItem(it.tempId, { materialId: v })}
-                            placeholder="Pesquisar material..."
+                            placeholder="Pesquisar por código, descrição, unidade…"
                             disabled={readOnly}
                           />
                         </div>
                         {!readOnly && (
-                          <button
-                            type="button"
-                            onClick={() => navigate("/materials")}
-                            className="inline-flex items-center gap-2 text-sm text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                            Nova matéria-prima
-                          </button>
+                          <div className="flex flex-wrap gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => refreshMaterials()}
+                              className="inline-flex items-center gap-2 text-xs border border-border rounded-lg px-3 py-2 hover:bg-accent"
+                              title="Recarrega a lista após cadastrar material em outra aba"
+                            >
+                              Atualizar lista
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => window.open("/materials", "_blank", "noopener,noreferrer")}
+                              className="inline-flex items-center gap-2 text-sm text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Nova matéria-prima (nova aba)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigate("/materials")}
+                              className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-lg px-3 py-2 hover:bg-accent"
+                            >
+                              Ir em Suprimentos
+                            </button>
+                          </div>
                         )}
                       </div>
                       <p className="text-[11px] text-muted-foreground">
-                        O custo do material no cadastro não é alterado automaticamente por esta solicitação.
+                        Dica: use <strong>Nova matéria-prima (nova aba)</strong> para não perder o rascunho desta solicitação; depois clique em{" "}
+                        <strong>Atualizar lista</strong>.
                       </p>
+                    </div>
+
+                    {selectedMaterial ? (
+                      <div className="md:col-span-2">
+                        <MaterialMpSummaryCard material={selectedMaterial} readOnly={readOnly} />
+                      </div>
+                    ) : it.materialId ? (
+                      <div className="md:col-span-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-950">
+                        Material não encontrado na lista local. Salve a solicitação apenas após atualizar a lista ou verificar o cadastro.
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase">
+                        Referência no fornecedor (opcional)
+                      </label>
+                      <input
+                        disabled={readOnly}
+                        placeholder="Código / item na lista do fornecedor"
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                        value={it.supplierReference}
+                        onChange={(e) => updateItem(it.tempId, { supplierReference: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase">
+                        Embalagem / apresentação (opcional)
+                      </label>
+                      <input
+                        disabled={readOnly}
+                        placeholder="Ex.: fardo 25 kg, bobina, caixa"
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                        value={it.packagingPresentation}
+                        onChange={(e) => updateItem(it.tempId, { packagingPresentation: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase">
+                        Qtd. mínima sugerida — MOQ (opcional)
+                      </label>
+                      <input
+                        disabled={readOnly}
+                        type="number"
+                        min={0}
+                        step="any"
+                        placeholder="Somente referência de compra"
+                        className="w-full p-2 rounded-lg border border-border bg-background text-sm"
+                        value={it.minOrderQtySuggested}
+                        onChange={(e) => updateItem(it.tempId, { minOrderQtySuggested: e.target.value })}
+                      />
                     </div>
                   </>
                 )}
 
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Descrição *</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase">
+                    {it.lineType === "MATERIA_PRIMA" ? "Descrição na solicitação *" : "Descrição *"}
+                  </label>
                   <input
                     disabled={readOnly}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.description}
                     onChange={(e) => updateItem(it.tempId, { description: e.target.value })}
                   />
+                  {it.lineType === "MATERIA_PRIMA" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Preenchida a partir do cadastro ao selecionar o material; ajuste se precisar detalhar especificação da compra.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -763,7 +977,9 @@ export const PurchaseModule = () => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Unidade *</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase">
+                    Unidade *{it.lineType === "MATERIA_PRIMA" ? " (alinhada ao cadastro)" : ""}
+                  </label>
                   <input
                     disabled={readOnly}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
@@ -841,7 +1057,8 @@ export const PurchaseModule = () => {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

@@ -29,6 +29,9 @@ export interface PurchaseRequestItemRow {
   priority: PurchasePriority | null;
   notes: string | null;
   suggestedSupplier: string | null;
+  supplierReference: string | null;
+  packagingPresentation: string | null;
+  minOrderQtySuggested: string | number | null;
   lineStatus: PurchaseItemLineStatus;
   material?: Material | null;
   costCenter?: CostCenterRow | null;
@@ -64,6 +67,10 @@ export interface PurchaseItemDraft {
   priority: PurchasePriority | "";
   notes: string;
   suggestedSupplier: string;
+  supplierReference: string;
+  packagingPresentation: string;
+  /** string para input controlado; vazio = sem MOQ sugerido */
+  minOrderQtySuggested: string;
   lineStatus: PurchaseItemLineStatus;
 }
 
@@ -80,6 +87,9 @@ export function emptyPurchaseItemDraft(): PurchaseItemDraft {
     priority: "",
     notes: "",
     suggestedSupplier: "",
+    supplierReference: "",
+    packagingPresentation: "",
+    minOrderQtySuggested: "",
     lineStatus: "ABERTA",
   };
 }

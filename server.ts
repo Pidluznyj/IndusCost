@@ -890,8 +890,45 @@ app.delete("/api/employees/:id", async (req, res) => {
       if (it.costCenterId != null && it.costCenterId !== "" && !isUuid(it.costCenterId)) {
         return `Item ${i + 1}: centro de custo inválido.`;
       }
+      if (it.lineType === "MATERIA_PRIMA") {
+        const mo = it.minOrderQtySuggested;
+        if (mo != null && mo !== "") {
+          const n = Number(mo);
+          if (!Number.isFinite(n) || n <= 0) {
+            return `Item ${i + 1}: quantidade mínima sugerida (MOQ) inválida — use valor positivo ou deixe em branco.`;
+          }
+        }
+      }
     }
     return null;
+  }
+
+  function purchaseRequestItemMpExtras(it: any) {
+    const isMp = it.lineType === "MATERIA_PRIMA";
+    if (!isMp) {
+      return {
+        supplierReference: null,
+        packagingPresentation: null,
+        minOrderQtySuggested: null,
+      };
+    }
+    const supRef =
+      it.supplierReference != null && String(it.supplierReference).trim()
+        ? String(it.supplierReference).trim()
+        : null;
+    const pack =
+      it.packagingPresentation != null && String(it.packagingPresentation).trim()
+        ? String(it.packagingPresentation).trim()
+        : null;
+    let minOrder: number | null = null;
+    if (it.minOrderQtySuggested != null && String(it.minOrderQtySuggested).trim() !== "") {
+      minOrder = Number(it.minOrderQtySuggested);
+    }
+    return {
+      supplierReference: supRef,
+      packagingPresentation: pack,
+      minOrderQtySuggested: minOrder,
+    };
   }
 
   app.post("/api/purchase-requests", async (req, res) => {
@@ -941,6 +978,7 @@ app.delete("/api/employees/:id", async (req, res) => {
             const mat = await tx.material.findUnique({ where: { id: it.materialId } });
             if (!mat) throw new Error("Material da linha de matéria-prima não encontrado.");
           }
+          const mpExtras = purchaseRequestItemMpExtras(it);
           await tx.purchaseRequestItem.create({
             data: {
               purchaseRequestId: header.id,
@@ -954,6 +992,9 @@ app.delete("/api/employees/:id", async (req, res) => {
               priority: it.priority || null,
               notes: it.notes != null ? String(it.notes) : null,
               suggestedSupplier: it.suggestedSupplier != null ? String(it.suggestedSupplier) : null,
+              supplierReference: mpExtras.supplierReference,
+              packagingPresentation: mpExtras.packagingPresentation,
+              minOrderQtySuggested: mpExtras.minOrderQtySuggested,
               lineStatus: it.lineStatus && ["ABERTA", "CANCELADA"].includes(it.lineStatus) ? it.lineStatus : "ABERTA",
             },
           });
@@ -1028,6 +1069,7 @@ app.delete("/api/employees/:id", async (req, res) => {
             const mat = await tx.material.findUnique({ where: { id: it.materialId } });
             if (!mat) throw new Error("Material da linha de matéria-prima não encontrado.");
           }
+          const mpExtrasPut = purchaseRequestItemMpExtras(it);
           await tx.purchaseRequestItem.create({
             data: {
               purchaseRequestId: id,
@@ -1041,6 +1083,9 @@ app.delete("/api/employees/:id", async (req, res) => {
               priority: it.priority || null,
               notes: it.notes != null ? String(it.notes) : null,
               suggestedSupplier: it.suggestedSupplier != null ? String(it.suggestedSupplier) : null,
+              supplierReference: mpExtrasPut.supplierReference,
+              packagingPresentation: mpExtrasPut.packagingPresentation,
+              minOrderQtySuggested: mpExtrasPut.minOrderQtySuggested,
               lineStatus: it.lineStatus && ["ABERTA", "CANCELADA"].includes(it.lineStatus) ? it.lineStatus : "ABERTA",
             },
           });

@@ -1,6 +1,6 @@
 # Roadmap de campos de banco — IndusCost (comercial, CRM e referência técnica)
 
-**Versão do documento:** 1.2  
+**Versão do documento:** 1.3  
 **Última revisão:** 2026-04-10  
 **Fonte de verdade do schema atual:** `prisma/schema.prisma` (PostgreSQL)
 
@@ -206,13 +206,18 @@ Campos relevantes para mix/análise: `id`, `sku`, `name`, `type` (enum `ItemType
 | `priority` | `PurchasePriority?` | Não | Prioridade da linha (opcional) |
 | `notes` | String? | Não | Observação do item |
 | `suggestedSupplier` | String? | Não | Fornecedor sugerido (texto) |
+| `supplierReference` | String? | Não | Referência/código no fornecedor (Bloco 2 — prepara cotação; **não** altera `Material`) |
+| `packagingPresentation` | String? | Não | Embalagem/apresentação desejada na compra (Bloco 2) |
+| `minOrderQtySuggested` | Decimal(20,6)? | Não | MOQ sugerida na demanda (referência; **não** é política de estoque) |
 | `lineStatus` | `PurchaseItemLineStatus` | Sim | ABERTA, CANCELADA |
+
+**Migration aditiva Bloco 2:** `prisma/migrations/20260410180000_purchases_block2_mp_context/migration.sql` — apenas colunas opcionais em `PurchaseRequestItem`.
 
 **Relação existente:** `Material` passa a ter `PurchaseRequestItem[]` (FK opcional; **sem** alteração de custo do material pela solicitação).
 
-**API (implementada):** `GET/POST/PATCH` em `/api/cost-centers`; `GET/POST/PUT` em `/api/purchase-requests` e `GET` por id — validação: MP exige `materialId`; itens indiretos não enviam `materialId`; cabeçalho exige CC ativo; mínimo um item por solicitação.
+**API (implementada):** `GET/POST/PATCH` em `/api/cost-centers`; `GET/POST/PUT` em `/api/purchase-requests` e `GET` por id — validação: MP exige `materialId`; itens indiretos não enviam `materialId`; cabeçalho exige CC ativo; mínimo um item por solicitação; campos Bloco 2 só persistem para `lineType = MATERIA_PRIMA` (demais gravados como `null`).
 
-**UI (implementada):** módulo `/purchases` — lista, criar, editar, visualizar; `SearchableSelect` para materiais e CC; link operacional para **Nova matéria-prima** (`/materials`).
+**UI (implementada):** módulo `/purchases` — lista, criar, editar, visualizar; `SearchableSelect` para materiais (rótulo **código — descrição**, busca por código/unidade/categoria) e CC; **Bloco 2:** painel somente leitura com dados reais do `Material` (custos, perda, conversão, frete, `calculations` do GET `/api/materials`); atalhos **Nova matéria-prima (nova aba)**, **Ir em Suprimentos**, **Atualizar lista**; campos de contexto MP (referência fornecedor, embalagem, MOQ).
 
 ---
 
@@ -457,6 +462,7 @@ Registros padronizados a partir da **validação do código** (`server.ts`, `src
 | Transparência de cálculo — UI | implementado | `src/lib/calculationExplainability.ts`, `src/types/calculation.ts`, `CalculatedValue.tsx`, `ProductModule.tsx`, `ProposalModule.tsx` | Tooltips com metadados; margem de linha explicada em `proposalLineExplain.ts` (alinhado ao cálculo em tela) | nenhum | nenhum | — | técnica | `ProposalItem.calculationExplainability` só em memória ao adicionar item |
 | Navegação SPA — Fase 1 (módulos principais) | implementado | `main.tsx`, `App.tsx`, `Layout.tsx`, `Sidebar.tsx`, `src/lib/mainNavigation.ts` | `react-router-dom`: rotas `/:segmento` alinhados ao menu; `/` e `*` → `/dashboard`; funil: `navigate("/proposals")` no evento existente | nenhum | nenhum | — | técnica | Histórico do browser entre módulos |
 | Compras — Bloco 1 (centro de custo + solicitação) | implementado | `prisma/schema.prisma`, `prisma/migrations/20260410120000_purchases_block1/migration.sql`, `prisma/seed.ts`, `server.ts`, `src/components/PurchaseModule.tsx`, `src/types/purchase.ts`, `App.tsx`, `Sidebar.tsx`, `mainNavigation.ts` | Novos models `CostCenter`, `PurchaseRequest`, `PurchaseRequestItem` + enums; API REST; UI lista/criar/editar/ver; vínculo opcional `Material`↔item MP; CC fallback `A-CLASS` no seed; **sem** alteração de custo de material nem fluxos existentes de custo/preço/BOM | nenhum | precisa tabela nova | Ver secção **4.7** | Bloco 1 | Contratos de API existentes fora `/api/cost-centers` e `/api/purchase-requests` inalterados |
+| Compras — Bloco 2 (MP na solicitação: UX + contexto + prep. cotação) | implementado | `prisma/schema.prisma`, `prisma/migrations/20260410180000_purchases_block2_mp_context/migration.sql`, `server.ts`, `PurchaseModule.tsx`, `src/types/purchase.ts` | Colunas opcionais em `PurchaseRequestItem`; validação MOQ; UI: seletor com label **código — descrição**, painel de dados do material (somente leitura, fonte GET materiais), materiais inativos vinculados permanecem selecionáveis na edição; fluxo nova MP em **nova aba** + atualizar lista; **sem** atualizar `Material.currentCost`, **sem** “última compra”, **sem** tabela de cotação | nenhum | precisa novos campos | `supplierReference`, `packagingPresentation`, `minOrderQtySuggested` | Bloco 2 | Exibição de custos no painel = **leitura** do cadastro + `calculations` já retornados pela API de materiais |
 
 ### 11.2 Itens analisados / planejados (backlog comercial — não implementados como migration neste ciclo)
 
@@ -475,13 +481,14 @@ Registros padronizados a partir da **validação do código** (`server.ts`, `src
 | Título | Status | Módulos / arquivos | Resumo |
 |--------|--------|---------------------|--------|
 | `SearchableSelect` | não requer banco | `src/components/shared/SearchableSelect.tsx` | Componente de UI; opções vindas de APIs/cadastros; sem alteração de schema neste changelog |
+| Resumo de material na solicitação (Compras Bloco 2) | não requer banco | `PurchaseModule.tsx` (`MaterialMpSummaryCard`) | Exibe dados do `Material` já retornados por GET `/api/materials` (incl. `calculations`); **não** duplica colunas de custo na linha de compra |
 | Preferências de usuário / favoritos de rota | analisado | — | Não implementado; seria tabela ou storage futuro — **fora** deste ciclo |
 | Relatórios — layout / impressão | analisado | `reports-print.css`, `ReportsModule` | Questões de CSS/print **não** exigem campo novo por si |
 | Ambiente — `DATABASE_URL` | analisado | Prisma / deploy | Configuração de ambiente; não é “campo novo” de negócio |
 
 ### 11.4 Itens que exigirão novos campos ou tabelas (futuro)
 
-Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). **Compras Bloco 1** (secção **4.7**) foi migrado na revisão **1.2**; itens comerciais/CRM listados abaixo no checklist **permanecem** como `falta criar` salvo onde indicado.
+Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). **Compras Bloco 1** e **Bloco 2** (secção **4.7**) estão refletidos nas migrations indicadas (revisões **1.2** e **1.3**); itens comerciais/CRM listados abaixo no checklist **permanecem** como `falta criar` salvo onde indicado.
 
 ---
 
@@ -496,6 +503,19 @@ Referência cruzada: **secção 5** (domínios), **secção 12** (checklist nume
 | **Tabelas / models criados** | `CostCenter`, `PurchaseRequest`, `PurchaseRequestItem` (detalhe de campos: secção **4.7**). |
 | **Campos criados ou planejados** | **Criados e persistidos:** conforme tabelas na **4.7**. **Planejados (sem banco nesta entrega):** pedido de compra, cotação, recebimento, aprovação multinível, atualização automática de custo de MP, rateio de CC (ver **5.9**). |
 | **Status por tema** | Centro de custo e solicitação: **implementado** (persistido). Pedido/recebimento/financeiro: **planejado**. UI de atalhos e labels: **não requer banco**. Política futura de escrita de custo a partir de compra: **reavaliar**. |
+
+---
+
+### 11.6 Changelog estruturado — entrega **Compras Bloco 2** (2026-04-10)
+
+| Campo do changelog | Conteúdo |
+|--------------------|----------|
+| **Funcionalidade implementada** | Experiência reforçada para item **MATERIA_PRIMA**: `SearchableSelect` com **código — descrição** e busca por código/descrição/unidade/categoria/fornecedor cadastro; painel **MaterialMpSummaryCard** com campos reais de `Material` (custos, perda, conversão, frete, fornecedor do cadastro, status, referências **landed/effective** quando `calculations` existir na API); inclusão de material **inativo** na lista de opções se já vinculado à linha (edição); merge de `material` embutido no GET da solicitação na lista local; três campos persistidos opcionais para demanda/cotação futura: `supplierReference`, `packagingPresentation`, `minOrderQtySuggested`; fluxo **Nova matéria-prima (nova aba)** + **Atualizar lista** + navegação opcional mesma aba; item **INDIRETO** inalterado em comportamento. |
+| **Módulos / arquivos alterados** | `prisma/schema.prisma`; `prisma/migrations/20260410180000_purchases_block2_mp_context/migration.sql`; `server.ts` (`purchaseRequestItemMpExtras`, validação MOQ); `src/components/PurchaseModule.tsx`; `src/types/purchase.ts`; `docs/database-field-roadmap.md`. |
+| **Impacto técnico** | Contrato JSON de itens de `/api/purchase-requests` ganha propriedades opcionais; persistência apenas para linhas MP; **nenhuma** alteração em `/api/materials` além do consumo já existente pelo frontend. |
+| **Impacto em banco** | **Migration aditiva:** três colunas nullable em `PurchaseRequestItem`. Sem mudança em `Material`, custos, BOM ou propostas. |
+| **Campos da base criados ou planejados** | **Criados:** `supplierReference`, `packagingPresentation`, `minOrderQtySuggested`. **Planejado (cotação):** tabela de cotações/fornecedores, linhas de oferta, vínculo solicitação↔cotação (ver **5.9**). **Não requer banco:** labels do seletor, card de resumo (dados lidos de `Material`). |
+| **Status** | Contexto MP na solicitação: **implementado**. Cotação multi-fornecedor: **planejado**. Painel de custos como ajuda visual: **não requer banco** (derivado/leitura API materiais). Snapshot de preço na linha para auditoria: **reavaliar** em fase de cotação. |
 
 ---
 

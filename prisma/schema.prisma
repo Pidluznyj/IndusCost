@@ -394,6 +394,12 @@ model PurchaseRequestItem {
   priority          PurchasePriority?
   notes             String?
   suggestedSupplier String?
+  /// Referência/código no fornecedor (prepara cotação; não altera cadastro de Material)
+  supplierReference String?
+  /// Embalagem ou apresentação desejada na compra
+  packagingPresentation String?
+  /// Quantidade mínima de pedido sugerida (MOQ) — apenas demanda; não é política de estoque
+  minOrderQtySuggested Decimal? @db.Decimal(20, 6)
   lineStatus        PurchaseItemLineStatus @default(ABERTA)
 
   purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
