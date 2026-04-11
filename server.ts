@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -418,9 +419,9 @@ app.post("/api/employees", async (req, res) => {
       data: {
         name: cleanName,
         roleId: cleanRoleId,
-        department: normalizeOptionalText(department),
-        costCenter: normalizeOptionalText(costCenter),
-        classification: normalizeOptionalText(classification),
+        department: normalizeRequiredText(department),
+        costCenter: normalizeRequiredText(costCenter),
+        classification: normalizeRequiredText(classification),
         salary: toNumber(salary, 0),
         monthlyHours: toNumber(monthlyHours, 0),
         productivity: toNumber(productivity, 0),
@@ -492,9 +493,9 @@ app.put("/api/employees/:id", async (req, res) => {
       data: {
         name: cleanName,
         roleId: cleanRoleId,
-        department: normalizeOptionalText(department),
-        costCenter: normalizeOptionalText(costCenter),
-        classification: normalizeOptionalText(classification),
+        department: normalizeRequiredText(department),
+        costCenter: normalizeRequiredText(costCenter),
+        classification: normalizeRequiredText(classification),
         salary: toNumber(salary, 0),
         monthlyHours: toNumber(monthlyHours, 0),
         productivity: toNumber(productivity, 0),
@@ -695,6 +696,44 @@ app.delete("/api/employees/:id", async (req, res) => {
       }
     });
     res.json(material);
+  });
+
+  app.patch("/api/materials/:id/status", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!isUuid(id)) {
+        return res.status(400).json({ error: "ID de material inválido." });
+      }
+
+      const next =
+        typeof status === "string" ? status.trim().toUpperCase() : "";
+      if (next !== "ACTIVE" && next !== "INACTIVE") {
+        return res
+          .status(400)
+          .json({ error: "Status inválido. Use ACTIVE ou INACTIVE." });
+      }
+
+      const existing = await prisma.material.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: "Material não encontrado." });
+      }
+
+      const material = await prisma.material.update({
+        where: { id },
+        data: { status: next },
+      });
+      res.json(material);
+    } catch (error) {
+      console.error("Material status error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Erro ao atualizar status do material.",
+      });
+    }
   });
 
   app.delete("/api/materials/:id", async (req, res) => {

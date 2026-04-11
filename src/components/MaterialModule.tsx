@@ -121,14 +121,28 @@ export const MaterialModule = () => {
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      await fetch(`/api/materials/${id}/status`, {
+      const res = await fetch(`/api/materials/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      fetchData();
+      if (!res.ok) {
+        let message = "Não foi possível alterar o status do material.";
+        try {
+          const errBody = await res.json();
+          if (errBody?.error && typeof errBody.error === "string") {
+            message = errBody.error;
+          }
+        } catch {
+          /* ignore */
+        }
+        alert(message);
+        return;
+      }
+      await fetchData();
     } catch (error) {
       console.error("Erro ao alterar status:", error);
+      alert("Erro de conexão ao alterar status do material.");
     }
   };
 
