@@ -12,6 +12,10 @@ import {
   BarChart3,
   Info,
   Clock,
+  Heart,
+  Sparkles,
+  ListTodo,
+  Target,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -22,6 +26,13 @@ import {
   isPipelineOpenStatus,
   proposalExpiryDate,
 } from "@/src/lib/salesFunnel";
+import type { PortfolioAbcResult } from "@/src/lib/customerCommercialIntel";
+import {
+  computeCommercialPhase2,
+  enrichCrossSellFromMix,
+  HEALTH_LEVEL_LABEL_PT,
+  REPURCHASE_WINDOW_LABEL_PT,
+} from "@/src/lib/customerCommercialIntel";
 
 type ProductLite = { id: string; sku: string; name: string; type: string };
 
@@ -77,6 +88,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
   const [err, setErr] = useState<string | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [proposals, setProposals] = useState<CommercialProposal[]>([]);
+  const [portfolioAbc, setPortfolioAbc] = useState<PortfolioAbcResult | null>(null);
 
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
@@ -92,13 +104,17 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     let cancelled = false;
     setLoading(true);
     setErr(null);
-    fetchJsonOk<{ customer: Customer; proposals: CommercialProposal[] }>(
-      `/api/customers/${customerId}/commercial-360`
-    )
+    setPortfolioAbc(null);
+    fetchJsonOk<{
+      customer: Customer;
+      proposals: CommercialProposal[];
+      portfolioAbc: PortfolioAbcResult;
+    }>(`/api/customers/${customerId}/commercial-360`)
       .then((data) => {
         if (cancelled) return;
         setCustomer(data.customer);
         setProposals(Array.isArray(data.proposals) ? data.proposals : []);
+        setPortfolioAbc(data.portfolioAbc ?? null);
       })
       .catch((e) => {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Erro ao carregar.");
@@ -134,6 +150,38 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       { value: "", label: "Todos os produtos", searchTerms: "todos" },
       ...[...m.entries()].map(([id, label]) => ({ value: id, label, searchTerms: label })),
     ];
+  }, [proposals]);
+
+  /** Mix agregado de todo o histórico do cliente (sem filtro) — cross-sell / Fase 2. */
+  const mixRowsAll = useMemo(() => {
+    const m = new Map<
+      string,
+      { sku: string; name: string; type: string; qty: number; revenue: number; margin: number }
+    >();
+    proposals.forEach((p) => {
+      p.items?.forEach((it) => {
+        const pr = it.Product;
+        const id = it.productId;
+        const qty = n(it.quantity);
+        const lineRev = qty * n(it.negotiatedPrice);
+        const lineMg = n(it.marginValue);
+        const prev = m.get(id);
+        const sku = pr?.sku || "—";
+        const name = pr?.name || "Produto";
+        const type = pr?.type || "—";
+        if (prev) {
+          m.set(id, {
+            ...prev,
+            qty: prev.qty + qty,
+            revenue: prev.revenue + lineRev,
+            margin: prev.margin + lineMg,
+          });
+        } else {
+          m.set(id, { sku, name, type, qty, revenue: lineRev, margin: lineMg });
+        }
+      });
+    });
+    return [...m.values()].sort((a, b) => b.revenue - a.revenue);
   }, [proposals]);
 
   const filtered = useMemo(() => {
@@ -352,30 +400,34 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     return out.slice(0, 12);
   }, [filtered, proposals, metrics]);
 
-  const health = useMemo(() => {
-    const fp = filtered;
-    const open = fp.filter((p) => isPipelineOpenStatus(p.status)).length;
-    const won = fp.filter((p) => p.status === "APPROVED").length;
-    const last = fp.length
-      ? [...fp].sort(
+  const phase2 = useMemo(() => {
+    if (!portfolioAbc) return null;
+    const approvedN = proposals.filter((p) => p.status === "APPROVED").length;
+    const base = computeCommercialPhase2(proposals, portfolioAbc);
+    const mixHint = enrichCrossSellFromMix(
+      mixRowsAll.map((r) => ({ sku: r.sku, type: r.type, revenue: r.revenue })),
+      approvedN
+    );
+    return {
+      ...base,
+      crossSell: [...base.crossSell, ...mixHint],
+    };
+  }, [proposals, portfolioAbc, mixRowsAll]);
+
+  const relationInfo = useMemo(() => {
+    const last = proposals.length
+      ? [...proposals].sort(
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         )[0]
       : null;
-    const resp = last?.responsible?.trim() || null;
-    let label = "Monitorar";
-    let color = "text-amber-600";
-    if (won >= 1 && open >= 1) {
-      label = "Ativo — pipeline + histórico";
-      color = "text-green-600";
-    } else if (won >= 2 && open === 0) {
-      label = "Cliente com histórico; sem pipeline no filtro";
-      color = "text-blue-600";
-    } else if (fp.length === 0) {
-      label = "Sem propostas no período";
-      color = "text-muted-foreground";
-    }
-    return { label, color, lastMove: last?.updatedAt, resp, open, lastStatus: last?.status };
-  }, [filtered]);
+    const openAll = proposals.filter((p) => isPipelineOpenStatus(p.status)).length;
+    return {
+      resp: last?.responsible?.trim() || null,
+      lastMove: last?.updatedAt,
+      lastStatus: last?.status,
+      openAll,
+    };
+  }, [proposals]);
 
   if (!open) return null;
 
@@ -420,6 +472,223 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
           )}
           {!loading && !err && customer && (
             <>
+              {/* Fase 2 — Inteligência comercial (histórico completo) */}
+              {phase2 && (
+                <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-primary/5 to-transparent p-4 space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-black flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        Inteligência comercial (Fase 2)
+                      </h3>
+                      <p className="text-[10px] text-muted-foreground mt-1 max-w-3xl">{phase2.proxyNote}</p>
+                    </div>
+                    <span className="text-[10px] font-mono text-muted-foreground">v{phase2.version}</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Heart className="h-4 w-4 text-rose-500" />
+                        <span className="text-xs font-bold uppercase text-muted-foreground">Saúde comercial</span>
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <span
+                          className={cn(
+                            "text-2xl font-black",
+                            phase2.health.level === "SAUDAVEL" && "text-emerald-600",
+                            phase2.health.level === "ATENCAO" && "text-amber-600",
+                            phase2.health.level === "EM_RISCO" && "text-orange-600",
+                            phase2.health.level === "INATIVO" && "text-slate-500"
+                          )}
+                        >
+                          {HEALTH_LEVEL_LABEL_PT[phase2.health.level]}
+                        </span>
+                        <span className="text-sm text-muted-foreground pb-0.5">Score {phase2.health.score}/100</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all",
+                            phase2.health.level === "SAUDAVEL" && "bg-emerald-500",
+                            phase2.health.level === "ATENCAO" && "bg-amber-500",
+                            phase2.health.level === "EM_RISCO" && "bg-orange-500",
+                            phase2.health.level === "INATIVO" && "bg-slate-400"
+                          )}
+                          style={{ width: `${phase2.health.score}%` }}
+                        />
+                      </div>
+                      <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
+                        {phase2.health.reasons.length ? (
+                          phase2.health.reasons.map((r, i) => <li key={i}>{r}</li>)
+                        ) : (
+                          <li>Critérios calculados; sem detalhes adicionais.</li>
+                        )}
+                      </ul>
+                      <p className="text-[10px] text-muted-foreground border-t border-border pt-2">
+                        Critérios: atividade recente, pipeline, tempo desde aprovações (proxy), margem e conversão.
+                        Não substitui pedido/NF.
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Target className="h-4 w-4 text-primary" />
+                        <span className="text-xs font-bold uppercase text-muted-foreground">Classificação</span>
+                      </div>
+                      <p className="text-lg font-black text-primary">
+                        {phase2.segment.labelsPt[phase2.segment.primary]}
+                      </p>
+                      <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
+                        {phase2.segment.reasons.map((r, i) => (
+                          <li key={i}>{r}</li>
+                        ))}
+                      </ul>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
+                          ABC:{" "}
+                          {phase2.portfolioAbc.abcEligible && phase2.portfolioAbc.abcClass
+                            ? `Classe ${phase2.portfolioAbc.abcClass}`
+                            : "— (sem receita aprovada)"}
+                        </span>
+                        {phase2.portfolioAbc.rank != null && (
+                          <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-muted">
+                            Ranking receita aprovada: #{phase2.portfolioAbc.rank} /{" "}
+                            {phase2.portfolioAbc.customerCount}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-primary" />
+                        <span className="text-xs font-bold uppercase text-muted-foreground">Previsão de recompra</span>
+                      </div>
+                      <p className="text-[11px] font-semibold text-foreground">{phase2.repurchase.basis}</p>
+                      <p className="text-sm font-bold">{REPURCHASE_WINDOW_LABEL_PT[phase2.repurchase.windowStatus]}</p>
+                      <p className="text-[11px] text-muted-foreground">{phase2.repurchase.windowDetail}</p>
+                      <dl className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+                        <dt className="text-muted-foreground">Mediana (dias)</dt>
+                        <dd className="font-mono text-right">
+                          {phase2.repurchase.medianDaysBetweenApprovals != null
+                            ? Math.round(phase2.repurchase.medianDaysBetweenApprovals)
+                            : "—"}
+                        </dd>
+                        <dt className="text-muted-foreground">Média (dias)</dt>
+                        <dd className="font-mono text-right">
+                          {phase2.repurchase.meanDaysBetweenApprovals != null
+                            ? Math.round(phase2.repurchase.meanDaysBetweenApprovals)
+                            : "—"}
+                        </dd>
+                        <dt className="text-muted-foreground">Dias última aprovação</dt>
+                        <dd className="font-mono text-right">
+                          {phase2.repurchase.daysSinceLastApproval != null
+                            ? Math.round(phase2.repurchase.daysSinceLastApproval)
+                            : "—"}
+                        </dd>
+                        <dt className="text-muted-foreground">Próxima janela (est.)</dt>
+                        <dd className="font-mono text-right text-[10px]">
+                          {phase2.repurchase.predictedNextApprovalDate
+                            ? new Date(phase2.repurchase.predictedNextApprovalDate).toLocaleDateString("pt-BR")
+                            : "—"}
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-border bg-card p-4">
+                      <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2 flex items-center gap-2">
+                        <BarChart3 className="h-3.5 w-3.5" /> Curva ABC (carteira)
+                      </h4>
+                      <p className="text-[10px] text-muted-foreground mb-2">{phase2.portfolioAbc.basisLabel}</p>
+                      <p className="text-[11px] leading-relaxed">{phase2.portfolioAbc.methodologyNote}</p>
+                      <dl className="mt-3 grid grid-cols-2 gap-1 text-[11px]">
+                        <dt className="text-muted-foreground">Receita aprovada (cliente)</dt>
+                        <dd className="text-right font-mono">{formatCurrency(phase2.portfolioAbc.customerApprovedNet)}</dd>
+                        <dt className="text-muted-foreground">Total carteira aprovada</dt>
+                        <dd className="text-right font-mono">{formatCurrency(phase2.portfolioAbc.portfolioApprovedTotal)}</dd>
+                        <dt className="text-muted-foreground">Participação</dt>
+                        <dd className="text-right font-mono">{formatNumber(phase2.portfolioAbc.shareOfPortfolioPct, 2)}%</dd>
+                      </dl>
+                    </div>
+                    <div className="rounded-xl border border-border bg-card p-4">
+                      <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2 flex items-center gap-2">
+                        <TrendingUp className="h-3.5 w-3.5" /> Tendência (aprovações)
+                      </h4>
+                      <dl className="grid grid-cols-2 gap-1 text-[11px]">
+                        <dt className="text-muted-foreground">Últimos 180d (líq. aprov.)</dt>
+                        <dd className="text-right font-mono">{formatCurrency(phase2.trend.recent180dApprovedNet)}</dd>
+                        <dt className="text-muted-foreground">180d anteriores</dt>
+                        <dd className="text-right font-mono">{formatCurrency(phase2.trend.prior180dApprovedNet)}</dd>
+                      </dl>
+                      {phase2.trend.note && (
+                        <p className="text-[11px] text-amber-800 mt-2">{phase2.trend.note}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {phase2.crossSell.length > 0 && (
+                    <div className="rounded-xl border border-border bg-card p-4">
+                      <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2 flex items-center gap-2">
+                        <Package className="h-3.5 w-3.5" /> Expansão / cross-sell (heurística)
+                      </h4>
+                      <ul className="text-[11px] space-y-1 list-disc pl-4 text-muted-foreground">
+                        {phase2.crossSell.map((c, i) => (
+                          <li key={i}>{c}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {phase2.nextActions.length > 0 && (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                      <h4 className="text-xs font-bold uppercase text-amber-900 mb-2 flex items-center gap-2">
+                        <ListTodo className="h-3.5 w-3.5" /> Próximas ações sugeridas
+                      </h4>
+                      <ul className="text-sm space-y-1.5">
+                        {phase2.nextActions.map((a, i) => (
+                          <li key={i} className="flex gap-2">
+                            <span className="text-[10px] font-bold uppercase text-muted-foreground w-16 shrink-0 pt-0.5">
+                              {a.kind === "follow_up" ? "Follow-up" : a.kind === "risk" ? "Risco" : "Expansão"}
+                            </span>
+                            <span>{a.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {phase2.strategicAlerts.length > 0 && (
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 space-y-2">
+                      <h4 className="text-xs font-bold uppercase text-red-900 flex items-center gap-2">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Alertas de follow-up
+                      </h4>
+                      <ul className="text-sm space-y-1">
+                        {phase2.strategicAlerts.map((a, i) => (
+                          <li
+                            key={i}
+                            className={cn(
+                              a.level === "danger" && "text-red-800",
+                              a.level === "warn" && "text-amber-900",
+                              a.level === "info" && "text-blue-900"
+                            )}
+                          >
+                            {a.text}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-dashed border-border p-3 bg-muted/30">
+                    <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Visão gerencial (reutilizável)</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">{phase2.managerial.summary}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Filtros */}
               <div className="rounded-xl border border-border p-4 bg-accent/10 space-y-3">
                 <p className="text-xs font-bold uppercase text-muted-foreground">Filtros da visão</p>
@@ -574,25 +843,34 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   <User className="h-5 w-5 text-primary" />
                   <div>
                     <p className="text-[10px] font-bold text-muted-foreground uppercase">Responsável (última mov.)</p>
-                    <p className="font-bold">{health.resp || "—"}</p>
+                    <p className="font-bold">{relationInfo.resp || "—"}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-5 w-5 text-primary" />
                   <div>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase">Última atualização (filtro)</p>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase">Última atualização (histórico completo)</p>
                     <p className="font-bold text-sm">
-                      {health.lastMove
-                        ? new Date(health.lastMove).toLocaleString("pt-BR")
+                      {relationInfo.lastMove
+                        ? new Date(relationInfo.lastMove).toLocaleString("pt-BR")
                         : "—"}
                     </p>
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Status comercial (derivado)</p>
-                  <p className={cn("font-bold", health.color)}>{health.label}</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Pipeline aberto (total cliente)</p>
+                  <p className="font-bold text-primary">{relationInfo.openAll} proposta(s)</p>
                   <p className="text-[10px] text-muted-foreground">
-                    Último status: {health.lastStatus || "—"} · Abertas: {health.open}
+                    Último status: {relationInfo.lastStatus || "—"}
+                    {phase2 && (
+                      <>
+                        {" "}
+                        · Saúde (Fase 2):{" "}
+                        <span className="font-semibold text-foreground">
+                          {HEALTH_LEVEL_LABEL_PT[phase2.health.level]}
+                        </span>
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -601,8 +879,11 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
               {alerts.length > 0 && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
                   <h3 className="text-sm font-bold flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" /> Alertas e oportunidades
+                    <AlertTriangle className="h-4 w-4 text-amber-600" /> Sinais com base no filtro atual
                   </h3>
+                  <p className="text-[10px] text-muted-foreground">
+                    Complementa os alertas estratégicos acima; respeita período, status e demais filtros.
+                  </p>
                   <ul className="text-sm space-y-1">
                     {alerts.map((a, i) => (
                       <li

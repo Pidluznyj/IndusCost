@@ -11,6 +11,7 @@ import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
+import { buildPortfolioAbcForCustomer } from "./src/lib/customerCommercialIntel.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -2655,7 +2656,19 @@ app.delete("/api/employees/:id", async (req, res) => {
         },
         orderBy: { createdAt: "desc" },
       });
-      res.json({ customer, proposals });
+
+      const approvedByCustomer = await prisma.proposal.groupBy({
+        by: ["customerId"],
+        where: { status: "APPROVED" },
+        _sum: { totalNetValue: true },
+      });
+      const abcRows = approvedByCustomer.map((g) => ({
+        customerId: g.customerId,
+        revenue: Number(g._sum.totalNetValue ?? 0),
+      }));
+      const portfolioAbc = buildPortfolioAbcForCustomer(abcRows, id);
+
+      res.json({ customer, proposals, portfolioAbc });
     } catch (error) {
       console.error("commercial-360 error:", error);
       res.status(500).json({ error: "Erro ao montar visão comercial do cliente." });
