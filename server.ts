@@ -757,6 +757,308 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json({ success: true });
   });
 
+  // --- Compras: centros de custo e solicitações (Bloco 1) ---
+  app.get("/api/cost-centers", async (_req, res) => {
+    try {
+      const rows = await prisma.costCenter.findMany({
+        orderBy: [{ isActive: "desc" }, { code: "asc" }],
+      });
+      res.json(rows);
+    } catch (e) {
+      console.error("cost-centers list error:", e);
+      res.status(500).json({ error: "Erro ao listar centros de custo." });
+    }
+  });
+
+  app.post("/api/cost-centers", async (req, res) => {
+    try {
+      const { code, name, description, notes, isActive } = req.body;
+      if (!code || !name) {
+        return res.status(400).json({ error: "Código e nome do centro de custo são obrigatórios." });
+      }
+      const row = await prisma.costCenter.create({
+        data: {
+          code: String(code).trim().toUpperCase(),
+          name: String(name).trim(),
+          description: description != null ? String(description) : null,
+          notes: notes != null ? String(notes) : null,
+          isActive: isActive !== false,
+        },
+      });
+      res.json(row);
+    } catch (e: any) {
+      console.error("cost-center create error:", e);
+      if (e.code === "P2002") {
+        return res.status(409).json({ error: "Já existe centro de custo com este código." });
+      }
+      res.status(500).json({ error: "Erro ao criar centro de custo." });
+    }
+  });
+
+  app.patch("/api/cost-centers/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const { name, description, notes, isActive } = req.body;
+      const row = await prisma.costCenter.update({
+        where: { id },
+        data: {
+          ...(name !== undefined ? { name: String(name) } : {}),
+          ...(description !== undefined ? { description: description } : {}),
+          ...(notes !== undefined ? { notes: notes } : {}),
+          ...(isActive !== undefined ? { isActive: Boolean(isActive) } : {}),
+        },
+      });
+      res.json(row);
+    } catch (e: any) {
+      console.error("cost-center patch error:", e);
+      if (e.code === "P2025") return res.status(404).json({ error: "Centro de custo não encontrado." });
+      res.status(500).json({ error: "Erro ao atualizar centro de custo." });
+    }
+  });
+
+  const purchaseInclude = {
+    defaultCostCenter: true,
+    items: {
+      include: { material: true, costCenter: true },
+      orderBy: { id: "asc" as const },
+    },
+  };
+
+  app.get("/api/purchase-requests", async (_req, res) => {
+    try {
+      const rows = await prisma.purchaseRequest.findMany({
+        include: {
+          defaultCostCenter: true,
+          items: { include: { material: true, costCenter: true } },
+        },
+        orderBy: { number: "desc" },
+      });
+      res.json(rows);
+    } catch (e) {
+      console.error("purchase-requests list error:", e);
+      res.status(500).json({ error: "Erro ao listar solicitações de compra." });
+    }
+  });
+
+  app.get("/api/purchase-requests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const row = await prisma.purchaseRequest.findUnique({
+        where: { id },
+        include: purchaseInclude,
+      });
+      if (!row) return res.status(404).json({ error: "Solicitação não encontrada." });
+      res.json(row);
+    } catch (e) {
+      console.error("purchase-request get error:", e);
+      res.status(500).json({ error: "Erro ao carregar solicitação." });
+    }
+  });
+
+  function validatePurchaseRequestPayload(body: any): string | null {
+    if (!body || typeof body !== "object") return "Payload inválido.";
+    if (!body.requester || !String(body.requester).trim()) return "Solicitante é obrigatório.";
+    if (!body.department || !String(body.department).trim()) return "Departamento / área é obrigatório.";
+    if (!body.justification || !String(body.justification).trim()) return "Justificativa é obrigatória.";
+    if (!body.defaultCostCenterId || !isUuid(body.defaultCostCenterId)) {
+      return "Centro de custo do cabeçalho é obrigatório.";
+    }
+    const st = body.status;
+    if (st && !["RASCUNHO", "ABERTA", "CANCELADA", "ENCERRADA"].includes(st)) return "Status inválido.";
+    const pr = body.priority;
+    if (pr && !["BAIXA", "NORMAL", "ALTA", "URGENTE"].includes(pr)) return "Prioridade inválida.";
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (items.length === 0) return "Inclua ao menos um item na solicitação.";
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!it.lineType || !["MATERIA_PRIMA", "INDIRETO"].includes(it.lineType)) {
+        return `Item ${i + 1}: tipo de linha inválido (MATERIA_PRIMA ou INDIRETO).`;
+      }
+      if (!it.description || !String(it.description).trim()) return `Item ${i + 1}: descrição é obrigatória.`;
+      const q = Number(it.quantity);
+      if (!Number.isFinite(q) || q <= 0) return `Item ${i + 1}: quantidade inválida.`;
+      if (!it.unit || !String(it.unit).trim()) return `Item ${i + 1}: unidade é obrigatória.`;
+      if (it.lineType === "MATERIA_PRIMA") {
+        if (!it.materialId || !isUuid(it.materialId)) {
+          return `Item ${i + 1}: matéria-prima exige material cadastrado (selecione um item ou cadastre nova MP em Suprimentos).`;
+        }
+      } else {
+        if (it.materialId) return `Item ${i + 1}: itens indiretos não devem ter material vinculado.`;
+      }
+      if (it.costCenterId != null && it.costCenterId !== "" && !isUuid(it.costCenterId)) {
+        return `Item ${i + 1}: centro de custo inválido.`;
+      }
+    }
+    return null;
+  }
+
+  app.post("/api/purchase-requests", async (req, res) => {
+    try {
+      const err = validatePurchaseRequestPayload(req.body);
+      if (err) return res.status(400).json({ error: err });
+
+      const {
+        requester,
+        department,
+        requestCategory,
+        priority = "NORMAL",
+        status = "RASCUNHO",
+        justification,
+        defaultCostCenterId,
+        notes,
+        items = [],
+      } = req.body;
+
+      const cc = await prisma.costCenter.findUnique({ where: { id: defaultCostCenterId } });
+      if (!cc || !cc.isActive) {
+        return res.status(400).json({ error: "Centro de custo do cabeçalho inválido ou inativo." });
+      }
+
+      const created = await prisma.$transaction(async (tx) => {
+        const header = await tx.purchaseRequest.create({
+          data: {
+            requester: String(requester).trim(),
+            department: String(department).trim(),
+            requestCategory: requestCategory != null ? String(requestCategory) : null,
+            priority,
+            status,
+            justification: String(justification).trim(),
+            defaultCostCenterId,
+            notes: notes != null ? String(notes) : null,
+          },
+        });
+
+        for (const it of items) {
+          const costCenterId =
+            it.costCenterId && isUuid(it.costCenterId) ? it.costCenterId : null;
+          if (costCenterId) {
+            const c = await tx.costCenter.findUnique({ where: { id: costCenterId } });
+            if (!c || !c.isActive) throw new Error(`Centro de custo do item inválido ou inativo.`);
+          }
+          if (it.lineType === "MATERIA_PRIMA") {
+            const mat = await tx.material.findUnique({ where: { id: it.materialId } });
+            if (!mat) throw new Error("Material da linha de matéria-prima não encontrado.");
+          }
+          await tx.purchaseRequestItem.create({
+            data: {
+              purchaseRequestId: header.id,
+              lineType: it.lineType,
+              materialId: it.lineType === "MATERIA_PRIMA" ? it.materialId : null,
+              description: String(it.description).trim(),
+              quantity: it.quantity,
+              unit: String(it.unit).trim(),
+              costCenterId,
+              desiredDate: it.desiredDate ? new Date(it.desiredDate) : null,
+              priority: it.priority || null,
+              notes: it.notes != null ? String(it.notes) : null,
+              suggestedSupplier: it.suggestedSupplier != null ? String(it.suggestedSupplier) : null,
+              lineStatus: it.lineStatus && ["ABERTA", "CANCELADA"].includes(it.lineStatus) ? it.lineStatus : "ABERTA",
+            },
+          });
+        }
+
+        return tx.purchaseRequest.findUniqueOrThrow({
+          where: { id: header.id },
+          include: purchaseInclude,
+        });
+      });
+
+      res.json(created);
+    } catch (e: any) {
+      console.error("purchase-request create error:", e);
+      res.status(500).json({ error: e.message || "Erro ao criar solicitação de compra." });
+    }
+  });
+
+  app.put("/api/purchase-requests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+
+      const err = validatePurchaseRequestPayload(req.body);
+      if (err) return res.status(400).json({ error: err });
+
+      const existing = await prisma.purchaseRequest.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Solicitação não encontrada." });
+
+      const {
+        requester,
+        department,
+        requestCategory,
+        priority = "NORMAL",
+        status = "RASCUNHO",
+        justification,
+        defaultCostCenterId,
+        notes,
+        items = [],
+      } = req.body;
+
+      const cc = await prisma.costCenter.findUnique({ where: { id: defaultCostCenterId } });
+      if (!cc || !cc.isActive) {
+        return res.status(400).json({ error: "Centro de custo do cabeçalho inválido ou inativo." });
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        await tx.purchaseRequest.update({
+          where: { id },
+          data: {
+            requester: String(requester).trim(),
+            department: String(department).trim(),
+            requestCategory: requestCategory != null ? String(requestCategory) : null,
+            priority,
+            status,
+            justification: String(justification).trim(),
+            defaultCostCenterId,
+            notes: notes != null ? String(notes) : null,
+          },
+        });
+
+        await tx.purchaseRequestItem.deleteMany({ where: { purchaseRequestId: id } });
+
+        for (const it of items) {
+          const costCenterId =
+            it.costCenterId && isUuid(it.costCenterId) ? it.costCenterId : null;
+          if (costCenterId) {
+            const c = await tx.costCenter.findUnique({ where: { id: costCenterId } });
+            if (!c || !c.isActive) throw new Error(`Centro de custo do item inválido ou inativo.`);
+          }
+          if (it.lineType === "MATERIA_PRIMA") {
+            const mat = await tx.material.findUnique({ where: { id: it.materialId } });
+            if (!mat) throw new Error("Material da linha de matéria-prima não encontrado.");
+          }
+          await tx.purchaseRequestItem.create({
+            data: {
+              purchaseRequestId: id,
+              lineType: it.lineType,
+              materialId: it.lineType === "MATERIA_PRIMA" ? it.materialId : null,
+              description: String(it.description).trim(),
+              quantity: it.quantity,
+              unit: String(it.unit).trim(),
+              costCenterId,
+              desiredDate: it.desiredDate ? new Date(it.desiredDate) : null,
+              priority: it.priority || null,
+              notes: it.notes != null ? String(it.notes) : null,
+              suggestedSupplier: it.suggestedSupplier != null ? String(it.suggestedSupplier) : null,
+              lineStatus: it.lineStatus && ["ABERTA", "CANCELADA"].includes(it.lineStatus) ? it.lineStatus : "ABERTA",
+            },
+          });
+        }
+
+        return tx.purchaseRequest.findUniqueOrThrow({
+          where: { id },
+          include: purchaseInclude,
+        });
+      });
+
+      res.json(updated);
+    } catch (e: any) {
+      console.error("purchase-request update error:", e);
+      res.status(500).json({ error: e.message || "Erro ao atualizar solicitação de compra." });
+    }
+  });
+
   // --- Helper Functions for Recursive BOM ---
   async function checkBOMCycle(parentId: string, childProductId: string): Promise<boolean> {
     if (parentId === childProductId) return true;

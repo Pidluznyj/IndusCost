@@ -14,6 +14,7 @@ import { SettingsModule } from "./components/SettingsModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { ProposalModule } from "./components/ProposalModule";
+import { PurchaseModule } from "./components/PurchaseModule";
 import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
 
 function ModulePageShell({
@@ -90,6 +91,17 @@ export default function App() {
               description="Gestão de matérias-primas, insumos e custos de aquisição."
             >
               <MaterialModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="/purchases"
+          element={
+            <ModulePageShell
+              title="Compras"
+              description="Solicitações de compra, centro de custo e classificação da demanda (sem pedido, recebimento ou financeiro nesta fase)."
+            >
+              <PurchaseModule />
             </ModulePageShell>
           }
         />

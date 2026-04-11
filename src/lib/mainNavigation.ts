@@ -7,6 +7,7 @@ export const MAIN_MODULE_PATH_SEGMENTS = [
   "employees",
   "machines",
   "materials",
+  "purchases",
   "products",
   "opex",
   "taxes",

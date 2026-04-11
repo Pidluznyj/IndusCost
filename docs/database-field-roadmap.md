@@ -1,10 +1,10 @@
 # Roadmap de campos de banco — IndusCost (comercial, CRM e referência técnica)
 
-**Versão do documento:** 1.1  
+**Versão do documento:** 1.2  
 **Última revisão:** 2026-04-10  
 **Fonte de verdade do schema atual:** `prisma/schema.prisma` (PostgreSQL)
 
-**Escopo cumulativo:** além do backlog comercial/CRM, este documento passa a registrar **alterações técnicas validadas no código** (motor de custo, API, UI, roteamento) com classificação explícita de **impacto em banco** vs **somente aplicação**. Problemas de ambiente local (ex.: `DATABASE_URL` ausente) **não** são tratados como exigência de migration.
+**Escopo cumulativo:** além do backlog comercial/CRM, este documento registra **alterações técnicas validadas no código** (motor de custo, API, UI, roteamento, **compras / solicitação**) com classificação explícita de **impacto em banco** vs **somente aplicação**. Problemas de ambiente local (ex.: `DATABASE_URL` ausente) **não** são tratados como exigência de migration.
 
 ---
 
@@ -151,6 +151,68 @@ Campos relevantes para mix/análise: `id`, `sku`, `name`, `type` (enum `ItemType
 | `inputSnapshot` | String | Snapshot textual dos insumos | — |
 
 **Uso atual no código:** referências a `prisma.costCalculationLog.deleteMany` em fluxos de exclusão de produto (`server.ts`); **não** foi identificado preenchimento desta tabela em cada chamada GET de cost-analysis no estado atual do repositório. A tabela é **reaproveitável** para auditoria/snapshot futuro de custo, com política de escrita a definir (fora do escopo deste documento até haver requisito de produto).
+
+### 4.7 Compras — `CostCenter`, `PurchaseRequest`, `PurchaseRequestItem` (Bloco 1 — já no schema)
+
+**Objetivo de negócio:** disciplinar **demanda de compra** (solicitação), com **centro de custo** obrigatório no cabeçalho, herança/sobrescrita por item, classificação **matéria-prima vs indireto**, vínculo opcional com `Material` apenas quando `lineType = MATERIA_PRIMA`. **Não** inclui pedido de compra, recebimento, estoque, financeiro nem atualização automática de `Material.currentCost`.
+
+**Migration aplicável:** `prisma/migrations/20260410120000_purchases_block1/migration.sql` (adição de enums + tabelas; **não** altera tabelas de custo/BOM/proposta existentes além da FK opcional em `Material` → `PurchaseRequestItem`).
+
+**Seed:** centro de custo fallback `code = A-CLASS`, `name = A classificar` (upsert em `prisma/seed.ts`) — uso **visível e rastreável**, não substitui definição real de CC.
+
+#### `CostCenter`
+
+| Campo | Tipo (Prisma) | Obr.? | Default | Finalidade |
+|-------|----------------|-------|---------|------------|
+| `id` | Uuid | Sim | `gen_random_uuid()` | PK |
+| `code` | String @unique | Sim | — | Código curto (ex.: `A-CLASS`, `PROD-01`) |
+| `name` | String | Sim | — | Nome |
+| `description` | String? | Não | NULL | Detalhe opcional |
+| `isActive` | Boolean | Sim | `true` | Permite inativar sem apagar histórico |
+| `notes` | String? | Não | NULL | Observação interna |
+| `createdAt`, `updatedAt` | DateTime | Sim | now / `@updatedAt` | Auditoria |
+
+**Futuro (não neste bloco):** hierarquia, rateio, centro “virtual” — modelagem atual **não impede** (campos extras em migration futura).
+
+#### `PurchaseRequest` (cabeçalho)
+
+| Campo | Tipo (Prisma) | Obr.? | Finalidade |
+|-------|----------------|-------|------------|
+| `id` | Uuid | Sim | PK |
+| `number` | Int @unique | Sim | Número sequencial legível (`autoincrement`) |
+| `requester` | String | Sim | Solicitante (texto) |
+| `department` | String | Sim | Área/departamento |
+| `requestCategory` | String? | Não | Tipo/categoria livre opcional |
+| `priority` | `PurchasePriority` | Sim | BAIXA, NORMAL, ALTA, URGENTE |
+| `status` | `PurchaseRequestStatus` | Sim | RASCUNHO, ABERTA, CANCELADA, ENCERRADA |
+| `justification` | Text | Sim | Justificativa |
+| `defaultCostCenterId` | Uuid | Sim | CC padrão do cabeçalho (FK `CostCenter`, `onDelete: Restrict`) |
+| `notes` | Text? | Não | Observações gerais |
+| `createdAt`, `updatedAt` | DateTime | Sim | Auditoria |
+
+#### `PurchaseRequestItem`
+
+| Campo | Tipo (Prisma) | Obr.? | Finalidade |
+|-------|----------------|-------|------------|
+| `id` | Uuid | Sim | PK |
+| `purchaseRequestId` | Uuid | Sim | FK solicitação (`Cascade` delete) |
+| `lineType` | `PurchaseLineType` | Sim | `MATERIA_PRIMA` ou `INDIRETO` |
+| `materialId` | Uuid? | Condicional | Obrigatório na API quando MP; `null` quando indireto |
+| `description` | String | Sim | Texto da linha |
+| `quantity` | Decimal(20,6) | Sim | Quantidade |
+| `unit` | String | Sim | Unidade |
+| `costCenterId` | Uuid? | Não | Sobrescreve CC do cabeçalho; `null` = herdar |
+| `desiredDate` | DateTime? | Não | Data desejada |
+| `priority` | `PurchasePriority?` | Não | Prioridade da linha (opcional) |
+| `notes` | String? | Não | Observação do item |
+| `suggestedSupplier` | String? | Não | Fornecedor sugerido (texto) |
+| `lineStatus` | `PurchaseItemLineStatus` | Sim | ABERTA, CANCELADA |
+
+**Relação existente:** `Material` passa a ter `PurchaseRequestItem[]` (FK opcional; **sem** alteração de custo do material pela solicitação).
+
+**API (implementada):** `GET/POST/PATCH` em `/api/cost-centers`; `GET/POST/PUT` em `/api/purchase-requests` e `GET` por id — validação: MP exige `materialId`; itens indiretos não enviam `materialId`; cabeçalho exige CC ativo; mínimo um item por solicitação.
+
+**UI (implementada):** módulo `/purchases` — lista, criar, editar, visualizar; `SearchableSelect` para materiais e CC; link operacional para **Nova matéria-prima** (`/materials`).
 
 ---
 
@@ -304,6 +366,20 @@ Campos ideais para **`Opportunity`** (quando existir):
 
 ---
 
+### 5.9 Compras — evoluções futuras (fora do Bloco 1; **planejado** / **reavaliar**)
+
+| Domínio | Artefato sugerido | Status doc | Observação |
+|---------|-------------------|--------------|------------|
+| Compras | `PurchaseOrder` + linhas | planejado | Transformar solicitação aprovada em pedido; FK a fornecedor formal |
+| Compras | Cotação / comparação de preços | planejado | Tabelas próprias ou vínculo a documento externo |
+| Compras | Recebimento (NF, conferência) | planejado | Estoque e rastreabilidade lotes |
+| Compras | Atualização de `Material.currentCost` a partir de compra | reavaliar | Política explícita; não automático na solicitação (Bloco 1) |
+| Compras | Aprovação multinível | planejado | Workflow / papéis; sem alteração no Bloco 1 |
+| Compras | Contas a pagar / integração financeira | planejado | Fora do escopo solicitação |
+| Compras | Rateio de `CostCenter` | planejado | Modelagem atual não bloqueia colunas de rateio futuras |
+
+---
+
 ## 6. Persistido vs calculado (resumo)
 
 | Necessidade | Recomendação |
@@ -380,6 +456,7 @@ Registros padronizados a partir da **validação do código** (`server.ts`, `src
 | Consolidação PRODUCT — UX e warning divergência | implementado | `server.ts`, `ProductModule.tsx` | `ProductBOM` com `orderBy: { id: "asc" }`; warning `BOM_DETAIL_TOTAL_DIVERGENCE` se soma do detalhe ≠ total; rótulos “estrutura (BOM)” | nenhum | nenhum | — | técnica | Sem mudança de fórmula de negócio |
 | Transparência de cálculo — UI | implementado | `src/lib/calculationExplainability.ts`, `src/types/calculation.ts`, `CalculatedValue.tsx`, `ProductModule.tsx`, `ProposalModule.tsx` | Tooltips com metadados; margem de linha explicada em `proposalLineExplain.ts` (alinhado ao cálculo em tela) | nenhum | nenhum | — | técnica | `ProposalItem.calculationExplainability` só em memória ao adicionar item |
 | Navegação SPA — Fase 1 (módulos principais) | implementado | `main.tsx`, `App.tsx`, `Layout.tsx`, `Sidebar.tsx`, `src/lib/mainNavigation.ts` | `react-router-dom`: rotas `/:segmento` alinhados ao menu; `/` e `*` → `/dashboard`; funil: `navigate("/proposals")` no evento existente | nenhum | nenhum | — | técnica | Histórico do browser entre módulos |
+| Compras — Bloco 1 (centro de custo + solicitação) | implementado | `prisma/schema.prisma`, `prisma/migrations/20260410120000_purchases_block1/migration.sql`, `prisma/seed.ts`, `server.ts`, `src/components/PurchaseModule.tsx`, `src/types/purchase.ts`, `App.tsx`, `Sidebar.tsx`, `mainNavigation.ts` | Novos models `CostCenter`, `PurchaseRequest`, `PurchaseRequestItem` + enums; API REST; UI lista/criar/editar/ver; vínculo opcional `Material`↔item MP; CC fallback `A-CLASS` no seed; **sem** alteração de custo de material nem fluxos existentes de custo/preço/BOM | nenhum | precisa tabela nova | Ver secção **4.7** | Bloco 1 | Contratos de API existentes fora `/api/cost-centers` e `/api/purchase-requests` inalterados |
 
 ### 11.2 Itens analisados / planejados (backlog comercial — não implementados como migration neste ciclo)
 
@@ -404,7 +481,21 @@ Registros padronizados a partir da **validação do código** (`server.ts`, `src
 
 ### 11.4 Itens que exigirão novos campos ou tabelas (futuro)
 
-Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). Nada disso foi migrado no schema na revisão 1.1 deste documento.
+Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). **Compras Bloco 1** (secção **4.7**) foi migrado na revisão **1.2**; itens comerciais/CRM listados abaixo no checklist **permanecem** como `falta criar` salvo onde indicado.
+
+---
+
+### 11.5 Changelog estruturado — entrega **Compras Bloco 1** (2026-04-10)
+
+| Campo do changelog | Conteúdo |
+|--------------------|----------|
+| **Funcionalidade implementada** | Cadastro mínimo de **centro de custo**; **solicitação de compra** com cabeçalho e itens; tipos **MATERIA_PRIMA** (material obrigatório via API) e **INDIRETO** (descrição livre, sem material); CC no cabeçalho com herança por item (`costCenterId` null) ou sobrescrita; fallback rastreável **A-CLASS** / “A classificar”; telas lista / criar / editar / visualizar em `/purchases`; pesquisa de material com `SearchableSelect`; atalho **Nova matéria-prima** para `/materials`. |
+| **Módulos / arquivos alterados** | `server.ts`; `prisma/schema.prisma`; `prisma/migrations/20260410120000_purchases_block1/migration.sql`; `prisma/seed.ts`; `src/App.tsx`; `src/components/layout/Sidebar.tsx`; `src/lib/mainNavigation.ts`; `src/components/PurchaseModule.tsx` (novo); `src/types/purchase.ts` (novo); `docs/database-field-roadmap.md` (este arquivo). |
+| **Impacto técnico** | Novas rotas Express prefixadas `/api/cost-centers` e `/api/purchase-requests`; frontend rota `/purchases` e item de menu `purchases`; sem mudança em contratos de APIs de produtos, materiais (exceto relação Prisma reversa), propostas ou pricing. |
+| **Impacto em banco** | **Migration aditiva:** enums `PurchaseRequestStatus`, `PurchasePriority`, `PurchaseLineType`, `PurchaseItemLineStatus`; tabelas `CostCenter`, `PurchaseRequest`, `PurchaseRequestItem`; relação `Material.purchaseRequestItems` (FK opcional em item). **Nenhuma** migration destrutiva em tabelas de custo/BOM/proposta. |
+| **Tabelas / models criados** | `CostCenter`, `PurchaseRequest`, `PurchaseRequestItem` (detalhe de campos: secção **4.7**). |
+| **Campos criados ou planejados** | **Criados e persistidos:** conforme tabelas na **4.7**. **Planejados (sem banco nesta entrega):** pedido de compra, cotação, recebimento, aprovação multinível, atualização automática de custo de MP, rateio de CC (ver **5.9**). |
+| **Status por tema** | Centro de custo e solicitação: **implementado** (persistido). Pedido/recebimento/financeiro: **planejado**. UI de atalhos e labels: **não requer banco**. Política futura de escrita de custo a partir de compra: **reavaliar**. |
 
 ---
 
@@ -433,6 +524,11 @@ Usar esta lista como índice rápido; detalhes nas secções 4–5. Marcar no PR
 | 17 | ABC/Segmento | Cache `abcClass` / `commercialSegment` persistidos | 3 | opcional futuro |
 | 18 | Oportunidade | Modelo `Opportunity` + FK em `Proposal` | 3 | opcional futuro |
 | 19 | Pedido real | Modelo futuro `Order` / datas fiscais | 3 | opcional futuro |
+| 20 | Compras | `PurchaseOrder` + linhas (pós-solicitação) | 3 | falta criar |
+| 21 | Compras | Cotação / comparativo de ofertas | 3 | falta criar |
+| 22 | Compras | Recebimento mercadoria / NF | 3 | falta criar |
+| 23 | Compras | Workflow aprovação solicitação | 3 | falta criar |
+| 24 | Compras | Rateio multi-centro por linha | 3 | opcional futuro |
 
 ---
 

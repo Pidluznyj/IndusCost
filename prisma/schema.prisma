@@ -95,6 +95,7 @@ model Material {
   updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   MaterialPriceHistory MaterialPriceHistory[]
   ProductBOM           ProductBOM[]
+  PurchaseRequestItem PurchaseRequestItem[]
 }
 
 model MaterialPriceHistory {
@@ -341,4 +342,88 @@ enum ProposalStatus {
   REJECTED
   EXPIRED
   CANCELED
+}
+
+// --- Compras (Bloco 1 — solicitação; sem pedido/recebimento/financeiro) ---
+
+model CostCenter {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  purchaseRequestsDefault PurchaseRequest[]       @relation("PurchaseRequestDefaultCc")
+  purchaseRequestItems    PurchaseRequestItem[]
+}
+
+model PurchaseRequest {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number              Int                   @unique @default(autoincrement())
+  requester           String
+  department          String
+  requestCategory     String?
+  priority            PurchasePriority      @default(NORMAL)
+  status              PurchaseRequestStatus @default(RASCUNHO)
+  justification       String                @db.Text
+  defaultCostCenterId String                @db.Uuid
+  notes               String?               @db.Text
+  createdAt           DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+
+  defaultCostCenter CostCenter            @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  items             PurchaseRequestItem[]
+
+  @@index([status])
+  @@index([defaultCostCenterId])
+}
+
+model PurchaseRequestItem {
+  id                String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseRequestId String                 @db.Uuid
+  lineType          PurchaseLineType
+  materialId        String?                @db.Uuid
+  description       String
+  quantity          Decimal                @db.Decimal(20, 6)
+  unit              String
+  costCenterId      String?                @db.Uuid
+  desiredDate       DateTime?              @db.Timestamptz(6)
+  priority          PurchasePriority?
+  notes             String?
+  suggestedSupplier String?
+  lineStatus        PurchaseItemLineStatus @default(ABERTA)
+
+  purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  costCenter      CostCenter?     @relation(fields: [costCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  material        Material?       @relation(fields: [materialId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([purchaseRequestId])
+  @@index([materialId])
+}
+
+enum PurchaseRequestStatus {
+  RASCUNHO
+  ABERTA
+  CANCELADA
+  ENCERRADA
+}
+
+enum PurchasePriority {
+  BAIXA
+  NORMAL
+  ALTA
+  URGENTE
+}
+
+enum PurchaseLineType {
+  MATERIA_PRIMA
+  INDIRETO
+}
+
+enum PurchaseItemLineStatus {
+  ABERTA
+  CANCELADA
 }

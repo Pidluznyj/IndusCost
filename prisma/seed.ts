@@ -8,6 +8,23 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Iniciando seed...");
 
+  // Compras — centro de custo fallback (rastreável; não substitui definição real de CC)
+  await prisma.costCenter.upsert({
+    where: { code: "A-CLASS" },
+    update: {
+      name: "A classificar",
+      isActive: true,
+      notes: "Fallback controlado: pendência de classificação de centro de custo (módulo Compras).",
+    },
+    create: {
+      code: "A-CLASS",
+      name: "A classificar",
+      description: "Uso quando o centro de custo ainda não foi definido; manter visível e corrigir quando possível.",
+      isActive: true,
+      notes: "Seed inicial — não ocultar este vínculo em relatórios futuros.",
+    },
+  });
+
   // 1. Criar Cargos
   const roleOperador = await prisma.role.upsert({
     where: { name: "Operador de Torno" },
