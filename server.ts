@@ -2277,7 +2277,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       });
 
     } else if (product.ProductRouting.length > 0) {
-      // PRIORIDADE 2: Roteiro
+      // PRIORIDADE 2: Roteiro (produto final ou componente com operações explícitas)
       const rolesWithComponents = await Promise.all(product.ProductRouting.map(async (step) => {
         const emp = await prisma.employee.findFirst({
           where: { roleId: step.roleId },
@@ -2336,8 +2336,10 @@ app.delete("/api/employees/:id", async (req, res) => {
         };
       });
 
-    } else if (product.type !== "MATERIAL") {
-      return { error: "ROUTING_MISSING", message: `Produto/Componente [${product.sku}] sem processo.` };
+    } else if (product.type === "COMPONENT") {
+      // Componente fabricado precisa de Processo Padrão (ramo acima) ou de roteiro.
+      // PRODUCT pode ser apenas montagem de BOM (materiais + filhos) sem processo próprio — custo industrial = BOM + CIF/OPEX sobre tempo zero.
+      return { error: "ROUTING_MISSING", message: `Componente [${product.sku}] sem processo (padrão ou roteiro).` };
     }
 
     const totalHH_Unit = operationItems.reduce((acc, item) => acc + item.totalHH, 0);
