@@ -13,7 +13,8 @@ import {
   MapPin,
   Globe,
   CheckCircle2,
-  Download
+  Download,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -21,6 +22,7 @@ import { Customer } from "@/src/types/commercial";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { CustomerImportConfig } from "../lib/importer/CustomerConfig";
+import { CustomerCommercial360 } from "./customers/CustomerCommercial360";
 
 export const CustomerModule = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -29,6 +31,7 @@ export const CustomerModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [commercial360CustomerId, setCommercial360CustomerId] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Customer>>({
@@ -172,6 +175,12 @@ export const CustomerModule = () => {
         confirmUrl="/api/customers/import/confirm"
       />
 
+      <CustomerCommercial360
+        open={commercial360CustomerId != null}
+        customerId={commercial360CustomerId}
+        onClose={() => setCommercial360CustomerId(null)}
+      />
+
       {/* Table */}
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
@@ -240,6 +249,14 @@ export const CustomerModule = () => {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          title="Visão comercial do cliente"
+                          onClick={() => setCommercial360CustomerId(c.id)}
+                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                        >
+                          <BarChart3 className="h-4 w-4" />
+                        </button>
                         <button 
                           onClick={() => handleOpenModal(c)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
@@ -270,11 +287,27 @@ export const CustomerModule = () => {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-card w-full max-w-4xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
           >
-            <div className="p-6 border-b border-border flex items-center justify-between bg-accent/30">
+            <div className="p-6 border-b border-border flex items-center justify-between gap-3 bg-accent/30">
               <h3 className="text-xl font-bold">{editingCustomer ? "Editar Cliente" : "Novo Cliente"}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {editingCustomer && (
+                  <button
+                    type="button"
+                    onClick={() => setCommercial360CustomerId(editingCustomer.id)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-border bg-background hover:bg-accent text-foreground transition-colors"
+                  >
+                    <BarChart3 className="h-4 w-4 text-primary" />
+                    Visão comercial
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-2 hover:bg-accent rounded-full transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-8">

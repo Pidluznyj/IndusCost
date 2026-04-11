@@ -966,9 +966,9 @@ app.delete("/api/employees/:id", async (req, res) => {
                   String(e?.childType ?? "").trim().toUpperCase() === "MATERIAL"
               )
               .map((e: any) => String(e?.childIdentifier ?? "").trim())
-              .filter(Boolean)
-          )
-        ];
+              .filter((c: string) => c.length > 0)
+          ),
+        ] as string[];
         const materials =
           matCodes.length === 0
             ? []
