@@ -10,7 +10,8 @@ import {
   Loader2,
   Factory,
   LayoutDashboard,
-  GitBranch
+  GitBranch,
+  CircleHelp,
 } from "lucide-react";
 import { 
   BarChart, 
@@ -30,6 +31,8 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { motion } from "motion/react";
 import { SalesFunnelPanel } from "@/src/components/dashboard/SalesFunnelPanel";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { DASHBOARD_TOUR_STEPS } from "@/src/tours/dashboardTourSteps";
 
 interface DashboardData {
   kpis: {
@@ -54,6 +57,7 @@ export const DashboardModule = () => {
   const [dashboardTab, setDashboardTab] = useState<"operacao" | "funil">("operacao");
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -76,50 +80,73 @@ export const DashboardModule = () => {
   }, []);
 
   return (
-    <div className="space-y-6 pb-12">
-      <div className="flex flex-wrap gap-2 p-1 bg-accent/40 rounded-xl border border-border w-full max-w-xl">
+    <div data-tour="dashboard-module" className="space-y-6 pb-12">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div
+          data-tour="dashboard-tabs"
+          className="flex flex-wrap gap-2 p-1 bg-accent/40 rounded-xl border border-border w-full max-w-xl"
+        >
+          <button
+            type="button"
+            onClick={() => setDashboardTab("operacao")}
+            className={cn(
+              "flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all",
+              dashboardTab === "operacao"
+                ? "bg-card text-primary shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            Operação / Financeiro
+          </button>
+          <button
+            type="button"
+            onClick={() => setDashboardTab("funil")}
+            className={cn(
+              "flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all",
+              dashboardTab === "funil"
+                ? "bg-card text-primary shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <GitBranch className="h-4 w-4" />
+            Funil de Vendas
+          </button>
+        </div>
         <button
           type="button"
-          onClick={() => setDashboardTab("operacao")}
-          className={cn(
-            "flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all",
-            dashboardTab === "operacao"
-              ? "bg-card text-primary shadow-sm border border-border"
-              : "text-muted-foreground hover:text-foreground"
-          )}
+          onClick={() => setTourOpen(true)}
+          className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border border-border bg-card hover:bg-accent text-foreground shrink-0"
+          aria-label="Abrir tour guiado do dashboard"
         >
-          <LayoutDashboard className="h-4 w-4" />
-          Operação / Financeiro
-        </button>
-        <button
-          type="button"
-          onClick={() => setDashboardTab("funil")}
-          className={cn(
-            "flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all",
-            dashboardTab === "funil"
-              ? "bg-card text-primary shadow-sm border border-border"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <GitBranch className="h-4 w-4" />
-          Funil de Vendas
+          <CircleHelp className="h-4 w-4 text-primary" />
+          Como usar
         </button>
       </div>
 
-      {dashboardTab === "funil" && <SalesFunnelPanel />}
+      <div data-tour="dashboard-main-area" className="space-y-6">
+        {dashboardTab === "funil" && <SalesFunnelPanel />}
 
-      {dashboardTab === "operacao" && (
-        <>
-          {(loading || !data) ? (
-            <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-              <Loader2 className="h-12 w-12 animate-spin text-primary" />
-              <p className="text-muted-foreground font-medium">Consolidando indicadores gerenciais...</p>
-            </div>
-          ) : (
-            <OperationDashboardBody data={data} />
-          )}
-        </>
-      )}
+        {dashboardTab === "operacao" && (
+          <>
+            {(loading || !data) ? (
+              <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                <p className="text-muted-foreground font-medium">Consolidando indicadores gerenciais...</p>
+              </div>
+            ) : (
+              <OperationDashboardBody data={data} />
+            )}
+          </>
+        )}
+      </div>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={DASHBOARD_TOUR_STEPS}
+        tourName="Tour do Dashboard"
+      />
     </div>
   );
 };
@@ -141,7 +168,7 @@ function OperationDashboardBody({ data }: { data: DashboardData }) {
   return (
     <div className="space-y-8">
       {/* KPI Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div data-tour="dashboard-kpi-cards" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <KPICard 
           title="Custo médio folha / colaborador" 
           value={formatCurrency(data.kpis.avgEmployeeCost)} 
@@ -176,7 +203,7 @@ function OperationDashboardBody({ data }: { data: DashboardData }) {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div data-tour="dashboard-charts-block" className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Cost Composition Chart */}
         <div className="lg:col-span-1 bg-card rounded-3xl border border-border p-8 shadow-sm flex flex-col">
           <div className="flex items-center justify-between mb-8">

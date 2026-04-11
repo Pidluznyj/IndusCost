@@ -1,10 +1,10 @@
 # Roadmap de campos de banco — IndusCost (comercial, CRM e referência técnica)
 
-**Versão do documento:** 1.3  
+**Versão do documento:** 1.4  
 **Última revisão:** 2026-04-10  
 **Fonte de verdade do schema atual:** `prisma/schema.prisma` (PostgreSQL)
 
-**Escopo cumulativo:** além do backlog comercial/CRM, este documento registra **alterações técnicas validadas no código** (motor de custo, API, UI, roteamento, **compras / solicitação**) com classificação explícita de **impacto em banco** vs **somente aplicação**. Problemas de ambiente local (ex.: `DATABASE_URL` ausente) **não** são tratados como exigência de migration.
+**Escopo cumulativo:** além do backlog comercial/CRM, este documento registra **alterações técnicas validadas no código** (motor de custo, API, UI, roteamento, **compras / solicitação**, **UX / tour guiado**) com classificação explícita de **impacto em banco** vs **somente aplicação**. Problemas de ambiente local (ex.: `DATABASE_URL` ausente) **não** são tratados como exigência de migration.
 
 ---
 
@@ -463,6 +463,7 @@ Registros padronizados a partir da **validação do código** (`server.ts`, `src
 | Navegação SPA — Fase 1 (módulos principais) | implementado | `main.tsx`, `App.tsx`, `Layout.tsx`, `Sidebar.tsx`, `src/lib/mainNavigation.ts` | `react-router-dom`: rotas `/:segmento` alinhados ao menu; `/` e `*` → `/dashboard`; funil: `navigate("/proposals")` no evento existente | nenhum | nenhum | — | técnica | Histórico do browser entre módulos |
 | Compras — Bloco 1 (centro de custo + solicitação) | implementado | `prisma/schema.prisma`, `prisma/migrations/20260410120000_purchases_block1/migration.sql`, `prisma/seed.ts`, `server.ts`, `src/components/PurchaseModule.tsx`, `src/types/purchase.ts`, `App.tsx`, `Sidebar.tsx`, `mainNavigation.ts` | Novos models `CostCenter`, `PurchaseRequest`, `PurchaseRequestItem` + enums; API REST; UI lista/criar/editar/ver; vínculo opcional `Material`↔item MP; CC fallback `A-CLASS` no seed; **sem** alteração de custo de material nem fluxos existentes de custo/preço/BOM | nenhum | precisa tabela nova | Ver secção **4.7** | Bloco 1 | Contratos de API existentes fora `/api/cost-centers` e `/api/purchase-requests` inalterados |
 | Compras — Bloco 2 (MP na solicitação: UX + contexto + prep. cotação) | implementado | `prisma/schema.prisma`, `prisma/migrations/20260410180000_purchases_block2_mp_context/migration.sql`, `server.ts`, `PurchaseModule.tsx`, `src/types/purchase.ts` | Colunas opcionais em `PurchaseRequestItem`; validação MOQ; UI: seletor com label **código — descrição**, painel de dados do material (somente leitura, fonte GET materiais), materiais inativos vinculados permanecem selecionáveis na edição; fluxo nova MP em **nova aba** + atualizar lista; **sem** atualizar `Material.currentCost`, **sem** “última compra”, **sem** tabela de cotação | nenhum | precisa novos campos | `supplierReference`, `packagingPresentation`, `minOrderQtySuggested` | Bloco 2 | Exibição de custos no painel = **leitura** do cadastro + `calculations` já retornados pela API de materiais |
+| Tour guiado — Bloco 1 (infra + piloto Dashboard) | implementado | `src/components/tour/GuidedTour.tsx`, `src/tours/dashboardTourSteps.ts`, `DashboardModule.tsx` | Componente reutilizável (`createPortal`, overlay, highlight `data-tour`, passos opcionais com skip seguro); disparo só via **Como usar**; **sem** auto-start; **sem** migration | nenhum | nenhum | — | UX | Piloto único; outros módulos: **planejado**; persistência “tour visto”: **opcional futuro** (sem banco nesta fase) |
 
 ### 11.2 Itens analisados / planejados (backlog comercial — não implementados como migration neste ciclo)
 
@@ -485,10 +486,11 @@ Registros padronizados a partir da **validação do código** (`server.ts`, `src
 | Preferências de usuário / favoritos de rota | analisado | — | Não implementado; seria tabela ou storage futuro — **fora** deste ciclo |
 | Relatórios — layout / impressão | analisado | `reports-print.css`, `ReportsModule` | Questões de CSS/print **não** exigem campo novo por si |
 | Ambiente — `DATABASE_URL` | analisado | Prisma / deploy | Configuração de ambiente; não é “campo novo” de negócio |
+| Tour guiado (`GuidedTour` + `data-tour`) | não requer banco | `GuidedTour.tsx`, `dashboardTourSteps.ts`, `DashboardModule.tsx` | Onboarding em memória; atributos `data-tour` só marcam âncoras na UI; sem `schema.prisma` nesta entrega |
 
 ### 11.4 Itens que exigirão novos campos ou tabelas (futuro)
 
-Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). **Compras Bloco 1** e **Bloco 2** (secção **4.7**) estão refletidos nas migrations indicadas (revisões **1.2** e **1.3**); itens comerciais/CRM listados abaixo no checklist **permanecem** como `falta criar` salvo onde indicado.
+Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). **Compras Bloco 1** e **Bloco 2** (secção **4.7**) estão refletidos nas migrations indicadas (revisões **1.2** e **1.3**). **Tour guiado (revisão 1.4)** não exige migration. Itens comerciais/CRM listados abaixo no checklist **permanecem** como `falta criar` salvo onde indicado.
 
 ---
 
@@ -516,6 +518,19 @@ Referência cruzada: **secção 5** (domínios), **secção 12** (checklist nume
 | **Impacto em banco** | **Migration aditiva:** três colunas nullable em `PurchaseRequestItem`. Sem mudança em `Material`, custos, BOM ou propostas. |
 | **Campos da base criados ou planejados** | **Criados:** `supplierReference`, `packagingPresentation`, `minOrderQtySuggested`. **Planejado (cotação):** tabela de cotações/fornecedores, linhas de oferta, vínculo solicitação↔cotação (ver **5.9**). **Não requer banco:** labels do seletor, card de resumo (dados lidos de `Material`). |
 | **Status** | Contexto MP na solicitação: **implementado**. Cotação multi-fornecedor: **planejado**. Painel de custos como ajuda visual: **não requer banco** (derivado/leitura API materiais). Snapshot de preço na linha para auditoria: **reavaliar** em fase de cotação. |
+
+---
+
+### 11.7 Changelog estruturado — **Tour guiado Bloco 1** (2026-04-10)
+
+| Campo do changelog | Conteúdo |
+|--------------------|----------|
+| **Funcionalidade implementada** | Infraestrutura **`GuidedTour`**: overlay + destaque no elemento `[data-tour="…"]`, cartão com título/descrição, Voltar/Avançar/Concluir, fechar por fundo, **Esc**; passos com `optional: true` são ignorados se o nó não existir (ex.: KPIs antes do carregamento ou aba Funil); **sem** abertura automática ao entrar no módulo. Piloto: **Dashboard** — botão **Como usar**; passos definidos em `src/tours/dashboardTourSteps.ts`; âncoras `dashboard-module`, `dashboard-tabs`, `dashboard-main-area`, `dashboard-kpi-cards` (opcional), `dashboard-charts-block` (opcional). |
+| **Módulos / arquivos alterados** | `src/components/tour/GuidedTour.tsx` (novo); `src/tours/dashboardTourSteps.ts` (novo); `src/components/DashboardModule.tsx`; `docs/database-field-roadmap.md`. |
+| **Impacto técnico** | Apenas frontend; `createPortal` para o overlay; listeners de resize/scroll limpos no teardown do passo; nenhuma alteração de API ou `server.ts`. |
+| **Impacto em banco** | **Nenhum.** Não há mudança em `prisma/schema.prisma` nem migration. |
+| **Planejado / opcional futuro** | Expandir tours a outros módulos (ex.: Compras); persistir preferência “tour já visto” (localStorage, perfil de usuário ou tabela) — **fora** desta entrega; analytics de onboarding — **reavaliar**. |
+| **Status** | Infra + piloto Dashboard: **implementado** (**não requer banco**). Demais módulos: **planejado**. |
 
 ---
 
@@ -549,6 +564,7 @@ Usar esta lista como índice rápido; detalhes nas secções 4–5. Marcar no PR
 | 22 | Compras | Recebimento mercadoria / NF | 3 | falta criar |
 | 23 | Compras | Workflow aprovação solicitação | 3 | falta criar |
 | 24 | Compras | Rateio multi-centro por linha | 3 | opcional futuro |
+| 25 | UX / Tour | Preferência “tour visto” persistida (usuário ou `localStorage`) | 3 | opcional futuro |
 
 ---
 
