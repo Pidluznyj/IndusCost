@@ -33,6 +33,8 @@ import { Material } from "@/src/types/material";
 import { motion, AnimatePresence } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { ProductImportConfig } from "../lib/importer/ProductConfig";
+import { CalculatedValue } from "./shared/CalculatedValue";
+import type { CalculationExplainabilityMap } from "@/src/types/calculation";
 
 /* -------------------------------------------------------------------------- */
 /*                                Sub-Components                              */
@@ -531,6 +533,9 @@ export const ProductModule = () => {
         typeof backendCostAnalysis.warningCount === "number"
           ? backendCostAnalysis.warningCount
           : warnings.length;
+      const calculationExplainability =
+        (backendCostAnalysis as { calculationExplainability?: CalculationExplainabilityMap })
+          .calculationExplainability ?? null;
       return {
         bomCost,
         routingCost,
@@ -539,6 +544,7 @@ export const ProductModule = () => {
         details: backendCostAnalysis.details || { materials: [], operations: [], processBreakdown: [] },
         warnings,
         warningCount,
+        calculationExplainability,
       };
     }
     return {
@@ -549,6 +555,7 @@ export const ProductModule = () => {
       details: { materials: [], operations: [], processBreakdown: [] },
       warnings: [] as unknown[],
       warningCount: 0,
+      calculationExplainability: null as CalculationExplainabilityMap | null,
     };
   }, [backendCostAnalysis]);
 
@@ -1246,7 +1253,9 @@ export const ProductModule = () => {
                             <p className="text-xs font-bold text-blue-600 uppercase">Custo da estrutura (BOM)</p>
                             <Layers className="h-4 w-4 text-blue-500" />
                           </div>
-                          <p className="text-3xl font-black text-blue-700">{formatCurrency(displayCost.bomCost)}</p>
+                          <CalculatedValue meta={displayCost.calculationExplainability?.totalMaterialCost ?? null}>
+                            <p className="text-3xl font-black text-blue-700">{formatCurrency(displayCost.bomCost)}</p>
+                          </CalculatedValue>
                           <p className="text-[10px] text-blue-600/60">
                             Soma das linhas da BOM (matérias-primas e/ou CIU dos componentes), conforme o motor.
                           </p>
@@ -1256,7 +1265,9 @@ export const ProductModule = () => {
                             <p className="text-xs font-bold text-purple-600 uppercase">Conversão (HH + HM)</p>
                             <Settings className="h-4 w-4 text-purple-500" />
                           </div>
-                          <p className="text-3xl font-black text-purple-700">{formatCurrency(displayCost.routingCost)}</p>
+                          <CalculatedValue meta={displayCost.calculationExplainability?.totalConversionCost ?? null}>
+                            <p className="text-3xl font-black text-purple-700">{formatCurrency(displayCost.routingCost)}</p>
+                          </CalculatedValue>
                           <p className="text-[10px] text-purple-600/60">Processo padrão ou roteiro; sem CIF rateado</p>
                         </div>
                         <div className="p-6 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col gap-2">
@@ -1264,9 +1275,15 @@ export const ProductModule = () => {
                             <p className="text-xs font-bold text-primary uppercase">Custo Industrial (CIU)</p>
                             <TrendingUp className="h-4 w-4 text-primary" />
                           </div>
-                          <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
-                          <p className="text-[10px] text-primary/60">
-                            BOM + conversão + CIF ({formatCurrency(displayCost.cifCost)})
+                          <CalculatedValue meta={displayCost.calculationExplainability?.totalIndustrialCost ?? null}>
+                            <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
+                          </CalculatedValue>
+                          <p className="text-[10px] text-primary/60 flex flex-wrap items-center gap-1">
+                            <span>BOM + conversão + CIF (</span>
+                            <CalculatedValue meta={displayCost.calculationExplainability?.totalCIF_Unit ?? null} hideIcon>
+                              <span>{formatCurrency(displayCost.cifCost)}</span>
+                            </CalculatedValue>
+                            <span>)</span>
                           </p>
                         </div>
                       </div>

@@ -15,6 +15,10 @@ import {
   buildPortfolioAbcForCustomer,
   buildCustomerAbcRanking,
 } from "./src/lib/customerCommercialIntel.js";
+import {
+  buildCostAnalysisExplainability,
+  buildPricingSnapshotExplainability,
+} from "./src/lib/calculationExplainability.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -2545,6 +2549,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       if ("error" in analysis) return res.status(400).json(analysis);
 
       // Mapeamento para garantir retrocompatibilidade com o frontend atual
+      const calculationExplainability = buildCostAnalysisExplainability(analysis as any);
       res.json({
         ...analysis,
         summary: {
@@ -2555,6 +2560,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           totalIndustrialCost: analysis.totalIndustrialCost,
           totalGerencialCost: analysis.totalGerencialCost
         },
+        calculationExplainability,
         // O breakdown de materiais e operações agora vem direto dos details do motor
         audit: { calculatedAt: new Date().toISOString() }
       });
@@ -2607,6 +2613,17 @@ app.delete("/api/employees/:id", async (req, res) => {
       const divisor = 1 - taxRate - commRate - otherRate - marginRate;
       const suggestedPrice = divisor > 0 ? (analysis.totalIndustrialCost + freight) / divisor : 0;
 
+      const calculationExplainability = buildPricingSnapshotExplainability({
+        analysis: analysis as any,
+        taxRate,
+        commRate,
+        marginRate,
+        otherRate,
+        freight,
+        suggestedPrice,
+        divisor,
+      });
+
       // marginPerc = premissa de margem desejada na formação de preço (compat.); preferir desiredMarginPremissaPct
       res.json({
         unitCost: analysis.totalIndustrialCost,
@@ -2617,6 +2634,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         desiredMarginPremissaPct: marginRate * 100,
         marginPerc: marginRate * 100,
         costBase: "CIU_MOTOR",
+        calculationExplainability,
       });
     } catch (error) {
       console.error("Pricing snapshot error:", error);

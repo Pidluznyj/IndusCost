@@ -1,5 +1,6 @@
 // src/types/commercial.ts
 import { Product } from "./product";
+import type { CalculationExplanation } from "./calculation";
 
 export type ProposalStatus = 
   | "DRAFT" 
@@ -51,6 +52,11 @@ export interface ProposalItem {
   commissionValue: number;
   freightValue: number;
   notes?: string;
+  /** Metadados de transparência vindos do snapshot de preço (unitCost / preço sugerido). */
+  calculationExplainability?: {
+    unitCost?: CalculationExplanation;
+    suggestedPrice?: CalculationExplanation;
+  };
 }
 
 export interface Proposal {

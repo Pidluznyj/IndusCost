@@ -33,6 +33,8 @@ import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/co
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
+import { CalculatedValue } from "./shared/CalculatedValue";
+import { buildProposalLineMarginExplanation } from "@/src/lib/proposalLineExplain";
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -86,6 +88,7 @@ function normalizeProposalItem(
     commissionValue: safeNum(item.commissionValue),
     freightValue: safeNum(item.freightValue),
     notes: item.notes,
+    calculationExplainability: item.calculationExplainability,
   };
 }
 
@@ -234,9 +237,14 @@ export const ProposalModule = () => {
     if (!product) return;
 
     try {
-      const snapshot = await fetchJsonOk<Record<string, unknown>>(
-        `/api/products/${productId}/pricing-snapshot`
-      );
+      const snapshot = await fetchJsonOk<{
+        unitCost?: unknown;
+        suggestedPrice?: unknown;
+        taxesPerc?: unknown;
+        commissionPerc?: unknown;
+        freightValue?: unknown;
+        calculationExplainability?: ProposalItem["calculationExplainability"];
+      }>(`/api/products/${productId}/pricing-snapshot`);
 
       const unitCost = safeNum(snapshot.unitCost);
       const suggestedPrice = safeNum(snapshot.suggestedPrice);
@@ -271,6 +279,7 @@ export const ProposalModule = () => {
         commissionPerc,
         commissionValue,
         freightValue: freightVal,
+        calculationExplainability: snapshot.calculationExplainability,
       });
 
       setFormData(prev => ({
@@ -286,6 +295,9 @@ export const ProposalModule = () => {
   const updateItem = (index: number, updates: Partial<ProposalItem>) => {
     const newItems = [...(formData.items || [])];
     const merged = { ...newItems[index], ...updates };
+    if (updates.unitCost !== undefined || updates.suggestedPrice !== undefined) {
+      (merged as ProposalItem).calculationExplainability = undefined;
+    }
     let item = normalizeProposalItem(merged);
 
     const qty = safeNum(item.quantity);
@@ -612,10 +624,18 @@ export const ProposalModule = () => {
                           />
                         </td>
                         <td className="p-3 text-xs font-mono text-muted-foreground">
-                          {safeNum(item.unitCost).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
+                          <CalculatedValue meta={item.calculationExplainability?.unitCost ?? null} hideIcon>
+                            <span>
+                              {safeNum(item.unitCost).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
+                            </span>
+                          </CalculatedValue>
                         </td>
                         <td className="p-3 text-xs font-mono text-blue-600 font-medium">
-                          {safeNum(item.suggestedPrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
+                          <CalculatedValue meta={item.calculationExplainability?.suggestedPrice ?? null} hideIcon>
+                            <span>
+                              {safeNum(item.suggestedPrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
+                            </span>
+                          </CalculatedValue>
                         </td>
                         <td className="p-3">
                           <input
@@ -636,12 +656,33 @@ export const ProposalModule = () => {
                           />
                         </td>
                         <td className="p-3">
-                          <div className={cn(
-                            "text-xs font-bold",
-                            safeNum(item.marginPerc) >= 20 ? "text-green-600" : safeNum(item.marginPerc) >= 10 ? "text-orange-600" : "text-red-600"
-                          )}>
-                            {safeNum(item.marginPerc).toFixed(3)}%
-                          </div>
+                          <CalculatedValue
+                            hideIcon
+                            meta={buildProposalLineMarginExplanation({
+                              quantity: safeNum(item.quantity),
+                              negotiatedPrice: safeNum(item.negotiatedPrice),
+                              discountValue: safeNum(item.discountValue),
+                              taxesValue: safeNum(item.taxesValue),
+                              commissionValue: safeNum(item.commissionValue),
+                              freightValue: safeNum(item.freightValue),
+                              unitCost: safeNum(item.unitCost),
+                              marginValue: safeNum(item.marginValue),
+                              marginPerc: safeNum(item.marginPerc),
+                            })}
+                          >
+                            <div
+                              className={cn(
+                                "text-xs font-bold",
+                                safeNum(item.marginPerc) >= 20
+                                  ? "text-green-600"
+                                  : safeNum(item.marginPerc) >= 10
+                                    ? "text-orange-600"
+                                    : "text-red-600"
+                              )}
+                            >
+                              {safeNum(item.marginPerc).toFixed(3)}%
+                            </div>
+                          </CalculatedValue>
                         </td>
                         <td className="p-3 text-right text-xs font-bold font-mono">
                           {(safeNum(item.quantity) * safeNum(item.negotiatedPrice) - safeNum(item.discountValue)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })}
