@@ -582,7 +582,8 @@ app.delete("/api/employees/:id", async (req, res) => {
       const existingCodes = new Set(existing.map(e => e.code));
 
       const toCreate = data.filter(d => !existingCodes.has(d.code));
-      
+      const rowsSkippedExisting = data.filter(d => existingCodes.has(d.code)).length;
+
       if (toCreate.length > 0) {
         await prisma.material.createMany({
           data: toCreate.map(d => ({
@@ -602,10 +603,16 @@ app.delete("/api/employees/:id", async (req, res) => {
         });
       }
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         count: toCreate.length,
-        skipped: existingCodes.size 
+        skipped: rowsSkippedExisting,
+        summary: {
+          rowsProcessed: data.length,
+          rowsImported: toCreate.length,
+          rowsSkippedExisting,
+          rowsFailed: 0
+        }
       });
     } catch (error) {
       console.error("Import confirm error:", error);
@@ -761,6 +768,26 @@ app.delete("/api/employees/:id", async (req, res) => {
     return false;
   }
 
+  async function checkBOMCycleWithTx(
+    tx: Prisma.TransactionClient,
+    parentId: string,
+    childProductId: string
+  ): Promise<boolean> {
+    if (parentId === childProductId) return true;
+    const children = await tx.productBOM.findMany({
+      where: { productId: childProductId },
+      select: { childProductId: true },
+    });
+    for (const child of children) {
+      if (child.childProductId) {
+        if (child.childProductId === parentId) return true;
+        if (await checkBOMCycleWithTx(tx, parentId, child.childProductId))
+          return true;
+      }
+    }
+    return false;
+  }
+
   async function getFullBOMTree(productId: string): Promise<any> {
     const product = await prisma.product.findUnique({
       where: { id: productId },
@@ -876,13 +903,13 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
-        // 1. Create Products/Components
+        // 1. Create Products/Components (somente SKUs novos)
         const skus = cadastro.map((d: any) => d.sku);
         const existing = await tx.product.findMany({
           where: { sku: { in: skus } },
           select: { sku: true }
         });
-        const existingSkus = new Set(existing.map(e => e.sku));
+        const existingSkus = new Set(existing.map((e) => e.sku));
         const toCreate = cadastro.filter((d: any) => !existingSkus.has(d.sku));
 
         if (toCreate.length > 0) {
@@ -899,61 +926,249 @@ app.delete("/api/employees/:id", async (req, res) => {
           });
         }
 
-        // 2. Create BOMs
-        // Refresh product list to get IDs (including newly created ones)
-        const allSkus = [...new Set([
-          ...skus, 
-          ...estrutura.map((e: any) => e.parentSku), 
-          ...estrutura.filter((e: any) => e.childType === "COMPONENT").map((e: any) => e.childIdentifier)
-        ])];
-        
+        const productsSkippedExisting = cadastro.filter((d: any) =>
+          existingSkus.has(d.sku)
+        ).length;
+
+        // 2. BOM: substituir estrutura por pai (idempotente na reimportação)
+        const allSkus = [
+          ...new Set(
+            [
+              ...skus,
+              ...estrutura.map((e: any) => e?.parentSku).filter(Boolean),
+              ...estrutura
+                .filter(
+                  (e: any) =>
+                    String(e?.childType ?? "").trim().toUpperCase() === "COMPONENT"
+                )
+                .map((e: any) => e?.childIdentifier)
+                .filter(Boolean)
+            ] as string[]
+          )
+        ];
+
         const products = await tx.product.findMany({
-          where: { sku: { in: allSkus as string[] } },
-          select: { id: true, sku: true }
+          where: { sku: { in: allSkus } },
+          select: { id: true, sku: true, type: true }
         });
-        const skuToId = new Map(products.map(p => [p.sku, p.id]));
+        const skuToId = new Map<string, string>(
+          products.map((p) => [p.sku, p.id] as [string, string])
+        );
+        const skuToType = new Map<string, string>(
+          products.map((p) => [p.sku, String(p.type)] as [string, string])
+        );
 
-        const materials = await tx.material.findMany({
-          where: { code: { in: estrutura.filter((e: any) => e.childType === "MATERIAL").map((e: any) => e.childIdentifier) } },
-          select: { id: true, code: true }
-        });
-        const matCodeToId = new Map(materials.map(m => [m.code, m.id]));
+        const matCodes = [
+          ...new Set(
+            estrutura
+              .filter(
+                (e: any) =>
+                  String(e?.childType ?? "").trim().toUpperCase() === "MATERIAL"
+              )
+              .map((e: any) => String(e?.childIdentifier ?? "").trim())
+              .filter(Boolean)
+          )
+        ];
+        const materials =
+          matCodes.length === 0
+            ? []
+            : await tx.material.findMany({
+                where: { code: { in: matCodes } },
+                select: { id: true, code: true }
+              });
+        const matCodeToId = new Map<string, string>(
+          materials.map((m) => [m.code, m.id] as [string, string])
+        );
 
-        const bomData = [];
-        for (const item of estrutura) {
-          const parentId = skuToId.get(item.parentSku);
-          if (!parentId) continue;
+        const parentSkuList: string[] = estrutura.map((e: any) =>
+          String(e?.parentSku ?? "").trim()
+        ).filter((s: string) => s.length > 0);
+        const parentSkusInFile: string[] = [...new Set(parentSkuList)];
 
-          let materialId = null;
-          let childProductId = null;
-
-          if (item.childType === "MATERIAL") {
-            materialId = matCodeToId.get(item.childIdentifier);
-          } else {
-            childProductId = skuToId.get(item.childIdentifier);
+        let bomParentsStructureReplaced = 0;
+        for (const ps of parentSkusInFile) {
+          const pid = skuToId.get(ps);
+          if (pid) {
+            await tx.productBOM.deleteMany({ where: { productId: pid } });
+            bomParentsStructureReplaced++;
           }
+        }
 
-          // Only add if we found the child (material or component)
-          if (materialId || childProductId) {
-            bomData.push({
-              productId: parentId,
-              materialId,
-              childProductId,
-              quantity: Number(item.quantity),
-              lossPercentage: item.lossPercentage !== undefined ? Number(item.lossPercentage) : 0,
-              notes: item.notes || null
+        const ignoredRows: Array<{
+          row: number;
+          parentSku: string;
+          childType?: string;
+          childIdentifier?: string;
+          reason: string;
+        }> = [];
+
+        const seenBomKeys = new Set<string>();
+        const bomData: Array<{
+          productId: string;
+          materialId: string | null;
+          childProductId: string | null;
+          quantity: number;
+          lossPercentage: number;
+          notes: string | null;
+        }> = [];
+
+        for (let idx = 0; idx < estrutura.length; idx++) {
+          const item = estrutura[idx];
+          const rowNum = idx + 2;
+          const parentSku = String(item?.parentSku ?? "").trim();
+          if (!parentSku) {
+            ignoredRows.push({
+              row: rowNum,
+              parentSku: "",
+              reason: "Dado obrigatório ausente (parentSku)."
             });
+            continue;
           }
+
+          const parentId = skuToId.get(parentSku);
+          if (!parentId) {
+            ignoredRows.push({
+              row: rowNum,
+              parentSku,
+              reason: "Produto pai não encontrado no cadastro (SKU sem produto correspondente)."
+            });
+            continue;
+          }
+
+          const childTypeRaw = String(item?.childType ?? "").trim().toUpperCase();
+          if (childTypeRaw !== "MATERIAL" && childTypeRaw !== "COMPONENT") {
+            ignoredRows.push({
+              row: rowNum,
+              parentSku,
+              childType: childTypeRaw || undefined,
+              reason:
+                "Tipo de filho inválido ou ausente (use MATERIAL ou COMPONENT)."
+            });
+            continue;
+          }
+
+          const parentType = skuToType.get(parentSku);
+          if (parentType === "PRODUCT" && childTypeRaw === "MATERIAL") {
+            ignoredRows.push({
+              row: rowNum,
+              parentSku,
+              childType: childTypeRaw,
+              reason:
+                "Produto final não pode receber material diretamente; use um componente."
+            });
+            continue;
+          }
+
+          const childIdentifier = String(item?.childIdentifier ?? "").trim();
+          if (!childIdentifier) {
+            ignoredRows.push({
+              row: rowNum,
+              parentSku,
+              reason: "Dado obrigatório ausente (childIdentifier)."
+            });
+            continue;
+          }
+
+          let materialId: string | null = null;
+          let childProductId: string | null = null;
+
+          if (childTypeRaw === "MATERIAL") {
+            materialId = matCodeToId.get(childIdentifier) ?? null;
+            if (!materialId) {
+              ignoredRows.push({
+                row: rowNum,
+                parentSku,
+                childType: childTypeRaw,
+                childIdentifier,
+                reason: "Material não encontrado (código inexistente no cadastro de materiais)."
+              });
+              continue;
+            }
+          } else {
+            childProductId = skuToId.get(childIdentifier) ?? null;
+            if (!childProductId) {
+              ignoredRows.push({
+                row: rowNum,
+                parentSku,
+                childType: childTypeRaw,
+                childIdentifier,
+                reason:
+                  "Produto filho não encontrado (SKU de componente inexistente no cadastro)."
+              });
+              continue;
+            }
+          }
+
+          const qty = Number(item.quantity);
+          if (!Number.isFinite(qty) || qty <= 0) {
+            ignoredRows.push({
+              row: rowNum,
+              parentSku,
+              childType: childTypeRaw,
+              childIdentifier,
+              reason: "Quantidade inválida ou ausente (deve ser número > 0)."
+            });
+            continue;
+          }
+
+          if (childTypeRaw === "COMPONENT" && childProductId) {
+            const cycle = await checkBOMCycleWithTx(tx, parentId, childProductId);
+            if (cycle) {
+              ignoredRows.push({
+                row: rowNum,
+                parentSku,
+                childType: childTypeRaw,
+                childIdentifier,
+                reason: "Ciclo estrutural detectado (vínculo pai/filho inválido)."
+              });
+              continue;
+            }
+          }
+
+          const dedupeKey = `${parentId}|${materialId ?? ""}|${childProductId ?? ""}`;
+          if (seenBomKeys.has(dedupeKey)) {
+            ignoredRows.push({
+              row: rowNum,
+              parentSku,
+              childType: childTypeRaw,
+              childIdentifier,
+              reason:
+                "Linha duplicada no arquivo para o mesmo vínculo pai/filho (descartada pela idempotência)."
+            });
+            continue;
+          }
+          seenBomKeys.add(dedupeKey);
+
+          bomData.push({
+            productId: parentId,
+            materialId,
+            childProductId,
+            quantity: qty,
+            lossPercentage:
+              item.lossPercentage !== undefined ? Number(item.lossPercentage) : 0,
+            notes: item.notes ? String(item.notes) : null
+          });
         }
 
         if (bomData.length > 0) {
           await tx.productBOM.createMany({ data: bomData });
         }
 
-        return { 
-          productsCreated: toCreate.length, 
-          bomCreated: bomData.length,
-          skipped: existingSkus.size
+        const bomLinesWritten = bomData.length;
+        const estruturaRowsIgnored = ignoredRows.length;
+
+        return {
+          productsCreated: toCreate.length,
+          productsSkippedExisting,
+          cadastroRowsProcessed: cadastro.length,
+          estruturaRowsProcessed: estrutura.length,
+          bomLinesWritten,
+          bomCreated: bomLinesWritten,
+          bomParentsStructureReplaced,
+          estruturaRowsIgnored,
+          skipped: productsSkippedExisting,
+          estruturaIgnoredDetails: ignoredRows,
+          hasStructureWarnings: estruturaRowsIgnored > 0
         };
       });
 
@@ -2361,7 +2576,8 @@ app.delete("/api/employees/:id", async (req, res) => {
       const existingTaxIds = new Set(existing.map(e => e.taxId));
 
       const toCreate = data.filter(d => !existingTaxIds.has(d.taxId));
-      
+      const rowsSkippedExisting = data.filter(d => existingTaxIds.has(d.taxId)).length;
+
       if (toCreate.length > 0) {
         await prisma.customer.createMany({
           data: toCreate.map(d => ({
@@ -2383,10 +2599,16 @@ app.delete("/api/employees/:id", async (req, res) => {
         });
       }
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         count: toCreate.length,
-        skipped: existingTaxIds.size 
+        skipped: rowsSkippedExisting,
+        summary: {
+          rowsProcessed: data.length,
+          rowsImported: toCreate.length,
+          rowsSkippedExisting,
+          rowsFailed: 0
+        }
       });
     } catch (error) {
       console.error("Import confirm error:", error);
