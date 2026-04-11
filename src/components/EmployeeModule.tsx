@@ -14,6 +14,7 @@ import {
   PieChart
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Employee, Role, CreateEmployeeInput, PayrollComponent } from "@/src/types/employee";
 import { motion } from "motion/react";
 
@@ -51,19 +52,17 @@ export const EmployeeModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [empRes, roleRes, compRes] = await Promise.all([
-        fetch("/api/employees"),
-        fetch("/api/roles"),
-        fetch("/api/payroll-components")
+      const [empData, roleData, compData] = await Promise.all([
+        fetchJsonOk<Employee[]>("/api/employees"),
+        fetchJsonOk<Role[]>("/api/roles"),
+        fetchJsonOk<PayrollComponent[]>("/api/payroll-components"),
       ]);
-      const empData = await empRes.json();
-      const roleData = await roleRes.json();
-      const compData = await compRes.json();
-      setEmployees(empData);
-      setRoles(roleData);
-      setPayrollComponents(compData);
+      setEmployees(Array.isArray(empData) ? empData : []);
+      setRoles(Array.isArray(roleData) ? roleData : []);
+      setPayrollComponents(Array.isArray(compData) ? compData : []);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar colaboradores.");
     } finally {
       setLoading(false);
     }
@@ -110,34 +109,32 @@ export const EmployeeModule = () => {
     const url = editingEmployee ? `/api/employees/${editingEmployee.id}` : "/api/employees";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o colaborador.");
     }
   };
 
   const handleComponentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/payroll-components", {
+      await fetchJsonOk("/api/payroll-components", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(compFormData),
       });
-      if (res.ok) {
-        setIsComponentModalOpen(false);
-        fetchData();
-      }
+      setIsComponentModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar componente:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o componente de folha.");
     }
   };
 
@@ -153,7 +150,7 @@ export const EmployeeModule = () => {
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      await fetch(`/api/employees/${id}/status`, {
+      await fetchOk(`/api/employees/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
@@ -161,13 +158,14 @@ export const EmployeeModule = () => {
       fetchData();
     } catch (error) {
       console.error("Erro ao alterar status:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível alterar o status.");
     }
   };
 
   const filteredEmployees = employees.filter(emp => 
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.Role.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.department.toLowerCase().includes(searchTerm.toLowerCase())
+    (emp.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (emp.Role?.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (emp.department ?? "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (

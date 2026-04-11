@@ -20,6 +20,7 @@ import {
   Info
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -46,16 +47,17 @@ export const SimulationModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [sRes, pRes, tRes] = await Promise.all([
-        fetch("/api/simulations"),
-        fetch("/api/products"),
-        fetch("/api/tax-rules")
+      const [s, p, t] = await Promise.all([
+        fetchJsonOk("/api/simulations"),
+        fetchJsonOk("/api/products"),
+        fetchJsonOk("/api/tax-rules"),
       ]);
-      setSimulations(await sRes.json());
-      setProducts(await pRes.json());
-      setTaxRules(await tRes.json());
+      setSimulations(Array.isArray(s) ? s : []);
+      setProducts(Array.isArray(p) ? p : []);
+      setTaxRules(Array.isArray(t) ? t : []);
     } catch (error) {
       console.error("Erro ao buscar simulações:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar simulações.");
     } finally {
       setLoading(false);
     }
@@ -67,38 +69,38 @@ export const SimulationModule = () => {
 
   const handleCompare = async (id: string) => {
     try {
-      const res = await fetch(`/api/simulations/${id}/compare`);
-      const data = await res.json();
+      const data = await fetchJsonOk(`/api/simulations/${id}/compare`);
       setComparing(data);
     } catch (error) {
       console.error("Erro ao comparar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar a comparação.");
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/simulations", {
+      await fetchJsonOk("/api/simulations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar simulação:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar a simulação.");
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta simulação?")) return;
     try {
-      await fetch(`/api/simulations/${id}`, { method: "DELETE" });
+      await fetchOk(`/api/simulations/${id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
       console.error("Erro ao excluir:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível excluir a simulação.");
     }
   };
 
@@ -206,6 +208,11 @@ export const SimulationModule = () => {
               </div>
 
               <div className="flex-1 overflow-y-auto p-8 space-y-12">
+                {comparing.simulationNote && (
+                  <p className="text-[11px] text-muted-foreground border border-border rounded-lg p-3 bg-accent/20">
+                    {comparing.simulationNote}
+                  </p>
+                )}
                 {/* Main Comparison Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Official Base */}
@@ -224,7 +231,9 @@ export const SimulationModule = () => {
                         <p className="text-sm font-bold">{formatCurrency(comparing.base.ciu, 5)}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Margem Base</p>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase" title="Percentual de margem desejada na formação de preço (premissa), não margem realizada">
+                          Margem premissa
+                        </p>
                         <p className="text-sm font-bold">{comparing.base.premissas.marginRate}%</p>
                       </div>
                     </div>
@@ -255,7 +264,9 @@ export const SimulationModule = () => {
                         <p className="text-sm font-bold">{formatCurrency(comparing.simulated.ciu, 5)}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold text-primary uppercase">Nova Margem</p>
+                        <p className="text-[10px] font-bold text-primary uppercase" title="Premissa de margem após ajuste do cenário (heurística)">
+                          Margem premissa (cenário)
+                        </p>
                         <p className="text-sm font-bold">{formatNumber(comparing.simulated.marginRate)}%</p>
                       </div>
                     </div>

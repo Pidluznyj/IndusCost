@@ -104,20 +104,20 @@ export const DashboardModule = () => {
       {/* KPI Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <KPICard 
-          title="Custo Médio / Colaborador" 
+          title="Custo médio folha / colaborador" 
           value={formatCurrency(data.kpis.avgEmployeeCost)} 
           icon={Users} 
           trend="+2.4%" 
           trendUp={false}
-          subtitle={`${data.kpis.totalEmployees} colaboradores ativos`}
+          subtitle={`Média de custo mensal estimado por colaborador (não é a taxa HH global do motor de custo). ${data.kpis.totalEmployees} ativos.`}
         />
         <KPICard 
-          title="Custo Médio HM (Máquinas)" 
+          title="Tarifa HM global (energia ÷ h úteis)" 
           value={formatCurrency(data.kpis.avgHM)} 
           icon={Cpu} 
           trend="-1.2%" 
           trendUp={true}
-          subtitle={`${data.kpis.totalMachines} máquinas operando`}
+          subtitle={`Mesma base ENERGY_COST ÷ WORKING_HOURS usada no custeio de máquina. ${data.kpis.totalMachines} máquinas cadastradas.`}
         />
         <KPICard 
           title="CIF Mensal Total" 
@@ -141,7 +141,10 @@ export const DashboardModule = () => {
         {/* Cost Composition Chart */}
         <div className="lg:col-span-1 bg-card rounded-3xl border border-border p-8 shadow-sm flex flex-col">
           <div className="flex items-center justify-between mb-8">
-            <h3 className="font-bold text-lg">Composição Média do Custo</h3>
+            <div>
+              <h3 className="font-bold text-lg">Composição média unitária (motor)</h3>
+              <p className="text-[10px] text-muted-foreground mt-1">Média dos custos unitários por produto ativo — mesmo motor da análise de custo.</p>
+            </div>
             <PieChart className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="flex-1 min-h-[300px]">
@@ -173,7 +176,12 @@ export const DashboardModule = () => {
         {/* Product Performance Chart */}
         <div className="lg:col-span-2 bg-card rounded-3xl border border-border p-8 shadow-sm">
           <div className="flex items-center justify-between mb-8">
-            <h3 className="font-bold text-lg">Rentabilidade por Produto (%)</h3>
+            <div>
+              <h3 className="font-bold text-lg">Margem líquida sobre preço sugerido</h3>
+              <p className="text-[10px] text-muted-foreground mt-1 max-w-md">
+                (Preço sugerido − impostos − comissão − frete − custo gerencial) ÷ preço sugerido. Custo gerencial = CIU + OPEX unitário (motor).
+              </p>
+            </div>
             <BarChart3 className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="h-[350px]">
@@ -212,8 +220,8 @@ export const DashboardModule = () => {
               <tr>
                 <th className="p-4 font-bold">Produto</th>
                 <th className="p-4 font-bold text-right">Preço Sug.</th>
-                <th className="p-4 font-bold text-right">Margem R$</th>
-                <th className="p-4 font-bold text-right">Margem %</th>
+                <th className="p-4 font-bold text-right" title="Preço sugerido − impostos − comissão − frete − custo gerencial">Margem líq. R$</th>
+                <th className="p-4 font-bold text-right" title="Margem líquida ÷ preço sugerido">Margem líq. %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -249,8 +257,8 @@ export const DashboardModule = () => {
               <tr>
                 <th className="p-4 font-bold">Produto</th>
                 <th className="p-4 font-bold text-right">Preço Sug.</th>
-                <th className="p-4 font-bold text-right">Margem R$</th>
-                <th className="p-4 font-bold text-right">Margem %</th>
+                <th className="p-4 font-bold text-right" title="Preço sugerido − impostos − comissão − frete − custo gerencial">Margem líq. R$</th>
+                <th className="p-4 font-bold text-right" title="Margem líquida ÷ preço sugerido">Margem líq. %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">

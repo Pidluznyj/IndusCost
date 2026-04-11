@@ -16,6 +16,7 @@ import {
   Download
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Customer } from "@/src/types/commercial";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
@@ -51,11 +52,11 @@ export const CustomerModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/customers");
-      const data = await res.json();
-      setCustomers(data);
+      const data = await fetchJsonOk<Customer[]>("/api/customers");
+      setCustomers(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar clientes:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar clientes.");
     } finally {
       setLoading(false);
     }
@@ -98,33 +99,33 @@ export const CustomerModule = () => {
     const url = editingCustomer ? `/api/customers/${editingCustomer.id}` : "/api/customers";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar cliente:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o cliente.");
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir este cliente?")) return;
     try {
-      await fetch(`/api/customers/${id}`, { method: "DELETE" });
+      await fetchOk(`/api/customers/${id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
       console.error("Erro ao excluir cliente:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível excluir o cliente.");
     }
   };
 
   const filteredCustomers = customers.filter(c => 
-    c.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.taxId.includes(searchTerm) ||
+    (c.companyName ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (c.taxId ?? "").includes(searchTerm) ||
     (c.tradeName?.toLowerCase() || "").includes(searchTerm.toLowerCase())
   );
 

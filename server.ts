@@ -2012,6 +2012,9 @@ app.delete("/api/employees/:id", async (req, res) => {
     const simSuggestedPrice = (simCIU + freight) / divisor;
 
     res.json({
+      simulationMethod: "HEURISTIC_LAYER_SPLIT",
+      simulationNote:
+        "Cenário simulado reparte o CIU em faixas fixas (60% MP / 30% conversão / 10% CIF) para aplicar alavancas; não reroda o motor getProductCostAnalysis. Base oficial permanece em base.ciu.",
       base,
       simulated: {
         ciu: simCIU,
@@ -2511,13 +2514,16 @@ app.delete("/api/employees/:id", async (req, res) => {
       const divisor = 1 - taxRate - commRate - otherRate - marginRate;
       const suggestedPrice = divisor > 0 ? (analysis.totalIndustrialCost + freight) / divisor : 0;
 
+      // marginPerc = premissa de margem desejada na formação de preço (compat.); preferir desiredMarginPremissaPct
       res.json({
         unitCost: analysis.totalIndustrialCost,
         suggestedPrice,
         taxesPerc: taxRate * 100,
         commissionPerc: commRate * 100,
         freightValue: freight,
+        desiredMarginPremissaPct: marginRate * 100,
         marginPerc: marginRate * 100,
+        costBase: "CIU_MOTOR",
       });
     } catch (error) {
       console.error("Pricing snapshot error:", error);

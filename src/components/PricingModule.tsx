@@ -5,6 +5,7 @@ import {
   BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -45,16 +46,17 @@ export const PricingModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [pRes, prodRes, taxRes] = await Promise.all([
-        fetch("/api/pricing"),
-        fetch("/api/products"),
-        fetch("/api/tax-rules")
+      const [p, prod, tax] = await Promise.all([
+        fetchJsonOk("/api/pricing"),
+        fetchJsonOk("/api/products"),
+        fetchJsonOk("/api/tax-rules"),
       ]);
-      setPricings(await pRes.json());
-      setProducts(await prodRes.json());
-      setTaxRules(await taxRes.json());
+      setPricings(Array.isArray(p) ? p : []);
+      setProducts(Array.isArray(prod) ? prod : []);
+      setTaxRules(Array.isArray(tax) ? tax : []);
     } catch (error) {
       console.error("Erro ao buscar dados de preço:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar precificação.");
     } finally {
       setLoading(false);
     }
@@ -68,15 +70,11 @@ export const PricingModule = () => {
   const handleCalculateUnit = async (productId: string, taxRuleId: string) => {
     setCalculating(true);
     try {
-      const res = await fetch(`/api/pricing/${productId}/${taxRuleId}/calculate`);
-      const data = await res.json();
-      if (res.ok) {
-        setCalculationResult(data);
-      } else {
-        alert(data.error || "Erro ao calcular preço");
-      }
+      const data = await fetchJsonOk(`/api/pricing/${productId}/${taxRuleId}/calculate`);
+      setCalculationResult(data);
     } catch (error) {
       console.error("Erro no cálculo:", error);
+      alert(error instanceof Error ? error.message : "Erro ao calcular preço.");
     } finally {
       setCalculating(false);
     }
@@ -85,17 +83,16 @@ export const PricingModule = () => {
   const handleSubmitUnit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/pricing", {
+      await fetchJsonOk("/api/pricing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar premissas unitárias:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar a formação de preço.");
     }
   };
 
@@ -103,16 +100,11 @@ export const PricingModule = () => {
     if (!window.confirm(`Tem certeza que deseja excluir esta premissa de precificação do produto ${pricing.Product?.name}?`)) return;
     
     try {
-      const res = await fetch(`/api/pricing/${pricing.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const errorData = await res.json();
-        window.alert(errorData.error || "Erro estrutural ao excluir a formação de preço.");
-        return;
-      }
+      await fetchJsonOk(`/api/pricing/${pricing.id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
       console.error("Erro durante request de deleção:", error);
-      window.alert("Falha de conexão com a infraestrutura no momento de excluir.");
+      window.alert(error instanceof Error ? error.message : "Falha ao excluir a formação de preço.");
     }
   };
 
@@ -133,26 +125,27 @@ export const PricingModule = () => {
     if (!window.confirm(`Confirma a exclusão Múltipla de ${selectedPricings.length} formações de preço?`)) return;
 
     try {
-      const res = await fetch("/api/pricing/bulk-delete", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selectedPricings })
+      const data = await fetchJsonOk<{
+        success?: number;
+        error?: number;
+        details?: Array<{ message?: string }>;
+      }>("/api/pricing/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedPricings }),
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        window.alert(data.error || "Houve erro ao processar exclusões em lote.");
-        return;
+
+      if (data.error != null && data.error > 0) {
+        window.alert(
+          `${data.success ?? 0} apagados. Houveram ${data.error} falhas.\nExemplo de falha: ${data.details?.[0]?.message ?? "—"}`
+        );
       }
 
-      if (data.error > 0) {
-        window.alert(`${data.success} apagados. Houveram ${data.error} falhas.\nExemplo de falha: ${data.details[0]?.message}`);
-      }
-      
       setSelectedPricings([]);
       fetchData();
     } catch (err) {
       console.error("Erro no bulk delete", err);
-      window.alert("Falha de conexão ao excluir lote.");
+      window.alert(err instanceof Error ? err.message : "Falha de conexão ao excluir lote.");
     }
   };
 
@@ -175,7 +168,7 @@ export const PricingModule = () => {
 
     setSimulatingBatch(true);
     try {
-      const res = await fetch("/api/pricing/simulate-batch", {
+      const data = await fetchJsonOk<{ results: any[] }>("/api/pricing/simulate-batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -183,16 +176,10 @@ export const PricingModule = () => {
           ...batchFormData
         }),
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        alert(data.error || "Falha na simulação em lote.");
-        return;
-      }
-      setBatchResults(data.results);
+      setBatchResults(data.results ?? []);
     } catch (error) {
       console.error("Erro na simulação de lote:", error);
-      alert("Erro desconhecido na simulação.");
+      alert(error instanceof Error ? error.message : "Erro na simulação em lote.");
     } finally {
       setSimulatingBatch(false);
     }
@@ -208,7 +195,7 @@ export const PricingModule = () => {
     if (!window.confirm(`Tem certeza que deseja gravar as premissas de preço para ${validResults.length} produtos?`)) return;
 
     try {
-      const res = await fetch("/api/pricing/apply-batch", {
+      const data = await fetchJsonOk<{ appliedCount?: number }>("/api/pricing/apply-batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -216,19 +203,14 @@ export const PricingModule = () => {
           ...batchFormData
         })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || "Falha ao gravar no banco.");
-        return;
-      }
-      alert(`${data.appliedCount} produtos atualizados com sucesso!`);
+      alert(`${data.appliedCount ?? 0} produtos atualizados com sucesso!`);
       // Limpa para voltar à tabela com seleção vazia
       setBatchResults(null);
       setSelectedProductIds([]);
       fetchData(); // para aparecer na aba de unitário caso voltem lá
     } catch (err) {
       console.error("Apply batch error", err);
-      alert("Falha de conexão ao aplicar.");
+      alert(err instanceof Error ? err.message : "Falha ao aplicar lote.");
     }
   };
 

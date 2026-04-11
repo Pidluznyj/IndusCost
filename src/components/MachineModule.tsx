@@ -15,6 +15,7 @@ import {
   Clock
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
 
 interface MachineCostComponent {
@@ -52,10 +53,11 @@ export const MachineModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/machines");
-      setMachines(await res.json());
+      const data = await fetchJsonOk<Machine[]>("/api/machines");
+      setMachines(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar máquinas:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar máquinas.");
     } finally {
       setLoading(false);
     }
@@ -112,17 +114,16 @@ export const MachineModule = () => {
     const url = editingMachine ? `/api/machines/${editingMachine.id}` : "/api/machines";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar máquina:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar a máquina.");
     }
   };
 
@@ -130,16 +131,11 @@ export const MachineModule = () => {
     if (!window.confirm(`Tem certeza que deseja excluir esta máquina?\n(${machine.name})`)) return;
     
     try {
-      const res = await fetch(`/api/machines/${machine.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const errorData = await res.json();
-        window.alert(errorData.message || "Erro ao excluir máquina.");
-        return;
-      }
+      await fetchJsonOk(`/api/machines/${machine.id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
       console.error("Erro ao deletar máquina:", error);
-      window.alert("Erro de conexão ao tentar excluir máquina.");
+      window.alert(error instanceof Error ? error.message : "Erro ao excluir máquina.");
     }
   };
 

@@ -14,6 +14,7 @@ import {
   CheckCircle2
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
 
 interface Role {
@@ -81,15 +82,27 @@ export const SettingsModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [rRes, cRes, gRes] = await Promise.all([
-        fetch("/api/roles"),
-        fetch("/api/payroll-components"),
-        fetch("/api/settings/globals")
+      const [rolesData, componentsData, config] = await Promise.all([
+        fetchJsonOk<Role[]>("/api/roles"),
+        fetchJsonOk<PayrollComponent[]>("/api/payroll-components"),
+        fetchJsonOk<{
+          values: {
+            energyCost: number;
+            workingHours: number;
+            factoryHours: number;
+            hhOverride: number | null;
+          };
+          calculated: { hhAuto: number; hhSource: "AUTO" | "MANUAL" };
+          ids: {
+            energyId?: string;
+            hoursId?: string;
+            factoryId?: string;
+            hhOverrideId?: string;
+          };
+        }>("/api/settings/globals"),
       ]);
-      setRoles(await rRes.json());
-      setComponents(await cRes.json());
-      
-      const config = await gRes.json();
+      setRoles(Array.isArray(rolesData) ? rolesData : []);
+      setComponents(Array.isArray(componentsData) ? componentsData : []);
       
       setGlobals({
         energyCost: config.values.energyCost,
@@ -111,6 +124,7 @@ export const SettingsModule = () => {
       });
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar configurações.");
     } finally {
       setLoading(false);
     }
@@ -150,7 +164,7 @@ export const SettingsModule = () => {
       // Save Energy Cost
       const energyMethod = globals.energyId ? "PUT" : "POST";
       const energyUrl = globals.energyId ? `/api/indirect-costs/${globals.energyId}` : "/api/indirect-costs";
-      await fetch(energyUrl, {
+      await fetchOk(energyUrl, {
         method: energyMethod,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -166,7 +180,7 @@ export const SettingsModule = () => {
       // Save Working Hours
       const hoursMethod = globals.hoursId ? "PUT" : "POST";
       const hoursUrl = globals.hoursId ? `/api/indirect-costs/${globals.hoursId}` : "/api/indirect-costs";
-      await fetch(hoursUrl, {
+      await fetchOk(hoursUrl, {
         method: hoursMethod,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -182,7 +196,7 @@ export const SettingsModule = () => {
       // Save Factory Hours
       const factoryMethod = globals.factoryId ? "PUT" : "POST";
       const factoryUrl = globals.factoryId ? `/api/indirect-costs/${globals.factoryId}` : "/api/indirect-costs";
-      await fetch(factoryUrl, {
+      await fetchOk(factoryUrl, {
         method: factoryMethod,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -199,7 +213,7 @@ export const SettingsModule = () => {
       const hhVal = globalForm.hhOverride === "" ? 0 : Number(globalForm.hhOverride);
       const hhMethod = globals.hhOverrideId ? "PUT" : "POST";
       const hhUrl = globals.hhOverrideId ? `/api/indirect-costs/${globals.hhOverrideId}` : "/api/indirect-costs";
-      await fetch(hhUrl, {
+      await fetchOk(hhUrl, {
         method: hhMethod, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -215,6 +229,7 @@ export const SettingsModule = () => {
       fetchData();
     } catch (error) {
       console.error("Erro ao salvar parâmetros globais:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar parâmetros globais.");
     }
   };
 
@@ -226,17 +241,16 @@ export const SettingsModule = () => {
     const body = activeSubTab === "roles" ? roleForm : componentForm;
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar.");
     }
   };
 

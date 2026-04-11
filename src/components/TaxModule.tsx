@@ -16,6 +16,7 @@ import {
   MapPin
 } from "lucide-react";
 import { cn, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
 
 interface TaxComponent {
@@ -52,10 +53,11 @@ export const TaxModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/tax-rules");
-      setRules(await res.json());
+      const data = await fetchJsonOk<TaxRule[]>("/api/tax-rules");
+      setRules(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar regras tributárias:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar regras tributárias.");
     } finally {
       setLoading(false);
     }
@@ -109,17 +111,16 @@ export const TaxModule = () => {
     const url = editingRule ? `/api/tax-rules/${editingRule.id}` : "/api/tax-rules";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar a regra tributária.");
     }
   };
 

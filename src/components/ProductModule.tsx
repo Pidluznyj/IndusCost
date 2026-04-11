@@ -26,6 +26,7 @@ import {
   Download
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting } from "@/src/types/product";
 import { Material } from "@/src/types/material";
@@ -127,26 +128,19 @@ export const ProductModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [productsRes, materialsRes, machinesRes, rolesRes] = await Promise.all([
-        fetch("/api/products"),
-        fetch("/api/materials"),
-        fetch("/api/machines"),
-        fetch("/api/roles")
-      ]);
-      
       const [productsData, materialsData, machinesData, rolesData] = await Promise.all([
-        productsRes.json(),
-        materialsRes.json(),
-        machinesRes.json(),
-        rolesRes.json()
+        fetchJsonOk<Product[]>("/api/products"),
+        fetchJsonOk<Material[]>("/api/materials"),
+        fetchJsonOk("/api/machines"),
+        fetchJsonOk("/api/roles"),
       ]);
-
-      setItems(productsData);
-      setMaterials(materialsData);
-      setMachines(machinesData);
-      setRoles(rolesData);
+      setItems(Array.isArray(productsData) ? productsData : []);
+      setMaterials(Array.isArray(materialsData) ? materialsData : []);
+      setMachines(Array.isArray(machinesData) ? machinesData : []);
+      setRoles(Array.isArray(rolesData) ? rolesData : []);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar dados de engenharia.");
     } finally {
       setLoading(false);
     }
@@ -158,23 +152,50 @@ export const ProductModule = () => {
 
   useEffect(() => {
     if (activeFormTab === "tree" && editingItem?.id) {
+      let cancelled = false;
       setLoadingTree(true);
-      fetch(`/api/products/${editingItem.id}/tree`)
-        .then(res => res.json())
-        .then(data => setTreeData(data))
-        .catch(err => console.error("Erro ao carregar árvore:", err))
-        .finally(() => setLoadingTree(false));
+      setTreeData(null);
+      fetchJsonOk(`/api/products/${editingItem.id}/tree`)
+        .then((data) => {
+          if (!cancelled) setTreeData(data);
+        })
+        .catch((err) => {
+          console.error("Erro ao carregar árvore:", err);
+          if (!cancelled) {
+            setTreeData(null);
+            alert(err instanceof Error ? err.message : "Não foi possível carregar a árvore do produto.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingTree(false);
+        });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [activeFormTab, editingItem?.id]);
 
   useEffect(() => {
     if ((activeFormTab === "cost" || isModalOpen) && editingItem?.id) {
+      let cancelled = false;
       setLoadingCost(true);
-      fetch(`/api/products/${editingItem.id}/cost-analysis`)
-        .then(res => res.json())
-        .then(data => setBackendCostAnalysis(data))
-        .catch(err => console.error("Erro ao carregar custo:", err))
-        .finally(() => setLoadingCost(false));
+      fetchJsonOk(`/api/products/${editingItem.id}/cost-analysis`)
+        .then((data) => {
+          if (!cancelled) setBackendCostAnalysis(data);
+        })
+        .catch((err) => {
+          console.error("Erro ao carregar custo:", err);
+          if (!cancelled) {
+            setBackendCostAnalysis(null);
+            alert(err instanceof Error ? err.message : "Não foi possível carregar a análise de custo.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingCost(false);
+        });
+      return () => {
+        cancelled = true;
+      };
     } else if (!editingItem?.id) {
       setBackendCostAnalysis(null);
     }
@@ -306,20 +327,16 @@ export const ProductModule = () => {
     };
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      } else {
-        const error = await res.json();
-        alert(error.error || "Erro ao salvar item.");
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Erro de conexão ao salvar o item.");
     }
   };
 
@@ -329,20 +346,14 @@ export const ProductModule = () => {
     }
 
     try {
-      const res = await fetch(`/api/products/${id}`, {
+      await fetchJsonOk(`/api/products/${id}`, {
         method: "DELETE",
       });
-
-      if (res.ok) {
-        setSelectedIds(prev => prev.filter(i => i !== id));
-        fetchData();
-      } else {
-        const error = await res.json();
-        alert(error.error || "Erro ao excluir item.");
-      }
+      setSelectedIds((prev) => prev.filter((i) => i !== id));
+      fetchData();
     } catch (error) {
       console.error("Erro ao excluir:", error);
-      alert("Erro de conexão ao tentar excluir o item.");
+      alert(error instanceof Error ? error.message : "Erro de conexão ao tentar excluir o item.");
     }
   };
 
@@ -354,33 +365,34 @@ export const ProductModule = () => {
     }
 
     try {
-      const res = await fetch("/api/products/bulk-delete", {
+      const result = await fetchJsonOk<{
+        deleted?: number;
+        blocked?: number;
+        details?: Array<{ status?: string; name?: string; reason?: string }>;
+        error?: string;
+      }>("/api/products/bulk-delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selectedIds })
+        body: JSON.stringify({ ids: selectedIds }),
       });
 
-      const result = await res.json();
+      if (result.blocked != null && result.blocked > 0) {
+        const blockedDetails = (result.details ?? [])
+          .filter((d: any) => d.status === "blocked")
+          .map((d: any) => `- ${d.name}: ${d.reason}`)
+          .join("\n");
 
-      if (res.ok) {
-        if (result.blocked > 0) {
-          const blockedDetails = result.details
-            .filter((d: any) => d.status === "blocked")
-            .map((d: any) => `- ${d.name}: ${d.reason}`)
-            .join("\n");
-          
-          alert(`${result.deleted} itens excluídos.\n${result.blocked} itens não puderam ser excluídos:\n${blockedDetails}`);
-        } else {
-          alert(`${result.deleted} itens excluídos com sucesso.`);
-        }
-        setSelectedIds([]);
-        fetchData();
+        alert(
+          `${result.deleted ?? 0} itens excluídos.\n${result.blocked} itens não puderam ser excluídos:\n${blockedDetails}`
+        );
       } else {
-        alert(result.error || "Erro ao processar exclusão em massa.");
+        alert(`${result.deleted ?? 0} itens excluídos com sucesso.`);
       }
+      setSelectedIds([]);
+      fetchData();
     } catch (error) {
       console.error("Bulk delete error:", error);
-      alert("Erro de conexão ao tentar excluir itens.");
+      alert(error instanceof Error ? error.message : "Erro de conexão ao tentar excluir itens.");
     }
   };
 
@@ -471,14 +483,26 @@ export const ProductModule = () => {
 
   const displayCost = useMemo(() => {
     if (backendCostAnalysis) {
+      const s = backendCostAnalysis.summary;
+      const bomCost = s?.totalMaterialCost || 0;
+      const routingCost = s?.totalConversionCost || 0;
+      const cifCost = s?.totalCIF_Unit || 0;
+      const total = s?.totalIndustrialCost || 0;
       return {
-        bomCost: backendCostAnalysis.summary?.totalMaterialCost || 0,
-        routingCost: backendCostAnalysis.summary?.totalConversionCost || 0,
-        total: backendCostAnalysis.summary?.totalIndustrialCost || 0,
+        bomCost,
+        routingCost,
+        cifCost,
+        total,
         details: backendCostAnalysis.details || { materials: [], operations: [], processBreakdown: [] }
       };
     }
-    return { bomCost: 0, routingCost: 0, total: 0, details: { materials: [], operations: [], processBreakdown: [] } };
+    return {
+      bomCost: 0,
+      routingCost: 0,
+      cifCost: 0,
+      total: 0,
+      details: { materials: [], operations: [], processBreakdown: [] }
+    };
   }, [backendCostAnalysis]);
 
   return (
@@ -1207,21 +1231,28 @@ export const ProductModule = () => {
                         </div>
                         <div className="p-6 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-purple-600 uppercase">Custo de Processo (MOD/GIF)</p>
+                            <p className="text-xs font-bold text-purple-600 uppercase">Conversão (HH + HM)</p>
                             <Settings className="h-4 w-4 text-purple-500" />
                           </div>
                           <p className="text-3xl font-black text-purple-700">{formatCurrency(displayCost.routingCost)}</p>
-                          <p className="text-[10px] text-purple-600/60">Baseado em taxas de máquina e mão de obra</p>
+                          <p className="text-[10px] text-purple-600/60">Processo padrão ou roteiro; sem CIF rateado</p>
                         </div>
                         <div className="p-6 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-primary uppercase">Custo Total Industrial</p>
+                            <p className="text-xs font-bold text-primary uppercase">Custo Industrial (CIU)</p>
                             <TrendingUp className="h-4 w-4 text-primary" />
                           </div>
                           <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
-                          <p className="text-[10px] text-primary/60">Custo unitário estimado de produção</p>
+                          <p className="text-[10px] text-primary/60">
+                            MP + conversão + CIF ({formatCurrency(displayCost.cifCost)})
+                          </p>
                         </div>
                       </div>
+
+                      <p className="text-[11px] text-muted-foreground text-center px-2">
+                        Conciliação: materiais + conversão + CIF = CIU (mesmo motor de{" "}
+                        <code className="text-[10px] bg-accent px-1 rounded">/api/products/:id/cost-analysis</code>).
+                      </p>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         {/* BOM Breakdown */}

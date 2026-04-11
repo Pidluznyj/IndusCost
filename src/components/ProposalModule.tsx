@@ -27,6 +27,7 @@ import {
   Printer
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
@@ -102,16 +103,17 @@ export const ProposalModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [pRes, cRes, prRes] = await Promise.all([
-        fetch("/api/proposals"),
-        fetch("/api/customers"),
-        fetch("/api/products")
+      const [p, c, pr] = await Promise.all([
+        fetchJsonOk<Proposal[]>("/api/proposals"),
+        fetchJsonOk<Customer[]>("/api/customers"),
+        fetchJsonOk<Product[]>("/api/products"),
       ]);
-      setProposals(await pRes.json());
-      setCustomers(await cRes.json());
-      setProducts(await prRes.json());
+      setProposals(Array.isArray(p) ? p : []);
+      setCustomers(Array.isArray(c) ? c : []);
+      setProducts(Array.isArray(pr) ? pr : []);
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar propostas e cadastros.");
     } finally {
       setLoading(false);
     }
@@ -143,8 +145,7 @@ export const ProposalModule = () => {
   const handleEdit = async (id: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/proposals/${id}`);
-      const data = await res.json();
+      const data = await fetchJsonOk<Proposal & { items?: ProposalItem[] }>(`/api/proposals/${id}`);
       const items = Array.isArray(data.items)
         ? data.items.map((it: ProposalItem) => normalizeProposalItem(it))
         : [];
@@ -153,6 +154,7 @@ export const ProposalModule = () => {
       setView("form");
     } catch (error) {
       console.error("Erro ao buscar proposta:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível abrir a proposta.");
     } finally {
       setLoading(false);
     }
@@ -172,27 +174,27 @@ export const ProposalModule = () => {
     const url = editingProposal ? `/api/proposals/${editingProposal.id}` : "/api/proposals";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setView("list");
-        fetchData();
-      }
+      setView("list");
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar proposta:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar a proposta.");
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta proposta permanentemente?")) return;
     try {
-      await fetch(`/api/proposals/${id}`, { method: "DELETE" });
+      await fetchOk(`/api/proposals/${id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
       console.error("Erro ao excluir proposta:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível excluir a proposta.");
     }
   };
 
@@ -201,32 +203,43 @@ export const ProposalModule = () => {
     if (!product) return;
 
     try {
-      const res = await fetch(`/api/products/${productId}/pricing-snapshot`);
-      const snapshot = await res.json();
+      const snapshot = await fetchJsonOk<Record<string, unknown>>(
+        `/api/products/${productId}/pricing-snapshot`
+      );
 
       const unitCost = safeNum(snapshot.unitCost);
       const suggestedPrice = safeNum(snapshot.suggestedPrice);
       const taxesPerc = safeNum(snapshot.taxesPerc);
       const commissionPerc = safeNum(snapshot.commissionPerc);
-      const marginPercSnap = safeNum(snapshot.marginPerc);
+      const freightVal = safeNum(snapshot.freightValue);
+
+      const qty = 1;
+      const gross = qty * suggestedPrice;
+      const totalCost = qty * unitCost;
+      const taxesValue = gross * (taxesPerc / 100);
+      const commissionValue = gross * (commissionPerc / 100);
+      const marginValue = safeNum(
+        gross - taxesValue - commissionValue - freightVal - totalCost
+      );
+      const marginPerc = gross > 0 ? safeNum((marginValue / gross) * 100) : 0;
 
       const newItem = normalizeProposalItem({
         productId,
         Product: product,
-        quantity: 1,
+        quantity: qty,
         unit: "UN",
         unitCost,
         suggestedPrice,
         negotiatedPrice: suggestedPrice,
         discountPerc: 0,
         discountValue: 0,
-        marginValue: suggestedPrice - unitCost,
-        marginPerc: marginPercSnap,
+        marginValue,
+        marginPerc,
         taxesPerc,
-        taxesValue: suggestedPrice * (taxesPerc / 100),
+        taxesValue,
         commissionPerc,
-        commissionValue: suggestedPrice * (commissionPerc / 100),
-        freightValue: safeNum(snapshot.freightValue),
+        commissionValue,
+        freightValue: freightVal,
       });
 
       setFormData(prev => ({
@@ -235,6 +248,7 @@ export const ProposalModule = () => {
       }));
     } catch (error) {
       console.error("Erro ao adicionar item:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível obter preço/custo do produto.");
     }
   };
 
@@ -535,7 +549,12 @@ export const ProposalModule = () => {
                       <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Sugerido</th>
                       <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Negociado</th>
                       <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Desc %</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Margem %</th>
+                      <th
+                        className="p-3 text-[10px] font-bold uppercase text-muted-foreground max-w-[120px]"
+                        title="Margem líquida sobre faturamento bruto da linha, após impostos, comissão, frete e custo industrial (CIU do motor)."
+                      >
+                        Margem líq. %
+                      </th>
                       <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right">Total Líq.</th>
                       <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-center"></th>
                     </tr>

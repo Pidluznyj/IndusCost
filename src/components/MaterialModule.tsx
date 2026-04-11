@@ -17,6 +17,7 @@ import {
   DollarSign
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Material, CreateMaterialInput } from "@/src/types/material";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
@@ -49,11 +50,11 @@ export const MaterialModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/materials");
-      const data = await res.json();
-      setMaterials(data);
+      const data = await fetchJsonOk<Material[]>("/api/materials");
+      setMaterials(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar materiais:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar materiais.");
     } finally {
       setLoading(false);
     }
@@ -104,45 +105,31 @@ export const MaterialModule = () => {
     const url = editingMaterial ? `/api/materials/${editingMaterial.id}` : "/api/materials";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o material.");
     }
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      const res = await fetch(`/api/materials/${id}/status`, {
+      await fetchOk(`/api/materials/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (!res.ok) {
-        let message = "Não foi possível alterar o status do material.";
-        try {
-          const errBody = await res.json();
-          if (errBody?.error && typeof errBody.error === "string") {
-            message = errBody.error;
-          }
-        } catch {
-          /* ignore */
-        }
-        alert(message);
-        return;
-      }
       await fetchData();
     } catch (error) {
       console.error("Erro ao alterar status:", error);
-      alert("Erro de conexão ao alterar status do material.");
+      alert(error instanceof Error ? error.message : "Erro de conexão ao alterar status do material.");
     }
   };
 

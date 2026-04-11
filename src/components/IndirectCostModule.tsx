@@ -18,6 +18,7 @@ import {
   TrendingDown
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
 
 interface IndirectCost {
@@ -48,10 +49,11 @@ export const IndirectCostModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/indirect-costs");
-      setCosts(await res.json());
+      const data = await fetchJsonOk<IndirectCost[]>("/api/indirect-costs");
+      setCosts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar custos indiretos:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar custos indiretos.");
     } finally {
       setLoading(false);
     }
@@ -90,17 +92,16 @@ export const IndirectCostModule = () => {
     const url = editingCost ? `/api/indirect-costs/${editingCost.id}` : "/api/indirect-costs";
 
     try {
-      const res = await fetch(url, {
+      await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchData();
-      }
+      setIsModalOpen(false);
+      fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar o custo indireto.");
     }
   };
 
@@ -108,16 +109,11 @@ export const IndirectCostModule = () => {
     if (!window.confirm(`Tem certeza que deseja excluir este custo indireto: ${cost.description}?`)) return;
     
     try {
-      const res = await fetch(`/api/indirect-costs/${cost.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const errorData = await res.json();
-        window.alert(errorData.message || "Erro ao excluir custo indireto.");
-        return;
-      }
+      await fetchJsonOk(`/api/indirect-costs/${cost.id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
       console.error("Erro ao deletar custo indireto:", error);
-      window.alert("Erro de conexão ao tentar excluir custo indireto.");
+      window.alert(error instanceof Error ? error.message : "Erro ao excluir custo indireto.");
     }
   };
 
