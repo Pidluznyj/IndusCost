@@ -485,9 +485,11 @@ export const PricingModule = () => {
                     <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">Canal Fiscal</label>
                     <SearchableSelect
                       placeholder="Selecione a Regra..."
-                      options={taxRules.map(r => ({
+                      options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
                         value: r.id,
-                        label: r.name
+                        label: r.name,
+                        sublabel: r.description?.trim() || undefined,
+                        searchTerms: [r.name, r.description].filter(Boolean).join(" "),
                       }))}
                       value={batchFormData.taxRuleId}
                       onChange={(val) => setBatchFormData({...batchFormData, taxRuleId: val})}
@@ -676,11 +678,11 @@ export const PricingModule = () => {
                      <label className="text-xs font-bold text-muted-foreground uppercase">Produto Alvo</label>
                      <SearchableSelect
                        placeholder="Selecione o produto..."
-                       options={products.map(p => ({
+                       options={products.map((p: { id: string; sku: string; name: string; type?: string }) => ({
                          value: p.id,
-                         label: p.name,
-                         sublabel: p.sku,
-                         searchTerms: p.sku
+                         label: `${p.sku} — ${p.name}`,
+                         sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
+                         searchTerms: `${p.sku} ${p.name}`,
                        }))}
                        value={formData.productId}
                        onChange={(val) => setFormData({...formData, productId: val})}
@@ -690,9 +692,11 @@ export const PricingModule = () => {
                      <label className="text-xs font-bold text-muted-foreground uppercase">Regra Fiscal</label>
                      <SearchableSelect
                        placeholder="Selecione a regra..."
-                       options={taxRules.map(r => ({
+                       options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
                          value: r.id,
-                         label: r.name
+                         label: r.name,
+                         sublabel: r.description?.trim() || undefined,
+                         searchTerms: [r.name, r.description].filter(Boolean).join(" "),
                        }))}
                        value={formData.taxRuleId}
                        onChange={(val) => setFormData({...formData, taxRuleId: val})}

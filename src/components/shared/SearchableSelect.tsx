@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Search, ChevronDown, X, Check } from "lucide-react";
-import { cn } from "@/src/lib/utils";
+import { cn, normalizeSearchString } from "@/src/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 
 export interface SelectOption {
@@ -16,9 +16,15 @@ interface SearchableSelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   emptyMessage?: string;
+  /** Texto quando há value mas não há opção correspondente (ex.: registro removido) */
+  unknownSelectionLabel?: string;
   className?: string;
   required?: boolean;
   disabled?: boolean;
+}
+
+function optionSearchHaystack(opt: SelectOption): string {
+  return [opt.label, opt.sublabel, opt.searchTerms].filter(Boolean).join(" ");
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
@@ -27,6 +33,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   onChange,
   placeholder = "Selecione uma opção...",
   emptyMessage = "Nenhum resultado encontrado.",
+  unknownSelectionLabel = "Seleção não disponível na lista atual",
   className,
   required = false,
   disabled = false,
@@ -42,13 +49,10 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   );
 
   const filteredOptions = useMemo(() => {
-    if (!searchTerm) return options;
-    const term = searchTerm.toLowerCase();
-    return options.filter(
-      (opt) =>
-        opt.label.toLowerCase().includes(term) ||
-        (opt.sublabel && opt.sublabel.toLowerCase().includes(term)) ||
-        (opt.searchTerms && opt.searchTerms.toLowerCase().includes(term))
+    if (!searchTerm.trim()) return options;
+    const term = normalizeSearchString(searchTerm);
+    return options.filter((opt) =>
+      normalizeSearchString(optionSearchHaystack(opt)).includes(term)
     );
   }, [options, searchTerm]);
 
@@ -96,7 +100,11 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         )}
       >
         <span className="truncate">
-          {selectedOption ? selectedOption.label : placeholder}
+          {selectedOption
+            ? selectedOption.label
+            : value
+              ? unknownSelectionLabel
+              : placeholder}
         </span>
         <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
       </button>

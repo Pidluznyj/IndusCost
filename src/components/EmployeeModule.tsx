@@ -17,6 +17,24 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Employee, Role, CreateEmployeeInput, PayrollComponent } from "@/src/types/employee";
 import { motion } from "motion/react";
+import { SearchableSelect } from "./shared/SearchableSelect";
+
+const EMPLOYEE_CLASSIFICATION_OPTIONS = [
+  { value: "DIRETO", label: "Direto", searchTerms: "DIRETO direto" },
+  { value: "INDIRETO", label: "Indireto", searchTerms: "INDIRETO indireto" },
+  { value: "APOIO", label: "Apoio", searchTerms: "APOIO apoio" },
+];
+
+const PAYROLL_TYPE_OPTIONS = [
+  { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT beneficio benefício" },
+  { value: "CHARGE", label: "Encargo", searchTerms: "CHARGE encargo" },
+  { value: "PROVISION", label: "Provisão", searchTerms: "PROVISION provisão provisao" },
+];
+
+const PAYROLL_CALC_OPTIONS = [
+  { value: "PERCENTAGE", label: "Percentual (%)", searchTerms: "PERCENTAGE percentual" },
+  { value: "FIXED", label: "Valor Fixo (R$)", searchTerms: "FIXED fixo" },
+];
 
 export const EmployeeModule = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -338,15 +356,17 @@ export const EmployeeModule = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Cargo</label>
-                        <select
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                        <SearchableSelect
+                          required
+                          placeholder="Selecione o cargo..."
+                          options={roles.map((role) => ({
+                            value: role.id,
+                            label: role.name,
+                            searchTerms: role.name,
+                          }))}
                           value={formData.roleId}
-                          onChange={(e) => setFormData({...formData, roleId: e.target.value})}
-                        >
-                          {roles.map(role => (
-                            <option key={role.id} value={role.id}>{role.name}</option>
-                          ))}
-                        </select>
+                          onChange={(v) => setFormData({ ...formData, roleId: v })}
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Setor</label>
@@ -372,15 +392,13 @@ export const EmployeeModule = () => {
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Classificação</label>
-                        <select
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                        <SearchableSelect
+                          required
+                          placeholder="Classificação..."
+                          options={EMPLOYEE_CLASSIFICATION_OPTIONS}
                           value={formData.classification}
-                          onChange={(e) => setFormData({...formData, classification: e.target.value})}
-                        >
-                          <option value="DIRETO">Direto</option>
-                          <option value="INDIRETO">Indireto</option>
-                          <option value="APOIO">Apoio</option>
-                        </select>
+                          onChange={(v) => setFormData({ ...formData, classification: v })}
+                        />
                       </div>
                     </div>
                   </div>
@@ -509,26 +527,21 @@ export const EmployeeModule = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Tipo</label>
-                  <select
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                  <SearchableSelect
+                    placeholder="Tipo..."
+                    options={PAYROLL_TYPE_OPTIONS}
                     value={compFormData.type}
-                    onChange={(e) => setCompFormData({...compFormData, type: e.target.value})}
-                  >
-                    <option value="BENEFIT">Benefício</option>
-                    <option value="CHARGE">Encargo</option>
-                    <option value="PROVISION">Provisão</option>
-                  </select>
+                    onChange={(v) => setCompFormData({ ...compFormData, type: v })}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Cálculo</label>
-                  <select
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                  <SearchableSelect
+                    placeholder="Cálculo..."
+                    options={PAYROLL_CALC_OPTIONS}
                     value={compFormData.calculationType}
-                    onChange={(e) => setCompFormData({...compFormData, calculationType: e.target.value})}
-                  >
-                    <option value="PERCENTAGE">Percentual (%)</option>
-                    <option value="FIXED">Valor Fixo (R$)</option>
-                  </select>
+                    onChange={(v) => setCompFormData({ ...compFormData, calculationType: v })}
+                  />
                 </div>
               </div>
               <div className="space-y-1.5">

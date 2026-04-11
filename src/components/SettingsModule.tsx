@@ -16,6 +16,18 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
+import { SearchableSelect } from "./shared/SearchableSelect";
+
+const PAYROLL_COMPONENT_TYPE_OPTIONS = [
+  { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
+  { value: "CHARGE", label: "Encargo", searchTerms: "CHARGE encargo" },
+  { value: "PROVISION", label: "Provisão", searchTerms: "PROVISION provisão provisao" },
+];
+
+const PAYROLL_COMPONENT_CALC_OPTIONS = [
+  { value: "PERCENTAGE", label: "Porcentagem (%)", searchTerms: "PERCENTAGE percentual" },
+  { value: "FIXED", label: "Valor Fixo (R$)", searchTerms: "FIXED fixo" },
+];
 
 interface Role {
   id: string;
@@ -543,26 +555,28 @@ export const SettingsModule = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tipo</label>
-                        <select
-                          className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
+                        <SearchableSelect
+                          placeholder="Tipo..."
+                          options={PAYROLL_COMPONENT_TYPE_OPTIONS}
                           value={componentForm.type}
-                          onChange={(e) => setComponentForm({...componentForm, type: e.target.value as any})}
-                        >
-                          <option value="BENEFIT">Benefício</option>
-                          <option value="CHARGE">Encargo</option>
-                          <option value="PROVISION">Provisão</option>
-                        </select>
+                          onChange={(v) =>
+                            setComponentForm({ ...componentForm, type: v as PayrollComponent["type"] })
+                          }
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Cálculo</label>
-                        <select
-                          className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
+                        <SearchableSelect
+                          placeholder="Cálculo..."
+                          options={PAYROLL_COMPONENT_CALC_OPTIONS}
                           value={componentForm.calculationType}
-                          onChange={(e) => setComponentForm({...componentForm, calculationType: e.target.value as any})}
-                        >
-                          <option value="PERCENTAGE">Porcentagem (%)</option>
-                          <option value="FIXED">Valor Fixo (R$)</option>
-                        </select>
+                          onChange={(v) =>
+                            setComponentForm({
+                              ...componentForm,
+                              calculationType: v as PayrollComponent["calculationType"],
+                            })
+                          }
+                        />
                       </div>
                     </div>
                     <div className="space-y-1.5">

@@ -23,3 +23,11 @@ export function formatNumber(value: number | string, decimals = 2) {
     maximumFractionDigits: 6,
   }).format(amount);
 }
+
+/** Minúsculas e sem acentos — para busca em selects pesquisáveis */
+export function normalizeSearchString(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase();
+}

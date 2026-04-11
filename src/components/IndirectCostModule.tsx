@@ -20,6 +20,7 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
+import { SearchableSelect } from "./shared/SearchableSelect";
 
 interface IndirectCost {
   id: string;
@@ -307,15 +308,16 @@ export const IndirectCostModule = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Categoria</label>
-                    <select
-                      className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
+                    <SearchableSelect
+                      placeholder="Categoria..."
+                      options={categories.map((cat) => ({
+                        value: cat.id,
+                        label: cat.label,
+                        searchTerms: `${cat.id} ${cat.label}`,
+                      }))}
                       value={formData.category}
-                      onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    >
-                      {categories.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.label}</option>
-                      ))}
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, category: v })}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Valor Mensal (R$)</label>
@@ -343,15 +345,16 @@ export const IndirectCostModule = () => {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Critério de Rateio</label>
-                    <select
-                      className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
+                    <SearchableSelect
+                      placeholder="Critério..."
+                      options={criteria.map((cr) => ({
+                        value: cr.id,
+                        label: cr.label,
+                        searchTerms: `${cr.id} ${cr.label}`,
+                      }))}
                       value={formData.allocationCriteria}
-                      onChange={(e) => setFormData({...formData, allocationCriteria: e.target.value})}
-                    >
-                      {criteria.map(cr => (
-                        <option key={cr.id} value={cr.id}>{cr.label}</option>
-                      ))}
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, allocationCriteria: v })}
+                    />
                   </div>
                 </div>
 

@@ -22,6 +22,13 @@ import { Material, CreateMaterialInput } from "@/src/types/material";
 import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { MaterialImportConfig } from "../lib/importer/MaterialConfig";
+import { SearchableSelect } from "./shared/SearchableSelect";
+
+const MATERIAL_CATEGORY_OPTIONS = [
+  { value: "MATERIA_PRIMA", label: "Matéria-Prima", searchTerms: "MATERIA_PRIMA materia prima" },
+  { value: "INSUMO", label: "Insumo", searchTerms: "INSUMO insumo" },
+  { value: "EMBALAGEM", label: "Embalagem", searchTerms: "EMBALAGEM embalagem" },
+];
 
 export const MaterialModule = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -352,15 +359,12 @@ export const MaterialModule = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Categoria</label>
-                        <select
-                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                        <SearchableSelect
+                          placeholder="Categoria..."
+                          options={MATERIAL_CATEGORY_OPTIONS}
                           value={formData.category}
-                          onChange={(e) => setFormData({...formData, category: e.target.value})}
-                        >
-                          <option value="MATERIA_PRIMA">Matéria-Prima</option>
-                          <option value="INSUMO">Insumo</option>
-                          <option value="EMBALAGEM">Embalagem</option>
-                        </select>
+                          onChange={(v) => setFormData({ ...formData, category: v })}
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Fornecedor</label>

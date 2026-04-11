@@ -18,6 +18,18 @@ import {
 import { cn, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
+import { SearchableSelect } from "./shared/SearchableSelect";
+
+const TAX_OPERATION_OPTIONS = [
+  { value: "VENDA", label: "Venda", searchTerms: "VENDA venda" },
+  { value: "COMPRA", label: "Compra", searchTerms: "COMPRA compra" },
+  { value: "TRANSFERENCIA", label: "Transferência", searchTerms: "TRANSFERENCIA transferencia transferência" },
+];
+
+const TAX_BASE_TYPE_OPTIONS = [
+  { value: "GROSS_PRICE", label: "Preço Bruto", searchTerms: "GROSS bruto" },
+  { value: "NET_PRICE", label: "Preço Líquido", searchTerms: "NET líquido liquido" },
+];
 
 interface TaxComponent {
   id?: string;
@@ -244,15 +256,12 @@ export const TaxModule = () => {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de Operação</label>
-                    <select
-                      className="w-full p-3 rounded-xl border border-border bg-background outline-none focus:ring-2 focus:ring-primary/20"
+                    <SearchableSelect
+                      placeholder="Tipo de operação..."
+                      options={TAX_OPERATION_OPTIONS}
                       value={formData.operation}
-                      onChange={(e) => setFormData({...formData, operation: e.target.value})}
-                    >
-                      <option value="VENDA">Venda</option>
-                      <option value="COMPRA">Compra</option>
-                      <option value="TRANSFERENCIA">Transferência</option>
-                    </select>
+                      onChange={(v) => setFormData({ ...formData, operation: v })}
+                    />
                   </div>
                 </div>
 
@@ -305,18 +314,17 @@ export const TaxModule = () => {
                         </div>
                         <div className="col-span-3 space-y-1.5">
                           <label className="text-[10px] font-bold text-muted-foreground uppercase">Base de Cálculo</label>
-                          <select
-                            className="w-full p-2 rounded-lg border border-border bg-background text-[10px] outline-none"
+                          <SearchableSelect
+                            placeholder="Base..."
+                            className="text-[10px]"
+                            options={TAX_BASE_TYPE_OPTIONS}
                             value={comp.baseType}
-                            onChange={(e) => {
+                            onChange={(v) => {
                               const newComps = [...formData.components];
-                              newComps[idx].baseType = e.target.value;
+                              newComps[idx].baseType = v;
                               setFormData({ ...formData, components: newComps });
                             }}
-                          >
-                            <option value="GROSS_PRICE">Preço Bruto</option>
-                            <option value="NET_PRICE">Preço Líquido</option>
-                          </select>
+                          />
                         </div>
                         <div className="col-span-1 flex justify-end">
                           <button 

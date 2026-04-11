@@ -360,11 +360,11 @@ export const SimulationModule = () => {
                         <label className="text-xs font-bold text-muted-foreground uppercase">Produto Base</label>
                         <SearchableSelect
                           placeholder="Selecione..."
-                          options={products.map(p => ({
+                          options={products.map((p: { id: string; sku: string; name: string; type?: string }) => ({
                             value: p.id,
-                            label: p.name,
-                            sublabel: p.sku,
-                            searchTerms: p.sku
+                            label: `${p.sku} — ${p.name}`,
+                            sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
+                            searchTerms: `${p.sku} ${p.name}`,
                           }))}
                           value={formData.productId}
                           onChange={(val) => setFormData({...formData, productId: val})}
@@ -374,9 +374,11 @@ export const SimulationModule = () => {
                         <label className="text-xs font-bold text-muted-foreground uppercase">Canal de Venda</label>
                         <SearchableSelect
                           placeholder="Selecione..."
-                          options={taxRules.map(r => ({
+                          options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
                             value: r.id,
-                            label: r.name
+                            label: r.name,
+                            sublabel: r.description?.trim() || undefined,
+                            searchTerms: [r.name, r.description].filter(Boolean).join(" "),
                           }))}
                           value={formData.taxRuleId}
                           onChange={(val) => setFormData({...formData, taxRuleId: val})}

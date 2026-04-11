@@ -443,6 +443,42 @@ export const ProductModule = () => {
     setFormData({ ...formData, bom: newBOM });
   };
 
+  const bomSelectOptions = useMemo(() => {
+    const compOpts = items
+      .filter((i) => i.type === "COMPONENT" && i.id !== editingItem?.id)
+      .map((i) => ({
+        value: i.id,
+        label: `${i.sku} — ${i.name}`,
+        sublabel: "Componente",
+        searchTerms: `${i.sku} ${i.name}`,
+      }));
+    const matOpts =
+      formData.type === "COMPONENT"
+        ? materials.map((m) => ({
+            value: m.id,
+            label: `${m.code} — ${m.description}`,
+            sublabel: "Material",
+            searchTerms: `${m.code} ${m.description}`,
+          }))
+        : [];
+    return [...compOpts, ...matOpts];
+  }, [items, materials, formData.type, editingItem?.id]);
+
+  const setBomLineMaterialOrChild = (index: number, val: string) => {
+    const newBOM = [...formData.bom];
+    if (!val) {
+      newBOM[index] = { ...newBOM[index], materialId: undefined, childProductId: undefined };
+    } else {
+      const isMat = materials.some((m) => m.id === val);
+      if (isMat) {
+        newBOM[index] = { ...newBOM[index], materialId: val, childProductId: undefined };
+      } else {
+        newBOM[index] = { ...newBOM[index], childProductId: val, materialId: undefined };
+      }
+    }
+    setFormData({ ...formData, bom: newBOM });
+  };
+
   /* -------------------------------------------------------------------------- */
   /*                              Routing Helpers                               */
   /* -------------------------------------------------------------------------- */
@@ -950,40 +986,12 @@ export const ProductModule = () => {
                                 <div key={idx} className="grid grid-cols-12 gap-4 p-4 bg-accent/20 rounded-xl border border-border items-end group relative">
                                   <div className="col-span-4 space-y-1.5">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Item / Componente</label>
-                                    <select
-                                      className="w-full p-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                                    <SearchableSelect
+                                      placeholder="Selecione um item..."
+                                      options={bomSelectOptions}
                                       value={item.materialId || item.childProductId || ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        const isMaterial = materials.some(m => m.id === val);
-                                        if (isMaterial) {
-                                          updateBOMItem(idx, "materialId", val);
-                                        } else {
-                                          updateBOMItem(idx, "childProductId", val);
-                                        }
-                                      }}
-                                    >
-                                      <option value="">Selecione um item...</option>
-                                      
-                                      {/* Only show components if parent is PRODUCT */}
-                                      <optgroup label="Componentes">
-                                        {items
-                                          .filter(i => i.type === "COMPONENT" && i.id !== editingItem?.id)
-                                          .map(i => (
-                                            <option key={i.id} value={i.id}>{i.sku} - {i.name}</option>
-                                          ))
-                                        }
-                                      </optgroup>
-
-                                      {/* Only show materials if parent is COMPONENT */}
-                                      {formData.type === "COMPONENT" && (
-                                        <optgroup label="Materiais">
-                                          {materials.map(m => (
-                                            <option key={m.id} value={m.id}>{m.code} - {m.description}</option>
-                                          ))}
-                                        </optgroup>
-                                      )}
-                                    </select>
+                                      onChange={(val) => setBomLineMaterialOrChild(idx, val)}
+                                    />
                                   </div>
                                   <div className="col-span-2 space-y-1.5">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Qtd. Líquida</label>
@@ -1104,9 +1112,9 @@ export const ProductModule = () => {
                                         placeholder="Selecione..."
                                         options={machines.map(m => ({
                                           value: m.id,
-                                          label: m.name,
-                                          sublabel: m.code,
-                                          searchTerms: m.code
+                                          label: `${m.code} — ${m.name}`,
+                                          sublabel: "Máquina / centro",
+                                          searchTerms: `${m.code} ${m.name}`,
                                         }))}
                                         value={step.machineId || ""}
                                         onChange={(val) => updateRoutingStep(idx, "machineId", val)}
@@ -1118,7 +1126,8 @@ export const ProductModule = () => {
                                         placeholder="Selecione..."
                                         options={roles.map(r => ({
                                           value: r.id,
-                                          label: r.name
+                                          label: r.name,
+                                          searchTerms: r.name,
                                         }))}
                                         value={step.roleId || ""}
                                         onChange={(val) => updateRoutingStep(idx, "roleId", val)}

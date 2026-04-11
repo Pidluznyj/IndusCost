@@ -43,6 +43,19 @@ const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon
   CANCELED: { label: "Cancelada", color: "bg-gray-500/10 text-gray-600", icon: Trash2 },
 };
 
+const PROPOSAL_STATUS_SELECT_OPTIONS = (Object.entries(STATUS_CONFIG) as [ProposalStatus, (typeof STATUS_CONFIG)["DRAFT"]][]).map(
+  ([key, cfg]) => ({
+    value: key,
+    label: cfg.label,
+    searchTerms: `${key} ${cfg.label}`,
+  })
+);
+
+const FREIGHT_CONDITION_OPTIONS = [
+  { value: "CIF", label: "CIF (Emitente)", searchTerms: "CIF emitente" },
+  { value: "FOB", label: "FOB (Destinatário)", searchTerms: "FOB destinatario destinatário" },
+];
+
 function safeNum(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -370,18 +383,15 @@ export const ProposalModule = () => {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <select 
-              className={cn(
-                "px-4 py-2 rounded-lg border border-border font-bold text-sm outline-none",
-                STATUS_CONFIG[formData.status as ProposalStatus]?.color
-              )}
-              value={formData.status}
-              onChange={(e) => setFormData({...formData, status: e.target.value as ProposalStatus})}
-            >
-              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                <option key={key} value={key}>{cfg.label}</option>
-              ))}
-            </select>
+            <div className={cn("min-w-[200px]", STATUS_CONFIG[formData.status as ProposalStatus]?.color, "rounded-lg border border-border p-0.5")}>
+              <SearchableSelect
+                className="border-0 bg-transparent"
+                placeholder="Status..."
+                options={PROPOSAL_STATUS_SELECT_OPTIONS}
+                value={formData.status || "DRAFT"}
+                onChange={(v) => setFormData({ ...formData, status: v as ProposalStatus })}
+              />
+            </div>
             <button 
               onClick={handleSave}
               className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-2 rounded-lg font-bold hover:opacity-90 transition-opacity shadow-lg"
@@ -417,11 +427,19 @@ export const ProposalModule = () => {
                   <SearchableSelect
                     required
                     placeholder="Selecione um cliente..."
-                    options={customers.map(c => ({
-                      value: c.id,
-                      label: c.companyName,
-                      sublabel: c.taxId
-                    }))}
+                    options={customers.map((c) => {
+                      const primary = (c.companyName || c.tradeName || "").trim() || "Cliente";
+                      const sub =
+                        c.tradeName && c.companyName && c.tradeName !== c.companyName
+                          ? c.tradeName
+                          : c.taxId || undefined;
+                      return {
+                        value: c.id,
+                        label: primary,
+                        sublabel: sub,
+                        searchTerms: [c.companyName, c.tradeName, c.taxId].filter(Boolean).join(" "),
+                      };
+                    })}
                     value={formData.customerId || ""}
                     onChange={(val) => setFormData({...formData, customerId: val})}
                   />
@@ -470,14 +488,12 @@ export const ProposalModule = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Frete</label>
-                    <select
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.freightCondition}
-                      onChange={(e) => setFormData({...formData, freightCondition: e.target.value})}
-                    >
-                      <option value="CIF">CIF (Emitente)</option>
-                      <option value="FOB">FOB (Destinatário)</option>
-                    </select>
+                    <SearchableSelect
+                      placeholder="Condição de frete..."
+                      options={FREIGHT_CONDITION_OPTIONS}
+                      value={formData.freightCondition || "CIF"}
+                      onChange={(v) => setFormData({ ...formData, freightCondition: v })}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Prazo Entrega (Dias)</label>
@@ -526,11 +542,11 @@ export const ProposalModule = () => {
                   <div className="w-64">
                     <SearchableSelect
                       placeholder="+ Adicionar Produto..."
-                      options={products.map(p => ({
+                      options={products.map((p) => ({
                         value: p.id,
-                        label: p.name,
-                        sublabel: p.sku,
-                        searchTerms: p.sku
+                        label: `${p.sku} — ${p.name}`,
+                        sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
+                        searchTerms: `${p.sku} ${p.name}`,
                       }))}
                       value=""
                       onChange={(val) => val && addItem(val)}
