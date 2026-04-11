@@ -1,0 +1,36 @@
+/* IndusCost — impressão / PDF (navegador) da aba Relatórios */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #reports-print-root,
+  #reports-print-root * {
+    visibility: visible;
+  }
+  #reports-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    background: white !important;
+    color: black !important;
+  }
+  .reports-no-print {
+    display: none !important;
+  }
+  .reports-print-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .reports-table-wrap {
+    overflow: visible !important;
+  }
+  table {
+    font-size: 9pt !important;
+  }
+  .recharts-responsive-container {
+    min-height: 220px !important;
+  }
+}

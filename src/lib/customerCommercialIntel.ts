@@ -126,6 +126,45 @@ export function buildPortfolioAbcForCustomer(
   };
 }
 
+/** Lista completa da curva ABC por cliente (receita aprovada). Para relatórios e dashboard de carteira. */
+export interface CustomerAbcRow {
+  customerId: string;
+  companyName: string;
+  revenue: number;
+  rank: number;
+  abcClass: "A" | "B" | "C";
+  /** Participação do cliente na receita aprovada total da carteira (%) */
+  shareOfPortfolioPct: number;
+  /** Acumulado da receita aprovada após incluir este cliente (Pareto, %) */
+  cumulativeRevenuePct: number;
+}
+
+export function buildCustomerAbcRanking(
+  approvedByCustomer: Array<{ customerId: string; revenue: number }>,
+  nameByCustomerId: Map<string, string>
+): CustomerAbcRow[] {
+  const positive = approvedByCustomer.filter((r) => r.revenue > 0);
+  const total = positive.reduce((a, r) => a + r.revenue, 0);
+  const sorted = [...positive].sort((a, b) => b.revenue - a.revenue);
+  let cum = 0;
+  return sorted.map((row, index) => {
+    const startPct = total > 0 ? cum / total : 0;
+    const abcClass: "A" | "B" | "C" =
+      startPct < 0.8 ? "A" : startPct < 0.95 ? "B" : "C";
+    cum += row.revenue;
+    const cumPct = total > 0 ? (cum / total) * 100 : 0;
+    return {
+      customerId: row.customerId,
+      companyName: nameByCustomerId.get(row.customerId) || "—",
+      revenue: row.revenue,
+      rank: index + 1,
+      abcClass,
+      shareOfPortfolioPct: total > 0 ? (row.revenue / total) * 100 : 0,
+      cumulativeRevenuePct: cumPct,
+    };
+  });
+}
+
 export interface Phase2IntelResult {
   version: number;
   proxyNote: string;

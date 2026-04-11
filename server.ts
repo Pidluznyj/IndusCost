@@ -11,7 +11,10 @@ import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
 import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
-import { buildPortfolioAbcForCustomer } from "./src/lib/customerCommercialIntel.js";
+import {
+  buildPortfolioAbcForCustomer,
+  buildCustomerAbcRanking,
+} from "./src/lib/customerCommercialIntel.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -2531,6 +2534,511 @@ app.delete("/api/employees/:id", async (req, res) => {
     } catch (error) {
       console.error("Pricing snapshot error:", error);
       res.status(500).json({ error: "Erro ao gerar snapshot de preço" });
+    }
+  });
+
+  /** Agregações para a aba Relatórios (sem BI externo). Respeita filtros de query. */
+  app.get("/api/reports/data", async (req, res) => {
+    const q = req.query;
+    const dateFrom = typeof q.dateFrom === "string" && q.dateFrom ? q.dateFrom : null;
+    const dateTo = typeof q.dateTo === "string" && q.dateTo ? q.dateTo : null;
+    const customerIdF = typeof q.customerId === "string" && q.customerId ? q.customerId : null;
+    const responsibleF =
+      typeof q.responsible === "string" && q.responsible.trim() ? q.responsible.trim() : null;
+    const statusF =
+      typeof q.status === "string" && q.status && q.status !== "ALL" ? q.status : null;
+    const minNet = q.minNet != null && q.minNet !== "" ? Number(q.minNet) : null;
+    const maxNet = q.maxNet != null && q.maxNet !== "" ? Number(q.maxNet) : null;
+    const productIdF =
+      typeof q.productId === "string" && q.productId ? q.productId : null;
+
+    const endOfDay = (iso: string) => {
+      const d = new Date(iso);
+      d.setHours(23, 59, 59, 999);
+      return d;
+    };
+
+    const where: any = {};
+    if (dateFrom) where.createdAt = { ...(where.createdAt || {}), gte: new Date(dateFrom) };
+    if (dateTo) where.createdAt = { ...(where.createdAt || {}), lte: endOfDay(dateTo) };
+    if (customerIdF) where.customerId = customerIdF;
+    if (responsibleF) where.responsible = responsibleF;
+    if (statusF) where.status = statusF;
+    if (
+      (minNet != null && Number.isFinite(minNet)) ||
+      (maxNet != null && Number.isFinite(maxNet))
+    ) {
+      where.totalNetValue = {} as { gte?: number; lte?: number };
+      if (minNet != null && Number.isFinite(minNet)) where.totalNetValue.gte = minNet;
+      if (maxNet != null && Number.isFinite(maxNet)) where.totalNetValue.lte = maxNet;
+    }
+
+    try {
+      const proposals = await prisma.proposal.findMany({
+        where,
+        include: {
+          Customer: { select: { id: true, companyName: true, tradeName: true } },
+          items: {
+            include: {
+              Product: { select: { id: true, sku: true, name: true, type: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      const probW: Record<string, number> = {
+        DRAFT: 0.2,
+        ANALYSIS: 0.4,
+        SENT: 0.65,
+        APPROVED: 1,
+        REJECTED: 0,
+        EXPIRED: 0.05,
+        CANCELED: 0,
+      };
+      const pipelineOpen = (s: string) =>
+        s === "DRAFT" || s === "ANALYSIS" || s === "SENT";
+      const now = new Date();
+
+      let proposalsFiltered = proposals;
+      if (productIdF) {
+        proposalsFiltered = proposals.filter((p) =>
+          p.items.some((it) => it.productId === productIdF)
+        );
+      }
+
+      const num = (v: unknown) => {
+        const x = Number(v);
+        return Number.isFinite(x) ? x : 0;
+      };
+
+      let totalNet = 0;
+      let weightedPipeline = 0;
+      let pipelineOpenNet = 0;
+      let approvedNet = 0;
+      const byStatus: Record<string, { count: number; netSum: number }> = {};
+      const byResponsible = new Map<string, { count: number; netSum: number }>();
+      const byMonth = new Map<string, { month: string; count: number; netSum: number; approvedNet: number }>();
+
+      for (const p of proposalsFiltered) {
+        const net = num(p.totalNetValue);
+        totalNet += net;
+        const st = p.status;
+        weightedPipeline += net * (probW[st] ?? 0);
+        if (pipelineOpen(st)) pipelineOpenNet += net;
+        if (st === "APPROVED") approvedNet += net;
+        if (!byStatus[st]) byStatus[st] = { count: 0, netSum: 0 };
+        byStatus[st].count++;
+        byStatus[st].netSum += net;
+        const resp = (p.responsible || "").trim() || "(sem responsável)";
+        const br = byResponsible.get(resp) || { count: 0, netSum: 0 };
+        br.count++;
+        br.netSum += net;
+        byResponsible.set(resp, br);
+        const c = new Date(p.createdAt);
+        const key = `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, "0")}`;
+        const m = byMonth.get(key) || {
+          month: key,
+          count: 0,
+          netSum: 0,
+          approvedNet: 0,
+        };
+        m.count++;
+        m.netSum += net;
+        if (st === "APPROVED") m.approvedNet += net;
+        byMonth.set(key, m);
+      }
+
+      const closedWon = proposalsFiltered.filter((p) => p.status === "APPROVED").length;
+      const closedLost = proposalsFiltered.filter((p) =>
+        ["REJECTED", "CANCELED"].includes(p.status)
+      ).length;
+      const convDenom = closedWon + closedLost;
+      const conversionRate = convDenom > 0 ? closedWon / convDenom : null;
+
+      const custAgg = new Map<
+        string,
+        { companyName: string; netSum: number; count: number; approvedNet: number; lastAt: Date }
+      >();
+      for (const p of proposalsFiltered) {
+        const cid = p.customerId;
+        const name = p.Customer?.companyName || "—";
+        const net = num(p.totalNetValue);
+        const g = custAgg.get(cid) || {
+          companyName: name,
+          netSum: 0,
+          count: 0,
+          approvedNet: 0,
+          lastAt: new Date(0),
+        };
+        g.netSum += net;
+        g.count++;
+        if (p.status === "APPROVED") g.approvedNet += net;
+        const ca = new Date(p.createdAt);
+        if (ca > g.lastAt) g.lastAt = ca;
+        custAgg.set(cid, g);
+      }
+      const topCustomersByNet = [...custAgg.entries()]
+        .map(([customerId, v]) => ({
+          customerId,
+          companyName: v.companyName,
+          netSum: v.netSum,
+          proposalCount: v.count,
+        }))
+        .sort((a, b) => b.netSum - a.netSum)
+        .slice(0, 25);
+      const topCustomersByCount = [...custAgg.entries()]
+        .map(([customerId, v]) => ({
+          customerId,
+          companyName: v.companyName,
+          proposalCount: v.count,
+          netSum: v.netSum,
+        }))
+        .sort((a, b) => b.proposalCount - a.proposalCount)
+        .slice(0, 25);
+
+      const approvedGroup = await prisma.proposal.groupBy({
+        by: ["customerId"],
+        where: { status: "APPROVED" },
+        _sum: { totalNetValue: true },
+      });
+      const nameMap = new Map<string, string>();
+      const customers = await prisma.customer.findMany({ select: { id: true, companyName: true } });
+      customers.forEach((c) => nameMap.set(c.id, c.companyName));
+      const abcRows = buildCustomerAbcRanking(
+        approvedGroup.map((g) => ({
+          customerId: g.customerId,
+          revenue: Number(g._sum.totalNetValue ?? 0),
+        })),
+        nameMap
+      );
+
+      const STALE_DAYS = 14;
+      const staleProposals = proposalsFiltered
+        .filter((p) => pipelineOpen(p.status))
+        .map((p) => {
+          const daysSinceUpd = Math.floor(
+            (now.getTime() - new Date(p.updatedAt).getTime()) / 86400000
+          );
+          return {
+            id: p.id,
+            number: p.number,
+            status: p.status,
+            customerName: p.Customer?.companyName || "—",
+            responsible: (p.responsible || "").trim() || "—",
+            createdAt: p.createdAt,
+            updatedAt: p.updatedAt,
+            totalNetValue: num(p.totalNetValue),
+            daysSinceUpdate: daysSinceUpd,
+            stale: daysSinceUpd >= STALE_DAYS,
+          };
+        })
+        .filter((x) => x.stale)
+        .slice(0, 100);
+
+      const validityExpiredOpen: Array<{
+        id: string;
+        number: number;
+        status: string;
+        customerName: string;
+        daysOpen: number;
+      }> = [];
+      for (const p of proposalsFiltered) {
+        if (!pipelineOpen(p.status)) continue;
+        const vd = p.validityDays && p.validityDays > 0 ? p.validityDays : 15;
+        const exp = new Date(p.createdAt).getTime() + vd * 86400000;
+        if (exp < now.getTime()) {
+          validityExpiredOpen.push({
+            id: p.id,
+            number: p.number,
+            status: p.status,
+            customerName: p.Customer?.companyName || "—",
+            daysOpen: Math.floor((now.getTime() - new Date(p.createdAt).getTime()) / 86400000),
+          });
+        }
+      }
+
+      const mixMap = new Map<
+        string,
+        {
+          productId: string;
+          sku: string;
+          name: string;
+          type: string;
+          qty: number;
+          revenue: number;
+          marginSum: number;
+          lines: number;
+        }
+      >();
+      for (const p of proposalsFiltered) {
+        for (const it of p.items) {
+          const pr = it.Product;
+          const pid = it.productId;
+          const qty = num(it.quantity);
+          const rev = qty * num(it.negotiatedPrice);
+          const mg = num(it.marginValue);
+          const prev = mixMap.get(pid);
+          const sku = pr?.sku || "—";
+          const name = pr?.name || "Produto";
+          const type = String(pr?.type || "—");
+          if (prev) {
+            prev.qty += qty;
+            prev.revenue += rev;
+            prev.marginSum += mg;
+            prev.lines += 1;
+          } else {
+            mixMap.set(pid, {
+              productId: pid,
+              sku,
+              name,
+              type,
+              qty,
+              revenue: rev,
+              marginSum: mg,
+              lines: 1,
+            });
+          }
+        }
+      }
+      const mixByProduct = [...mixMap.values()].sort((a, b) => b.revenue - a.revenue);
+
+      const allApprovedList = await prisma.proposal.findMany({
+        where: { status: "APPROVED" },
+        select: { customerId: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      });
+      const datesByCustomer = new Map<string, Date[]>();
+      for (const row of allApprovedList) {
+        const arr = datesByCustomer.get(row.customerId) || [];
+        arr.push(row.createdAt);
+        datesByCustomer.set(row.customerId, arr);
+      }
+      function medianIntervals(dates: Date[]): number | null {
+        if (dates.length < 2) return null;
+        const gaps: number[] = [];
+        for (let i = 1; i < dates.length; i++) {
+          gaps.push(
+            Math.floor((dates[i]!.getTime() - dates[i - 1]!.getTime()) / 86400000)
+          );
+        }
+        const s = [...gaps].sort((a, b) => a - b);
+        const m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : (s[m - 1]! + s[m]!) / 2;
+      }
+      const repurchaseRows: Array<{
+        customerId: string;
+        companyName: string;
+        medianDays: number | null;
+        lastApprovedAt: string | null;
+        daysSinceLast: number | null;
+        lateVsMedian: boolean | null;
+      }> = [];
+      for (const [cid, dates] of datesByCustomer) {
+        if (dates.length < 2) continue;
+        const med = medianIntervals(dates);
+        const last = dates[dates.length - 1]!;
+        const daysSince = Math.floor((now.getTime() - last.getTime()) / 86400000);
+        const late = med != null && med > 0 ? daysSince > med * 1.15 : null;
+        repurchaseRows.push({
+          customerId: cid,
+          companyName: nameMap.get(cid) || "—",
+          medianDays: med,
+          lastApprovedAt: last.toISOString(),
+          daysSinceLast: daysSince,
+          lateVsMedian: late,
+        });
+      }
+      repurchaseRows.sort((a, b) => (b.daysSinceLast || 0) - (a.daysSinceLast || 0));
+      const repurchaseLate = repurchaseRows.filter((r) => r.lateVsMedian === true).slice(0, 40);
+
+      const inactiveCustomers = [...custAgg.entries()]
+        .filter(([, v]) => v.count > 0)
+        .map(([customerId, v]) => ({
+          customerId,
+          companyName: v.companyName,
+          proposalCount: v.count,
+          lastProposalAt: v.lastAt.toISOString(),
+        }))
+        .sort((a, b) => new Date(a.lastProposalAt).getTime() - new Date(b.lastProposalAt).getTime())
+        .slice(0, 30);
+
+      const uniqueProductIds = [...new Set(proposalsFiltered.flatMap((p) => p.items.map((i) => i.productId)))];
+      const MAX_COST_PRODUCTS = 50;
+      const costSampleIds = uniqueProductIds.slice(0, MAX_COST_PRODUCTS);
+      const productCostRows: Array<{
+        productId: string;
+        sku: string;
+        name: string;
+        totalIndustrialCost: number | null;
+        suggestedPricePremissa: number | null;
+        avgNegotiatedInPeriod: number | null;
+        linesInPeriod: number;
+        error?: string;
+      }> = [];
+
+      const negPriceByProduct = new Map<string, { sum: number; w: number }>();
+      for (const p of proposalsFiltered) {
+        for (const it of p.items) {
+          const q = num(it.quantity);
+          const price = num(it.negotiatedPrice);
+          const o = negPriceByProduct.get(it.productId) || { sum: 0, w: 0 };
+          o.sum += price * q;
+          o.w += q;
+          negPriceByProduct.set(it.productId, o);
+        }
+      }
+
+      for (const pid of costSampleIds) {
+        const mix = mixMap.get(pid);
+        const analysis = await getProductCostAnalysis(pid);
+        let totalIndustrial: number | null = null;
+        let suggested = 0;
+        let err: string | undefined;
+        if (isCostAnalysisFailure(analysis)) {
+          err = analysis.error;
+        } else {
+          totalIndustrial = analysis.totalIndustrialCost;
+          const pricing = await prisma.productPricing.findFirst({
+            where: { productId: pid },
+            include: { TaxRule: { include: { TaxComponent: true } } },
+          });
+          if (pricing) {
+            const taxRate =
+              pricing.TaxRule?.TaxComponent?.reduce((acc, c) => acc + Number(c.percentage), 0) / 100 || 0;
+            const commRate = Number(pricing.commission) / 100;
+            const marginRate = Number(pricing.desiredMargin) / 100;
+            const otherRate = Number(pricing.otherVariables) / 100;
+            const freight = Number(pricing.freightOut);
+            const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+            suggested = divisor > 0 ? (analysis.totalIndustrialCost + freight) / divisor : 0;
+          }
+        }
+        const nw = negPriceByProduct.get(pid);
+        const avgNeg = nw && nw.w > 0 ? nw.sum / nw.w : null;
+        productCostRows.push({
+          productId: pid,
+          sku: mix?.sku || "—",
+          name: mix?.name || "—",
+          totalIndustrialCost: totalIndustrial,
+          suggestedPricePremissa: err ? null : suggested,
+          avgNegotiatedInPeriod: avgNeg,
+          linesInPeriod: mix?.lines ?? 0,
+          error: err,
+        });
+      }
+      productCostRows.sort((a, b) => {
+        const ga =
+          a.suggestedPricePremissa != null && a.avgNegotiatedInPeriod != null
+            ? a.avgNegotiatedInPeriod - a.suggestedPricePremissa
+            : 0;
+        const gb =
+          b.suggestedPricePremissa != null && b.avgNegotiatedInPeriod != null
+            ? b.avgNegotiatedInPeriod - b.suggestedPricePremissa
+            : 0;
+        return gb - ga;
+      });
+
+      let previousPeriod: {
+        proposalCount: number;
+        totalNet: number;
+        approvedNet: number;
+      } | null = null;
+      if (dateFrom && dateTo) {
+        const df = new Date(dateFrom);
+        const dt = endOfDay(dateTo);
+        const ms = dt.getTime() - df.getTime();
+        const prevEnd = new Date(df.getTime() - 86400000);
+        prevEnd.setHours(23, 59, 59, 999);
+        const prevStart = new Date(prevEnd.getTime() - ms);
+        prevStart.setHours(0, 0, 0, 0);
+        const prevWhere: any = {
+          createdAt: { gte: prevStart, lte: prevEnd },
+        };
+        if (customerIdF) prevWhere.customerId = customerIdF;
+        if (responsibleF) prevWhere.responsible = responsibleF;
+        if (statusF) prevWhere.status = statusF;
+        const prevList = await prisma.proposal.findMany({
+          where: prevWhere,
+          include: { items: true },
+        });
+        let prevFiltered = prevList;
+        if (productIdF) {
+          prevFiltered = prevList.filter((p) => p.items.some((it) => it.productId === productIdF));
+        }
+        let pNet = 0;
+        let pApp = 0;
+        for (const p of prevFiltered) {
+          const net = num(p.totalNetValue);
+          pNet += net;
+          if (p.status === "APPROVED") pApp += net;
+        }
+        previousPeriod = {
+          proposalCount: prevFiltered.length,
+          totalNet: pNet,
+          approvedNet: pApp,
+        };
+      }
+
+      res.json({
+        generatedAt: now.toISOString(),
+        filters: {
+          dateFrom,
+          dateTo,
+          customerId: customerIdF,
+          responsible: responsibleF,
+          status: statusF,
+          minNet,
+          maxNet,
+          productId: productIdF,
+        },
+        disclaimers: [
+          "Não existe tabela de pedido faturado: valores aprovados usam propostas APPROVED como proxy de negócio fechado.",
+          "Curva ABC e recompra usam histórico global de aprovações onde indicado.",
+          uniqueProductIds.length > MAX_COST_PRODUCTS
+            ? `Custo industrial: amostra de ${MAX_COST_PRODUCTS} produtos entre os do período (${uniqueProductIds.length} distintos).`
+            : null,
+        ].filter(Boolean),
+        commercial: {
+          proposalCount: proposalsFiltered.length,
+          totalNet,
+          approvedNet,
+          pipelineOpenNet,
+          weightedPipeline,
+          ticketAvg: proposalsFiltered.length ? totalNet / proposalsFiltered.length : 0,
+          conversionRate,
+          closedWon,
+          closedLost,
+          byStatus,
+          byResponsible: [...byResponsible.entries()]
+            .map(([responsible, v]) => ({ responsible, ...v }))
+            .sort((a, b) => b.netSum - a.netSum),
+          byMonth: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)),
+          staleProposals,
+          validityExpiredOpen,
+          topCustomersByNet,
+          topCustomersByCount,
+        },
+        customers: {
+          abc: abcRows,
+          repurchaseLate,
+          inactiveInPeriod: inactiveCustomers,
+        },
+        products: {
+          mixByProduct,
+        },
+        costing: {
+          productsAnalyzed: productCostRows,
+          costProductLimit: MAX_COST_PRODUCTS,
+          totalDistinctProductsInFilter: uniqueProductIds.length,
+        },
+        executive: {
+          previousPeriod,
+        },
+      });
+    } catch (error) {
+      console.error("reports/data error:", error);
+      res.status(500).json({ error: "Erro ao montar relatórios agregados." });
     }
   });
 
