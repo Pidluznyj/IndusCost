@@ -2631,6 +2631,37 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(customers);
   });
 
+  /** Visão comercial 360°: cliente + propostas com itens e produto (sem pedido faturado separado no schema). */
+  app.get("/api/customers/:id/commercial-360", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const customer = await prisma.customer.findUnique({ where: { id } });
+      if (!customer) return res.status(404).json({ error: "Cliente não encontrado" });
+      const proposals = await prisma.proposal.findMany({
+        where: { customerId: id },
+        include: {
+          items: {
+            include: {
+              Product: {
+                select: {
+                  id: true,
+                  sku: true,
+                  name: true,
+                  type: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      res.json({ customer, proposals });
+    } catch (error) {
+      console.error("commercial-360 error:", error);
+      res.status(500).json({ error: "Erro ao montar visão comercial do cliente." });
+    }
+  });
+
   app.post("/api/customers", async (req, res) => {
     const customer = await prisma.customer.create({ data: req.body });
     res.json(customer);

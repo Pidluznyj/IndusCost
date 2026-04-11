@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
@@ -31,9 +31,16 @@ import {
   UserCircle
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
+
+  useEffect(() => {
+    const goProposals = () => setActiveTab("proposals");
+    window.addEventListener(EVENT_OPEN_PROPOSAL, goProposals);
+    return () => window.removeEventListener(EVENT_OPEN_PROPOSAL, goProposals);
+  }, []);
 
   return (
     <Layout onTabChange={setActiveTab} activeTab={activeTab}>
@@ -41,7 +48,9 @@ export default function App() {
         <div className="space-y-8">
           <div className="flex flex-col gap-1">
             <h2 className="text-3xl font-bold tracking-tight">Dashboard Gerencial</h2>
-            <p className="text-muted-foreground">Visão executiva de custos, rentabilidade e eficiência operacional.</p>
+            <p className="text-muted-foreground">
+              Operação e financeiro, ou funil comercial B2B (propostas, pipeline e responsáveis) — use as abas internas.
+            </p>
           </div>
           <DashboardModule />
         </div>

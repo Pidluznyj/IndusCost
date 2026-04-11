@@ -3,18 +3,14 @@ import {
   TrendingUp, 
   Users, 
   Cpu, 
-  Package, 
   ArrowUpRight, 
   ArrowDownRight,
-  Activity,
-  DollarSign,
   PieChart,
   BarChart3,
   Loader2,
-  Filter,
-  RefreshCcw,
-  Target,
-  Factory
+  Factory,
+  LayoutDashboard,
+  GitBranch
 } from "lucide-react";
 import { 
   BarChart, 
@@ -33,6 +29,7 @@ import {
 } from "recharts";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { motion } from "motion/react";
+import { SalesFunnelPanel } from "@/src/components/dashboard/SalesFunnelPanel";
 
 interface DashboardData {
   kpis: {
@@ -54,6 +51,7 @@ interface DashboardData {
 }
 
 export const DashboardModule = () => {
+  const [dashboardTab, setDashboardTab] = useState<"operacao" | "funil">("operacao");
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -77,17 +75,58 @@ export const DashboardModule = () => {
     fetchData();
   }, []);
 
-  if (loading || !data) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="text-muted-foreground font-medium">Consolidando indicadores gerenciais...</p>
+  return (
+    <div className="space-y-6 pb-12">
+      <div className="flex flex-wrap gap-2 p-1 bg-accent/40 rounded-xl border border-border w-full max-w-xl">
+        <button
+          type="button"
+          onClick={() => setDashboardTab("operacao")}
+          className={cn(
+            "flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all",
+            dashboardTab === "operacao"
+              ? "bg-card text-primary shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <LayoutDashboard className="h-4 w-4" />
+          Operação / Financeiro
+        </button>
+        <button
+          type="button"
+          onClick={() => setDashboardTab("funil")}
+          className={cn(
+            "flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all",
+            dashboardTab === "funil"
+              ? "bg-card text-primary shadow-sm border border-border"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <GitBranch className="h-4 w-4" />
+          Funil de Vendas
+        </button>
       </div>
-    );
-  }
 
-  const COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"];
+      {dashboardTab === "funil" && <SalesFunnelPanel />}
 
+      {dashboardTab === "operacao" && (
+        <>
+          {(loading || !data) ? (
+            <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+              <Loader2 className="h-12 w-12 animate-spin text-primary" />
+              <p className="text-muted-foreground font-medium">Consolidando indicadores gerenciais...</p>
+            </div>
+          ) : (
+            <OperationDashboardBody data={data} />
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+const COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"];
+
+function OperationDashboardBody({ data }: { data: DashboardData }) {
   const costCompositionData = [
     { name: "Matéria-Prima", value: data.costComposition.mp },
     { name: "Mão de Obra (HH)", value: data.costComposition.hh },
@@ -100,7 +139,7 @@ export const DashboardModule = () => {
   const bottomProducts = [...data.productPerformance].reverse().slice(0, 5);
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-8">
       {/* KPI Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <KPICard 
@@ -286,7 +325,7 @@ export const DashboardModule = () => {
       </div>
     </div>
   );
-};
+}
 
 const KPICard = ({ title, value, icon: Icon, trend, trendUp, subtitle }: any) => (
   <motion.div 

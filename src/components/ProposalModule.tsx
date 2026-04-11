@@ -1,5 +1,5 @@
 // src/components/ProposalModule.tsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { 
   Plus, 
   Search, 
@@ -32,6 +32,7 @@ import { SearchableSelect } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
+import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -155,7 +156,7 @@ export const ProposalModule = () => {
     setView("form");
   };
 
-  const handleEdit = async (id: string) => {
+  const handleEdit = useCallback(async (id: string) => {
     setLoading(true);
     try {
       const data = await fetchJsonOk<Proposal & { items?: ProposalItem[] }>(`/api/proposals/${id}`);
@@ -171,7 +172,24 @@ export const ProposalModule = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    let id: string | null = null;
+    try {
+      id = sessionStorage.getItem(STORAGE_OPEN_PROPOSAL_KEY);
+    } catch {
+      return;
+    }
+    if (!id) return;
+    try {
+      sessionStorage.removeItem(STORAGE_OPEN_PROPOSAL_KEY);
+    } catch {
+      /* ignore */
+    }
+    void handleEdit(id);
+  }, [loading, handleEdit]);
 
   const handleSave = async () => {
     if (!formData.customerId) {
