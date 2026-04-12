@@ -35,6 +35,9 @@ import { motion, AnimatePresence } from "motion/react";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
 import { CalculatedValue } from "./shared/CalculatedValue";
 import { buildProposalLineMarginExplanation } from "@/src/lib/proposalLineExplain";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -94,6 +97,7 @@ function normalizeProposalItem(
 
 export const ProposalModule = () => {
   const [view, setView] = useState<"list" | "form">("list");
+  const [tourOpen, setTourOpen] = useState(false);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -395,9 +399,9 @@ export const ProposalModule = () => {
 
   if (view === "form") {
     return (
-      <div className="space-y-6 pb-20">
+      <div className="space-y-6 pb-20" data-tour="proposals-root">
         {/* Form Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between" data-tour="proposals-form-actions">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => setView("list")}
@@ -413,6 +417,7 @@ export const ProposalModule = () => {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <TourHelpButton onClick={() => setTourOpen(true)} />
             <div className={cn("min-w-[200px]", STATUS_CONFIG[formData.status as ProposalStatus]?.color, "rounded-lg border border-border p-0.5")}>
               <SearchableSelect
                 className="border-0 bg-transparent"
@@ -563,7 +568,10 @@ export const ProposalModule = () => {
 
           {/* Right Column: Items Grid */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[600px]">
+            <div
+              className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[600px]"
+              data-tour="proposals-form-items"
+            >
               <div className="p-4 border-b border-border bg-accent/30 flex items-center justify-between">
                 <h4 className="font-bold flex items-center gap-2">
                   <Package className="h-4 w-4" /> Itens da Proposta
@@ -752,14 +760,24 @@ export const ProposalModule = () => {
             </div>
           </div>
         </div>
+
+        <GuidedTour
+          open={tourOpen}
+          onClose={() => setTourOpen(false)}
+          steps={PROPOSAL_TOUR_STEPS}
+          tourName="Tour de Propostas"
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="proposals-root">
       {/* List Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="proposals-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -770,17 +788,23 @@ export const ProposalModule = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button 
-          onClick={handleCreateNew}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Proposta
-        </button>
+        <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            onClick={handleCreateNew}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Nova Proposta
+          </button>
+        </div>
       </div>
 
       {/* Proposals List */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        data-tour="proposals-table"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -881,6 +905,13 @@ export const ProposalModule = () => {
           </table>
         </div>
       </div>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={PROPOSAL_TOUR_STEPS}
+        tourName="Tour de Propostas"
+      />
     </div>
   );
 };

@@ -11,7 +11,6 @@ import {
   Factory,
   LayoutDashboard,
   GitBranch,
-  CircleHelp,
 } from "lucide-react";
 import { 
   BarChart, 
@@ -32,6 +31,7 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { motion } from "motion/react";
 import { SalesFunnelPanel } from "@/src/components/dashboard/SalesFunnelPanel";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { DASHBOARD_TOUR_STEPS } from "@/src/tours/dashboardTourSteps";
 
 interface DashboardData {
@@ -113,15 +113,7 @@ export const DashboardModule = () => {
             Funil de Vendas
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setTourOpen(true)}
-          className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border border-border bg-card hover:bg-accent text-foreground shrink-0"
-          aria-label="Abrir tour guiado do dashboard"
-        >
-          <CircleHelp className="h-4 w-4 text-primary" />
-          Como usar
-        </button>
+        <TourHelpButton onClick={() => setTourOpen(true)} />
       </div>
 
       <div data-tour="dashboard-main-area" className="space-y-6">

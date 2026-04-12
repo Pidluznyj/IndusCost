@@ -23,6 +23,9 @@ import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { MaterialImportConfig } from "../lib/importer/MaterialConfig";
 import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { MATERIAL_TOUR_STEPS } from "@/src/tours/materialTourSteps";
 
 const MATERIAL_CATEGORY_OPTIONS = [
   { value: "MATERIA_PRIMA", label: "Matéria-Prima", searchTerms: "MATERIA_PRIMA materia prima" },
@@ -38,6 +41,7 @@ export const MaterialModule = () => {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Material | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<CreateMaterialInput>({
@@ -147,9 +151,12 @@ export const MaterialModule = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="materials-root">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="materials-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -161,6 +168,7 @@ export const MaterialModule = () => {
           />
         </div>
         <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
           <button 
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -190,7 +198,10 @@ export const MaterialModule = () => {
       />
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        data-tour="materials-table"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -552,6 +563,13 @@ export const MaterialModule = () => {
           </motion.div>
         </div>
       )}
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={MATERIAL_TOUR_STEPS}
+        tourName="Tour de Materiais"
+      />
     </div>
   );
 };

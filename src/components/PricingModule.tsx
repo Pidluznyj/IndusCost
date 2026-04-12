@@ -8,8 +8,12 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { motion, AnimatePresence } from "motion/react";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { PRICING_TOUR_STEPS } from "@/src/tours/pricingTourSteps";
 
 export const PricingModule = () => {
+  const [tourOpen, setTourOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"UNIT" | "BATCH">("UNIT");
   const [selectedPricings, setSelectedPricings] = useState<string[]>([]);
 
@@ -215,16 +219,22 @@ export const PricingModule = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="pricing-root">
       {/* Header */}
       <div className="flex flex-col gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Formação de Preço</h2>
-          <p className="text-xs text-muted-foreground">Estratégia e precificação do portfólio industrial.</p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Formação de Preço</h2>
+            <p className="text-xs text-muted-foreground">Estratégia e precificação do portfólio industrial.</p>
+          </div>
+          <TourHelpButton onClick={() => setTourOpen(true)} />
         </div>
-        
+
         {/* Toggle View Mode */}
-        <div className="flex bg-accent/30 p-1 rounded-xl w-fit border border-border">
+        <div
+          className="flex bg-accent/30 p-1 rounded-xl w-fit border border-border"
+          data-tour="pricing-mode-toggle"
+        >
           <button 
             onClick={() => setViewMode("UNIT")}
             className={cn(
@@ -250,7 +260,7 @@ export const PricingModule = () => {
         <div className="p-12 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>
       ) : viewMode === "UNIT" ? (
         // --- VIEW: UNIT ---
-        <div className="space-y-6">
+        <div className="space-y-6" data-tour="pricing-unit-panel">
           <div className="flex justify-end">
              <button 
               onClick={() => {
@@ -343,7 +353,7 @@ export const PricingModule = () => {
         </div>
       ) : (
         // --- VIEW: BATCH ---
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-tour="pricing-batch-panel">
           <div className="lg:col-span-2 space-y-4">
             {/* Esquerda: Seleção de Produtos ou Resultados em tabela */}
 
@@ -731,6 +741,13 @@ export const PricingModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={PRICING_TOUR_STEPS}
+        tourName="Tour de Precificação"
+      />
     </div>
   );
 };

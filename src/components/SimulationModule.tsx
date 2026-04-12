@@ -23,6 +23,9 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { motion, AnimatePresence } from "motion/react";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { SIMULATION_TOUR_STEPS } from "@/src/tours/simulationTourSteps";
 
 export const SimulationModule = () => {
   const [simulations, setSimulations] = useState<any[]>([]);
@@ -31,6 +34,7 @@ export const SimulationModule = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [comparing, setComparing] = useState<any | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -105,24 +109,30 @@ export const SimulationModule = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="simulation-root">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="simulation-header"
+      >
         <div className="flex flex-col gap-1">
           <h2 className="text-2xl font-bold tracking-tight">Cenários e Simulações</h2>
           <p className="text-xs text-muted-foreground">Teste o impacto de variações de mercado sem alterar seus dados oficiais.</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Novo Cenário
-        </button>
+        <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Novo Cenário
+          </button>
+        </div>
       </div>
 
       {/* Simulations Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-tour="simulation-grid">
         {loading ? (
           <div className="col-span-full p-12 text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
@@ -471,6 +481,13 @@ export const SimulationModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={SIMULATION_TOUR_STEPS}
+        tourName="Tour de Simulações"
+      />
     </div>
   );
 };

@@ -17,6 +17,9 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { SETTINGS_TOUR_STEPS } from "@/src/tours/settingsTourSteps";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -45,6 +48,7 @@ interface PayrollComponent {
 }
 
 export const SettingsModule = () => {
+  const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
   const [globals, setGlobals] = useState<{
@@ -267,9 +271,12 @@ export const SettingsModule = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4 border-b border-border w-full sm:w-auto">
+    <div className="space-y-6" data-tour="settings-root">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" data-tour="settings-toolbar">
+        <div
+          className="flex items-center gap-4 border-b border-border w-full sm:w-auto"
+          data-tour="settings-subtabs"
+        >
           <button
             onClick={() => setActiveSubTab("roles")}
             className={cn(
@@ -301,15 +308,18 @@ export const SettingsModule = () => {
             {activeSubTab === "globals" && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
           </button>
         </div>
-        {activeSubTab !== "globals" && (
-          <button 
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            {activeSubTab === "roles" ? "Novo Cargo" : "Novo Componente"}
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          {activeSubTab !== "globals" && (
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              {activeSubTab === "roles" ? "Novo Cargo" : "Novo Componente"}
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -317,7 +327,7 @@ export const SettingsModule = () => {
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-tour="settings-main-panel">
           {activeSubTab === "roles" ? (
             roles.map((role) => (
               <motion.div 
@@ -474,6 +484,13 @@ export const SettingsModule = () => {
           )}
         </div>
       )}
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={SETTINGS_TOUR_STEPS}
+        tourName="Tour de Configurações"
+      />
 
       {/* Modal */}
       <AnimatePresence>

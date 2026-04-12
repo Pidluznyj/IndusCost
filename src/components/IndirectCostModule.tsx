@@ -21,6 +21,9 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { INDIRECT_COST_TOUR_STEPS } from "@/src/tours/indirectTourSteps";
 
 interface IndirectCost {
   id: string;
@@ -38,6 +41,7 @@ export const IndirectCostModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCost, setEditingCost] = useState<IndirectCost | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     description: "",
@@ -137,9 +141,12 @@ export const IndirectCostModule = () => {
   const totalOPEX = costs.filter(c => c.category !== "CIF" && c.status === "ACTIVE").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="indirect-cost-root">
       {/* Summary Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+        data-tour="indirect-cost-summary"
+      >
         <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
           <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Total CIF Mensal</p>
           <p className="text-2xl font-black text-blue-600">{formatCurrency(totalCIF)}</p>
@@ -165,7 +172,10 @@ export const IndirectCostModule = () => {
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="indirect-cost-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -176,17 +186,23 @@ export const IndirectCostModule = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Despesa
-        </button>
+        <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Nova Despesa
+          </button>
+        </div>
       </div>
 
       {/* Table */}
-      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+      <div
+        className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden"
+        data-tour="indirect-cost-table"
+      >
         <table className="w-full text-left text-sm">
           <thead className="bg-accent/50 border-b border-border">
             <tr>
@@ -379,6 +395,13 @@ export const IndirectCostModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={INDIRECT_COST_TOUR_STEPS}
+        tourName="Tour de Custos Indiretos"
+      />
     </div>
   );
 };

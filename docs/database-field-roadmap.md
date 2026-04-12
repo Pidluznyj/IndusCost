@@ -1,6 +1,6 @@
 # Roadmap de campos de banco — IndusCost (comercial, CRM e referência técnica)
 
-**Versão do documento:** 1.4  
+**Versão do documento:** 1.5  
 **Última revisão:** 2026-04-10  
 **Fonte de verdade do schema atual:** `prisma/schema.prisma` (PostgreSQL)
 
@@ -463,7 +463,8 @@ Registros padronizados a partir da **validação do código** (`server.ts`, `src
 | Navegação SPA — Fase 1 (módulos principais) | implementado | `main.tsx`, `App.tsx`, `Layout.tsx`, `Sidebar.tsx`, `src/lib/mainNavigation.ts` | `react-router-dom`: rotas `/:segmento` alinhados ao menu; `/` e `*` → `/dashboard`; funil: `navigate("/proposals")` no evento existente | nenhum | nenhum | — | técnica | Histórico do browser entre módulos |
 | Compras — Bloco 1 (centro de custo + solicitação) | implementado | `prisma/schema.prisma`, `prisma/migrations/20260410120000_purchases_block1/migration.sql`, `prisma/seed.ts`, `server.ts`, `src/components/PurchaseModule.tsx`, `src/types/purchase.ts`, `App.tsx`, `Sidebar.tsx`, `mainNavigation.ts` | Novos models `CostCenter`, `PurchaseRequest`, `PurchaseRequestItem` + enums; API REST; UI lista/criar/editar/ver; vínculo opcional `Material`↔item MP; CC fallback `A-CLASS` no seed; **sem** alteração de custo de material nem fluxos existentes de custo/preço/BOM | nenhum | precisa tabela nova | Ver secção **4.7** | Bloco 1 | Contratos de API existentes fora `/api/cost-centers` e `/api/purchase-requests` inalterados |
 | Compras — Bloco 2 (MP na solicitação: UX + contexto + prep. cotação) | implementado | `prisma/schema.prisma`, `prisma/migrations/20260410180000_purchases_block2_mp_context/migration.sql`, `server.ts`, `PurchaseModule.tsx`, `src/types/purchase.ts` | Colunas opcionais em `PurchaseRequestItem`; validação MOQ; UI: seletor com label **código — descrição**, painel de dados do material (somente leitura, fonte GET materiais), materiais inativos vinculados permanecem selecionáveis na edição; fluxo nova MP em **nova aba** + atualizar lista; **sem** atualizar `Material.currentCost`, **sem** “última compra”, **sem** tabela de cotação | nenhum | precisa novos campos | `supplierReference`, `packagingPresentation`, `minOrderQtySuggested` | Bloco 2 | Exibição de custos no painel = **leitura** do cadastro + `calculations` já retornados pela API de materiais |
-| Tour guiado — Bloco 1 (infra + piloto Dashboard) | implementado | `src/components/tour/GuidedTour.tsx`, `src/tours/dashboardTourSteps.ts`, `DashboardModule.tsx` | Componente reutilizável (`createPortal`, overlay, highlight `data-tour`, passos opcionais com skip seguro); disparo só via **Como usar**; **sem** auto-start; **sem** migration | nenhum | nenhum | — | UX | Piloto único; outros módulos: **planejado**; persistência “tour visto”: **opcional futuro** (sem banco nesta fase) |
+| Tour guiado — Bloco 1 (infra + piloto Dashboard) | implementado | `GuidedTour.tsx`, `dashboardTourSteps.ts`, `DashboardModule.tsx` | Infra + piloto Dashboard — ver **11.7** | nenhum | nenhum | — | UX | — |
+| Tour guiado — Bloco 2 (expansão módulos principais) | implementado | `TourHelpButton.tsx`, `src/tours/*TourSteps.ts` (exceto `dashboardTourSteps`), módulos em **11.8** | Mesmo padrão do Bloco 1; `data-tour` + **Como usar** por tela; sem auto-start; sem migration | nenhum | nenhum | — | UX | Persistência “tour visto”: **opcional futuro** (sem banco nesta fase) |
 
 ### 11.2 Itens analisados / planejados (backlog comercial — não implementados como migration neste ciclo)
 
@@ -486,11 +487,11 @@ Registros padronizados a partir da **validação do código** (`server.ts`, `src
 | Preferências de usuário / favoritos de rota | analisado | — | Não implementado; seria tabela ou storage futuro — **fora** deste ciclo |
 | Relatórios — layout / impressão | analisado | `reports-print.css`, `ReportsModule` | Questões de CSS/print **não** exigem campo novo por si |
 | Ambiente — `DATABASE_URL` | analisado | Prisma / deploy | Configuração de ambiente; não é “campo novo” de negócio |
-| Tour guiado (`GuidedTour` + `data-tour`) | não requer banco | `GuidedTour.tsx`, `dashboardTourSteps.ts`, `DashboardModule.tsx` | Onboarding em memória; atributos `data-tour` só marcam âncoras na UI; sem `schema.prisma` nesta entrega |
+| Tour guiado (`GuidedTour` + `data-tour`) | não requer banco | `GuidedTour.tsx`, `TourHelpButton.tsx`, `src/tours/*TourSteps.ts`, módulos listados na **11.8** | Onboarding em memória; âncoras `data-tour` só na UI; sem `schema.prisma`; expansão **1.5** sem alteração de API ou motor de custo |
 
 ### 11.4 Itens que exigirão novos campos ou tabelas (futuro)
 
-Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). **Compras Bloco 1** e **Bloco 2** (secção **4.7**) estão refletidos nas migrations indicadas (revisões **1.2** e **1.3**). **Tour guiado (revisão 1.4)** não exige migration. Itens comerciais/CRM listados abaixo no checklist **permanecem** como `falta criar` salvo onde indicado.
+Referência cruzada: **secção 5** (domínios), **secção 12** (checklist numerada), **secção 13** (priorização). **Compras Bloco 1** e **Bloco 2** (secção **4.7**) estão refletidos nas migrations indicadas (revisões **1.2** e **1.3**). **Tour guiado — expansão (revisão 1.5)** não exige migration. Itens comerciais/CRM listados abaixo no checklist **permanecem** como `falta criar` salvo onde indicado.
 
 ---
 
@@ -529,8 +530,19 @@ Referência cruzada: **secção 5** (domínios), **secção 12** (checklist nume
 | **Módulos / arquivos alterados** | `src/components/tour/GuidedTour.tsx` (novo); `src/tours/dashboardTourSteps.ts` (novo); `src/components/DashboardModule.tsx`; `docs/database-field-roadmap.md`. |
 | **Impacto técnico** | Apenas frontend; `createPortal` para o overlay; listeners de resize/scroll limpos no teardown do passo; nenhuma alteração de API ou `server.ts`. |
 | **Impacto em banco** | **Nenhum.** Não há mudança em `prisma/schema.prisma` nem migration. |
-| **Planejado / opcional futuro** | Expandir tours a outros módulos (ex.: Compras); persistir preferência “tour já visto” (localStorage, perfil de usuário ou tabela) — **fora** desta entrega; analytics de onboarding — **reavaliar**. |
-| **Status** | Infra + piloto Dashboard: **implementado** (**não requer banco**). Demais módulos: **planejado**. |
+| **Planejado / opcional futuro** | Expansão adicional a outras telas (se necessário): mesmo padrão; persistir preferência “tour já visto” (localStorage, perfil de usuário ou tabela) — **fora** desta entrega; analytics de onboarding — **reavaliar**. |
+| **Status** | Infra + piloto Dashboard: **implementado** (**não requer banco**). Expansão a outros módulos: ver **11.8** (revisão **1.5**). |
+
+### 11.8 Changelog estruturado — **Tour guiado Bloco 2** (expansão módulos principais, 2026-04-10)
+
+| Campo do changelog | Conteúdo |
+|--------------------|----------|
+| **Funcionalidade implementada** | Expansão do **mesmo** padrão do Bloco 1 (`GuidedTour`, passos em `src/tours/*.ts`, âncoras `data-tour`, passos `optional` quando o DOM varia). Botão reutilizável **`TourHelpButton`** (`Como usar`). Tours **curtos** (tipicamente 3–6 passos por módulo), **sob demanda**, sem abertura automática, sem persistência de “tour visto” e **sem** analytics. |
+| **Módulos / arquivos alterados (frontend)** | `src/components/tour/TourHelpButton.tsx` (novo); `src/tours/purchaseTourSteps.ts`, `productTourSteps.ts`, `proposalTourSteps.ts`, `customerTourSteps.ts`, `materialTourSteps.ts`, `reportsTourSteps.ts`, `pricingTourSteps.ts`, `settingsTourSteps.ts`, `simulationTourSteps.ts`, `employeeTourSteps.ts`, `machineTourSteps.ts`, `taxTourSteps.ts`, `indirectTourSteps.ts` (novos); integração em `PurchaseModule.tsx`, `ProductModule.tsx`, `ProposalModule.tsx`, `CustomerModule.tsx`, `MaterialModule.tsx`, `ReportsModule.tsx`, `PricingModule.tsx`, `SettingsModule.tsx`, `SimulationModule.tsx`, `EmployeeModule.tsx`, `MachineModule.tsx`, `TaxModule.tsx`, `IndirectCostModule.tsx`; `DashboardModule.tsx` passa a usar `TourHelpButton`; `docs/database-field-roadmap.md` (este arquivo). |
+| **Impacto técnico** | Somente **React/TS**; apenas `data-tour`, estado local `tourOpen` e renderização de `GuidedTour`. **Nenhuma** alteração em `server.ts`, contratos de API, `prisma/schema.prisma`, regras de custo/preço/BOM/proposta ou navegação principal além do que já existia. |
+| **Impacto em banco** | **Nenhum.** |
+| **Planejado / opcional futuro** | Persistir “tour concluído” ou preferências de onboarding (**localStorage**, perfil de usuário ou tabela) — **não** implementado; analytics de uso do tour — **reavaliar**. |
+| **Status** | Expansão multi-módulo: **implementado** (**não requer banco**). |
 
 ---
 

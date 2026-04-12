@@ -18,6 +18,9 @@ import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Employee, Role, CreateEmployeeInput, PayrollComponent } from "@/src/types/employee";
 import { motion } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { EMPLOYEE_TOUR_STEPS } from "@/src/tours/employeeTourSteps";
 
 const EMPLOYEE_CLASSIFICATION_OPTIONS = [
   { value: "DIRETO", label: "Direto", searchTerms: "DIRETO direto" },
@@ -43,6 +46,7 @@ export const EmployeeModule = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [isComponentModalOpen, setIsComponentModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [viewingCosts, setViewingCosts] = useState<Employee | null>(null);
@@ -187,9 +191,12 @@ export const EmployeeModule = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="employees-root">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="employees-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -201,6 +208,7 @@ export const EmployeeModule = () => {
           />
         </div>
         <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
           <button 
             onClick={() => setIsComponentModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium"
@@ -219,7 +227,10 @@ export const EmployeeModule = () => {
       </div>
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        data-tour="employees-table"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -633,6 +644,13 @@ export const EmployeeModule = () => {
           </motion.div>
         </div>
       )}
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={EMPLOYEE_TOUR_STEPS}
+        tourName="Tour de Colaboradores"
+      />
     </div>
   );
 };

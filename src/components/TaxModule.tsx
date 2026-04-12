@@ -19,6 +19,9 @@ import { cn, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { motion, AnimatePresence } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { TAX_TOUR_STEPS } from "@/src/tours/taxTourSteps";
 
 const TAX_OPERATION_OPTIONS = [
   { value: "VENDA", label: "Venda", searchTerms: "VENDA venda" },
@@ -54,6 +57,7 @@ export const TaxModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<TaxRule | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -137,9 +141,12 @@ export const TaxModule = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="tax-rules-root">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="tax-rules-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -150,17 +157,20 @@ export const TaxModule = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Regra Fiscal
-        </button>
+        <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Nova Regra Fiscal
+          </button>
+        </div>
       </div>
 
       {/* Rules Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-tour="tax-rules-grid">
         {loading ? (
           <div className="col-span-full p-12 text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
@@ -371,6 +381,13 @@ export const TaxModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={TAX_TOUR_STEPS}
+        tourName="Tour de Regras Fiscais"
+      />
     </div>
   );
 };

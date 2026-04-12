@@ -23,6 +23,9 @@ import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { CustomerImportConfig } from "../lib/importer/CustomerConfig";
 import { CustomerCommercial360 } from "./customers/CustomerCommercial360";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
 
 export const CustomerModule = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -32,6 +35,7 @@ export const CustomerModule = () => {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [commercial360CustomerId, setCommercial360CustomerId] = useState<string | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Customer>>({
@@ -133,9 +137,12 @@ export const CustomerModule = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="customers-root">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="customers-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -147,6 +154,7 @@ export const CustomerModule = () => {
           />
         </div>
         <div className="flex items-center gap-3">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
           <button 
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -182,7 +190,10 @@ export const CustomerModule = () => {
       />
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        data-tour="customers-table"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -478,6 +489,13 @@ export const CustomerModule = () => {
           </motion.div>
         </div>
       )}
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={CUSTOMER_TOUR_STEPS}
+        tourName="Tour de Clientes"
+      />
     </div>
   );
 };

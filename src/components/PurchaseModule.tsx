@@ -24,6 +24,9 @@ import {
   emptyPurchaseItemDraft,
 } from "@/src/types/purchase";
 import { SearchableSelect, SelectOption } from "@/src/components/shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { PURCHASE_TOUR_STEPS } from "@/src/tours/purchaseTourSteps";
 import { motion } from "motion/react";
 
 const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
@@ -193,6 +196,7 @@ export const PurchaseModule = () => {
   const [ccName, setCcName] = useState("");
   const [ccDescription, setCcDescription] = useState("");
   const [ccSaving, setCcSaving] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const readOnly = formMode === "view";
 
@@ -493,8 +497,11 @@ export const PurchaseModule = () => {
 
   if (view === "list") {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="space-y-6" data-tour="purchases-root">
+        <div
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          data-tour="purchases-toolbar"
+        >
           <div>
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <ShoppingCart className="h-5 w-5 text-primary" />
@@ -504,17 +511,21 @@ export const PurchaseModule = () => {
               Demanda de compra classificada por tipo e centro de custo — sem pedido, recebimento ou financeiro nesta fase.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
-          >
-            <Plus className="h-4 w-4" />
-            Nova solicitação
-          </button>
+          <div className="flex items-center gap-2">
+            <TourHelpButton onClick={() => setTourOpen(true)} />
+            <button
+              type="button"
+              data-tour="purchases-new-request"
+              onClick={openCreate}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" />
+              Nova solicitação
+            </button>
+          </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+        <div className="rounded-2xl border border-border bg-card overflow-hidden" data-tour="purchases-list">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-accent/40 border-b border-border">
@@ -591,22 +602,42 @@ export const PurchaseModule = () => {
             </table>
           </div>
         </div>
+        <GuidedTour
+          open={tourOpen}
+          onClose={() => setTourOpen(false)}
+          steps={PURCHASE_TOUR_STEPS}
+          tourName="Tour de Compras"
+        />
       </div>
     );
   }
 
   if (loadingForm && !requester) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-2 text-muted-foreground">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="text-sm">Carregando solicitação…</p>
+      <div className="space-y-4" data-tour="purchases-root">
+        <div className="flex justify-end" data-tour="purchases-toolbar">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+        </div>
+        <div className="flex flex-col items-center justify-center py-24 gap-2 text-muted-foreground">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm">Carregando solicitação…</p>
+        </div>
+        <GuidedTour
+          open={tourOpen}
+          onClose={() => setTourOpen(false)}
+          steps={PURCHASE_TOUR_STEPS}
+          tourName="Tour de Compras"
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+    <div className="space-y-6" data-tour="purchases-root">
+      <div
+        className="flex flex-col sm:flex-row sm:items-start justify-between gap-4"
+        data-tour="purchases-toolbar"
+      >
         <div>
           <button
             type="button"
@@ -629,8 +660,9 @@ export const PurchaseModule = () => {
             <p className="text-xs text-muted-foreground mt-1">Criada em {formatDt(createdAt)}</p>
           )}
         </div>
-        {!readOnly && (
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
+          {!readOnly && (
             <button
               type="button"
               onClick={handleSave}
@@ -640,8 +672,8 @@ export const PurchaseModule = () => {
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Salvar
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {headerCc?.code === "A-CLASS" && (
@@ -657,7 +689,7 @@ export const PurchaseModule = () => {
         </div>
       )}
 
-      <div className="rounded-2xl border border-border bg-card p-6 space-y-6">
+      <div className="rounded-2xl border border-border bg-card p-6 space-y-6" data-tour="purchases-header-block">
         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Cabeçalho</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-1.5">
@@ -767,7 +799,7 @@ export const PurchaseModule = () => {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+      <div className="rounded-2xl border border-border bg-card p-6 space-y-4" data-tour="purchases-items-block">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Itens</h4>
           {!readOnly && (
@@ -1061,6 +1093,13 @@ export const PurchaseModule = () => {
           })}
         </div>
       </div>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={PURCHASE_TOUR_STEPS}
+        tourName="Tour de Compras"
+      />
 
       {ccModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">

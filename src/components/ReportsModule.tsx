@@ -27,6 +27,9 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { REPORTS_TOUR_STEPS } from "@/src/tours/reportsTourSteps";
 import type { Customer } from "@/src/types/commercial";
 import type { ProposalStatus } from "@/src/types/commercial";
 import { STATUS_FUNNEL_META } from "@/src/lib/salesFunnel";
@@ -182,6 +185,7 @@ export const ReportsModule = () => {
   const [minNet, setMinNet] = useState("");
   const [maxNet, setMaxNet] = useState("");
   const [productId, setProductId] = useState("");
+  const [tourOpen, setTourOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -266,7 +270,7 @@ export const ReportsModule = () => {
   const handlePrint = () => window.print();
 
   return (
-    <div id="reports-print-root" className="space-y-6 text-foreground">
+    <div id="reports-print-root" className="space-y-6 text-foreground" data-tour="reports-root">
       <header className="reports-print-break border-b border-border pb-4">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
           <div>
@@ -281,7 +285,8 @@ export const ReportsModule = () => {
               </p>
             )}
           </div>
-          <div className="flex flex-wrap gap-2 reports-no-print">
+          <div className="flex flex-wrap gap-2 reports-no-print items-center" data-tour="reports-header-actions">
+            <TourHelpButton onClick={() => setTourOpen(true)} />
             <button
               type="button"
               onClick={() => void load()}
@@ -302,7 +307,10 @@ export const ReportsModule = () => {
         </div>
       </header>
 
-      <section className="reports-no-print rounded-xl border border-border bg-card p-4 space-y-4">
+      <section
+        className="reports-no-print rounded-xl border border-border bg-card p-4 space-y-4"
+        data-tour="reports-filters"
+      >
         <p className="text-xs font-bold uppercase text-muted-foreground">Filtros globais</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
           <div>
@@ -391,7 +399,10 @@ export const ReportsModule = () => {
         </div>
       )}
 
-      <div className="reports-no-print flex flex-wrap gap-2 p-1 bg-accent/40 rounded-xl border border-border">
+      <div
+        className="reports-no-print flex flex-wrap gap-2 p-1 bg-accent/40 rounded-xl border border-border"
+        data-tour="reports-tabs"
+      >
         {TAB_OPTS.map((t) => (
           <button
             key={t.id}
@@ -417,7 +428,7 @@ export const ReportsModule = () => {
       {err && <p className="text-center text-red-600 py-8">{err}</p>}
 
       {!loading && data && (
-        <>
+        <div data-tour="reports-main-content" className="space-y-6">
           {/* Resumo impressão: filtros */}
           <div className="hidden print:block text-xs border border-border rounded p-2 mb-4">
             <strong>Filtros:</strong> {dateFrom || "—"} a {dateTo || "—"} · Cliente:{" "}
@@ -685,8 +696,15 @@ export const ReportsModule = () => {
               )}
             </div>
           )}
-        </>
+        </div>
       )}
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={REPORTS_TOUR_STEPS}
+        tourName="Tour de Relatórios"
+      />
     </div>
   );
 };

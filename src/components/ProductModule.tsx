@@ -35,6 +35,9 @@ import { DataImportDialog } from "./shared/DataImportDialog";
 import { ProductImportConfig } from "../lib/importer/ProductConfig";
 import { CalculatedValue } from "./shared/CalculatedValue";
 import type { CalculationExplainabilityMap } from "@/src/types/calculation";
+import { GuidedTour } from "@/src/components/tour/GuidedTour";
+import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
 
 /* -------------------------------------------------------------------------- */
 /*                                Sub-Components                              */
@@ -110,6 +113,7 @@ export const ProductModule = () => {
   const [loadingTree, setLoadingTree] = useState(false);
   const [backendCostAnalysis, setBackendCostAnalysis] = useState<any>(null);
   const [loadingCost, setLoadingCost] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<CreateProductInput>({
@@ -560,9 +564,12 @@ export const ProductModule = () => {
   }, [backendCostAnalysis]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="products-root">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        data-tour="products-toolbar"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -574,6 +581,7 @@ export const ProductModule = () => {
           />
         </div>
         <div className="flex items-center gap-2">
+          <TourHelpButton onClick={() => setTourOpen(true)} />
           {selectedIds.length > 0 && (
             <motion.button
               initial={{ opacity: 0, x: 20 }}
@@ -614,7 +622,10 @@ export const ProductModule = () => {
       />
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        data-tour="products-table"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -741,6 +752,13 @@ export const ProductModule = () => {
         </div>
       </div>
 
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        steps={PRODUCT_TOUR_STEPS}
+        tourName="Tour de Produtos"
+      />
+
       {/* Modal: Product Form */}
       <AnimatePresence>
         {isModalOpen && (
@@ -770,7 +788,10 @@ export const ProductModule = () => {
               </div>
 
               {/* Tabs Navigation */}
-              <div className="flex items-center px-6 border-b border-border bg-card/50">
+              <div
+                className="flex items-center px-6 border-b border-border bg-card/50"
+                data-tour="products-modal-tabs"
+              >
                 {[
                   { id: "info", label: "Informações", icon: Info },
                   { id: "bom", label: "Estrutura (BOM)", icon: Layers },
