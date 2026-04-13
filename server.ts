@@ -2498,6 +2498,24 @@ app.delete("/api/employees/:id", async (req, res) => {
     return typeof x === "object" && x !== null && "error" in x && typeof (x as { error: unknown }).error === "string";
   }
 
+  /** Texto único para logs/UI quando o custeio recursivo falha (inclui cause aninhado, ex.: filho do filho). */
+  function describeCostAnalysisFailure(failure: unknown, depth = 0): string {
+    if (depth > 8) return "(cadeia de erros truncada)";
+    if (!failure || typeof failure !== "object" || !("error" in failure)) return "erro de custeio desconhecido";
+    const f = failure as { error: string; message?: string; cause?: unknown };
+    const head =
+      typeof f.message === "string" && f.message.trim().length > 0 ? `${f.error}: ${f.message}` : f.error;
+    if (
+      f.cause !== undefined &&
+      f.cause !== null &&
+      typeof f.cause === "object" &&
+      "error" in (f.cause as object)
+    ) {
+      return `${head} → ${describeCostAnalysisFailure(f.cause, depth + 1)}`;
+    }
+    return head;
+  }
+
   /** Avisos técnicos (cadastro/custeio suspeito). Não substituem erro fatal. */
   type CostAnalysisWarning = {
     code: string;
@@ -2617,13 +2635,26 @@ app.delete("/api/employees/:id", async (req, res) => {
           };
         }
         if (isCostAnalysisFailure(childAnalysis)) {
+          const childProd = await prisma.product.findUnique({
+            where: { id: item.childProductId },
+            select: { sku: true, name: true, type: true },
+          });
+          const childLabel = childProd
+            ? `[${childProd.sku}] ${childProd.name}${childProd.type ? ` (${childProd.type})` : ""}`
+            : `childProductId=${item.childProductId}`;
+          const chain = describeCostAnalysisFailure(childAnalysis);
           return {
             error: "CHILD_COST_FAILED",
-            message: `Falha ao custear componente filho na BOM de [${product.sku}].`,
+            message: `Não foi possível custear o componente filho ${childLabel} referenciado na BOM de [${product.sku}]. Motivo no motor: ${chain}`,
             parentProductId: product.id,
             parentSku: product.sku,
             childProductId: item.childProductId,
+            childSku: childProd?.sku ?? null,
+            childName: childProd?.name ?? null,
+            childItemType: childProd?.type ?? null,
             bomLineId: item.id,
+            childErrorCode: (childAnalysis as { error: string }).error,
+            childErrorDetail: chain,
             cause: childAnalysis,
           };
         }
@@ -2666,7 +2697,8 @@ app.delete("/api/employees/:id", async (req, res) => {
       breakdown?: any 
     }> = [];
 
-    if (product.type === "COMPONENT" && product.cycleTimeSeconds !== null && Number(product.cycleTimeSeconds) > 0) {
+    // Ciclo > 0: processo padrão vale para qualquer tipo (evita PRODUCT com molde cadastrado custear só BOM).
+    if (product.cycleTimeSeconds !== null && Number(product.cycleTimeSeconds) > 0) {
       // PRIORIDADE 1: Processo Padrão do Componente
       const cycle = Number(product.cycleTimeSeconds);
       const cav = Number(product.cavities);
