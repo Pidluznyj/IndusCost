@@ -24,7 +24,8 @@ import {
   Truck,
   Info,
   ExternalLink,
-  Printer
+  Printer,
+  LayoutDashboard,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -38,6 +39,7 @@ import { buildProposalLineMarginExplanation } from "@/src/lib/proposalLineExplai
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
+import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -102,6 +104,7 @@ export const ProposalModule = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
+  const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -160,10 +163,12 @@ export const ProposalModule = () => {
       notes: "",
       items: []
     });
+    setAnalysisProposalId(null);
     setView("form");
   };
 
   const handleEdit = useCallback(async (id: string) => {
+    setAnalysisProposalId(null);
     setLoading(true);
     try {
       const data = await fetchJsonOk<Proposal & { items?: ProposalItem[] }>(`/api/proposals/${id}`);
@@ -876,6 +881,14 @@ export const ProposalModule = () => {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAnalysisProposalId(p.id)}
+                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-emerald-600 transition-all"
+                          title="Análise (dashboard)"
+                        >
+                          <LayoutDashboard className="h-4 w-4" />
+                        </button>
                         <button 
                           onClick={() => handleEdit(p.id)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
@@ -911,6 +924,13 @@ export const ProposalModule = () => {
         onClose={() => setTourOpen(false)}
         steps={PROPOSAL_TOUR_STEPS}
         tourName="Tour de Propostas"
+      />
+
+      <ProposalAnalysisModal
+        open={analysisProposalId !== null}
+        proposalId={analysisProposalId}
+        onClose={() => setAnalysisProposalId(null)}
+        onEdit={handleEdit}
       />
     </div>
   );
