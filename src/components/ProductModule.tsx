@@ -818,57 +818,49 @@ export const ProductModule = () => {
               className="bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
               {/* Modal Header */}
-              <div className="p-6 border-b border-border flex flex-col gap-4 bg-accent/30 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex items-start gap-4 min-w-0 flex-1">
-                  <div className="h-12 w-12 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                    {formData.type === "PRODUCT" ? <Package className="h-6 w-6" /> : 
-                     formData.type === "COMPONENT" ? <Layers className="h-6 w-6" /> : 
-                     <Box className="h-6 w-6" />}
+              <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3 bg-accent/30">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="h-10 w-10 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                    {formData.type === "PRODUCT" ? <Package className="h-5 w-5" /> : 
+                     formData.type === "COMPONENT" ? <Layers className="h-5 w-5" /> : 
+                     <Box className="h-5 w-5" />}
                   </div>
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div>
-                      <h3 className="text-xl font-bold">{editingItem ? "Editar Engenharia" : "Nova Engenharia"}</h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Defina a estrutura e o processo produtivo do item
-                      </p>
-                    </div>
-                    <div
-                      className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 space-y-2 shadow-sm"
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <h3 className="text-lg font-bold leading-tight">
+                      {editingItem ? "Editar Engenharia" : "Nova Engenharia"}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Defina a estrutura e o processo produtivo do item
+                    </p>
+                    <p
+                      className="flex items-baseline gap-2 pt-1 min-w-0 text-sm"
                       data-tour="products-modal-context"
                     >
-                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          Código (SKU)
-                        </span>
-                        <span className="font-mono text-sm font-bold text-primary tabular-nums break-all">
-                          {(formData.sku && String(formData.sku).trim()) || (editingItem ? "—" : "…")}
-                        </span>
-                      </div>
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          Nome
-                        </span>
-                        <p className="text-sm font-semibold text-foreground leading-snug break-words">
-                          {(formData.name && String(formData.name).trim()) || "—"}
-                        </p>
-                      </div>
-                      {(formData.description != null && String(formData.description).trim() !== "") && (
-                        <div className="space-y-0.5 pt-1 border-t border-border/60">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                            Descrição
-                          </span>
-                          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3 break-words">
-                            {String(formData.description).trim()}
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                      <span className="shrink-0 font-mono text-xs font-semibold text-primary tabular-nums">
+                        {(formData.sku && String(formData.sku).trim()) || (editingItem ? "—" : "…")}
+                      </span>
+                      <span className="text-muted-foreground/50 shrink-0 select-none" aria-hidden>
+                        ·
+                      </span>
+                      <span
+                        className="min-w-0 truncate text-[13px] font-medium text-foreground/90"
+                        title={
+                          (formData.description && String(formData.description).trim()) ||
+                          (formData.name && String(formData.name).trim()) ||
+                          ""
+                        }
+                      >
+                        {(formData.description && String(formData.description).trim()) ||
+                          (formData.name && String(formData.name).trim()) ||
+                          "—"}
+                      </span>
+                    </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="p-2 hover:bg-accent rounded-full transition-colors shrink-0 self-end sm:self-start"
+                  className="p-2 hover:bg-accent rounded-full transition-colors shrink-0"
                   aria-label="Fechar"
                 >
                   <X className="h-5 w-5" />
