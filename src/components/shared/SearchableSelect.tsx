@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useLayoutEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Search, ChevronDown, X, Check } from "lucide-react";
 import { cn, normalizeSearchString } from "@/src/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
@@ -41,7 +42,20 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [dropdownBox, setDropdownBox] = useState({ top: 0, left: 0, width: 0 });
+
+  const updateDropdownPosition = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setDropdownBox({
+      top: r.bottom + 4,
+      left: r.left,
+      width: r.width,
+    });
+  }, []);
 
   const selectedOption = useMemo(
     () => options.find((opt) => opt.value === value),
@@ -56,12 +70,25 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     );
   }, [options, searchTerm]);
 
-  // Close on click outside
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updateDropdownPosition();
+    const onScrollOrResize = () => updateDropdownPosition();
+    window.addEventListener("resize", onScrollOrResize);
+    document.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      document.removeEventListener("scroll", onScrollOrResize, true);
+    };
+  }, [isOpen, updateDropdownPosition]);
+
+  // Close on click outside (inclui painel em portal no body)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+      const t = event.target as Node;
+      if (containerRef.current?.contains(t)) return;
+      if (dropdownRef.current?.contains(t)) return;
+      setIsOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -123,77 +150,94 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         ))}
       </select>
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.98 }}
-            animate={{ opacity: 1, y: 4, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.98 }}
-            className="absolute z-[100] w-full bg-card rounded-xl border border-border shadow-2xl overflow-hidden backdrop-blur-md"
-          >
-            {/* Search Input */}
-            <div className="p-2 border-b border-border bg-accent/30 flex items-center gap-2">
-              <Search className="h-4 w-4 text-muted-foreground ml-2" />
-              <input
-                ref={inputRef}
-                type="text"
-                className="w-full bg-transparent border-none outline-none text-sm p-1.5"
-                placeholder="Pesquisar..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-              />
-              {searchTerm && (
-                <button 
-                  onClick={() => setSearchTerm("")}
-                  className="p-1 hover:bg-accent rounded-full"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-
-            {/* Options List */}
-            <div className="max-h-[250px] overflow-y-auto p-1 py-1.5 custom-scrollbar">
-              {filteredOptions.length === 0 ? (
-                <div className="p-4 text-center text-xs text-muted-foreground italic">
-                  {emptyMessage}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {isOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -10, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                transition={{ duration: 0.15 }}
+                style={{
+                  position: "fixed",
+                  top: dropdownBox.top,
+                  left: dropdownBox.left,
+                  width: dropdownBox.width,
+                  zIndex: 10000,
+                }}
+                className="bg-card rounded-xl border border-border shadow-2xl overflow-hidden backdrop-blur-md"
+              >
+                <div ref={dropdownRef}>
+                {/* Search Input */}
+                <div className="p-2 border-b border-border bg-accent/30 flex items-center gap-2">
+                  <Search className="h-4 w-4 text-muted-foreground ml-2" />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    className="w-full bg-transparent border-none outline-none text-sm p-1.5"
+                    placeholder="Pesquisar..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm("")}
+                      className="p-1 hover:bg-accent rounded-full"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
-              ) : (
-                filteredOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => {
-                      onChange(option.value);
-                      setIsOpen(false);
-                    }}
-                    className={cn(
-                      "w-full flex items-center justify-between p-2 rounded-lg text-left text-sm transition-colors group mb-0.5",
-                      value === option.value 
-                        ? "bg-primary text-primary-foreground font-bold" 
-                        : "hover:bg-primary/10 text-foreground"
-                    )}
-                  >
-                    <div className="flex flex-col min-w-0">
-                      <span className="truncate">{option.label}</span>
-                      {option.sublabel && (
-                        <span className={cn(
-                          "text-[10px] truncate leading-tight",
-                          value === option.value ? "text-primary-foreground/80" : "text-muted-foreground"
-                        )}>
-                          {option.sublabel}
-                        </span>
-                      )}
+
+                {/* Options List */}
+                <div className="max-h-[250px] overflow-y-auto p-1 py-1.5 custom-scrollbar">
+                  {filteredOptions.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-muted-foreground italic">
+                      {emptyMessage}
                     </div>
-                    {value === option.value && <Check className="h-4 w-4 flex-shrink-0 ml-2" />}
-                  </button>
-                ))
-              )}
-            </div>
-          </motion.div>
+                  ) : (
+                    filteredOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          onChange(option.value);
+                          setIsOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between p-2 rounded-lg text-left text-sm transition-colors group mb-0.5",
+                          value === option.value
+                            ? "bg-primary text-primary-foreground font-bold"
+                            : "hover:bg-primary/10 text-foreground"
+                        )}
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className="truncate">{option.label}</span>
+                          {option.sublabel && (
+                            <span
+                              className={cn(
+                                "text-[10px] truncate leading-tight",
+                                value === option.value ? "text-primary-foreground/80" : "text-muted-foreground"
+                              )}
+                            >
+                              {option.sublabel}
+                            </span>
+                          )}
+                        </div>
+                        {value === option.value && <Check className="h-4 w-4 flex-shrink-0 ml-2" />}
+                      </button>
+                    ))
+                  )}
+                </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
   );
 };
