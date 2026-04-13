@@ -125,7 +125,7 @@ export function GuidedTour({ open, onClose, steps, tourName = "Tour guiado" }: G
   const missingRequired = Boolean(current && !el && !current.optional);
   const showHighlight = Boolean(rect && rect.width > 0 && rect.height > 0 && !missingRequired);
 
-  const cardPosition = useMemo(() => {
+  const cardPosition = (() => {
     if (!rect || missingRequired) {
       return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" as const };
     }
@@ -139,7 +139,7 @@ export function GuidedTour({ open, onClose, steps, tourName = "Tour guiado" }: G
     if (left < 12) left = 12;
     if (top + 240 > vh) top = Math.max(12, rect.top - margin - 210);
     return { top: `${top}px`, left: `${left}px`, transform: "none" as const };
-  }, [rect, missingRequired]);
+  })();
 
   const node = (
     <div className="fixed inset-0 z-[200]" role="dialog" aria-modal="true" aria-label={tourName}>
