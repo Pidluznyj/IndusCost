@@ -29,6 +29,15 @@ import {
   buildExcludedBomLineRecord,
   type ExcludedBomLineRecord,
 } from "./src/lib/costAnalysisPartial.js";
+import {
+  addDirectMaterialRow,
+  cloneExplosionMap,
+  finalizeRowsForOpenBook,
+  mergeExplosionMaps,
+  naturePercentages,
+  sumExplosionTotalCost,
+  type ExplosionRowCore,
+} from "./src/lib/openBookMaterialExplosion.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -3062,16 +3071,141 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   }
 
+  /**
+   * Explosão recursiva só de matéria-prima (MP), consolidando por materialId.
+   * Respeita as mesmas exclusões de linha que getProductCostAnalysis (filho não custeado = ramo ignorado).
+   */
+  async function buildOpenBookRawMaterialExplosionPerUnit(
+    productId: string,
+    cache: AnalysisCache,
+    pathStack: Set<string>,
+    memo: Map<string, Map<string, ExplosionRowCore>>
+  ): Promise<Map<string, ExplosionRowCore> | { error: string; message?: string }> {
+    if (memo.has(productId)) {
+      return cloneExplosionMap(memo.get(productId)!);
+    }
+    if (pathStack.has(productId)) {
+      return { error: "BOM_CYCLE", message: "Ciclo na BOM ao explodir matérias-primas." };
+    }
+    pathStack.add(productId);
+    try {
+      const product = await prisma.product.findUnique({
+        where: { id: productId },
+        include: {
+          ProductBOM: { orderBy: { id: "asc" }, include: { Material: true } },
+        },
+      });
+      if (!product) {
+        return { error: "NOT_FOUND", message: "Produto não encontrado." };
+      }
+
+      const into = new Map<string, ExplosionRowCore>();
+
+      for (const item of product.ProductBOM) {
+        if (item.Material) {
+          const mat = item.Material;
+          const landedCost = Number(mat.currentCost) + Number(mat.freight ?? 0);
+          const matStandardLoss = Number(mat.standardLoss ?? 0) / 100;
+          const bomLoss = Number(item.lossPercentage ?? 0) / 100;
+          const requiredQty = Number(item.quantity) / (1 - bomLoss);
+          const matEffectiveCost = landedCost / (1 - matStandardLoss);
+          const lineTotal = matEffectiveCost * requiredQty;
+          addDirectMaterialRow(into, {
+            materialId: mat.id,
+            code: mat.code,
+            description: mat.description,
+            unit: mat.unit,
+            quantity: requiredQty,
+            totalCost: lineTotal,
+          });
+          continue;
+        }
+
+        if (item.childProductId) {
+          const childAnalysis = await getProductCostAnalysis(item.childProductId, cache, false, pathStack);
+          if (childAnalysis === null || isCostAnalysisFailure(childAnalysis)) {
+            continue;
+          }
+          const sub = await buildOpenBookRawMaterialExplosionPerUnit(
+            item.childProductId,
+            cache,
+            pathStack,
+            memo
+          );
+          if (!(sub instanceof Map)) {
+            return sub;
+          }
+          const bomLoss = Number(item.lossPercentage ?? 0) / 100;
+          const requiredQty = Number(item.quantity) / (1 - bomLoss);
+          mergeExplosionMaps(into, sub, requiredQty);
+          continue;
+        }
+      }
+
+      memo.set(productId, cloneExplosionMap(into));
+      return into;
+    } finally {
+      pathStack.delete(productId);
+    }
+  }
+
   // --- API: Product Cost Analysis (Motor de Cálculo CIU com CIF) ---
   app.get("/api/products/:id/cost-analysis", async (req, res) => {
     try {
       const { id } = req.params;
-      const analysis = await getProductCostAnalysis(id, undefined, true);
+      const cache = await initAnalysisCache();
+      const analysis = await getProductCostAnalysis(id, cache, true);
       if (!analysis) return res.status(404).json({ error: "Produto não encontrado" });
       if ("error" in analysis) return res.status(400).json(analysis);
 
       // Mapeamento para garantir retrocompatibilidade com o frontend atual
       const calculationExplainability = buildCostAnalysisExplainability(analysis as any);
+
+      let openBook: Record<string, unknown> | undefined;
+      try {
+        const explosion = await buildOpenBookRawMaterialExplosionPerUnit(id, cache, new Set<string>(), new Map());
+        const mp = Number(analysis.totalMaterialCost);
+        const hh = Number(analysis.totalHH_Unit);
+        const hm = Number(analysis.totalHM_Unit);
+        const industri = Number(analysis.totalIndustrialCost);
+        const nat = naturePercentages(mp, hh, hm);
+        if (explosion instanceof Map) {
+          const sumMp = sumExplosionTotalCost(explosion);
+          const rows = finalizeRowsForOpenBook(explosion, industri, mp);
+          const reconcileOk = Math.abs(sumMp - mp) < 0.02;
+          openBook = {
+            executive: {
+              totalIndustrialCost: industri,
+              totalMaterialCost: mp,
+              totalHH: hh,
+              totalHM: hm,
+              pctMp: nat.pctMp,
+              pctHh: nat.pctHh,
+              pctHm: nat.pctHm,
+              denominatorIndustrial: nat.base,
+            },
+            consolidatedMaterials: rows,
+            cifOpexInformational: {
+              totalCIF_Unit: analysis.totalCIF_Unit,
+              totalOPEX_Unit: analysis.totalOPEX_Unit,
+            },
+            explosionReconcilesMaterialTotal: reconcileOk,
+            explosionMaterialSum: sumMp,
+          };
+        } else {
+          openBook = {
+            error: explosion.error,
+            message: explosion.message ?? null,
+          };
+        }
+      } catch (obErr) {
+        console.error("Open book material explosion error:", obErr);
+        openBook = {
+          error: "OPEN_BOOK_FAILED",
+          message: obErr instanceof Error ? obErr.message : String(obErr),
+        };
+      }
+
       res.json({
         ...analysis,
         summary: {
@@ -3084,7 +3218,8 @@ app.delete("/api/employees/:id", async (req, res) => {
         },
         calculationExplainability,
         // O breakdown de materiais e operações agora vem direto dos details do motor
-        audit: { calculatedAt: new Date().toISOString() }
+        audit: { calculatedAt: new Date().toISOString() },
+        openBook,
       });
     } catch (error) {
       console.error("Cost analysis endpoint error:", error);

@@ -23,7 +23,8 @@ import {
   FileText,
   History,
   CheckCircle2,
-  Download
+  Download,
+  BookOpen,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -40,6 +41,10 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
 import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomTreeContextPanel";
+import {
+  OpenBookCompositionTab,
+  type OpenBookPayload,
+} from "@/src/components/product/OpenBookCompositionTab";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1). */
 export type ProductWithCostSummary = Product & {
@@ -83,7 +88,7 @@ export const ProductModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
-  const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost" | "tree">("info");
+  const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost" | "tree" | "composition">("info");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [treeData, setTreeData] = useState<any>(null);
   const [loadingTree, setLoadingTree] = useState(false);
@@ -156,7 +161,7 @@ export const ProductModule = () => {
   }, [activeFormTab, editingItem?.id, reloadTree]);
 
   useEffect(() => {
-    if ((activeFormTab === "cost" || isModalOpen) && editingItem?.id) {
+    if ((activeFormTab === "cost" || activeFormTab === "composition" || isModalOpen) && editingItem?.id) {
       let cancelled = false;
       setLoadingCost(true);
       fetchJsonOk(`/api/products/${editingItem.id}/cost-analysis`)
@@ -528,6 +533,7 @@ export const ProductModule = () => {
       )
         ? (backendCostAnalysis as { excludedBomLines: unknown[] }).excludedBomLines
         : [];
+      const openBook = (backendCostAnalysis as { openBook?: unknown }).openBook ?? null;
       return {
         bomCost,
         routingCost,
@@ -539,6 +545,7 @@ export const ProductModule = () => {
         calculationExplainability,
         costAnalysisPartial,
         excludedBomLines,
+        openBook,
       };
     }
     return {
@@ -552,6 +559,7 @@ export const ProductModule = () => {
       calculationExplainability: null as CalculationExplainabilityMap | null,
       costAnalysisPartial: false,
       excludedBomLines: [] as unknown[],
+      openBook: null as unknown,
     };
   }, [backendCostAnalysis]);
 
@@ -878,6 +886,7 @@ export const ProductModule = () => {
                   { id: "routing", label: "Processo (Roteiro)", icon: Settings },
                   { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
                   { id: "cost", label: "Análise de Custo", icon: DollarSign },
+                  { id: "composition", label: "Composição de Custos", icon: BookOpen },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -1328,6 +1337,14 @@ export const ProductModule = () => {
                   )}
 
                   {/* Tab: Cost Analysis */}
+                  {activeFormTab === "composition" && (
+                    <OpenBookCompositionTab
+                      loading={loadingCost}
+                      costAnalysisPartial={displayCost.costAnalysisPartial}
+                      openBook={displayCost.openBook as OpenBookPayload | null}
+                    />
+                  )}
+
                   {activeFormTab === "cost" && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                       {costAnalysisError && (
