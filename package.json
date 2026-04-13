@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/lib/costRollup.test.ts",
+    "test": "tsx --test src/lib/costRollup.test.ts src/lib/costAnalysisPartial.test.ts src/components/shared/BomCostDetailRow.test.tsx",
     "postinstall": "prisma generate"
   },
   "dependencies": {

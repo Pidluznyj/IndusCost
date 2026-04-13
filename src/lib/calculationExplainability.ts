@@ -20,6 +20,8 @@ type AnalysisLike = {
   totalGerencialCost: number;
   sku?: string;
   name?: string;
+  /** Quando há filhos da BOM excluídos por falha de custeio. */
+  costAnalysisPartial?: boolean;
   warnings?: Array<{ message?: string }>;
   details?: {
     materials?: Array<{ description?: string; unitCost?: number }>;
@@ -118,6 +120,9 @@ export function buildCostAnalysisExplainability(analysis: AnalysisLike): Calcula
     resultLabel: "CIU",
     resultValue: ciu,
     warnings: warnTexts,
+    notes: analysis.costAnalysisPartial
+      ? "Cálculo parcial: há itens na BOM que não foram custeados e foram excluídos do total. Complete o cadastro desses itens para obter o custo completo."
+      : undefined,
     source: motorSource,
   };
 

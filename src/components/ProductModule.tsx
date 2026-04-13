@@ -34,6 +34,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { ProductImportConfig } from "../lib/importer/ProductConfig";
 import { CalculatedValue } from "./shared/CalculatedValue";
+import { BomCostDetailRow } from "./shared/BomCostDetailRow";
 import type { CalculationExplainabilityMap } from "@/src/types/calculation";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
@@ -547,6 +548,14 @@ export const ProductModule = () => {
       const calculationExplainability =
         (backendCostAnalysis as { calculationExplainability?: CalculationExplainabilityMap })
           .calculationExplainability ?? null;
+      const costAnalysisPartial = Boolean(
+        (backendCostAnalysis as { costAnalysisPartial?: boolean }).costAnalysisPartial
+      );
+      const excludedBomLines = Array.isArray(
+        (backendCostAnalysis as { excludedBomLines?: unknown }).excludedBomLines
+      )
+        ? (backendCostAnalysis as { excludedBomLines: unknown[] }).excludedBomLines
+        : [];
       return {
         bomCost,
         routingCost,
@@ -556,6 +565,8 @@ export const ProductModule = () => {
         warnings,
         warningCount,
         calculationExplainability,
+        costAnalysisPartial,
+        excludedBomLines,
       };
     }
     return {
@@ -567,6 +578,8 @@ export const ProductModule = () => {
       warnings: [] as unknown[],
       warningCount: 0,
       calculationExplainability: null as CalculationExplainabilityMap | null,
+      costAnalysisPartial: false,
+      excludedBomLines: [] as unknown[],
     };
   }, [backendCostAnalysis]);
 
@@ -1284,6 +1297,27 @@ export const ProductModule = () => {
                           <p className="text-xs whitespace-pre-wrap break-words opacity-95">{costAnalysisError}</p>
                         </div>
                       )}
+                      {!costAnalysisError && displayCost.costAnalysisPartial && (
+                        <div
+                          className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100"
+                          role="status"
+                        >
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <Badge variant="warning">Cálculo parcial</Badge>
+                            <span className="font-semibold">Um ou mais itens da BOM não foram custeados.</span>
+                          </div>
+                          <p className="text-xs opacity-95">
+                            O total exibido nos cards soma apenas os itens com cadastro suficiente para custeio.
+                            Itens excluídos aparecem em vermelho na tabela abaixo; passe o mouse para ver o motivo e o que
+                            corrigir.
+                          </p>
+                          {displayCost.excludedBomLines.length > 0 && (
+                            <p className="text-[11px] mt-2 font-mono opacity-90">
+                              Exclusões: {displayCost.excludedBomLines.length} linha(s)
+                            </p>
+                          )}
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
@@ -1315,6 +1349,11 @@ export const ProductModule = () => {
                           <CalculatedValue meta={displayCost.calculationExplainability?.totalIndustrialCost ?? null}>
                             <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
                           </CalculatedValue>
+                          {displayCost.costAnalysisPartial && (
+                            <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                              Total parcial — exclui itens não custeados na BOM.
+                            </p>
+                          )}
                           <p className="text-[10px] text-primary/60 flex flex-wrap items-center gap-1">
                             <span>MP + HH + HM (CIF referência: </span>
                             <CalculatedValue meta={displayCost.calculationExplainability?.totalCIF_Unit ?? null} hideIcon>
@@ -1383,12 +1422,7 @@ export const ProductModule = () => {
                                   </tr>
                                 ) : (
                                   displayCost.details.materials.map((item: any, idx: number) => (
-                                    <tr key={idx}>
-                                      <td className="p-3 font-medium">{item.description}</td>
-                                      <td className="p-3 text-right">{formatNumber(item.requiredQty, 5)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(item.basePrice)}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(item.unitCost)}</td>
-                                    </tr>
+                                    <BomCostDetailRow key={idx} item={item} />
                                   ))
                                 )}
                               </tbody>
@@ -1497,6 +1531,9 @@ export const ProductModule = () => {
                     <div className="flex flex-col">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase">Custo Industrial</p>
                       <p className="text-lg font-black text-primary">{formatCurrency(displayCost.total)}</p>
+                      {displayCost.costAnalysisPartial && (
+                        <span className="text-[10px] font-bold text-amber-600">Parcial</span>
+                      )}
                     </div>
                     <div className="h-8 w-px bg-border" />
                     <div className="flex flex-col">

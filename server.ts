@@ -25,6 +25,10 @@ import {
   type ChildScaledContribution,
   type ChildUnitAnalysis,
 } from "./src/lib/costRollup.js";
+import {
+  buildExcludedBomLineRecord,
+  type ExcludedBomLineRecord,
+} from "./src/lib/costAnalysisPartial.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -2550,8 +2554,12 @@ app.delete("/api/employees/:id", async (req, res) => {
     const lotSize = Number(product.defaultLotSize) || 1;
 
     const warnings: CostAnalysisWarning[] = [];
+    /** Filho custeado com cálculo parcial (exclusões na subárvore). */
+    let hasDescendantPartialCost = false;
     /** Evita segunda passagem recursiva no bloco `details` (mesmo resultado da primeira). */
     const bomLineChildAnalysisCache = new Map<string, Record<string, unknown>>();
+    /** Linhas da BOM cujo filho não foi custeado — excluídas da soma (cálculo parcial). */
+    const bomLineExcludedByLineId = new Map<string, ExcludedBomLineRecord>();
 
     // 1. Materiais / Componentes (Recurso) — recursão com pathStack; ciclo detectado; erros de filho propagam (nunca custo zero por falha silenciosa)
     const materialLineCosts: number[] = [];
@@ -2595,41 +2603,73 @@ app.delete("/api/employees/:id", async (req, res) => {
       if (item.childProductId) {
         const childAnalysis = await getProductCostAnalysis(item.childProductId, cache, false, stack);
         if (childAnalysis === null) {
-          return {
-            error: "CHILD_NOT_FOUND",
+          const notFoundFailure = {
+            error: "CHILD_NOT_FOUND" as const,
             message: `Componente referenciado na BOM de [${product.sku}] não existe (ID órfão).`,
-            parentProductId: product.id,
-            parentSku: product.sku,
-            childProductId: item.childProductId,
-            bomLineId: item.id,
           };
+          const childProd = await prisma.product.findUnique({
+            where: { id: item.childProductId },
+            select: { sku: true, name: true, type: true },
+          });
+          const chain = describeCostAnalysisFailure(notFoundFailure);
+          const ex = buildExcludedBomLineRecord({
+            bomLineId: item.id,
+            childProductId: item.childProductId,
+            sku: childProd?.sku ?? null,
+            name: childProd?.name ?? null,
+            itemType: childProd?.type ?? null,
+            errorCode: notFoundFailure.error,
+            failure: notFoundFailure,
+            detailChain: chain,
+          });
+          bomLineExcludedByLineId.set(item.id, ex);
+          warnings.push({
+            code: "BOM_CHILD_EXCLUDED_FROM_COST",
+            severity: "warning",
+            message: `Componente não custeado (excluído do total): ${chain}. Complete o cadastro ou corrija a referência para incluir no cálculo.`,
+            context: "CHILD_COMPONENT",
+            childProductId: item.childProductId,
+            sku: ex.sku ?? undefined,
+            name: ex.name ?? undefined,
+            bomLineId: item.id,
+          });
+          continue;
         }
         if (isCostAnalysisFailure(childAnalysis)) {
           const childProd = await prisma.product.findUnique({
             where: { id: item.childProductId },
             select: { sku: true, name: true, type: true },
           });
-          const childLabel = childProd
-            ? `[${childProd.sku}] ${childProd.name}${childProd.type ? ` (${childProd.type})` : ""}`
-            : `childProductId=${item.childProductId}`;
           const chain = describeCostAnalysisFailure(childAnalysis);
-          return {
-            error: "CHILD_COST_FAILED",
-            message: `Não foi possível custear o componente filho ${childLabel} referenciado na BOM de [${product.sku}]. Motivo no motor: ${chain}`,
-            parentProductId: product.id,
-            parentSku: product.sku,
-            childProductId: item.childProductId,
-            childSku: childProd?.sku ?? null,
-            childName: childProd?.name ?? null,
-            childItemType: childProd?.type ?? null,
+          const errCode = (childAnalysis as { error: string }).error;
+          const ex = buildExcludedBomLineRecord({
             bomLineId: item.id,
-            childErrorCode: (childAnalysis as { error: string }).error,
-            childErrorDetail: chain,
-            cause: childAnalysis,
-          };
+            childProductId: item.childProductId,
+            sku: childProd?.sku ?? null,
+            name: childProd?.name ?? null,
+            itemType: childProd?.type ?? null,
+            errorCode: errCode,
+            failure: childAnalysis as { error: string; message?: string },
+            detailChain: chain,
+          });
+          bomLineExcludedByLineId.set(item.id, ex);
+          warnings.push({
+            code: "BOM_CHILD_EXCLUDED_FROM_COST",
+            severity: "warning",
+            message: `Componente [${childProd?.sku ?? "?"}] não custeado (excluído do total). Motivo: ${chain}. Complete o cadastro do componente para incluir no cálculo.`,
+            context: "CHILD_COMPONENT",
+            childProductId: item.childProductId,
+            sku: childProd?.sku ?? undefined,
+            name: childProd?.name ?? undefined,
+            bomLineId: item.id,
+          });
+          continue;
         }
         bomLineChildAnalysisCache.set(item.id, childAnalysis as Record<string, unknown>);
         mergeCostWarnings(warnings, childAnalysis);
+        if ((childAnalysis as { costAnalysisPartial?: boolean }).costAnalysisPartial === true) {
+          hasDescendantPartialCost = true;
+        }
 
         const childUnitCost =
           Number(childAnalysis.totalMaterialCost) +
@@ -2654,13 +2694,32 @@ app.delete("/api/employees/:id", async (req, res) => {
         continue;
       }
 
-      return {
-        error: "BOM_LINE_INCOMPLETE",
+      const incompleteFailure = {
+        error: "BOM_LINE_INCOMPLETE" as const,
         message: `Linha da BOM de [${product.sku}] sem material ou componente associado — estrutura inválida para custeio.`,
-        parentProductId: product.id,
-        parentSku: product.sku,
-        bomLineId: item.id,
       };
+      const incChain = describeCostAnalysisFailure(incompleteFailure);
+      bomLineExcludedByLineId.set(
+        item.id,
+        buildExcludedBomLineRecord({
+          bomLineId: item.id,
+          childProductId: null,
+          sku: null,
+          name: null,
+          itemType: null,
+          errorCode: incompleteFailure.error,
+          failure: incompleteFailure,
+          detailChain: incChain,
+        })
+      );
+      warnings.push({
+        code: "BOM_LINE_INCOMPLETE",
+        severity: "warning",
+        message: `${incompleteFailure.message} Linha excluída do total até ser corrigida.`,
+        context: "BOM_LINE",
+        bomLineId: item.id,
+      });
+      continue;
     }
     const materialStructuralTotal = materialLineCosts.reduce((acc, u) => acc + u, 0);
 
@@ -2812,6 +2871,8 @@ app.delete("/api/employees/:id", async (req, res) => {
     /** Custo/preço consolidado (regra de negócio): MP + HH + HM — CIF e OPEX apenas informativos. */
     const totalIndustrialCost = totalMaterialCost + totalHH_Unit + totalHM_Unit;
 
+    const costAnalysisPartial = bomLineExcludedByLineId.size > 0 || hasDescendantPartialCost;
+
     const result: any = {
       productId: product.id,
       sku: product.sku,
@@ -2825,18 +2886,36 @@ app.delete("/api/employees/:id", async (req, res) => {
       totalGerencialCost: totalIndustrialCost,
       warnings,
       warningCount: warnings.length,
+      costAnalysisPartial,
+      excludedBomLines: Array.from(bomLineExcludedByLineId.values()),
     };
 
     if (includeDetails) {
-      const materialsRows: Array<{
-        description: string;
-        basePrice: number;
-        requiredQty: number;
-        unitCost: number;
-      } | null> = [];
+      const materialsRows: Array<Record<string, unknown>> = [];
       for (const item of product.ProductBOM) {
         const bomLoss = Number(item.lossPercentage) / 100;
         const requiredQty = Number(item.quantity) / (1 - bomLoss);
+        const exRow = bomLineExcludedByLineId.get(item.id);
+        if (exRow) {
+          const label =
+            exRow.sku || exRow.name
+              ? `[${exRow.sku ?? "—"}] ${exRow.name ?? ""}`.trim()
+              : "Linha de BOM sem material nem componente";
+          materialsRows.push({
+            description: label,
+            basePrice: 0,
+            requiredQty,
+            unitCost: 0,
+            excludedFromCost: true,
+            errorCode: exRow.errorCode,
+            message: exRow.message,
+            detailChain: exRow.detailChain,
+            sku: exRow.sku,
+            name: exRow.name,
+            bomLineId: exRow.bomLineId,
+          });
+          continue;
+        }
         if (item.Material) {
           const mat = item.Material;
           const matStandardLoss = Number(mat.standardLoss) / 100;
@@ -2874,20 +2953,30 @@ app.delete("/api/employees/:id", async (req, res) => {
           });
           continue;
         }
-        materialsRows.push(null);
+        materialsRows.push({
+          description: "Linha de BOM sem material nem componente",
+          basePrice: 0,
+          requiredQty,
+          unitCost: 0,
+          excludedFromCost: true,
+          errorCode: "BOM_LINE_INCOMPLETE",
+          message: "Linha sem material ou componente.",
+          detailChain: "BOM_LINE_INCOMPLETE",
+        });
       }
       result.details = {
-        materials: materialsRows.filter(Boolean) as Array<{
-          description: string;
-          basePrice: number;
-          requiredQty: number;
-          unitCost: number;
-        }>,
+        materials: materialsRows,
         processBreakdown: operationItems.map((oi) => oi.breakdown).filter(Boolean),
       };
 
-      const detailMaterials = result.details.materials;
-      const lineSum = detailMaterials.reduce((acc, row) => acc + row.unitCost, 0);
+      const detailMaterials = result.details.materials as Array<{
+        unitCost: number;
+        excludedFromCost?: boolean;
+      }>;
+      const lineSum = detailMaterials.reduce(
+        (acc, row) => acc + (row.excludedFromCost ? 0 : row.unitCost),
+        0
+      );
       if (
         Number.isFinite(lineSum) &&
         Number.isFinite(materialStructuralTotal) &&
