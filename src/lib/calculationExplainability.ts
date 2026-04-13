@@ -67,14 +67,14 @@ export function buildCostAnalysisExplainability(analysis: AnalysisLike): Calcula
   }
 
   const totalMaterialCost: CalculationExplanation = {
-    title: "Custo da estrutura (BOM)",
+    title: "Custo da estrutura (BOM) — parcela material",
     description:
-      "Somatório das linhas da lista de materiais: matérias-primas (custo aterrissado ajustado por perda padrão × quantidade com perda da BOM) e/ou custo industrial unitário do componente filho × quantidade com perda da BOM.",
-    formulaText: "totalMaterialCost = Σ (custo da linha i).",
+      "MP direta na BOM (custo aterrissado × qtd com perda) mais parcela de material dos componentes filhos (recursivo). Não inclui HH/HM/CIF dos filhos — estes aparecem em Conversão e CIF.",
+    formulaText: "Material na CIU = MP direta + Σ (material unitário do filho × qtd com perda).",
     inputs: bomInputs.length > 0 ? bomInputs : [{ label: "Total consolidado (sem detalhe de linhas nesta resposta)", value: brMoney(mat) }],
     resultLabel: "Total BOM",
     resultValue: mat,
-    notes: "Para produtos finais, a API de cadastro normalmente não permite MP direta na BOM; o valor pode ser só a soma dos componentes.",
+    notes: "Produtos finais podem ter MP direta na BOM; filhos fabricados contribuem com MP + conversão + CIF agregados nos cards.",
     warnings: warnTexts,
     source: motorSource,
   };
@@ -82,8 +82,8 @@ export function buildCostAnalysisExplainability(analysis: AnalysisLike): Calcula
   const totalConversionCost: CalculationExplanation = {
     title: "Conversão (mão de obra + máquina)",
     description:
-      "Parcela de custo de transformação alocada a HH e HM conforme o processo padrão do componente ou etapas do roteiro. A soma HH+HM corresponde ao custo de conversão total unitário.",
-    formulaText: "totalConversionCost = totalHH_Unit + totalHM_Unit.",
+      "HH+HM do processo deste item e, quando há filhos fabricados na BOM, HH+HM dos filhos agregados proporcionalmente à quantidade (sem dupla contagem com o total da BOM).",
+    formulaText: "totalConversionCost = totalHH_Unit + totalHM_Unit (inclui rollup dos filhos).",
     inputs: [
       { label: "HH unitário (alocado)", value: brMoney(hh) },
       { label: "HM unitário (alocado)", value: brMoney(hm) },
@@ -96,7 +96,7 @@ export function buildCostAnalysisExplainability(analysis: AnalysisLike): Calcula
   const totalCIF_Unit: CalculationExplanation = {
     title: "CIF unitário rateado",
     description:
-      "CIF industrial proporcional ao tempo produtivo unitário: tempo (h) × taxa CIF/h. A taxa vem dos custos indiretos fabris e das horas fábrica do período.",
+      "CIF do tempo produtivo deste item e CIF agregado dos filhos fabricados (proporcional à qtd na BOM), além do rateio por tempo próprio.",
     formulaText: "totalCIF_Unit = tempoProdutivoUnitário_h × (Σ CIF mensal / horas fábrica mensais).",
     inputs: [{ label: "Tempo produtivo embutido nas operações", value: "(ver detalhamento de processo)" }],
     resultLabel: "CIF unitário",

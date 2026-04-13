@@ -19,6 +19,12 @@ import {
   buildCostAnalysisExplainability,
   buildPricingSnapshotExplainability,
 } from "./src/lib/calculationExplainability.js";
+import {
+  aggregateParentDecomposition,
+  scaleChildContribution,
+  type ChildScaledContribution,
+  type ChildUnitAnalysis,
+} from "./src/lib/costRollup.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -2549,6 +2555,8 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     // 1. Materiais / Componentes (Recurso) — recursão com pathStack; ciclo detectado; erros de filho propagam (nunca custo zero por falha silenciosa)
     const materialLineCosts: number[] = [];
+    let directMaterialBOMTotal = 0;
+    const childScaledContributions: ChildScaledContribution[] = [];
     for (const item of product.ProductBOM) {
       if (item.Material) {
         const mat = item.Material;
@@ -2580,6 +2588,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           });
         }
         materialLineCosts.push(lineTotal);
+        directMaterialBOMTotal += lineTotal;
         continue;
       }
 
@@ -2636,7 +2645,9 @@ app.delete("/api/employees/:id", async (req, res) => {
           });
         }
         const requiredQty = Number(item.quantity) / (1 - (Number(item.lossPercentage) / 100));
-        materialLineCosts.push(childUnitCost * requiredQty);
+        const scaled = scaleChildContribution(childAnalysis as ChildUnitAnalysis, requiredQty);
+        childScaledContributions.push(scaled);
+        materialLineCosts.push(scaled.structuralLine);
         continue;
       }
 
@@ -2648,7 +2659,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         bomLineId: item.id,
       };
     }
-    const totalMaterialCost = materialLineCosts.reduce((acc, u) => acc + u, 0);
+    const materialStructuralTotal = materialLineCosts.reduce((acc, u) => acc + u, 0);
 
     // 2. Operações (A Mágica da Prioridade)
     let operationItems: Array<{ 
@@ -2768,8 +2779,8 @@ app.delete("/api/employees/:id", async (req, res) => {
       return { error: "ROUTING_MISSING", message: `Componente [${product.sku}] sem processo (padrão ou roteiro).` };
     }
 
-    const totalHH_Unit = operationItems.reduce((acc, item) => acc + item.totalHH, 0);
-    const totalHM_Unit = operationItems.reduce((acc, item) => acc + item.totalHM, 0);
+    const ownHH_Unit = operationItems.reduce((acc, item) => acc + item.totalHH, 0);
+    const ownHM_Unit = operationItems.reduce((acc, item) => acc + item.totalHM, 0);
     const totalTimeH_Unit = operationItems.reduce((acc, item) => acc + item.totalTimeH, 0);
 
     // 3. CIF/OPEX
@@ -2782,8 +2793,18 @@ app.delete("/api/employees/:id", async (req, res) => {
     const cifRatePerHour = totalCIF_Monthly / cache.factoryHoursMonthly;
     const opexRatePerHour = cache.opexRatePerHour;
     
-    const totalCIF_Unit = totalTimeH_Unit * cifRatePerHour;
+    const ownCIF_Unit = totalTimeH_Unit * cifRatePerHour;
     const totalOPEX_Unit = totalTimeH_Unit * opexRatePerHour;
+
+    const decomposed = aggregateParentDecomposition(directMaterialBOMTotal, childScaledContributions, {
+      hh: ownHH_Unit,
+      hm: ownHM_Unit,
+      cif: ownCIF_Unit,
+    });
+    const totalMaterialCost = decomposed.totalMaterialCost;
+    const totalHH_Unit = decomposed.totalHH_Unit;
+    const totalHM_Unit = decomposed.totalHM_Unit;
+    const totalCIF_Unit = decomposed.totalCIF_Unit;
 
     const totalIndustrialCost = totalMaterialCost + totalHH_Unit + totalHM_Unit + totalCIF_Unit;
 
@@ -2861,13 +2882,13 @@ app.delete("/api/employees/:id", async (req, res) => {
       const lineSum = detailMaterials.reduce((acc, row) => acc + row.unitCost, 0);
       if (
         Number.isFinite(lineSum) &&
-        Number.isFinite(totalMaterialCost) &&
-        Math.abs(lineSum - totalMaterialCost) > 0.0001
+        Number.isFinite(materialStructuralTotal) &&
+        Math.abs(lineSum - materialStructuralTotal) > 0.0001
       ) {
         warnings.push({
           code: "BOM_DETAIL_TOTAL_DIVERGENCE",
           severity: "warning",
-          message: `Soma do detalhamento da BOM (${lineSum.toFixed(6)}) difere do total consolidado (${totalMaterialCost.toFixed(6)}) — revisar arredondamento ou consistência das linhas.`,
+          message: `Soma do detalhamento da BOM (${lineSum.toFixed(6)}) difere do total estrutural das linhas (${materialStructuralTotal.toFixed(6)}) — revisar arredondamento ou consistência das linhas.`,
           context: "BOM_LINE",
         });
         result.warningCount = warnings.length;
