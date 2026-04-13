@@ -2631,7 +2631,10 @@ app.delete("/api/employees/:id", async (req, res) => {
         bomLineChildAnalysisCache.set(item.id, childAnalysis as Record<string, unknown>);
         mergeCostWarnings(warnings, childAnalysis);
 
-        const childUnitCost = childAnalysis.totalIndustrialCost;
+        const childUnitCost =
+          Number(childAnalysis.totalMaterialCost) +
+          Number(childAnalysis.totalHH_Unit) +
+          Number(childAnalysis.totalHM_Unit);
         if (!Number.isFinite(childUnitCost) || childUnitCost <= 0) {
           warnings.push({
             code: "CHILD_ZERO_OR_INVALID_INDUSTRIAL_COST",
@@ -2806,7 +2809,8 @@ app.delete("/api/employees/:id", async (req, res) => {
     const totalHM_Unit = decomposed.totalHM_Unit;
     const totalCIF_Unit = decomposed.totalCIF_Unit;
 
-    const totalIndustrialCost = totalMaterialCost + totalHH_Unit + totalHM_Unit + totalCIF_Unit;
+    /** Custo/preço consolidado (regra de negócio): MP + HH + HM — CIF e OPEX apenas informativos. */
+    const totalIndustrialCost = totalMaterialCost + totalHH_Unit + totalHM_Unit;
 
     const result: any = {
       productId: product.id,
@@ -2818,7 +2822,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       totalCIF_Unit,
       totalOPEX_Unit,
       totalIndustrialCost,
-      totalGerencialCost: totalIndustrialCost + totalOPEX_Unit,
+      totalGerencialCost: totalIndustrialCost,
       warnings,
       warningCount: warnings.length,
     };
@@ -2858,11 +2862,15 @@ app.delete("/api/employees/:id", async (req, res) => {
               bomLineId: item.id,
             };
           }
+          const childUnitNoCif =
+            Number(childResult.totalMaterialCost ?? 0) +
+            Number(childResult.totalHH_Unit ?? 0) +
+            Number(childResult.totalHM_Unit ?? 0);
           materialsRows.push({
             description: String(childResult.name ?? "—"),
-            basePrice: Number(childResult.totalIndustrialCost ?? 0),
+            basePrice: childUnitNoCif,
             requiredQty,
-            unitCost: Number(childResult.totalIndustrialCost ?? 0) * requiredQty,
+            unitCost: childUnitNoCif * requiredQty,
           });
           continue;
         }

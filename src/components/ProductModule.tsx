@@ -1316,7 +1316,7 @@ export const ProductModule = () => {
                             <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
                           </CalculatedValue>
                           <p className="text-[10px] text-primary/60 flex flex-wrap items-center gap-1">
-                            <span>BOM + conversão + CIF (</span>
+                            <span>MP + HH + HM (CIF referência: </span>
                             <CalculatedValue meta={displayCost.calculationExplainability?.totalCIF_Unit ?? null} hideIcon>
                               <span>{formatCurrency(displayCost.cifCost)}</span>
                             </CalculatedValue>
@@ -1348,7 +1348,7 @@ export const ProductModule = () => {
                       )}
 
                       <p className="text-[11px] text-muted-foreground text-center px-2">
-                        Conciliação: estrutura (BOM) + conversão + CIF = CIU (mesmo motor de{" "}
+                        Conciliação: MP + HH + HM = CIU; CIF não entra no total (mesmo motor de{" "}
                         <code className="text-[10px] bg-accent px-1 rounded">/api/products/:id/cost-analysis</code>).
                       </p>
 

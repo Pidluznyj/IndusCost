@@ -1,7 +1,6 @@
 /**
- * Agregação pura da decomposição de custo (MP / HH / HM / CIF) quando a BOM inclui
- * componentes filhos fabricados. O custo industrial unitário do filho já embute MP+HH+HM+CIF;
- * aqui separamos essas parcelas para o pai sem alterar o total.
+ * Agregação da decomposição (MP / HH / HM / CIF informativo) quando a BOM inclui filhos fabricados.
+ * O custo consolidado do item (regra de negócio) usa só MP+HH+HM; CIF não entra na linha estrutural nem no total final.
  */
 
 export type ChildUnitAnalysis = {
@@ -17,7 +16,7 @@ export type ChildScaledContribution = {
   hh: number;
   hm: number;
   cif: number;
-  /** Linha estrutural da BOM (= CIU unitário do filho × qtd com perda) */
+  /** Linha BOM (= MP+HH+HM unitário do filho × qtd; sem CIF no consolidado) */
   structuralLine: number;
 };
 
@@ -27,12 +26,17 @@ export function scaleChildContribution(
 ): ChildScaledContribution {
   const q = Number(requiredQty);
   const safeQ = Number.isFinite(q) ? q : 0;
+  const mat = Number(child.totalMaterialCost);
+  const hhU = Number(child.totalHH_Unit);
+  const hmU = Number(child.totalHM_Unit);
+  const cifU = Number(child.totalCIF_Unit);
+  const lineNoCif = mat + hhU + hmU;
   return {
-    material: Number(child.totalMaterialCost) * safeQ,
-    hh: Number(child.totalHH_Unit) * safeQ,
-    hm: Number(child.totalHM_Unit) * safeQ,
-    cif: Number(child.totalCIF_Unit) * safeQ,
-    structuralLine: Number(child.totalIndustrialCost) * safeQ,
+    material: mat * safeQ,
+    hh: hhU * safeQ,
+    hm: hmU * safeQ,
+    cif: cifU * safeQ,
+    structuralLine: lineNoCif * safeQ,
   };
 }
 
@@ -64,7 +68,7 @@ export function aggregateParentDecomposition(
   };
 }
 
-/** Soma das linhas da BOM “estrutura” (MP direto + CIU completo dos filhos × qtd). */
+/** Soma das linhas da BOM (MP direto + MP+HH+HM dos filhos × qtd). */
 export function structuralBomLineTotal(
   directMaterialTotal: number,
   childContributions: ChildScaledContribution[]

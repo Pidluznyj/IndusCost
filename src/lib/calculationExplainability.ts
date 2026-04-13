@@ -94,10 +94,10 @@ export function buildCostAnalysisExplainability(analysis: AnalysisLike): Calcula
   };
 
   const totalCIF_Unit: CalculationExplanation = {
-    title: "CIF unitário rateado",
+    title: "CIF unitário (referência — não compõe o custo final)",
     description:
-      "CIF do tempo produtivo deste item e CIF agregado dos filhos fabricados (proporcional à qtd na BOM), além do rateio por tempo próprio.",
-    formulaText: "totalCIF_Unit = tempoProdutivoUnitário_h × (Σ CIF mensal / horas fábrica mensais).",
+      "CIF calculado por tempo (próprio e agregado dos filhos) para análise; não entra no custo consolidado MP+HH+HM.",
+    formulaText: "Referência CIF/h × tempo; excluído do total consolidado.",
     inputs: [{ label: "Tempo produtivo embutido nas operações", value: "(ver detalhamento de processo)" }],
     resultLabel: "CIF unitário",
     resultValue: cif,
@@ -105,15 +105,15 @@ export function buildCostAnalysisExplainability(analysis: AnalysisLike): Calcula
   };
 
   const totalIndustrialCost: CalculationExplanation = {
-    title: "Custo industrial unitário (CIU)",
+    title: "Custo consolidado (MP + HH + HM)",
     description:
-      "Custo industrial completo por unidade: estrutura (BOM) + conversão + CIF industrial rateado ao produto.",
-    formulaText: "CIU = totalMaterialCost + totalHH_Unit + totalHM_Unit + totalCIF_Unit.",
+      "Valor final do item por unidade: material (estrutura) + conversão HH/HM. CIF e OPEX abaixo são apenas referência e não entram neste total.",
+    formulaText: "Custo final = totalMaterialCost + totalHH_Unit + totalHM_Unit.",
     inputs: [
-      { label: "BOM", value: brMoney(mat) },
+      { label: "MP (estrutura)", value: brMoney(mat) },
       { label: "HH", value: brMoney(hh) },
       { label: "HM", value: brMoney(hm) },
-      { label: "CIF", value: brMoney(cif) },
+      { label: "CIF (informativo)", value: brMoney(cif) },
     ],
     resultLabel: "CIU",
     resultValue: ciu,
@@ -122,10 +122,10 @@ export function buildCostAnalysisExplainability(analysis: AnalysisLike): Calcula
   };
 
   const totalOPEX_Unit: CalculationExplanation = {
-    title: "OPEX unitário (referência)",
+    title: "OPEX unitário (referência — não compõe o custo final)",
     description:
-      "Parcela de OPEX associada ao tempo produtivo unitário (referência gerencial; o CIU acima já está completo para formação de preço conforme premissas do sistema).",
-    formulaText: "totalOPEX_Unit = tempoProdutivoUnitário_h × taxaOPEX/h.",
+      "OPEX por tempo produtivo do item; não entra no custo consolidado nem no total gerencial exibido como base de preço.",
+    formulaText: "Referência OPEX/h × tempo; excluído do custo final.",
     inputs: [{ label: "OPEX unitário", value: brMoney(opex) }],
     resultLabel: "OPEX unitário",
     resultValue: opex,
@@ -133,13 +133,11 @@ export function buildCostAnalysisExplainability(analysis: AnalysisLike): Calcula
   };
 
   const totalGerencialCost: CalculationExplanation = {
-    title: "Custo gerencial (CIU + OPEX)",
-    description: "Soma do custo industrial unitário com o OPEX unitário de referência.",
-    formulaText: "Custo gerencial = totalIndustrialCost + totalOPEX_Unit.",
-    inputs: [
-      { label: "CIU", value: brMoney(ciu) },
-      { label: "OPEX", value: brMoney(opex) },
-    ],
+    title: "Total gerencial (igual ao custo consolidado)",
+    description:
+      "Alinhado ao custo MP+HH+HM; OPEX permanece apenas como campo informativo separado.",
+    formulaText: "totalGerencialCost = totalIndustrialCost (MP+HH+HM).",
+    inputs: [{ label: "Custo consolidado (MP+HH+HM)", value: brMoney(cger) }],
     resultLabel: "Total gerencial",
     resultValue: cger,
     source: motorSource,
