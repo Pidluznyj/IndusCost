@@ -1205,27 +1205,6 @@ app.delete("/api/employees/:id", async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const results = await ServerImporter.parseExcelMulti(req.file.buffer, EngineeringImportConfigs);
-      
-      const cadastro = results["CADASTRO"];
-      const estrutura = results["ESTRUTURA"];
-      
-      const fileSkus = new Set(cadastro.data.map(d => d.sku));
-      
-      // Cross-sheet validation
-      estrutura.data.forEach((item, idx) => {
-        const rowNum = idx + 2;
-        const parentInFile = cadastro.data.find(d => d.sku === item.parentSku);
-        
-        if (parentInFile && parentInFile.type === "PRODUCT" && item.childType === "MATERIAL") {
-          estrutura.errors.push({
-            row: rowNum,
-            column: "Tipo Filho",
-            message: "Produtos finais não podem receber materiais diretamente. Use componentes."
-          });
-          estrutura.invalidRows++;
-          estrutura.validRows--;
-        }
-      });
 
       const importId = crypto.randomUUID();
       importCache.set(importId, results);
@@ -1398,18 +1377,6 @@ app.delete("/api/employees/:id", async (req, res) => {
               childType: childTypeRaw || undefined,
               reason:
                 "Tipo de filho inválido ou ausente (use MATERIAL ou COMPONENT)."
-            });
-            continue;
-          }
-
-          const parentType = skuToType.get(parentSku);
-          if (parentType === "PRODUCT" && childTypeRaw === "MATERIAL") {
-            ignoredRows.push({
-              row: rowNum,
-              parentSku,
-              childType: childTypeRaw,
-              reason:
-                "Produto final não pode receber material diretamente; use um componente."
             });
             continue;
           }
@@ -1607,9 +1574,6 @@ app.delete("/api/employees/:id", async (req, res) => {
             return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
           }
         }
-        if (item.materialId && effectiveType === "PRODUCT") {
-          return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
-        }
       }
 
       if (effectiveType === "MATERIAL" && (routing || []).length > 0) {
@@ -1718,9 +1682,6 @@ app.delete("/api/employees/:id", async (req, res) => {
           if (effectiveType === "MATERIAL") {
             return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
           }
-        }
-        if (item.materialId && effectiveType === "PRODUCT") {
-          return res.status(400).json({ error: "Produtos Finais não podem conter Matérias-Primas diretamente. Use Componentes." });
         }
       }
 

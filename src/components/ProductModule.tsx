@@ -275,7 +275,7 @@ export const ProductModule = () => {
 
     // Validation based on type
     if (formData.type === "PRODUCT" && formData.bom.length === 0) {
-      alert("Um PRODUTO deve ter pelo menos um COMPONENTE em sua estrutura.");
+      alert("Um PRODUTO deve ter pelo menos uma linha na estrutura (componentes fabricados e/ou materiais comprados).");
       return;
     }
 
@@ -466,7 +466,7 @@ export const ProductModule = () => {
         searchTerms: `${i.sku} ${i.name}`,
       }));
     const matOpts =
-      formData.type === "COMPONENT"
+      formData.type === "COMPONENT" || formData.type === "PRODUCT"
         ? materials.map((m) => ({
             value: m.id,
             label: `${m.code} — ${m.description}`,
@@ -1007,8 +1007,8 @@ export const ProductModule = () => {
                                 <Layers className="h-4 w-4" /> Composição do Item
                               </h4>
                               <p className="text-xs text-muted-foreground mt-1">
-                                {formData.type === "PRODUCT" 
-                                  ? "Produtos só podem conter COMPONENTES." 
+                                {formData.type === "PRODUCT"
+                                  ? "Produtos finais podem listar COMPONENTES fabricados e/ou MATERIAIS comprados (custo aterrissado)."
                                   : "Componentes podem conter COMPONENTES e MATERIAIS."}
                               </p>
                             </div>
@@ -1031,7 +1031,7 @@ export const ProductModule = () => {
                               formData.bom.map((item, idx) => (
                                 <div key={idx} className="grid grid-cols-12 gap-4 p-4 bg-accent/20 rounded-xl border border-border items-end group relative">
                                   <div className="col-span-4 space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Item / Componente</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Item (componente ou material)</label>
                                     <SearchableSelect
                                       placeholder="Selecione um item..."
                                       options={bomSelectOptions}
