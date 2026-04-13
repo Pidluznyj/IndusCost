@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { 
   Plus, 
   Search, 
@@ -39,6 +39,16 @@ import type { CalculationExplainabilityMap } from "@/src/types/calculation";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
+import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomTreeContextPanel";
+
+/** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1). */
+export type ProductWithCostSummary = Product & {
+  costSummary?:
+    | { na: true; label: string }
+    | { unavailable: true; reason: string }
+    | { error: true; code?: string; message?: string }
+    | { totalIndustrialCost: number; partial?: boolean };
+};
 
 /* -------------------------------------------------------------------------- */
 /*                                Sub-Components                              */
@@ -59,47 +69,12 @@ const Badge = ({ children, variant = "default" }: { children: React.ReactNode, v
   );
 };
 
-const TreeNode: React.FC<{ node: any }> = ({ node }) => {
-  const isComponent = node.type === "COMPONENT";
-  const name = isComponent ? node.item?.name : node.item?.description;
-  const code = isComponent ? node.item?.sku : node.item?.code;
-
-  return (
-    <div className="relative">
-      <div className="absolute -left-6 top-4 w-6 h-px bg-border" />
-      <div className="flex items-center gap-3 p-3 bg-accent/30 rounded-lg border border-border group hover:border-primary/30 transition-colors">
-        <div className={cn(
-          "h-8 w-8 rounded flex items-center justify-center",
-          isComponent ? "bg-purple-500/10 text-purple-600" : "bg-orange-500/10 text-orange-600"
-        )}>
-          {isComponent ? <Layers className="h-4 w-4" /> : <Box className="h-4 w-4" />}
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold">{name || "Desconhecido"}</p>
-            <p className="text-[10px] font-bold text-primary">Qtd: {Number(node.quantity)}</p>
-          </div>
-          <p className="text-[10px] text-muted-foreground font-mono">{code}</p>
-        </div>
-      </div>
-      
-      {isComponent && node.item?.children && node.item.children.length > 0 && (
-        <div className="ml-6 border-l-2 border-border pl-6 mt-2 space-y-2">
-          {node.item.children.map((childNode: any, cIdx: number) => (
-            <TreeNode key={cIdx} node={childNode} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 /* -------------------------------------------------------------------------- */
 /*                                Main Module                                 */
 /* -------------------------------------------------------------------------- */
 
 export const ProductModule = () => {
-  const [items, setItems] = useState<Product[]>([]);
+  const [items, setItems] = useState<ProductWithCostSummary[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [machines, setMachines] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
@@ -137,7 +112,7 @@ export const ProductModule = () => {
     setLoading(true);
     try {
       const [productsData, materialsData, machinesData, rolesData] = await Promise.all([
-        fetchJsonOk<Product[]>("/api/products"),
+        fetchJsonOk<ProductWithCostSummary[]>("/api/products?cost=1"),
         fetchJsonOk<Material[]>("/api/materials"),
         fetchJsonOk("/api/machines"),
         fetchJsonOk("/api/roles"),
@@ -158,30 +133,27 @@ export const ProductModule = () => {
     fetchData();
   }, []);
 
+  const reloadTree = useCallback(async () => {
+    if (!editingItem?.id) return;
+    setLoadingTree(true);
+    setTreeData(null);
+    try {
+      const data = await fetchJsonOk(`/api/products/${editingItem.id}/tree`);
+      setTreeData(data);
+    } catch (err) {
+      console.error("Erro ao carregar árvore:", err);
+      setTreeData(null);
+      alert(err instanceof Error ? err.message : "Não foi possível carregar a árvore do produto.");
+    } finally {
+      setLoadingTree(false);
+    }
+  }, [editingItem?.id]);
+
   useEffect(() => {
     if (activeFormTab === "tree" && editingItem?.id) {
-      let cancelled = false;
-      setLoadingTree(true);
-      setTreeData(null);
-      fetchJsonOk(`/api/products/${editingItem.id}/tree`)
-        .then((data) => {
-          if (!cancelled) setTreeData(data);
-        })
-        .catch((err) => {
-          console.error("Erro ao carregar árvore:", err);
-          if (!cancelled) {
-            setTreeData(null);
-            alert(err instanceof Error ? err.message : "Não foi possível carregar a árvore do produto.");
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setLoadingTree(false);
-        });
-      return () => {
-        cancelled = true;
-      };
+      void reloadTree();
     }
-  }, [activeFormTab, editingItem?.id]);
+  }, [activeFormTab, editingItem?.id, reloadTree]);
 
   useEffect(() => {
     if ((activeFormTab === "cost" || isModalOpen) && editingItem?.id) {
@@ -667,6 +639,12 @@ export const ProductModule = () => {
                 <th className="p-4 font-semibold text-sm">Tipo</th>
                 <th className="p-4 font-semibold text-sm">Versão</th>
                 <th className="p-4 font-semibold text-sm">Estrutura</th>
+                <th className="p-4 font-semibold text-sm text-right whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-primary opacity-80" />
+                    Custo industrial (CIU)
+                  </span>
+                </th>
                 <th className="p-4 font-semibold text-sm">Status</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
@@ -674,19 +652,19 @@ export const ProductModule = () => {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center">
+                  <td colSpan={8} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando engenharia...</p>
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
                     Nenhum item encontrado.
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => (
+                filteredItems.map((item: ProductWithCostSummary) => (
                   <tr key={item.id} className={cn(
                     "hover:bg-accent/30 transition-colors group",
                     selectedIds.includes(item.id) && "bg-primary/5"
@@ -743,6 +721,56 @@ export const ProductModule = () => {
                         </div>
                       </div>
                     </td>
+                    <td className="p-4 text-right align-middle min-w-[8.5rem]">
+                      {(() => {
+                        const cs = item.costSummary;
+                        if (!cs) {
+                          return <span className="text-xs text-muted-foreground">—</span>;
+                        }
+                        if ("na" in cs && cs.na) {
+                          return (
+                            <span className="text-xs text-muted-foreground" title={cs.label}>
+                              —
+                            </span>
+                          );
+                        }
+                        if ("unavailable" in cs && cs.unavailable) {
+                          return (
+                            <span
+                              className="text-xs font-medium text-amber-700 dark:text-amber-400"
+                              title={cs.reason}
+                            >
+                              Config
+                            </span>
+                          );
+                        }
+                        if ("error" in cs && cs.error) {
+                          return (
+                            <span
+                              className="text-xs font-medium text-destructive"
+                              title={cs.message || cs.code || "Custeio indisponível"}
+                            >
+                              —
+                            </span>
+                          );
+                        }
+                        if (typeof cs.totalIndustrialCost === "number" && Number.isFinite(cs.totalIndustrialCost)) {
+                          return (
+                            <div className="flex flex-col items-end gap-1">
+                              <span className="text-sm font-bold tabular-nums tracking-tight text-primary">
+                                {formatCurrency(cs.totalIndustrialCost)}
+                              </span>
+                              {cs.partial ? (
+                                <Badge variant="warning" className="text-[9px] px-1.5 py-0 h-5 font-bold">
+                                  Parcial
+                                </Badge>
+                              ) : null}
+                            </div>
+                          );
+                        }
+                        return <span className="text-xs text-muted-foreground">—</span>;
+                      })()}
+                    </td>
                     <td className="p-4">
                       <Badge variant={item.status === "ACTIVE" ? "success" : "danger"}>
                         {item.status === "ACTIVE" ? "Ativo" : "Inativo"}
@@ -790,19 +818,59 @@ export const ProductModule = () => {
               className="bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
               {/* Modal Header */}
-              <div className="p-6 border-b border-border flex items-center justify-between bg-accent/30">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <div className="p-6 border-b border-border flex flex-col gap-4 bg-accent/30 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-4 min-w-0 flex-1">
+                  <div className="h-12 w-12 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                     {formData.type === "PRODUCT" ? <Package className="h-6 w-6" /> : 
                      formData.type === "COMPONENT" ? <Layers className="h-6 w-6" /> : 
                      <Box className="h-6 w-6" />}
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold">{editingItem ? "Editar Engenharia" : "Nova Engenharia"}</h3>
-                    <p className="text-xs text-muted-foreground">Defina a estrutura e o processo produtivo do item</p>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div>
+                      <h3 className="text-xl font-bold">{editingItem ? "Editar Engenharia" : "Nova Engenharia"}</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Defina a estrutura e o processo produtivo do item
+                      </p>
+                    </div>
+                    <div
+                      className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 space-y-2 shadow-sm"
+                      data-tour="products-modal-context"
+                    >
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Código (SKU)
+                        </span>
+                        <span className="font-mono text-sm font-bold text-primary tabular-nums break-all">
+                          {(formData.sku && String(formData.sku).trim()) || (editingItem ? "—" : "…")}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Nome
+                        </span>
+                        <p className="text-sm font-semibold text-foreground leading-snug break-words">
+                          {(formData.name && String(formData.name).trim()) || "—"}
+                        </p>
+                      </div>
+                      {(formData.description != null && String(formData.description).trim() !== "") && (
+                        <div className="space-y-0.5 pt-1 border-t border-border/60">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                            Descrição
+                          </span>
+                          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3 break-words">
+                            {String(formData.description).trim()}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-2 hover:bg-accent rounded-full transition-colors shrink-0 self-end sm:self-start"
+                  aria-label="Fechar"
+                >
                   <X className="h-5 w-5" />
                 </button>
               </div>
@@ -1249,38 +1317,20 @@ export const ProductModule = () => {
                             <p className="text-sm text-muted-foreground">Materiais não possuem sub-estrutura.</p>
                           </div>
                         </div>
+                      ) : editingItem?.id ? (
+                        <ProductBomTreeContextPanel
+                          treeData={treeData}
+                          loadingTree={loadingTree}
+                          rootProductId={editingItem.id}
+                          rootName={formData.name || editingItem.name}
+                          rootSku={formData.sku || editingItem.sku}
+                          rootType={formData.type}
+                          onReloadTree={reloadTree}
+                          onAfterMutation={fetchData}
+                          onOpenFullProductEdit={(p) => handleOpenModal(p)}
+                        />
                       ) : (
-                        <div className="bg-card border border-border rounded-xl p-6">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-6 flex items-center gap-2">
-                            <ChevronRight className="h-4 w-4" /> Visualização Hierárquica
-                          </h4>
-                          
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
-                              {formData.type === "PRODUCT" ? <Package className="h-5 w-5 text-primary" /> : <Layers className="h-5 w-5 text-primary" />}
-                              <div>
-                                <p className="text-sm font-bold">{formData.name || "Novo Item"}</p>
-                                <p className="text-[10px] text-primary font-mono">{formData.sku || "SEM SKU"}</p>
-                              </div>
-                            </div>
-                            
-                            <div className="ml-6 border-l-2 border-border pl-6 space-y-4 pt-4">
-                              {loadingTree ? (
-                                <div className="flex items-center gap-2 text-muted-foreground">
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                  <span className="text-xs">Carregando estrutura completa...</span>
-                                </div>
-                              ) : !treeData || !treeData.children || treeData.children.length === 0 ? (
-                                <p className="text-xs text-muted-foreground italic">Nenhum item na estrutura salva.</p>
-                              ) : (
-                                treeData.children.map((node: any, idx: number) => (
-                                  <TreeNode key={idx} node={node} />
-                                ))
-                              )}
-                            </div>
-
-                          </div>
-                        </div>
+                        <p className="text-sm text-muted-foreground">Salve o item para visualizar a árvore.</p>
                       )}
                     </div>
                   )}

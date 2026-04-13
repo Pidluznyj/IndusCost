@@ -1516,19 +1516,83 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   app.get("/api/products", async (req, res) => {
-    const products = await prisma.product.findMany({
-      include: {
-        ProductBOM: { 
-          include: { 
-            Material: true,
-            ChildProduct: true
-          } 
+    try {
+      const products = await prisma.product.findMany({
+        include: {
+          ProductBOM: {
+            include: {
+              Material: true,
+              ChildProduct: true,
+            },
+          },
+          ProductRouting: { include: { Machine: true, Role: true } },
         },
-        ProductRouting: { include: { Machine: true, Role: true } },
-      },
-      orderBy: { sku: "asc" },
-    });
-    res.json(products);
+        orderBy: { sku: "asc" },
+      });
+
+      const wantCost = req.query.cost === "1" || req.query.cost === "true";
+      if (!wantCost) {
+        res.json(products);
+        return;
+      }
+
+      let cache: Awaited<ReturnType<typeof initAnalysisCache>>;
+      try {
+        cache = await initAnalysisCache();
+      } catch (cfgErr: any) {
+        res.json(
+          products.map((p) => ({
+            ...p,
+            costSummary: {
+              unavailable: true as const,
+              reason: cfgErr?.message ?? "Configuração global incompleta",
+            },
+          }))
+        );
+        return;
+      }
+
+      const enriched = await Promise.all(
+        products.map(async (p) => {
+          if (p.type === "MATERIAL") {
+            return {
+              ...p,
+              costSummary: {
+                na: true as const,
+                label: "Matéria-prima (custo no cadastro de MP)",
+              },
+            };
+          }
+          const a = await getProductCostAnalysis(p.id, cache, false);
+          if (a && typeof a === "object" && "error" in a) {
+            return {
+              ...p,
+              costSummary: {
+                error: true as const,
+                code: (a as { error: string }).error,
+                message: typeof (a as { message?: string }).message === "string" ? (a as { message: string }).message : undefined,
+              },
+            };
+          }
+          const ok = a as {
+            totalIndustrialCost: number;
+            costAnalysisPartial?: boolean;
+          };
+          return {
+            ...p,
+            costSummary: {
+              totalIndustrialCost: Number(ok.totalIndustrialCost),
+              partial: Boolean(ok.costAnalysisPartial),
+            },
+          };
+        })
+      );
+
+      res.json(enriched);
+    } catch (error) {
+      console.error("GET /api/products", error);
+      res.status(500).json({ error: "Erro ao listar produtos." });
+    }
   });
 
   app.get("/api/products/:id", async (req, res) => {
