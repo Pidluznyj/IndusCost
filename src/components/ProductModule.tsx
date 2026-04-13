@@ -113,6 +113,7 @@ export const ProductModule = () => {
   const [loadingTree, setLoadingTree] = useState(false);
   const [backendCostAnalysis, setBackendCostAnalysis] = useState<any>(null);
   const [loadingCost, setLoadingCost] = useState(false);
+  const [costAnalysisError, setCostAnalysisError] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
 
   // Form State
@@ -187,13 +188,18 @@ export const ProductModule = () => {
       setLoadingCost(true);
       fetchJsonOk(`/api/products/${editingItem.id}/cost-analysis`)
         .then((data) => {
-          if (!cancelled) setBackendCostAnalysis(data);
+          if (!cancelled) {
+            setBackendCostAnalysis(data);
+            setCostAnalysisError(null);
+          }
         })
         .catch((err) => {
           console.error("Erro ao carregar custo:", err);
           if (!cancelled) {
             setBackendCostAnalysis(null);
-            alert(err instanceof Error ? err.message : "Não foi possível carregar a análise de custo.");
+            const text = err instanceof Error ? err.message : "Não foi possível carregar a análise de custo.";
+            setCostAnalysisError(text);
+            alert(text);
           }
         })
         .finally(() => {
@@ -204,6 +210,7 @@ export const ProductModule = () => {
       };
     } else if (!editingItem?.id) {
       setBackendCostAnalysis(null);
+      setCostAnalysisError(null);
     }
   }, [activeFormTab, isModalOpen, editingItem?.id]);
 
@@ -1268,6 +1275,15 @@ export const ProductModule = () => {
                   {/* Tab: Cost Analysis */}
                   {activeFormTab === "cost" && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      {costAnalysisError && (
+                        <div
+                          className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
+                          role="alert"
+                        >
+                          <p className="font-semibold mb-1">Análise de custo indisponível</p>
+                          <p className="text-xs whitespace-pre-wrap break-words opacity-95">{costAnalysisError}</p>
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">

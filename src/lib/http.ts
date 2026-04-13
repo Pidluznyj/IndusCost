@@ -10,8 +10,11 @@ export async function parseApiErrorMessage(res: Response): Promise<string> {
       const data: unknown = await res.json();
       if (data && typeof data === "object") {
         const o = data as Record<string, unknown>;
-        if (typeof o.error === "string" && o.error.trim()) return o.error;
-        if (typeof o.message === "string" && o.message.trim()) return o.message;
+        const msg = typeof o.message === "string" ? o.message.trim() : "";
+        const err = typeof o.error === "string" ? o.error.trim() : "";
+        // Preferir message: o backend costuma enviar error=CHILD_COST_FAILED e o detalhe útil em message.
+        if (msg) return msg;
+        if (err) return err;
         if (typeof o.details === "string" && o.details.trim()) return o.details;
       }
       return fallback;
