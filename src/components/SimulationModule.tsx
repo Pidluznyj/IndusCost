@@ -18,7 +18,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Info,
-  Cpu
+  Cpu,
+  Copy
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -40,6 +41,11 @@ export const SimulationModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [comparing, setComparing] = useState<any | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
+  const [compareViewTab, setCompareViewTab] = useState<"INTERNAL" | "CLIENT">("INTERNAL");
+  const [clientCurrentPriceInput, setClientCurrentPriceInput] = useState("0");
+  const [clientReadjustPctInput, setClientReadjustPctInput] = useState("0");
+  const [clientValidityNote, setClientValidityNote] = useState("");
+  const [clientObservation, setClientObservation] = useState("");
   const [commercialMode, setCommercialMode] = useState<"MARGIN" | "TARGET_PRICE">("MARGIN");
   const [commercialMarginInput, setCommercialMarginInput] = useState("0");
   const [commercialTargetPriceInput, setCommercialTargetPriceInput] = useState("0");
@@ -118,9 +124,14 @@ export const SimulationModule = () => {
 
   useEffect(() => {
     if (!comparing) return;
+    setCompareViewTab("INTERNAL");
     setCommercialMode("MARGIN");
     setCommercialMarginInput(String(Number(comparing?.simulated?.marginRate ?? 0)));
     setCommercialTargetPriceInput(String(Number(comparing?.simulated?.suggestedPrice ?? 0)));
+    setClientCurrentPriceInput(String(Number(comparing?.base?.resultados?.suggestedPrice ?? 0)));
+    setClientReadjustPctInput(String(Number(comparing?.delta?.pricePct ?? 0)));
+    setClientValidityNote("");
+    setClientObservation("");
   }, [comparing]);
 
   const simulatedCostBase = Number(comparing?.breakdown?.simulated?.costBase ?? comparing?.simulated?.ciu ?? 0);
@@ -184,6 +195,26 @@ export const SimulationModule = () => {
   const simMpPct = simCostBase > 0 ? (simMp / simCostBase) * 100 : 0;
   const simHhPct = simCostBase > 0 ? (simHh / simCostBase) * 100 : 0;
   const simHmPct = simCostBase > 0 ? (simHm / simCostBase) * 100 : 0;
+  const clientCurrentPrice = Number.parseFloat(clientCurrentPriceInput.replace(",", "."));
+  const clientReajPct = Number.parseFloat(clientReadjustPctInput.replace(",", "."));
+  const clientNewPrice = (Number.isFinite(clientCurrentPrice) ? clientCurrentPrice : 0) * (1 + (Number.isFinite(clientReajPct) ? clientReajPct : 0) / 100);
+
+  const handleCopyClientSummary = async () => {
+    const text =
+      `Resumo Comercial - ${String(comparing?.base?.product ?? "").trim()}\n` +
+      `Preço atual: ${formatCurrency(Number.isFinite(clientCurrentPrice) ? clientCurrentPrice : 0, 5)}\n` +
+      `Reajuste: ${formatNumber(Number.isFinite(clientReajPct) ? clientReajPct : 0, 2)}%\n` +
+      `Novo preço: ${formatCurrency(clientNewPrice, 5)}\n` +
+      `Drivers: MP ${formatNumber(simMpPct, 2)}% | HH ${formatNumber(simHhPct, 2)}% | HM ${formatNumber(simHmPct, 2)}%\n` +
+      (clientValidityNote.trim() ? `Vigência: ${clientValidityNote.trim()}\n` : "") +
+      (clientObservation.trim() ? `Observação: ${clientObservation.trim()}\n` : "");
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("Resumo comercial copiado.");
+    } catch {
+      alert("Não foi possível copiar automaticamente.");
+    }
+  };
 
   return (
     <div className="space-y-6" data-tour="simulation-root">
@@ -299,7 +330,136 @@ export const SimulationModule = () => {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-8 space-y-12">
+              <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                <div className="inline-flex rounded-xl border border-border p-1 bg-accent/20">
+                  <button
+                    type="button"
+                    onClick={() => setCompareViewTab("INTERNAL")}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
+                      compareViewTab === "INTERNAL"
+                        ? "bg-card text-primary shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Visão interna
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompareViewTab("CLIENT")}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
+                      compareViewTab === "CLIENT"
+                        ? "bg-card text-primary shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Reajuste para Cliente
+                  </button>
+                </div>
+
+                {compareViewTab === "CLIENT" ? (
+                  <div className="space-y-6">
+                    <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-black uppercase tracking-wider text-primary">Resumo Comercial</h4>
+                        <button
+                          type="button"
+                          onClick={handleCopyClientSummary}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copiar resumo
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Preço atual do cliente (R$)</span>
+                          <input
+                            type="number"
+                            step="0.00001"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={clientCurrentPriceInput}
+                            onChange={(e) => setClientCurrentPriceInput(e.target.value)}
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Reajuste (%)</span>
+                          <input
+                            type="number"
+                            step="0.00001"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={clientReadjustPctInput}
+                            onChange={(e) => setClientReadjustPctInput(e.target.value)}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="rounded-lg border border-border bg-accent/10 p-3">
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">Preço atual</p>
+                          <p className="text-lg font-black">{formatCurrency(Number.isFinite(clientCurrentPrice) ? clientCurrentPrice : 0, 5)}</p>
+                        </div>
+                        <div className="rounded-lg border border-border bg-accent/10 p-3">
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">Reajuste</p>
+                          <p className="text-lg font-black">{formatNumber(Number.isFinite(clientReajPct) ? clientReajPct : 0, 2)}%</p>
+                        </div>
+                        <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                          <p className="text-[10px] font-bold uppercase text-primary/80">Novo preço</p>
+                          <p className="text-lg font-black text-primary">{formatCurrency(clientNewPrice, 5)}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border p-4 bg-accent/5 space-y-3">
+                        <h5 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Composição percentual dos drivers</h5>
+                        {[
+                          { label: "MP", pct: simMpPct, bar: "bg-orange-500/80" },
+                          { label: "HH", pct: simHhPct, bar: "bg-blue-500/80" },
+                          { label: "HM", pct: simHmPct, bar: "bg-violet-500/80" },
+                        ].map((row) => (
+                          <div key={row.label} className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold">{row.label}</span>
+                              <span className="tabular-nums font-semibold">{formatNumber(row.pct, 2)}%</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-accent overflow-hidden">
+                              <div className={cn("h-full rounded-full", row.bar)} style={{ width: `${Math.max(0, Math.min(100, row.pct))}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Vigência (opcional)</span>
+                          <input
+                            type="text"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={clientValidityNote}
+                            onChange={(e) => setClientValidityNote(e.target.value)}
+                            placeholder="Ex: a partir de 01/06/2026"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">Observação (opcional)</span>
+                          <input
+                            type="text"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={clientObservation}
+                            onChange={(e) => setClientObservation(e.target.value)}
+                            placeholder="Texto curto para negociação"
+                          />
+                        </label>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        O reajuste proposto considera a participação relativa de matéria-prima, mão de obra e custo de processo na composição do item.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
                 {comparing.simulationNote && (
                   <p className="text-[11px] text-muted-foreground border border-border rounded-lg p-3 bg-accent/20">
                     {comparing.simulationNote}
@@ -565,6 +725,8 @@ export const SimulationModule = () => {
                     Os resultados são estimativas para suporte à decisão e não alteram os registros oficiais do sistema.
                   </p>
                 </div>
+                  </>
+                )}
               </div>
             </motion.div>
           </div>
