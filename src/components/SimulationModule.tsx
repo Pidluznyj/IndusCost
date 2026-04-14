@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { 
   TrendingUp, 
   Plus, 
@@ -156,6 +157,12 @@ export const SimulationModule = () => {
   useEffect(() => {
     fetchSavedNewProductSimulations();
   }, []);
+
+  useEffect(() => {
+    if (!newProductReportOpen) return;
+    document.body.classList.add("np-report-printing");
+    return () => document.body.classList.remove("np-report-printing");
+  }, [newProductReportOpen]);
 
   const handleCompare = async (id: string) => {
     try {
@@ -1442,42 +1449,48 @@ export const SimulationModule = () => {
         </div>
       )}
 
-      {newProductReportOpen && frozenReportSnapshot && (
-        <div className="new-product-report-print-shell fixed inset-0 z-[100] flex items-start justify-center p-4 pt-16 sm:pt-8">
-          <button
-            type="button"
-            aria-label="Fechar relatório"
-            className="absolute inset-0 bg-black/50 reports-no-print"
-            onClick={() => setNewProductReportOpen(false)}
-          />
-          <div className="new-product-report-print-panel relative w-full max-w-[min(1100px,calc(100vw-2rem))] max-h-[95vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
-            <div className="sticky top-0 z-10 flex flex-wrap items-center justify-end gap-2 border-b border-border bg-card/95 backdrop-blur px-4 py-3 reports-no-print">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
-              >
-                <Printer className="h-3.5 w-3.5" />
-                Imprimir
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewProductReportOpen(false)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
-              >
-                <X className="h-3.5 w-3.5" />
-                Fechar
-              </button>
+      {newProductReportOpen &&
+        frozenReportSnapshot &&
+        createPortal(
+          <div
+            id="new-product-report-print-portal"
+            className="new-product-report-print-shell fixed inset-0 z-[100] flex items-start justify-center p-4 pt-16 sm:pt-8"
+          >
+            <button
+              type="button"
+              aria-label="Fechar relatório"
+              className="absolute inset-0 bg-black/50 reports-no-print"
+              onClick={() => setNewProductReportOpen(false)}
+            />
+            <div className="new-product-report-print-panel relative w-full max-w-[min(1100px,calc(100vw-2rem))] max-h-[95vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
+              <div className="sticky top-0 z-10 flex flex-wrap items-center justify-end gap-2 border-b border-border bg-card/95 backdrop-blur px-4 py-3 reports-no-print">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Imprimir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewProductReportOpen(false)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Fechar
+                </button>
+              </div>
+              <div id="new-product-report-print-root" className="p-5 md:p-10 bg-white print:p-0">
+                <NewProductSimulationReport
+                  snapshot={frozenReportSnapshot}
+                  recordStatus={activePersistedSimulation?.status}
+                />
+              </div>
             </div>
-            <div id="new-product-report-print-root" className="p-5 md:p-10 bg-white print:p-0">
-              <NewProductSimulationReport
-                snapshot={frozenReportSnapshot}
-                recordStatus={activePersistedSimulation?.status}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Modal: Comparison View */}
       <AnimatePresence>

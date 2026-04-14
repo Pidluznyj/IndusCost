@@ -4,14 +4,23 @@
     size: A4;
     margin: 12mm;
   }
+  /*
+   * Relatório novo produto: modal em createPortal(document.body).
+   * Esconde o app (#root) para não aparecer sidebar "IndusCost" nem o shell.
+   */
+  body.np-report-printing #root {
+    display: none !important;
+  }
   body * {
     visibility: hidden;
   }
   #reports-print-root,
   #reports-print-root *,
+  #new-product-report-print-portal,
+  #new-product-report-print-portal *,
   #new-product-report-print-root,
   #new-product-report-print-root * {
-    visibility: visible;
+    visibility: visible !important;
   }
   /* Aba Relatórios: único bloco absoluto na página */
   #reports-print-root {
