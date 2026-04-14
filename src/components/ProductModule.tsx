@@ -877,31 +877,45 @@ export const ProductModule = () => {
 
               {/* Tabs Navigation */}
               <div
-                className="flex items-center px-6 border-b border-border bg-card/50"
+                className="px-5 pt-3 border-b border-border bg-gradient-to-b from-accent/60 to-accent/20"
                 data-tour="products-modal-tabs"
               >
-                {[
-                  { id: "info", label: "Informações", icon: Info },
-                  { id: "bom", label: "Estrutura (BOM)", icon: Layers },
-                  { id: "routing", label: "Processo (Roteiro)", icon: Settings },
-                  { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
-                  { id: "cost", label: "Análise de Custo", icon: DollarSign },
-                  { id: "composition", label: "Composição de Custos", icon: BookOpen },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveFormTab(tab.id as any)}
-                    className={cn(
-                      "flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-all",
-                      activeFormTab === tab.id 
-                        ? "border-primary text-primary bg-primary/5" 
-                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                    )}
-                  >
-                    <tab.icon className="h-4 w-4" />
-                    {tab.label}
-                  </button>
-                ))}
+                <div
+                  className="flex items-end gap-1.5 overflow-x-auto pb-0.5 -mb-px"
+                  role="tablist"
+                  aria-label="Navegação de engenharia"
+                >
+                  {[
+                    { id: "info", label: "Informações", icon: Info },
+                    { id: "bom", label: "Estrutura (BOM)", icon: Layers },
+                    { id: "routing", label: "Processo (Roteiro)", icon: Settings },
+                    { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
+                    { id: "cost", label: "Análise de Custo", icon: DollarSign },
+                    { id: "composition", label: "Composição de Custos", icon: BookOpen },
+                  ].map((tab) => {
+                    const isActive = activeFormTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        aria-current={isActive ? "page" : undefined}
+                        onClick={() => setActiveFormTab(tab.id as any)}
+                        className={cn(
+                          "relative inline-flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap rounded-t-xl border border-transparent border-b-0 transition-[color,background-color,box-shadow,transform] duration-200",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-1",
+                          isActive
+                            ? "bg-card text-foreground border-border shadow-[0_8px_20px_-14px_rgba(0,0,0,0.5)] -mb-px"
+                            : "text-muted-foreground hover:text-foreground hover:bg-background/80"
+                        )}
+                      >
+                        <tab.icon className={cn("h-4 w-4", isActive ? "text-primary" : "opacity-80")} />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               
               <form onSubmit={handleSubmit} className="flex-1 overflow-hidden flex flex-col">
