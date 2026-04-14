@@ -31,9 +31,13 @@ import {
   priceFromCostAndMargin,
 } from "@/src/lib/simulationFormula";
 import {
-  computeNewProductSandboxResult,
+  computeFinalProductFromComposition,
+  computeSimulatedComponent,
+  type ExistingComponentCost,
+  type FinalCompositionLine,
   materialLineTotal,
   type NewProductMaterialLine,
+  type SimulatedComponent,
 } from "@/src/lib/newProductSandbox";
 
 export const SimulationModule = () => {
@@ -53,16 +57,26 @@ export const SimulationModule = () => {
   const [commercialMode, setCommercialMode] = useState<"MARGIN" | "TARGET_PRICE">("MARGIN");
   const [commercialMarginInput, setCommercialMarginInput] = useState("0");
   const [commercialTargetPriceInput, setCommercialTargetPriceInput] = useState("0");
-  const [newProductMode, setNewProductMode] = useState<"MARGIN" | "TARGET_PRICE">("MARGIN");
-  const [newProductName, setNewProductName] = useState("");
-  const [newProductSku, setNewProductSku] = useState("");
-  const [newProductHh, setNewProductHh] = useState("0");
-  const [newProductHm, setNewProductHm] = useState("0");
-  const [newProductDesiredMargin, setNewProductDesiredMargin] = useState("20");
-  const [newProductTargetPrice, setNewProductTargetPrice] = useState("0");
-  const [newProductMaterials, setNewProductMaterials] = useState<NewProductMaterialLine[]>([
+  const [newProductInnerTab, setNewProductInnerTab] = useState<"FINAL_PRODUCT" | "SIM_COMPONENTS" | "VIABILITY">("FINAL_PRODUCT");
+  const [finalProductMode, setFinalProductMode] = useState<"MARGIN" | "TARGET_PRICE">("MARGIN");
+  const [finalProductName, setFinalProductName] = useState("");
+  const [finalProductSku, setFinalProductSku] = useState("");
+  const [finalDesiredMargin, setFinalDesiredMargin] = useState("20");
+  const [finalTargetPrice, setFinalTargetPrice] = useState("0");
+  const [finalCompositionLines, setFinalCompositionLines] = useState<FinalCompositionLine[]>([
+    { id: "line-initial", type: "EXISTING_COMPONENT", refId: "", quantity: 1 },
+  ]);
+  const [simulatedComponents, setSimulatedComponents] = useState<SimulatedComponent[]>([]);
+  const [editingSimulatedId, setEditingSimulatedId] = useState<string | null>(null);
+  const [simDraftName, setSimDraftName] = useState("");
+  const [simDraftSku, setSimDraftSku] = useState("");
+  const [simDraftHh, setSimDraftHh] = useState("0");
+  const [simDraftHm, setSimDraftHm] = useState("0");
+  const [simDraftMaterials, setSimDraftMaterials] = useState<NewProductMaterialLine[]>([
     { code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 },
   ]);
+  const [existingComponentCosts, setExistingComponentCosts] = useState<Record<string, ExistingComponentCost>>({});
+  const [existingCostLoadingId, setExistingCostLoadingId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -81,7 +95,7 @@ export const SimulationModule = () => {
     try {
       const [s, p, t] = await Promise.all([
         fetchJsonOk("/api/simulations"),
-        fetchJsonOk("/api/products"),
+        fetchJsonOk("/api/products?cost=1"),
         fetchJsonOk("/api/tax-rules"),
       ]);
       setSimulations(Array.isArray(s) ? s : []);
@@ -230,33 +244,27 @@ export const SimulationModule = () => {
     }
   };
 
-  const updateNewProductMaterial = (
-    idx: number,
-    field: keyof NewProductMaterialLine,
-    value: string
-  ) => {
-    setNewProductMaterials((prev) => {
+  const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  const updateSimDraftMaterial = (idx: number, field: keyof NewProductMaterialLine, value: string) => {
+    setSimDraftMaterials((prev) => {
       const next = [...prev];
-      const line = { ...next[idx] };
-      if (field === "quantity" || field === "unitCost") {
-        (line as any)[field] = Number.parseFloat(value) || 0;
-      } else {
-        (line as any)[field] = value;
-      }
-      next[idx] = line;
+      const row = { ...next[idx] } as any;
+      row[field] = field === "quantity" || field === "unitCost" ? Number.parseFloat(value) || 0 : value;
+      next[idx] = row;
       return next;
     });
   };
 
-  const addNewProductMaterialLine = () => {
-    setNewProductMaterials((prev) => [
+  const addSimDraftMaterialLine = () => {
+    setSimDraftMaterials((prev) => [
       ...prev,
       { code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 },
     ]);
   };
 
-  const removeNewProductMaterialLine = (idx: number) => {
-    setNewProductMaterials((prev) => {
+  const removeSimDraftMaterialLine = (idx: number) => {
+    setSimDraftMaterials((prev) => {
       if (prev.length <= 1) return prev;
       const next = [...prev];
       next.splice(idx, 1);
@@ -264,14 +272,164 @@ export const SimulationModule = () => {
     });
   };
 
-  const newProductResult = computeNewProductSandboxResult({
-    lines: newProductMaterials,
-    hh: Number.parseFloat(newProductHh) || 0,
-    hm: Number.parseFloat(newProductHm) || 0,
-    mode: newProductMode,
-    desiredMarginPct: Number.parseFloat(newProductDesiredMargin) || 0,
-    targetPrice: Number.parseFloat(newProductTargetPrice) || 0,
+  const resetSimDraft = () => {
+    setEditingSimulatedId(null);
+    setSimDraftName("");
+    setSimDraftSku("");
+    setSimDraftHh("0");
+    setSimDraftHm("0");
+    setSimDraftMaterials([{ code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 }]);
+  };
+
+  const simulatedDraftPreview = computeSimulatedComponent({
+    id: editingSimulatedId ?? "draft",
+    name: simDraftName || "Componente simulado",
+    sku: simDraftSku || undefined,
+    materials: simDraftMaterials,
+    hh: Number.parseFloat(simDraftHh) || 0,
+    hm: Number.parseFloat(simDraftHm) || 0,
   });
+
+  const saveSimulatedComponent = () => {
+    if (!simDraftName.trim()) {
+      alert("Informe um nome para o componente simulado.");
+      return;
+    }
+    const id = editingSimulatedId ?? makeId();
+    const component = computeSimulatedComponent({
+      id,
+      name: simDraftName.trim(),
+      sku: simDraftSku.trim() || undefined,
+      materials: simDraftMaterials,
+      hh: Number.parseFloat(simDraftHh) || 0,
+      hm: Number.parseFloat(simDraftHm) || 0,
+    });
+    setSimulatedComponents((prev) => {
+      const idx = prev.findIndex((x) => x.id === id);
+      if (idx < 0) return [...prev, component];
+      const next = [...prev];
+      next[idx] = component;
+      return next;
+    });
+    resetSimDraft();
+  };
+
+  const startEditSimulatedComponent = (id: string) => {
+    const target = simulatedComponents.find((x) => x.id === id);
+    if (!target) return;
+    setEditingSimulatedId(target.id);
+    setSimDraftName(target.name);
+    setSimDraftSku(target.sku ?? "");
+    setSimDraftHh(String(target.hh));
+    setSimDraftHm(String(target.hm));
+    setSimDraftMaterials(target.materials.length > 0 ? target.materials : [{ code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 }]);
+    setNewProductInnerTab("SIM_COMPONENTS");
+  };
+
+  const removeSimulatedComponent = (id: string) => {
+    setSimulatedComponents((prev) => prev.filter((x) => x.id !== id));
+    setFinalCompositionLines((prev) =>
+      prev.map((line) =>
+        line.type === "SIMULATED_COMPONENT" && line.refId === id
+          ? { ...line, refId: "" }
+          : line
+      )
+    );
+    if (editingSimulatedId === id) resetSimDraft();
+  };
+
+  const addCompositionLine = () => {
+    setFinalCompositionLines((prev) => [
+      ...prev,
+      { id: makeId(), type: "EXISTING_COMPONENT", refId: "", quantity: 1 },
+    ]);
+  };
+
+  const removeCompositionLine = (id: string) => {
+    setFinalCompositionLines((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((line) => line.id !== id);
+    });
+  };
+
+  const updateCompositionLineType = (id: string, type: FinalCompositionLine["type"]) => {
+    setFinalCompositionLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== id) return line;
+        if (type === "DIRECT_MATERIAL") {
+          return { id: line.id, type, description: "", quantity: 1, unitCost: 0 };
+        }
+        return { id: line.id, type, refId: "", quantity: 1 };
+      })
+    );
+  };
+
+  const updateCompositionLine = (id: string, field: string, value: string | number) => {
+    setFinalCompositionLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== id) return line;
+        const next = { ...line } as any;
+        next[field] = field === "quantity" || field === "unitCost" ? Number(value) || 0 : value;
+        return next as FinalCompositionLine;
+      })
+    );
+  };
+
+  const ensureExistingComponentCost = async (productId: string) => {
+    if (!productId || existingComponentCosts[productId]) return;
+    const p = products.find((x) => x.id === productId);
+    setExistingCostLoadingId(productId);
+    try {
+      const analysis = await fetchJsonOk(`/api/products/${productId}/cost-analysis`);
+      setExistingComponentCosts((prev) => ({
+        ...prev,
+        [productId]: {
+          id: productId,
+          sku: String(p?.sku ?? analysis?.sku ?? ""),
+          name: String(p?.name ?? analysis?.name ?? ""),
+          mp: Number(analysis?.totalMaterialCost ?? 0),
+          hh: Number(analysis?.totalHH_Unit ?? 0),
+          hm: Number(analysis?.totalHM_Unit ?? 0),
+        },
+      }));
+    } catch {
+      // keep fallback from consolidated cost if detailed endpoint fails
+    } finally {
+      setExistingCostLoadingId(null);
+    }
+  };
+
+  const existingComponentsForCalc: ExistingComponentCost[] = products.map((p) => {
+    const detailed = existingComponentCosts[p.id];
+    if (detailed) return detailed;
+    return {
+      id: p.id,
+      sku: String(p.sku ?? ""),
+      name: String(p.name ?? ""),
+      mp: Number(p?.costSummary?.totalIndustrialCost ?? 0),
+      hh: 0,
+      hm: 0,
+    };
+  });
+
+  const finalProductResult = computeFinalProductFromComposition({
+    lines: finalCompositionLines,
+    existingComponents: existingComponentsForCalc,
+    simulatedComponents,
+    mode: finalProductMode,
+    desiredMarginPct: Number.parseFloat(finalDesiredMargin) || 0,
+    targetPrice: Number.parseFloat(finalTargetPrice) || 0,
+  });
+
+  const resolveLineUnitCost = (line: FinalCompositionLine) => {
+    if (line.type === "DIRECT_MATERIAL") return Number(line.unitCost) || 0;
+    if (line.type === "SIMULATED_COMPONENT") {
+      const s = simulatedComponents.find((x) => x.id === line.refId);
+      return Number(s?.breakdown.costBase ?? 0);
+    }
+    const found = existingComponentsForCalc.find((x) => x.id === line.refId);
+    return Number((found?.mp ?? 0) + (found?.hh ?? 0) + (found?.hm ?? 0));
+  };
 
   return (
     <div className="space-y-6" data-tour="simulation-root">
@@ -394,169 +552,432 @@ export const SimulationModule = () => {
       )}
 
       {workspaceTab === "NEW_PRODUCT" && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="xl:col-span-2 space-y-6">
-            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-              <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Novo Produto (Sandbox)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="space-y-1">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground">Nome do produto</span>
-                  <input
-                    type="text"
-                    className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
-                    value={newProductName}
-                    onChange={(e) => setNewProductName(e.target.value)}
-                    placeholder="Ex: Tampa Técnica Série X"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground">SKU provisório (opcional)</span>
-                  <input
-                    type="text"
-                    className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
-                    value={newProductSku}
-                    onChange={(e) => setNewProductSku(e.target.value)}
-                    placeholder="Ex: NP-0001"
-                  />
-                </label>
-              </div>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="space-y-1">
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">Nome do produto final (sandbox)</span>
+                <input
+                  type="text"
+                  className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                  value={finalProductName}
+                  onChange={(e) => setFinalProductName(e.target.value)}
+                  placeholder="Ex: Conjunto Técnico X"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">SKU provisório</span>
+                <input
+                  type="text"
+                  className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                  value={finalProductSku}
+                  onChange={(e) => setFinalProductSku(e.target.value)}
+                  placeholder="Ex: NP-2026-001"
+                />
+              </label>
             </div>
 
+            <div className="inline-flex rounded-xl border border-border p-1 bg-accent/20">
+              <button
+                type="button"
+                onClick={() => setNewProductInnerTab("FINAL_PRODUCT")}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
+                  newProductInnerTab === "FINAL_PRODUCT" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Produto final
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewProductInnerTab("SIM_COMPONENTS")}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
+                  newProductInnerTab === "SIM_COMPONENTS" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Componentes simulados
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewProductInnerTab("VIABILITY")}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
+                  newProductInnerTab === "VIABILITY" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Resumo de viabilidade
+              </button>
+            </div>
+          </div>
+
+          {newProductInnerTab === "FINAL_PRODUCT" && (
             <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Matérias-primas</h3>
+                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Composição do produto final</h3>
                 <button
                   type="button"
-                  onClick={addNewProductMaterialLine}
+                  onClick={addCompositionLine}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Adicionar linha
                 </button>
               </div>
+
               <div className="space-y-2">
-                {newProductMaterials.map((line, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-end rounded-lg border border-border p-2.5 bg-accent/10">
-                    <label className="col-span-2 space-y-1">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Código</span>
-                      <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.code} onChange={(e) => updateNewProductMaterial(idx, "code", e.target.value)} />
-                    </label>
-                    <label className="col-span-3 space-y-1">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Descrição</span>
-                      <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.description} onChange={(e) => updateNewProductMaterial(idx, "description", e.target.value)} />
-                    </label>
-                    <label className="col-span-2 space-y-1">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Qtd</span>
-                      <input type="number" step="0.00001" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.quantity} onChange={(e) => updateNewProductMaterial(idx, "quantity", e.target.value)} />
-                    </label>
-                    <label className="col-span-1 space-y-1">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Un</span>
-                      <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.unit} onChange={(e) => updateNewProductMaterial(idx, "unit", e.target.value)} />
-                    </label>
-                    <label className="col-span-2 space-y-1">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Custo un.</span>
-                      <input type="number" step="0.00001" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.unitCost} onChange={(e) => updateNewProductMaterial(idx, "unitCost", e.target.value)} />
-                    </label>
-                    <div className="col-span-2 flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-[9px] font-bold uppercase text-muted-foreground">Total linha</p>
-                        <p className="text-xs font-bold tabular-nums">{formatCurrency(materialLineTotal(line), 5)}</p>
+                {finalCompositionLines.map((line) => {
+                  const unitCost = resolveLineUnitCost(line);
+                  const lineTotal = unitCost * (Number(line.quantity) || 0);
+                  return (
+                    <div key={line.id} className="grid grid-cols-12 gap-2 items-end rounded-lg border border-border p-2.5 bg-accent/10">
+                      <label className="col-span-2 space-y-1">
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Tipo</span>
+                        <select
+                          className="w-full p-2 rounded border border-border bg-background text-xs"
+                          value={line.type}
+                          onChange={(e) => updateCompositionLineType(line.id, e.target.value as FinalCompositionLine["type"])}
+                        >
+                          <option value="EXISTING_COMPONENT">Componente existente</option>
+                          <option value="SIMULATED_COMPONENT">Componente simulado</option>
+                          <option value="DIRECT_MATERIAL">Material direto</option>
+                        </select>
+                      </label>
+
+                      {line.type === "EXISTING_COMPONENT" && (
+                        <div className="col-span-4 space-y-1">
+                          <span className="text-[9px] font-bold uppercase text-muted-foreground">Item existente</span>
+                          <SearchableSelect
+                            placeholder="Selecione componente existente..."
+                            options={products.map((p: any) => ({
+                              value: p.id,
+                              label: `${p.sku} — ${p.name}`,
+                              sublabel: p.type === "COMPONENT" ? "Componente cadastrado" : "Produto cadastrado",
+                              searchTerms: `${p.sku} ${p.name}`,
+                            }))}
+                            value={line.refId}
+                            onChange={(val) => {
+                              updateCompositionLine(line.id, "refId", val);
+                              ensureExistingComponentCost(val);
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {line.type === "SIMULATED_COMPONENT" && (
+                        <div className="col-span-4 space-y-1">
+                          <span className="text-[9px] font-bold uppercase text-muted-foreground">Componente simulado</span>
+                          <select
+                            className="w-full p-2 rounded border border-border bg-background text-xs"
+                            value={line.refId}
+                            onChange={(e) => updateCompositionLine(line.id, "refId", e.target.value)}
+                          >
+                            <option value="">Selecione...</option>
+                            {simulatedComponents.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {(item.sku ? `${item.sku} — ` : "") + item.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {line.type === "DIRECT_MATERIAL" && (
+                        <label className="col-span-4 space-y-1">
+                          <span className="text-[9px] font-bold uppercase text-muted-foreground">Descrição do material</span>
+                          <input
+                            type="text"
+                            className="w-full p-2 rounded border border-border bg-background text-xs"
+                            value={line.description}
+                            onChange={(e) => updateCompositionLine(line.id, "description", e.target.value)}
+                          />
+                        </label>
+                      )}
+
+                      <label className="col-span-2 space-y-1">
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Quantidade</span>
+                        <input
+                          type="number"
+                          step="0.00001"
+                          className="w-full p-2 rounded border border-border bg-background text-xs"
+                          value={line.quantity}
+                          onChange={(e) => updateCompositionLine(line.id, "quantity", e.target.value)}
+                        />
+                      </label>
+
+                      {line.type === "DIRECT_MATERIAL" ? (
+                        <label className="col-span-2 space-y-1">
+                          <span className="text-[9px] font-bold uppercase text-muted-foreground">Custo un.</span>
+                          <input
+                            type="number"
+                            step="0.00001"
+                            className="w-full p-2 rounded border border-border bg-background text-xs"
+                            value={line.unitCost}
+                            onChange={(e) => updateCompositionLine(line.id, "unitCost", e.target.value)}
+                          />
+                        </label>
+                      ) : (
+                        <div className="col-span-2 space-y-1">
+                          <span className="text-[9px] font-bold uppercase text-muted-foreground">Custo un.</span>
+                          <div className="w-full p-2 rounded border border-border bg-background text-xs font-semibold tabular-nums">
+                            {formatCurrency(unitCost, 5)}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="col-span-2 flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[9px] font-bold uppercase text-muted-foreground">Total linha</p>
+                          <p className="text-xs font-bold tabular-nums">{formatCurrency(lineTotal, 5)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeCompositionLine(line.id)}
+                          className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                          title="Remover linha"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => removeNewProductMaterialLine(idx)}
-                        className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
-                        title="Remover linha"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+
+                      {line.type === "EXISTING_COMPONENT" && line.refId && (
+                        <div className="col-span-12 text-[10px] text-muted-foreground">
+                          {existingCostLoadingId === line.refId
+                            ? "Carregando composição detalhada MP/HH/HM do componente existente..."
+                            : existingComponentCosts[line.refId]
+                              ? "Composição do componente existente carregada com custo detalhado (MP + HH + HM)."
+                              : "Usando custo consolidado atual; ao selecionar novamente, o sistema tenta buscar composição detalhada."}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
+          )}
 
-            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-              <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Conversão + Comercial</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="space-y-1">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground">HH (R$)</span>
-                  <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={newProductHh} onChange={(e) => setNewProductHh(e.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground">HM (R$)</span>
-                  <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={newProductHm} onChange={(e) => setNewProductHm(e.target.value)} />
-                </label>
+          {newProductInnerTab === "SIM_COMPONENTS" && (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2 rounded-2xl border border-border bg-card p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">
+                    {editingSimulatedId ? "Editar componente simulado" : "Novo componente simulado"}
+                  </h3>
+                  {editingSimulatedId && (
+                    <button
+                      type="button"
+                      onClick={resetSimDraft}
+                      className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                    >
+                      Cancelar edição
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground">Nome provisório</span>
+                    <input
+                      type="text"
+                      className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                      value={simDraftName}
+                      onChange={(e) => setSimDraftName(e.target.value)}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground">SKU provisório (opcional)</span>
+                    <input
+                      type="text"
+                      className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                      value={simDraftSku}
+                      onChange={(e) => setSimDraftSku(e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Matérias-primas do componente</h4>
+                  <button
+                    type="button"
+                    onClick={addSimDraftMaterialLine}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Adicionar MP
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {simDraftMaterials.map((line, idx) => (
+                    <div key={`${line.code}-${idx}`} className="grid grid-cols-12 gap-2 items-end rounded-lg border border-border p-2.5 bg-accent/10">
+                      <label className="col-span-2 space-y-1">
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Código</span>
+                        <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.code} onChange={(e) => updateSimDraftMaterial(idx, "code", e.target.value)} />
+                      </label>
+                      <label className="col-span-3 space-y-1">
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Descrição</span>
+                        <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.description} onChange={(e) => updateSimDraftMaterial(idx, "description", e.target.value)} />
+                      </label>
+                      <label className="col-span-2 space-y-1">
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Qtd</span>
+                        <input type="number" step="0.00001" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.quantity} onChange={(e) => updateSimDraftMaterial(idx, "quantity", e.target.value)} />
+                      </label>
+                      <label className="col-span-1 space-y-1">
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Un</span>
+                        <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.unit} onChange={(e) => updateSimDraftMaterial(idx, "unit", e.target.value)} />
+                      </label>
+                      <label className="col-span-2 space-y-1">
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Custo un.</span>
+                        <input type="number" step="0.00001" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.unitCost} onChange={(e) => updateSimDraftMaterial(idx, "unitCost", e.target.value)} />
+                      </label>
+                      <div className="col-span-2 flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[9px] font-bold uppercase text-muted-foreground">Total</p>
+                          <p className="text-xs font-bold tabular-nums">{formatCurrency(materialLineTotal(line), 5)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeSimDraftMaterialLine(idx)}
+                          className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground">HH (R$)</span>
+                    <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={simDraftHh} onChange={(e) => setSimDraftHh(e.target.value)} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground">HM (R$)</span>
+                    <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={simDraftHm} onChange={(e) => setSimDraftHm(e.target.value)} />
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={saveSimulatedComponent}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-opacity"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {editingSimulatedId ? "Atualizar componente" : "Salvar componente simulado"}
+                </button>
               </div>
-              <div className="inline-flex rounded-lg border border-border p-1 bg-accent/20">
-                <button type="button" onClick={() => setNewProductMode("MARGIN")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-md transition-colors", newProductMode === "MARGIN" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Margem desejada</button>
-                <button type="button" onClick={() => setNewProductMode("TARGET_PRICE")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-md transition-colors", newProductMode === "TARGET_PRICE" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Preço alvo</button>
+
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Pré-visualização</h4>
+                  <MetricCard label="MP" value={formatCurrency(simulatedDraftPreview.breakdown.mp, 5)} />
+                  <MetricCard label="HH" value={formatCurrency(simulatedDraftPreview.breakdown.hh, 5)} />
+                  <MetricCard label="HM" value={formatCurrency(simulatedDraftPreview.breakdown.hm, 5)} />
+                  <MetricCard label="Custo total" value={formatCurrency(simulatedDraftPreview.breakdown.costBase, 5)} />
+                  <p className="text-xs text-muted-foreground">
+                    MP {formatNumber(simulatedDraftPreview.breakdown.mpPct, 2)}% • HH {formatNumber(simulatedDraftPreview.breakdown.hhPct, 2)}% • HM {formatNumber(simulatedDraftPreview.breakdown.hmPct, 2)}%
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Componentes simulados salvos</h4>
+                  {simulatedComponents.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Nenhum componente simulado criado.</p>
+                  ) : (
+                    simulatedComponents.map((item) => (
+                      <div key={item.id} className="rounded-lg border border-border bg-accent/10 p-3 space-y-2">
+                        <p className="text-xs font-black">{(item.sku ? `${item.sku} — ` : "") + item.name}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Custo: {formatCurrency(item.breakdown.costBase, 5)} | MP {formatNumber(item.breakdown.mpPct, 2)}% | HH {formatNumber(item.breakdown.hhPct, 2)}% | HM {formatNumber(item.breakdown.hmPct, 2)}%
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button type="button" className="px-2 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent" onClick={() => startEditSimulatedComponent(item.id)}>Editar</button>
+                          <button type="button" className="px-2 py-1 rounded border border-red-200 text-[11px] font-semibold text-red-700 hover:bg-red-50" onClick={() => removeSimulatedComponent(item.id)}>Remover</button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-              {newProductMode === "MARGIN" ? (
-                <label className="space-y-1">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground">Margem desejada (%)</span>
-                  <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={newProductDesiredMargin} onChange={(e) => setNewProductDesiredMargin(e.target.value)} />
-                </label>
-              ) : (
-                <label className="space-y-1">
-                  <span className="text-[10px] font-bold uppercase text-muted-foreground">Preço alvo (R$)</span>
-                  <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={newProductTargetPrice} onChange={(e) => setNewProductTargetPrice(e.target.value)} />
-                </label>
-              )}
             </div>
-          </div>
+          )}
 
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-border bg-card p-5 space-y-3 sticky top-6">
-              <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Resultado de viabilidade</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <MetricCard label="MP total" value={formatCurrency(newProductResult.mp, 5)} />
-                <MetricCard label="HH total" value={formatCurrency(newProductResult.hh, 5)} />
-                <MetricCard label="HM total" value={formatCurrency(newProductResult.hm, 5)} />
-                <MetricCard label="Custo base" value={formatCurrency(newProductResult.costBase, 5)} />
+          {newProductInnerTab === "VIABILITY" && (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2 rounded-2xl border border-border bg-card p-5 space-y-4">
+                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Comercial do produto final</h3>
+                <div className="inline-flex rounded-lg border border-border p-1 bg-accent/20">
+                  <button type="button" onClick={() => setFinalProductMode("MARGIN")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-md transition-colors", finalProductMode === "MARGIN" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Margem desejada</button>
+                  <button type="button" onClick={() => setFinalProductMode("TARGET_PRICE")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-md transition-colors", finalProductMode === "TARGET_PRICE" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Preço alvo</button>
+                </div>
+                {finalProductMode === "MARGIN" ? (
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground">Margem desejada (%)</span>
+                    <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={finalDesiredMargin} onChange={(e) => setFinalDesiredMargin(e.target.value)} />
+                  </label>
+                ) : (
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground">Preço alvo (R$)</span>
+                    <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={finalTargetPrice} onChange={(e) => setFinalTargetPrice(e.target.value)} />
+                  </label>
+                )}
+                <div className="text-xs text-muted-foreground rounded-lg border border-border bg-accent/10 p-3">
+                  Custo base utilizado no simulador: MP + HH + HM. Sem CIF e sem OPEX nesta fase de sandbox.
+                </div>
               </div>
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
-                <p className="text-[10px] font-bold uppercase text-primary/80">Preço sugerido</p>
-                <p className="text-xl font-black text-primary">{formatCurrency(newProductResult.price, 5)}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Margem resultante: <b>{formatNumber(newProductResult.marginPct, 2)}%</b>
+
+              <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Resumo de viabilidade</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <MetricCard label="MP total" value={formatCurrency(finalProductResult.mp, 5)} />
+                  <MetricCard label="HH total" value={formatCurrency(finalProductResult.hh, 5)} />
+                  <MetricCard label="HM total" value={formatCurrency(finalProductResult.hm, 5)} />
+                  <MetricCard label="Custo base" value={formatCurrency(finalProductResult.costBase, 5)} />
+                </div>
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-[10px] font-bold uppercase text-primary/80">Preço sugerido</p>
+                  <p className="text-xl font-black text-primary">{formatCurrency(finalProductResult.price, 5)}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Margem resultante: <b>{formatNumber(finalProductResult.marginPct, 2)}%</b>
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {[
+                    { label: "MP", pct: finalProductResult.mpPct, bar: "bg-orange-500/80" },
+                    { label: "HH", pct: finalProductResult.hhPct, bar: "bg-blue-500/80" },
+                    { label: "HM", pct: finalProductResult.hmPct, bar: "bg-violet-500/80" },
+                  ].map((row) => (
+                    <div key={row.label} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold">{row.label}</span>
+                        <span className="tabular-nums font-semibold">{formatNumber(row.pct, 2)}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-accent overflow-hidden">
+                        <div className={cn("h-full rounded-full", row.bar)} style={{ width: `${Math.max(0, Math.min(100, row.pct))}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p
+                  className={cn(
+                    "text-xs font-semibold rounded-lg px-3 py-2",
+                    finalProductResult.viability === "VIAVEL"
+                      ? "bg-green-500/10 text-green-700"
+                      : finalProductResult.viability === "ATENCAO"
+                        ? "bg-amber-500/10 text-amber-700"
+                        : "bg-red-500/10 text-red-700"
+                  )}
+                >
+                  {finalProductResult.viability === "VIAVEL"
+                    ? "Viável"
+                    : finalProductResult.viability === "ATENCAO"
+                      ? "Atenção"
+                      : "Inviável"}
                 </p>
               </div>
-              <div className="space-y-2">
-                {[
-                  { label: "MP", pct: newProductResult.mpPct, bar: "bg-orange-500/80" },
-                  { label: "HH", pct: newProductResult.hhPct, bar: "bg-blue-500/80" },
-                  { label: "HM", pct: newProductResult.hmPct, bar: "bg-violet-500/80" },
-                ].map((row) => (
-                  <div key={row.label} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold">{row.label}</span>
-                      <span className="tabular-nums font-semibold">{formatNumber(row.pct, 2)}%</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-accent overflow-hidden">
-                      <div className={cn("h-full rounded-full", row.bar)} style={{ width: `${Math.max(0, Math.min(100, row.pct))}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p
-                className={cn(
-                  "text-xs font-semibold rounded-lg px-3 py-2",
-                  newProductResult.viability === "VIAVEL"
-                    ? "bg-green-500/10 text-green-700"
-                    : newProductResult.viability === "ATENCAO"
-                      ? "bg-amber-500/10 text-amber-700"
-                      : "bg-red-500/10 text-red-700"
-                )}
-              >
-                {newProductResult.viability === "VIAVEL"
-                  ? "Viável"
-                  : newProductResult.viability === "ATENCAO"
-                    ? "Atenção"
-                    : "Inviável"}
-              </p>
             </div>
-          </div>
+          )}
         </div>
       )}
 
