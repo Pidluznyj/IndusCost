@@ -900,10 +900,11 @@ export const SimulationModule = () => {
     }
   };
 
-  const handleDeleteSavedSnapshot = async (id: string) => {
+  const handleDeleteSavedSnapshot = async (id: string, displayName: string) => {
+    const label = displayName.trim() || "este snapshot";
     if (
       !confirm(
-        "Excluir permanentemente este registro da biblioteca? Esta ação não pode ser desfeita."
+        `Excluir permanentemente «${label}»?\n\nEsta ação é irreversível e remove o registro da biblioteca.`
       )
     ) {
       return;
@@ -1750,15 +1751,24 @@ export const SimulationModule = () => {
                       <div
                         key={item.id}
                         className={cn(
-                          "flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between",
+                          "relative rounded-lg border p-3 pt-2",
                           activePersistedSimulation?.id === item.id
                             ? "border-primary/50 bg-primary/5 ring-1 ring-primary/30"
                             : "border-border bg-accent/10"
                         )}
                       >
-                        <div className="min-w-0">
+                        <button
+                          type="button"
+                          title="Excluir da biblioteca"
+                          aria-label={`Excluir snapshot ${item.name}`}
+                          onClick={() => handleDeleteSavedSnapshot(item.id, item.name)}
+                          className="absolute right-1.5 top-1.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                        </button>
+                        <div className="min-w-0 pr-8">
                           <div className="flex flex-wrap items-center gap-1.5 gap-y-0.5">
-                            <p className="text-xs font-black">{item.name}</p>
+                            <p className="text-xs font-black leading-tight">{item.name}</p>
                             <span
                               className={cn(
                                 "rounded px-1.5 py-0.5 text-[9px] font-bold uppercase",
@@ -1770,35 +1780,26 @@ export const SimulationModule = () => {
                               {item.status === "SAVED" ? "Salvo" : "Rascunho"}
                             </span>
                           </div>
-                          <p className="text-[11px] text-muted-foreground">
+                          <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
                             {item.productName}
                             {item.productSku ? ` • ${item.productSku}` : ""}
                             {item.savedAt ? ` • salvo em ${new Date(item.savedAt).toLocaleString()}` : ""}
                           </p>
                         </div>
-                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             type="button"
                             onClick={() => handleOpenSavedSnapshot(item.id)}
-                            className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
+                            className="min-w-[4.5rem] flex-1 rounded-md border border-border bg-card px-2.5 py-1.5 text-center text-[11px] font-semibold shadow-sm hover:bg-accent sm:flex-initial"
                           >
                             Abrir
                           </button>
                           <button
                             type="button"
                             onClick={() => handleCloneSavedSnapshot(item.id)}
-                            className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
+                            className="min-w-[4.5rem] flex-1 rounded-md border border-border bg-background/80 px-2.5 py-1.5 text-center text-[11px] font-semibold text-foreground hover:bg-accent sm:flex-initial"
                           >
                             Clonar
-                          </button>
-                          <button
-                            type="button"
-                            title="Excluir registro da biblioteca"
-                            onClick={() => handleDeleteSavedSnapshot(item.id)}
-                            className="inline-flex items-center justify-center rounded border border-red-200/80 bg-red-50/50 p-1.5 text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
-                            aria-label={`Excluir ${item.name}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>
