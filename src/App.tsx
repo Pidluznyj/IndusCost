@@ -16,21 +16,32 @@ import { CustomerModule } from "./components/CustomerModule";
 import { ProposalModule } from "./components/ProposalModule";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
+import { ModuleIndicatorsButton } from "@/src/components/contextual/ModuleIndicatorsButton";
+import { PurchaseIndicatorsDashboard } from "@/src/components/contextual/PurchaseIndicatorsDashboard";
+import { ProposalIndicatorsDashboard } from "@/src/components/contextual/ProposalIndicatorsDashboard";
+import { SimulationIndicatorsDashboard } from "@/src/components/contextual/SimulationIndicatorsDashboard";
+import { ProductEngineeringIndicatorsDashboard } from "@/src/components/contextual/ProductEngineeringIndicatorsDashboard";
+import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual/PricingFormationIndicatorsDashboard";
 
 function ModulePageShell({
   title,
   description,
   children,
+  headerActions,
 }: {
   title: string;
   description: string;
   children: React.ReactNode;
+  headerActions?: React.ReactNode;
 }) {
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
-        <p className="text-muted-foreground">{description}</p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
+          <p className="text-muted-foreground">{description}</p>
+        </div>
+        {headerActions ? <div className="shrink-0 flex flex-wrap gap-2">{headerActions}</div> : null}
       </div>
       {children}
     </div>
@@ -95,13 +106,36 @@ export default function App() {
           }
         />
         <Route
+          path="/purchases/indicators"
+          element={
+            <ModulePageShell
+              title="Compras — Indicadores"
+              description="Panorama das solicitações já registradas no módulo de compras."
+            >
+              <PurchaseIndicatorsDashboard />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="/purchases"
           element={
             <ModulePageShell
               title="Compras"
               description="Solicitações de compra, centro de custo e classificação da demanda (sem pedido, recebimento ou financeiro nesta fase)."
+              headerActions={<ModuleIndicatorsButton to="/purchases/indicators" />}
             >
               <PurchaseModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="/products/indicators"
+          element={
+            <ModulePageShell
+              title="Engenharia — Indicadores"
+              description="Contagens estruturais sobre o cadastro de produtos e componentes."
+            >
+              <ProductEngineeringIndicatorsDashboard />
             </ModulePageShell>
           }
         />
@@ -111,6 +145,7 @@ export default function App() {
             <ModulePageShell
               title="Engenharia de Produto"
               description="Definição de estrutura técnica (BOM) e roteiros produtivos."
+              headerActions={<ModuleIndicatorsButton to="/products/indicators" />}
             >
               <ProductModule />
             </ModulePageShell>
@@ -139,13 +174,36 @@ export default function App() {
           }
         />
         <Route
+          path="/pricing/indicators"
+          element={
+            <ModulePageShell
+              title="Formação de Preço — Indicadores"
+              description="Cobertura de premissas produto × regra fiscal."
+            >
+              <PricingFormationIndicatorsDashboard />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="/pricing"
           element={
             <ModulePageShell
               title="Formação de Preço"
               description="Simulador comercial de markup, impostos e margens líquidas."
+              headerActions={<ModuleIndicatorsButton to="/pricing/indicators" />}
             >
               <PricingModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="/proposals/indicators"
+          element={
+            <ModulePageShell
+              title="Propostas — Indicadores"
+              description="Funil e totais consolidados a partir das propostas cadastradas."
+            >
+              <ProposalIndicatorsDashboard />
             </ModulePageShell>
           }
         />
@@ -155,6 +213,7 @@ export default function App() {
             <ModulePageShell
               title="Propostas Comerciais"
               description="Gestão de propostas, orçamentos e negociações comerciais."
+              headerActions={<ModuleIndicatorsButton to="/proposals/indicators" />}
             >
               <ProposalModule />
             </ModulePageShell>
@@ -172,11 +231,23 @@ export default function App() {
           }
         />
         <Route
+          path="/simulations/indicators"
+          element={
+            <ModulePageShell
+              title="Simulações — Indicadores"
+              description="Cenários what-if e simulações de novo produto persistidas."
+            >
+              <SimulationIndicatorsDashboard />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="/simulations"
           element={
             <ModulePageShell
               title="Cenários e Simulações"
               description="Analise o impacto de variações de mercado e eficiência."
+              headerActions={<ModuleIndicatorsButton to="/simulations/indicators" />}
             >
               <SimulationModule />
             </ModulePageShell>
