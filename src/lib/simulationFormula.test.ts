@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { naturePercentages } from "./openBookMaterialExplosion";
-import { simulateScenarioFromBreakdown } from "./simulationFormula";
+import {
+  marginFromCostAndTargetPrice,
+  priceFromCostAndMargin,
+  simulateScenarioFromBreakdown,
+} from "./simulationFormula";
 
 const premissas = {
   taxRatePct: 0,
@@ -66,8 +70,33 @@ describe("simulationFormula TESTE 4", () => {
   });
 });
 
-/** TESTE 5 — caso real aproximado (MP 10,20 -> 21,00; margem 40%) */
+/** TESTE 5 — modo margem desejada */
 describe("simulationFormula TESTE 5", () => {
+  it("margem informada calcula preço corretamente", () => {
+    const calc = priceFromCostAndMargin(
+      4.02,
+      { taxRatePct: 0, commRatePct: 0, otherRatePct: 0, freight: 0 },
+      40
+    );
+    assert.ok(Math.abs(calc.price - 6.7) < 1e-9);
+  });
+});
+
+/** TESTE 6 — modo preço alvo */
+describe("simulationFormula TESTE 6", () => {
+  it("preço alvo informado calcula margem resultante", () => {
+    const calc = marginFromCostAndTargetPrice(
+      4.02,
+      { taxRatePct: 0, commRatePct: 0, otherRatePct: 0, freight: 0 },
+      6.7
+    );
+    assert.ok(calc.feasible);
+    assert.ok(Math.abs(calc.marginRatePct - 40) < 1e-9);
+  });
+});
+
+/** TESTE 7 — caso real aproximado (MP 10,20 -> 21,00; margem 40%) */
+describe("simulationFormula TESTE 7", () => {
   it("resultado simulado bate com memória matemática esperada", () => {
     const base = { mp: 3.06, hh: 0.95, hm: 0.01 }; // custo ~4,02 => preço ~6,70 com margem 40%
     const r = simulateScenarioFromBreakdown(
@@ -86,8 +115,8 @@ describe("simulationFormula TESTE 5", () => {
   });
 });
 
-/** TESTE 6 — regressão: composição continua fechando 100% */
-describe("simulationFormula TESTE 6", () => {
+/** TESTE 8 — regressão: composição continua fechando 100% */
+describe("simulationFormula TESTE 8", () => {
   it("% MP + % HH + % HM continua 100%", () => {
     const n = naturePercentages(3.06, 0.95, 0.01);
     const sum = n.pctMp + n.pctHh + n.pctHm;

@@ -27,6 +27,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { SIMULATION_TOUR_STEPS } from "@/src/tours/simulationTourSteps";
+import {
+  marginFromCostAndTargetPrice,
+  priceFromCostAndMargin,
+} from "@/src/lib/simulationFormula";
 
 export const SimulationModule = () => {
   const [simulations, setSimulations] = useState<any[]>([]);
@@ -36,6 +40,9 @@ export const SimulationModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [comparing, setComparing] = useState<any | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
+  const [commercialMode, setCommercialMode] = useState<"MARGIN" | "TARGET_PRICE">("MARGIN");
+  const [commercialMarginInput, setCommercialMarginInput] = useState("0");
+  const [commercialTargetPriceInput, setCommercialTargetPriceInput] = useState("0");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -108,6 +115,68 @@ export const SimulationModule = () => {
       alert(error instanceof Error ? error.message : "Não foi possível excluir a simulação.");
     }
   };
+
+  useEffect(() => {
+    if (!comparing) return;
+    setCommercialMode("MARGIN");
+    setCommercialMarginInput(String(Number(comparing?.simulated?.marginRate ?? 0)));
+    setCommercialTargetPriceInput(String(Number(comparing?.simulated?.suggestedPrice ?? 0)));
+  }, [comparing]);
+
+  const simulatedCostBase = Number(comparing?.breakdown?.simulated?.costBase ?? comparing?.simulated?.ciu ?? 0);
+  const premissasNoMargin = {
+    taxRatePct: Number(comparing?.base?.premissas?.taxRate ?? 0),
+    commRatePct: Number(comparing?.base?.premissas?.commRate ?? 0),
+    otherRatePct: Number(comparing?.base?.premissas?.otherRate ?? 0),
+    freight: Number(comparing?.base?.premissas?.freight ?? 0),
+  };
+  const editedMargin = Number.parseFloat(commercialMarginInput.replace(",", "."));
+  const editedTargetPrice = Number.parseFloat(commercialTargetPriceInput.replace(",", "."));
+
+  const commercialProjection = (() => {
+    if (!comparing) {
+      return {
+        price: 0,
+        marginRate: 0,
+        divisor: 0,
+        feasible: false,
+      };
+    }
+    if (commercialMode === "MARGIN") {
+      const marginRate = Number.isFinite(editedMargin)
+        ? editedMargin
+        : Number(comparing?.simulated?.marginRate ?? 0);
+      const calc = priceFromCostAndMargin(simulatedCostBase, premissasNoMargin, marginRate);
+      return {
+        price: calc.price,
+        marginRate,
+        divisor: calc.divisor,
+        feasible: calc.divisor > 0,
+      };
+    }
+    const target = Number.isFinite(editedTargetPrice)
+      ? editedTargetPrice
+      : Number(comparing?.simulated?.suggestedPrice ?? 0);
+    const calc = marginFromCostAndTargetPrice(simulatedCostBase, premissasNoMargin, target);
+    return {
+      price: target,
+      marginRate: calc.marginRatePct,
+      divisor:
+        1 -
+        premissasNoMargin.taxRatePct / 100 -
+        premissasNoMargin.commRatePct / 100 -
+        premissasNoMargin.otherRatePct / 100 -
+        calc.marginRatePct / 100,
+      feasible: calc.feasible,
+    };
+  })();
+  const baseSuggestedPrice = Number(comparing?.base?.resultados?.suggestedPrice ?? 0);
+  const displayedSuggestedPrice = commercialProjection.price;
+  const displayedMarginRate = commercialProjection.marginRate;
+  const displayedPriceDelta = displayedSuggestedPrice - baseSuggestedPrice;
+  const displayedPriceDeltaPct =
+    baseSuggestedPrice > 0 ? (displayedPriceDelta / baseSuggestedPrice) * 100 : 0;
+  const displayedMarkup = simulatedCostBase > 0 ? displayedSuggestedPrice / simulatedCostBase : 0;
 
   return (
     <div className="space-y-6" data-tour="simulation-root">
@@ -229,6 +298,92 @@ export const SimulationModule = () => {
                     {comparing.simulationNote}
                   </p>
                 )}
+                <div className="rounded-xl border border-border p-4 bg-card space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      Modo comercial
+                    </h4>
+                    <div className="inline-flex rounded-lg border border-border p-1 bg-accent/20">
+                      <button
+                        type="button"
+                        onClick={() => setCommercialMode("MARGIN")}
+                        className={cn(
+                          "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors",
+                          commercialMode === "MARGIN"
+                            ? "bg-card text-primary shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Margem desejada
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCommercialMode("TARGET_PRICE")}
+                        className={cn(
+                          "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors",
+                          commercialMode === "TARGET_PRICE"
+                            ? "bg-card text-primary shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Preço alvo
+                      </button>
+                    </div>
+                  </div>
+
+                  {commercialMode === "MARGIN" ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                          Margem desejada (%) — editável
+                        </span>
+                        <input
+                          type="number"
+                          step="0.00001"
+                          className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                          value={commercialMarginInput}
+                          onChange={(e) => setCommercialMarginInput(e.target.value)}
+                        />
+                      </label>
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                          Preço final calculado (R$)
+                        </span>
+                        <div className="w-full p-2.5 rounded-lg border border-border bg-accent/20 text-sm font-semibold">
+                          {formatCurrency(displayedSuggestedPrice, 5)}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                          Preço alvo (R$) — editável
+                        </span>
+                        <input
+                          type="number"
+                          step="0.00001"
+                          className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                          value={commercialTargetPriceInput}
+                          onChange={(e) => setCommercialTargetPriceInput(e.target.value)}
+                        />
+                      </label>
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                          Margem resultante calculada (%)
+                        </span>
+                        <div className="w-full p-2.5 rounded-lg border border-border bg-accent/20 text-sm font-semibold">
+                          {formatNumber(displayedMarginRate, 5)}%
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!commercialProjection.feasible && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                      Campo comercial inválido para cálculo (divisor <= 0). Ajuste margem/preço alvo.
+                    </p>
+                  )}
+                </div>
                 {/* Main Comparison Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Official Base */}
@@ -264,14 +419,14 @@ export const SimulationModule = () => {
                       <span className="text-[10px] font-black uppercase text-primary tracking-widest">Cenário Simulado</span>
                       <div className={cn(
                         "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black",
-                        comparing.delta.pricePct > 0 ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"
+                        displayedPriceDeltaPct > 0 ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"
                       )}>
-                        {comparing.delta.pricePct > 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                        {formatNumber(Math.abs(comparing.delta.pricePct))}%
+                        {displayedPriceDeltaPct > 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                        {formatNumber(Math.abs(displayedPriceDeltaPct))}%
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-4xl font-black text-primary">{formatCurrency(comparing.simulated.suggestedPrice, 5)}</p>
+                      <p className="text-4xl font-black text-primary">{formatCurrency(displayedSuggestedPrice, 5)}</p>
                       <p className="text-xs text-primary/60">Novo Preço Sugerido</p>
                     </div>
                     <div className="pt-4 border-t border-primary/20 grid grid-cols-2 gap-4">
@@ -280,10 +435,10 @@ export const SimulationModule = () => {
                         <p className="text-sm font-bold">{formatCurrency(comparing.simulated.ciu, 5)}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold text-primary uppercase" title="Premissa de margem após ajuste do cenário (heurística)">
+                        <p className="text-[10px] font-bold text-primary uppercase" title="Margem comercial aplicada no modo ativo do cenário">
                           Margem premissa (cenário)
                         </p>
-                        <p className="text-sm font-bold">{formatNumber(comparing.simulated.marginRate)}%</p>
+                        <p className="text-sm font-bold">{formatNumber(displayedMarginRate)}%</p>
                       </div>
                     </div>
                   </div>
@@ -304,15 +459,15 @@ export const SimulationModule = () => {
                     </div>
                     <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex flex-col items-center text-center">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Variação de Preço</p>
-                      <p className={cn("text-xl font-black", comparing.delta.price > 0 ? "text-red-600" : "text-green-600")}>
-                        {comparing.delta.price > 0 ? "+" : ""}{formatCurrency(comparing.delta.price, 5)}
+                      <p className={cn("text-xl font-black", displayedPriceDelta > 0 ? "text-red-600" : "text-green-600")}>
+                        {displayedPriceDelta > 0 ? "+" : ""}{formatCurrency(displayedPriceDelta, 5)}
                       </p>
                       <p className="text-[10px] text-muted-foreground">necessário para manter margem</p>
                     </div>
                     <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex flex-col items-center text-center">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Novo Markup</p>
                       <p className="text-xl font-black text-primary">
-                        {formatNumber(comparing.simulated.markup)}x
+                        {formatNumber(displayedMarkup)}x
                       </p>
                       <p className="text-[10px] text-muted-foreground">fator multiplicador simulado</p>
                     </div>

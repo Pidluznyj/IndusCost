@@ -20,6 +20,38 @@ export type PricingPremissas = {
   freight: number;
 };
 
+export function priceFromCostAndMargin(
+  costBase: number,
+  premissas: Omit<PricingPremissas, "marginRatePct">,
+  marginRatePct: number
+): { price: number; divisor: number } {
+  const taxRate = Number(premissas.taxRatePct) / 100;
+  const commRate = Number(premissas.commRatePct) / 100;
+  const otherRate = Number(premissas.otherRatePct) / 100;
+  const marginRate = Number(marginRatePct) / 100;
+  const freight = Number(premissas.freight);
+  const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+  const price = divisor > 0 ? (Number(costBase) + freight) / divisor : 0;
+  return { price, divisor };
+}
+
+export function marginFromCostAndTargetPrice(
+  costBase: number,
+  premissas: Omit<PricingPremissas, "marginRatePct">,
+  targetPrice: number
+): { marginRatePct: number; feasible: boolean } {
+  const taxRate = Number(premissas.taxRatePct) / 100;
+  const commRate = Number(premissas.commRatePct) / 100;
+  const otherRate = Number(premissas.otherRatePct) / 100;
+  const freight = Number(premissas.freight);
+  const p = Number(targetPrice);
+  if (!Number.isFinite(p) || p <= 0) {
+    return { marginRatePct: 0, feasible: false };
+  }
+  const marginRate = 1 - taxRate - commRate - otherRate - (Number(costBase) + freight) / p;
+  return { marginRatePct: marginRate * 100, feasible: Number.isFinite(marginRate) };
+}
+
 export function simulateScenarioFromBreakdown(
   base: SimulationBaseBreakdown,
   adj: SimulationAdjustments,
@@ -38,28 +70,40 @@ export function simulateScenarioFromBreakdown(
   const simHm = (Number(base.hm) * hmFactor) / efficiencyFactor;
   const simCost = simMp + simHh + simHm;
 
-  const taxRate = Number(premissas.taxRatePct) / 100;
-  const commRate = Number(premissas.commRatePct) / 100;
-  const otherRate = Number(premissas.otherRatePct) / 100;
-  const marginRate = (Number(premissas.marginRatePct) * marginFactor) / 100;
-  const freight = Number(premissas.freight);
-  const divisor = 1 - taxRate - commRate - otherRate - marginRate;
-
-  const baseSuggestedPrice = divisor > 0 ? (baseCost + freight) / divisor : 0;
-  const simSuggestedPrice = divisor > 0 ? (simCost + freight) / divisor : 0;
+  const marginRatePct = Number(premissas.marginRatePct) * marginFactor;
+  const basePriceCalc = priceFromCostAndMargin(
+    baseCost,
+    {
+      taxRatePct: Number(premissas.taxRatePct),
+      commRatePct: Number(premissas.commRatePct),
+      otherRatePct: Number(premissas.otherRatePct),
+      freight: Number(premissas.freight),
+    },
+    marginRatePct
+  );
+  const simPriceCalc = priceFromCostAndMargin(
+    simCost,
+    {
+      taxRatePct: Number(premissas.taxRatePct),
+      commRatePct: Number(premissas.commRatePct),
+      otherRatePct: Number(premissas.otherRatePct),
+      freight: Number(premissas.freight),
+    },
+    marginRatePct
+  );
 
   return {
     base: { mp: Number(base.mp), hh: Number(base.hh), hm: Number(base.hm), costBase: baseCost },
     simulated: { mp: simMp, hh: simHh, hm: simHm, costBase: simCost },
     pricing: {
-      divisor,
+      divisor: simPriceCalc.divisor,
       taxRatePct: Number(premissas.taxRatePct),
       commRatePct: Number(premissas.commRatePct),
       otherRatePct: Number(premissas.otherRatePct),
-      marginRatePct: marginRate * 100,
-      freight,
-      baseSuggestedPrice,
-      simSuggestedPrice,
+      marginRatePct,
+      freight: Number(premissas.freight),
+      baseSuggestedPrice: basePriceCalc.price,
+      simSuggestedPrice: simPriceCalc.price,
     },
   };
 }

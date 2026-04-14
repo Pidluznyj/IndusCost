@@ -2427,6 +2427,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         premissas: {
           taxRate: taxRateBase * 100,
           commRate: commRateBase * 100,
+          otherRate: otherRateBase * 100,
           marginRate: marginRateBase * 100,
           freight: freightBase,
         },
