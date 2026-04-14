@@ -2,12 +2,10 @@ import React, { useEffect, useState } from "react";
 import { 
   TrendingUp, 
   Plus, 
-  Search, 
   Trash2, 
   X,
   Loader2,
   Calculator,
-  ArrowRight,
   AlertCircle,
   Save,
   Layers,
@@ -32,8 +30,14 @@ import {
   marginFromCostAndTargetPrice,
   priceFromCostAndMargin,
 } from "@/src/lib/simulationFormula";
+import {
+  computeNewProductSandboxResult,
+  materialLineTotal,
+  type NewProductMaterialLine,
+} from "@/src/lib/newProductSandbox";
 
 export const SimulationModule = () => {
+  const [workspaceTab, setWorkspaceTab] = useState<"SCENARIOS" | "NEW_PRODUCT">("SCENARIOS");
   const [simulations, setSimulations] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [taxRules, setTaxRules] = useState<any[]>([]);
@@ -49,6 +53,16 @@ export const SimulationModule = () => {
   const [commercialMode, setCommercialMode] = useState<"MARGIN" | "TARGET_PRICE">("MARGIN");
   const [commercialMarginInput, setCommercialMarginInput] = useState("0");
   const [commercialTargetPriceInput, setCommercialTargetPriceInput] = useState("0");
+  const [newProductMode, setNewProductMode] = useState<"MARGIN" | "TARGET_PRICE">("MARGIN");
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductSku, setNewProductSku] = useState("");
+  const [newProductHh, setNewProductHh] = useState("0");
+  const [newProductHm, setNewProductHm] = useState("0");
+  const [newProductDesiredMargin, setNewProductDesiredMargin] = useState("20");
+  const [newProductTargetPrice, setNewProductTargetPrice] = useState("0");
+  const [newProductMaterials, setNewProductMaterials] = useState<NewProductMaterialLine[]>([
+    { code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 },
+  ]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -216,6 +230,49 @@ export const SimulationModule = () => {
     }
   };
 
+  const updateNewProductMaterial = (
+    idx: number,
+    field: keyof NewProductMaterialLine,
+    value: string
+  ) => {
+    setNewProductMaterials((prev) => {
+      const next = [...prev];
+      const line = { ...next[idx] };
+      if (field === "quantity" || field === "unitCost") {
+        (line as any)[field] = Number.parseFloat(value) || 0;
+      } else {
+        (line as any)[field] = value;
+      }
+      next[idx] = line;
+      return next;
+    });
+  };
+
+  const addNewProductMaterialLine = () => {
+    setNewProductMaterials((prev) => [
+      ...prev,
+      { code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 },
+    ]);
+  };
+
+  const removeNewProductMaterialLine = (idx: number) => {
+    setNewProductMaterials((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = [...prev];
+      next.splice(idx, 1);
+      return next;
+    });
+  };
+
+  const newProductResult = computeNewProductSandboxResult({
+    lines: newProductMaterials,
+    hh: Number.parseFloat(newProductHh) || 0,
+    hm: Number.parseFloat(newProductHm) || 0,
+    mode: newProductMode,
+    desiredMarginPct: Number.parseFloat(newProductDesiredMargin) || 0,
+    targetPrice: Number.parseFloat(newProductTargetPrice) || 0,
+  });
+
   return (
     <div className="space-y-6" data-tour="simulation-root">
       {/* Header Actions */}
@@ -229,17 +286,47 @@ export const SimulationModule = () => {
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Novo Cenário
-          </button>
+          {workspaceTab === "SCENARIOS" && (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Novo Cenário
+            </button>
+          )}
         </div>
       </div>
 
+      <div className="inline-flex rounded-xl border border-border p-1 bg-accent/20">
+        <button
+          type="button"
+          onClick={() => setWorkspaceTab("SCENARIOS")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
+            workspaceTab === "SCENARIOS"
+              ? "bg-card text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Cenários existentes
+        </button>
+        <button
+          type="button"
+          onClick={() => setWorkspaceTab("NEW_PRODUCT")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
+            workspaceTab === "NEW_PRODUCT"
+              ? "bg-card text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Simular Novo Produto
+        </button>
+      </div>
+
       {/* Simulations Grid */}
+      {workspaceTab === "SCENARIOS" && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-tour="simulation-grid">
         {loading ? (
           <div className="col-span-full p-12 text-center">
@@ -304,6 +391,174 @@ export const SimulationModule = () => {
           ))
         )}
       </div>
+      )}
+
+      {workspaceTab === "NEW_PRODUCT" && (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="xl:col-span-2 space-y-6">
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+              <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Novo Produto (Sandbox)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">Nome do produto</span>
+                  <input
+                    type="text"
+                    className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                    value={newProductName}
+                    onChange={(e) => setNewProductName(e.target.value)}
+                    placeholder="Ex: Tampa Técnica Série X"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">SKU provisório (opcional)</span>
+                  <input
+                    type="text"
+                    className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                    value={newProductSku}
+                    onChange={(e) => setNewProductSku(e.target.value)}
+                    placeholder="Ex: NP-0001"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Matérias-primas</h3>
+                <button
+                  type="button"
+                  onClick={addNewProductMaterialLine}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Adicionar linha
+                </button>
+              </div>
+              <div className="space-y-2">
+                {newProductMaterials.map((line, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-end rounded-lg border border-border p-2.5 bg-accent/10">
+                    <label className="col-span-2 space-y-1">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Código</span>
+                      <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.code} onChange={(e) => updateNewProductMaterial(idx, "code", e.target.value)} />
+                    </label>
+                    <label className="col-span-3 space-y-1">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Descrição</span>
+                      <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.description} onChange={(e) => updateNewProductMaterial(idx, "description", e.target.value)} />
+                    </label>
+                    <label className="col-span-2 space-y-1">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Qtd</span>
+                      <input type="number" step="0.00001" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.quantity} onChange={(e) => updateNewProductMaterial(idx, "quantity", e.target.value)} />
+                    </label>
+                    <label className="col-span-1 space-y-1">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Un</span>
+                      <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.unit} onChange={(e) => updateNewProductMaterial(idx, "unit", e.target.value)} />
+                    </label>
+                    <label className="col-span-2 space-y-1">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground">Custo un.</span>
+                      <input type="number" step="0.00001" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.unitCost} onChange={(e) => updateNewProductMaterial(idx, "unitCost", e.target.value)} />
+                    </label>
+                    <div className="col-span-2 flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[9px] font-bold uppercase text-muted-foreground">Total linha</p>
+                        <p className="text-xs font-bold tabular-nums">{formatCurrency(materialLineTotal(line), 5)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeNewProductMaterialLine(idx)}
+                        className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                        title="Remover linha"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+              <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Conversão + Comercial</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">HH (R$)</span>
+                  <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={newProductHh} onChange={(e) => setNewProductHh(e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">HM (R$)</span>
+                  <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={newProductHm} onChange={(e) => setNewProductHm(e.target.value)} />
+                </label>
+              </div>
+              <div className="inline-flex rounded-lg border border-border p-1 bg-accent/20">
+                <button type="button" onClick={() => setNewProductMode("MARGIN")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-md transition-colors", newProductMode === "MARGIN" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Margem desejada</button>
+                <button type="button" onClick={() => setNewProductMode("TARGET_PRICE")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-md transition-colors", newProductMode === "TARGET_PRICE" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Preço alvo</button>
+              </div>
+              {newProductMode === "MARGIN" ? (
+                <label className="space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">Margem desejada (%)</span>
+                  <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={newProductDesiredMargin} onChange={(e) => setNewProductDesiredMargin(e.target.value)} />
+                </label>
+              ) : (
+                <label className="space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">Preço alvo (R$)</span>
+                  <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={newProductTargetPrice} onChange={(e) => setNewProductTargetPrice(e.target.value)} />
+                </label>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-3 sticky top-6">
+              <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Resultado de viabilidade</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <MetricCard label="MP total" value={formatCurrency(newProductResult.mp, 5)} />
+                <MetricCard label="HH total" value={formatCurrency(newProductResult.hh, 5)} />
+                <MetricCard label="HM total" value={formatCurrency(newProductResult.hm, 5)} />
+                <MetricCard label="Custo base" value={formatCurrency(newProductResult.costBase, 5)} />
+              </div>
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                <p className="text-[10px] font-bold uppercase text-primary/80">Preço sugerido</p>
+                <p className="text-xl font-black text-primary">{formatCurrency(newProductResult.price, 5)}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Margem resultante: <b>{formatNumber(newProductResult.marginPct, 2)}%</b>
+                </p>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { label: "MP", pct: newProductResult.mpPct, bar: "bg-orange-500/80" },
+                  { label: "HH", pct: newProductResult.hhPct, bar: "bg-blue-500/80" },
+                  { label: "HM", pct: newProductResult.hmPct, bar: "bg-violet-500/80" },
+                ].map((row) => (
+                  <div key={row.label} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold">{row.label}</span>
+                      <span className="tabular-nums font-semibold">{formatNumber(row.pct, 2)}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-accent overflow-hidden">
+                      <div className={cn("h-full rounded-full", row.bar)} style={{ width: `${Math.max(0, Math.min(100, row.pct))}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p
+                className={cn(
+                  "text-xs font-semibold rounded-lg px-3 py-2",
+                  newProductResult.viability === "VIAVEL"
+                    ? "bg-green-500/10 text-green-700"
+                    : newProductResult.viability === "ATENCAO"
+                      ? "bg-amber-500/10 text-amber-700"
+                      : "bg-red-500/10 text-red-700"
+                )}
+              >
+                {newProductResult.viability === "VIAVEL"
+                  ? "Viável"
+                  : newProductResult.viability === "ATENCAO"
+                    ? "Atenção"
+                    : "Inviável"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Comparison View */}
       <AnimatePresence>
@@ -912,3 +1167,12 @@ export const SimulationModule = () => {
     </div>
   );
 };
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-accent/10 p-2.5">
+      <p className="text-[10px] font-bold uppercase text-muted-foreground">{label}</p>
+      <p className="text-sm font-black">{value}</p>
+    </div>
+  );
+}
