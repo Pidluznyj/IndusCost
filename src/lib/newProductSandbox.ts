@@ -3,12 +3,18 @@ import {
   priceFromCostAndMargin,
 } from "./simulationFormula";
 
+/** origem: cadastro Suprimentos (recomendado) ou linha digitada manualmente no sandbox */
+export type NewProductMaterialSource = "CATALOG" | "MANUAL";
+
 export type NewProductMaterialLine = {
   code: string;
   description: string;
   quantity: number;
   unit: string;
   unitCost: number;
+  /** ID do Material (Suprimentos) quando a linha está vinculada ao cadastro */
+  materialId?: string | null;
+  source?: NewProductMaterialSource;
 };
 
 export type CostBreakdown = {
@@ -60,6 +66,25 @@ export type FinalCompositionLine =
       quantity: number;
       unitCost: number;
     };
+
+/** Alinhado à lógica de GET /api/materials (efetivo com frete e perda). */
+export function effectiveUnitCostFromMaterialPayload(m: {
+  currentCost: number;
+  freight?: number;
+  standardLoss?: number;
+  calculations?: { landedCost?: number; effectiveCost?: number };
+}): number {
+  const fromApi = m.calculations?.effectiveCost;
+  if (typeof fromApi === "number" && Number.isFinite(fromApi) && fromApi >= 0) return fromApi;
+  const currentCost = Number(m.currentCost);
+  const freight = Number(m.freight ?? 0);
+  const lossPct = Number(m.standardLoss ?? 0) / 100;
+  const landed = (Number.isFinite(currentCost) ? currentCost : 0) + (Number.isFinite(freight) ? freight : 0);
+  if (!Number.isFinite(landed) || landed < 0) return 0;
+  const denom = 1 - (Number.isFinite(lossPct) ? lossPct : 0);
+  if (denom <= 0 || !Number.isFinite(denom)) return landed;
+  return landed / denom;
+}
 
 export function materialLineTotal(line: NewProductMaterialLine): number {
   return Number(line.quantity) * Number(line.unitCost);

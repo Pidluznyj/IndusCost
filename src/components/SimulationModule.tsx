@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { 
   TrendingUp, 
@@ -36,12 +36,14 @@ import {
 import {
   computeFinalProductFromComposition,
   computeSimulatedComponent,
+  effectiveUnitCostFromMaterialPayload,
   type ExistingComponentCost,
   type FinalCompositionLine,
   materialLineTotal,
   type NewProductMaterialLine,
   type SimulatedComponent,
 } from "@/src/lib/newProductSandbox";
+import type { Material } from "@/src/types/material";
 import { type NewProductSimulationSnapshot } from "@/src/lib/newProductSimulationSnapshot";
 import { NewProductSimulationReport } from "@/src/components/NewProductSimulationReport";
 
@@ -65,6 +67,8 @@ export const SimulationModule = () => {
   const [simulations, setSimulations] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [taxRules, setTaxRules] = useState<any[]>([]);
+  /** Materiais Suprimentos — preço efetivo alinhado ao GET /api/materials */
+  const [materialCatalog, setMaterialCatalog] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [comparing, setComparing] = useState<any | null>(null);
@@ -94,7 +98,7 @@ export const SimulationModule = () => {
   const [simDraftHh, setSimDraftHh] = useState("0");
   const [simDraftHm, setSimDraftHm] = useState("0");
   const [simDraftMaterials, setSimDraftMaterials] = useState<NewProductMaterialLine[]>([
-    { code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 },
+    { code: "", description: "", quantity: 0, unit: "kg", unitCost: 0, source: "MANUAL", materialId: null },
   ]);
   const [existingComponentCosts, setExistingComponentCosts] = useState<Record<string, ExistingComponentCost>>({});
   const [existingCostLoadingId, setExistingCostLoadingId] = useState<string | null>(null);
@@ -121,14 +125,16 @@ export const SimulationModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, p, t] = await Promise.all([
+      const [s, p, t, mats] = await Promise.all([
         fetchJsonOk("/api/simulations"),
         fetchJsonOk("/api/products?cost=1"),
         fetchJsonOk("/api/tax-rules"),
+        fetchJsonOk("/api/materials"),
       ]);
       setSimulations(Array.isArray(s) ? s : []);
       setProducts(Array.isArray(p) ? p : []);
       setTaxRules(Array.isArray(t) ? t : []);
+      setMaterialCatalog(Array.isArray(mats) ? (mats as Material[]) : []);
     } catch (error) {
       console.error("Erro ao buscar simulações:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar simulações.");
@@ -297,20 +303,115 @@ export const SimulationModule = () => {
 
   const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+  const materialSelectOptions = useMemo(() => {
+    return materialCatalog.map((m) => {
+      const u = effectiveUnitCostFromMaterialPayload({
+        currentCost: Number(m.currentCost),
+        freight: m.freight != null ? Number(m.freight) : 0,
+        standardLoss: m.standardLoss != null ? Number(m.standardLoss) : 0,
+        calculations: m.calculations,
+      });
+      return {
+        value: m.id,
+        label: `${m.code} — ${m.description}`,
+        sublabel: `${m.unit} · ${formatCurrency(u, 2)} eff. por un. (cadastro)`,
+        searchTerms: `${m.code} ${m.description} ${m.supplier ?? ""}`,
+      };
+    });
+  }, [materialCatalog]);
+
   const updateSimDraftMaterial = (idx: number, field: keyof NewProductMaterialLine, value: string) => {
     setSimDraftMaterials((prev) => {
       const next = [...prev];
-      const row = { ...next[idx] } as any;
-      row[field] = field === "quantity" || field === "unitCost" ? Number.parseFloat(value) || 0 : value;
-      next[idx] = row;
+      const row = { ...next[idx] } as NewProductMaterialLine & Record<string, unknown>;
+      if (field === "quantity" || field === "unitCost") {
+        row[field] = Number.parseFloat(value) || 0;
+      } else {
+        (row as any)[field] = value;
+      }
+      next[idx] = row as NewProductMaterialLine;
       return next;
     });
   };
 
-  const addSimDraftMaterialLine = () => {
+  const applyCatalogMaterialToLine = (idx: number, materialId: string) => {
+    if (!materialId.trim()) {
+      setSimDraftMaterials((prev) => {
+        const next = [...prev];
+        const prevRow = next[idx];
+        if (!prevRow) return prev;
+        next[idx] = {
+          ...prevRow,
+          materialId: null,
+          source: "CATALOG",
+          code: "",
+          description: "",
+          unit: "kg",
+          unitCost: 0,
+        };
+        return next;
+      });
+      return;
+    }
+    const m = materialCatalog.find((x) => x.id === materialId);
+    if (!m) return;
+    const unitCost = effectiveUnitCostFromMaterialPayload({
+      currentCost: Number(m.currentCost),
+      freight: m.freight != null ? Number(m.freight) : 0,
+      standardLoss: m.standardLoss != null ? Number(m.standardLoss) : 0,
+      calculations: m.calculations,
+    });
+    setSimDraftMaterials((prev) => {
+      const next = [...prev];
+      const prevRow = next[idx];
+      if (!prevRow) return prev;
+      const qty = Number(prevRow.quantity) > 0 ? Number(prevRow.quantity) : 1;
+      next[idx] = {
+        ...prevRow,
+        materialId,
+        source: "CATALOG",
+        code: m.code,
+        description: m.description,
+        unit: m.unit,
+        unitCost,
+        quantity: qty,
+      };
+      return next;
+    });
+  };
+
+  const convertSimDraftLineToManual = (idx: number) => {
+    setSimDraftMaterials((prev) => {
+      const next = [...prev];
+      const prevRow = next[idx];
+      if (!prevRow) return prev;
+      next[idx] = { ...prevRow, source: "MANUAL", materialId: null };
+      return next;
+    });
+  };
+
+  const addSimDraftMaterialLine = (kind: "catalog" | "manual") => {
     setSimDraftMaterials((prev) => [
       ...prev,
-      { code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 },
+      kind === "catalog"
+        ? {
+            code: "",
+            description: "",
+            quantity: 1,
+            unit: "kg",
+            unitCost: 0,
+            source: "CATALOG",
+            materialId: null,
+          }
+        : {
+            code: "",
+            description: "",
+            quantity: 0,
+            unit: "kg",
+            unitCost: 0,
+            source: "MANUAL",
+            materialId: null,
+          },
     ]);
   };
 
@@ -329,7 +430,7 @@ export const SimulationModule = () => {
     setSimDraftSku("");
     setSimDraftHh("0");
     setSimDraftHm("0");
-    setSimDraftMaterials([{ code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 }]);
+    setSimDraftMaterials([{ code: "", description: "", quantity: 0, unit: "kg", unitCost: 0, source: "MANUAL", materialId: null }]);
   };
 
   const simulatedDraftPreview = computeSimulatedComponent({
@@ -344,6 +445,11 @@ export const SimulationModule = () => {
   const saveSimulatedComponent = () => {
     if (!simDraftName.trim()) {
       alert("Informe um nome para o componente simulado.");
+      return;
+    }
+    const orphanCatalog = simDraftMaterials.some((m) => m.source === "CATALOG" && !m.materialId);
+    if (orphanCatalog) {
+      alert("Há linha de MP 'da base (Suprimentos)' sem material selecionado. Selecione um item da lista ou remova a linha.");
       return;
     }
     const id = editingSimulatedId ?? makeId();
@@ -373,7 +479,24 @@ export const SimulationModule = () => {
     setSimDraftSku(target.sku ?? "");
     setSimDraftHh(String(target.hh));
     setSimDraftHm(String(target.hm));
-    setSimDraftMaterials(target.materials.length > 0 ? target.materials : [{ code: "", description: "", quantity: 0, unit: "kg", unitCost: 0 }]);
+    setSimDraftMaterials(
+      target.materials.length > 0
+        ? target.materials.map((m) => ({
+            code: m.code,
+            description: m.description,
+            quantity: Number(m.quantity) || 0,
+            unit: m.unit,
+            unitCost: Number(m.unitCost) || 0,
+            materialId: (m as NewProductMaterialLine).materialId ?? null,
+            source:
+              (m as NewProductMaterialLine).source === "CATALOG" || (m as NewProductMaterialLine).source === "MANUAL"
+                ? (m as NewProductMaterialLine).source
+                : (m as NewProductMaterialLine).materialId
+                  ? "CATALOG"
+                  : "MANUAL",
+          }))
+        : [{ code: "", description: "", quantity: 0, unit: "kg", unitCost: 0, source: "MANUAL", materialId: null }]
+    );
     setNewProductInnerTab("SIM_COMPONENTS");
   };
 
@@ -600,6 +723,13 @@ export const SimulationModule = () => {
             unit: m.unit,
             unitCost: m.unitCost,
             total: materialLineTotal(m),
+            materialId: m.materialId ?? null,
+            source:
+              m.source === "CATALOG" || m.source === "MANUAL"
+                ? m.source
+                : m.materialId
+                  ? "CATALOG"
+                  : "MANUAL",
           })),
         })),
       },
@@ -686,6 +816,13 @@ export const SimulationModule = () => {
           quantity: Number(m.quantity) || 0,
           unit: m.unit,
           unitCost: Number(m.unitCost) || 0,
+          materialId: m.materialId ?? null,
+          source:
+            m.source === "CATALOG" || m.source === "MANUAL"
+              ? m.source
+              : m.materialId
+                ? "CATALOG"
+                : "MANUAL",
         })),
         breakdown: {
           mp: Number(item.mp) || 0,
@@ -1263,56 +1400,175 @@ export const SimulationModule = () => {
                   </label>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Matérias-primas do componente</h4>
-                  <button
-                    type="button"
-                    onClick={addSimDraftMaterialLine}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Adicionar MP
-                  </button>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Matérias-primas do componente</h4>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Priorize materiais do cadastro de Suprimentos (custo efetivo alinhado ao sistema). Uso manual é exceção.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => addSimDraftMaterialLine("catalog")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Da base (Suprimentos)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addSimDraftMaterialLine("manual")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Linha manual
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  {simDraftMaterials.map((line, idx) => (
-                    <div key={`${line.code}-${idx}`} className="grid grid-cols-12 gap-2 items-end rounded-lg border border-border p-2.5 bg-accent/10">
-                      <label className="col-span-2 space-y-1">
-                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Código</span>
-                        <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.code} onChange={(e) => updateSimDraftMaterial(idx, "code", e.target.value)} />
-                      </label>
-                      <label className="col-span-3 space-y-1">
-                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Descrição</span>
-                        <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.description} onChange={(e) => updateSimDraftMaterial(idx, "description", e.target.value)} />
-                      </label>
-                      <label className="col-span-2 space-y-1">
-                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Qtd</span>
-                        <input type="number" step="0.00001" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.quantity} onChange={(e) => updateSimDraftMaterial(idx, "quantity", e.target.value)} />
-                      </label>
-                      <label className="col-span-1 space-y-1">
-                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Un</span>
-                        <input type="text" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.unit} onChange={(e) => updateSimDraftMaterial(idx, "unit", e.target.value)} />
-                      </label>
-                      <label className="col-span-2 space-y-1">
-                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Custo un.</span>
-                        <input type="number" step="0.00001" className="w-full p-2 rounded border border-border bg-background text-xs" value={line.unitCost} onChange={(e) => updateSimDraftMaterial(idx, "unitCost", e.target.value)} />
-                      </label>
-                      <div className="col-span-2 flex items-center justify-between gap-2">
-                        <div>
-                          <p className="text-[9px] font-bold uppercase text-muted-foreground">Total</p>
-                          <p className="text-xs font-bold tabular-nums">{formatCurrency(materialLineTotal(line), 5)}</p>
+                <div className="space-y-3">
+                  {simDraftMaterials.map((line, idx) => {
+                    const mode = line.source === "CATALOG" ? "catalog" : "manual";
+                    const catalogIncomplete = mode === "catalog" && !line.materialId;
+                    const manualWarn = mode === "manual" && (Number(line.unitCost) === 0 || !Number.isFinite(Number(line.unitCost)));
+                    const identityLocked = mode === "catalog" && Boolean(line.materialId);
+                    return (
+                      <div
+                        key={`sim-mp-${idx}-${line.materialId ?? "none"}`}
+                        className={cn(
+                          "rounded-xl border p-3 space-y-2 bg-accent/10",
+                          catalogIncomplete ? "border-amber-400/60" : "border-border",
+                          manualWarn ? "border-amber-500/50" : null
+                        )}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span
+                            className={cn(
+                              "text-[10px] font-bold uppercase px-2 py-0.5 rounded-md",
+                              mode === "catalog" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            {mode === "catalog" ? "Cadastro Suprimentos" : "Manual (sandbox)"}
+                          </span>
+                          {mode === "catalog" && line.materialId ? (
+                            <button
+                              type="button"
+                              disabled={newProductIsReadOnly}
+                              onClick={() => convertSimDraftLineToManual(idx)}
+                              className="text-[10px] font-semibold text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                            >
+                              Trocar para manual
+                            </button>
+                          ) : null}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => removeSimDraftMaterialLine(idx)}
-                          className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+
+                        {mode === "catalog" ? (
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-bold uppercase text-muted-foreground">Material do cadastro</span>
+                            <SearchableSelect
+                              options={materialSelectOptions}
+                              value={line.materialId ?? ""}
+                              onChange={(id) => applyCatalogMaterialToLine(idx, id)}
+                              placeholder="Buscar por código, descrição..."
+                              emptyMessage="Nenhum material encontrado."
+                              disabled={newProductIsReadOnly}
+                              className="text-xs"
+                            />
+                            {catalogIncomplete ? (
+                              <p className="text-[10px] text-amber-800">Selecione um material da lista para aplicar custo e identificação do cadastro.</p>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        <div className="grid grid-cols-12 gap-2 items-end">
+                          <label className="col-span-2 space-y-1">
+                            <span className="text-[9px] font-bold uppercase text-muted-foreground">Código</span>
+                            <input
+                              type="text"
+                              className={cn(
+                                "w-full p-2 rounded border border-border bg-background text-xs",
+                                identityLocked && "bg-muted/50 text-muted-foreground"
+                              )}
+                              value={line.code}
+                              disabled={newProductIsReadOnly || identityLocked}
+                              onChange={(e) => updateSimDraftMaterial(idx, "code", e.target.value)}
+                            />
+                          </label>
+                          <label className="col-span-3 space-y-1">
+                            <span className="text-[9px] font-bold uppercase text-muted-foreground">Descrição</span>
+                            <input
+                              type="text"
+                              className={cn(
+                                "w-full p-2 rounded border border-border bg-background text-xs",
+                                identityLocked && "bg-muted/50 text-muted-foreground"
+                              )}
+                              value={line.description}
+                              disabled={newProductIsReadOnly || identityLocked}
+                              onChange={(e) => updateSimDraftMaterial(idx, "description", e.target.value)}
+                            />
+                          </label>
+                          <label className="col-span-2 space-y-1">
+                            <span className="text-[9px] font-bold uppercase text-muted-foreground">Qtd</span>
+                            <input
+                              type="number"
+                              step="0.00001"
+                              className="w-full p-2 rounded border border-border bg-background text-xs"
+                              value={line.quantity}
+                              disabled={newProductIsReadOnly}
+                              onChange={(e) => updateSimDraftMaterial(idx, "quantity", e.target.value)}
+                            />
+                          </label>
+                          <label className="col-span-1 space-y-1">
+                            <span className="text-[9px] font-bold uppercase text-muted-foreground">Un</span>
+                            <input
+                              type="text"
+                              className={cn(
+                                "w-full p-2 rounded border border-border bg-background text-xs",
+                                identityLocked && "bg-muted/50 text-muted-foreground"
+                              )}
+                              value={line.unit}
+                              disabled={newProductIsReadOnly || identityLocked}
+                              onChange={(e) => updateSimDraftMaterial(idx, "unit", e.target.value)}
+                            />
+                          </label>
+                          <label className="col-span-2 space-y-1">
+                            <span className="text-[9px] font-bold uppercase text-muted-foreground">Custo un. (R$)</span>
+                            <input
+                              type="number"
+                              step="0.00001"
+                              className="w-full p-2 rounded border border-border bg-background text-xs"
+                              value={line.unitCost}
+                              disabled={newProductIsReadOnly}
+                              onChange={(e) => updateSimDraftMaterial(idx, "unitCost", e.target.value)}
+                            />
+                            {mode === "catalog" && line.materialId ? (
+                              <p className="text-[9px] text-muted-foreground">Pode ajustar o custo unitário para cenário; valor inicial vem do cadastro.</p>
+                            ) : null}
+                          </label>
+                          <div className="col-span-2 flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-[9px] font-bold uppercase text-muted-foreground">Total</p>
+                              <p className="text-xs font-bold tabular-nums">{formatCurrency(materialLineTotal(line), 5)}</p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={newProductIsReadOnly}
+                              onClick={() => removeSimDraftMaterialLine(idx)}
+                              className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        {manualWarn ? (
+                          <p className="text-[10px] text-amber-800">
+                            Custo unitário zero ou inválido: a linha não soma MP até você informar um valor.
+                          </p>
+                        ) : null}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

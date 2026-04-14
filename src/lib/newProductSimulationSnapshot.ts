@@ -34,6 +34,9 @@ export type NewProductSnapshotComponent = {
     unit: string;
     unitCost: number;
     total: number;
+    /** aditivo: víncio opcional com Material (Suprimentos) */
+    materialId?: string | null;
+    source?: "CATALOG" | "MANUAL";
   }>;
 };
 
