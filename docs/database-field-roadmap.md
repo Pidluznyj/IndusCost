@@ -1,7 +1,7 @@
 # Roadmap de campos de banco — IndusCost (comercial, CRM e referência técnica)
 
-**Versão do documento:** 1.5  
-**Última revisão:** 2026-04-10  
+**Versão do documento:** 1.6  
+**Última revisão:** 2026-04-14  
 **Fonte de verdade do schema atual:** `prisma/schema.prisma` (PostgreSQL)
 
 **Escopo cumulativo:** além do backlog comercial/CRM, este documento registra **alterações técnicas validadas no código** (motor de custo, API, UI, roteamento, **compras / solicitação**, **UX / tour guiado**) com classificação explícita de **impacto em banco** vs **somente aplicação**. Problemas de ambiente local (ex.: `DATABASE_URL` ausente) **não** são tratados como exigência de migration.
@@ -218,6 +218,22 @@ Campos relevantes para mix/análise: `id`, `sku`, `name`, `type` (enum `ItemType
 **API (implementada):** `GET/POST/PATCH` em `/api/cost-centers`; `GET/POST/PUT` em `/api/purchase-requests` e `GET` por id — validação: MP exige `materialId`; itens indiretos não enviam `materialId`; cabeçalho exige CC ativo; mínimo um item por solicitação; campos Bloco 2 só persistem para `lineType = MATERIA_PRIMA` (demais gravados como `null`).
 
 **UI (implementada):** módulo `/purchases` — lista, criar, editar, visualizar; `SearchableSelect` para materiais (rótulo **código — descrição**, busca por código/unidade/categoria) e CC; **Bloco 2:** painel somente leitura com dados reais do `Material` (custos, perda, conversão, frete, `calculations` do GET `/api/materials`); atalhos **Nova matéria-prima (nova aba)**, **Ir em Suprimentos**, **Atualizar lista**; campos de contexto MP (referência fornecedor, embalagem, MOQ).
+
+### 4.8 Simulações de novos produtos — `NewProductSimulation` (snapshot congelado)
+
+| Campo | Tipo (Prisma) | Finalidade | Observação |
+|-------|----------------|------------|------------|
+| `id` | Uuid | PK | — |
+| `name` | String | Nome da simulação persistida | — |
+| `status` | Enum `NewProductSimulationStatus` (`DRAFT`/`SAVED`) | Estado funcional | `SAVED` = snapshot imutável |
+| `sourceSimulationId` | Uuid? | Rastreabilidade de clonagem | origem da cópia |
+| `productName`, `productSku`, `notes` | String/String?/String? | Cabeçalho congelado | leitura rápida sem parse de JSON |
+| `snapshot` | Json | Snapshot completo da memória de cálculo | inclui linhas, premissas e consolidados |
+| `savedAt` | DateTime? | Momento de congelamento | nulo em draft clonado |
+| `createdBy`, `origin` | String? | Metadados de origem/autoria | opcionais |
+| `createdAt`, `updatedAt` | DateTime | Auditoria técnica | — |
+
+**Regra de negócio implementada:** `SAVED` é consultável e somente leitura; clonagem cria novo `DRAFT` com `sourceSimulationId`, sem alterar o original.
 
 ---
 
@@ -546,6 +562,18 @@ Referência cruzada: **secção 5** (domínios), **secção 12** (checklist nume
 
 ---
 
+### 11.9 Changelog estruturado — **Persistência de simulações de novos produtos** (2026-04-14)
+
+| Campo do changelog | Conteúdo |
+|--------------------|----------|
+| **Funcionalidade implementada** | Persistência de simulações de novo produto em snapshot congelado, com abertura em somente leitura e clonagem para novo draft editável. |
+| **Módulos / arquivos alterados** | `prisma/schema.prisma`; `prisma/migrations/20260414130000_new_product_simulation_snapshots/migration.sql`; `server.ts`; `src/components/SimulationModule.tsx`; `src/lib/newProductSimulationSnapshot.ts`; `src/lib/newProductSimulationSnapshot.test.ts`; `package.json`; `docs/database-field-roadmap.md`. |
+| **Impacto técnico** | Novas rotas dedicadas: `GET /api/new-product-simulations`, `GET /api/new-product-simulations/:id`, `POST /api/new-product-simulations/save`, `POST /api/new-product-simulations/:id/clone`. Nenhuma alteração nos endpoints existentes de simulações tradicionais. |
+| **Impacto em banco** | **Migration aditiva:** enum `NewProductSimulationStatus` e tabela `NewProductSimulation` com `snapshot` JSON e metadados de rastreabilidade. |
+| **Status** | Implementado com isolamento de domínio (não mistura com `Product`/`ProductBOM` e não cria produto oficial). |
+
+---
+
 ## 12. Checklist incremental de campos futuros
 
 Usar esta lista como índice rápido; detalhes nas secções 4–5. Marcar no PR: `[roadmap]` quando item for implementado.
@@ -577,6 +605,7 @@ Usar esta lista como índice rápido; detalhes nas secções 4–5. Marcar no PR
 | 23 | Compras | Workflow aprovação solicitação | 3 | falta criar |
 | 24 | Compras | Rateio multi-centro por linha | 3 | opcional futuro |
 | 25 | UX / Tour | Preferência “tour visto” persistida (usuário ou `localStorage`) | 3 | opcional futuro |
+| 26 | Simulação Novo Produto | `NewProductSimulation` (snapshot persistido + clone draft) | 1 | já existe |
 
 ---
 

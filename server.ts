@@ -39,6 +39,10 @@ import {
   type ExplosionRowCore,
 } from "./src/lib/openBookMaterialExplosion.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
+import {
+  buildCloneDraftData,
+  buildSnapshotSaveData,
+} from "./src/lib/newProductSimulationSnapshot.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -2495,6 +2499,73 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.status(500).json({ error: "Erro ao comparar simulação" });
   }
 });
+
+  // --- API: New Product Simulations (Sandbox Snapshot Persistence) ---
+  app.get("/api/new-product-simulations", async (req, res) => {
+    const status = String(req.query.status ?? "").toUpperCase();
+    const where =
+      status === "SAVED" || status === "DRAFT"
+        ? { status: status as "SAVED" | "DRAFT" }
+        : undefined;
+    const rows = await prisma.newProductSimulation.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        sourceSimulationId: true,
+        productName: true,
+        productSku: true,
+        savedAt: true,
+        createdAt: true,
+      },
+    });
+    res.json(rows);
+  });
+
+  app.get("/api/new-product-simulations/:id", async (req, res) => {
+    const { id } = req.params;
+    const row = await prisma.newProductSimulation.findUnique({ where: { id } });
+    if (!row) return res.status(404).json({ error: "Simulação de novo produto não encontrada." });
+    res.json(row);
+  });
+
+  app.post("/api/new-product-simulations/save", async (req, res) => {
+    const { simulationName, snapshot, createdBy, origin } = req.body ?? {};
+    if (!simulationName || typeof simulationName !== "string") {
+      return res.status(400).json({ error: "Nome da simulação é obrigatório." });
+    }
+    if (!snapshot || typeof snapshot !== "object") {
+      return res.status(400).json({ error: "Snapshot inválido." });
+    }
+    const productName = String((snapshot as any)?.header?.productName ?? "").trim();
+    if (!productName) {
+      return res.status(400).json({ error: "Snapshot sem cabeçalho de produto válido." });
+    }
+    const data = buildSnapshotSaveData({
+      simulationName,
+      snapshot,
+      createdBy: typeof createdBy === "string" ? createdBy : undefined,
+      origin: typeof origin === "string" ? origin : undefined,
+    });
+    const created = await prisma.newProductSimulation.create({ data });
+    res.json(created);
+  });
+
+  app.post("/api/new-product-simulations/:id/clone", async (req, res) => {
+    const { id } = req.params;
+    const source = await prisma.newProductSimulation.findUnique({
+      where: { id },
+      select: { id: true, name: true, snapshot: true },
+    });
+    if (!source) {
+      return res.status(404).json({ error: "Simulação de origem não encontrada." });
+    }
+    const cloneData = buildCloneDraftData(source);
+    const created = await prisma.newProductSimulation.create({ data: cloneData });
+    res.json(created);
+  });
 
   // --- Helper: Cálculo de Custo de Produto ---
   interface AnalysisCache {

@@ -39,6 +39,22 @@ import {
   type NewProductMaterialLine,
   type SimulatedComponent,
 } from "@/src/lib/newProductSandbox";
+import { type NewProductSimulationSnapshot } from "@/src/lib/newProductSimulationSnapshot";
+
+type PersistedNewProductSimulationSummary = {
+  id: string;
+  name: string;
+  status: "DRAFT" | "SAVED";
+  sourceSimulationId?: string | null;
+  productName: string;
+  productSku?: string | null;
+  savedAt?: string | null;
+  createdAt?: string | null;
+};
+
+type PersistedNewProductSimulation = PersistedNewProductSimulationSummary & {
+  snapshot: NewProductSimulationSnapshot;
+};
 
 export const SimulationModule = () => {
   const [workspaceTab, setWorkspaceTab] = useState<"SCENARIOS" | "NEW_PRODUCT">("SCENARIOS");
@@ -61,6 +77,7 @@ export const SimulationModule = () => {
   const [finalProductMode, setFinalProductMode] = useState<"MARGIN" | "TARGET_PRICE">("MARGIN");
   const [finalProductName, setFinalProductName] = useState("");
   const [finalProductSku, setFinalProductSku] = useState("");
+  const [finalProductNotes, setFinalProductNotes] = useState("");
   const [finalDesiredMargin, setFinalDesiredMargin] = useState("20");
   const [finalTargetPrice, setFinalTargetPrice] = useState("0");
   const [finalCompositionLines, setFinalCompositionLines] = useState<FinalCompositionLine[]>([
@@ -77,6 +94,11 @@ export const SimulationModule = () => {
   ]);
   const [existingComponentCosts, setExistingComponentCosts] = useState<Record<string, ExistingComponentCost>>({});
   const [existingCostLoadingId, setExistingCostLoadingId] = useState<string | null>(null);
+  const [savedNewProductSimulations, setSavedNewProductSimulations] = useState<PersistedNewProductSimulationSummary[]>([]);
+  const [savedNewProductLoading, setSavedNewProductLoading] = useState(false);
+  const [activePersistedSimulation, setActivePersistedSimulation] = useState<PersistedNewProductSimulationSummary | null>(null);
+  const [frozenLineValues, setFrozenLineValues] = useState<Record<string, { unitCost: number; lineTotal: number }>>({});
+  const [snapshotSaveName, setSnapshotSaveName] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -111,6 +133,23 @@ export const SimulationModule = () => {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  const fetchSavedNewProductSimulations = async () => {
+    setSavedNewProductLoading(true);
+    try {
+      const rows = await fetchJsonOk("/api/new-product-simulations");
+      setSavedNewProductSimulations(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      console.error("Erro ao buscar snapshots de novo produto:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar snapshots salvos.");
+    } finally {
+      setSavedNewProductLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSavedNewProductSimulations();
   }, []);
 
   const handleCompare = async (id: string) => {
@@ -422,6 +461,7 @@ export const SimulationModule = () => {
   });
 
   const resolveLineUnitCost = (line: FinalCompositionLine) => {
+    if (newProductIsReadOnly && frozenLineValues[line.id]) return frozenLineValues[line.id].unitCost;
     if (line.type === "DIRECT_MATERIAL") return Number(line.unitCost) || 0;
     if (line.type === "SIMULATED_COMPONENT") {
       const s = simulatedComponents.find((x) => x.id === line.refId);
@@ -429,6 +469,274 @@ export const SimulationModule = () => {
     }
     const found = existingComponentsForCalc.find((x) => x.id === line.refId);
     return Number((found?.mp ?? 0) + (found?.hh ?? 0) + (found?.hm ?? 0));
+  };
+
+  const newProductIsReadOnly = activePersistedSimulation?.status === "SAVED";
+
+  const snapshotSummaryFromRecord = (row: any): PersistedNewProductSimulationSummary => ({
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    sourceSimulationId: row.sourceSimulationId ?? null,
+    productName: row.productName,
+    productSku: row.productSku ?? null,
+    savedAt: row.savedAt ?? null,
+    createdAt: row.createdAt ?? null,
+  });
+
+  const resetNewProductDraftWorkspace = () => {
+    setActivePersistedSimulation(null);
+    setFrozenLineValues({});
+    setSnapshotSaveName("");
+    setFinalProductName("");
+    setFinalProductSku("");
+    setFinalProductNotes("");
+    setFinalProductMode("MARGIN");
+    setFinalDesiredMargin("20");
+    setFinalTargetPrice("0");
+    setFinalCompositionLines([{ id: "line-initial", type: "EXISTING_COMPONENT", refId: "", quantity: 1 }]);
+    setSimulatedComponents([]);
+    resetSimDraft();
+    setNewProductInnerTab("FINAL_PRODUCT");
+  };
+
+  const buildCurrentNewProductSnapshot = (): NewProductSimulationSnapshot => {
+    const nowIso = new Date().toISOString();
+    const lines = finalCompositionLines.map((line) => {
+      const quantity = Number(line.quantity) || 0;
+      const unitCost = resolveLineUnitCost(line);
+      const lineTotal = unitCost * quantity;
+      if (line.type === "DIRECT_MATERIAL") {
+        return {
+          id: line.id,
+          type: line.type,
+          description: line.description,
+          quantity,
+          unitCost,
+          lineTotal,
+          breakdown: { mp: lineTotal, hh: 0, hm: 0 },
+        };
+      }
+      if (line.type === "SIMULATED_COMPONENT") {
+        const sim = simulatedComponents.find((x) => x.id === line.refId);
+        return {
+          id: line.id,
+          type: line.type,
+          referenceId: line.refId,
+          referenceLabel: sim ? `${sim.sku ? `${sim.sku} — ` : ""}${sim.name}` : "Componente simulado",
+          quantity,
+          unitCost,
+          lineTotal,
+          breakdown: {
+            mp: (sim?.breakdown.mp ?? 0) * quantity,
+            hh: (sim?.breakdown.hh ?? 0) * quantity,
+            hm: (sim?.breakdown.hm ?? 0) * quantity,
+          },
+        };
+      }
+      const ex = existingComponentsForCalc.find((x) => x.id === line.refId);
+      return {
+        id: line.id,
+        type: line.type,
+        referenceId: line.refId,
+        referenceLabel: ex ? `${ex.sku ? `${ex.sku} — ` : ""}${ex.name}` : "Componente existente",
+        quantity,
+        unitCost,
+        lineTotal,
+        breakdown: {
+          mp: (ex?.mp ?? 0) * quantity,
+          hh: (ex?.hh ?? 0) * quantity,
+          hm: (ex?.hm ?? 0) * quantity,
+        },
+      };
+    });
+
+    return {
+      header: {
+        simulationName: snapshotSaveName.trim() || finalProductName.trim() || "Simulação sem nome",
+        productName: finalProductName.trim() || "Produto simulado",
+        productSku: finalProductSku.trim() || undefined,
+        notes: finalProductNotes.trim() || undefined,
+        createdAt: nowIso,
+        savedAt: nowIso,
+        origin: "NEW_PRODUCT_SANDBOX",
+      },
+      commercial: {
+        mode: finalProductMode,
+        desiredMarginPct: Number.parseFloat(finalDesiredMargin) || 0,
+        targetPrice: Number.parseFloat(finalTargetPrice) || 0,
+      },
+      composition: {
+        lines,
+        simulatedComponents: simulatedComponents.map((c) => ({
+          id: c.id,
+          name: c.name,
+          sku: c.sku,
+          hh: c.hh,
+          hm: c.hm,
+          costBase: c.breakdown.costBase,
+          mp: c.breakdown.mp,
+          mpPct: c.breakdown.mpPct,
+          hhPct: c.breakdown.hhPct,
+          hmPct: c.breakdown.hmPct,
+          materials: c.materials.map((m) => ({
+            code: m.code,
+            description: m.description,
+            quantity: m.quantity,
+            unit: m.unit,
+            unitCost: m.unitCost,
+            total: materialLineTotal(m),
+          })),
+        })),
+      },
+      result: {
+        mp: finalProductResult.mp,
+        hh: finalProductResult.hh,
+        hm: finalProductResult.hm,
+        costBase: finalProductResult.costBase,
+        mpPct: finalProductResult.mpPct,
+        hhPct: finalProductResult.hhPct,
+        hmPct: finalProductResult.hmPct,
+        price: finalProductResult.price,
+        marginPct: finalProductResult.marginPct,
+        viability: finalProductResult.viability,
+      },
+    };
+  };
+
+  const loadSnapshotIntoWorkspace = (
+    snapshot: NewProductSimulationSnapshot,
+    summary: PersistedNewProductSimulationSummary
+  ) => {
+    setActivePersistedSimulation(summary);
+    setSnapshotSaveName(summary.name);
+    setFinalProductName(snapshot.header.productName ?? "");
+    setFinalProductSku(snapshot.header.productSku ?? "");
+    setFinalProductNotes(snapshot.header.notes ?? "");
+    setFinalProductMode(snapshot.commercial.mode ?? "MARGIN");
+    setFinalDesiredMargin(String(Number(snapshot.commercial.desiredMarginPct ?? 0)));
+    setFinalTargetPrice(String(Number(snapshot.commercial.targetPrice ?? 0)));
+    const loadedLines: FinalCompositionLine[] = snapshot.composition.lines.map((line, idx) => {
+      if (line.type === "DIRECT_MATERIAL") {
+        return {
+          id: line.id || `line-${idx}`,
+          type: "DIRECT_MATERIAL",
+          description: line.description ?? "",
+          quantity: Number(line.quantity) || 0,
+          unitCost: Number(line.unitCost) || 0,
+        };
+      }
+      return {
+        id: line.id || `line-${idx}`,
+        type: line.type,
+        refId: line.referenceId ?? "",
+        quantity: Number(line.quantity) || 0,
+      };
+    });
+    setFinalCompositionLines(
+      loadedLines.length > 0
+        ? loadedLines
+        : [{ id: "line-initial", type: "EXISTING_COMPONENT", refId: "", quantity: 1 }]
+    );
+    if (summary.status !== "SAVED") {
+      loadedLines.forEach((line) => {
+        if (line.type === "EXISTING_COMPONENT" && line.refId) {
+          ensureExistingComponentCost(line.refId);
+        }
+      });
+    }
+    setFrozenLineValues(
+      summary.status === "SAVED"
+        ? Object.fromEntries(
+            snapshot.composition.lines.map((line, idx) => [
+              line.id || `line-${idx}`,
+              {
+                unitCost: Number(line.unitCost) || 0,
+                lineTotal: Number(line.lineTotal) || 0,
+              },
+            ])
+          )
+        : {}
+    );
+    setSimulatedComponents(
+      snapshot.composition.simulatedComponents.map((item) => ({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        hh: Number(item.hh) || 0,
+        hm: Number(item.hm) || 0,
+        materials: item.materials.map((m) => ({
+          code: m.code,
+          description: m.description,
+          quantity: Number(m.quantity) || 0,
+          unit: m.unit,
+          unitCost: Number(m.unitCost) || 0,
+        })),
+        breakdown: {
+          mp: Number(item.mp) || 0,
+          hh: Number(item.hh) || 0,
+          hm: Number(item.hm) || 0,
+          costBase: Number(item.costBase) || 0,
+          mpPct: Number(item.mpPct) || 0,
+          hhPct: Number(item.hhPct) || 0,
+          hmPct: Number(item.hmPct) || 0,
+        },
+      }))
+    );
+    resetSimDraft();
+    setNewProductInnerTab("VIABILITY");
+  };
+
+  const handleSaveNewProductSnapshot = async () => {
+    if (newProductIsReadOnly) return;
+    const snapshot = buildCurrentNewProductSnapshot();
+    try {
+      const created = await fetchJsonOk("/api/new-product-simulations/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          simulationName: snapshotSaveName.trim() || snapshot.header.simulationName,
+          origin: "NEW_PRODUCT_SANDBOX",
+          snapshot,
+        }),
+      });
+      const summary = snapshotSummaryFromRecord(created);
+      loadSnapshotIntoWorkspace(
+        created.snapshot as NewProductSimulationSnapshot,
+        { ...summary, status: "SAVED" }
+      );
+      fetchSavedNewProductSimulations();
+      alert("Snapshot salvo com sucesso. Registro agora está congelado.");
+    } catch (error) {
+      console.error("Erro ao salvar snapshot:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível salvar snapshot.");
+    }
+  };
+
+  const handleOpenSavedSnapshot = async (id: string) => {
+    try {
+      const row = (await fetchJsonOk(`/api/new-product-simulations/${id}`)) as PersistedNewProductSimulation;
+      loadSnapshotIntoWorkspace(row.snapshot, snapshotSummaryFromRecord(row));
+    } catch (error) {
+      console.error("Erro ao abrir snapshot salvo:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível abrir o snapshot.");
+    }
+  };
+
+  const handleCloneSavedSnapshot = async (id: string) => {
+    try {
+      const row = (await fetchJsonOk(`/api/new-product-simulations/${id}/clone`, {
+        method: "POST",
+      })) as PersistedNewProductSimulation;
+      loadSnapshotIntoWorkspace(
+        row.snapshot,
+        { ...snapshotSummaryFromRecord(row), status: "DRAFT" }
+      );
+      fetchSavedNewProductSimulations();
+    } catch (error) {
+      console.error("Erro ao clonar snapshot:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível clonar o snapshot.");
+    }
   };
 
   return (
@@ -554,7 +862,60 @@ export const SimulationModule = () => {
       {workspaceTab === "NEW_PRODUCT" && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <p
+                className={cn(
+                  "text-xs font-semibold rounded-lg px-3 py-2 w-fit",
+                  newProductIsReadOnly
+                    ? "bg-amber-500/10 text-amber-700"
+                    : activePersistedSimulation?.status === "DRAFT"
+                      ? "bg-blue-500/10 text-blue-700"
+                      : "bg-emerald-500/10 text-emerald-700"
+                )}
+              >
+                {newProductIsReadOnly
+                  ? "Snapshot salvo / congelado (somente leitura)"
+                  : activePersistedSimulation?.status === "DRAFT"
+                    ? "Editando cópia clonada (draft)"
+                    : "Draft em edição (sandbox)"}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={resetNewProductDraftWorkspace}
+                  className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                >
+                  Novo draft
+                </button>
+                <button
+                  type="button"
+                  disabled={newProductIsReadOnly}
+                  onClick={handleSaveNewProductSnapshot}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
+                    newProductIsReadOnly
+                      ? "bg-accent text-muted-foreground cursor-not-allowed"
+                      : "bg-primary text-primary-foreground hover:opacity-90"
+                  )}
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Salvar simulação
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="space-y-1 md:col-span-2">
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">Nome da simulação (snapshot)</span>
+                <input
+                  type="text"
+                  className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                  value={snapshotSaveName}
+                  onChange={(e) => setSnapshotSaveName(e.target.value)}
+                  placeholder="Ex: Cenário novo produto cliente X - abril/2026"
+                  disabled={newProductIsReadOnly}
+                />
+              </label>
               <label className="space-y-1">
                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Nome do produto final (sandbox)</span>
                 <input
@@ -563,6 +924,7 @@ export const SimulationModule = () => {
                   value={finalProductName}
                   onChange={(e) => setFinalProductName(e.target.value)}
                   placeholder="Ex: Conjunto Técnico X"
+                  disabled={newProductIsReadOnly}
                 />
               </label>
               <label className="space-y-1">
@@ -573,6 +935,17 @@ export const SimulationModule = () => {
                   value={finalProductSku}
                   onChange={(e) => setFinalProductSku(e.target.value)}
                   placeholder="Ex: NP-2026-001"
+                  disabled={newProductIsReadOnly}
+                />
+              </label>
+              <label className="space-y-1 md:col-span-2">
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">Observações</span>
+                <textarea
+                  className="w-full p-2.5 rounded-lg border border-border bg-background text-sm min-h-20"
+                  value={finalProductNotes}
+                  onChange={(e) => setFinalProductNotes(e.target.value)}
+                  placeholder="Observações do cenário (opcional)"
+                  disabled={newProductIsReadOnly}
                 />
               </label>
             </div>
@@ -611,8 +984,57 @@ export const SimulationModule = () => {
             </div>
           </div>
 
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Snapshots salvos</h3>
+              <button
+                type="button"
+                onClick={fetchSavedNewProductSimulations}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+              >
+                Atualizar lista
+              </button>
+            </div>
+            {savedNewProductLoading ? (
+              <p className="text-xs text-muted-foreground">Carregando snapshots...</p>
+            ) : savedNewProductSimulations.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nenhum snapshot salvo até o momento.</p>
+            ) : (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {savedNewProductSimulations.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-border bg-accent/10 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-black">{item.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {item.productName}
+                        {item.productSku ? ` • ${item.productSku}` : ""}
+                        {item.savedAt ? ` • salvo em ${new Date(item.savedAt).toLocaleString()}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSavedSnapshot(item.id)}
+                        className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
+                      >
+                        Abrir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCloneSavedSnapshot(item.id)}
+                        className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
+                      >
+                        Clonar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {newProductInnerTab === "FINAL_PRODUCT" && (
-            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <fieldset disabled={newProductIsReadOnly} className="rounded-2xl border border-border bg-card p-5 space-y-4 disabled:opacity-95">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Composição do produto final</h3>
                 <button
@@ -628,7 +1050,9 @@ export const SimulationModule = () => {
               <div className="space-y-2">
                 {finalCompositionLines.map((line) => {
                   const unitCost = resolveLineUnitCost(line);
-                  const lineTotal = unitCost * (Number(line.quantity) || 0);
+                  const lineTotal = newProductIsReadOnly && frozenLineValues[line.id]
+                    ? frozenLineValues[line.id].lineTotal
+                    : unitCost * (Number(line.quantity) || 0);
                   return (
                     <div key={line.id} className="grid grid-cols-12 gap-2 items-end rounded-lg border border-border p-2.5 bg-accent/10">
                       <label className="col-span-2 space-y-1">
@@ -656,6 +1080,7 @@ export const SimulationModule = () => {
                               searchTerms: `${p.sku} ${p.name}`,
                             }))}
                             value={line.refId}
+                            disabled={newProductIsReadOnly}
                             onChange={(val) => {
                               updateCompositionLine(line.id, "refId", val);
                               ensureExistingComponentCost(val);
@@ -670,6 +1095,7 @@ export const SimulationModule = () => {
                           <select
                             className="w-full p-2 rounded border border-border bg-background text-xs"
                             value={line.refId}
+                            disabled={newProductIsReadOnly}
                             onChange={(e) => updateCompositionLine(line.id, "refId", e.target.value)}
                           >
                             <option value="">Selecione...</option>
@@ -689,6 +1115,7 @@ export const SimulationModule = () => {
                             type="text"
                             className="w-full p-2 rounded border border-border bg-background text-xs"
                             value={line.description}
+                            disabled={newProductIsReadOnly}
                             onChange={(e) => updateCompositionLine(line.id, "description", e.target.value)}
                           />
                         </label>
@@ -701,6 +1128,7 @@ export const SimulationModule = () => {
                           step="0.00001"
                           className="w-full p-2 rounded border border-border bg-background text-xs"
                           value={line.quantity}
+                          disabled={newProductIsReadOnly}
                           onChange={(e) => updateCompositionLine(line.id, "quantity", e.target.value)}
                         />
                       </label>
@@ -713,6 +1141,7 @@ export const SimulationModule = () => {
                             step="0.00001"
                             className="w-full p-2 rounded border border-border bg-background text-xs"
                             value={line.unitCost}
+                            disabled={newProductIsReadOnly}
                             onChange={(e) => updateCompositionLine(line.id, "unitCost", e.target.value)}
                           />
                         </label>
@@ -735,6 +1164,7 @@ export const SimulationModule = () => {
                           onClick={() => removeCompositionLine(line.id)}
                           className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
                           title="Remover linha"
+                          disabled={newProductIsReadOnly}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -753,11 +1183,11 @@ export const SimulationModule = () => {
                   );
                 })}
               </div>
-            </div>
+            </fieldset>
           )}
 
           {newProductInnerTab === "SIM_COMPONENTS" && (
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <fieldset disabled={newProductIsReadOnly} className="grid grid-cols-1 xl:grid-cols-3 gap-6 disabled:opacity-95">
               <div className="xl:col-span-2 rounded-2xl border border-border bg-card p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">
@@ -900,11 +1330,11 @@ export const SimulationModule = () => {
                   )}
                 </div>
               </div>
-            </div>
+            </fieldset>
           )}
 
           {newProductInnerTab === "VIABILITY" && (
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <fieldset disabled={newProductIsReadOnly} className="grid grid-cols-1 xl:grid-cols-3 gap-6 disabled:opacity-95">
               <div className="xl:col-span-2 rounded-2xl border border-border bg-card p-5 space-y-4">
                 <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Comercial do produto final</h3>
                 <div className="inline-flex rounded-lg border border-border p-1 bg-accent/20">
@@ -976,7 +1406,7 @@ export const SimulationModule = () => {
                       : "Inviável"}
                 </p>
               </div>
-            </div>
+            </fieldset>
           )}
         </div>
       )}

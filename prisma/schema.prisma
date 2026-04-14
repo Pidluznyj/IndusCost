@@ -232,6 +232,24 @@ model Simulation {
   updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
+model NewProductSimulation {
+  id                 String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  status             NewProductSimulationStatus @default(SAVED)
+  sourceSimulationId String?                   @db.Uuid
+  productName        String
+  productSku         String?
+  notes              String?
+  snapshot           Json
+  savedAt            DateTime?                 @db.Timestamptz(6)
+  createdBy          String?
+  origin             String?
+  createdAt          DateTime?                 @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime?                 @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([status, createdAt], map: "idx_NewProductSimulation_status_createdAt")
+}
+
 model Customer {
   id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyName String
@@ -342,6 +360,11 @@ enum ProposalStatus {
   REJECTED
   EXPIRED
   CANCELED
+}
+
+enum NewProductSimulationStatus {
+  DRAFT
+  SAVED
 }
 
 // --- Compras (Bloco 1 — solicitação; sem pedido/recebimento/financeiro) ---
