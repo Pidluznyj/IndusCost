@@ -1,13 +1,20 @@
-/* IndusCost — impressão / PDF (navegador) da aba Relatórios */
+/* IndusCost — impressão / PDF (navegador) da aba Relatórios e relatório novo produto */
 @media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
   body * {
     visibility: hidden;
   }
   #reports-print-root,
-  #reports-print-root * {
+  #reports-print-root *,
+  #new-product-report-print-root,
+  #new-product-report-print-root * {
     visibility: visible;
   }
-  #reports-print-root {
+  #reports-print-root,
+  #new-product-report-print-root {
     position: absolute;
     left: 0;
     top: 0;

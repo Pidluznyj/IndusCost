@@ -17,7 +17,9 @@ import {
   ArrowDownRight,
   Info,
   Cpu,
-  Copy
+  Copy,
+  FileText,
+  Printer,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -40,6 +42,7 @@ import {
   type SimulatedComponent,
 } from "@/src/lib/newProductSandbox";
 import { type NewProductSimulationSnapshot } from "@/src/lib/newProductSimulationSnapshot";
+import { NewProductSimulationReport } from "@/src/components/NewProductSimulationReport";
 
 type PersistedNewProductSimulationSummary = {
   id: string;
@@ -99,6 +102,8 @@ export const SimulationModule = () => {
   const [activePersistedSimulation, setActivePersistedSimulation] = useState<PersistedNewProductSimulationSummary | null>(null);
   const [frozenLineValues, setFrozenLineValues] = useState<Record<string, { unitCost: number; lineTotal: number }>>({});
   const [snapshotSaveName, setSnapshotSaveName] = useState("");
+  const [frozenReportSnapshot, setFrozenReportSnapshot] = useState<NewProductSimulationSnapshot | null>(null);
+  const [newProductReportOpen, setNewProductReportOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -487,6 +492,8 @@ export const SimulationModule = () => {
   const resetNewProductDraftWorkspace = () => {
     setActivePersistedSimulation(null);
     setFrozenLineValues({});
+    setFrozenReportSnapshot(null);
+    setNewProductReportOpen(false);
     setSnapshotSaveName("");
     setFinalProductName("");
     setFinalProductSku("");
@@ -608,6 +615,7 @@ export const SimulationModule = () => {
     snapshot: NewProductSimulationSnapshot,
     summary: PersistedNewProductSimulationSummary
   ) => {
+    setFrozenReportSnapshot(snapshot);
     setActivePersistedSimulation(summary);
     setSnapshotSaveName(summary.name);
     setFinalProductName(snapshot.header.productName ?? "");
@@ -879,7 +887,30 @@ export const SimulationModule = () => {
                     ? "Editando cópia clonada (draft)"
                     : "Draft em edição (sandbox)"}
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {newProductIsReadOnly && frozenReportSnapshot && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setNewProductReportOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Ver relatório
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewProductReportOpen(true);
+                        setTimeout(() => window.print(), 400);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      Imprimir relatório
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={resetNewProductDraftWorkspace}
@@ -1408,6 +1439,43 @@ export const SimulationModule = () => {
               </div>
             </fieldset>
           )}
+        </div>
+      )}
+
+      {newProductReportOpen && frozenReportSnapshot && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-16 sm:pt-8">
+          <button
+            type="button"
+            aria-label="Fechar relatório"
+            className="absolute inset-0 bg-black/50 reports-no-print"
+            onClick={() => setNewProductReportOpen(false)}
+          />
+          <div className="relative w-full max-w-[min(1100px,calc(100vw-2rem))] max-h-[95vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
+            <div className="sticky top-0 z-10 flex flex-wrap items-center justify-end gap-2 border-b border-border bg-card/95 backdrop-blur px-4 py-3 reports-no-print">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Imprimir
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewProductReportOpen(false)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+                Fechar
+              </button>
+            </div>
+            <div id="new-product-report-print-root" className="p-5 md:p-10 bg-white print:p-0">
+              <NewProductSimulationReport
+                snapshot={frozenReportSnapshot}
+                recordStatus={activePersistedSimulation?.status}
+              />
+            </div>
+          </div>
         </div>
       )}
 

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/lib/costRollup.test.ts src/lib/costAnalysisPartial.test.ts src/lib/openBookMaterialExplosion.test.ts src/lib/pricingOpenBook.test.ts src/lib/simulationFormula.test.ts src/lib/newProductSandbox.test.ts src/lib/newProductSimulationSnapshot.test.ts src/components/shared/BomCostDetailRow.test.tsx",
+    "test": "tsx --test src/lib/costRollup.test.ts src/lib/costAnalysisPartial.test.ts src/lib/openBookMaterialExplosion.test.ts src/lib/pricingOpenBook.test.ts src/lib/simulationFormula.test.ts src/lib/newProductSandbox.test.ts src/lib/newProductSimulationSnapshot.test.ts src/components/shared/BomCostDetailRow.test.tsx src/components/NewProductSimulationReport.test.tsx",
     "postinstall": "prisma generate"
   },
   "dependencies": {
