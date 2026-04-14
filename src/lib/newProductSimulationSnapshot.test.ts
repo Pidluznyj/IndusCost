@@ -4,6 +4,7 @@ import {
   buildCloneDraftData,
   buildSnapshotSaveData,
   editorModeFromStatus,
+  persistedStatusFromApiRecord,
   type NewProductSimulationSnapshot,
 } from "./newProductSimulationSnapshot";
 import { computeFinalProductFromComposition } from "./newProductSandbox";
@@ -71,6 +72,13 @@ describe("newProductSimulationSnapshot TESTE 1", () => {
 describe("newProductSimulationSnapshot TESTE 2", () => {
   it("simulação salva abre como somente leitura", () => {
     assert.equal(editorModeFromStatus("SAVED"), "READONLY");
+  });
+
+  it("persistedStatusFromApiRecord reconhece SAVED e DRAFT inclusive por savedAt legado", () => {
+    assert.equal(persistedStatusFromApiRecord({ status: "SAVED" }), "SAVED");
+    assert.equal(persistedStatusFromApiRecord({ status: "DRAFT", savedAt: null }), "DRAFT");
+    assert.equal(persistedStatusFromApiRecord({ status: undefined, savedAt: "2026-01-01" }), "SAVED");
+    assert.equal(persistedStatusFromApiRecord({ status: undefined, savedAt: null }), "DRAFT");
   });
 });
 

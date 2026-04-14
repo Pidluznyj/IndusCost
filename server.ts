@@ -2567,6 +2567,21 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(created);
   });
 
+  app.delete("/api/new-product-simulations/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      await prisma.newProductSimulation.delete({ where: { id } });
+      return res.status(204).end();
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      if (code === "P2025") {
+        return res.status(404).json({ error: "Simulação de novo produto não encontrada." });
+      }
+      console.error("DELETE new-product-simulations:", error);
+      return res.status(500).json({ error: "Erro ao excluir simulação de novo produto." });
+    }
+  });
+
   // --- Helper: Cálculo de Custo de Produto ---
   interface AnalysisCache {
     indirectCosts: any[];

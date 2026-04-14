@@ -45,7 +45,10 @@ import {
   type SimulatedComponent,
 } from "@/src/lib/newProductSandbox";
 import type { Material } from "@/src/types/material";
-import { type NewProductSimulationSnapshot } from "@/src/lib/newProductSimulationSnapshot";
+import {
+  persistedStatusFromApiRecord,
+  type NewProductSimulationSnapshot,
+} from "@/src/lib/newProductSimulationSnapshot";
 import { NewProductSimulationReport } from "@/src/components/NewProductSimulationReport";
 
 type PersistedNewProductSimulationSummary = {
@@ -153,7 +156,13 @@ export const SimulationModule = () => {
     setSavedNewProductLoading(true);
     try {
       const rows = await fetchJsonOk("/api/new-product-simulations");
-      setSavedNewProductSimulations(Array.isArray(rows) ? rows : []);
+      const list = Array.isArray(rows) ? rows : [];
+      setSavedNewProductSimulations(
+        list.map((r: any) => ({
+          ...r,
+          status: persistedStatusFromApiRecord(r),
+        }))
+      );
     } catch (error) {
       console.error("Erro ao buscar snapshots de novo produto:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar snapshots salvos.");
@@ -619,12 +628,14 @@ export const SimulationModule = () => {
     return Number((found?.mp ?? 0) + (found?.hh ?? 0) + (found?.hm ?? 0));
   };
 
-  const newProductIsReadOnly = activePersistedSimulation?.status === "SAVED";
+  /** Snapshot persistido congelado (imutável na UI) — única fonte para somente leitura + impressão. */
+  const isViewingFrozenSavedSnapshot = activePersistedSimulation?.status === "SAVED";
+  const newProductIsReadOnly = isViewingFrozenSavedSnapshot;
 
   const snapshotSummaryFromRecord = (row: any): PersistedNewProductSimulationSummary => ({
     id: row.id,
     name: row.name,
-    status: row.status,
+    status: persistedStatusFromApiRecord(row),
     sourceSimulationId: row.sourceSimulationId ?? null,
     productName: row.productName,
     productSku: row.productSku ?? null,
@@ -881,10 +892,31 @@ export const SimulationModule = () => {
   const handleOpenSavedSnapshot = async (id: string) => {
     try {
       const row = (await fetchJsonOk(`/api/new-product-simulations/${id}`)) as PersistedNewProductSimulation;
-      loadSnapshotIntoWorkspace(row.snapshot, snapshotSummaryFromRecord(row));
+      const summary = snapshotSummaryFromRecord(row);
+      loadSnapshotIntoWorkspace(row.snapshot as NewProductSimulationSnapshot, summary);
     } catch (error) {
       console.error("Erro ao abrir snapshot salvo:", error);
       alert(error instanceof Error ? error.message : "Não foi possível abrir o snapshot.");
+    }
+  };
+
+  const handleDeleteSavedSnapshot = async (id: string) => {
+    if (
+      !confirm(
+        "Excluir permanentemente este registro da biblioteca? Esta ação não pode ser desfeita."
+      )
+    ) {
+      return;
+    }
+    try {
+      await fetchOk(`/api/new-product-simulations/${id}`, { method: "DELETE" });
+      if (activePersistedSimulation?.id === id) {
+        resetNewProductDraftWorkspace();
+      }
+      await fetchSavedNewProductSimulations();
+    } catch (error) {
+      console.error("Erro ao excluir snapshot:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível excluir o registro.");
     }
   };
 
@@ -1031,7 +1063,7 @@ export const SimulationModule = () => {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <p
                 className={cn(
-                  "text-xs font-semibold rounded-lg px-3 py-2 w-fit",
+                  "text-xs font-semibold rounded-lg px-3 py-2 w-fit max-w-full text-pretty",
                   newProductIsReadOnly
                     ? "bg-amber-500/10 text-amber-700"
                     : activePersistedSimulation?.status === "DRAFT"
@@ -1040,13 +1072,13 @@ export const SimulationModule = () => {
                 )}
               >
                 {newProductIsReadOnly
-                  ? "Snapshot salvo / congelado (somente leitura)"
+                  ? "Snapshot salvo · somente leitura"
                   : activePersistedSimulation?.status === "DRAFT"
-                    ? "Editando cópia clonada (draft)"
-                    : "Draft em edição (sandbox)"}
+                    ? "Cópia em rascunho (editável)"
+                    : "Simulação em edição (não persistida)"}
               </p>
               <div className="flex items-center gap-2 flex-wrap">
-                {newProductIsReadOnly && frozenReportSnapshot && (
+                {isViewingFrozenSavedSnapshot && frozenReportSnapshot && (
                   <>
                     <button
                       type="button"
@@ -1725,14 +1757,26 @@ export const SimulationModule = () => {
                         )}
                       >
                         <div className="min-w-0">
-                          <p className="text-xs font-black">{item.name}</p>
+                          <div className="flex flex-wrap items-center gap-1.5 gap-y-0.5">
+                            <p className="text-xs font-black">{item.name}</p>
+                            <span
+                              className={cn(
+                                "rounded px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                                item.status === "SAVED"
+                                  ? "bg-emerald-500/15 text-emerald-800"
+                                  : "bg-blue-500/15 text-blue-800"
+                              )}
+                            >
+                              {item.status === "SAVED" ? "Salvo" : "Rascunho"}
+                            </span>
+                          </div>
                           <p className="text-[11px] text-muted-foreground">
                             {item.productName}
                             {item.productSku ? ` • ${item.productSku}` : ""}
                             {item.savedAt ? ` • salvo em ${new Date(item.savedAt).toLocaleString()}` : ""}
                           </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => handleOpenSavedSnapshot(item.id)}
@@ -1746,6 +1790,15 @@ export const SimulationModule = () => {
                             className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
                           >
                             Clonar
+                          </button>
+                          <button
+                            type="button"
+                            title="Excluir registro da biblioteca"
+                            onClick={() => handleDeleteSavedSnapshot(item.id)}
+                            className="inline-flex items-center justify-center rounded border border-red-200/80 bg-red-50/50 p-1.5 text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+                            aria-label={`Excluir ${item.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>

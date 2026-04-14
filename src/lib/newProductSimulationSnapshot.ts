@@ -118,3 +118,20 @@ export function buildCloneDraftData(saved: {
 export function editorModeFromStatus(status: "DRAFT" | "SAVED") {
   return status === "SAVED" ? "READONLY" : "EDITABLE";
 }
+
+/**
+ * Normaliza `status` vindo do Prisma/API (incl. JSON) para o modo da tela.
+ * Se `status` estiver ausente ou ambíguo, usa `savedAt`: registros congelados costumam ter data; rascunhos clonados vêm com `savedAt` null.
+ */
+export function persistedStatusFromApiRecord(row: { status?: unknown; savedAt?: unknown }): "DRAFT" | "SAVED" {
+  const s = row?.status;
+  if (s === "SAVED") return "SAVED";
+  if (s === "DRAFT") return "DRAFT";
+  if (typeof s === "string") {
+    const u = s.trim().toUpperCase();
+    if (u === "SAVED") return "SAVED";
+    if (u === "DRAFT") return "DRAFT";
+  }
+  if (row.savedAt != null && row.savedAt !== "") return "SAVED";
+  return "DRAFT";
+}
