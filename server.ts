@@ -38,6 +38,7 @@ import {
   sumExplosionTotalCost,
   type ExplosionRowCore,
 } from "./src/lib/openBookMaterialExplosion.js";
+import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -2434,42 +2435,52 @@ app.delete("/api/employees/:id", async (req, res) => {
         }
       };
 
-      // 2. Aplicar Ajustes (Simulação)
-    const matAdj = 1 + (Number(sim.materialAdj) / 100);
-    const laborAdj = 1 + (Number(sim.laborAdj) / 100);
-    const indirectAdj = 1 + (Number(sim.indirectAdj) / 100);
-    const efficiencyAdj = 1 + (Number(sim.efficiencyAdj) / 100);
-    const marginAdj = 1 + (Number(sim.marginAdj) / 100);
+      // 2. Aplicar Ajustes (Simulação) com base real MP + HH + HM (sem CIF/OPEX no custo base)
+    const breakdownBase = {
+      mp: Number((baseData as any).totalMaterialCost ?? 0),
+      hh: Number((baseData as any).totalHH_Unit ?? 0),
+      hm: Number((baseData as any).totalHM_Unit ?? 0),
+    };
 
-    // Recalcular Custo Industrial Simulado
-    const simCIU_Materials = base.ciu * 0.6 * matAdj; // Estimativa: 60% do CIU é material
-    const simCIU_Conversion = base.ciu * 0.3 * laborAdj / efficiencyAdj; // Estimativa: 30% é conversão
-    const simCIU_CIF = base.ciu * 0.1 * indirectAdj; // Estimativa: 10% é CIF
-    
-    const simCIU = simCIU_Materials + simCIU_Conversion + simCIU_CIF;
+    const calc = simulateScenarioFromBreakdown(
+      breakdownBase,
+      {
+        materialAdjPct: Number(sim.materialAdj ?? 0),
+        laborAdjPct: Number(sim.laborAdj ?? 0),
+        hmAdjPct: Number(sim.indirectAdj ?? 0),
+        efficiencyAdjPct: Number(sim.efficiencyAdj ?? 0),
+        marginAdjPct: Number(sim.marginAdj ?? 0),
+      },
+      {
+        taxRatePct: taxRateBase * 100,
+        commRatePct: commRateBase * 100,
+        otherRatePct: otherRateBase * 100,
+        marginRatePct: marginRateBase * 100,
+        freight: freightBase,
+      }
+    );
+
+    const simCIU = calc.simulated.costBase;
     const simOPEX = base.custoGerencial - base.ciu;
-    const simCustoGerencial = simCIU + (simOPEX * indirectAdj);
-
-    // Recalcular Preço Sugerido Simulado
-    const taxRate = base.premissas.taxRate / 100;
-    const commRate = base.premissas.commRate / 100;
-    const marginRate = (base.premissas.marginRate * marginAdj) / 100;
-    const freight = base.premissas.freight;
-
-    const divisor = 1 - taxRate - commRate - marginRate;
-    const simSuggestedPrice = (simCIU + freight) / divisor;
+    const simCustoGerencial = simCIU + simOPEX;
+    const simSuggestedPrice = calc.pricing.simSuggestedPrice;
 
     res.json({
-      simulationMethod: "HEURISTIC_LAYER_SPLIT",
+      simulationMethod: "REAL_COMPONENT_BREAKDOWN",
       simulationNote:
-        "Cenário simulado reparte o CIU em faixas fixas (60% MP / 30% conversão / 10% CIF) para aplicar alavancas; não reroda o motor getProductCostAnalysis. Base oficial permanece em base.ciu.",
+        "Cenário simulado aplica ajustes diretamente nos componentes reais do CIU (MP/HH/HM), mantendo CIF/OPEX fora do custo base principal.",
       base,
       simulated: {
         ciu: simCIU,
         custoGerencial: simCustoGerencial,
         suggestedPrice: simSuggestedPrice,
-        marginRate: marginRate * 100,
-        markup: simSuggestedPrice / simCIU,
+        marginRate: calc.pricing.marginRatePct,
+        markup: simCIU > 0 ? simSuggestedPrice / simCIU : 0,
+        breakdown: calc.simulated,
+      },
+      breakdown: {
+        base: calc.base,
+        simulated: calc.simulated,
       },
       delta: {
         price: simSuggestedPrice - base.resultados.suggestedPrice,

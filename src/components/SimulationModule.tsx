@@ -17,7 +17,8 @@ import {
   DollarSign,
   ArrowUpRight,
   ArrowDownRight,
-  Info
+  Info,
+  Cpu
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -172,6 +173,11 @@ export const SimulationModule = () => {
                       <Users className="h-3 w-3" /> HH: {sim.laborAdj > 0 ? "+" : ""}{sim.laborAdj}%
                     </div>
                   )}
+                  {Number(sim.indirectAdj) !== 0 && (
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-violet-600">
+                      <Cpu className="h-3 w-3" /> HM: {sim.indirectAdj > 0 ? "+" : ""}{sim.indirectAdj}%
+                    </div>
+                  )}
                   {Number(sim.efficiencyAdj) !== 0 && (
                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-green-600">
                       <Zap className="h-3 w-3" /> Efic: {sim.efficiencyAdj > 0 ? "+" : ""}{sim.efficiencyAdj}%
@@ -313,6 +319,30 @@ export const SimulationModule = () => {
                   </div>
                 </div>
 
+                {comparing.breakdown && (
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      Memória de cálculo (MP + HH + HM)
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="rounded-xl border border-border p-4 bg-accent/10 text-xs space-y-2">
+                        <p className="font-bold uppercase text-muted-foreground">Base</p>
+                        <p>MP: <b>{formatCurrency(comparing.breakdown.base.mp, 5)}</b></p>
+                        <p>HH: <b>{formatCurrency(comparing.breakdown.base.hh, 5)}</b></p>
+                        <p>HM: <b>{formatCurrency(comparing.breakdown.base.hm, 5)}</b></p>
+                        <p className="pt-1 border-t border-border">Custo base: <b>{formatCurrency(comparing.breakdown.base.costBase, 5)}</b></p>
+                      </div>
+                      <div className="rounded-xl border border-primary/30 p-4 bg-primary/5 text-xs space-y-2">
+                        <p className="font-bold uppercase text-primary">Simulado</p>
+                        <p>MP: <b>{formatCurrency(comparing.breakdown.simulated.mp, 5)}</b></p>
+                        <p>HH: <b>{formatCurrency(comparing.breakdown.simulated.hh, 5)}</b></p>
+                        <p>HM: <b>{formatCurrency(comparing.breakdown.simulated.hm, 5)}</b></p>
+                        <p className="pt-1 border-t border-primary/20">Custo base: <b>{formatCurrency(comparing.breakdown.simulated.costBase, 5)}</b></p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="p-4 rounded-xl bg-orange-50 border border-orange-100 flex items-start gap-3">
                   <AlertCircle className="h-5 w-5 text-orange-600 shrink-0 mt-0.5" />
                   <p className="text-xs text-orange-800 leading-relaxed">
@@ -427,6 +457,20 @@ export const SimulationModule = () => {
                         className="w-full accent-primary"
                         value={formData.laborAdj}
                         onChange={(e) => setFormData({...formData, laborAdj: parseInt(e.target.value)})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold flex items-center justify-between">
+                        <span>Máquina (HM)</span>
+                        <span className={cn(formData.indirectAdj > 0 ? "text-red-600" : "text-green-600")}>
+                          {formData.indirectAdj > 0 ? "+" : ""}{formData.indirectAdj}%
+                        </span>
+                      </label>
+                      <input 
+                        type="range" min="-50" max="100" step="1"
+                        className="w-full accent-primary"
+                        value={formData.indirectAdj}
+                        onChange={(e) => setFormData({...formData, indirectAdj: parseInt(e.target.value)})}
                       />
                     </div>
                     <div className="space-y-2">
