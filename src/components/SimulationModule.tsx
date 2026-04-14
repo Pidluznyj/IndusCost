@@ -21,6 +21,7 @@ import {
   Copy,
   FileText,
   Printer,
+  Search,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -103,6 +104,7 @@ export const SimulationModule = () => {
   const [existingComponentCosts, setExistingComponentCosts] = useState<Record<string, ExistingComponentCost>>({});
   const [existingCostLoadingId, setExistingCostLoadingId] = useState<string | null>(null);
   const [savedNewProductSimulations, setSavedNewProductSimulations] = useState<PersistedNewProductSimulationSummary[]>([]);
+  const [savedSnapshotSearch, setSavedSnapshotSearch] = useState("");
   const [savedNewProductLoading, setSavedNewProductLoading] = useState(false);
   const [activePersistedSimulation, setActivePersistedSimulation] = useState<PersistedNewProductSimulationSummary | null>(null);
   const [frozenLineValues, setFrozenLineValues] = useState<Record<string, { unitCost: number; lineTotal: number }>>({});
@@ -319,6 +321,17 @@ export const SimulationModule = () => {
       };
     });
   }, [materialCatalog]);
+
+  const filteredSavedNewProductSimulations = useMemo(() => {
+    const q = savedSnapshotSearch.trim().toLowerCase();
+    if (!q) return savedNewProductSimulations;
+    return savedNewProductSimulations.filter((item) => {
+      const name = (item.name ?? "").toLowerCase();
+      const product = (item.productName ?? "").toLowerCase();
+      const sku = (item.productSku ?? "").toLowerCase();
+      return name.includes(q) || product.includes(q) || sku.includes(q);
+    });
+  }, [savedNewProductSimulations, savedSnapshotSearch]);
 
   const updateSimDraftMaterial = (idx: number, field: keyof NewProductMaterialLine, value: string) => {
     setSimDraftMaterials((prev) => {
@@ -1012,7 +1025,8 @@ export const SimulationModule = () => {
       )}
 
       {workspaceTab === "NEW_PRODUCT" && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:gap-6">
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <p
@@ -1157,55 +1171,6 @@ export const SimulationModule = () => {
                 Resumo de viabilidade
               </button>
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Snapshots salvos</h3>
-              <button
-                type="button"
-                onClick={fetchSavedNewProductSimulations}
-                className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
-              >
-                Atualizar lista
-              </button>
-            </div>
-            {savedNewProductLoading ? (
-              <p className="text-xs text-muted-foreground">Carregando snapshots...</p>
-            ) : savedNewProductSimulations.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Nenhum snapshot salvo até o momento.</p>
-            ) : (
-              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                {savedNewProductSimulations.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-border bg-accent/10 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-black">{item.name}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {item.productName}
-                        {item.productSku ? ` • ${item.productSku}` : ""}
-                        {item.savedAt ? ` • salvo em ${new Date(item.savedAt).toLocaleString()}` : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSavedSnapshot(item.id)}
-                        className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
-                      >
-                        Abrir
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCloneSavedSnapshot(item.id)}
-                        className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
-                      >
-                        Clonar
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
           {newProductInnerTab === "FINAL_PRODUCT" && (
@@ -1702,6 +1667,94 @@ export const SimulationModule = () => {
               </div>
             </fieldset>
           )}
+          </div>
+
+          <aside
+            className={cn(
+              "w-full shrink-0 xl:w-[360px]",
+              "xl:sticky xl:top-4 xl:self-start",
+              "max-xl:order-last"
+            )}
+            aria-label="Snapshots salvos"
+          >
+            <div className="flex min-h-0 max-h-[min(52vh,420px)] flex-col overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm xl:max-h-[calc(100vh-8rem)]">
+              <div className="mb-3 flex flex-shrink-0 flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">
+                    Snapshots salvos
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground">Biblioteca secundária</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchSavedNewProductSimulations}
+                  className="shrink-0 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
+                >
+                  Atualizar lista
+                </button>
+              </div>
+              <label className="mb-3 flex flex-shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5">
+                <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <input
+                  type="search"
+                  className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                  placeholder="Filtrar por nome ou produto..."
+                  value={savedSnapshotSearch}
+                  onChange={(e) => setSavedSnapshotSearch(e.target.value)}
+                />
+              </label>
+              <div className="min-h-0 flex-1 overflow-y-auto pr-0.5 xl:min-h-[12rem]">
+                {savedNewProductLoading ? (
+                  <p className="text-xs text-muted-foreground">Carregando snapshots...</p>
+                ) : filteredSavedNewProductSimulations.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {savedNewProductSimulations.length === 0
+                      ? "Nenhum snapshot salvo até o momento."
+                      : "Nenhum resultado para o filtro."}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredSavedNewProductSimulations.map((item) => (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between",
+                          activePersistedSimulation?.id === item.id
+                            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/30"
+                            : "border-border bg-accent/10"
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-black">{item.name}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {item.productName}
+                            {item.productSku ? ` • ${item.productSku}` : ""}
+                            {item.savedAt ? ` • salvo em ${new Date(item.savedAt).toLocaleString()}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSavedSnapshot(item.id)}
+                            className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
+                          >
+                            Abrir
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCloneSavedSnapshot(item.id)}
+                            className="px-2.5 py-1 rounded border border-border text-[11px] font-semibold hover:bg-accent"
+                          >
+                            Clonar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </aside>
         </div>
       )}
 
