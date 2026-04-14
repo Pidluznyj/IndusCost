@@ -380,7 +380,7 @@ export const SimulationModule = () => {
                   )}
                   {!commercialProjection.feasible && (
                     <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                      Campo comercial inválido para cálculo (divisor <= 0). Ajuste margem/preço alvo.
+                      Campo comercial inválido para cálculo (divisor {"<="} 0). Ajuste margem/preço alvo.
                     </p>
                   )}
                 </div>
