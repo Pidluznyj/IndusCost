@@ -1443,14 +1443,14 @@ export const SimulationModule = () => {
       )}
 
       {newProductReportOpen && frozenReportSnapshot && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-16 sm:pt-8">
+        <div className="new-product-report-print-shell fixed inset-0 z-[100] flex items-start justify-center p-4 pt-16 sm:pt-8">
           <button
             type="button"
             aria-label="Fechar relatório"
             className="absolute inset-0 bg-black/50 reports-no-print"
             onClick={() => setNewProductReportOpen(false)}
           />
-          <div className="relative w-full max-w-[min(1100px,calc(100vw-2rem))] max-h-[95vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
+          <div className="new-product-report-print-panel relative w-full max-w-[min(1100px,calc(100vw-2rem))] max-h-[95vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
             <div className="sticky top-0 z-10 flex flex-wrap items-center justify-end gap-2 border-b border-border bg-card/95 backdrop-blur px-4 py-3 reports-no-print">
               <button
                 type="button"
