@@ -2162,7 +2162,8 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     try {
       // 1. Buscar dados do produto (custos) - Chamada direta da função interna
-      const costData = await getProductCostAnalysis(productId);
+      const cache = await initAnalysisCache();
+      const costData = await getProductCostAnalysis(productId, cache, true);
       if (!costData) return res.status(404).json({ error: "Produto não encontrado para análise de custo" });
       if (isCostAnalysisFailure(costData)) return res.status(400).json(costData);
 
@@ -2203,6 +2204,53 @@ app.delete("/api/employees/:id", async (req, res) => {
     const contributionMargin = suggestedPrice - totalTaxes - totalCommission - freight - custoFabril;
     const operationalMargin = contributionMargin - opex;
 
+      let openBook: Record<string, unknown> | undefined;
+      try {
+        const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
+          productId,
+          cache,
+          new Set<string>(),
+          new Map()
+        );
+        const mp = Number(costData.totalMaterialCost ?? 0);
+        const hh = Number(costData.totalHH_Unit ?? 0);
+        const hm = Number(costData.totalHM_Unit ?? 0);
+        const nat = naturePercentages(mp, hh, hm);
+        if (explosion instanceof Map) {
+          const sumMp = sumExplosionTotalCost(explosion);
+          openBook = {
+            executive: {
+              totalIndustrialCost: ciu,
+              totalMaterialCost: mp,
+              totalHH: hh,
+              totalHM: hm,
+              pctMp: nat.pctMp,
+              pctHh: nat.pctHh,
+              pctHm: nat.pctHm,
+              denominatorIndustrial: nat.base,
+            },
+            consolidatedMaterials: finalizeRowsForOpenBook(explosion, ciu, mp),
+            cifOpexInformational: {
+              totalCIF_Unit: Number(costData.totalCIF_Unit ?? 0),
+              totalOPEX_Unit: Number(costData.totalOPEX_Unit ?? 0),
+            },
+            explosionReconcilesMaterialTotal: Math.abs(sumMp - mp) < 0.02,
+            explosionMaterialSum: sumMp,
+          };
+        } else {
+          openBook = {
+            error: explosion.error,
+            message: explosion.message ?? null,
+          };
+        }
+      } catch (obErr) {
+        console.error("Pricing openBook error:", obErr);
+        openBook = {
+          error: "OPEN_BOOK_FAILED",
+          message: obErr instanceof Error ? obErr.message : String(obErr),
+        };
+      }
+
       res.json({
         product: costData.name,
         sku: costData.sku,
@@ -2222,7 +2270,8 @@ app.delete("/api/employees/:id", async (req, res) => {
           contributionMargin,
           operationalMargin,
           markup: suggestedPrice / custoFabril,
-        }
+        },
+        openBook,
       });
     } catch (error) {
       console.error("Pricing calculation error:", error);

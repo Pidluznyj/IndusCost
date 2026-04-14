@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { 
   Calculator, Plus, Search, Edit2, Trash2, X, Loader2, DollarSign,
   TrendingUp, TrendingDown, Percent, Truck, Users, ShieldCheck, Save,
-  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight
+  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -11,6 +11,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRICING_TOUR_STEPS } from "@/src/tours/pricingTourSteps";
+import { PricingOpenBookTab } from "@/src/components/pricing/PricingOpenBookTab";
+import type { PricingOpenBookPayload } from "@/src/lib/pricingOpenBook";
 
 export const PricingModule = () => {
   const [tourOpen, setTourOpen] = useState(false);
@@ -24,6 +26,7 @@ export const PricingModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [calculationResult, setCalculationResult] = useState<any | null>(null);
+  const [resultTab, setResultTab] = useState<"summary" | "composition">("summary");
   
   const [searchTermBatch, setSearchTermBatch] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
@@ -76,6 +79,7 @@ export const PricingModule = () => {
     try {
       const data = await fetchJsonOk(`/api/pricing/${productId}/${taxRuleId}/calculate`);
       setCalculationResult(data);
+      setResultTab("summary");
     } catch (error) {
       console.error("Erro no cálculo:", error);
       alert(error instanceof Error ? error.message : "Erro ao calcular preço.");
@@ -581,9 +585,40 @@ export const PricingModule = () => {
                     <X className="h-5 w-5" />
                   </button>
                 </div>
+
+                <div className="px-4 pt-3 border-b border-border bg-gradient-to-b from-accent/40 to-accent/10">
+                  <div className="flex items-end gap-1 overflow-x-auto -mb-px">
+                    {[
+                      { id: "summary" as const, label: "Resumo da Formação", icon: BarChart3 },
+                      { id: "composition" as const, label: "Composição do Preço", icon: BookOpen },
+                    ].map((tab) => {
+                      const isActive = resultTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          onClick={() => setResultTab(tab.id)}
+                          className={cn(
+                            "inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-t-lg border border-transparent border-b-0 whitespace-nowrap transition-all",
+                            isActive
+                              ? "bg-card border-border text-foreground -mb-px"
+                              : "text-muted-foreground hover:text-foreground hover:bg-background/80"
+                          )}
+                        >
+                          <tab.icon className={cn("h-3.5 w-3.5", isActive ? "text-primary" : "opacity-80")} />
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 
                 <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                   <div className="relative p-8 rounded-3xl bg-primary/5 border-2 border-primary/20 flex flex-col items-center text-center overflow-hidden">
+                  {resultTab === "summary" && (
+                    <>
+                      <div className="relative p-8 rounded-3xl bg-primary/5 border-2 border-primary/20 flex flex-col items-center text-center overflow-hidden">
                      <div className="absolute top-4 right-4 bg-primary text-primary-foreground px-3 py-1 rounded-full text-[10px] font-black uppercase">
                        Preço Sugerido
                      </div>
@@ -643,7 +678,7 @@ export const PricingModule = () => {
                      </div>
                    </div>
 
-                   <div className="p-6 rounded-2xl bg-accent/30 border border-border space-y-4">
+                      <div className="p-6 rounded-2xl bg-accent/30 border border-border space-y-4">
                      <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Rentabilidade</h4>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                        <div className="p-4 rounded-xl bg-white border border-border">
@@ -655,7 +690,21 @@ export const PricingModule = () => {
                          <p className="text-xl font-black text-green-600">{formatCurrency(calculationResult.resultados.operationalMargin, 5)}</p>
                        </div>
                      </div>
-                   </div>
+                      </div>
+                    </>
+                  )}
+
+                  {resultTab === "composition" && (
+                    <PricingOpenBookTab
+                      openBook={(calculationResult.openBook as PricingOpenBookPayload | undefined) ?? null}
+                      premissas={{
+                        taxRate: Number(calculationResult.premissas?.taxRate ?? 0),
+                        commRate: Number(calculationResult.premissas?.commRate ?? 0),
+                        marginRate: Number(calculationResult.premissas?.marginRate ?? 0),
+                        freight: Number(calculationResult.premissas?.freight ?? 0),
+                      }}
+                    />
+                  )}
                 </div>
              </motion.div>
           </div>
