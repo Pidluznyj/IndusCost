@@ -44,16 +44,31 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [dropdownBox, setDropdownBox] = useState({ top: 0, left: 0, width: 0 });
+  const [dropdownBox, setDropdownBox] = useState({
+    top: 0,
+    left: 0,
+    width: 0,
+    maxHeight: 250,
+  });
 
   const updateDropdownPosition = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - r.bottom - 12;
+    const spaceAbove = r.top - 12;
+    const preferredMaxHeight = 250;
+    const openUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
+    const safeMaxHeight = Math.max(
+      120,
+      Math.min(preferredMaxHeight, openUpward ? spaceAbove : spaceBelow)
+    );
     setDropdownBox({
-      top: r.bottom + 4,
+      top: openUpward ? Math.max(8, r.top - safeMaxHeight - 4) : r.bottom + 4,
       left: r.left,
       width: r.width,
+      maxHeight: safeMaxHeight,
     });
   }, []);
 
@@ -193,7 +208,10 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 </div>
 
                 {/* Options List */}
-                <div className="max-h-[250px] overflow-y-auto p-1 py-1.5 custom-scrollbar">
+                <div
+                  className="overflow-y-auto p-1 py-1.5 custom-scrollbar"
+                  style={{ maxHeight: dropdownBox.maxHeight }}
+                >
                   {filteredOptions.length === 0 ? (
                     <div className="p-4 text-center text-xs text-muted-foreground italic">
                       {emptyMessage}
