@@ -177,6 +177,13 @@ export const SimulationModule = () => {
   const displayedPriceDeltaPct =
     baseSuggestedPrice > 0 ? (displayedPriceDelta / baseSuggestedPrice) * 100 : 0;
   const displayedMarkup = simulatedCostBase > 0 ? displayedSuggestedPrice / simulatedCostBase : 0;
+  const simMp = Number(comparing?.breakdown?.simulated?.mp ?? 0);
+  const simHh = Number(comparing?.breakdown?.simulated?.hh ?? 0);
+  const simHm = Number(comparing?.breakdown?.simulated?.hm ?? 0);
+  const simCostBase = Number(comparing?.breakdown?.simulated?.costBase ?? simulatedCostBase ?? 0);
+  const simMpPct = simCostBase > 0 ? (simMp / simCostBase) * 100 : 0;
+  const simHhPct = simCostBase > 0 ? (simHh / simCostBase) * 100 : 0;
+  const simHmPct = simCostBase > 0 ? (simHm / simCostBase) * 100 : 0;
 
   return (
     <div className="space-y-6" data-tour="simulation-root">
@@ -355,26 +362,79 @@ export const SimulationModule = () => {
                       </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <label className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                          Preço alvo (R$) — editável
-                        </span>
-                        <input
-                          type="number"
-                          step="0.00001"
-                          className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
-                          value={commercialTargetPriceInput}
-                          onChange={(e) => setCommercialTargetPriceInput(e.target.value)}
-                        />
-                      </label>
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                          Margem resultante calculada (%)
-                        </span>
-                        <div className="w-full p-2.5 rounded-lg border border-border bg-accent/20 text-sm font-semibold">
-                          {formatNumber(displayedMarginRate, 5)}%
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                            Preço alvo (R$) — editável
+                          </span>
+                          <input
+                            type="number"
+                            step="0.00001"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={commercialTargetPriceInput}
+                            onChange={(e) => setCommercialTargetPriceInput(e.target.value)}
+                          />
+                        </label>
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                            Margem resultante calculada (%)
+                          </span>
+                          <div className="w-full p-2.5 rounded-lg border border-border bg-accent/20 text-sm font-semibold">
+                            {formatNumber(displayedMarginRate, 5)}%
+                          </div>
                         </div>
+                      </div>
+
+                      <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h5 className="text-[11px] font-black uppercase tracking-wider text-primary">
+                            Composição do preço alvo
+                          </h5>
+                          <span className="text-[10px] text-primary/70 font-semibold">
+                            Custo base = MP + HH + HM
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="rounded-lg border border-border bg-card p-3">
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground">Preço alvo</p>
+                            <p className="text-base font-black text-primary">{formatCurrency(displayedSuggestedPrice, 5)}</p>
+                          </div>
+                          <div className="rounded-lg border border-border bg-card p-3">
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground">Margem resultante</p>
+                            <p className="text-base font-black">{formatNumber(displayedMarginRate, 5)}%</p>
+                          </div>
+                          <div className="rounded-lg border border-border bg-card p-3">
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground">Custo base total</p>
+                            <p className="text-base font-black">{formatCurrency(simCostBase, 5)}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          {[
+                            { label: "MP", value: simMp, pct: simMpPct, bar: "bg-orange-500/80" },
+                            { label: "HH", value: simHh, pct: simHhPct, bar: "bg-blue-500/80" },
+                            { label: "HM", value: simHm, pct: simHmPct, bar: "bg-violet-500/80" },
+                          ].map((row) => (
+                            <div key={row.label} className="rounded-lg border border-border bg-card p-2.5">
+                              <div className="flex items-center justify-between gap-3 text-[11px]">
+                                <span className="font-bold">{row.label}</span>
+                                <span className="tabular-nums font-semibold">{formatCurrency(row.value, 5)}</span>
+                                <span className="tabular-nums text-muted-foreground">{formatNumber(row.pct, 2)}%</span>
+                              </div>
+                              <div className="mt-1.5 h-1.5 rounded-full bg-accent overflow-hidden">
+                                <div className={cn("h-full rounded-full", row.bar)} style={{ width: `${Math.max(0, Math.min(100, row.pct))}%` }} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          Neste preço alvo, a matéria-prima representa <b>{formatNumber(simMpPct, 2)}%</b> do custo base,
+                          HH representa <b>{formatNumber(simHhPct, 2)}%</b> e HM representa <b>{formatNumber(simHmPct, 2)}%</b>.
+                          Isso ajuda a justificar comercialmente impactos de resina, dissídio e custo de máquina.
+                        </p>
                       </div>
                     </div>
                   )}
