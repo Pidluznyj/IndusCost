@@ -48,18 +48,252 @@ const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const BOOTSTRAP_ADMIN_COOKIE_NAME = "induscost_bootstrap_admin";
+const BOOTSTRAP_ADMIN_SESSION_TTL_MS = 1000 * 60 * 60 * 8;
+
+type BootstrapAdminConfig = {
+  enabled: boolean;
+  username: string;
+  password: string;
+  sessionSecret: string;
+};
+
+type BootstrapAdminSessionPayload = {
+  username: string;
+  exp: number;
+  nonce: string;
+};
+
+function parseBooleanEnv(value: string | undefined): boolean {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function getBootstrapAdminConfig(): BootstrapAdminConfig {
+  return {
+    enabled: parseBooleanEnv(process.env.BOOTSTRAP_ADMIN_ENABLED),
+    username: String(process.env.BOOTSTRAP_ADMIN_USERNAME ?? ""),
+    password: String(process.env.BOOTSTRAP_ADMIN_PASSWORD ?? ""),
+    sessionSecret: String(process.env.BOOTSTRAP_ADMIN_SESSION_SECRET ?? ""),
+  };
+}
+
+function isBootstrapAdminConfigReady(config: BootstrapAdminConfig): boolean {
+  return config.username.length > 0 && config.password.length > 0 && config.sessionSecret.length > 0;
+}
+
+function safeEqualString(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+function parseCookiesFromHeader(header: string | undefined): Record<string, string> {
+  if (!header) return {};
+  return header
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce<Record<string, string>>((acc, cookiePart) => {
+      const eqIdx = cookiePart.indexOf("=");
+      if (eqIdx <= 0) return acc;
+      const key = cookiePart.slice(0, eqIdx).trim();
+      const value = cookiePart.slice(eqIdx + 1).trim();
+      acc[key] = decodeURIComponent(value);
+      return acc;
+    }, {});
+}
+
+function signBootstrapSession(payload: string, secret: string): string {
+  return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+}
+
+function encodeBootstrapSessionToken(payload: BootstrapAdminSessionPayload, secret: string): string {
+  const payloadJson = JSON.stringify(payload);
+  const encodedPayload = Buffer.from(payloadJson, "utf8").toString("base64url");
+  const signature = signBootstrapSession(encodedPayload, secret);
+  return `${encodedPayload}.${signature}`;
+}
+
+function decodeBootstrapSessionToken(
+  token: string,
+  secret: string
+): BootstrapAdminSessionPayload | null {
+  const [encodedPayload, signature] = token.split(".");
+  if (!encodedPayload || !signature) return null;
+  const expectedSignature = signBootstrapSession(encodedPayload, secret);
+  if (!safeEqualString(signature, expectedSignature)) return null;
+  try {
+    const payloadRaw = Buffer.from(encodedPayload, "base64url").toString("utf8");
+    const parsed = JSON.parse(payloadRaw) as Partial<BootstrapAdminSessionPayload>;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.username !== "string" || typeof parsed.exp !== "number" || typeof parsed.nonce !== "string") {
+      return null;
+    }
+    if (!Number.isFinite(parsed.exp) || parsed.exp <= Date.now()) return null;
+    return {
+      username: parsed.username,
+      exp: parsed.exp,
+      nonce: parsed.nonce,
+    };
+  } catch {
+    return null;
+  }
+}
 
 async function startServer() {
   const app = express();
   const port = process.env.PORT || 3000;
   const host = process.env.HOST || "0.0.0.0";
+  const bootstrapAdminConfig = getBootstrapAdminConfig();
+  const isBootstrapReady = isBootstrapAdminConfigReady(bootstrapAdminConfig);
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+  if (bootstrapAdminConfig.enabled && !isBootstrapReady) {
+    console.warn(
+      "[bootstrap-admin] habilitado, porém incompleto. Defina BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD e BOOTSTRAP_ADMIN_SESSION_SECRET."
+    );
+  }
+
+  function readBootstrapSession(req: express.Request): BootstrapAdminSessionPayload | null {
+    if (!bootstrapAdminConfig.enabled || !isBootstrapReady) return null;
+    const cookies = parseCookiesFromHeader(req.headers.cookie);
+    const token = cookies[BOOTSTRAP_ADMIN_COOKIE_NAME];
+    if (!token) return null;
+    return decodeBootstrapSessionToken(token, bootstrapAdminConfig.sessionSecret);
+  }
+
+  function setBootstrapSessionCookie(res: express.Response, username: string): BootstrapAdminSessionPayload {
+    const payload: BootstrapAdminSessionPayload = {
+      username,
+      exp: Date.now() + BOOTSTRAP_ADMIN_SESSION_TTL_MS,
+      nonce: crypto.randomBytes(16).toString("hex"),
+    };
+    const token = encodeBootstrapSessionToken(payload, bootstrapAdminConfig.sessionSecret);
+    res.cookie(BOOTSTRAP_ADMIN_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: BOOTSTRAP_ADMIN_SESSION_TTL_MS,
+      path: "/",
+    });
+    return payload;
+  }
+
+  function clearBootstrapSessionCookie(res: express.Response): void {
+    res.clearCookie(BOOTSTRAP_ADMIN_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+  }
+
+  const requireBootstrapAdmin: express.RequestHandler = (req, res, next) => {
+    if (!bootstrapAdminConfig.enabled) return next();
+    if (!isBootstrapReady) {
+      return res.status(503).json({
+        error: "BOOTSTRAP_ADMIN_MISCONFIGURED",
+        message: "Acesso administrativo temporário habilitado, mas sem configuração completa de ambiente.",
+      });
+    }
+    const session = readBootstrapSession(req);
+    if (!session || !safeEqualString(session.username, bootstrapAdminConfig.username)) {
+      return res.status(401).json({
+        error: "BOOTSTRAP_ADMIN_REQUIRED",
+        message: "Acesso administrativo temporário necessário para esta operação.",
+      });
+    }
+    return next();
+  };
+
+  const requireBootstrapForGlobalParamMutation: express.RequestHandler = async (req, res, next) => {
+    const method = req.method.toUpperCase();
+    if (method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") return next();
+
+    const bodyCategory =
+      typeof req.body?.category === "string" ? req.body.category.trim().toUpperCase() : "";
+    if (bodyCategory === "GLOBAL_PARAM") {
+      return requireBootstrapAdmin(req, res, next);
+    }
+
+    const targetId = typeof req.params?.id === "string" ? req.params.id : "";
+    if (!targetId) return next();
+
+    try {
+      const current = await prisma.indirectCost.findUnique({
+        where: { id: targetId },
+        select: { category: true },
+      });
+      if (current?.category === "GLOBAL_PARAM") {
+        return requireBootstrapAdmin(req, res, next);
+      }
+      return next();
+    } catch (error) {
+      console.error("Error validating GLOBAL_PARAM mutation guard:", error);
+      return res.status(500).json({ error: "Erro ao validar proteção administrativa." });
+    }
+  };
+
   // --- API: Test ---
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/bootstrap-admin/status", (req, res) => {
+    const session = readBootstrapSession(req);
+    res.json({
+      enabled: bootstrapAdminConfig.enabled,
+      authenticated: Boolean(session),
+      mode: "bootstrap-env",
+      misconfigured: bootstrapAdminConfig.enabled && !isBootstrapReady,
+      username: session?.username ?? null,
+      expiresAt: session ? new Date(session.exp).toISOString() : null,
+    });
+  });
+
+  app.post("/api/bootstrap-admin/login", (req, res) => {
+    if (!bootstrapAdminConfig.enabled) {
+      return res.status(400).json({
+        error: "BOOTSTRAP_ADMIN_DISABLED",
+        message: "Acesso administrativo temporário está desabilitado neste ambiente.",
+      });
+    }
+    if (!isBootstrapReady) {
+      return res.status(503).json({
+        error: "BOOTSTRAP_ADMIN_MISCONFIGURED",
+        message:
+          "Acesso administrativo temporário habilitado, mas sem configuração completa de ambiente.",
+      });
+    }
+
+    const username = typeof req.body?.username === "string" ? req.body.username : "";
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+    const isValidUsername = safeEqualString(username, bootstrapAdminConfig.username);
+    const isValidPassword = safeEqualString(password, bootstrapAdminConfig.password);
+
+    if (!isValidUsername || !isValidPassword) {
+      return res.status(401).json({
+        error: "INVALID_CREDENTIALS",
+        message: "Credenciais administrativas inválidas.",
+      });
+    }
+
+    const session = setBootstrapSessionCookie(res, bootstrapAdminConfig.username);
+    return res.json({
+      success: true,
+      mode: "bootstrap-env",
+      expiresAt: new Date(session.exp).toISOString(),
+    });
+  });
+
+  app.post("/api/bootstrap-admin/logout", (_req, res) => {
+    clearBootstrapSessionCookie(res);
+    res.json({ success: true });
   });
 
   // --- API: Test DB Connection ---
@@ -200,7 +434,7 @@ async function startServer() {
     res.json(roles);
   });
 
-  app.post("/api/roles", async (req, res) => {
+  app.post("/api/roles", requireBootstrapAdmin, async (req, res) => {
     const { name, baseSalary, monthlyHours } = req.body;
     const role = await prisma.role.create({
       data: { name, baseSalary, monthlyHours },
@@ -208,7 +442,7 @@ async function startServer() {
     res.json(role);
   });
 
-  app.put("/api/roles/:id", async (req, res) => {
+  app.put("/api/roles/:id", requireBootstrapAdmin, async (req, res) => {
     const { id } = req.params;
     const { name, baseSalary, monthlyHours } = req.body;
     const role = await prisma.role.update({
@@ -218,7 +452,7 @@ async function startServer() {
     res.json(role);
   });
 
-  app.delete("/api/roles/:id", async (req, res) => {
+  app.delete("/api/roles/:id", requireBootstrapAdmin, async (req, res) => {
     const { id } = req.params;
     await prisma.role.delete({ where: { id } });
     res.json({ success: true });
@@ -309,7 +543,7 @@ async function startServer() {
     res.json(components);
   });
 
-  app.post("/api/payroll-components", async (req, res) => {
+  app.post("/api/payroll-components", requireBootstrapAdmin, async (req, res) => {
     const { name, type, calculationType, value } = req.body;
     const component = await prisma.payrollComponent.create({
       data: { name, type, calculationType, value },
@@ -317,7 +551,7 @@ async function startServer() {
     res.json(component);
   });
 
-  app.put("/api/payroll-components/:id", async (req, res) => {
+  app.put("/api/payroll-components/:id", requireBootstrapAdmin, async (req, res) => {
     const { id } = req.params;
     const { name, type, calculationType, value } = req.body;
     const component = await prisma.payrollComponent.update({
@@ -327,7 +561,7 @@ async function startServer() {
     res.json(component);
   });
 
-  app.delete("/api/payroll-components/:id", async (req, res) => {
+  app.delete("/api/payroll-components/:id", requireBootstrapAdmin, async (req, res) => {
     const { id } = req.params;
     await prisma.payrollComponent.delete({ where: { id } });
     res.json({ success: true });
@@ -1998,7 +2232,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(costs);
   });
 
-  app.post("/api/indirect-costs", async (req, res) => {
+  app.post("/api/indirect-costs", requireBootstrapForGlobalParamMutation, async (req, res) => {
     const { description, category, monthlyValue, costCenter, allocationCriteria } = req.body;
     const cost = await prisma.indirectCost.create({
       data: { description, category, monthlyValue, costCenter, allocationCriteria }
@@ -2006,7 +2240,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(cost);
   });
 
-  app.put("/api/indirect-costs/:id", async (req, res) => {
+  app.put("/api/indirect-costs/:id", requireBootstrapForGlobalParamMutation, async (req, res) => {
     const { id } = req.params;
     const { description, category, monthlyValue, costCenter, allocationCriteria, status } = req.body;
     const cost = await prisma.indirectCost.update({
@@ -2016,7 +2250,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(cost);
   });
 
-  app.delete("/api/indirect-costs/:id", async (req, res) => {
+  app.delete("/api/indirect-costs/:id", requireBootstrapForGlobalParamMutation, async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -2650,7 +2884,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   }
 
   // --- API: Global Settings Preview ---
-  app.get("/api/settings/globals", async (req, res) => {
+  app.get("/api/settings/globals", requireBootstrapAdmin, async (req, res) => {
     try {
       const cache = await initAnalysisCache();
       const indirects = await prisma.indirectCost.findMany({ where: { category: "GLOBAL_PARAM" } });

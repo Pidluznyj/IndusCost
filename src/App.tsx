@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
@@ -22,6 +22,17 @@ import { ProposalIndicatorsDashboard } from "@/src/components/contextual/Proposa
 import { SimulationIndicatorsDashboard } from "@/src/components/contextual/SimulationIndicatorsDashboard";
 import { ProductEngineeringIndicatorsDashboard } from "@/src/components/contextual/ProductEngineeringIndicatorsDashboard";
 import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual/PricingFormationIndicatorsDashboard";
+import { fetchJsonOk } from "@/src/lib/http";
+import { AlertCircle, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
+
+type BootstrapAdminStatus = {
+  enabled: boolean;
+  authenticated: boolean;
+  mode: "bootstrap-env";
+  misconfigured: boolean;
+  username: string | null;
+  expiresAt: string | null;
+};
 
 function ModulePageShell({
   title,
@@ -45,6 +56,178 @@ function ModulePageShell({
       </div>
       {children}
     </div>
+  );
+}
+
+function BootstrapAdminSettingsRoute() {
+  const [status, setStatus] = useState<BootstrapAdminStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [pendingLogin, setPendingLogin] = useState(false);
+  const [pendingLogout, setPendingLogout] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  const refreshStatus = async () => {
+    setLoadingStatus(true);
+    try {
+      const data = await fetchJsonOk<BootstrapAdminStatus>("/api/bootstrap-admin/status");
+      setStatus(data);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Não foi possível validar acesso administrativo.");
+    } finally {
+      setLoadingStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshStatus();
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPendingLogin(true);
+    setErrorMessage(null);
+    try {
+      await fetchJsonOk("/api/bootstrap-admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      setPassword("");
+      await refreshStatus();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Falha ao autenticar acesso administrativo.");
+    } finally {
+      setPendingLogin(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setPendingLogout(true);
+    setErrorMessage(null);
+    try {
+      await fetchJsonOk("/api/bootstrap-admin/logout", { method: "POST" });
+      await refreshStatus();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Falha ao encerrar sessão administrativa.");
+    } finally {
+      setPendingLogout(false);
+    }
+  };
+
+  if (loadingStatus) {
+    return (
+      <ModulePageShell
+        title="Configurações do Sistema"
+        description="Validação de acesso administrativo temporário em andamento."
+      >
+        <div className="rounded-2xl border border-border bg-card p-8 text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <p className="mt-3 text-sm text-muted-foreground">Verificando sessão administrativa...</p>
+        </div>
+      </ModulePageShell>
+    );
+  }
+
+  if (status?.enabled && !status.authenticated) {
+    return (
+      <ModulePageShell
+        title="Configurações do Sistema"
+        description="Acesso administrativo bootstrap temporário obrigatório para esta área."
+      >
+        <div className="max-w-xl rounded-2xl border border-border bg-card p-6 space-y-5">
+          <div className="flex items-start gap-3">
+            <ShieldOff className="h-5 w-5 text-amber-600 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-semibold">Acesso administrativo temporário</p>
+              <p className="text-sm text-muted-foreground">
+                Este acesso é controlado por variáveis de ambiente e existe apenas como bootstrap. Login completo e
+                permissionamento serão implementados em etapa futura.
+              </p>
+            </div>
+          </div>
+          {status.misconfigured && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              Bootstrap admin habilitado no backend, mas sem configuração completa de ambiente.
+            </div>
+          )}
+          {errorMessage && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorMessage}</div>
+          )}
+          <form onSubmit={handleLogin} className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Usuário administrativo
+              </label>
+              <input
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="Informe o usuário bootstrap"
+                autoComplete="username"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Senha</label>
+              <input
+                required
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="Informe a senha bootstrap"
+                autoComplete="current-password"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={pendingLogin || status.misconfigured}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+            >
+              {pendingLogin ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Entrar no hub administrativo
+            </button>
+          </form>
+        </div>
+      </ModulePageShell>
+    );
+  }
+
+  const headerActions =
+    status?.enabled && status?.authenticated ? (
+      <button
+        type="button"
+        onClick={handleLogout}
+        disabled={pendingLogout}
+        className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+      >
+        {pendingLogout ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}
+        Logout Admin (Bootstrap)
+      </button>
+    ) : undefined;
+
+  return (
+    <ModulePageShell
+      title="Configurações do Sistema"
+      description="Gerencie cargos, encargos e parâmetros globais."
+      headerActions={headerActions}
+    >
+      {status?.enabled && status?.authenticated && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5" />
+            <p>
+              Sessão administrativa temporária ativa para <strong>{status.username}</strong>. Este acesso bootstrap é
+              provisório e será substituído por autenticação completa com permissionamento.
+            </p>
+          </div>
+        </div>
+      )}
+      <SettingsModule />
+    </ModulePageShell>
   );
 }
 
@@ -266,14 +449,7 @@ export default function App() {
         />
         <Route
           path="/settings"
-          element={
-            <ModulePageShell
-              title="Configurações do Sistema"
-              description="Gerencie cargos, encargos e parâmetros globais."
-            >
-              <SettingsModule />
-            </ModulePageShell>
-          }
+          element={<BootstrapAdminSettingsRoute />}
         />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
