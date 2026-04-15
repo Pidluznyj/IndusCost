@@ -1,17 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { 
-  Settings, 
-  Plus, 
-  Search, 
-  Edit2, 
-  Trash2, 
+import {
+  Settings,
+  Plus,
+  Edit2,
   X,
   Loader2,
   Briefcase,
   CreditCard,
   Save,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -47,6 +45,53 @@ interface PayrollComponent {
   value: number;
 }
 
+type HubSection = "globals" | "operational" | "integrations" | "security" | "system";
+type OperationalSubTab = "roles" | "payroll";
+
+const HUB_SECTIONS: Array<{
+  id: HubSection;
+  title: string;
+  description: string;
+  status: "operational" | "future";
+  note: string;
+}> = [
+  {
+    id: "globals",
+    title: "Gerais / Parâmetros Globais",
+    description: "Parâmetros corporativos usados nos cálculos do sistema.",
+    status: "operational",
+    note: "Operacional hoje",
+  },
+  {
+    id: "operational",
+    title: "Estrutura Operacional",
+    description: "Cargos, salários, encargos e benefícios da operação.",
+    status: "operational",
+    note: "Operacional hoje",
+  },
+  {
+    id: "integrations",
+    title: "Integrações",
+    description: "Conexões externas e sincronizações com sistemas terceiros.",
+    status: "future",
+    note: "Em preparação",
+  },
+  {
+    id: "security",
+    title: "Segurança e Acesso",
+    description: "Bootstrap admin, login e permissionamento em etapas futuras.",
+    status: "future",
+    note: "Em preparação",
+  },
+  {
+    id: "system",
+    title: "Sistema",
+    description: "Operação técnica, saúde do ambiente e manutenção.",
+    status: "future",
+    note: "Em preparação",
+  },
+];
+
 export const SettingsModule = () => {
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -71,7 +116,8 @@ export const SettingsModule = () => {
     hhSource: "AUTO"
   });
   const [loading, setLoading] = useState(true);
-  const [activeSubTab, setActiveSubTab] = useState<"roles" | "payroll" | "globals">("roles");
+  const [activeHubSection, setActiveHubSection] = useState<HubSection>("globals");
+  const [activeOperationalTab, setActiveOperationalTab] = useState<OperationalSubTab>("roles");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
 
@@ -153,7 +199,7 @@ export const SettingsModule = () => {
   const handleOpenModal = (item?: any) => {
     if (item) {
       setEditingItem(item);
-      if (activeSubTab === "roles") {
+      if (activeOperationalTab === "roles") {
         setRoleForm({
           name: item.name,
           baseSalary: Number(item.baseSalary),
@@ -251,10 +297,10 @@ export const SettingsModule = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const endpoint = activeSubTab === "roles" ? "/api/roles" : "/api/payroll-components";
+    const endpoint = activeOperationalTab === "roles" ? "/api/roles" : "/api/payroll-components";
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem ? `${endpoint}/${editingItem.id}` : endpoint;
-    const body = activeSubTab === "roles" ? roleForm : componentForm;
+    const body = activeOperationalTab === "roles" ? roleForm : componentForm;
 
     try {
       await fetchJsonOk(url, {
@@ -272,51 +318,77 @@ export const SettingsModule = () => {
 
   return (
     <div className="space-y-6" data-tour="settings-root">
+      <section className="rounded-2xl border border-border bg-card/40 p-6 space-y-4">
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary/80">Administração do Sistema</p>
+          <h3 className="text-2xl font-bold tracking-tight">Hub Administrativo de Configurações</h3>
+          <p className="text-sm text-muted-foreground max-w-3xl">
+            Centralize parâmetros operacionais e prepare a evolução para integração, segurança e governança do
+            sistema. Funcionalidades futuras aparecem de forma explícita e sem simulação de operação.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 font-semibold text-green-700">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Áreas operacionais ativas
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-700">
+            <AlertCircle className="h-3.5 w-3.5" />
+            Áreas futuras em preparação
+          </span>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" data-tour="settings-subtabs">
+        {HUB_SECTIONS.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            onClick={() => setActiveHubSection(section.id)}
+            className={cn(
+              "rounded-xl border text-left p-4 transition-all",
+              activeHubSection === section.id
+                ? "border-primary bg-primary/5 shadow-sm"
+                : "border-border bg-card hover:border-primary/40"
+            )}
+          >
+            <div className="flex items-center justify-between gap-3 mb-1">
+              <h4 className="text-sm font-bold">{section.title}</h4>
+              <span
+                className={cn(
+                  "text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full",
+                  section.status === "operational" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                )}
+              >
+                {section.note}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">{section.description}</p>
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" data-tour="settings-toolbar">
         <div
-          className="flex items-center gap-4 border-b border-border w-full sm:w-auto"
-          data-tour="settings-subtabs"
+          className="flex items-center gap-2 text-xs sm:text-sm font-medium text-muted-foreground border border-border rounded-lg px-3 py-2 bg-card/40"
         >
-          <button
-            onClick={() => setActiveSubTab("roles")}
-            className={cn(
-              "px-4 py-2 text-sm font-bold transition-all relative",
-              activeSubTab === "roles" ? "text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Cargos e Salários
-            {activeSubTab === "roles" && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
-          </button>
-          <button
-            onClick={() => setActiveSubTab("payroll")}
-            className={cn(
-              "px-4 py-2 text-sm font-bold transition-all relative",
-              activeSubTab === "payroll" ? "text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Encargos e Benefícios
-            {activeSubTab === "payroll" && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
-          </button>
-          <button
-            onClick={() => setActiveSubTab("globals")}
-            className={cn(
-              "px-4 py-2 text-sm font-bold transition-all relative",
-              activeSubTab === "globals" ? "text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Parâmetros Globais
-            {activeSubTab === "globals" && <motion.div layoutId="subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
-          </button>
+          <Settings className="h-4 w-4 text-primary" />
+          <span>
+            Área atual:{" "}
+            <span className="text-foreground font-semibold">
+              {HUB_SECTIONS.find((s) => s.id === activeHubSection)?.title}
+            </span>
+          </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <TourHelpButton onClick={() => setTourOpen(true)} />
-          {activeSubTab !== "globals" && (
+          {activeHubSection === "operational" && (
             <button
               onClick={() => handleOpenModal()}
               className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
             >
               <Plus className="h-4 w-4" />
-              {activeSubTab === "roles" ? "Novo Cargo" : "Novo Componente"}
+              {activeOperationalTab === "roles" ? "Novo Cargo" : "Novo Componente"}
             </button>
           )}
         </div>
@@ -327,92 +399,150 @@ export const SettingsModule = () => {
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-tour="settings-main-panel">
-          {activeSubTab === "roles" ? (
-            roles.map((role) => (
-              <motion.div 
-                key={role.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-all group"
-              >
-                <div className="p-5 border-b border-border bg-accent/30 flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                      <Briefcase className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm">{role.name}</h3>
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{role.monthlyHours}h mensais</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleOpenModal(role)} className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors">
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-                <div className="p-5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Salário Base</span>
-                    <span className="text-lg font-black text-primary">{formatCurrency(role.baseSalary)}</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-                    <span>Custo p/ Hora (Base)</span>
-                    <span>{formatNumber(Number(role.baseSalary) / role.monthlyHours, 5)}</span>
-                  </div>
-                </div>
-              </motion.div>
-            ))
-          ) : activeSubTab === "payroll" ? (
-            components.map((comp) => (
-              <motion.div 
-                key={comp.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-all group"
-              >
-                <div className="p-5 border-b border-border bg-accent/30 flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                      <CreditCard className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm">{comp.name}</h3>
-                      <p className={cn(
-                        "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full inline-block mt-1",
-                        comp.type === "BENEFIT" ? "bg-green-100 text-green-700" : 
-                        comp.type === "CHARGE" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
-                      )}>
-                        {comp.type === "BENEFIT" ? "Benefício" : comp.type === "CHARGE" ? "Encargo" : "Provisão"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleOpenModal(comp)} className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors">
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-                <div className="p-5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Valor / Alíquota</span>
-                    <span className="text-lg font-black text-primary">
-                      {comp.calculationType === "PERCENTAGE" ? `${formatNumber(comp.value)}%` : formatCurrency(comp.value)}
-                    </span>
-                  </div>
-                  <div className="mt-2 text-[10px] text-muted-foreground italic">
-                    {comp.calculationType === "PERCENTAGE" ? "Calculado sobre o salário base" : "Valor fixo mensal"}
-                  </div>
-                </div>
-              </motion.div>
-            ))
-          ) : (
-            <div className="col-span-1 md:col-span-2 lg:col-span-3 bg-card rounded-2xl border border-border overflow-hidden shadow-sm p-6">
-              <h3 className="text-lg font-bold mb-4">Parâmetros Globais da Empresa</h3>
+        <div data-tour="settings-main-panel" className="space-y-4">
+          {activeHubSection === "operational" && (
+            <>
+              <div className="rounded-xl border border-border bg-card/40 p-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveOperationalTab("roles")}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-bold transition-all relative",
+                    activeOperationalTab === "roles"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  Cargos e Salários
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveOperationalTab("payroll")}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-bold transition-all relative",
+                    activeOperationalTab === "payroll"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  Encargos e Benefícios
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {activeOperationalTab === "roles"
+                  ? roles.map((role) => (
+                      <motion.div
+                        key={role.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-all group"
+                      >
+                        <div className="p-5 border-b border-border bg-accent/30 flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                              <Briefcase className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-sm">{role.name}</h3>
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                                {role.monthlyHours}h mensais
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenModal(role)}
+                              className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="p-5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Salário Base</span>
+                            <span className="text-lg font-black text-primary">{formatCurrency(role.baseSalary)}</span>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                            <span>Custo p/ Hora (Base)</span>
+                            <span>{formatNumber(Number(role.baseSalary) / role.monthlyHours, 5)}</span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))
+                  : components.map((comp) => (
+                      <motion.div
+                        key={comp.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-all group"
+                      >
+                        <div className="p-5 border-b border-border bg-accent/30 flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                              <CreditCard className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-sm">{comp.name}</h3>
+                              <p
+                                className={cn(
+                                  "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full inline-block mt-1",
+                                  comp.type === "BENEFIT"
+                                    ? "bg-green-100 text-green-700"
+                                    : comp.type === "CHARGE"
+                                    ? "bg-blue-100 text-blue-700"
+                                    : "bg-orange-100 text-orange-700"
+                                )}
+                              >
+                                {comp.type === "BENEFIT" ? "Benefício" : comp.type === "CHARGE" ? "Encargo" : "Provisão"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenModal(comp)}
+                              className="p-1.5 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="p-5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Valor / Alíquota</span>
+                            <span className="text-lg font-black text-primary">
+                              {comp.calculationType === "PERCENTAGE"
+                                ? `${formatNumber(comp.value)}%`
+                                : formatCurrency(comp.value)}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-[10px] text-muted-foreground italic">
+                            {comp.calculationType === "PERCENTAGE"
+                              ? "Calculado sobre o salário base"
+                              : "Valor fixo mensal"}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+              </div>
+            </>
+          )}
+
+          {activeHubSection === "globals" && (
+            <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm p-6">
+              <div className="mb-6 space-y-1">
+                <h3 className="text-lg font-bold">Parâmetros Globais da Empresa</h3>
+                <p className="text-sm text-muted-foreground">
+                  Configurações reais já conectadas ao backend atual para cálculo industrial e gerencial.
+                </p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Custo de Energia (R$ / mês)</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Custo de Energia (R$ / mês)
+                  </label>
                   <input
                     type="number"
                     step="0.00001"
@@ -424,7 +554,9 @@ export const SettingsModule = () => {
                   <p className="text-[10px] text-muted-foreground">Custo total estimado de energia da fábrica.</p>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Horas Máquina Disponíveis</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Horas Máquina Disponíveis
+                  </label>
                   <input
                     type="number"
                     step="0.00001"
@@ -436,7 +568,9 @@ export const SettingsModule = () => {
                   <p className="text-[10px] text-muted-foreground">Divisor da Energia para Taxa HM.</p>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Capacidade Fabril Total</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Capacidade Fabril Total
+                  </label>
                   <input
                     type="number"
                     step="0.00001"
@@ -445,15 +579,21 @@ export const SettingsModule = () => {
                     className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                     placeholder="Ex: 8448"
                   />
-                  <p className="text-[10px] text-muted-foreground">Horas mensais totais alocadas p/ rateio de CIF e OPEX.</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Horas mensais totais alocadas p/ rateio de CIF e OPEX.
+                  </p>
                 </div>
                 <div className="space-y-1.5 p-4 rounded-2xl bg-primary/5 border border-primary/10 lg:col-span-1">
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-primary uppercase tracking-wider">Override Custo HH (R$/h)</label>
-                    <span className={cn(
-                      "text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase",
-                      globals.hhSource === "MANUAL" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"
-                    )}>
+                    <label className="text-xs font-bold text-primary uppercase tracking-wider">
+                      Override Custo HH (R$/h)
+                    </label>
+                    <span
+                      className={cn(
+                        "text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase",
+                        globals.hhSource === "MANUAL" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"
+                      )}
+                    >
                       {globals.hhSource === "MANUAL" ? "Manual Ativo" : "Automático"}
                     </span>
                   </div>
@@ -461,24 +601,66 @@ export const SettingsModule = () => {
                     type="number"
                     step="0.00001"
                     value={globalForm.hhOverride}
-                    onChange={(e) => setGlobalForm({ ...globalForm, hhOverride: e.target.value === "" ? "" : Number(e.target.value) })}
+                    onChange={(e) =>
+                      setGlobalForm({ ...globalForm, hhOverride: e.target.value === "" ? "" : Number(e.target.value) })
+                    }
                     className="w-full p-3 bg-background border border-primary/20 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none font-bold text-primary placeholder:font-normal placeholder:text-muted-foreground/50"
                     placeholder={`Automático: ${formatCurrency(globals.calculatedHh, 5)}/h`}
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    {globalForm.hhOverride === "" || globalForm.hhOverride === 0 
+                    {globalForm.hhOverride === "" || globalForm.hhOverride === 0
                       ? `Usando cálculo automático da folha: ${formatCurrency(globals.calculatedHh, 5)}/h`
-                      : `Sobrescrevendo cálculo automático com valor manual.`}
+                      : "Sobrescrevendo cálculo automático com valor manual."}
                   </p>
                 </div>
               </div>
               <div className="mt-6 flex justify-end">
                 <button
+                  type="button"
                   onClick={handleSaveGlobals}
                   className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-bold hover:opacity-90 transition-opacity"
                 >
                   Salvar Parâmetros
                 </button>
+              </div>
+            </div>
+          )}
+
+          {(activeHubSection === "integrations" ||
+            activeHubSection === "security" ||
+            activeHubSection === "system") && (
+            <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">{HUB_SECTIONS.find((s) => s.id === activeHubSection)?.title}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {HUB_SECTIONS.find((s) => s.id === activeHubSection)?.description}
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  Em preparação
+                </span>
+              </div>
+              <div className="rounded-xl border border-dashed border-border bg-accent/20 p-4">
+                {activeHubSection === "integrations" && (
+                  <p className="text-sm text-muted-foreground">
+                    Integrações como Nomus e conectores externos serão habilitadas em etapa futura, com contrato técnico
+                    e validação operacional antes de liberar edição nesta tela.
+                  </p>
+                )}
+                {activeHubSection === "security" && (
+                  <p className="text-sm text-muted-foreground">
+                    Bootstrap de administrador, login e permissionamento ainda não estão implementados neste projeto.
+                    Esta seção prepara o ponto de encaixe para as próximas etapas sem simular funcionalidades.
+                  </p>
+                )}
+                {activeHubSection === "system" && (
+                  <p className="text-sm text-muted-foreground">
+                    Indicadores de saúde, jobs, logs e manutenção sistêmica serão incluídos em fases futuras conforme a
+                    evolução operacional do ambiente.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -509,7 +691,7 @@ export const SettingsModule = () => {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold">
-                      {editingItem ? "Editar" : "Novo"} {activeSubTab === "roles" ? "Cargo" : "Componente"}
+                      {editingItem ? "Editar" : "Novo"} {activeOperationalTab === "roles" ? "Cargo" : "Componente"}
                     </h3>
                   </div>
                 </div>
@@ -519,7 +701,7 @@ export const SettingsModule = () => {
               </div>
 
               <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                {activeSubTab === "roles" ? (
+                {activeOperationalTab === "roles" ? (
                   <>
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Nome do Cargo</label>
