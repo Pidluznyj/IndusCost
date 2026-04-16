@@ -45,6 +45,7 @@ import {
   OpenBookCompositionTab,
   type OpenBookPayload,
 } from "@/src/components/product/OpenBookCompositionTab";
+import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1). */
 export type ProductWithCostSummary = Product & {
@@ -422,6 +423,43 @@ export const ProductModule = () => {
     setListStatusFilter("");
   };
 
+  const handleExportEngineering = () => {
+    const selected = selectedIds.length
+      ? filteredItems.filter((i) => selectedIds.includes(i.id))
+      : filteredItems;
+
+    const exportable = selected.filter((p) => p.type === "PRODUCT" || p.type === "COMPONENT");
+    const skipped = selected.length - exportable.length;
+
+    if (exportable.length === 0) {
+      alert("Nenhum item exportável. Selecione itens do tipo PRODUCT ou COMPONENT.");
+      return;
+    }
+
+    try {
+      const wb = buildEngineeringExportWorkbook(exportable);
+      const bytes = workbookToXlsxBytes(wb);
+      const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "engenharia_produto_export.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      if (skipped > 0) {
+        alert(`Exportação concluída. ${skipped} item(ns) foram ignorados por não serem PRODUCT/COMPONENT.`);
+      }
+    } catch (err) {
+      console.error("Export engineering error:", err);
+      alert(err instanceof Error ? err.message : "Não foi possível exportar a engenharia.");
+    }
+  };
+
   /* -------------------------------------------------------------------------- */
   /*                                BOM Helpers                                 */
   /* -------------------------------------------------------------------------- */
@@ -656,6 +694,14 @@ export const ProductModule = () => {
           >
             <Download className="h-4 w-4" />
             Importar
+          </button>
+          <button
+            onClick={handleExportEngineering}
+            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            title={selectedIds.length ? "Exportar itens selecionados no layout de importação" : "Exportar itens filtrados no layout de importação"}
+          >
+            <BookOpen className="h-4 w-4" />
+            Exportar
           </button>
           <button 
             onClick={() => handleOpenModal()}
