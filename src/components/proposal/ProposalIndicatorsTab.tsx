@@ -169,7 +169,7 @@ function StackedBar({
             key={p.key}
             className={cn("h-full", p.className)}
             style={{ width: `${Math.min(100, (p.value / total) * 100)}%` }}
-            title={`${p.label}: ${moneyOrDash(p.value)} (${numOrDash((p.value / total) * 100, 1)}%)`}
+            title={`${p.label}: ${formatAdaptiveCurrency(p.value)} (${formatAdaptiveNumber((p.value / total) * 100)}%)`}
           />
         ))}
         {remaining > 0.01 ? (
@@ -184,7 +184,7 @@ function StackedBar({
         {sanitized.map((p) => (
           <div key={p.key} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-accent/20 px-3 py-2">
             <span className="font-semibold">{p.label}</span>
-            <span className="tabular-nums text-muted-foreground">{numOrDash((p.value / total) * 100, 1)}%</span>
+            <span className="tabular-nums text-muted-foreground">{formatAdaptiveNumber((p.value / total) * 100)}%</span>
           </div>
         ))}
       </div>
@@ -437,20 +437,25 @@ export function ProposalIndicatorsTab({
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3">
-        <KpiCard icon={BarChart3} label="Preço total (líquido)" value={moneyOrDash(net)} tone="primary" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-3">
+        <KpiCard icon={BarChart3} label="Preço total (líquido)" value={formatAdaptiveCurrency(net)} tone="primary" />
         <KpiCard
           icon={Layers}
           label="Custo base (MP+HH+HM)"
-          value={moneyOrDash(totalsByNature.base)}
+          value={formatAdaptiveCurrency(totalsByNature.base)}
           sub={coverage.ok < coverage.total ? `Parcial (${coverage.ok}/${coverage.total})` : undefined}
         />
-        <KpiCard icon={Package} label="MP total" value={moneyOrDash(totalsByNature.mp)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
-        <KpiCard icon={Package} label="HH total" value={moneyOrDash(totalsByNature.hh)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
-        <KpiCard icon={Package} label="HM total" value={moneyOrDash(totalsByNature.hm)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
-        <KpiCard icon={AlertCircle} label="Impostos" value={moneyOrDash(totals.totalTaxes)} />
-        <KpiCard icon={AlertCircle} label="Margem (R$)" value={moneyOrDash(totals.totalMarginValue)} tone={safeNum(totals.totalMarginValue) != null && safeNum(totals.totalMarginValue)! >= 0 ? "green" : "red"} />
-        <KpiCard icon={AlertCircle} label="Margem (%)" value={marginPerc == null ? "—" : `${numOrDash(marginPerc, 2)}%`} />
+        <KpiCard icon={Package} label="MP total" value={formatAdaptiveCurrency(totalsByNature.mp)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
+        <KpiCard icon={Package} label="HH total" value={formatAdaptiveCurrency(totalsByNature.hh)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
+        <KpiCard icon={Package} label="HM total" value={formatAdaptiveCurrency(totalsByNature.hm)} sub={coverage.ok < coverage.total ? "Parcial" : undefined} />
+        <KpiCard icon={AlertCircle} label="Impostos" value={formatAdaptiveCurrency(totals.totalTaxes)} />
+        <KpiCard
+          icon={AlertCircle}
+          label="Margem (R$)"
+          value={formatAdaptiveCurrency(totals.totalMarginValue)}
+          tone={safeNum(totals.totalMarginValue) != null && safeNum(totals.totalMarginValue)! >= 0 ? "green" : "red"}
+        />
+        <KpiCard icon={AlertCircle} label="Margem (%)" value={marginPerc == null ? "—" : `${formatAdaptiveNumber(marginPerc)}%`} />
       </div>
 
       <StackedBar parts={compositionParts} total={net} />
