@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { 
   Calculator, Plus, Search, Edit2, Trash2, X, Loader2, DollarSign,
   TrendingUp, TrendingDown, Percent, Truck, Users, ShieldCheck, Save,
@@ -13,6 +13,13 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRICING_TOUR_STEPS } from "@/src/tours/pricingTourSteps";
 import { PricingOpenBookTab } from "@/src/components/pricing/PricingOpenBookTab";
 import type { PricingOpenBookPayload } from "@/src/lib/pricingOpenBook";
+import {
+  filterAndSortPricingRows,
+  pricingListSafeNumber,
+  type PricingCommissionBand,
+  type PricingMarginBand,
+  type PricingSortKey,
+} from "@/src/lib/pricingListFilters";
 
 export const PricingModule = () => {
   const [tourOpen, setTourOpen] = useState(false);
@@ -32,6 +39,11 @@ export const PricingModule = () => {
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [simulatingBatch, setSimulatingBatch] = useState(false);
   const [batchResults, setBatchResults] = useState<any[] | null>(null);
+  const [pricingSearchTerm, setPricingSearchTerm] = useState("");
+  const [pricingTaxRuleFilter, setPricingTaxRuleFilter] = useState("");
+  const [pricingMarginBand, setPricingMarginBand] = useState<PricingMarginBand>("ALL");
+  const [pricingCommissionBand, setPricingCommissionBand] = useState<PricingCommissionBand>("ALL");
+  const [pricingSortBy, setPricingSortBy] = useState<PricingSortKey>("NAME_ASC");
 
   const [formData, setFormData] = useState({
     productId: "",
@@ -72,6 +84,33 @@ export const PricingModule = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const filteredPricings = useMemo(
+    () =>
+      filterAndSortPricingRows(pricings, {
+        search: pricingSearchTerm,
+        taxRuleId: pricingTaxRuleFilter,
+        marginBand: pricingMarginBand,
+        commissionBand: pricingCommissionBand,
+        sortBy: pricingSortBy,
+      }),
+    [pricings, pricingSearchTerm, pricingTaxRuleFilter, pricingMarginBand, pricingCommissionBand, pricingSortBy]
+  );
+
+  const hasActivePricingFilters =
+    pricingSearchTerm.trim() !== "" ||
+    pricingTaxRuleFilter !== "" ||
+    pricingMarginBand !== "ALL" ||
+    pricingCommissionBand !== "ALL" ||
+    pricingSortBy !== "NAME_ASC";
+
+  const clearPricingFilters = () => {
+    setPricingSearchTerm("");
+    setPricingTaxRuleFilter("");
+    setPricingMarginBand("ALL");
+    setPricingCommissionBand("ALL");
+    setPricingSortBy("NAME_ASC");
+  };
 
   // --- UNITARY LOGIC ---
   const handleCalculateUnit = async (productId: string, taxRuleId: string) => {
@@ -121,10 +160,14 @@ export const PricingModule = () => {
   };
 
   const toggleAllPricings = () => {
-    if (selectedPricings.length > 0 && selectedPricings.length === pricings.length) {
-      setSelectedPricings([]);
+    const filteredIds = filteredPricings.map((p: any) => p.id);
+    const allFilteredSelected =
+      filteredIds.length > 0 && filteredIds.every((id: string) => selectedPricings.includes(id));
+
+    if (allFilteredSelected) {
+      setSelectedPricings((prev) => prev.filter((id) => !filteredIds.includes(id)));
     } else {
-      setSelectedPricings(pricings.map((p: any) => p.id));
+      setSelectedPricings((prev) => [...new Set([...prev, ...filteredIds])]);
     }
   };
 
@@ -288,6 +331,86 @@ export const PricingModule = () => {
          </div>
        )}
 
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+            <div className="relative flex-1 min-w-[260px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Buscar por produto ou SKU..."
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={pricingSearchTerm}
+                onChange={(e) => setPricingSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="min-w-[180px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
+              value={pricingTaxRuleFilter}
+              onChange={(e) => setPricingTaxRuleFilter(e.target.value)}
+            >
+              <option value="">Todas as regras fiscais</option>
+              {taxRules.map((rule: any) => (
+                <option key={rule.id} value={rule.id}>
+                  {String(rule.name ?? "Regra fiscal")}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="min-w-[170px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
+              value={pricingMarginBand}
+              onChange={(e) => setPricingMarginBand(e.target.value as PricingMarginBand)}
+            >
+              <option value="ALL">Todas as margens</option>
+              <option value="NEGATIVE">Margem negativa</option>
+              <option value="UP_TO_10">Margem 0% a 9,99%</option>
+              <option value="FROM_10_TO_20">Margem 10% a 20%</option>
+              <option value="ABOVE_20">Margem acima de 20%</option>
+            </select>
+
+            <select
+              className="min-w-[170px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
+              value={pricingCommissionBand}
+              onChange={(e) => setPricingCommissionBand(e.target.value as PricingCommissionBand)}
+            >
+              <option value="ALL">Todas as comissões</option>
+              <option value="ZERO">Comissão 0%</option>
+              <option value="UP_TO_5">Comissão até 5%</option>
+              <option value="FROM_5_TO_10">Comissão 5,01% a 10%</option>
+              <option value="ABOVE_10">Comissão acima de 10%</option>
+            </select>
+
+            <select
+              className="min-w-[170px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
+              value={pricingSortBy}
+              onChange={(e) => setPricingSortBy(e.target.value as PricingSortKey)}
+            >
+              <option value="NAME_ASC">Ordenar: nome</option>
+              <option value="SKU_ASC">Ordenar: SKU</option>
+              <option value="MARGIN_DESC">Ordenar: maior margem</option>
+              <option value="MARGIN_ASC">Ordenar: menor margem</option>
+            </select>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Exibindo <span className="font-bold text-foreground">{filteredPricings.length}</span> de{" "}
+              <span className="font-bold text-foreground">{pricings.length}</span> premissa(s).
+            </p>
+            <button
+              type="button"
+              onClick={clearPricingFilters}
+              disabled={!hasActivePricingFilters}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:hover:bg-background"
+            >
+              <X className="h-4 w-4" /> Limpar filtros
+            </button>
+          </div>
+        </div>
+      </div>
+
        {/* Tabela de Leitura */}
        <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
@@ -296,7 +419,7 @@ export const PricingModule = () => {
                  <tr>
                    <th className="p-4 w-10">
                       <input type="checkbox" className="rounded accent-primary w-4 h-4 cursor-pointer" 
-                             checked={pricings.length > 0 && selectedPricings.length === pricings.length} 
+                             checked={filteredPricings.length > 0 && filteredPricings.every((pricing: any) => selectedPricings.includes(pricing.id))} 
                              onChange={toggleAllPricings} />
                    </th>
                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground w-1/4">Produto</th>
@@ -308,8 +431,10 @@ export const PricingModule = () => {
               <tbody className="divide-y divide-border">
                 {pricings.length === 0 ? (
                   <tr><td colSpan={5} className="p-12 text-center text-muted-foreground">Nenhuma premissa configurada.</td></tr>
+                ) : filteredPricings.length === 0 ? (
+                  <tr><td colSpan={5} className="p-12 text-center text-muted-foreground">Nenhum resultado encontrado com os filtros aplicados.</td></tr>
                 ) : (
-                  pricings.map((pricing: any) => (
+                  filteredPricings.map((pricing: any) => (
                      <tr key={pricing.id} className="hover:bg-accent/20 cursor-pointer" onClick={(e) => {
                         if((e.target as HTMLElement).closest('.btn-acoes')) return;
                         togglePricingSelection(pricing.id);
@@ -320,16 +445,16 @@ export const PricingModule = () => {
                                 onChange={() => togglePricingSelection(pricing.id)} />
                        </td>
                        <td className="p-4">
-                         <p className="font-bold text-sm tracking-tight">{pricing.Product?.name}</p>
-                         <p className="text-[10px] font-mono text-muted-foreground">SKU: {pricing.Product?.sku}</p>
+                         <p className="font-bold text-sm tracking-tight">{pricing.Product?.name ?? "—"}</p>
+                         <p className="text-[10px] font-mono text-muted-foreground">SKU: {pricing.Product?.sku ?? "—"}</p>
                        </td>
                        <td className="p-4">
-                         <span className="bg-primary/10 text-primary px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest">{pricing.TaxRule?.name}</span>
+                         <span className="bg-primary/10 text-primary px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest">{pricing.TaxRule?.name ?? "—"}</span>
                        </td>
                        <td className="p-4 text-center">
                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-xs text-muted-foreground">Mg. <span className="font-bold text-green-600">{Number(pricing.desiredMargin)}%</span></span>
-                            <span className="text-xs text-muted-foreground">Comissão. <span className="font-bold text-orange-600">{Number(pricing.commission)}%</span></span>
+                           <span className="text-xs text-muted-foreground">Mg. <span className="font-bold text-green-600">{pricingListSafeNumber(pricing.desiredMargin) == null ? "—" : `${formatNumber(pricingListSafeNumber(pricing.desiredMargin) ?? 0, 2)}%`}</span></span>
+                           <span className="text-xs text-muted-foreground">Comissão. <span className="font-bold text-orange-600">{pricingListSafeNumber(pricing.commission) == null ? "—" : `${formatNumber(pricingListSafeNumber(pricing.commission) ?? 0, 2)}%`}</span></span>
                          </div>
                        </td>
                        <td className="p-4 btn-acoes">
