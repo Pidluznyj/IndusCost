@@ -2,6 +2,7 @@ import { normalizeSearchString } from "@/src/lib/utils";
 
 export type PricingListRow = {
   id: string;
+  productId?: string;
   taxRuleId?: string | null;
   desiredMargin?: unknown;
   commission?: unknown;

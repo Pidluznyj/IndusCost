@@ -41,6 +41,7 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
 import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
+import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -107,6 +108,7 @@ export const ProposalModule = () => {
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
   const [formTab, setFormTab] = useState<"items" | "indicators">("items");
+  const [proposalIndicatorsDetailOpen, setProposalIndicatorsDetailOpen] = useState(false);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -152,6 +154,7 @@ export const ProposalModule = () => {
   const handleCreateNew = () => {
     setEditingProposal(null);
     setFormTab("items");
+    setProposalIndicatorsDetailOpen(false);
     setFormData({
       title: "",
       customerId: "",
@@ -181,6 +184,7 @@ export const ProposalModule = () => {
       setEditingProposal(data);
       setFormData({ ...data, items });
       setFormTab("items");
+    setProposalIndicatorsDetailOpen(false);
       setView("form");
     } catch (error) {
       console.error("Erro ao buscar proposta:", error);
@@ -761,6 +765,7 @@ export const ProposalModule = () => {
                     proposalNumber={editingProposal?.number ?? null}
                     proposalTitle={formData.title ?? null}
                     proposalId={editingProposal?.id ?? null}
+                    onOpenDetailed={() => setProposalIndicatorsDetailOpen(true)}
                     items={formData.items || []}
                     totals={{
                       totalGrossValue: totals.totalGross,
@@ -804,6 +809,25 @@ export const ProposalModule = () => {
                 </div>
               </div>
             </div>
+
+            <ProposalIndicatorsDetailModal
+              open={proposalIndicatorsDetailOpen}
+              onClose={() => setProposalIndicatorsDetailOpen(false)}
+              proposalNumber={editingProposal?.number ?? null}
+              proposalTitle={formData.title ?? null}
+              proposalId={editingProposal?.id ?? null}
+              items={formData.items || []}
+              totals={{
+                totalGrossValue: totals.totalGross,
+                totalDiscount: totals.totalDiscount,
+                totalNetValue: totals.totalNet,
+                totalTaxes: totals.totalTaxes,
+                totalCommission: totals.totalComm,
+                totalFreight: totals.totalFreight,
+                totalMarginValue: totals.totalMarginValue,
+                totalMarginPerc: totals.totalMarginPerc,
+              }}
+            />
 
             {/* General Notes for PDF */}
             <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">

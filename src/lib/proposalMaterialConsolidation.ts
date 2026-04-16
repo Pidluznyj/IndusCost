@@ -1,4 +1,4 @@
-import type { ProposalItem } from "@/src/types/commercial";
+import type { ProposalItem } from "../types/commercial";
 
 export type ConsolidatedMaterialLite = {
   materialId?: unknown;
@@ -37,6 +37,7 @@ export type ProposalConsolidatedMaterialRow = {
 };
 
 function safeNum(value: unknown): number | null {
+  if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
