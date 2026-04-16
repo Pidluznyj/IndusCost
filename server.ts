@@ -3177,17 +3177,25 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
     const materialStructuralTotal = materialLineCosts.reduce((acc, u) => acc + u, 0);
 
-    // 2. Operações (A Mágica da Prioridade)
-    let operationItems: Array<{ 
-      totalHH: number, 
-      totalHM: number, 
-      totalTimeH: number,
-      breakdown?: any 
-    }> = [];
+    // 2. Operações (prioridade)
+    // - PRODUCT com ciclo (molde): processo padrão antes do roteiro (evita custear só BOM quando há molde no PF).
+    // - Demais casos: roteiro explícito antes do processo padrão — ao zerar o roteiro, o detalhamento deixa de listar operações do roteiro (cai para processo padrão só se existir).
+    type OperationRow = {
+      totalHH: number;
+      totalHM: number;
+      totalTimeH: number;
+      breakdown?: any;
+    };
+    let operationItems: OperationRow[] = [];
 
-    // Ciclo > 0: processo padrão vale para qualquer tipo (evita PRODUCT com molde cadastrado custear só BOM).
-    if (product.cycleTimeSeconds !== null && Number(product.cycleTimeSeconds) > 0) {
-      // PRIORIDADE 1: Processo Padrão do Componente
+    const productHasStandardCycle =
+      product.cycleTimeSeconds !== null && Number(product.cycleTimeSeconds) > 0;
+    const preferStandardOverRouting = product.type === "PRODUCT" && productHasStandardCycle;
+
+    const buildStandardOperationItems = (): OperationRow[] | { error: string; message: string } => {
+      if (!productHasStandardCycle) {
+        return [];
+      }
       const cycle = Number(product.cycleTimeSeconds);
       const cav = Number(product.cavities);
       const eff = Number(product.efficiencyExpected);
@@ -3200,37 +3208,59 @@ app.delete("/api/employees/:id", async (req, res) => {
       const effDecimal = eff / 100;
       const machineHourCost = cache.energyCost / cache.workingHours;
       const cellHourCost = machineHourCost + cache.globalHhCost;
-      
+
       const netPph = (3600 / cycle) * cav * effDecimal;
       const unitTransform = cellHourCost / netPph;
-      
+
       const setupH = setup / 60;
       const setupCost = (setupH * cellHourCost) / lotSize;
       const totalStepCost = unitTransform + setupCost;
 
-      operationItems.push({
-        totalHH: totalStepCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0),
-        totalHM: totalStepCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
-        totalTimeH: (1/netPph) + (setupH/lotSize),
-        breakdown: {
-          source: "STANDARD_PROCESS",
-          description: "Processo Padrão do Componente",
-          timeMin: (1/netPph) * 60,
-          ratePerMin: cellHourCost / 60,
-          machineCost: unitTransform * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0) + (setupCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0)),
-          laborCost: unitTransform * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0) + (setupCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0)),
-          total: totalStepCost,
-          calculationDetails: {
-            cycle, cavities: cav, efficiency: eff, setupTimeMin: setup, lotSize,
-            workingHours: cache.workingHours, energyCost: cache.energyCost, factoryHoursMonthly: cache.factoryHoursMonthly,
-            globalHhCost: cache.globalHhCost, machineHourCost, cellHourCost,
-            netPph, unitTransform, setupCost, totalStepCost
-          }
-        }
-      });
+      return [
+        {
+          totalHH: totalStepCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0),
+          totalHM: totalStepCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
+          totalTimeH: (1 / netPph) + (setupH / lotSize),
+          breakdown: {
+            source: "STANDARD_PROCESS",
+            description: "Processo Padrão do Componente",
+            timeMin: (1 / netPph) * 60,
+            ratePerMin: cellHourCost / 60,
+            machineCost:
+              unitTransform * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0) +
+              setupCost * (cellHourCost > 0 ? machineHourCost / cellHourCost : 0),
+            laborCost:
+              unitTransform * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0) +
+              setupCost * (cellHourCost > 0 ? cache.globalHhCost / cellHourCost : 0),
+            total: totalStepCost,
+            calculationDetails: {
+              cycle,
+              cavities: cav,
+              efficiency: eff,
+              setupTimeMin: setup,
+              lotSize,
+              workingHours: cache.workingHours,
+              energyCost: cache.energyCost,
+              factoryHoursMonthly: cache.factoryHoursMonthly,
+              globalHhCost: cache.globalHhCost,
+              machineHourCost,
+              cellHourCost,
+              netPph,
+              unitTransform,
+              setupCost,
+              totalStepCost,
+            },
+          },
+        },
+      ];
+    };
 
+    if (preferStandardOverRouting) {
+      const std = buildStandardOperationItems();
+      if (!Array.isArray(std)) return std;
+      operationItems = std;
     } else if (product.ProductRouting.length > 0) {
-      // PRIORIDADE 2: Roteiro (produto final ou componente com operações explícitas)
+      // Roteiro (operações explícitas)
       const rolesWithComponents = await Promise.all(product.ProductRouting.map(async (step) => {
         const emp = await prisma.employee.findFirst({
           where: { roleId: step.roleId },
@@ -3289,10 +3319,13 @@ app.delete("/api/employees/:id", async (req, res) => {
         };
       });
 
-    } else if (product.type === "COMPONENT") {
-      // Componente fabricado precisa de Processo Padrão (ramo acima) ou de roteiro.
-      // PRODUCT pode ser apenas montagem de BOM (materiais + filhos) sem processo próprio — custo industrial = BOM + CIF/OPEX sobre tempo zero.
-      return { error: "ROUTING_MISSING", message: `Componente [${product.sku}] sem processo (padrão ou roteiro).` };
+    } else {
+      const std = buildStandardOperationItems();
+      if (!Array.isArray(std)) return std;
+      operationItems = std;
+      if (operationItems.length === 0 && product.type === "COMPONENT") {
+        return { error: "ROUTING_MISSING", message: `Componente [${product.sku}] sem processo (padrão ou roteiro).` };
+      }
     }
 
     const ownHH_Unit = operationItems.reduce((acc, item) => acc + item.totalHH, 0);

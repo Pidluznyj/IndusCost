@@ -164,35 +164,45 @@ export const ProductModule = () => {
   }, [activeFormTab, editingItem?.id, reloadTree]);
 
   useEffect(() => {
-    if ((activeFormTab === "cost" || activeFormTab === "composition" || isModalOpen) && editingItem?.id) {
-      let cancelled = false;
-      setLoadingCost(true);
-      fetchJsonOk(`/api/products/${editingItem.id}/cost-analysis`)
-        .then((data) => {
-          if (!cancelled) {
-            setBackendCostAnalysis(data);
-            setCostAnalysisError(null);
-          }
-        })
-        .catch((err) => {
-          console.error("Erro ao carregar custo:", err);
-          if (!cancelled) {
-            setBackendCostAnalysis(null);
-            const text = err instanceof Error ? err.message : "Não foi possível carregar a análise de custo.";
-            setCostAnalysisError(text);
-            alert(text);
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setLoadingCost(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    } else if (!editingItem?.id) {
+    if (!isModalOpen || !editingItem?.id) {
       setBackendCostAnalysis(null);
       setCostAnalysisError(null);
+      setLoadingCost(false);
+      return;
     }
+    if (activeFormTab !== "cost" && activeFormTab !== "composition") {
+      return;
+    }
+
+    const ac = new AbortController();
+    let cancelled = false;
+    setLoadingCost(true);
+    fetchJsonOk(`/api/products/${editingItem.id}/cost-analysis`, { signal: ac.signal })
+      .then((data) => {
+        if (!cancelled) {
+          setBackendCostAnalysis(data);
+          setCostAnalysisError(null);
+        }
+      })
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Erro ao carregar custo:", err);
+        if (!cancelled) {
+          setBackendCostAnalysis(null);
+          const text = err instanceof Error ? err.message : "Não foi possível carregar a análise de custo.";
+          setCostAnalysisError(text);
+          alert(text);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCost(false);
+      });
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      setLoadingCost(false);
+    };
   }, [activeFormTab, isModalOpen, editingItem?.id]);
 
   const handleOpenModal = (item?: Product) => {
