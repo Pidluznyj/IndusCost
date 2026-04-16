@@ -105,6 +105,8 @@ export const ProposalModule = () => {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [listStatusFilter, setListStatusFilter] = useState<"" | ProposalStatus>("");
+  const [listResponsibleFilter, setListResponsibleFilter] = useState("");
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
   const [formTab, setFormTab] = useState<"items" | "indicators">("items");
@@ -404,11 +406,34 @@ export const ProposalModule = () => {
     }));
   }, [totals]);
 
-  const filteredProposals = proposals.filter(p => 
-    (p.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.Customer?.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.number.toString().includes(searchTerm)
-  );
+  const responsibleOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of proposals) {
+      const r = String(p.responsible ?? "").trim();
+      if (r) s.add(r);
+    }
+    return [...s.values()].sort((a, b) => a.localeCompare(b));
+  }, [proposals]);
+
+  const filteredProposals = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return proposals.filter((p) => {
+      if (listStatusFilter && p.status !== listStatusFilter) return false;
+      if (listResponsibleFilter.trim()) {
+        const r = String(p.responsible ?? "").trim();
+        if (r !== listResponsibleFilter.trim()) return false;
+      }
+      if (!q) return true;
+      const hay = `${p.number} ${(p.title ?? "")} ${(p.Customer?.companyName ?? "")}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [proposals, searchTerm, listStatusFilter, listResponsibleFilter]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setListStatusFilter("");
+    setListResponsibleFilter("");
+  };
 
   if (view === "form") {
     return (
@@ -862,15 +887,61 @@ export const ProposalModule = () => {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         data-tour="proposals-toolbar"
       >
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por número, cliente ou título..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex-1 flex flex-col gap-2">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+            <div className="relative flex-1 min-w-[260px] max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Buscar por número, cliente ou título..."
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="min-w-[180px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listStatusFilter}
+              onChange={(e) => setListStatusFilter(e.target.value as any)}
+            >
+              <option value="">Todos os status</option>
+              {(Object.keys(STATUS_CONFIG) as ProposalStatus[]).map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_CONFIG[s]?.label ?? s}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="min-w-[200px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listResponsibleFilter}
+              onChange={(e) => setListResponsibleFilter(e.target.value)}
+            >
+              <option value="">Todos os responsáveis</option>
+              {responsibleOptions.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Exibindo <span className="font-bold text-foreground">{filteredProposals.length}</span> de{" "}
+              <span className="font-bold text-foreground">{proposals.length}</span> proposta(s).
+            </p>
+            <button
+              type="button"
+              onClick={clearListFilters}
+              disabled={!searchTerm.trim() && !listStatusFilter && !listResponsibleFilter.trim()}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
+            >
+              <X className="h-4 w-4" />
+              Limpar filtros
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />

@@ -7,10 +7,12 @@ import {
   Loader2,
   Package,
   Plus,
+  Search,
   ShoppingCart,
   Trash2,
   ExternalLink,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -197,6 +199,10 @@ export const PurchaseModule = () => {
   const [ccDescription, setCcDescription] = useState("");
   const [ccSaving, setCcSaving] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
+
+  const [listSearch, setListSearch] = useState("");
+  const [listStatus, setListStatus] = useState<"" | PurchaseRequestStatus>("");
+  const [listPriority, setListPriority] = useState<"" | PurchasePriority>("");
 
   const readOnly = formMode === "view";
 
@@ -495,6 +501,24 @@ export const PurchaseModule = () => {
     return headerCc ? `${headerCc.code} — ${headerCc.name} (herdado)` : "—";
   };
 
+  const filteredRequests = useMemo(() => {
+    const q = listSearch.trim().toLowerCase();
+    return requests.filter((r) => {
+      if (listStatus && r.status !== listStatus) return false;
+      if (listPriority && r.priority !== listPriority) return false;
+      if (!q) return true;
+      const hay =
+        `#${r.number} ${r.requester} ${r.department} ${r.defaultCostCenter?.code ?? ""} ${r.defaultCostCenter?.name ?? ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [requests, listSearch, listStatus, listPriority]);
+
+  const clearListFilters = () => {
+    setListSearch("");
+    setListStatus("");
+    setListPriority("");
+  };
+
   if (view === "list") {
     return (
       <div className="space-y-6" data-tour="purchases-root">
@@ -525,6 +549,65 @@ export const PurchaseModule = () => {
           </div>
         </div>
 
+        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+              <div className="relative flex-1 min-w-[260px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nº, solicitante, área ou centro de custo..."
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                />
+              </div>
+
+              <select
+                className="min-w-[180px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
+                value={listStatus}
+                onChange={(e) => setListStatus(e.target.value as any)}
+              >
+                <option value="">Todos os status</option>
+                {(Object.keys(STATUS_LABEL) as PurchaseRequestStatus[]).map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className="min-w-[180px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
+                value={listPriority}
+                onChange={(e) => setListPriority(e.target.value as any)}
+              >
+                <option value="">Todas as prioridades</option>
+                {(Object.keys(PRIORITY_LABEL) as PurchasePriority[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Exibindo <span className="font-bold text-foreground">{filteredRequests.length}</span> de{" "}
+                <span className="font-bold text-foreground">{requests.length}</span> solicitação(ões).
+              </p>
+              <button
+                type="button"
+                onClick={clearListFilters}
+                disabled={!listSearch.trim() && !listStatus && !listPriority}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:hover:bg-background"
+              >
+                <X className="h-4 w-4" />
+                Limpar filtros
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="rounded-2xl border border-border bg-card overflow-hidden" data-tour="purchases-list">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
@@ -552,8 +635,14 @@ export const PurchaseModule = () => {
                       Nenhuma solicitação cadastrada.
                     </td>
                   </tr>
+                ) : filteredRequests.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground text-sm">
+                      Nenhum resultado encontrado com os filtros aplicados.
+                    </td>
+                  </tr>
                 ) : (
-                  requests.map((r) => (
+                  filteredRequests.map((r) => (
                     <tr key={r.id} className="hover:bg-accent/20 transition-colors">
                       <td className="p-4 font-mono text-sm">#{r.number}</td>
                       <td className="p-4">

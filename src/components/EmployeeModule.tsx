@@ -45,6 +45,8 @@ export const EmployeeModule = () => {
   const [payrollComponents, setPayrollComponents] = useState<PayrollComponent[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [listClassificationFilter, setListClassificationFilter] = useState<"" | CreateEmployeeInput["classification"]>("");
+  const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
   const [isComponentModalOpen, setIsComponentModalOpen] = useState(false);
@@ -184,11 +186,25 @@ export const EmployeeModule = () => {
     }
   };
 
-  const filteredEmployees = employees.filter(emp => 
-    (emp.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (emp.Role?.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (emp.department ?? "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEmployees = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return employees.filter((emp) => {
+      if (listClassificationFilter && emp.classification !== listClassificationFilter) return false;
+      if (listStatusFilter && emp.status !== listStatusFilter) return false;
+      if (!q) return true;
+      return (
+        (emp.name ?? "").toLowerCase().includes(q) ||
+        (emp.Role?.name ?? "").toLowerCase().includes(q) ||
+        (emp.department ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [employees, searchTerm, listClassificationFilter, listStatusFilter]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setListClassificationFilter("");
+    setListStatusFilter("");
+  };
 
   return (
     <div className="space-y-6" data-tour="employees-root">
@@ -197,15 +213,58 @@ export const EmployeeModule = () => {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         data-tour="employees-toolbar"
       >
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por nome, cargo ou setor..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex-1 flex flex-col gap-2">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+            <div className="relative flex-1 max-w-md min-w-[260px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Buscar por nome, cargo ou setor..."
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="min-w-[170px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listClassificationFilter}
+              onChange={(e) => setListClassificationFilter(e.target.value as any)}
+            >
+              <option value="">Todas as classificações</option>
+              {EMPLOYEE_CLASSIFICATION_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="min-w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listStatusFilter}
+              onChange={(e) => setListStatusFilter(e.target.value as any)}
+            >
+              <option value="">Todos os status</option>
+              <option value="ACTIVE">Ativo</option>
+              <option value="INACTIVE">Inativo</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={clearListFilters}
+              disabled={!searchTerm.trim() && !listClassificationFilter && !listStatusFilter}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
+              title="Limpar filtros"
+            >
+              <X className="h-4 w-4" />
+              Limpar
+            </button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Exibindo <span className="font-bold text-foreground">{filteredEmployees.length}</span> de{" "}
+            <span className="font-bold text-foreground">{employees.length}</span> colaborador(es).
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />

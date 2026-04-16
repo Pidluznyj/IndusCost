@@ -85,6 +85,8 @@ export const ProductModule = () => {
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [listTypeFilter, setListTypeFilter] = useState<"" | ItemType>("");
+  const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
@@ -401,10 +403,24 @@ export const ProductModule = () => {
     }
   };
 
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredItems = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return items.filter((item) => {
+      if (listTypeFilter && item.type !== listTypeFilter) return false;
+      if (listStatusFilter && item.status !== listStatusFilter) return false;
+      if (!q) return true;
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.sku.toLowerCase().includes(q)
+      );
+    });
+  }, [items, searchTerm, listTypeFilter, listStatusFilter]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setListTypeFilter("");
+    setListStatusFilter("");
+  };
 
   /* -------------------------------------------------------------------------- */
   /*                                BOM Helpers                                 */
@@ -570,15 +586,56 @@ export const ProductModule = () => {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         data-tour="products-toolbar"
       >
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por SKU ou nome..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex-1 flex flex-col gap-2">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+            <div className="relative flex-1 max-w-md min-w-[260px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Buscar por SKU ou nome..."
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="min-w-[160px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listTypeFilter}
+              onChange={(e) => setListTypeFilter(e.target.value as any)}
+            >
+              <option value="">Todos os tipos</option>
+              <option value="PRODUCT">Produto</option>
+              <option value="COMPONENT">Componente</option>
+              <option value="MATERIAL">Material</option>
+            </select>
+
+            <select
+              className="min-w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listStatusFilter}
+              onChange={(e) => setListStatusFilter(e.target.value as any)}
+            >
+              <option value="">Todos os status</option>
+              <option value="ACTIVE">Ativo</option>
+              <option value="INACTIVE">Inativo</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={clearListFilters}
+              disabled={!searchTerm.trim() && !listTypeFilter && !listStatusFilter}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
+              title="Limpar filtros"
+            >
+              <X className="h-4 w-4" />
+              Limpar
+            </button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Exibindo <span className="font-bold text-foreground">{filteredItems.length}</span> de{" "}
+            <span className="font-bold text-foreground">{items.length}</span> item(ns).
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
