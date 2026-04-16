@@ -2968,6 +2968,24 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   }
 
+  /**
+   * Rótulo da origem do processo próprio do item, espelhando a precedência do motor (sem recalcular custos).
+   * PRODUCT com ciclo: padrão; caso contrário, roteiro se houver; senão processo padrão se houver ciclo.
+   */
+  function inferOwnProcessSourceForMotorDisplay(input: {
+    type: string;
+    cycleTimeSeconds: unknown | null;
+    routingCount: number;
+  }): "ROUTING" | "STANDARD_PROCESS" {
+    const productHasStandardCycle =
+      input.cycleTimeSeconds !== null && Number(input.cycleTimeSeconds) > 0;
+    const preferStandardOverRouting = input.type === "PRODUCT" && productHasStandardCycle;
+    if (preferStandardOverRouting) return "STANDARD_PROCESS";
+    if (input.routingCount > 0) return "ROUTING";
+    if (productHasStandardCycle) return "STANDARD_PROCESS";
+    return "STANDARD_PROCESS";
+  }
+
   async function getProductCostAnalysis(
     productId: string,
     cache?: AnalysisCache,
@@ -3014,6 +3032,16 @@ app.delete("/api/employees/:id", async (req, res) => {
     const bomLineChildAnalysisCache = new Map<string, Record<string, unknown>>();
     /** Linhas da BOM cujo filho não foi custeado — excluídas da soma (cálculo parcial). */
     const bomLineExcludedByLineId = new Map<string, ExcludedBomLineRecord>();
+    /** Parcelas de HH/HM de componentes fabricados já agregadas em `childScaledContributions` (só para detalhe UI do PRODUTO). */
+    const childBomConversionRollups: Array<{
+      bomLineId: string;
+      childProductId: string;
+      sku: string;
+      name: string;
+      requiredQty: number;
+      hhScaled: number;
+      hmScaled: number;
+    }> = [];
 
     // 1. Materiais / Componentes (Recurso) — recursão com pathStack; ciclo detectado; erros de filho propagam (nunca custo zero por falha silenciosa)
     const materialLineCosts: number[] = [];
@@ -3145,6 +3173,15 @@ app.delete("/api/employees/:id", async (req, res) => {
         const scaled = scaleChildContribution(childAnalysis as ChildUnitAnalysis, requiredQty);
         childScaledContributions.push(scaled);
         materialLineCosts.push(scaled.structuralLine);
+        childBomConversionRollups.push({
+          bomLineId: item.id,
+          childProductId: item.childProductId,
+          sku: String((childAnalysis as { sku?: string }).sku ?? "?"),
+          name: String((childAnalysis as { name?: string }).name ?? "—"),
+          requiredQty,
+          hhScaled: scaled.hh,
+          hmScaled: scaled.hm,
+        });
         continue;
       }
 
@@ -3364,6 +3401,9 @@ app.delete("/api/employees/:id", async (req, res) => {
       productId: product.id,
       sku: product.sku,
       name: product.name,
+      productType: product.type,
+      /** Tempo produtivo próprio (h/unid. deste item), antes de agregar filhos — usado no detalhe de conversão BOM. */
+      ownProductiveTimeH_Unit: totalTimeH_Unit,
       totalMaterialCost,
       totalHH_Unit,
       totalHM_Unit,
@@ -3451,9 +3491,75 @@ app.delete("/api/employees/:id", async (req, res) => {
           detailChain: "BOM_LINE_INCOMPLETE",
         });
       }
+      const ownProcessBreakdown = operationItems.map((oi) => oi.breakdown).filter(Boolean);
+      let processBreakdownMerged = ownProcessBreakdown;
+
+      if (product.type === "PRODUCT" && childBomConversionRollups.length > 0) {
+        const childIds = [...new Set(childBomConversionRollups.map((r) => r.childProductId))];
+        const childCadastro =
+          childIds.length > 0
+            ? await prisma.product.findMany({
+                where: { id: { in: childIds } },
+                select: {
+                  id: true,
+                  type: true,
+                  cycleTimeSeconds: true,
+                  _count: { select: { ProductRouting: true } },
+                },
+              })
+            : [];
+        const childCadastroById = new Map(childCadastro.map((c) => [c.id, c]));
+
+        const bomChildRows: unknown[] = [];
+        for (const row of childBomConversionRollups) {
+          const hh = Number(row.hhScaled);
+          const hm = Number(row.hmScaled);
+          if (!Number.isFinite(hh) || !Number.isFinite(hm) || (Math.abs(hh) < 1e-12 && Math.abs(hm) < 1e-12)) {
+            continue;
+          }
+          const cad = childCadastroById.get(row.childProductId);
+          const source = cad
+            ? inferOwnProcessSourceForMotorDisplay({
+                type: cad.type,
+                cycleTimeSeconds: cad.cycleTimeSeconds,
+                routingCount: cad._count?.ProductRouting ?? 0,
+              })
+            : "STANDARD_PROCESS";
+          const childCached = bomLineChildAnalysisCache.get(row.bomLineId) as
+            | { ownProductiveTimeH_Unit?: number }
+            | undefined;
+          const childOwnTimeH = Number(childCached?.ownProductiveTimeH_Unit ?? 0);
+          let timeMin: number | undefined;
+          if (Number.isFinite(childOwnTimeH) && childOwnTimeH > 0 && row.requiredQty > 0) {
+            timeMin = childOwnTimeH * row.requiredQty * 60;
+          }
+          const total = hh + hm;
+          bomChildRows.push({
+            source,
+            rollupFromBom: true,
+            description: `[${row.sku}] ${row.name}`,
+            timeMin,
+            machineCost: hm,
+            laborCost: hh,
+            total,
+            calculationDetails: {
+              rollupFromBom: true,
+              bomLineId: row.bomLineId,
+              childProductId: row.childProductId,
+              childSku: row.sku,
+              childName: row.name,
+              requiredQty: row.requiredQty,
+              childOwnProductiveTimeH_Unit: childOwnTimeH,
+              processSource: source,
+            },
+          });
+        }
+        processBreakdownMerged = [...ownProcessBreakdown, ...bomChildRows];
+      }
+
       result.details = {
         materials: materialsRows,
-        processBreakdown: operationItems.map((oi) => oi.breakdown).filter(Boolean),
+        processBreakdown: processBreakdownMerged,
       };
 
       const detailMaterials = result.details.materials as Array<{

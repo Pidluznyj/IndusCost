@@ -628,6 +628,7 @@ export const ProductModule = () => {
         ? (backendCostAnalysis as { excludedBomLines: unknown[] }).excludedBomLines
         : [];
       const openBook = (backendCostAnalysis as { openBook?: unknown }).openBook ?? null;
+      const productType = (backendCostAnalysis as { productType?: string }).productType ?? null;
       return {
         bomCost,
         routingCost,
@@ -640,6 +641,7 @@ export const ProductModule = () => {
         costAnalysisPartial,
         excludedBomLines,
         openBook,
+        productType,
       };
     }
     return {
@@ -654,6 +656,7 @@ export const ProductModule = () => {
       costAnalysisPartial: false,
       excludedBomLines: [] as unknown[],
       openBook: null as unknown,
+      productType: null as string | null,
     };
   }, [backendCostAnalysis]);
 
@@ -1660,8 +1663,20 @@ export const ProductModule = () => {
                             Detalhamento Processo
                           </h4>
                           <p className="text-[10px] text-muted-foreground -mt-2">
-                            Linhas com selo “PROCESSO PADRÃO” vêm dos campos de ciclo do item; “ROTEIRO” vêm das operações
-                            salvas na aba Processo.
+                            {displayCost.productType === "PRODUCT" ? (
+                              <>
+                                <span className="font-medium text-foreground/80">Item analisado: </span>
+                                processo próprio do produto (ciclo/roteiro) quando existir; linhas{" "}
+                                <span className="font-medium text-foreground/80">“Estrutura (BOM)”</span> mostram a
+                                conversão (HH/HM) dos <strong>componentes fabricados</strong> já incorporada na unidade
+                                do produto — mesma parcela que entra no motor, sem duplicar.
+                              </>
+                            ) : (
+                              <>
+                                Linhas com selo “PROCESSO PADRÃO” vêm dos campos de ciclo do item; “ROTEIRO” vêm das
+                                operações salvas na aba Processo.
+                              </>
+                            )}
                           </p>
                           <div className="bg-card rounded-xl border border-border overflow-hidden">
                             <table className="w-full text-left text-xs">
@@ -1688,11 +1703,37 @@ export const ProductModule = () => {
                                     </td>
                                   </tr>
                                 ) : (
-                                  displayCost.details.processBreakdown.map((step: any, idx: number) => (
+                                  displayCost.details.processBreakdown.map((step: any, idx: number) => {
+                                    const rollupBom = Boolean(step?.rollupFromBom || step?.calculationDetails?.rollupFromBom);
+                                    const processOriginLabel =
+                                      step?.source === "ROUTING"
+                                        ? "Roteiro"
+                                        : step?.source === "STANDARD_PROCESS"
+                                          ? "Processo padrão"
+                                          : "—";
+                                    const timeCell =
+                                      step?.timeMin != null && Number.isFinite(Number(step.timeMin))
+                                        ? formatNumber(Number(step.timeMin), 2)
+                                        : "—";
+                                    const tooltipBadge = rollupBom
+                                      ? "ESTRUTURA (BOM)"
+                                      : step?.source === "STANDARD_PROCESS"
+                                        ? "PROCESSO PADRÃO"
+                                        : "ROTEIRO";
+                                    return (
                                     <tr key={idx} className="group relative">
                                       <td className="p-3 font-medium">
                                         <div className="flex items-center gap-2">
-                                          {step.description}
+                                          <div className="min-w-0">
+                                            <div className="truncate">{step.description}</div>
+                                            {rollupBom && (
+                                              <div className="text-[10px] text-muted-foreground font-normal leading-snug">
+                                                Origem no componente: <span className="text-foreground/90">{processOriginLabel}</span>
+                                                {" · "}
+                                                <span className="text-amber-800/90 dark:text-amber-200/90">Conversão na unidade do produto</span>
+                                              </div>
+                                            )}
+                                          </div>
                                           {step.calculationDetails && (
                                             <div className="group/tooltip relative">
                                               <Info className="h-3 w-3 text-muted-foreground/50 cursor-help hover:text-primary transition-colors" />
@@ -1701,10 +1742,45 @@ export const ProductModule = () => {
                                                   <div className="flex items-center justify-between border-b pb-2 mb-2">
                                                     <span className="font-bold uppercase text-[9px]">Memória de Cálculo</span>
                                                     <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[8px] font-mono">
-                                                      {step.source === "STANDARD_PROCESS" ? "PROCESSO PADRÃO" : "ROTEIRO"}
+                                                      {tooltipBadge}
                                                     </span>
                                                   </div>
-                                                  
+
+                                                  {rollupBom ? (
+                                                    <div className="space-y-2 text-[11px] leading-relaxed">
+                                                      <p>
+                                                        Parcela de <b>HH/HM</b> do componente{" "}
+                                                        <b>{String(step.calculationDetails?.childSku ?? "")}</b>{" "}
+                                                        incorporada na <b>unidade do produto pai</b>, com a mesma escala
+                                                        usada no motor (<code className="text-[10px]">scaleChildContribution</code>
+                                                        ).
+                                                      </p>
+                                                      <p>
+                                                        Qtd estrutura (com perda):{" "}
+                                                        <b>{formatNumber(Number(step.calculationDetails?.requiredQty ?? 0), 4)}</b>
+                                                      </p>
+                                                      <p>
+                                                        Tempo produtivo do componente (h/unid.):{" "}
+                                                        <b>
+                                                          {Number(step.calculationDetails?.childOwnProductiveTimeH_Unit) > 0
+                                                            ? formatNumber(
+                                                                Number(step.calculationDetails.childOwnProductiveTimeH_Unit),
+                                                                4
+                                                              )
+                                                            : "—"}
+                                                        </b>
+                                                      </p>
+                                                      <p>
+                                                        Origem do processo no componente:{" "}
+                                                        <b>
+                                                          {step.calculationDetails?.processSource === "ROUTING"
+                                                            ? "Roteiro"
+                                                            : "Processo padrão"}
+                                                        </b>
+                                                      </p>
+                                                    </div>
+                                                  ) : (
+                                                    <>
                                                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                                                     <div>
                                                       <p className="opacity-50 uppercase text-[8px] font-bold">Variáveis Entrada</p>
@@ -1725,6 +1801,8 @@ export const ProductModule = () => {
                                                     <p>Custo Transf: <b>{formatCurrency(step.calculationDetails.unitTransform)}</b></p>
                                                     <p>Custo Setup: <b>{formatCurrency(step.calculationDetails.setupCost)}</b></p>
                                                   </div>
+                                                    </>
+                                                  )}
 
                                                   <div className="pt-2 border-t flex justify-between items-center text-[10px]">
                                                     <span className="font-bold">TOTAL OPERAÇÃO</span>
@@ -1737,12 +1815,13 @@ export const ProductModule = () => {
                                           )}
                                         </div>
                                       </td>
-                                      <td className="p-3 text-right">{formatNumber(step.timeMin, 5)}</td>
+                                      <td className="p-3 text-right">{timeCell}</td>
                                       <td className="p-3 text-right">{formatCurrency(step.machineCost)}</td>
                                       <td className="p-3 text-right">{formatCurrency(step.laborCost)}</td>
                                       <td className="p-3 text-right font-bold">{formatCurrency(step.total)}</td>
                                     </tr>
-                                  ))
+                                    );
+                                  })
                                 )}
                               </tbody>
                             </table>
