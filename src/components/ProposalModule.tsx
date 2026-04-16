@@ -40,6 +40,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
+import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -105,6 +106,7 @@ export const ProposalModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
+  const [formTab, setFormTab] = useState<"items" | "indicators">("items");
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -149,6 +151,7 @@ export const ProposalModule = () => {
 
   const handleCreateNew = () => {
     setEditingProposal(null);
+    setFormTab("items");
     setFormData({
       title: "",
       customerId: "",
@@ -177,6 +180,7 @@ export const ProposalModule = () => {
         : [];
       setEditingProposal(data);
       setFormData({ ...data, items });
+      setFormTab("items");
       setView("form");
     } catch (error) {
       console.error("Erro ao buscar proposta:", error);
@@ -578,148 +582,199 @@ export const ProposalModule = () => {
               data-tour="proposals-form-items"
             >
               <div className="p-4 border-b border-border bg-accent/30 flex items-center justify-between">
-                <h4 className="font-bold flex items-center gap-2">
-                  <Package className="h-4 w-4" /> Itens da Proposta
-                </h4>
-                <div className="flex items-center gap-2">
-                  <div className="w-64">
-                    <SearchableSelect
-                      placeholder="+ Adicionar Produto..."
-                      options={products.map((p) => ({
-                        value: p.id,
-                        label: `${p.sku} — ${p.name}`,
-                        sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
-                        searchTerms: `${p.sku} ${p.name}`,
-                      }))}
-                      value=""
-                      onChange={(val) => val && addItem(val)}
-                    />
+                <div className="flex items-center gap-3">
+                  <h4 className="font-bold flex items-center gap-2">
+                    <Package className="h-4 w-4" /> Proposta — Edição
+                  </h4>
+                  <div className="flex items-center gap-1 rounded-lg border border-border bg-card/40 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setFormTab("items")}
+                      className={cn(
+                        "px-3 py-1.5 rounded-md text-xs font-bold transition-colors",
+                        formTab === "items"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                      )}
+                    >
+                      Itens
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormTab("indicators")}
+                      className={cn(
+                        "px-3 py-1.5 rounded-md text-xs font-bold transition-colors",
+                        formTab === "indicators"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                      )}
+                    >
+                      Indicadores
+                    </button>
                   </div>
                 </div>
+                {formTab === "items" ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-64">
+                      <SearchableSelect
+                        placeholder="+ Adicionar Produto..."
+                        options={products.map((p) => ({
+                          value: p.id,
+                          label: `${p.sku} — ${p.name}`,
+                          sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
+                          searchTerms: `${p.sku} ${p.name}`,
+                        }))}
+                        value=""
+                        onChange={(val) => val && addItem(val)}
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
-              <div className="flex-1 overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-accent/20 border-b border-border">
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Produto</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Qtd</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Custo Unit.</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Sugerido</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Negociado</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Desc %</th>
-                      <th
-                        className="p-3 text-[10px] font-bold uppercase text-muted-foreground max-w-[120px]"
-                        title="Margem líquida sobre faturamento bruto da linha, após impostos, comissão, frete e custo industrial (CIU do motor)."
-                      >
-                        Margem líq. %
-                      </th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right">Total Líq.</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-center"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {formData.items?.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-accent/10 transition-colors group">
-                        <td className="p-3">
-                          <div className="max-w-[200px]">
-                            <p className="text-xs font-bold truncate">{item.Product?.sku}</p>
-                            <p className="text-[10px] text-muted-foreground truncate">{item.Product?.name}</p>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <input
-                            type="number"
-                            step="0.00001"
-                            className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
-                            value={item.quantity}
-                            onChange={(e) => updateItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
-                          />
-                        </td>
-                        <td className="p-3 text-xs font-mono text-muted-foreground">
-                          <CalculatedValue meta={item.calculationExplainability?.unitCost ?? null} hideIcon>
-                            <span>
-                              {safeNum(item.unitCost).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
-                            </span>
-                          </CalculatedValue>
-                        </td>
-                        <td className="p-3 text-xs font-mono text-blue-600 font-medium">
-                          <CalculatedValue meta={item.calculationExplainability?.suggestedPrice ?? null} hideIcon>
-                            <span>
-                              {safeNum(item.suggestedPrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
-                            </span>
-                          </CalculatedValue>
-                        </td>
-                        <td className="p-3">
-                          <input
-                            type="number"
-                            step="0.00001"
-                            className="w-full p-1 rounded border border-border bg-background text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
-                            value={item.negotiatedPrice}
-                            onChange={(e) => updateItem(idx, { negotiatedPrice: parseFloat(e.target.value) || 0 })}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <input
-                            type="number"
-                            step="0.00001"
-                            className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
-                            value={item.discountPerc}
-                            onChange={(e) => updateItem(idx, { discountPerc: parseFloat(e.target.value) || 0 })}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <CalculatedValue
-                            hideIcon
-                            meta={buildProposalLineMarginExplanation({
-                              quantity: safeNum(item.quantity),
-                              negotiatedPrice: safeNum(item.negotiatedPrice),
-                              discountValue: safeNum(item.discountValue),
-                              taxesValue: safeNum(item.taxesValue),
-                              commissionValue: safeNum(item.commissionValue),
-                              freightValue: safeNum(item.freightValue),
-                              unitCost: safeNum(item.unitCost),
-                              marginValue: safeNum(item.marginValue),
-                              marginPerc: safeNum(item.marginPerc),
-                            })}
-                          >
-                            <div
-                              className={cn(
-                                "text-xs font-bold",
-                                safeNum(item.marginPerc) >= 20
-                                  ? "text-green-600"
-                                  : safeNum(item.marginPerc) >= 10
-                                    ? "text-orange-600"
-                                    : "text-red-600"
-                              )}
-                            >
-                              {safeNum(item.marginPerc).toFixed(3)}%
+              {formTab === "items" ? (
+                <div className="flex-1 overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-accent/20 border-b border-border">
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Produto</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Qtd</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Custo Unit.</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Sugerido</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Negociado</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Desc %</th>
+                        <th
+                          className="p-3 text-[10px] font-bold uppercase text-muted-foreground max-w-[120px]"
+                          title="Margem líquida sobre faturamento bruto da linha, após impostos, comissão, frete e custo industrial (CIU do motor)."
+                        >
+                          Margem líq. %
+                        </th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right">Total Líq.</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-center"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {formData.items?.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-accent/10 transition-colors group">
+                          <td className="p-3">
+                            <div className="max-w-[200px]">
+                              <p className="text-xs font-bold truncate">{item.Product?.sku}</p>
+                              <p className="text-[10px] text-muted-foreground truncate">{item.Product?.name}</p>
                             </div>
-                          </CalculatedValue>
-                        </td>
-                        <td className="p-3 text-right text-xs font-bold font-mono">
-                          {(safeNum(item.quantity) * safeNum(item.negotiatedPrice) - safeNum(item.discountValue)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="p-3 text-center">
-                          <button 
-                            onClick={() => removeItem(idx)}
-                            className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {(!formData.items || formData.items.length === 0) && (
-                      <tr>
-                        <td colSpan={9} className="p-12 text-center text-muted-foreground italic text-sm">
-                          Nenhum produto adicionado. Use o seletor acima para começar.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="number"
+                              step="0.00001"
+                              className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
+                              value={item.quantity}
+                              onChange={(e) => updateItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
+                            />
+                          </td>
+                          <td className="p-3 text-xs font-mono text-muted-foreground">
+                            <CalculatedValue meta={item.calculationExplainability?.unitCost ?? null} hideIcon>
+                              <span>
+                                {safeNum(item.unitCost).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
+                              </span>
+                            </CalculatedValue>
+                          </td>
+                          <td className="p-3 text-xs font-mono text-blue-600 font-medium">
+                            <CalculatedValue meta={item.calculationExplainability?.suggestedPrice ?? null} hideIcon>
+                              <span>
+                                {safeNum(item.suggestedPrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
+                              </span>
+                            </CalculatedValue>
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="number"
+                              step="0.00001"
+                              className="w-full p-1 rounded border border-border bg-background text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                              value={item.negotiatedPrice}
+                              onChange={(e) => updateItem(idx, { negotiatedPrice: parseFloat(e.target.value) || 0 })}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="number"
+                              step="0.00001"
+                              className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
+                              value={item.discountPerc}
+                              onChange={(e) => updateItem(idx, { discountPerc: parseFloat(e.target.value) || 0 })}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <CalculatedValue
+                              hideIcon
+                              meta={buildProposalLineMarginExplanation({
+                                quantity: safeNum(item.quantity),
+                                negotiatedPrice: safeNum(item.negotiatedPrice),
+                                discountValue: safeNum(item.discountValue),
+                                taxesValue: safeNum(item.taxesValue),
+                                commissionValue: safeNum(item.commissionValue),
+                                freightValue: safeNum(item.freightValue),
+                                unitCost: safeNum(item.unitCost),
+                                marginValue: safeNum(item.marginValue),
+                                marginPerc: safeNum(item.marginPerc),
+                              })}
+                            >
+                              <div
+                                className={cn(
+                                  "text-xs font-bold",
+                                  safeNum(item.marginPerc) >= 20
+                                    ? "text-green-600"
+                                    : safeNum(item.marginPerc) >= 10
+                                      ? "text-orange-600"
+                                      : "text-red-600"
+                                )}
+                              >
+                                {safeNum(item.marginPerc).toFixed(3)}%
+                              </div>
+                            </CalculatedValue>
+                          </td>
+                          <td className="p-3 text-right text-xs font-bold font-mono">
+                            {(safeNum(item.quantity) * safeNum(item.negotiatedPrice) - safeNum(item.discountValue)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button 
+                              onClick={() => removeItem(idx)}
+                              className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!formData.items || formData.items.length === 0) && (
+                        <tr>
+                          <td colSpan={9} className="p-12 text-center text-muted-foreground italic text-sm">
+                            Nenhum produto adicionado. Use o seletor acima para começar.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-4">
+                  <ProposalIndicatorsTab
+                    proposalNumber={editingProposal?.number ?? null}
+                    proposalTitle={formData.title ?? null}
+                    proposalId={editingProposal?.id ?? null}
+                    items={formData.items || []}
+                    totals={{
+                      totalGrossValue: totals.totalGross,
+                      totalDiscount: totals.totalDiscount,
+                      totalNetValue: totals.totalNet,
+                      totalTaxes: totals.totalTaxes,
+                      totalCommission: totals.totalComm,
+                      totalFreight: totals.totalFreight,
+                      totalMarginValue: totals.totalMarginValue,
+                      totalMarginPerc: totals.totalMarginPerc,
+                    }}
+                  />
+                </div>
+              )}
 
               {/* Summary Footer */}
               <div className="p-6 bg-accent/30 border-t border-border grid grid-cols-2 md:grid-cols-4 gap-6">
