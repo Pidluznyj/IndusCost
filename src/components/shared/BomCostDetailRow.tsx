@@ -38,22 +38,28 @@ export function BomCostDetailRow({ item }: { item: BomCostDetailRowData }) {
       )}
       title={tooltip}
     >
-      <td className={cn("p-3 font-medium", excluded && "text-red-700 dark:text-red-300")}>
+      <td className={cn("min-w-0 px-3 py-2.5 align-top text-[13px] font-medium leading-snug", excluded && "text-red-700 dark:text-red-300")}>
         <div className="flex items-start gap-2">
           {excluded && <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-600" aria-hidden />}
-          <span>
+          <span className="min-w-0 break-words">
             {item.description}
             {excluded && (
-              <span className="block text-[10px] font-bold uppercase tracking-wide text-red-600 mt-1">
+              <span className="mt-1 block text-[10px] font-bold uppercase tracking-wide text-red-600">
                 Não incluído no custo
               </span>
             )}
           </span>
         </div>
       </td>
-      <td className="p-3 text-right">{formatNumber(item.requiredQty, 5)}</td>
-      <td className="p-3 text-right">{excluded ? "—" : formatCurrency(item.basePrice)}</td>
-      <td className="p-3 text-right font-bold">{excluded ? "—" : formatCurrency(item.unitCost)}</td>
+      <td className="px-3 py-2.5 text-right align-middle tabular-nums text-muted-foreground">
+        {formatNumber(item.requiredQty, 5)}
+      </td>
+      <td className="px-3 py-2.5 text-right align-middle tabular-nums">
+        {excluded ? "—" : formatCurrency(item.basePrice)}
+      </td>
+      <td className="px-3 py-2.5 text-right align-middle tabular-nums font-semibold text-foreground">
+        {excluded ? "—" : formatCurrency(item.unitCost)}
+      </td>
     </tr>
   );
 }

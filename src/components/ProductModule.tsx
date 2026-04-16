@@ -984,7 +984,7 @@ export const ProductModule = () => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-card flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-border shadow-2xl"
             >
               {/* Modal Header */}
               <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3 bg-accent/30">
@@ -1633,91 +1633,134 @@ export const ProductModule = () => {
                         <code className="text-[10px] bg-accent px-1 rounded">/api/products/:id/cost-analysis</code>).
                       </p>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* BOM Breakdown */}
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            Detalhamento BOM
-                          </h4>
-                          <div className="bg-card rounded-xl border border-border overflow-hidden">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-accent/50 border-b border-border">
-                                <tr>
-                                  <th className="p-3 font-bold">Item</th>
-                                  <th className="p-3 font-bold text-right">Qtd</th>
-                                  <th className="p-3 font-bold text-right">Custo Unit.</th>
-                                  <th className="p-3 font-bold text-right">Total</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-border">
-                                {loadingCost ? (
+                      <div className="grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-6 xl:gap-8">
+                        {/* BOM Breakdown — coluna mais estreita (mais números, menos texto) */}
+                        <div className="min-w-0 space-y-3 lg:col-span-2">
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                              Detalhamento BOM
+                            </h4>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">
+                              Estrutura salva: quantidades com perda e custo por linha (MP ou CIU do componente).
+                            </p>
+                          </div>
+                          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-border/30">
+                            <div className="max-h-[min(52vh,26rem)] overflow-auto overscroll-y-contain">
+                              <table className="w-full table-fixed border-collapse text-left text-[13px] leading-snug">
+                                <colgroup>
+                                  <col style={{ width: "46%" }} />
+                                  <col style={{ width: "14%" }} />
+                                  <col style={{ width: "20%" }} />
+                                  <col style={{ width: "20%" }} />
+                                </colgroup>
+                                <thead className="sticky top-0 z-10 border-b border-border bg-accent/95 backdrop-blur-sm supports-[backdrop-filter]:bg-accent/85">
                                   <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Carregando análise do backend...
-                                    </td>
+                                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Item
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Qtd
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Custo unit.
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Total
+                                    </th>
                                   </tr>
-                                ) : displayCost.details.materials.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={4} className="p-4 text-center text-muted-foreground text-xs">
-                                      Nenhum material ou componente na estrutura salva.
-                                    </td>
-                                  </tr>
-                                ) : (
-                                  displayCost.details.materials.map((item: any, idx: number) => (
-                                    <BomCostDetailRow key={idx} item={item} />
-                                  ))
-                                )}
-                              </tbody>
-                            </table>
+                                </thead>
+                                <tbody className="divide-y divide-border [&>tr:nth-child(even)]:bg-muted/15">
+                                  {loadingCost ? (
+                                    <tr>
+                                      <td colSpan={4} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                        Carregando análise do backend...
+                                      </td>
+                                    </tr>
+                                  ) : displayCost.details.materials.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={4} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                        Nenhum material ou componente na estrutura salva.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    displayCost.details.materials.map((item: any, idx: number) => (
+                                      <BomCostDetailRow key={idx} item={item} />
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Processing Breakdown */}
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            Detalhamento Processo
-                          </h4>
-                          <p className="text-[10px] text-muted-foreground -mt-2">
-                            {displayCost.productType === "PRODUCT" ? (
-                              <>
-                                <span className="font-medium text-foreground/80">Item analisado: </span>
-                                processo próprio do produto (ciclo/roteiro) quando existir; linhas{" "}
-                                <span className="font-medium text-foreground/80">“Estrutura (BOM)”</span> mostram a
-                                conversão (HH/HM) dos <strong>componentes fabricados</strong> já incorporada na unidade
-                                do produto — mesma parcela que entra no motor, sem duplicar.
-                              </>
-                            ) : (
-                              <>
-                                Linhas com selo “PROCESSO PADRÃO” vêm dos campos de ciclo do item; “ROTEIRO” vêm das
-                                operações salvas na aba Processo.
-                              </>
-                            )}
-                          </p>
-                          <div className="bg-card rounded-xl border border-border overflow-hidden">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-accent/50 border-b border-border">
-                                <tr>
-                                  <th className="p-3 font-bold">Operação</th>
-                                  <th className="p-3 font-bold text-right">Tempo (min)</th>
-                                  <th className="p-3 font-bold text-right">Custo Máq.</th>
-                                  <th className="p-3 font-bold text-right">Custo HH</th>
-                                  <th className="p-3 font-bold text-right">Total</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-border">
-                                {loadingCost ? (
+                        {/* Processamento — coluna mais larga (mais texto e contexto) */}
+                        <div className="min-w-0 space-y-3 lg:col-span-3">
+                          <div className="space-y-2">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                              Detalhamento processo
+                            </h4>
+                            <div className="rounded-lg border border-border/70 bg-muted/25 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                              {displayCost.productType === "PRODUCT" ? (
+                                <>
+                                  <span className="font-semibold text-foreground/85">Produto: </span>
+                                  mostra o processo próprio (ciclo/roteiro), quando houver, e linhas{" "}
+                                  <span className="font-semibold text-foreground/85">“Estrutura (BOM)”</span> com a
+                                  conversão (HH/HM) dos componentes fabricados na unidade do produto — mesma parcela do
+                                  motor, sem duplicar.
+                                </>
+                              ) : (
+                                <>
+                                  <span className="font-semibold text-foreground/85">Componente: </span>
+                                  origem do custo na linha abaixo (processo padrão ou roteiro). Detalhe técnico permanece
+                                  no ícone de memória de cálculo.
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-border/30">
+                            <div className="max-h-[min(56vh,30rem)] overflow-auto overscroll-y-contain">
+                              <table className="w-full table-fixed border-collapse text-left text-[13px] leading-snug">
+                                <colgroup>
+                                  <col style={{ width: "44%" }} />
+                                  <col style={{ width: "11%" }} />
+                                  <col style={{ width: "15%" }} />
+                                  <col style={{ width: "15%" }} />
+                                  <col style={{ width: "15%" }} />
+                                </colgroup>
+                                <thead className="sticky top-0 z-10 border-b border-border bg-accent/95 backdrop-blur-sm supports-[backdrop-filter]:bg-accent/85">
                                   <tr>
-                                    <td colSpan={5} className="p-4 text-center text-muted-foreground text-xs">
-                                      Carregando análise do backend...
-                                    </td>
+                                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Operação / componente
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Tempo (min)
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Custo máq.
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Custo HH
+                                    </th>
+                                    <th className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Total
+                                    </th>
                                   </tr>
-                                ) : !displayCost.details.processBreakdown || displayCost.details.processBreakdown.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={5} className="p-4 text-center text-muted-foreground text-xs">
-                                      Nenhum processo configurado.
-                                    </td>
-                                  </tr>
-                                ) : (
+                                </thead>
+                                <tbody className="divide-y divide-border [&>tr:nth-child(even)]:bg-muted/15">
+                                  {loadingCost ? (
+                                    <tr>
+                                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                        Carregando análise do backend...
+                                      </td>
+                                    </tr>
+                                  ) : !displayCost.details.processBreakdown ||
+                                    displayCost.details.processBreakdown.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                        Nenhum processo configurado.
+                                      </td>
+                                    </tr>
+                                  ) : (
                                   displayCost.details.processBreakdown.map((step: any, idx: number) => {
                                     const rollupBom = Boolean(step?.rollupFromBom || step?.calculationDetails?.rollupFromBom);
                                     const processOriginLabel =
@@ -1736,22 +1779,34 @@ export const ProductModule = () => {
                                         ? "PROCESSO PADRÃO"
                                         : "ROTEIRO";
                                     return (
-                                    <tr key={idx} className="group relative">
-                                      <td className="p-3 font-medium">
-                                        <div className="flex items-center gap-2">
-                                          <div className="min-w-0">
-                                            <div className="truncate">{step.description}</div>
-                                            {rollupBom && (
-                                              <div className="text-[10px] text-muted-foreground font-normal leading-snug">
-                                                Origem no componente: <span className="text-foreground/90">{processOriginLabel}</span>
-                                                {" · "}
-                                                <span className="text-amber-800/90 dark:text-amber-200/90">Conversão na unidade do produto</span>
-                                              </div>
-                                            )}
+                                    <tr key={idx} className="group align-top">
+                                      <td className="px-3 py-2.5 align-top">
+                                        <div className="flex items-start gap-2">
+                                          <div className="min-w-0 flex-1 pr-1">
+                                            <div className="break-words font-medium text-foreground leading-snug">
+                                              {step.description}
+                                            </div>
+                                            <div className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                                              {rollupBom ? (
+                                                <>
+                                                  <span className="text-muted-foreground/90">Origem no componente:</span>{" "}
+                                                  <span className="font-medium text-foreground/90">{processOriginLabel}</span>
+                                                  <span className="mx-1.5 text-border">·</span>
+                                                  <span className="font-medium text-amber-900/85 dark:text-amber-200/90">
+                                                    Conversão na unidade do produto
+                                                  </span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <span className="text-muted-foreground/90">Origem do custo:</span>{" "}
+                                                  <span className="font-medium text-foreground/90">{processOriginLabel}</span>
+                                                </>
+                                              )}
+                                            </div>
                                           </div>
                                           {step.calculationDetails && (
-                                            <div className="group/tooltip relative">
-                                              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help hover:text-primary transition-colors" />
+                                            <div className="group/tooltip relative shrink-0 pt-0.5">
+                                              <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help hover:text-primary transition-colors" />
                                               <div className="fixed z-[99] invisible group-hover/tooltip:visible bg-popover text-popover-foreground border shadow-xl rounded-xl p-4 w-80 text-[11px] pointer-events-none -translate-x-1/2 left-1/2 bottom-full mb-2 animate-in fade-in zoom-in-95 duration-200">
                                                 <div className="space-y-3">
                                                   <div className="flex items-center justify-between border-b pb-2 mb-2">
@@ -1830,16 +1885,25 @@ export const ProductModule = () => {
                                           )}
                                         </div>
                                       </td>
-                                      <td className="p-3 text-right">{timeCell}</td>
-                                      <td className="p-3 text-right">{formatCurrency(step.machineCost)}</td>
-                                      <td className="p-3 text-right">{formatCurrency(step.laborCost)}</td>
-                                      <td className="p-3 text-right font-bold">{formatCurrency(step.total)}</td>
+                                      <td className="px-3 py-2.5 text-right align-middle tabular-nums text-muted-foreground">
+                                        {timeCell}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right align-middle tabular-nums">
+                                        {formatCurrency(step.machineCost)}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right align-middle tabular-nums">
+                                        {formatCurrency(step.laborCost)}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right align-middle tabular-nums font-semibold text-foreground">
+                                        {formatCurrency(step.total)}
+                                      </td>
                                     </tr>
                                     );
                                   })
-                                )}
-                              </tbody>
-                            </table>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         </div>
                       </div>
