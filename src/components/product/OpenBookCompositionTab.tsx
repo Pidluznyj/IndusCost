@@ -94,11 +94,11 @@ export function OpenBookCompositionTab({ loading, costAnalysisPartial, openBook 
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
       {costAnalysisPartial && (
         <div
-          className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100"
+          className="rounded-xl border border-amber-500/55 bg-amber-50 ring-1 ring-amber-500/20 p-4 text-sm text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/45 dark:text-amber-50 dark:ring-amber-400/25"
           role="status"
         >
           <div className="flex items-center gap-2 font-semibold">
-            <AlertCircle className="h-4 w-4 shrink-0" />
+            <AlertCircle className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
             Cálculo parcial — a explosão de MP reflete apenas ramos custeados.
           </div>
         </div>
@@ -131,7 +131,7 @@ export function OpenBookCompositionTab({ loading, costAnalysisPartial, openBook 
       )}
 
       {!okReconcile && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-100">
+        <div className="rounded-lg border border-amber-500/55 bg-amber-50 ring-1 ring-amber-500/20 px-3 py-2 text-[11px] text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/45 dark:text-amber-50 dark:ring-amber-400/25">
           Atenção: soma da explosão de MP ({formatCurrency(openBook?.explosionMaterialSum ?? 0)}) difere do total de MP do
           motor ({formatCurrency(exec.totalMaterialCost)}) além da tolerância — revisar arredondamentos ou cadastro.
         </div>

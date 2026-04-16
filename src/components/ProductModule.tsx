@@ -60,16 +60,31 @@ export type ProductWithCostSummary = Product & {
 /*                                Sub-Components                              */
 /* -------------------------------------------------------------------------- */
 
-const Badge = ({ children, variant = "default" }: { children: React.ReactNode, variant?: "default" | "success" | "warning" | "danger" | "info" }) => {
+const Badge = ({
+  children,
+  variant = "default",
+  className,
+}: {
+  children: React.ReactNode;
+  variant?: "default" | "success" | "warning" | "danger" | "info";
+  className?: string;
+}) => {
   const variants = {
     default: "bg-accent text-accent-foreground",
     success: "bg-green-500/10 text-green-600",
-    warning: "bg-yellow-500/10 text-yellow-600",
+    warning:
+      "bg-amber-100 text-amber-950 ring-1 ring-amber-500/35 dark:bg-amber-950/55 dark:text-amber-50 dark:ring-amber-400/35",
     danger: "bg-red-500/10 text-red-600",
     info: "bg-blue-500/10 text-blue-600",
   };
   return (
-    <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider", variants[variant])}>
+    <span
+      className={cn(
+        "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+        variants[variant],
+        className
+      )}
+    >
       {children}
     </span>
   );
@@ -1500,20 +1515,20 @@ export const ProductModule = () => {
                       )}
                       {!costAnalysisError && displayCost.costAnalysisPartial && (
                         <div
-                          className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100"
+                          className="rounded-xl border border-amber-500/55 bg-amber-50 ring-1 ring-amber-500/20 p-4 text-sm text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/45 dark:text-amber-50 dark:ring-amber-400/25"
                           role="status"
                         >
                           <div className="flex flex-wrap items-center gap-2 mb-2">
                             <Badge variant="warning">Cálculo parcial</Badge>
                             <span className="font-semibold">Um ou mais itens da BOM não foram custeados.</span>
                           </div>
-                          <p className="text-xs opacity-95">
+                          <p className="text-xs text-amber-950/95 dark:text-amber-50/95">
                             O total exibido nos cards soma apenas os itens com cadastro suficiente para custeio.
                             Itens excluídos aparecem em vermelho na tabela abaixo; passe o mouse para ver o motivo e o que
                             corrigir.
                           </p>
                           {displayCost.excludedBomLines.length > 0 && (
-                            <p className="text-[11px] mt-2 font-mono opacity-90">
+                            <p className="text-[11px] mt-2 font-mono text-amber-900 dark:text-amber-100/95">
                               Exclusões: {displayCost.excludedBomLines.length} linha(s)
                             </p>
                           )}
@@ -1556,7 +1571,7 @@ export const ProductModule = () => {
                             <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
                           </CalculatedValue>
                           {displayCost.costAnalysisPartial && (
-                            <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                            <p className="text-[10px] font-bold text-amber-900 dark:text-amber-200">
                               Total parcial — exclui itens não custeados na BOM.
                             </p>
                           )}
@@ -1572,17 +1587,20 @@ export const ProductModule = () => {
 
                       {!loadingCost && displayCost.warningCount > 0 && (
                         <div
-                          className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-2"
+                          className="rounded-xl border border-amber-500/55 bg-amber-50 ring-1 ring-amber-500/20 p-4 space-y-2 dark:border-amber-500/45 dark:bg-amber-950/45 dark:ring-amber-400/25"
                           role="alert"
                         >
                           <div className="flex items-start gap-2">
-                            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                            <AlertCircle
+                              className="h-5 w-5 shrink-0 mt-0.5 text-amber-700 dark:text-amber-300"
+                              aria-hidden
+                            />
                             <div className="space-y-1 min-w-0">
-                              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                              <p className="text-sm font-semibold text-amber-950 dark:text-amber-50">
                                 A análise foi concluída, mas existem {displayCost.warningCount}{" "}
                                 {displayCost.warningCount === 1 ? "alerta" : "alertas"} que exigem revisão.
                               </p>
-                              <ul className="text-xs text-amber-900/90 dark:text-amber-100/90 space-y-1 list-disc pl-4">
+                              <ul className="text-xs text-amber-950 dark:text-amber-100 space-y-1.5 list-disc pl-4 marker:text-amber-700 dark:marker:text-amber-400">
                                 {(displayCost.warnings as Array<{ message?: string }>).map((w, i) => (
                                   <li key={i}>{typeof w?.message === "string" ? w.message : String(w)}</li>
                                 ))}
@@ -1742,7 +1760,7 @@ export const ProductModule = () => {
                       <p className="text-[10px] font-bold text-muted-foreground uppercase">Custo Industrial</p>
                       <p className="text-lg font-black text-primary">{formatCurrency(displayCost.total)}</p>
                       {displayCost.costAnalysisPartial && (
-                        <span className="text-[10px] font-bold text-amber-600">Parcial</span>
+                        <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200">Parcial</span>
                       )}
                     </div>
                     <div className="h-8 w-px bg-border" />
