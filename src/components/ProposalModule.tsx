@@ -42,6 +42,7 @@ import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
 import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
 import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
+import { filterProposals } from "@/src/lib/operationalListFilters";
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -107,6 +108,11 @@ export const ProposalModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [listStatusFilter, setListStatusFilter] = useState<"" | ProposalStatus>("");
   const [listResponsibleFilter, setListResponsibleFilter] = useState("");
+  const [listCustomerIdFilter, setListCustomerIdFilter] = useState("");
+  const [listStartDate, setListStartDate] = useState("");
+  const [listEndDate, setListEndDate] = useState("");
+  const [listMinValue, setListMinValue] = useState("");
+  const [listMaxValue, setListMaxValue] = useState("");
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
   const [formTab, setFormTab] = useState<"items" | "indicators">("items");
@@ -416,23 +422,37 @@ export const ProposalModule = () => {
   }, [proposals]);
 
   const filteredProposals = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    return proposals.filter((p) => {
-      if (listStatusFilter && p.status !== listStatusFilter) return false;
-      if (listResponsibleFilter.trim()) {
-        const r = String(p.responsible ?? "").trim();
-        if (r !== listResponsibleFilter.trim()) return false;
-      }
-      if (!q) return true;
-      const hay = `${p.number} ${(p.title ?? "")} ${(p.Customer?.companyName ?? "")}`.toLowerCase();
-      return hay.includes(q);
+    return filterProposals(proposals, {
+      search: searchTerm,
+      status: listStatusFilter,
+      responsible: listResponsibleFilter,
+      customerId: listCustomerIdFilter,
+      startDate: listStartDate,
+      endDate: listEndDate,
+      minNetValue: listMinValue,
+      maxNetValue: listMaxValue,
     });
-  }, [proposals, searchTerm, listStatusFilter, listResponsibleFilter]);
+  }, [
+    proposals,
+    searchTerm,
+    listStatusFilter,
+    listResponsibleFilter,
+    listCustomerIdFilter,
+    listStartDate,
+    listEndDate,
+    listMinValue,
+    listMaxValue,
+  ]);
 
   const clearListFilters = () => {
     setSearchTerm("");
     setListStatusFilter("");
     setListResponsibleFilter("");
+    setListCustomerIdFilter("");
+    setListStartDate("");
+    setListEndDate("");
+    setListMinValue("");
+    setListMaxValue("");
   };
 
   if (view === "form") {
@@ -925,6 +945,62 @@ export const ProposalModule = () => {
                 </option>
               ))}
             </select>
+
+            <select
+              className="min-w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={listCustomerIdFilter}
+              onChange={(e) => setListCustomerIdFilter(e.target.value)}
+            >
+              <option value="">Todos os clientes</option>
+              {customers
+                .slice()
+                .sort((a, b) => (a.companyName || "").localeCompare(b.companyName || ""))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {(c.companyName || c.tradeName || "Cliente").trim()}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-bold uppercase text-muted-foreground">Período</label>
+              <input
+                type="date"
+                className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+                value={listStartDate}
+                onChange={(e) => setListStartDate(e.target.value)}
+              />
+              <span className="text-xs text-muted-foreground">até</span>
+              <input
+                type="date"
+                className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+                value={listEndDate}
+                onChange={(e) => setListEndDate(e.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-bold uppercase text-muted-foreground">Valor líquido</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                className="w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+                placeholder="mín."
+                value={listMinValue}
+                onChange={(e) => setListMinValue(e.target.value)}
+              />
+              <span className="text-xs text-muted-foreground">até</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                className="w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+                placeholder="máx."
+                value={listMaxValue}
+                onChange={(e) => setListMaxValue(e.target.value)}
+              />
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-3">
@@ -935,7 +1011,16 @@ export const ProposalModule = () => {
             <button
               type="button"
               onClick={clearListFilters}
-              disabled={!searchTerm.trim() && !listStatusFilter && !listResponsibleFilter.trim()}
+              disabled={
+                !searchTerm.trim() &&
+                !listStatusFilter &&
+                !listResponsibleFilter.trim() &&
+                !listCustomerIdFilter &&
+                !listStartDate &&
+                !listEndDate &&
+                !listMinValue.trim() &&
+                !listMaxValue.trim()
+              }
               className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
             >
               <X className="h-4 w-4" />
@@ -1011,15 +1096,21 @@ export const ProposalModule = () => {
                       </div>
                     </td>
                     <td className="p-4 font-mono text-sm font-bold">
-                      {Number(p.totalNetValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {Number.isFinite(Number(p.totalNetValue))
+                        ? Number(p.totalNetValue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                        : "—"}
                     </td>
                     <td className="p-4">
+                      {Number.isFinite(Number(p.totalMarginPerc)) ? (
                       <div className={cn(
                         "text-xs font-bold",
                         Number(p.totalMarginPerc) >= 20 ? "text-green-600" : Number(p.totalMarginPerc) >= 10 ? "text-orange-600" : "text-red-600"
                       )}>
                         {Number(p.totalMarginPerc).toFixed(3)}%
                       </div>
+                      ) : (
+                        <div className="text-xs font-bold text-muted-foreground">—</div>
+                      )}
                     </td>
                     <td className="p-4">
                       <div className={cn(

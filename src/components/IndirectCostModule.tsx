@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { 
   Plus, 
   Search, 
@@ -24,6 +24,7 @@ import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { INDIRECT_COST_TOUR_STEPS } from "@/src/tours/indirectTourSteps";
+import { filterIndirectCosts } from "@/src/lib/operationalListFilters";
 
 interface IndirectCost {
   id: string;
@@ -39,6 +40,8 @@ export const IndirectCostModule = () => {
   const [costs, setCosts] = useState<IndirectCost[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [listCategory, setListCategory] = useState("");
+  const [listStatus, setListStatus] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCost, setEditingCost] = useState<IndirectCost | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
@@ -140,6 +143,16 @@ export const IndirectCostModule = () => {
   const totalCIF = costs.filter(c => c.category === "CIF" && c.status === "ACTIVE").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
   const totalOPEX = costs.filter(c => c.category !== "CIF" && c.status === "ACTIVE").reduce((acc, c) => acc + Number(c.monthlyValue), 0);
 
+  const filteredCosts = useMemo(() => {
+    return filterIndirectCosts(costs, { search: searchTerm, category: listCategory, status: listStatus });
+  }, [costs, searchTerm, listCategory, listStatus]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setListCategory("");
+    setListStatus("");
+  };
+
   return (
     <div className="space-y-6" data-tour="indirect-cost-root">
       {/* Summary Section */}
@@ -176,7 +189,8 @@ export const IndirectCostModule = () => {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         data-tour="indirect-cost-toolbar"
       >
-        <div className="relative flex-1 max-w-md">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+          <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
@@ -185,6 +199,28 @@ export const IndirectCostModule = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
+        </div>
+          <select
+            className="min-w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+            value={listCategory}
+            onChange={(e) => setListCategory(e.target.value)}
+          >
+            <option value="">Todas as categorias</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="min-w-[160px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+            value={listStatus}
+            onChange={(e) => setListStatus(e.target.value)}
+          >
+            <option value="">Todos os status</option>
+            <option value="ACTIVE">Ativo</option>
+            <option value="INACTIVE">Inativo</option>
+          </select>
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
@@ -196,6 +232,23 @@ export const IndirectCostModule = () => {
             Nova Despesa
           </button>
         </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Exibindo <span className="font-bold text-foreground">{filteredCosts.length}</span> de{" "}
+          <span className="font-bold text-foreground">{costs.filter((c) => c.category !== "GLOBAL_PARAM").length}</span>{" "}
+          despesa(s).
+        </p>
+        <button
+          type="button"
+          onClick={clearListFilters}
+          disabled={!searchTerm.trim() && !listCategory && !listStatus}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
+        >
+          <X className="h-4 w-4" />
+          Limpar filtros
+        </button>
       </div>
 
       {/* Table */}
@@ -227,8 +280,14 @@ export const IndirectCostModule = () => {
                   Nenhuma despesa indireta cadastrada.
                 </td>
               </tr>
+            ) : filteredCosts.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="p-12 text-center text-muted-foreground italic">
+                  Nenhum resultado encontrado com os filtros aplicados.
+                </td>
+              </tr>
             ) : (
-              costs.filter(c => c.category !== "GLOBAL_PARAM" && c.description.toLowerCase().includes(searchTerm.toLowerCase())).map((cost) => {
+              filteredCosts.map((cost) => {
                 const cat = categories.find(cat => cat.id === cost.category);
                 const Icon = cat?.icon || HelpCircle;
                 return (

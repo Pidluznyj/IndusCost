@@ -30,6 +30,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PURCHASE_TOUR_STEPS } from "@/src/tours/purchaseTourSteps";
 import { motion } from "motion/react";
+import { filterPurchaseRequests } from "@/src/lib/operationalListFilters";
 
 const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   RASCUNHO: "Rascunho",
@@ -203,6 +204,7 @@ export const PurchaseModule = () => {
   const [listSearch, setListSearch] = useState("");
   const [listStatus, setListStatus] = useState<"" | PurchaseRequestStatus>("");
   const [listPriority, setListPriority] = useState<"" | PurchasePriority>("");
+  const [listCostCenterId, setListCostCenterId] = useState("");
 
   const readOnly = formMode === "view";
 
@@ -502,21 +504,19 @@ export const PurchaseModule = () => {
   };
 
   const filteredRequests = useMemo(() => {
-    const q = listSearch.trim().toLowerCase();
-    return requests.filter((r) => {
-      if (listStatus && r.status !== listStatus) return false;
-      if (listPriority && r.priority !== listPriority) return false;
-      if (!q) return true;
-      const hay =
-        `#${r.number} ${r.requester} ${r.department} ${r.defaultCostCenter?.code ?? ""} ${r.defaultCostCenter?.name ?? ""}`.toLowerCase();
-      return hay.includes(q);
+    return filterPurchaseRequests(requests, {
+      search: listSearch,
+      status: listStatus,
+      priority: listPriority,
+      costCenterId: listCostCenterId,
     });
-  }, [requests, listSearch, listStatus, listPriority]);
+  }, [requests, listSearch, listStatus, listPriority, listCostCenterId]);
 
   const clearListFilters = () => {
     setListSearch("");
     setListStatus("");
     setListPriority("");
+    setListCostCenterId("");
   };
 
   if (view === "list") {
@@ -577,6 +577,19 @@ export const PurchaseModule = () => {
               </select>
 
               <select
+                className="min-w-[220px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
+                value={listCostCenterId}
+                onChange={(e) => setListCostCenterId(e.target.value)}
+              >
+                <option value="">Todos os centros de custo</option>
+                {costCenters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.code} — {c.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
                 className="min-w-[180px] rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
                 value={listPriority}
                 onChange={(e) => setListPriority(e.target.value as any)}
@@ -598,7 +611,7 @@ export const PurchaseModule = () => {
               <button
                 type="button"
                 onClick={clearListFilters}
-                disabled={!listSearch.trim() && !listStatus && !listPriority}
+                disabled={!listSearch.trim() && !listStatus && !listPriority && !listCostCenterId}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:hover:bg-background"
               >
                 <X className="h-4 w-4" />
