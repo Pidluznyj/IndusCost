@@ -196,6 +196,8 @@ export const ProductModule = () => {
   }, [activeFormTab, isModalOpen, editingItem?.id]);
 
   const handleOpenModal = (item?: Product) => {
+    setBackendCostAnalysis(null);
+    setCostAnalysisError(null);
     if (item) {
       setEditingItem(item);
       setFormData({
@@ -321,11 +323,24 @@ export const ProductModule = () => {
     };
 
     try {
-      await fetchJsonOk(url, {
+      const saved = await fetchJsonOk<Product>(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (editingItem && saved?.id === editingItem.id) {
+        setItems((prev) =>
+          prev.map((p) => {
+            if (p.id !== saved.id) return p;
+            return {
+              ...saved,
+              costSummary: (p as ProductWithCostSummary).costSummary,
+            } as ProductWithCostSummary;
+          })
+        );
+      }
+      setBackendCostAnalysis(null);
+      setCostAnalysisError(null);
       setIsModalOpen(false);
       fetchData();
     } catch (error) {
@@ -1516,6 +1531,11 @@ export const ProductModule = () => {
                             <p className="text-3xl font-black text-purple-700">{formatCurrency(displayCost.routingCost)}</p>
                           </CalculatedValue>
                           <p className="text-[10px] text-purple-600/60">Processo padrão ou roteiro; sem CIF rateado</p>
+                          <p className="text-[10px] text-muted-foreground leading-snug">
+                            O motor usa primeiro o <strong>processo padrão</strong> do componente (ciclo/cavidades na aba
+                            Informações). Só se ele estiver vazio é que entra o <strong>roteiro</strong> (aba Processo).
+                            Remover só o roteiro não zera a conversão se o processo padrão continuar preenchido.
+                          </p>
                         </div>
                         <div className="p-6 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
@@ -1611,6 +1631,10 @@ export const ProductModule = () => {
                           <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                             Detalhamento Processo
                           </h4>
+                          <p className="text-[10px] text-muted-foreground -mt-2">
+                            Linhas com selo “PROCESSO PADRÃO” vêm dos campos de ciclo do item; “ROTEIRO” vêm das operações
+                            salvas na aba Processo.
+                          </p>
                           <div className="bg-card rounded-xl border border-border overflow-hidden">
                             <table className="w-full text-left text-xs">
                               <thead className="bg-accent/50 border-b border-border">
