@@ -36,6 +36,28 @@ function numOrDash(value: unknown, decimals = 2): string {
   return n.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: 6 });
 }
 
+function formatAdaptiveNumber(value: unknown): string {
+  const n = safeNum(value);
+  if (n === null) return "—";
+  const abs = Math.abs(n);
+  return n.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: abs >= 1 ? 2 : 6,
+  });
+}
+
+function formatAdaptiveCurrency(value: unknown): string {
+  const n = safeNum(value);
+  if (n === null) return "—";
+  const abs = Math.abs(n);
+  return n.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: abs >= 1 ? 2 : 6,
+  });
+}
+
 type CostAnalysisLite = {
   totalMaterialCost?: unknown;
   totalHH_Unit?: unknown;
@@ -56,6 +78,17 @@ type OpenBookLite = {
   };
   consolidatedMaterials?: unknown;
   explosionReconcilesMaterialTotal?: unknown;
+};
+
+type ConsolidatedMaterialLite = {
+  materialId?: unknown;
+  code?: unknown;
+  description?: unknown;
+  unit?: unknown;
+  quantity?: unknown;
+  totalCost?: unknown;
+  unitCostEffective?: unknown;
+  pctOfMp?: unknown;
 };
 
 type Props = {
@@ -369,6 +402,82 @@ export function ProposalIndicatorsTab({
     ];
   }, [totalsByNature, totals.totalTaxes, totals.totalCommission, totals.totalFreight, totals.totalMarginValue]);
 
+  const consolidatedRawMaterials = useMemo(() => {
+    const byMaterial = new Map<
+      string,
+      {
+        materialId: string;
+        code: string | null;
+        description: string;
+        unit: string | null;
+        quantityTotal: number | null;
+        unitCostEffective: number | null;
+        totalCost: number | null;
+        coveredOccurrences: number;
+        missingPrice: boolean;
+      }
+    >();
+
+    lineMetrics.forEach((metric, itemIndex) => {
+      const qtyProposal = safeNum(items[itemIndex]?.quantity) ?? 0;
+      const rows = Array.isArray(metric.openBook?.consolidatedMaterials)
+        ? (metric.openBook?.consolidatedMaterials as ConsolidatedMaterialLite[])
+        : [];
+
+      for (const row of rows) {
+        const materialId = typeof row.materialId === "string" && row.materialId.trim()
+          ? row.materialId
+          : null;
+        if (!materialId) continue;
+
+        const description =
+          typeof row.description === "string" && row.description.trim() ? row.description.trim() : "Matéria-prima";
+        const code = typeof row.code === "string" && row.code.trim() ? row.code.trim() : null;
+        const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
+        const baseQty = safeNum(row.quantity);
+        const baseTotalCost = safeNum(row.totalCost);
+        const unitCostEffective = safeNum(row.unitCostEffective);
+
+        const quantityTotal = baseQty != null ? baseQty * qtyProposal : null;
+        const totalCost = baseTotalCost != null ? baseTotalCost * qtyProposal : null;
+
+        const current = byMaterial.get(materialId) ?? {
+          materialId,
+          code,
+          description,
+          unit,
+          quantityTotal: 0,
+          unitCostEffective,
+          totalCost: 0,
+          coveredOccurrences: 0,
+          missingPrice: unitCostEffective == null,
+        };
+
+        current.code = current.code ?? code;
+        current.unit = current.unit ?? unit;
+        if (quantityTotal != null) current.quantityTotal = (current.quantityTotal ?? 0) + quantityTotal;
+        else current.quantityTotal = null;
+        if (totalCost != null) current.totalCost = (current.totalCost ?? 0) + totalCost;
+        else current.totalCost = null;
+        if (current.unitCostEffective == null && unitCostEffective != null) current.unitCostEffective = unitCostEffective;
+        current.coveredOccurrences += 1;
+        current.missingPrice = current.missingPrice || unitCostEffective == null;
+        byMaterial.set(materialId, current);
+      }
+    });
+
+    const rows = [...byMaterial.values()].sort((a, b) => (b.totalCost ?? 0) - (a.totalCost ?? 0));
+    const totalMp = rows.reduce((acc, row) => acc + (row.totalCost ?? 0), 0);
+
+    return {
+      totalMp,
+      rows: rows.map((row) => ({
+        ...row,
+        pctOfMp: totalMp > 0 && row.totalCost != null ? (row.totalCost / totalMp) * 100 : null,
+      })),
+    };
+  }, [items, lineMetrics]);
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-border bg-card/40 p-6 space-y-2">
@@ -429,6 +538,62 @@ export function ProposalIndicatorsTab({
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border bg-accent/30 flex items-center justify-between gap-3">
           <div>
+            <h4 className="text-sm font-bold tracking-tight">Consolidação de matérias-primas</h4>
+            <p className="text-xs text-muted-foreground mt-1">
+              Consolidado real por `materialId`, usando o open book do motor e somando a quantidade total consumida na proposta.
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            Total MP consolidado: {moneyOrDash(consolidatedRawMaterials.totalMp)}
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-accent/20 border-b border-border">
+                <th className="p-3 font-semibold">Matéria-prima</th>
+                <th className="p-3 font-semibold">Código</th>
+                <th className="p-3 font-semibold">Unid.</th>
+                <th className="p-3 font-semibold text-right">Qtd total</th>
+                <th className="p-3 font-semibold text-right">Preço/kg</th>
+                <th className="p-3 font-semibold text-right">Valor total</th>
+                <th className="p-3 font-semibold text-right">% MP</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {consolidatedRawMaterials.rows.map((row) => (
+                <tr key={row.materialId} className="hover:bg-accent/10 transition-colors">
+                  <td className="p-3">
+                    <p className="font-medium text-foreground">{row.description}</p>
+                    {row.missingPrice ? (
+                      <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-200">
+                        Preço efetivo indisponível para esta matéria-prima no open book desta proposta.
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="p-3 font-mono text-muted-foreground">{row.code ?? "—"}</td>
+                  <td className="p-3">{row.unit ?? "—"}</td>
+                  <td className="p-3 text-right tabular-nums">{formatAdaptiveNumber(row.quantityTotal)}</td>
+                  <td className="p-3 text-right tabular-nums">{formatAdaptiveCurrency(row.unitCostEffective)}</td>
+                  <td className="p-3 text-right tabular-nums font-semibold">{formatAdaptiveCurrency(row.totalCost)}</td>
+                  <td className="p-3 text-right tabular-nums">{row.pctOfMp == null ? "—" : `${formatAdaptiveNumber(row.pctOfMp)}%`}</td>
+                </tr>
+              ))}
+              {consolidatedRawMaterials.rows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-10 text-center text-sm text-muted-foreground">
+                    Não foi possível consolidar matérias-primas desta proposta com segurança a partir do open book disponível.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card overflow-hidden">
+        <div className="px-5 py-4 border-b border-border bg-accent/30 flex items-center justify-between gap-3">
+          <div>
             <h4 className="text-sm font-bold tracking-tight">Detalhamento por item</h4>
             <p className="text-xs text-muted-foreground mt-1">
               MP/HH/HM vêm do motor de custo por produto. Impostos, margem e preço usam os campos da proposta.
@@ -472,15 +637,15 @@ export function ProposalIndicatorsTab({
                         </p>
                       ) : null}
                     </td>
-                    <td className="p-3 text-right tabular-nums">{numOrDash(qty, 4)}</td>
+                    <td className="p-3 text-right tabular-nums">{formatAdaptiveNumber(qty)}</td>
                     <td className="p-3 text-right tabular-nums">{moneyOrDash(mt.mpTotal)}</td>
                     <td className="p-3 text-right tabular-nums">{moneyOrDash(mt.hhTotal)}</td>
                     <td className="p-3 text-right tabular-nums">{moneyOrDash(mt.hmTotal)}</td>
                     <td className="p-3 text-right tabular-nums font-semibold">{moneyOrDash(mt.baseTotal)}</td>
                     <td className="p-3 text-right tabular-nums">{moneyOrDash(it.taxesValue)}</td>
                     <td className="p-3 text-right tabular-nums">{moneyOrDash(it.marginValue)}</td>
-                    <td className="p-3 text-right tabular-nums">{safeNum(it.marginPerc) == null ? "—" : `${numOrDash(it.marginPerc, 2)}%`}</td>
-                    <td className="p-3 text-right tabular-nums">{moneyOrDash(it.negotiatedPrice, 5)}</td>
+                    <td className="p-3 text-right tabular-nums">{safeNum(it.marginPerc) == null ? "—" : `${formatAdaptiveNumber(it.marginPerc)}%`}</td>
+                    <td className="p-3 text-right tabular-nums">{formatAdaptiveCurrency(it.negotiatedPrice)}</td>
                     <td className="p-3 text-right tabular-nums font-semibold">{moneyOrDash(netLine)}</td>
                     <td className="p-3 text-right">
                       <button
@@ -553,23 +718,23 @@ export function ProposalIndicatorsTab({
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div className="flex justify-between gap-2">
                             <span className="text-muted-foreground">MP</span>
-                            <span className="font-semibold tabular-nums">{moneyOrDash(drawer.openBook.executive.totalMaterialCost)}</span>
+                            <span className="font-semibold tabular-nums">{formatAdaptiveCurrency(drawer.openBook.executive.totalMaterialCost)}</span>
                           </div>
                           <div className="flex justify-between gap-2">
                             <span className="text-muted-foreground">HH</span>
-                            <span className="font-semibold tabular-nums">{moneyOrDash(drawer.openBook.executive.totalHH)}</span>
+                            <span className="font-semibold tabular-nums">{formatAdaptiveCurrency(drawer.openBook.executive.totalHH)}</span>
                           </div>
                           <div className="flex justify-between gap-2">
                             <span className="text-muted-foreground">HM</span>
-                            <span className="font-semibold tabular-nums">{moneyOrDash(drawer.openBook.executive.totalHM)}</span>
+                            <span className="font-semibold tabular-nums">{formatAdaptiveCurrency(drawer.openBook.executive.totalHM)}</span>
                           </div>
                           <div className="flex justify-between gap-2">
                             <span className="text-muted-foreground">Base (MP+HH+HM)</span>
-                            <span className="font-semibold tabular-nums">{moneyOrDash(drawer.openBook.executive.totalIndustrialCost)}</span>
+                            <span className="font-semibold tabular-nums">{formatAdaptiveCurrency(drawer.openBook.executive.totalIndustrialCost)}</span>
                           </div>
                         </div>
                         <p className="text-[10px] text-muted-foreground">
-                          Percentuais: MP {numOrDash(drawer.openBook.executive.pctMp, 1)}% · HH {numOrDash(drawer.openBook.executive.pctHh, 1)}% · HM {numOrDash(drawer.openBook.executive.pctHm, 1)}%
+                          Percentuais: MP {formatAdaptiveNumber(drawer.openBook.executive.pctMp)}% · HH {formatAdaptiveNumber(drawer.openBook.executive.pctHh)}% · HM {formatAdaptiveNumber(drawer.openBook.executive.pctHm)}%
                         </p>
                       </div>
                     ) : null}
@@ -597,7 +762,7 @@ export function ProposalIndicatorsTab({
                                     <p className="font-medium">{String((row as any).description ?? (row as any).code ?? "—")}</p>
                                   </td>
                                   <td className="p-3 text-right tabular-nums font-semibold">
-                                    {moneyOrDash((row as any).unitCostEffective ?? (row as any).unitCost ?? (row as any).totalCost)}
+                                    {formatAdaptiveCurrency((row as any).unitCostEffective ?? (row as any).unitCost ?? (row as any).totalCost)}
                                   </td>
                                 </tr>
                               ))}
