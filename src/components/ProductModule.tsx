@@ -662,26 +662,30 @@ export const ProductModule = () => {
 
   return (
     <div className="space-y-6" data-tour="products-root">
-      {/* Header Actions */}
+      {/* Header: filtros (esq.) + ações (dir.) — altura h-10 alinhada */}
       <div
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-6"
         data-tour="products-toolbar"
       >
-        <div className="flex-1 flex flex-col gap-2">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
-            <div className="relative flex-1 max-w-md min-w-[260px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Filtros da lista de engenharia"
+          >
+            <div className="relative min-w-[200px] max-w-md flex-1 basis-[220px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Buscar por SKU ou nome..."
-                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                className="h-10 w-full rounded-lg border border-border bg-card pl-10 pr-3 text-sm outline-none transition-all focus:ring-2 focus:ring-primary/20"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
 
             <select
-              className="min-w-[160px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              className="h-10 min-w-[160px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={listTypeFilter}
               onChange={(e) => setListTypeFilter(e.target.value as any)}
             >
@@ -692,7 +696,7 @@ export const ProductModule = () => {
             </select>
 
             <select
-              className="min-w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              className="h-10 min-w-[150px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={listStatusFilter}
               onChange={(e) => setListStatusFilter(e.target.value as any)}
             >
@@ -705,10 +709,10 @@ export const ProductModule = () => {
               type="button"
               onClick={clearListFilters}
               disabled={!searchTerm.trim() && !listTypeFilter && !listStatusFilter}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 disabled:hover:bg-card"
               title="Limpar filtros"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4 shrink-0" />
               Limpar
             </button>
           </div>
@@ -718,39 +722,50 @@ export const ProductModule = () => {
             <span className="font-bold text-foreground">{items.length}</span> item(ns).
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <TourHelpButton onClick={() => setTourOpen(true)} />
+        <div
+          className="flex flex-wrap items-center gap-2 lg:justify-end"
+          role="group"
+          aria-label="Ações da engenharia"
+        >
+          <TourHelpButton
+            onClick={() => setTourOpen(true)}
+            className="h-10 shrink-0 rounded-lg px-3 py-0 text-sm font-medium"
+          />
           {selectedIds.length > 0 && (
             <motion.button
+              type="button"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               onClick={handleBulkDelete}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-600 font-bold hover:bg-red-500/20 transition-all border border-red-500/20 text-sm"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/15"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-4 w-4 shrink-0" />
               Excluir ({selectedIds.length})
             </motion.button>
           )}
-          <button 
+          <button
+            type="button"
             onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-transparent bg-accent px-4 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90"
           >
-            <Download className="h-4 w-4" />
+            <Download className="h-4 w-4 shrink-0" />
             Importar
           </button>
           <button
+            type="button"
             onClick={handleExportEngineering}
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-transparent bg-accent px-4 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90"
             title={selectedIds.length ? "Exportar itens selecionados no layout de importação" : "Exportar itens filtrados no layout de importação"}
           >
-            <BookOpen className="h-4 w-4" />
+            <BookOpen className="h-4 w-4 shrink-0" />
             Exportar
           </button>
-          <button 
+          <button
+            type="button"
             onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 shrink-0" />
             Novo Item de Engenharia
           </button>
         </div>
