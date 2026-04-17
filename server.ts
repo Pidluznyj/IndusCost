@@ -3872,6 +3872,8 @@ app.delete("/api/employees/:id", async (req, res) => {
 
       const analysisCache = await initAnalysisCache();
       const productAnalysisMemo = new Map<string, any>();
+      /** Mesmo cache da rota GET /cost-analysis — evita reexplodir a BOM por produto. */
+      const openBookExplosionMemo = new Map<string, Map<string, ExplosionRowCore>>();
       const getProductAnalysis = async (pid: string) => {
         if (productAnalysisMemo.has(pid)) return productAnalysisMemo.get(pid);
         const a = await getProductCostAnalysis(pid, analysisCache, true);
@@ -3928,12 +3930,17 @@ app.delete("/api/employees/:id", async (req, res) => {
 
           const analysis = await getProductAnalysis(item.productId);
           if (!analysis || isCostAnalysisFailure(analysis)) continue;
-          const openBook = (analysis as { openBook?: unknown }).openBook as
-            | { consolidatedMaterials?: unknown }
-            | undefined;
-          const rows = Array.isArray(openBook?.consolidatedMaterials)
-            ? (openBook?.consolidatedMaterials as Array<Record<string, unknown>>)
-            : [];
+          // openBook não vem em getProductCostAnalysis; explosão de MP é a mesma do GET /api/products/:id/cost-analysis
+          const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
+            item.productId,
+            analysisCache,
+            new Set<string>(),
+            openBookExplosionMemo
+          );
+          if (!(explosion instanceof Map)) continue;
+          const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
+          const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
+          const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
           if (rows.length === 0) continue;
 
           for (const row of rows) {
