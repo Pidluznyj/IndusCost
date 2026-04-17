@@ -48,7 +48,7 @@ import {
 } from "@/src/components/product/OpenBookCompositionTab";
 import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
 
-/** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=…). */
+/** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
 export type ProductWithCostSummary = Product & {
   costSummary?:
     | { na: true; label: string }
@@ -102,8 +102,8 @@ export const ProductModule = () => {
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  /** Escopo da lista: carrega só este tipo via GET /api/products?type=… (evita custeio da lista inteira). */
-  const [engineeringSegment, setEngineeringSegment] = useState<ItemType>("PRODUCT");
+  /** Escopo da lista: só Produtos ou Componentes (GET /api/products?type=…). */
+  const [engineeringSegment, setEngineeringSegment] = useState<"PRODUCT" | "COMPONENT">("PRODUCT");
   const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -678,7 +678,7 @@ export const ProductModule = () => {
             role="tablist"
             aria-label="Escopo da lista de engenharia"
           >
-            {(["PRODUCT", "COMPONENT", "MATERIAL"] as const).map((seg) => (
+            {(["PRODUCT", "COMPONENT"] as const).map((seg) => (
               <button
                 key={seg}
                 type="button"
@@ -692,7 +692,7 @@ export const ProductModule = () => {
                     : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
-                {seg === "PRODUCT" ? "Produtos" : seg === "COMPONENT" ? "Componentes" : "Materiais"}
+                {seg === "PRODUCT" ? "Produtos" : "Componentes"}
               </button>
             ))}
           </div>
