@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { AppAlert } from "@/src/components/shared/AppAlert";
 
 function safeNum(value: unknown): number | null {
   const n = Number(value);
@@ -417,23 +418,26 @@ export function ProposalIndicatorsTab({
         </div>
 
         {error ? (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive mt-4">
-            {error}
-          </div>
+          <AppAlert variant="destructive" className="mt-4" role="alert">
+            <p>{error}</p>
+          </AppAlert>
         ) : null}
 
         {(coverage.total > 0 && coverage.ok < coverage.total) || loading ? (
-          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2">
-            {loading ? <Loader2 className="h-4 w-4 mt-0.5 animate-spin" /> : <ShieldAlert className="h-4 w-4 mt-0.5" />}
-            <div className="space-y-1">
-              <p className="font-semibold">Cobertura de MP/HH/HM</p>
-              <p className="text-xs text-muted-foreground">
-                {loading
-                  ? "Calculando análise de custo por item..."
-                  : `Parcial: ${coverage.ok}/${coverage.total} itens com breakdown MP/HH/HM. Itens sem dados exibem “—”.`}
-              </p>
-            </div>
-          </div>
+          <AppAlert
+            variant="warning"
+            className="mt-4"
+            role="status"
+            title="Cobertura de MP/HH/HM"
+            icon={loading ? Loader2 : ShieldAlert}
+            iconClassName={loading ? "animate-spin" : undefined}
+          >
+            <p className="text-xs opacity-90">
+              {loading
+                ? "Calculando análise de custo por item..."
+                : `Parcial: ${coverage.ok}/${coverage.total} itens com breakdown MP/HH/HM. Itens sem dados exibem “—”.`}
+            </p>
+          </AppAlert>
         ) : null}
       </div>
 

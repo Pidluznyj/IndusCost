@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { AlertCircle, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { AppAlert } from "@/src/components/shared/AppAlert";
 import {
   simulatePricingOpenBookSensitivity,
   type PricingOpenBookPayload,
@@ -141,10 +142,9 @@ export function PricingOpenBookTab({ openBook, premissas }: Props) {
       )}
 
       {openBook?.explosionReconcilesMaterialTotal === false && (
-        <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-[11px] text-amber-900 dark:text-amber-100 flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+        <AppAlert variant="warning" density="compact" role="alert">
           Soma da explosão de MP diverge do total de MP do motor além da tolerância.
-        </div>
+        </AppAlert>
       )}
 
       <div className="rounded-2xl border border-border bg-accent/10 p-5 space-y-4">

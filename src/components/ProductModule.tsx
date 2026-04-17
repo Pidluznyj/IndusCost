@@ -36,6 +36,7 @@ import { DataImportDialog } from "./shared/DataImportDialog";
 import { ProductImportConfig } from "../lib/importer/ProductConfig";
 import { CalculatedValue } from "./shared/CalculatedValue";
 import { BomCostDetailRow } from "./shared/BomCostDetailRow";
+import { AppAlert } from "./shared/AppAlert";
 import type { CalculationExplainabilityMap } from "@/src/types/calculation";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
@@ -1523,34 +1524,27 @@ export const ProductModule = () => {
                   {activeFormTab === "cost" && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                       {costAnalysisError && (
-                        <div
-                          className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
-                          role="alert"
-                        >
-                          <p className="font-semibold mb-1">Análise de custo indisponível</p>
+                        <AppAlert variant="destructive" title="Análise de custo indisponível" role="alert">
                           <p className="text-xs whitespace-pre-wrap break-words opacity-95">{costAnalysisError}</p>
-                        </div>
+                        </AppAlert>
                       )}
                       {!costAnalysisError && displayCost.costAnalysisPartial && (
-                        <div
-                          className="rounded-xl border border-amber-500/55 bg-amber-50 ring-1 ring-amber-500/20 p-4 text-sm text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/45 dark:text-amber-50 dark:ring-amber-400/25"
-                          role="status"
-                        >
-                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <AppAlert variant="warning" role="status" showIcon={false} className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Badge variant="warning">Cálculo parcial</Badge>
                             <span className="font-semibold">Um ou mais itens da BOM não foram custeados.</span>
                           </div>
-                          <p className="text-xs text-amber-950/95 dark:text-amber-50/95">
+                          <p className="text-xs opacity-95">
                             O total exibido nos cards soma apenas os itens com cadastro suficiente para custeio.
                             Itens excluídos aparecem em vermelho na tabela abaixo; passe o mouse para ver o motivo e o que
                             corrigir.
                           </p>
                           {displayCost.excludedBomLines.length > 0 && (
-                            <p className="text-[11px] mt-2 font-mono text-amber-900 dark:text-amber-100/95">
+                            <p className="text-[11px] mt-2 font-mono opacity-95">
                               Exclusões: {displayCost.excludedBomLines.length} linha(s)
                             </p>
                           )}
-                        </div>
+                        </AppAlert>
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col gap-2">
@@ -1604,28 +1598,19 @@ export const ProductModule = () => {
                       </div>
 
                       {!loadingCost && displayCost.warningCount > 0 && (
-                        <div
-                          className="rounded-xl border border-amber-500/55 bg-amber-50 ring-1 ring-amber-500/20 p-4 space-y-2 dark:border-amber-500/45 dark:bg-amber-950/45 dark:ring-amber-400/25"
-                          role="alert"
-                        >
-                          <div className="flex items-start gap-2">
-                            <AlertCircle
-                              className="h-5 w-5 shrink-0 mt-0.5 text-amber-700 dark:text-amber-300"
-                              aria-hidden
-                            />
-                            <div className="space-y-1 min-w-0">
-                              <p className="text-sm font-semibold text-amber-950 dark:text-amber-50">
-                                A análise foi concluída, mas existem {displayCost.warningCount}{" "}
-                                {displayCost.warningCount === 1 ? "alerta" : "alertas"} que exigem revisão.
-                              </p>
-                              <ul className="text-xs text-amber-950 dark:text-amber-100 space-y-1.5 list-disc pl-4 marker:text-amber-700 dark:marker:text-amber-400">
-                                {(displayCost.warnings as Array<{ message?: string }>).map((w, i) => (
-                                  <li key={i}>{typeof w?.message === "string" ? w.message : String(w)}</li>
-                                ))}
-                              </ul>
-                            </div>
+                        <AppAlert variant="warning" role="alert" className="space-y-2">
+                          <div className="space-y-1.5 min-w-0">
+                            <p className="text-sm font-semibold">
+                              A análise foi concluída, mas existem {displayCost.warningCount}{" "}
+                              {displayCost.warningCount === 1 ? "alerta" : "alertas"} que exigem revisão.
+                            </p>
+                            <ul className="text-xs space-y-1.5 list-disc pl-4 marker:text-amber-800 dark:marker:text-amber-400">
+                              {(displayCost.warnings as Array<{ message?: string }>).map((w, i) => (
+                                <li key={i}>{typeof w?.message === "string" ? w.message : String(w)}</li>
+                              ))}
+                            </ul>
                           </div>
-                        </div>
+                        </AppAlert>
                       )}
 
                       <p className="text-[11px] text-muted-foreground text-center px-2">

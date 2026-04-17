@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, ChevronDown, Loader2, Search } from "lucide-react";
+import { ChevronDown, Loader2, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
+import { AppAlert } from "@/src/components/shared/AppAlert";
 
 type FiltersState = {
   startDate: string;
@@ -153,10 +154,9 @@ export function ProductMaterialDemandDashboard() {
       <div className="space-y-2">
         <h3 className="text-lg font-bold tracking-tight">Inteligência de Matéria-Prima</h3>
         <p className="text-sm text-muted-foreground">Leitura analítica operacional derivada de itens de proposta.</p>
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-900 dark:text-amber-100 flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+        <AppAlert variant="info" role="status">
           <p>{data?.semantics.label ?? "Demanda/uso estimado de matéria-prima (não é consumo real de produção)."}</p>
-        </div>
+        </AppAlert>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-4">

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { AlertCircle, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { AppAlert } from "@/src/components/shared/AppAlert";
 import { simulateIndustrialCost } from "@/src/lib/openBookMaterialExplosion";
 
 export type OpenBookPayload = {
@@ -69,13 +70,9 @@ export function OpenBookCompositionTab({ loading, costAnalysisPartial, openBook 
 
   if (openBook?.error) {
     return (
-      <div
-        className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
-        role="alert"
-      >
-        <p className="font-semibold">Composição de custos indisponível</p>
-        <p className="text-xs mt-1 opacity-90">{openBook.message ?? openBook.error}</p>
-      </div>
+      <AppAlert variant="destructive" title="Composição de custos indisponível" role="alert">
+        <p className="text-xs opacity-95">{openBook.message ?? openBook.error}</p>
+      </AppAlert>
     );
   }
 
@@ -93,15 +90,9 @@ export function OpenBookCompositionTab({ loading, costAnalysisPartial, openBook 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
       {costAnalysisPartial && (
-        <div
-          className="rounded-xl border border-amber-500/55 bg-amber-50 ring-1 ring-amber-500/20 p-4 text-sm text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/45 dark:text-amber-50 dark:ring-amber-400/25"
-          role="status"
-        >
-          <div className="flex items-center gap-2 font-semibold">
-            <AlertCircle className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
-            Cálculo parcial — a explosão de MP reflete apenas ramos custeados.
-          </div>
-        </div>
+        <AppAlert variant="warning" role="status">
+          <p className="font-semibold">Cálculo parcial — a explosão de MP reflete apenas ramos custeados.</p>
+        </AppAlert>
       )}
 
       {/* BLOCO A — Resumo executivo */}
@@ -131,10 +122,10 @@ export function OpenBookCompositionTab({ loading, costAnalysisPartial, openBook 
       )}
 
       {!okReconcile && (
-        <div className="rounded-lg border border-amber-500/55 bg-amber-50 ring-1 ring-amber-500/20 px-3 py-2 text-[11px] text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/45 dark:text-amber-50 dark:ring-amber-400/25">
+        <AppAlert variant="warning" density="compact" role="alert">
           Atenção: soma da explosão de MP ({formatCurrency(openBook?.explosionMaterialSum ?? 0)}) difere do total de MP do
           motor ({formatCurrency(exec.totalMaterialCost)}) além da tolerância — revisar arredondamentos ou cadastro.
-        </div>
+        </AppAlert>
       )}
 
       {/* BLOCO C — Natureza (rápido) */}
