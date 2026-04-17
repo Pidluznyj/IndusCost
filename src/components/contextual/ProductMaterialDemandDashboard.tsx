@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, Loader2, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import { formatCurrency, formatNumber } from "@/src/lib/utils";
+import { formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
 import { ContextualDashboardEmpty } from "./ContextualDashboardEmpty";
@@ -77,17 +77,17 @@ const INITIAL_FILTERS: FiltersState = {
 
 function money(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
-  return formatCurrency(v);
+  return formatCurrencyAdaptive(v);
 }
 
-function num(v: number | null | undefined, decimals = 2): string {
+function num(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
-  return formatNumber(v, decimals);
+  return formatNumberAdaptive(v);
 }
 
 function pct(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
-  return `${formatNumber(v, 2)}%`;
+  return `${formatNumberAdaptive(v)}%`;
 }
 
 function periodLabel(yyyymm: string): string {
@@ -211,8 +211,8 @@ export function ProductMaterialDemandDashboard() {
         <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>
       ) : data ? (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-            <ContextualDashboardKpiCard label="Qtd total estimada MP" value={num(data.summary.totalEstimatedQuantity, 2)} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <ContextualDashboardKpiCard label="Qtd total estimada MP" value={num(data.summary.totalEstimatedQuantity)} />
             <ContextualDashboardKpiCard label="Valor total estimado MP" value={money(data.summary.totalEstimatedValue)} />
             <ContextualDashboardKpiCard label="Materiais únicos" value={String(data.summary.uniqueMaterials)} />
             <ContextualDashboardKpiCard label="Pedidos/propostas" value={String(data.summary.proposalCount)} />
@@ -222,6 +222,7 @@ export function ProductMaterialDemandDashboard() {
               label="Material líder"
               value={data.summary.leaderMaterial ? `${data.summary.leaderMaterial.code ? `[${data.summary.leaderMaterial.code}] ` : ""}${data.summary.leaderMaterial.description}` : "—"}
               hint={data.summary.leaderSharePct != null ? `${pct(data.summary.leaderSharePct)} da quantidade` : undefined}
+              valueClassName="text-base font-semibold leading-snug sm:text-lg normal-nums"
             />
           </div>
 
@@ -233,7 +234,7 @@ export function ProductMaterialDemandDashboard() {
                   <div key={`q-${row.materialId}`} className="space-y-1">
                     <div className="flex items-center justify-between gap-2 text-xs">
                       <span className="truncate">{(row.code ? `[${row.code}] ` : "") + row.description}</span>
-                      <span className="tabular-nums font-semibold">{num(row.quantityTotal, 2)}</span>
+                      <span className="tabular-nums font-semibold">{num(row.quantityTotal)}</span>
                     </div>
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                       <div className="h-full bg-blue-600/80" style={{ width: `${maxParetoQty > 0 ? (row.quantityTotal / maxParetoQty) * 100 : 0}%` }} />
@@ -276,7 +277,7 @@ export function ProductMaterialDemandDashboard() {
                   {data.charts.evolution.map((r) => (
                     <tr key={r.period}>
                       <td className="py-2">{periodLabel(r.period)}</td>
-                      <td className="py-2 text-right tabular-nums">{num(r.quantity, 2)}</td>
+                      <td className="py-2 text-right tabular-nums">{num(r.quantity)}</td>
                       <td className="py-2 text-right tabular-nums">{money(r.value)}</td>
                       <td className="py-2 text-right tabular-nums">{r.proposalCount}</td>
                     </tr>
@@ -320,7 +321,7 @@ export function ProductMaterialDemandDashboard() {
                           </div>
                         </td>
                         <td className="p-3">{row.unit ?? "—"}</td>
-                        <td className="p-3 text-right tabular-nums">{num(row.quantityTotal, 2)}</td>
+                        <td className="p-3 text-right tabular-nums">{num(row.quantityTotal)}</td>
                         <td className="p-3 text-right tabular-nums">{money(row.unitCostReference)}</td>
                         <td className="p-3 text-right tabular-nums font-semibold">{money(row.estimatedValueTotal)}</td>
                         <td className="p-3 text-right tabular-nums">{row.proposalCount}</td>
