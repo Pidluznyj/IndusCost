@@ -4941,6 +4941,20 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   // --- API: Proposals (Propostas Comerciais) ---
+  const PROPOSAL_STATUS_VALUES = [
+    "DRAFT",
+    "ANALYSIS",
+    "SENT",
+    "APPROVED",
+    "REJECTED",
+    "EXPIRED",
+    "CANCELED",
+  ] as const;
+
+  function isValidProposalStatus(value: unknown): value is (typeof PROPOSAL_STATUS_VALUES)[number] {
+    return typeof value === "string" && PROPOSAL_STATUS_VALUES.includes(value as any);
+  }
+
   app.get("/api/proposals", async (req, res) => {
     const proposals = await prisma.proposal.findMany({
       include: { Customer: true },
@@ -4963,6 +4977,14 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   app.post("/api/proposals", async (req, res) => {
     const { items, ...proposalData } = req.body;
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: "Payload inválido: items deve ser um array." });
+    }
+    if (Object.prototype.hasOwnProperty.call(proposalData, "status") && !isValidProposalStatus(proposalData.status)) {
+      return res.status(400).json({
+        error: `Status inválido. Use um dos valores: ${PROPOSAL_STATUS_VALUES.join(", ")}.`,
+      });
+    }
     const proposal = await prisma.proposal.create({
       data: {
         ...proposalData,
@@ -4995,6 +5017,14 @@ app.delete("/api/employees/:id", async (req, res) => {
   app.put("/api/proposals/:id", async (req, res) => {
     const { id } = req.params;
     const { items, ...proposalData } = req.body;
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: "Payload inválido: items deve ser um array." });
+    }
+    if (Object.prototype.hasOwnProperty.call(proposalData, "status") && !isValidProposalStatus(proposalData.status)) {
+      return res.status(400).json({
+        error: `Status inválido. Use um dos valores: ${PROPOSAL_STATUS_VALUES.join(", ")}.`,
+      });
+    }
 
     const proposal = await prisma.$transaction(async (tx) => {
       await tx.proposalItem.deleteMany({ where: { proposalId: id } });
@@ -5032,6 +5062,11 @@ app.delete("/api/employees/:id", async (req, res) => {
   app.patch("/api/proposals/:id/status", async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
+    if (!isValidProposalStatus(status)) {
+      return res.status(400).json({
+        error: `Status inválido. Use um dos valores: ${PROPOSAL_STATUS_VALUES.join(", ")}.`,
+      });
+    }
     const proposal = await prisma.proposal.update({
       where: { id },
       data: { status },

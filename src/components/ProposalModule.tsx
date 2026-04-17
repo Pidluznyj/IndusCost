@@ -72,6 +72,19 @@ function safeNum(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function safeInt(value: unknown, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.trunc(n);
+}
+
+function safeOptionalInt(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.trunc(n);
+}
+
 function normalizeProposalItem(
   item: Partial<ProposalItem> & { productId: string }
 ): ProposalItem {
@@ -117,6 +130,7 @@ export const ProposalModule = () => {
   const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
   const [formTab, setFormTab] = useState<"items" | "indicators">("items");
   const [proposalIndicatorsDetailOpen, setProposalIndicatorsDetailOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -219,7 +233,65 @@ export const ProposalModule = () => {
     void handleEdit(id);
   }, [loading, handleEdit]);
 
+  const buildSavePayload = useCallback(() => {
+    const status =
+      typeof formData.status === "string" &&
+      PROPOSAL_STATUS_SELECT_OPTIONS.some((o) => o.value === formData.status)
+        ? (formData.status as ProposalStatus)
+        : "DRAFT";
+
+    const items = (formData.items || []).map((raw) => {
+      const item = normalizeProposalItem(raw as ProposalItem);
+      return {
+        productId: item.productId,
+        quantity: safeNum(item.quantity, 1),
+        unit: item.unit ?? "UN",
+        unitCost: safeNum(item.unitCost),
+        suggestedPrice: safeNum(item.suggestedPrice),
+        negotiatedPrice: safeNum(item.negotiatedPrice),
+        discountPerc: safeNum(item.discountPerc),
+        discountValue: safeNum(item.discountValue),
+        marginValue: safeNum(item.marginValue),
+        marginPerc: safeNum(item.marginPerc),
+        taxesPerc: safeNum(item.taxesPerc),
+        taxesValue: safeNum(item.taxesValue),
+        commissionPerc: safeNum(item.commissionPerc),
+        commissionValue: safeNum(item.commissionValue),
+        freightValue: safeNum(item.freightValue),
+        notes: item.notes ?? null,
+      };
+    });
+
+    return {
+      title: formData.title?.trim() || null,
+      customerId: formData.customerId,
+      status,
+      responsible: formData.responsible?.trim() || null,
+      companyIssuer: formData.companyIssuer?.trim() || null,
+      validityDays: safeInt(formData.validityDays, 15),
+      paymentTerms: formData.paymentTerms?.trim() || null,
+      paymentMethod: formData.paymentMethod?.trim() || null,
+      deliveryTimeDays: safeOptionalInt(formData.deliveryTimeDays),
+      freightCondition: formData.freightCondition || "CIF",
+      deliveryLocation: formData.deliveryLocation?.trim() || null,
+      notes: formData.notes?.trim() || null,
+      internalNotes: formData.internalNotes?.trim() || null,
+      totalItems: safeInt(formData.totalItems, 0),
+      totalGrossValue: safeNum(formData.totalGrossValue),
+      totalDiscount: safeNum(formData.totalDiscount),
+      totalNetValue: safeNum(formData.totalNetValue),
+      totalCost: safeNum(formData.totalCost),
+      totalMarginValue: safeNum(formData.totalMarginValue),
+      totalMarginPerc: safeNum(formData.totalMarginPerc),
+      totalTaxes: safeNum(formData.totalTaxes),
+      totalCommission: safeNum(formData.totalCommission),
+      totalFreight: safeNum(formData.totalFreight),
+      items,
+    };
+  }, [formData]);
+
   const handleSave = async () => {
+    if (saving) return;
     if (!formData.customerId) {
       alert("Selecione um cliente.");
       return;
@@ -233,16 +305,20 @@ export const ProposalModule = () => {
     const url = editingProposal ? `/api/proposals/${editingProposal.id}` : "/api/proposals";
 
     try {
+      setSaving(true);
+      const payload = buildSavePayload();
       await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
+      await fetchData();
       setView("list");
-      fetchData();
     } catch (error) {
       console.error("Erro ao salvar proposta:", error);
       alert(error instanceof Error ? error.message : "Não foi possível salvar a proposta.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -487,10 +563,11 @@ export const ProposalModule = () => {
             </div>
             <button 
               onClick={handleSave}
+              disabled={saving}
               className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-2 rounded-lg font-bold hover:opacity-90 transition-opacity shadow-lg"
             >
-              <Save className="h-4 w-4" />
-              Salvar Proposta
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {saving ? "Salvando..." : "Salvar Proposta"}
             </button>
           </div>
         </div>
@@ -554,7 +631,12 @@ export const ProposalModule = () => {
                       type="number"
                       className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                       value={formData.validityDays}
-                      onChange={(e) => setFormData({...formData, validityDays: parseInt(e.target.value)})}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          validityDays: safeInt(e.target.value, 15),
+                        })
+                      }
                     />
                   </div>
                 </div>
@@ -594,7 +676,12 @@ export const ProposalModule = () => {
                       type="number"
                       className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                       value={formData.deliveryTimeDays}
-                      onChange={(e) => setFormData({...formData, deliveryTimeDays: parseInt(e.target.value)})}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          deliveryTimeDays: safeOptionalInt(e.target.value),
+                        })
+                      }
                     />
                   </div>
                 </div>
