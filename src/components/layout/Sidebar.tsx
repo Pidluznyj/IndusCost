@@ -17,6 +17,7 @@ import {
   PieChart,
   Scale,
   Layers,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
@@ -38,6 +39,7 @@ export const Sidebar = () => {
     { id: "customers", icon: Users, label: "Clientes" },
     { id: "simulations", icon: Layers, label: "Simulações" },
     { id: "reports", icon: FileText, label: "Relatórios" },
+    { id: "guide", icon: BookOpen, label: "Guia do Sistema" },
     { id: "settings", icon: Settings, label: "Configurações" },
   ];
 

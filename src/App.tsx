@@ -15,6 +15,7 @@ import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { ProposalModule } from "./components/ProposalModule";
 import { PurchaseModule } from "./components/PurchaseModule";
+import { SystemGuideModule } from "./components/SystemGuideModule";
 import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
 import { ModuleIndicatorsButton } from "@/src/components/contextual/ModuleIndicatorsButton";
 import { PurchaseIndicatorsDashboard } from "@/src/components/contextual/PurchaseIndicatorsDashboard";
@@ -480,6 +481,17 @@ export default function App() {
               description="Analise indicadores e exporte dados estratégicos."
             >
               <ReportsModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="/guide"
+          element={
+            <ModulePageShell
+              title="Guia do Sistema"
+              description="Manual funcional e de negócio do IndusCost — referência oficial para uso da aplicação."
+            >
+              <SystemGuideModule />
             </ModulePageShell>
           }
         />

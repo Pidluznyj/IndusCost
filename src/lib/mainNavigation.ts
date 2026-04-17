@@ -1,5 +1,5 @@
 /**
- * Segmentos de URL dos módulos principais (Fase 1 — alinhados aos ids do menu / Sidebar).
+ * Segmentos de URL alinhados aos ids do menu / Sidebar (módulos operacionais + guia do sistema).
  * Fonte única para validação e documentação; a navegação efetiva usa react-router.
  */
 export const MAIN_MODULE_PATH_SEGMENTS = [
@@ -16,6 +16,7 @@ export const MAIN_MODULE_PATH_SEGMENTS = [
   "customers",
   "simulations",
   "reports",
+  "guide",
   "settings",
 ] as const;
 
