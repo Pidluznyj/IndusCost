@@ -96,12 +96,7 @@ export function CustomerIndicatorsDashboard() {
     void loadDrilldown(selectedBucketKey);
   }, [selectedBucketKey, loadDrilldown]);
 
-  const handleBarClick = useCallback((row: ChartRow) => {
-    setSelectedLabel(row.label);
-    setSelectedBucketKey((prev) => (prev === row.key ? prev : row.key));
-    if (prev !== row.key) {
-      // força recarregar se clicar na mesma barra (mantém lista)
-    }
+  const selectBucket = useCallback((row: ChartRow) => {
     setSelectedBucketKey(row.key);
     setSelectedLabel(row.label);
   }, []);
@@ -183,11 +178,7 @@ export function CustomerIndicatorsDashboard() {
         ) : (
           <div className="h-[min(420px,60vh)] w-full [&_.recharts-bar-rectangle]:cursor-pointer">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                layout="vertical"
-                data={chartRows}
-                margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
-              >
+              <BarChart layout="vertical" data={chartRows} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10 }} interval={0} />
@@ -201,8 +192,9 @@ export function CustomerIndicatorsDashboard() {
                   fill="hsl(var(--primary))"
                   radius={[0, 4, 4, 0]}
                   maxBarSize={28}
-                  onClick={(barData: ChartRow) => {
-                    handleBarClick(barData);
+                  onClick={(props: { payload?: ChartRow } & Partial<ChartRow>) => {
+                    const row = props.payload ?? (props.key != null ? (props as ChartRow) : null);
+                    if (row?.key) selectBucket(row);
                   }}
                 />
               </BarChart>
