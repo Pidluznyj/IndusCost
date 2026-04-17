@@ -23,6 +23,7 @@ import { SimulationIndicatorsDashboard } from "@/src/components/contextual/Simul
 import { ProductEngineeringIndicatorsDashboard } from "@/src/components/contextual/ProductEngineeringIndicatorsDashboard";
 import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual/PricingFormationIndicatorsDashboard";
 import { ProductMaterialDemandDashboard } from "@/src/components/contextual/ProductMaterialDemandDashboard";
+import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
 import { fetchJsonOk } from "@/src/lib/http";
 import { AlertCircle, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
 
@@ -426,11 +427,23 @@ export default function App() {
           }
         />
         <Route
+          path="/customers/indicators"
+          element={
+            <ModulePageShell
+              title="Clientes — Indicadores"
+              description="Carteira, geografia (UF) e segmentos a partir do cadastro e vínculos com propostas."
+            >
+              <CustomerIndicatorsDashboard />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="/customers"
           element={
             <ModulePageShell
               title="Clientes"
               description="Gestão da carteira de clientes e contatos comerciais."
+              headerActions={<ModuleIndicatorsButton to="/customers/indicators" />}
             >
               <CustomerModule />
             </ModulePageShell>

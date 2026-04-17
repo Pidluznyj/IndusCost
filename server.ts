@@ -43,6 +43,7 @@ import {
   buildCloneDraftData,
   buildSnapshotSaveData,
 } from "./src/lib/newProductSimulationSnapshot.js";
+import { buildCustomerIndicatorsPayload } from "./src/lib/customerIndicators.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -4887,6 +4888,40 @@ app.delete("/api/employees/:id", async (req, res) => {
       orderBy: { companyName: "asc" },
     });
     res.json(customers);
+  });
+
+  /** Indicadores agregados do cadastro (somente leitura). */
+  app.get("/api/customers/indicators", async (_req, res) => {
+    try {
+      const rows = await prisma.customer.findMany({
+        select: {
+          id: true,
+          state: true,
+          status: true,
+          segment: true,
+          email: true,
+          phone: true,
+          address: true,
+          createdAt: true,
+          _count: { select: { proposals: true } },
+        },
+      });
+      const mapped = rows.map((r) => ({
+        id: r.id,
+        state: r.state,
+        status: r.status,
+        segment: r.segment,
+        email: r.email,
+        phone: r.phone,
+        address: r.address,
+        createdAt: r.createdAt,
+        proposalCount: r._count.proposals,
+      }));
+      res.json(buildCustomerIndicatorsPayload(mapped));
+    } catch (error) {
+      console.error("GET /api/customers/indicators", error);
+      res.status(500).json({ error: "Erro ao montar indicadores de clientes." });
+    }
   });
 
   /** Visão comercial 360°: cliente + propostas com itens e produto (sem pedido faturado separado no schema). */
