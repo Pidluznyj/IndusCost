@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
@@ -22,8 +22,9 @@ import { ProposalIndicatorsDashboard } from "@/src/components/contextual/Proposa
 import { SimulationIndicatorsDashboard } from "@/src/components/contextual/SimulationIndicatorsDashboard";
 import { ProductEngineeringIndicatorsDashboard } from "@/src/components/contextual/ProductEngineeringIndicatorsDashboard";
 import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual/PricingFormationIndicatorsDashboard";
+import { ProductMaterialDemandDashboard } from "@/src/components/contextual/ProductMaterialDemandDashboard";
 import { fetchJsonOk } from "@/src/lib/http";
-import { AlertCircle, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
+import { AlertCircle, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
 
 type BootstrapAdminStatus = {
   enabled: boolean;
@@ -323,12 +324,34 @@ export default function App() {
           }
         />
         <Route
+          path="/products/material-demand"
+          element={
+            <ModulePageShell
+              title="Engenharia — Inteligência de Matéria-Prima"
+              description="Demanda estimada de MP derivada de propostas (itens vendidos/orçados)."
+            >
+              <ProductMaterialDemandDashboard />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="/products"
           element={
             <ModulePageShell
               title="Engenharia de Produto"
               description="Definição de estrutura técnica (BOM) e roteiros produtivos."
-              headerActions={<ModuleIndicatorsButton to="/products/indicators" />}
+              headerActions={
+                <>
+                  <Link
+                    to="/products/material-demand"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <Package className="h-4 w-4 text-primary" />
+                    Inteligência MP
+                  </Link>
+                  <ModuleIndicatorsButton to="/products/indicators" />
+                </>
+              }
             >
               <ProductModule />
             </ModulePageShell>

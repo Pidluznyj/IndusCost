@@ -3819,6 +3819,461 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  /**
+   * Inteligência de matéria-prima (demanda estimada) derivada de propostas.
+   * Base: itens de proposta + openBook do motor por produto (não é consumo real de chão de fábrica).
+   */
+  app.get("/api/products/material-demand/analysis", async (req, res) => {
+    const q = req.query;
+    const startDate = typeof q.startDate === "string" && q.startDate ? q.startDate : null;
+    const endDate = typeof q.endDate === "string" && q.endDate ? q.endDate : null;
+    const status = typeof q.status === "string" && q.status && q.status !== "ALL" ? q.status : null;
+    const customerId = typeof q.customerId === "string" && q.customerId ? q.customerId : null;
+    const productId = typeof q.productId === "string" && q.productId ? q.productId : null;
+    const materialId = typeof q.materialId === "string" && q.materialId ? q.materialId : null;
+    const companyIssuer =
+      typeof q.companyIssuer === "string" && q.companyIssuer.trim() ? q.companyIssuer.trim() : null;
+    const modeRaw = typeof q.mode === "string" ? q.mode : "";
+    const mode =
+      modeRaw === "value" || modeRaw === "proposals" || modeRaw === "products" ? modeRaw : "quantity";
+    const search = typeof q.search === "string" ? q.search.trim().toLowerCase() : "";
+
+    const endOfDay = (iso: string) => {
+      const d = new Date(iso);
+      d.setHours(23, 59, 59, 999);
+      return d;
+    };
+    const safeNum = (v: unknown): number | null => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    try {
+      const where: any = {};
+      if (startDate) where.createdAt = { ...(where.createdAt || {}), gte: new Date(startDate) };
+      if (endDate) where.createdAt = { ...(where.createdAt || {}), lte: endOfDay(endDate) };
+      if (status) where.status = status;
+      if (customerId) where.customerId = customerId;
+      if (companyIssuer) where.companyIssuer = companyIssuer;
+      if (productId) where.items = { some: { productId } };
+
+      const proposals = await prisma.proposal.findMany({
+        where,
+        include: {
+          Customer: { select: { id: true, companyName: true } },
+          items: {
+            include: {
+              Product: { select: { id: true, sku: true, name: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      const analysisCache = await initAnalysisCache();
+      const productAnalysisMemo = new Map<string, any>();
+      const getProductAnalysis = async (pid: string) => {
+        if (productAnalysisMemo.has(pid)) return productAnalysisMemo.get(pid);
+        const a = await getProductCostAnalysis(pid, analysisCache, true);
+        productAnalysisMemo.set(pid, a);
+        return a;
+      };
+
+      type MaterialAgg = {
+        materialId: string;
+        code: string | null;
+        description: string;
+        unit: string | null;
+        quantityTotal: number;
+        valueTotal: number;
+        unitCostReference: number | null;
+        proposalIds: Set<string>;
+        productIds: Set<string>;
+        customerIds: Set<string>;
+        latestUsageAt: Date | null;
+        origins: Array<{
+          proposalId: string;
+          proposalNumber: number;
+          proposalStatus: string;
+          proposalDate: string;
+          customerId: string | null;
+          customerName: string | null;
+          companyIssuer: string | null;
+          productId: string;
+          productSku: string | null;
+          productName: string | null;
+          proposalQty: number;
+          materialQtyPerUnit: number | null;
+          estimatedQuantity: number | null;
+          unitCostReference: number | null;
+          estimatedValue: number | null;
+        }>;
+      };
+
+      const byMaterial = new Map<string, MaterialAgg>();
+      const byPeriod = new Map<string, { quantity: number; value: number; proposalIds: Set<string> }>();
+      const byProduct = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number; proposalIds: Set<string> }>();
+      const byCustomer = new Map<string, { customerId: string; customerName: string; quantity: number; value: number; proposalIds: Set<string> }>();
+      const byCompany = new Map<string, { companyIssuer: string; quantity: number; value: number; proposalIds: Set<string> }>();
+
+      for (const p of proposals) {
+        const proposalDate = new Date(p.createdAt);
+        const periodKey = `${proposalDate.getFullYear()}-${String(proposalDate.getMonth() + 1).padStart(2, "0")}`;
+        const customerName = p.Customer?.companyName ?? null;
+        const companyIssuerSafe = p.companyIssuer?.trim() || null;
+
+        for (const item of p.items) {
+          const proposalQty = safeNum(item.quantity) ?? 0;
+          if (!(proposalQty > 0)) continue;
+
+          const analysis = await getProductAnalysis(item.productId);
+          if (!analysis || isCostAnalysisFailure(analysis)) continue;
+          const openBook = (analysis as { openBook?: unknown }).openBook as
+            | { consolidatedMaterials?: unknown }
+            | undefined;
+          const rows = Array.isArray(openBook?.consolidatedMaterials)
+            ? (openBook?.consolidatedMaterials as Array<Record<string, unknown>>)
+            : [];
+          if (rows.length === 0) continue;
+
+          for (const row of rows) {
+            const mid = typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
+            if (!mid) continue;
+            if (materialId && mid !== materialId) continue;
+
+            const code = typeof row.code === "string" && row.code.trim() ? row.code.trim() : null;
+            const desc =
+              typeof row.description === "string" && row.description.trim()
+                ? row.description.trim()
+                : "Matéria-prima";
+            const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
+            const textHaystack = `${mid} ${code ?? ""} ${desc} ${unit ?? ""}`.toLowerCase();
+            if (search && !textHaystack.includes(search)) continue;
+
+            const qtyPerUnit = safeNum(row.quantity);
+            const valuePerUnit = safeNum(row.totalCost);
+            const unitCostRef = safeNum(row.unitCostEffective);
+            const estimatedQuantity = qtyPerUnit != null ? qtyPerUnit * proposalQty : null;
+            const estimatedValue = valuePerUnit != null ? valuePerUnit * proposalQty : null;
+
+            const current =
+              byMaterial.get(mid) ??
+              {
+                materialId: mid,
+                code,
+                description: desc,
+                unit,
+                quantityTotal: 0,
+                valueTotal: 0,
+                unitCostReference: unitCostRef,
+                proposalIds: new Set<string>(),
+                productIds: new Set<string>(),
+                customerIds: new Set<string>(),
+                latestUsageAt: null,
+                origins: [],
+              };
+
+            if (estimatedQuantity != null) current.quantityTotal += estimatedQuantity;
+            if (estimatedValue != null) current.valueTotal += estimatedValue;
+            if (current.unitCostReference == null && unitCostRef != null) {
+              current.unitCostReference = unitCostRef;
+            }
+            current.proposalIds.add(p.id);
+            current.productIds.add(item.productId);
+            if (p.customerId) current.customerIds.add(p.customerId);
+            if (!current.latestUsageAt || proposalDate > current.latestUsageAt) {
+              current.latestUsageAt = proposalDate;
+            }
+            current.origins.push({
+              proposalId: p.id,
+              proposalNumber: p.number,
+              proposalStatus: p.status,
+              proposalDate: p.createdAt.toISOString(),
+              customerId: p.customerId ?? null,
+              customerName,
+              companyIssuer: companyIssuerSafe,
+              productId: item.productId,
+              productSku: item.Product?.sku?.trim() || null,
+              productName: item.Product?.name?.trim() || null,
+              proposalQty,
+              materialQtyPerUnit: qtyPerUnit,
+              estimatedQuantity,
+              unitCostReference: unitCostRef,
+              estimatedValue,
+            });
+            byMaterial.set(mid, current);
+
+            const periodAgg =
+              byPeriod.get(periodKey) ?? { quantity: 0, value: 0, proposalIds: new Set<string>() };
+            if (estimatedQuantity != null) periodAgg.quantity += estimatedQuantity;
+            if (estimatedValue != null) periodAgg.value += estimatedValue;
+            periodAgg.proposalIds.add(p.id);
+            byPeriod.set(periodKey, periodAgg);
+
+            const pid = item.productId;
+            const prodAgg =
+              byProduct.get(pid) ??
+              {
+                productId: pid,
+                sku: item.Product?.sku?.trim() || null,
+                name: item.Product?.name?.trim() || "Produto",
+                quantity: 0,
+                value: 0,
+                proposalIds: new Set<string>(),
+              };
+            if (estimatedQuantity != null) prodAgg.quantity += estimatedQuantity;
+            if (estimatedValue != null) prodAgg.value += estimatedValue;
+            prodAgg.proposalIds.add(p.id);
+            byProduct.set(pid, prodAgg);
+
+            const cid = p.customerId ?? "__unknown_customer__";
+            const custAgg =
+              byCustomer.get(cid) ??
+              {
+                customerId: p.customerId ?? "",
+                customerName: customerName ?? "Cliente",
+                quantity: 0,
+                value: 0,
+                proposalIds: new Set<string>(),
+              };
+            if (estimatedQuantity != null) custAgg.quantity += estimatedQuantity;
+            if (estimatedValue != null) custAgg.value += estimatedValue;
+            custAgg.proposalIds.add(p.id);
+            byCustomer.set(cid, custAgg);
+
+            const companyKey = companyIssuerSafe ?? "Não informado";
+            const compAgg =
+              byCompany.get(companyKey) ??
+              { companyIssuer: companyKey, quantity: 0, value: 0, proposalIds: new Set<string>() };
+            if (estimatedQuantity != null) compAgg.quantity += estimatedQuantity;
+            if (estimatedValue != null) compAgg.value += estimatedValue;
+            compAgg.proposalIds.add(p.id);
+            byCompany.set(companyKey, compAgg);
+          }
+        }
+      }
+
+      const materials = [...byMaterial.values()];
+      const totalEstimatedQuantity = materials.reduce((acc, m) => acc + m.quantityTotal, 0);
+      const totalEstimatedValue = materials.reduce((acc, m) => acc + m.valueTotal, 0);
+
+      const allProposalIds = new Set<string>();
+      const allProductIds = new Set<string>();
+      const allCustomerIds = new Set<string>();
+      for (const m of materials) {
+        m.proposalIds.forEach((x) => allProposalIds.add(x));
+        m.productIds.forEach((x) => allProductIds.add(x));
+        m.customerIds.forEach((x) => allCustomerIds.add(x));
+      }
+
+      const rows = materials.map((m) => {
+        const byProd = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number }>();
+        const byCust = new Map<string, { customerId: string; customerName: string; quantity: number; value: number }>();
+        const byProp = new Map<string, { proposalId: string; proposalNumber: number; proposalDate: string; proposalStatus: string; quantity: number; value: number }>();
+
+        for (const o of m.origins) {
+          const pKey = o.productId;
+          const p = byProd.get(pKey) ?? {
+            productId: o.productId,
+            sku: o.productSku,
+            name: o.productName ?? "Produto",
+            quantity: 0,
+            value: 0,
+          };
+          if (o.estimatedQuantity != null) p.quantity += o.estimatedQuantity;
+          if (o.estimatedValue != null) p.value += o.estimatedValue;
+          byProd.set(pKey, p);
+
+          const cKey = o.customerId ?? "__unknown_customer__";
+          const c = byCust.get(cKey) ?? {
+            customerId: o.customerId ?? "",
+            customerName: o.customerName ?? "Cliente",
+            quantity: 0,
+            value: 0,
+          };
+          if (o.estimatedQuantity != null) c.quantity += o.estimatedQuantity;
+          if (o.estimatedValue != null) c.value += o.estimatedValue;
+          byCust.set(cKey, c);
+
+          const pr = byProp.get(o.proposalId) ?? {
+            proposalId: o.proposalId,
+            proposalNumber: o.proposalNumber,
+            proposalDate: o.proposalDate,
+            proposalStatus: o.proposalStatus,
+            quantity: 0,
+            value: 0,
+          };
+          if (o.estimatedQuantity != null) pr.quantity += o.estimatedQuantity;
+          if (o.estimatedValue != null) pr.value += o.estimatedValue;
+          byProp.set(o.proposalId, pr);
+        }
+
+        return {
+          materialId: m.materialId,
+          code: m.code,
+          description: m.description,
+          unit: m.unit,
+          quantityTotal: m.quantityTotal,
+          unitCostReference:
+            m.unitCostReference != null
+              ? m.unitCostReference
+              : m.quantityTotal > 0
+                ? m.valueTotal / m.quantityTotal
+                : null,
+          estimatedValueTotal: m.valueTotal,
+          proposalCount: m.proposalIds.size,
+          productCount: m.productIds.size,
+          customerCount: m.customerIds.size,
+          latestUsageAt: m.latestUsageAt ? m.latestUsageAt.toISOString() : null,
+          pctOfTotalQuantity:
+            totalEstimatedQuantity > 0 ? (m.quantityTotal / totalEstimatedQuantity) * 100 : null,
+          pctOfTotalValue: totalEstimatedValue > 0 ? (m.valueTotal / totalEstimatedValue) * 100 : null,
+          topProducts: [...byProd.values()]
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 8),
+          topCustomers: [...byCust.values()]
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 8),
+          proposals: [...byProp.values()]
+            .sort((a, b) => b.proposalDate.localeCompare(a.proposalDate))
+            .slice(0, 12),
+        };
+      });
+
+      const sortedRows = [...rows].sort((a, b) => {
+        if (mode === "value") return b.estimatedValueTotal - a.estimatedValueTotal;
+        if (mode === "proposals") return b.proposalCount - a.proposalCount;
+        if (mode === "products") return b.productCount - a.productCount;
+        return b.quantityTotal - a.quantityTotal;
+      });
+
+      const leader = [...rows].sort((a, b) => b.quantityTotal - a.quantityTotal)[0] ?? null;
+      const leaderSharePct =
+        leader && totalEstimatedQuantity > 0
+          ? (leader.quantityTotal / totalEstimatedQuantity) * 100
+          : null;
+
+      res.json({
+        semantics: {
+          source: "PROPOSAL_ITEMS_WITH_PRODUCT_OPEN_BOOK",
+          meaning: "DEMANDA_ESTIMADA_MATERIA_PRIMA",
+          label:
+            "Base derivada de itens de proposta. Os valores representam demanda/uso estimado de matéria-prima, não consumo real de produção.",
+        },
+        filtersApplied: {
+          startDate,
+          endDate,
+          status,
+          customerId,
+          productId,
+          materialId,
+          companyIssuer,
+          mode,
+          search: search || null,
+        },
+        summary: {
+          totalEstimatedQuantity,
+          totalEstimatedValue,
+          uniqueMaterials: rows.length,
+          proposalCount: allProposalIds.size,
+          productCount: allProductIds.size,
+          customerCount: allCustomerIds.size,
+          leaderMaterial: leader
+            ? {
+                materialId: leader.materialId,
+                code: leader.code,
+                description: leader.description,
+                quantityTotal: leader.quantityTotal,
+                estimatedValueTotal: leader.estimatedValueTotal,
+              }
+            : null,
+          leaderSharePct,
+        },
+        charts: {
+          paretoByQuantity: [...rows]
+            .sort((a, b) => b.quantityTotal - a.quantityTotal)
+            .slice(0, 15),
+          paretoByValue: [...rows]
+            .sort((a, b) => b.estimatedValueTotal - a.estimatedValueTotal)
+            .slice(0, 15),
+          evolution: [...byPeriod.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([period, v]) => ({
+              period,
+              quantity: v.quantity,
+              value: v.value,
+              proposalCount: v.proposalIds.size,
+            })),
+          byProduct: [...byProduct.values()]
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 20)
+            .map((x) => ({
+              productId: x.productId,
+              sku: x.sku,
+              name: x.name,
+              quantity: x.quantity,
+              value: x.value,
+              proposalCount: x.proposalIds.size,
+            })),
+          byCustomer: [...byCustomer.values()]
+            .filter((x) => x.customerId)
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 20)
+            .map((x) => ({
+              customerId: x.customerId,
+              customerName: x.customerName,
+              quantity: x.quantity,
+              value: x.value,
+              proposalCount: x.proposalIds.size,
+            })),
+          byCompanyIssuer: [...byCompany.values()]
+            .sort((a, b) => b.value - a.value)
+            .map((x) => ({
+              companyIssuer: x.companyIssuer,
+              quantity: x.quantity,
+              value: x.value,
+              proposalCount: x.proposalIds.size,
+            })),
+        },
+        rows: sortedRows,
+        facets: {
+          statuses: [...new Set(proposals.map((p) => p.status))].sort(),
+          customers: [...new Map(
+            proposals
+              .filter((p) => p.Customer?.id)
+              .map((p) => [p.Customer!.id, { id: p.Customer!.id, companyName: p.Customer!.companyName }])
+          ).values()],
+          products: [...new Map(
+            proposals.flatMap((p) =>
+              p.items.map((it) => [
+                it.productId,
+                { id: it.productId, sku: it.Product?.sku ?? null, name: it.Product?.name ?? "Produto" },
+              ] as const)
+            )
+          ).values()],
+          materials: rows
+            .map((r) => ({
+              materialId: r.materialId,
+              code: r.code,
+              description: r.description,
+              unit: r.unit,
+            }))
+            .sort((a, b) => a.description.localeCompare(b.description)),
+          companyIssuers: [
+            ...new Set(
+              proposals
+                .map((p) => p.companyIssuer?.trim())
+                .filter((v): v is string => Boolean(v))
+            ),
+          ].sort(),
+        },
+      });
+    } catch (error) {
+      console.error("Material demand analysis endpoint error:", error);
+      res.status(500).json({ error: "Erro ao montar análise de matéria-prima." });
+    }
+  });
+
   /** Agregações para a aba Relatórios (sem BI externo). Respeita filtros de query. */
   app.get("/api/reports/data", async (req, res) => {
     const q = req.query;
