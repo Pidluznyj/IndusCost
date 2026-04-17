@@ -16,6 +16,7 @@ import { CustomerModule } from "./components/CustomerModule";
 import { ProposalModule } from "./components/ProposalModule";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { SystemGuideModule } from "./components/SystemGuideModule";
+import { LandingPage } from "./components/LandingPage";
 import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
 import { ModuleIndicatorsButton } from "@/src/components/contextual/ModuleIndicatorsButton";
 import { PurchaseIndicatorsDashboard } from "@/src/components/contextual/PurchaseIndicatorsDashboard";
@@ -244,11 +245,11 @@ export default function App() {
   }, [navigate]);
 
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route element={<Layout />}>
         <Route
-          path="/dashboard"
+          path="dashboard"
           element={
             <ModulePageShell
               title="Dashboard Gerencial"
@@ -259,7 +260,7 @@ export default function App() {
           }
         />
         <Route
-          path="/employees"
+          path="employees"
           element={
             <ModulePageShell
               title="Colaboradores"
@@ -270,7 +271,7 @@ export default function App() {
           }
         />
         <Route
-          path="/machines"
+          path="machines"
           element={
             <ModulePageShell
               title="Centro de Trabalho (Máquinas)"
@@ -281,7 +282,7 @@ export default function App() {
           }
         />
         <Route
-          path="/materials"
+          path="materials"
           element={
             <ModulePageShell
               title="Suprimentos"
@@ -292,7 +293,7 @@ export default function App() {
           }
         />
         <Route
-          path="/purchases/indicators"
+          path="purchases/indicators"
           element={
             <ModulePageShell
               title="Compras — Indicadores"
@@ -303,7 +304,7 @@ export default function App() {
           }
         />
         <Route
-          path="/purchases"
+          path="purchases"
           element={
             <ModulePageShell
               title="Compras"
@@ -315,7 +316,7 @@ export default function App() {
           }
         />
         <Route
-          path="/products/indicators"
+          path="products/indicators"
           element={
             <ModulePageShell
               title="Engenharia — Indicadores"
@@ -326,7 +327,7 @@ export default function App() {
           }
         />
         <Route
-          path="/products/material-demand"
+          path="products/material-demand"
           element={
             <ModulePageShell
               title="Engenharia — Inteligência de Matéria-Prima"
@@ -337,7 +338,7 @@ export default function App() {
           }
         />
         <Route
-          path="/products"
+          path="products"
           element={
             <ModulePageShell
               title="Engenharia de Produto"
@@ -360,7 +361,7 @@ export default function App() {
           }
         />
         <Route
-          path="/opex"
+          path="opex"
           element={
             <ModulePageShell
               title="Custos Indiretos e OPEX"
@@ -371,7 +372,7 @@ export default function App() {
           }
         />
         <Route
-          path="/taxes"
+          path="taxes"
           element={
             <ModulePageShell
               title="Configuração Fiscal"
@@ -382,7 +383,7 @@ export default function App() {
           }
         />
         <Route
-          path="/pricing/indicators"
+          path="pricing/indicators"
           element={
             <ModulePageShell
               title="Formação de Preço — Indicadores"
@@ -393,7 +394,7 @@ export default function App() {
           }
         />
         <Route
-          path="/pricing"
+          path="pricing"
           element={
             <ModulePageShell
               title="Formação de Preço"
@@ -405,7 +406,7 @@ export default function App() {
           }
         />
         <Route
-          path="/proposals/indicators"
+          path="proposals/indicators"
           element={
             <ModulePageShell
               title="Propostas — Indicadores"
@@ -416,7 +417,7 @@ export default function App() {
           }
         />
         <Route
-          path="/proposals"
+          path="proposals"
           element={
             <ModulePageShell
               title="Propostas Comerciais"
@@ -428,7 +429,7 @@ export default function App() {
           }
         />
         <Route
-          path="/customers/indicators"
+          path="customers/indicators"
           element={
             <ModulePageShell
               title="Clientes — Indicadores"
@@ -439,7 +440,7 @@ export default function App() {
           }
         />
         <Route
-          path="/customers"
+          path="customers"
           element={
             <ModulePageShell
               title="Clientes"
@@ -451,7 +452,7 @@ export default function App() {
           }
         />
         <Route
-          path="/simulations/indicators"
+          path="simulations/indicators"
           element={
             <ModulePageShell
               title="Simulações — Indicadores"
@@ -462,7 +463,7 @@ export default function App() {
           }
         />
         <Route
-          path="/simulations"
+          path="simulations"
           element={
             <ModulePageShell
               title="Cenários e Simulações"
@@ -474,7 +475,7 @@ export default function App() {
           }
         />
         <Route
-          path="/reports"
+          path="reports"
           element={
             <ModulePageShell
               title="Relatórios e BI"
@@ -485,7 +486,7 @@ export default function App() {
           }
         />
         <Route
-          path="/guide"
+          path="guide"
           element={
             <ModulePageShell
               title="Guia do Sistema"
@@ -496,11 +497,11 @@ export default function App() {
           }
         />
         <Route
-          path="/settings"
+          path="settings"
           element={<BootstrapAdminSettingsRoute />}
         />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </Layout>
+      </Route>
+    </Routes>
   );
 }

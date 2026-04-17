@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -54,23 +54,32 @@ export const Sidebar = () => {
     >
       {/* Header */}
       <div className={cn("p-6 flex items-center mb-4", collapsed ? "justify-center" : "justify-between")}>
-        {!collapsed && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-center gap-2 overflow-hidden"
-          >
+        <Link
+          to="/"
+          title="Página inicial"
+          className={cn(
+            "rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary/40",
+            collapsed ? "flex justify-center" : ""
+          )}
+        >
+          {!collapsed && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-2 overflow-hidden"
+            >
+              <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <span className="font-bold text-lg tracking-tight whitespace-nowrap">IndusCost</span>
+            </motion.div>
+          )}
+          {collapsed && (
             <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
               <TrendingUp className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="font-bold text-lg tracking-tight whitespace-nowrap">IndusCost</span>
-          </motion.div>
-        )}
-        {collapsed && (
-          <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
-            <TrendingUp className="h-5 w-5 text-primary-foreground" />
-          </div>
-        )}
+          )}
+        </Link>
       </div>
 
       {/* Navigation */}
