@@ -43,7 +43,7 @@ import {
   buildCloneDraftData,
   buildSnapshotSaveData,
 } from "./src/lib/newProductSimulationSnapshot.js";
-import { buildCustomerIndicatorsPayload } from "./src/lib/customerIndicators.js";
+import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/customerIndicators.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -4921,6 +4921,38 @@ app.delete("/api/employees/:id", async (req, res) => {
     } catch (error) {
       console.error("GET /api/customers/indicators", error);
       res.status(500).json({ error: "Erro ao montar indicadores de clientes." });
+    }
+  });
+
+  /** Lista clientes de um agrupamento de UF (mesma regra de normalização do indicador). Somente leitura. */
+  app.get("/api/customers/indicators/drilldown", async (req, res) => {
+    const raw = typeof req.query.bucket === "string" ? req.query.bucket.trim() : "";
+    if (!raw) {
+      return res.status(400).json({ error: "Parâmetro bucket é obrigatório (ex.: SP, —, OUTROS)." });
+    }
+    try {
+      const customers = await prisma.customer.findMany({
+        select: {
+          id: true,
+          companyName: true,
+          tradeName: true,
+          taxId: true,
+          email: true,
+          phone: true,
+          city: true,
+          state: true,
+          status: true,
+        },
+        orderBy: { companyName: "asc" },
+      });
+      const filtered = customers.filter((c) => normalizeBrazilUf(c.state) === raw);
+      res.json({
+        bucket: raw,
+        customers: filtered,
+      });
+    } catch (error) {
+      console.error("GET /api/customers/indicators/drilldown", error);
+      res.status(500).json({ error: "Erro ao listar clientes do agrupamento." });
     }
   });
 

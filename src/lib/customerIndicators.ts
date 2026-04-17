@@ -183,6 +183,8 @@ export function buildCustomerIndicatorsPayload(rows: CustomerIndicatorInput[]): 
     byState.push({ key: "OUTROS", label: labelForStateKey("OUTROS"), count: outros });
   }
 
+  byState.sort((a, b) => b.count - a.count);
+
   const topSegments = [...segmentMap.entries()]
     .map(([segment, count]) => ({ segment: segment === "—" ? "Sem segmento" : segment, count }))
     .sort((a, b) => b.count - a.count)
