@@ -1765,7 +1765,12 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   app.get("/api/products", async (req, res) => {
     try {
+      const typeQ = typeof req.query.type === "string" ? req.query.type.trim() : "";
+      const typeFilter =
+        typeQ === "PRODUCT" || typeQ === "COMPONENT" || typeQ === "MATERIAL" ? { type: typeQ as "PRODUCT" | "COMPONENT" | "MATERIAL" } : {};
+
       const products = await prisma.product.findMany({
+        where: Object.keys(typeFilter).length ? typeFilter : undefined,
         include: {
           ProductBOM: {
             include: {

@@ -48,7 +48,7 @@ import {
 } from "@/src/components/product/OpenBookCompositionTab";
 import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
 
-/** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1). */
+/** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=…). */
 export type ProductWithCostSummary = Product & {
   costSummary?:
     | { na: true; label: string }
@@ -102,7 +102,8 @@ export const ProductModule = () => {
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [listTypeFilter, setListTypeFilter] = useState<"" | ItemType>("");
+  /** Escopo da lista: carrega só este tipo via GET /api/products?type=… (evita custeio da lista inteira). */
+  const [engineeringSegment, setEngineeringSegment] = useState<ItemType>("PRODUCT");
   const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -132,11 +133,12 @@ export const ProductModule = () => {
     routing: [],
   });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      const qs = new URLSearchParams({ cost: "1", type: engineeringSegment });
       const [productsData, materialsData, machinesData, rolesData] = await Promise.all([
-        fetchJsonOk<ProductWithCostSummary[]>("/api/products?cost=1"),
+        fetchJsonOk<ProductWithCostSummary[]>(`/api/products?${qs.toString()}`),
         fetchJsonOk<Material[]>("/api/materials"),
         fetchJsonOk("/api/machines"),
         fetchJsonOk("/api/roles"),
@@ -151,11 +153,15 @@ export const ProductModule = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [engineeringSegment]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    void fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [engineeringSegment]);
 
   const reloadTree = useCallback(async () => {
     if (!editingItem?.id) return;
@@ -448,7 +454,6 @@ export const ProductModule = () => {
   const filteredItems = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     return items.filter((item) => {
-      if (listTypeFilter && item.type !== listTypeFilter) return false;
       if (listStatusFilter && item.status !== listStatusFilter) return false;
       if (!q) return true;
       return (
@@ -456,11 +461,10 @@ export const ProductModule = () => {
         item.sku.toLowerCase().includes(q)
       );
     });
-  }, [items, searchTerm, listTypeFilter, listStatusFilter]);
+  }, [items, searchTerm, listStatusFilter]);
 
   const clearListFilters = () => {
     setSearchTerm("");
-    setListTypeFilter("");
     setListStatusFilter("");
   };
 
@@ -671,6 +675,29 @@ export const ProductModule = () => {
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div
             className="flex flex-wrap items-center gap-2"
+            role="tablist"
+            aria-label="Escopo da lista de engenharia"
+          >
+            {(["PRODUCT", "COMPONENT", "MATERIAL"] as const).map((seg) => (
+              <button
+                key={seg}
+                type="button"
+                role="tab"
+                aria-selected={engineeringSegment === seg}
+                onClick={() => setEngineeringSegment(seg)}
+                className={cn(
+                  "h-10 shrink-0 rounded-lg border px-3 text-sm font-semibold transition-colors",
+                  engineeringSegment === seg
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                {seg === "PRODUCT" ? "Produtos" : seg === "COMPONENT" ? "Componentes" : "Materiais"}
+              </button>
+            ))}
+          </div>
+          <div
+            className="flex flex-wrap items-center gap-2"
             role="group"
             aria-label="Filtros da lista de engenharia"
           >
@@ -686,17 +713,6 @@ export const ProductModule = () => {
             </div>
 
             <select
-              className="h-10 min-w-[160px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-              value={listTypeFilter}
-              onChange={(e) => setListTypeFilter(e.target.value as any)}
-            >
-              <option value="">Todos os tipos</option>
-              <option value="PRODUCT">Produto</option>
-              <option value="COMPONENT">Componente</option>
-              <option value="MATERIAL">Material</option>
-            </select>
-
-            <select
               className="h-10 min-w-[150px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={listStatusFilter}
               onChange={(e) => setListStatusFilter(e.target.value as any)}
@@ -709,7 +725,7 @@ export const ProductModule = () => {
             <button
               type="button"
               onClick={clearListFilters}
-              disabled={!searchTerm.trim() && !listTypeFilter && !listStatusFilter}
+              disabled={!searchTerm.trim() && !listStatusFilter}
               className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 disabled:hover:bg-card"
               title="Limpar filtros"
             >
