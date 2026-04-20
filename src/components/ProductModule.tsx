@@ -533,7 +533,7 @@ export const ProductModule = () => {
     setFormData({ ...formData, bom: newBOM });
   };
 
-  const bomSelectOptions = useMemo(() => {
+  const baseBomSelectOptions = useMemo(() => {
     const compOpts = items
       .filter((i) => i.type === "COMPONENT" && i.id !== editingItem?.id)
       .map((i) => ({
@@ -553,6 +553,56 @@ export const ProductModule = () => {
         : [];
     return [...compOpts, ...matOpts];
   }, [items, materials, formData.type, editingItem?.id]);
+
+  /**
+   * Em edição, garante label para itens já salvos na BOM mesmo quando o valor
+   * não está na lista atual do dropdown (ex.: tela em segmento PRODUCT).
+   */
+  const persistedBomSelectOptions = useMemo(() => {
+    const rows = Array.isArray((editingItem as any)?.ProductBOM) ? ((editingItem as any).ProductBOM as any[]) : [];
+    return rows
+      .map((row) => {
+        const value = row?.materialId || row?.childProductId;
+        if (!value) return null;
+
+        const material = row?.Material || row?.material;
+        if (material?.code && material?.description) {
+          return {
+            value: String(value),
+            label: `${material.code} — ${material.description}`,
+            sublabel: "Material (salvo)",
+            searchTerms: `${material.code} ${material.description}`,
+          };
+        }
+
+        const child = row?.ChildProduct || row?.childProduct;
+        if (child?.sku && child?.name) {
+          return {
+            value: String(value),
+            label: `${child.sku} — ${child.name}`,
+            sublabel: "Componente (salvo)",
+            searchTerms: `${child.sku} ${child.name}`,
+          };
+        }
+
+        return {
+          value: String(value),
+          label: "Item salvo (fora da lista atual)",
+          sublabel: row?.materialId ? "Material (salvo)" : "Componente (salvo)",
+          searchTerms: "item salvo",
+        };
+      })
+      .filter((opt): opt is NonNullable<typeof opt> => Boolean(opt));
+  }, [editingItem]);
+
+  const bomSelectOptions = useMemo(() => {
+    const merged = [...baseBomSelectOptions, ...persistedBomSelectOptions];
+    const dedup = new Map<string, (typeof merged)[number]>();
+    merged.forEach((opt) => {
+      if (!dedup.has(opt.value)) dedup.set(opt.value, opt);
+    });
+    return Array.from(dedup.values());
+  }, [baseBomSelectOptions, persistedBomSelectOptions]);
 
   const setBomLineMaterialOrChild = (index: number, val: string) => {
     const newBOM = [...formData.bom];
