@@ -1,5 +1,5 @@
 // src/components/ProposalModule.tsx
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { 
   Plus, 
   Search, 
@@ -179,8 +179,34 @@ export const ProposalModule = () => {
     }
   }, []);
 
-  const fetchProposals = useCallback(
-    async (page: number) => {
+  const listFiltersKey = useMemo(
+    () =>
+      JSON.stringify({
+        searchTerm,
+        listStatusFilter,
+        listResponsibleFilter,
+        listCustomerIdFilter,
+        listStartDate,
+        listEndDate,
+        listMinValue,
+        listMaxValue,
+      }),
+    [
+      searchTerm,
+      listStatusFilter,
+      listResponsibleFilter,
+      listCustomerIdFilter,
+      listStartDate,
+      listEndDate,
+      listMinValue,
+      listMaxValue,
+    ]
+  );
+
+  const prevListFiltersKeyRef = useRef<string | null>(null);
+
+  const loadProposalListPage = useCallback(
+    async (page: number, signal?: AbortSignal) => {
       setLoading(true);
       try {
         const params = new URLSearchParams();
@@ -195,16 +221,22 @@ export const ProposalModule = () => {
         if (listMinValue.trim()) params.set("minNetValue", listMinValue.trim());
         if (listMaxValue.trim()) params.set("maxNetValue", listMaxValue.trim());
 
-        const response = await fetchJsonOk<ProposalListResponse>(`/api/proposals?${params.toString()}`);
-        setProposals(Array.isArray(response?.data) ? response.data : []);
+        const response = await fetchJsonOk<ProposalListResponse>(`/api/proposals?${params.toString()}`, {
+          signal,
+        });
+        if (signal?.aborted) return;
+
+        const raw = Array.isArray(response?.data) ? response.data : [];
+        setProposals(raw.slice(0, PAGE_SIZE));
         setCurrentPage(Number.isFinite(Number(response?.page)) ? Number(response.page) : 1);
         setTotalPages(Number.isFinite(Number(response?.totalPages)) ? Math.max(1, Number(response.totalPages)) : 1);
         setTotalProposals(Number.isFinite(Number(response?.total)) ? Number(response.total) : 0);
       } catch (error) {
+        if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
         console.error("Erro ao buscar propostas:", error);
         alert(error instanceof Error ? error.message : "Não foi possível carregar propostas.");
       } finally {
-        setLoading(false);
+        if (!signal?.aborted) setLoading(false);
       }
     },
     [
@@ -224,21 +256,20 @@ export const ProposalModule = () => {
   }, [fetchReferenceData]);
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [
-    searchTerm,
-    listStatusFilter,
-    listResponsibleFilter,
-    listCustomerIdFilter,
-    listStartDate,
-    listEndDate,
-    listMinValue,
-    listMaxValue,
-  ]);
+    const ac = new AbortController();
+    const prevKey = prevListFiltersKeyRef.current;
+    const filtersChanged = prevKey !== null && prevKey !== listFiltersKey;
+    prevListFiltersKeyRef.current = listFiltersKey;
 
-  useEffect(() => {
-    void fetchProposals(currentPage);
-  }, [currentPage, fetchProposals]);
+    const pageToFetch = filtersChanged ? 1 : currentPage;
+    if (filtersChanged && currentPage !== 1) {
+      setCurrentPage(1);
+    }
+
+    void loadProposalListPage(pageToFetch, ac.signal);
+
+    return () => ac.abort();
+  }, [currentPage, listFiltersKey, loadProposalListPage]);
 
   const handleCreateNew = () => {
     setEditingProposal(null);
@@ -379,7 +410,7 @@ export const ProposalModule = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      await fetchProposals(currentPage);
+      await loadProposalListPage(currentPage);
       setView("list");
     } catch (error) {
       console.error("Erro ao salvar proposta:", error);
@@ -393,7 +424,7 @@ export const ProposalModule = () => {
     if (!confirm("Excluir esta proposta permanentemente?")) return;
     try {
       await fetchOk(`/api/proposals/${id}`, { method: "DELETE" });
-      void fetchProposals(currentPage);
+      void loadProposalListPage(currentPage);
     } catch (error) {
       console.error("Erro ao excluir proposta:", error);
       alert(error instanceof Error ? error.message : "Não foi possível excluir a proposta.");
@@ -557,6 +588,13 @@ export const ProposalModule = () => {
 
   const filteredProposals = proposals;
 
+  const listShownRange = useMemo(() => {
+    if (totalProposals === 0 || filteredProposals.length === 0) return { from: 0, to: 0 };
+    const from = (currentPage - 1) * PAGE_SIZE + 1;
+    const to = from + filteredProposals.length - 1;
+    return { from, to };
+  }, [totalProposals, currentPage, filteredProposals.length]);
+
   const clearListFilters = () => {
     setSearchTerm("");
     setListStatusFilter("");
@@ -572,8 +610,11 @@ export const ProposalModule = () => {
     return (
       <div className="space-y-6 pb-20" data-tour="proposals-root">
         {/* Form Header */}
-        <div className="flex items-center justify-between" data-tour="proposals-form-actions">
-          <div className="flex items-center gap-4">
+        <div
+          className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"
+          data-tour="proposals-form-actions"
+        >
+          <div className="flex items-start gap-4 min-w-0">
             <button 
               onClick={() => setView("list")}
               className="p-2 rounded-full hover:bg-accent transition-colors"
@@ -587,7 +628,7 @@ export const ProposalModule = () => {
               <p className="text-sm text-muted-foreground">Preencha os dados e configure os itens para gerar a proposta.</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 w-full md:w-auto shrink-0">
             <TourHelpButton onClick={() => setTourOpen(true)} />
             <div className={cn("min-w-[200px]", STATUS_CONFIG[formData.status as ProposalStatus]?.color, "rounded-lg border border-border p-0.5")}>
               <SearchableSelect
@@ -1028,10 +1069,10 @@ export const ProposalModule = () => {
     <div className="space-y-6" data-tour="proposals-root">
       {/* List Header */}
       <div
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4"
         data-tour="proposals-toolbar"
       >
-        <div className="flex-1 flex flex-col gap-2">
+        <div className="flex-1 flex flex-col gap-2 min-w-0">
           <div className="flex flex-col lg:flex-row lg:items-center gap-2">
             <div className="relative flex-1 min-w-[260px] max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1129,8 +1170,18 @@ export const ProposalModule = () => {
 
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              Exibindo <span className="font-bold text-foreground">{filteredProposals.length}</span> de{" "}
-              <span className="font-bold text-foreground">{totalProposals}</span> proposta(s).
+              {totalProposals === 0 ? (
+                <>Nenhuma proposta no filtro atual.</>
+              ) : (
+                <>
+                  Exibindo{" "}
+                  <span className="font-bold text-foreground">
+                    {listShownRange.from}–{listShownRange.to}
+                  </span>{" "}
+                  de <span className="font-bold text-foreground">{totalProposals}</span> proposta(s) · até{" "}
+                  {PAGE_SIZE} por página
+                </>
+              )}
             </p>
             <button
               type="button"
@@ -1152,7 +1203,7 @@ export const ProposalModule = () => {
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 self-start sm:pt-0.5">
           <TourHelpButton onClick={() => setTourOpen(true)} />
           <button
             onClick={handleCreateNew}
@@ -1244,8 +1295,8 @@ export const ProposalModule = () => {
                         {STATUS_CONFIG[p.status]?.label}
                       </div>
                     </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="p-4 text-right whitespace-nowrap align-middle">
+                      <div className="inline-flex flex-shrink-0 items-center justify-end gap-1.5">
                         <button
                           type="button"
                           onClick={() => setAnalysisProposalId(p.id)}

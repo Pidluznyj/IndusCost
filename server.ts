@@ -5035,7 +5035,8 @@ app.delete("/api/employees/:id", async (req, res) => {
   }
 
   function parsePositiveIntQuery(value: unknown, fallback: number): number {
-    const parsed = Number.parseInt(String(value ?? ""), 10);
+    const raw = Array.isArray(value) ? value[0] : value;
+    const parsed = Number.parseInt(String(raw ?? ""), 10);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
     return parsed;
   }
@@ -5131,7 +5132,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     const pageSize = Math.min(parsePositiveIntQuery(pageSizeRaw, 50), 200);
     const skip = (page - 1) * pageSize;
 
-    const [rows, total] = await Promise.all([
+    const [rowsRaw, total] = await Promise.all([
       prisma.proposal.findMany({
         where,
         include: { Customer: true },
@@ -5141,6 +5142,8 @@ app.delete("/api/employees/:id", async (req, res) => {
       }),
       prisma.proposal.count({ where }),
     ]);
+
+    const rows = rowsRaw.slice(0, pageSize);
 
     res.json({
       data: rows,
