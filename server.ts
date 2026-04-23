@@ -5034,12 +5034,134 @@ app.delete("/api/employees/:id", async (req, res) => {
     return typeof value === "string" && PROPOSAL_STATUS_VALUES.includes(value as any);
   }
 
+  function parsePositiveIntQuery(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value ?? ""), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return parsed;
+  }
+
+  function parseDateQueryStart(value: unknown): Date | null {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    const date = new Date(`${raw}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function parseDateQueryEnd(value: unknown): Date | null {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    const date = new Date(`${raw}T23:59:59.999`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function parseDecimalQuery(value: unknown): Prisma.Decimal | null {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    const normalized = raw.replace(",", ".");
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return null;
+    return new Prisma.Decimal(parsed);
+  }
+
   app.get("/api/proposals", async (req, res) => {
-    const proposals = await prisma.proposal.findMany({
-      include: { Customer: true },
-      orderBy: { number: "desc" },
+    const pageRaw = req.query.page;
+    const pageSizeRaw = req.query.pageSize;
+    const search = String(req.query.search ?? "").trim();
+    const status = String(req.query.status ?? "").trim();
+    const responsible = String(req.query.responsible ?? "").trim();
+    const customerId = String(req.query.customerId ?? "").trim();
+    const startDate = parseDateQueryStart(req.query.startDate);
+    const endDate = parseDateQueryEnd(req.query.endDate);
+    const minNet = parseDecimalQuery(req.query.minNetValue);
+    const maxNet = parseDecimalQuery(req.query.maxNetValue);
+
+    const hasPagination = pageRaw !== undefined || pageSizeRaw !== undefined;
+    const hasAnyFilter =
+      search.length > 0 ||
+      status.length > 0 ||
+      responsible.length > 0 ||
+      customerId.length > 0 ||
+      startDate !== null ||
+      endDate !== null ||
+      minNet !== null ||
+      maxNet !== null;
+
+    const where: Prisma.ProposalWhereInput = {
+      ...(status && isValidProposalStatus(status) ? { status } : {}),
+      ...(responsible ? { responsible } : {}),
+      ...(customerId ? { customerId } : {}),
+      ...((startDate || endDate)
+        ? {
+            createdAt: {
+              ...(startDate ? { gte: startDate } : {}),
+              ...(endDate ? { lte: endDate } : {}),
+            },
+          }
+        : {}),
+      ...((minNet || maxNet)
+        ? {
+            totalNetValue: {
+              ...(minNet ? { gte: minNet } : {}),
+              ...(maxNet ? { lte: maxNet } : {}),
+            },
+          }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              { title: { contains: search, mode: "insensitive" } },
+              { Customer: { companyName: { contains: search, mode: "insensitive" } } },
+              { Customer: { tradeName: { contains: search, mode: "insensitive" } } },
+              { Customer: { taxId: { contains: search, mode: "insensitive" } } },
+              ...(Number.isFinite(Number(search)) ? [{ number: Number.parseInt(search, 10) }] : []),
+            ],
+          }
+        : {}),
+    };
+
+    if (!hasPagination && !hasAnyFilter) {
+      const proposals = await prisma.proposal.findMany({
+        include: { Customer: true },
+        orderBy: [{ createdAt: "desc" }, { number: "desc" }],
+      });
+      return res.json(proposals);
+    }
+
+    const page = parsePositiveIntQuery(pageRaw, 1);
+    const pageSize = Math.min(parsePositiveIntQuery(pageSizeRaw, 50), 200);
+    const skip = (page - 1) * pageSize;
+
+    const [rows, total] = await Promise.all([
+      prisma.proposal.findMany({
+        where,
+        include: { Customer: true },
+        orderBy: [{ createdAt: "desc" }, { number: "desc" }],
+        skip,
+        take: pageSize,
+      }),
+      prisma.proposal.count({ where }),
+    ]);
+
+    res.json({
+      data: rows,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
     });
-    res.json(proposals);
+  });
+
+  app.get("/api/proposals/responsibles", async (req, res) => {
+    const rows = await prisma.proposal.findMany({
+      where: { responsible: { not: null } },
+      select: { responsible: true },
+      distinct: ["responsible"],
+      orderBy: { responsible: "asc" },
+    });
+    const responsibles = rows
+      .map((r) => String(r.responsible ?? "").trim())
+      .filter((r) => r.length > 0);
+    res.json(responsibles);
   });
 
   app.get("/api/proposals/:id", async (req, res) => {

@@ -26,6 +26,7 @@ import { ProductEngineeringIndicatorsDashboard } from "@/src/components/contextu
 import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual/PricingFormationIndicatorsDashboard";
 import { ProductMaterialDemandDashboard } from "@/src/components/contextual/ProductMaterialDemandDashboard";
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
+import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { fetchJsonOk } from "@/src/lib/http";
 import { AlertCircle, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
 
@@ -247,6 +248,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/proposals/:id/print" element={<ProposalPrintView />} />
       <Route element={<Layout />}>
         <Route
           path="dashboard"

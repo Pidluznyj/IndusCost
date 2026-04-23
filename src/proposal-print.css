@@ -1,0 +1,36 @@
+/* Impressão dedicada de proposta comercial */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  .proposal-print-no-print {
+    display: none !important;
+  }
+
+  .proposal-print-page {
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .proposal-print-sheet {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+    padding: 0 !important;
+  }
+
+  .proposal-print-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+

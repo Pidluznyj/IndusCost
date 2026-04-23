@@ -42,7 +42,16 @@ import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
 import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
 import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
-import { filterProposals } from "@/src/lib/operationalListFilters";
+
+const PAGE_SIZE = 50;
+
+type ProposalListResponse = {
+  data: Proposal[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -121,11 +130,15 @@ export const ProposalModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [listStatusFilter, setListStatusFilter] = useState<"" | ProposalStatus>("");
   const [listResponsibleFilter, setListResponsibleFilter] = useState("");
+  const [responsibleOptions, setResponsibleOptions] = useState<string[]>([]);
   const [listCustomerIdFilter, setListCustomerIdFilter] = useState("");
   const [listStartDate, setListStartDate] = useState("");
   const [listEndDate, setListEndDate] = useState("");
   const [listMinValue, setListMinValue] = useState("");
   const [listMaxValue, setListMaxValue] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalProposals, setTotalProposals] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
   const [formTab, setFormTab] = useState<"items" | "indicators">("items");
@@ -150,28 +163,82 @@ export const ProposalModule = () => {
     items: []
   });
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchReferenceData = useCallback(async () => {
     try {
-      const [p, c, pr] = await Promise.all([
-        fetchJsonOk<Proposal[]>("/api/proposals"),
+      const [c, pr, r] = await Promise.all([
         fetchJsonOk<Customer[]>("/api/customers"),
         fetchJsonOk<Product[]>("/api/products"),
+        fetchJsonOk<string[]>("/api/proposals/responsibles"),
       ]);
-      setProposals(Array.isArray(p) ? p : []);
       setCustomers(Array.isArray(c) ? c : []);
       setProducts(Array.isArray(pr) ? pr : []);
+      setResponsibleOptions(Array.isArray(r) ? r : []);
     } catch (error) {
-      console.error("Erro ao buscar dados:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível carregar propostas e cadastros.");
-    } finally {
-      setLoading(false);
+      console.error("Erro ao buscar cadastros:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível carregar cadastros.");
     }
-  };
+  }, []);
+
+  const fetchProposals = useCallback(
+    async (page: number) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("pageSize", String(PAGE_SIZE));
+        if (searchTerm.trim()) params.set("search", searchTerm.trim());
+        if (listStatusFilter) params.set("status", listStatusFilter);
+        if (listResponsibleFilter.trim()) params.set("responsible", listResponsibleFilter.trim());
+        if (listCustomerIdFilter) params.set("customerId", listCustomerIdFilter);
+        if (listStartDate) params.set("startDate", listStartDate);
+        if (listEndDate) params.set("endDate", listEndDate);
+        if (listMinValue.trim()) params.set("minNetValue", listMinValue.trim());
+        if (listMaxValue.trim()) params.set("maxNetValue", listMaxValue.trim());
+
+        const response = await fetchJsonOk<ProposalListResponse>(`/api/proposals?${params.toString()}`);
+        setProposals(Array.isArray(response?.data) ? response.data : []);
+        setCurrentPage(Number.isFinite(Number(response?.page)) ? Number(response.page) : 1);
+        setTotalPages(Number.isFinite(Number(response?.totalPages)) ? Math.max(1, Number(response.totalPages)) : 1);
+        setTotalProposals(Number.isFinite(Number(response?.total)) ? Number(response.total) : 0);
+      } catch (error) {
+        console.error("Erro ao buscar propostas:", error);
+        alert(error instanceof Error ? error.message : "Não foi possível carregar propostas.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      searchTerm,
+      listStatusFilter,
+      listResponsibleFilter,
+      listCustomerIdFilter,
+      listStartDate,
+      listEndDate,
+      listMinValue,
+      listMaxValue,
+    ]
+  );
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    void fetchReferenceData();
+  }, [fetchReferenceData]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    searchTerm,
+    listStatusFilter,
+    listResponsibleFilter,
+    listCustomerIdFilter,
+    listStartDate,
+    listEndDate,
+    listMinValue,
+    listMaxValue,
+  ]);
+
+  useEffect(() => {
+    void fetchProposals(currentPage);
+  }, [currentPage, fetchProposals]);
 
   const handleCreateNew = () => {
     setEditingProposal(null);
@@ -312,7 +379,7 @@ export const ProposalModule = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      await fetchData();
+      await fetchProposals(currentPage);
       setView("list");
     } catch (error) {
       console.error("Erro ao salvar proposta:", error);
@@ -326,7 +393,7 @@ export const ProposalModule = () => {
     if (!confirm("Excluir esta proposta permanentemente?")) return;
     try {
       await fetchOk(`/api/proposals/${id}`, { method: "DELETE" });
-      fetchData();
+      void fetchProposals(currentPage);
     } catch (error) {
       console.error("Erro ao excluir proposta:", error);
       alert(error instanceof Error ? error.message : "Não foi possível excluir a proposta.");
@@ -488,37 +555,7 @@ export const ProposalModule = () => {
     }));
   }, [totals]);
 
-  const responsibleOptions = useMemo(() => {
-    const s = new Set<string>();
-    for (const p of proposals) {
-      const r = String(p.responsible ?? "").trim();
-      if (r) s.add(r);
-    }
-    return [...s.values()].sort((a, b) => a.localeCompare(b));
-  }, [proposals]);
-
-  const filteredProposals = useMemo(() => {
-    return filterProposals(proposals, {
-      search: searchTerm,
-      status: listStatusFilter,
-      responsible: listResponsibleFilter,
-      customerId: listCustomerIdFilter,
-      startDate: listStartDate,
-      endDate: listEndDate,
-      minNetValue: listMinValue,
-      maxNetValue: listMaxValue,
-    });
-  }, [
-    proposals,
-    searchTerm,
-    listStatusFilter,
-    listResponsibleFilter,
-    listCustomerIdFilter,
-    listStartDate,
-    listEndDate,
-    listMinValue,
-    listMaxValue,
-  ]);
+  const filteredProposals = proposals;
 
   const clearListFilters = () => {
     setSearchTerm("");
@@ -1093,7 +1130,7 @@ export const ProposalModule = () => {
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
               Exibindo <span className="font-bold text-foreground">{filteredProposals.length}</span> de{" "}
-              <span className="font-bold text-foreground">{proposals.length}</span> proposta(s).
+              <span className="font-bold text-foreground">{totalProposals}</span> proposta(s).
             </p>
             <button
               type="button"
@@ -1225,8 +1262,9 @@ export const ProposalModule = () => {
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button 
+                          onClick={() => window.open(`/proposals/${p.id}/print`, "_blank", "noopener,noreferrer")}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-blue-500 transition-all"
-                          title="Gerar PDF"
+                          title="Imprimir proposta"
                         >
                           <Printer className="h-4 w-4" />
                         </button>
@@ -1244,6 +1282,33 @@ export const ProposalModule = () => {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+        <p className="text-sm text-muted-foreground">
+          Página <span className="font-semibold text-foreground">{currentPage}</span> de{" "}
+          <span className="font-semibold text-foreground">{totalPages}</span> · {PAGE_SIZE} por página
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+            disabled={currentPage <= 1 || loading}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:hover:bg-background"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Anterior
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+            disabled={currentPage >= totalPages || loading}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:hover:bg-background"
+          >
+            Próxima
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
