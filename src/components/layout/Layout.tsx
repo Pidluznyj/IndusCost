@@ -1,20 +1,14 @@
 import React from "react";
+import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { motion, AnimatePresence } from "motion/react";
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
-
-export const Layout = ({ children }: LayoutProps) => {
+export const Layout = () => {
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans antialiased text-foreground">
-      {/* Sidebar - Fixed on the left */}
       <Sidebar />
 
-      {/* Main Content - Scrollable area */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Top Header / Navbar (Optional but good for breadcrumbs/user profile) */}
         <header className="h-16 border-b border-border flex items-center justify-between px-8 bg-card/50 backdrop-blur-sm z-10">
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
@@ -30,7 +24,6 @@ export const Layout = ({ children }: LayoutProps) => {
           </div>
         </header>
 
-        {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
           <AnimatePresence mode="wait">
             <motion.div
@@ -40,7 +33,7 @@ export const Layout = ({ children }: LayoutProps) => {
               transition={{ duration: 0.3, ease: "easeOut" }}
               className="max-w-7xl mx-auto w-full"
             >
-              {children}
+              <Outlet />
             </motion.div>
           </AnimatePresence>
         </div>
