@@ -275,6 +275,15 @@ model Customer {
 model Proposal {
   id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   number           Int            @unique @default(autoincrement())
+  sourceSystem     String?
+  externalProposalId Int?
+  externalProposalCode String?
+  externalCustomerId Int?
+  externalSellerId Int?
+  externalCompanyId Int?
+  externalMovementTypeId Int?
+  externalOpenedAt DateTime?
+  externalRawPayload Json?
   title            String?
   customerId       String         @db.Uuid
   status           ProposalStatus @default(DRAFT)
@@ -304,11 +313,18 @@ model Proposal {
   items            ProposalItem[]
 
   @@index([customerId])
+  @@index([sourceSystem])
+  @@index([externalProposalCode])
+  @@unique([sourceSystem, externalProposalId])
 }
 
 model ProposalItem {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   proposalId      String   @db.Uuid
+  externalItemId  Int?
+  externalProductId Int?
+  externalItemStatus String?
+  externalRawPayload Json?
   productId       String   @db.Uuid
   quantity        Decimal  @db.Decimal(20, 6)
   unit            String?
@@ -332,6 +348,8 @@ model ProposalItem {
 
   @@index([productId])
   @@index([proposalId])
+  @@index([externalProductId])
+  @@unique([proposalId, externalItemId])
 }
 
 model CostCalculationLog {
