@@ -329,7 +329,9 @@ export const ProductBomTreeContextPanel: React.FC<{
     try {
       const data = await fetchJsonOk(`/api/products/${selection.childProductId}/cost-analysis`);
       if (data && typeof data === "object" && "error" in data) {
-        alert(typeof (data as { message?: string }).message === "string" ? (data as { message: string }).message : "Análise indisponível.");
+        const errPayload = data as Record<string, unknown>;
+        const msg = errPayload.message;
+        alert(typeof msg === "string" && msg.trim().length > 0 ? msg : "Análise indisponível.");
         setCostPreview(null);
         return;
       }

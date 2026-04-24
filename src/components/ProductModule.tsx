@@ -42,6 +42,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
 import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomTreeContextPanel";
+import type { BomCostDetailRowData } from "@/src/components/shared/BomCostDetailRow";
 import {
   OpenBookCompositionTab,
   type OpenBookPayload,
@@ -990,13 +991,17 @@ export const ProductModule = () => {
                             </span>
                           );
                         }
-                        if (typeof cs.totalIndustrialCost === "number" && Number.isFinite(cs.totalIndustrialCost)) {
+                        if (
+                          "totalIndustrialCost" in cs &&
+                          typeof cs.totalIndustrialCost === "number" &&
+                          Number.isFinite(cs.totalIndustrialCost)
+                        ) {
                           return (
                             <div className="flex flex-col items-end gap-1">
                               <span className="text-sm font-bold tabular-nums tracking-tight text-primary">
                                 {formatCurrency(cs.totalIndustrialCost)}
                               </span>
-                              {cs.partial ? (
+                              {"partial" in cs && cs.partial ? (
                                 <Badge variant="warning" className="text-[9px] px-1.5 py-0 h-5 font-bold">
                                   Parcial
                                 </Badge>
@@ -1734,8 +1739,10 @@ export const ProductModule = () => {
                                       </td>
                                     </tr>
                                   ) : (
-                                    displayCost.details.materials.map((item: any, idx: number) => (
-                                      <BomCostDetailRow key={idx} item={item} />
+                                    displayCost.details.materials.map((item: BomCostDetailRowData, idx: number) => (
+                                      <React.Fragment key={`${item.description}-${idx}`}>
+                                        <BomCostDetailRow item={item} />
+                                      </React.Fragment>
                                     ))
                                   )}
                                 </tbody>

@@ -66,6 +66,33 @@ type PersistedNewProductSimulation = PersistedNewProductSimulationSummary & {
   snapshot: NewProductSimulationSnapshot;
 };
 
+function pickNumericFromUnknown(o: Record<string, unknown>, key: string): number {
+  const v = o[key];
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Resposta do GET cost-analysis: estrutura validada antes de ler campos. */
+function parseProductCostAnalysisPayload(
+  analysis: unknown,
+  fallbackSku: string,
+  fallbackName: string
+): { sku: string; name: string; mp: number; hh: number; hm: number } {
+  if (!analysis || typeof analysis !== "object") {
+    return { sku: fallbackSku, name: fallbackName, mp: 0, hh: 0, hm: 0 };
+  }
+  const o = analysis as Record<string, unknown>;
+  const sku = typeof o.sku === "string" && o.sku.trim() ? o.sku : fallbackSku;
+  const name = typeof o.name === "string" && o.name.trim() ? o.name : fallbackName;
+  return {
+    sku,
+    name,
+    mp: pickNumericFromUnknown(o, "totalMaterialCost"),
+    hh: pickNumericFromUnknown(o, "totalHH_Unit"),
+    hm: pickNumericFromUnknown(o, "totalHM_Unit"),
+  };
+}
+
 export const SimulationModule = () => {
   const [workspaceTab, setWorkspaceTab] = useState<"SCENARIOS" | "NEW_PRODUCT">("SCENARIOS");
   const [simulations, setSimulations] = useState<any[]>([]);
@@ -577,15 +604,16 @@ export const SimulationModule = () => {
     setExistingCostLoadingId(productId);
     try {
       const analysis = await fetchJsonOk(`/api/products/${productId}/cost-analysis`);
+      const fields = parseProductCostAnalysisPayload(analysis, String(p?.sku ?? ""), String(p?.name ?? ""));
       setExistingComponentCosts((prev) => ({
         ...prev,
         [productId]: {
           id: productId,
-          sku: String(p?.sku ?? analysis?.sku ?? ""),
-          name: String(p?.name ?? analysis?.name ?? ""),
-          mp: Number(analysis?.totalMaterialCost ?? 0),
-          hh: Number(analysis?.totalHH_Unit ?? 0),
-          hm: Number(analysis?.totalHM_Unit ?? 0),
+          sku: fields.sku,
+          name: fields.name,
+          mp: fields.mp,
+          hh: fields.hh,
+          hm: fields.hm,
         },
       }));
     } catch {
@@ -867,7 +895,7 @@ export const SimulationModule = () => {
     if (newProductIsReadOnly) return;
     const snapshot = buildCurrentNewProductSnapshot();
     try {
-      const created = await fetchJsonOk("/api/new-product-simulations/save", {
+      const createdRaw = await fetchJsonOk("/api/new-product-simulations/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -876,11 +904,16 @@ export const SimulationModule = () => {
           snapshot,
         }),
       });
-      const summary = snapshotSummaryFromRecord(created);
-      loadSnapshotIntoWorkspace(
-        created.snapshot as NewProductSimulationSnapshot,
-        { ...summary, status: "SAVED" }
-      );
+      if (!createdRaw || typeof createdRaw !== "object") {
+        throw new Error("Resposta inválida do servidor ao salvar.");
+      }
+      const createdRecord = createdRaw as Record<string, unknown>;
+      const snap = createdRecord.snapshot;
+      if (snap == null || typeof snap !== "object") {
+        throw new Error("Resposta sem snapshot.");
+      }
+      const summary = snapshotSummaryFromRecord(createdRaw as PersistedNewProductSimulation);
+      loadSnapshotIntoWorkspace(snap as NewProductSimulationSnapshot, { ...summary, status: "SAVED" });
       fetchSavedNewProductSimulations();
       alert("Snapshot salvo com sucesso. Registro agora está congelado.");
     } catch (error) {

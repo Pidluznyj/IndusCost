@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
-import type { Proposal } from "@/src/types/commercial";
+import type { Proposal, ProposalStatus } from "@/src/types/commercial";
 import {
   proposalFinancialRollup,
   proposalStatusChartData,

@@ -3,7 +3,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { Prisma } from "@prisma/client";
+import { Prisma, type ItemType } from "@prisma/client";
 import { prisma } from "./src/lib/prisma.js";
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
@@ -1768,11 +1768,12 @@ app.delete("/api/employees/:id", async (req, res) => {
   app.get("/api/products", async (req, res) => {
     try {
       const typeQ = typeof req.query.type === "string" ? req.query.type.trim() : "";
-      const typeFilter =
-        typeQ === "PRODUCT" || typeQ === "COMPONENT" || typeQ === "MATERIAL" ? { type: typeQ as "PRODUCT" | "COMPONENT" | "MATERIAL" } : {};
+      /** Product.type no Prisma é apenas PRODUCT | COMPONENT (matéria-prima é modelo Material). */
+      const typeFilter: { type: ItemType } | undefined =
+        typeQ === "PRODUCT" || typeQ === "COMPONENT" ? { type: typeQ as ItemType } : undefined;
 
       const products = await prisma.product.findMany({
-        where: Object.keys(typeFilter).length ? typeFilter : undefined,
+        where: typeFilter,
         include: {
           ProductBOM: {
             include: {
@@ -1809,15 +1810,6 @@ app.delete("/api/employees/:id", async (req, res) => {
 
       const enriched = await Promise.all(
         products.map(async (p) => {
-          if (p.type === "MATERIAL") {
-            return {
-              ...p,
-              costSummary: {
-                na: true as const,
-                label: "Matéria-prima (custo no cadastro de MP)",
-              },
-            };
-          }
           const a = await getProductCostAnalysis(p.id, cache, false);
           if (a && typeof a === "object" && "error" in a) {
             return {

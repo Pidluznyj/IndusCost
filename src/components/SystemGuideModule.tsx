@@ -186,7 +186,9 @@ export function SystemGuideModule() {
                 </div>
                 <div className="space-y-4">
                   {section.entries.map((entry) => (
-                    <GuideEntryCard key={entry.anchor} entry={entry} />
+                    <React.Fragment key={entry.anchor}>
+                      <GuideEntryCard entry={entry} />
+                    </React.Fragment>
                   ))}
                 </div>
               </section>
