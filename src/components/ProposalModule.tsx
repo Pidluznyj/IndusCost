@@ -26,7 +26,6 @@ import {
   ExternalLink,
   Printer,
   LayoutDashboard,
-  Factory,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -34,7 +33,6 @@ import { SearchableSelect } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
-import { useNavigate } from "react-router-dom";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
 import { CalculatedValue } from "./shared/CalculatedValue";
 import { buildProposalLineMarginExplanation } from "@/src/lib/proposalLineExplain";
@@ -54,6 +52,12 @@ type ProposalListResponse = {
   total: number;
   totalPages: number;
 };
+
+function isPaginatedProposalResponse(value: unknown): value is ProposalListResponse {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return Array.isArray(v.data);
+}
 
 const STATUS_CONFIG: Record<ProposalStatus, { label: string; color: string; icon: any }> = {
   DRAFT: { label: "Rascunho", color: "bg-slate-500/10 text-slate-600", icon: FileText },
@@ -125,7 +129,6 @@ function normalizeProposalItem(
 }
 
 export const ProposalModule = () => {
-  const navigate = useNavigate();
   const [view, setView] = useState<"list" | "form">("list");
   const [tourOpen, setTourOpen] = useState(false);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -224,16 +227,33 @@ export const ProposalModule = () => {
         if (listMinValue.trim()) params.set("minNetValue", listMinValue.trim());
         if (listMaxValue.trim()) params.set("maxNetValue", listMaxValue.trim());
 
-        const response = await fetchJsonOk<ProposalListResponse>(`/api/proposals?${params.toString()}`, {
-          signal,
-        });
+        const response = await fetchJsonOk<ProposalListResponse | Proposal[]>(
+          `/api/proposals?${params.toString()}`,
+          { signal }
+        );
         if (signal?.aborted) return;
 
-        const raw = Array.isArray(response?.data) ? response.data : [];
-        setProposals(raw.slice(0, PAGE_SIZE));
-        setCurrentPage(Number.isFinite(Number(response?.page)) ? Number(response.page) : 1);
-        setTotalPages(Number.isFinite(Number(response?.totalPages)) ? Math.max(1, Number(response.totalPages)) : 1);
-        setTotalProposals(Number.isFinite(Number(response?.total)) ? Number(response.total) : 0);
+        if (Array.isArray(response)) {
+          const fallbackTotal = response.length;
+          const safePage = Math.max(1, page);
+          const start = (safePage - 1) * PAGE_SIZE;
+          const raw = response.slice(start, start + PAGE_SIZE);
+          setProposals(raw.slice(0, PAGE_SIZE));
+          setCurrentPage(safePage);
+          setTotalPages(Math.max(1, Math.ceil(fallbackTotal / PAGE_SIZE)));
+          setTotalProposals(fallbackTotal);
+        } else if (isPaginatedProposalResponse(response)) {
+          const raw = response.data;
+          setProposals(raw.slice(0, PAGE_SIZE));
+          setCurrentPage(Number.isFinite(Number(response.page)) ? Number(response.page) : 1);
+          setTotalPages(Number.isFinite(Number(response.totalPages)) ? Math.max(1, Number(response.totalPages)) : 1);
+          setTotalProposals(Number.isFinite(Number(response.total)) ? Number(response.total) : 0);
+        } else {
+          setProposals([]);
+          setCurrentPage(1);
+          setTotalPages(1);
+          setTotalProposals(0);
+        }
       } catch (error) {
         if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
         console.error("Erro ao buscar propostas:", error);
@@ -590,13 +610,14 @@ export const ProposalModule = () => {
   }, [totals]);
 
   const filteredProposals = proposals;
+  const pagedProposals = useMemo(() => filteredProposals.slice(0, PAGE_SIZE), [filteredProposals]);
 
   const listShownRange = useMemo(() => {
-    if (totalProposals === 0 || filteredProposals.length === 0) return { from: 0, to: 0 };
+    if (totalProposals === 0 || pagedProposals.length === 0) return { from: 0, to: 0 };
     const from = (currentPage - 1) * PAGE_SIZE + 1;
-    const to = from + filteredProposals.length - 1;
+    const to = from + pagedProposals.length - 1;
     return { from, to };
-  }, [totalProposals, currentPage, filteredProposals.length]);
+  }, [totalProposals, currentPage, pagedProposals.length]);
 
   const clearListFilters = () => {
     setSearchTerm("");
@@ -613,11 +634,8 @@ export const ProposalModule = () => {
     return (
       <div className="space-y-6 pb-20" data-tour="proposals-root">
         {/* Form Header */}
-        <div
-          className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"
-          data-tour="proposals-form-actions"
-        >
-          <div className="flex items-start gap-4 min-w-0">
+        <div className="flex items-center justify-between" data-tour="proposals-form-actions">
+          <div className="flex items-center gap-4">
             <button 
               onClick={() => setView("list")}
               className="p-2 rounded-full hover:bg-accent transition-colors"
@@ -631,7 +649,7 @@ export const ProposalModule = () => {
               <p className="text-sm text-muted-foreground">Preencha os dados e configure os itens para gerar a proposta.</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 w-full md:w-auto shrink-0">
+          <div className="flex items-center gap-3">
             <TourHelpButton onClick={() => setTourOpen(true)} />
             <div className={cn("min-w-[200px]", STATUS_CONFIG[formData.status as ProposalStatus]?.color, "rounded-lg border border-border p-0.5")}>
               <SearchableSelect
@@ -1072,10 +1090,10 @@ export const ProposalModule = () => {
     <div className="space-y-6" data-tour="proposals-root">
       {/* List Header */}
       <div
-        className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         data-tour="proposals-toolbar"
       >
-        <div className="flex-1 flex flex-col gap-2 min-w-0">
+        <div className="flex-1 flex flex-col gap-2">
           <div className="flex flex-col lg:flex-row lg:items-center gap-2">
             <div className="relative flex-1 min-w-[260px] max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1181,8 +1199,7 @@ export const ProposalModule = () => {
                   <span className="font-bold text-foreground">
                     {listShownRange.from}–{listShownRange.to}
                   </span>{" "}
-                  de <span className="font-bold text-foreground">{totalProposals}</span> proposta(s) · até{" "}
-                  {PAGE_SIZE} por página
+                  de <span className="font-bold text-foreground">{totalProposals}</span> proposta(s).
                 </>
               )}
             </p>
@@ -1206,16 +1223,7 @@ export const ProposalModule = () => {
             </button>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 self-start sm:pt-0.5">
-          <button
-            type="button"
-            onClick={() => navigate("/products/material-demand")}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
-            title="Abrir inteligência global de matéria-prima"
-          >
-            <Factory className="h-4 w-4 text-primary" />
-            Relatório Geral de MP
-          </button>
+        <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
           <button
             onClick={handleCreateNew}
@@ -1253,14 +1261,14 @@ export const ProposalModule = () => {
                     <p className="mt-2 text-sm text-muted-foreground">Carregando propostas...</p>
                   </td>
                 </tr>
-              ) : filteredProposals.length === 0 ? (
+              ) : pagedProposals.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-muted-foreground">
                     Nenhuma proposta encontrada.
                   </td>
                 </tr>
               ) : (
-                filteredProposals.map((p) => (
+                pagedProposals.map((p) => (
                   <tr key={p.id} className="hover:bg-accent/30 transition-colors group">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
