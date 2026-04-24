@@ -5496,6 +5496,16 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json({ success: true });
   });
 
+  // API fallback: garante resposta JSON para rotas /api não registradas
+  // e evita cair no fallback HTML da SPA (Vite/index.html).
+  app.use("/api", (req, res) => {
+    res.status(404).json({
+      error: "API route not found",
+      method: req.method,
+      path: req.originalUrl,
+    });
+  });
+
   // Global Error Handler
   app.use((err: any, req: any, res: any, next: any) => {
     console.error("Express Error:", err);
