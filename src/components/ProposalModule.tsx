@@ -43,7 +43,7 @@ import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysi
 import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
 import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 type ProposalListResponse = {
   data: Proposal[];
@@ -1094,8 +1094,8 @@ export const ProposalModule = () => {
         data-tour="proposals-toolbar"
       >
         <div className="flex-1 flex flex-col gap-2">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
-            <div className="relative flex-1 min-w-[260px] max-w-md">
+          <div className="flex flex-col xl:flex-row xl:items-center gap-2">
+            <div className="relative w-full xl:flex-1 xl:min-w-[260px] xl:max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
@@ -1107,7 +1107,7 @@ export const ProposalModule = () => {
             </div>
 
             <select
-              className="min-w-[180px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              className="w-full xl:w-[180px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
               value={listStatusFilter}
               onChange={(e) => setListStatusFilter(e.target.value as any)}
             >
@@ -1120,7 +1120,7 @@ export const ProposalModule = () => {
             </select>
 
             <select
-              className="min-w-[200px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              className="w-full xl:w-[200px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
               value={listResponsibleFilter}
               onChange={(e) => setListResponsibleFilter(e.target.value)}
             >
@@ -1133,7 +1133,7 @@ export const ProposalModule = () => {
             </select>
 
             <select
-              className="min-w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              className="w-full xl:w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
               value={listCustomerIdFilter}
               onChange={(e) => setListCustomerIdFilter(e.target.value)}
             >
@@ -1149,8 +1149,8 @@ export const ProposalModule = () => {
             </select>
           </div>
 
-          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col xl:flex-row xl:items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <label className="text-[10px] font-bold uppercase text-muted-foreground">Período</label>
               <input
                 type="date"
@@ -1167,7 +1167,7 @@ export const ProposalModule = () => {
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <label className="text-[10px] font-bold uppercase text-muted-foreground">Valor líquido</label>
               <input
                 type="number"
@@ -1189,7 +1189,7 @@ export const ProposalModule = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-xs text-muted-foreground">
               {totalProposals === 0 ? (
                 <>Nenhuma proposta no filtro atual.</>
