@@ -26,6 +26,7 @@ import {
   ExternalLink,
   Printer,
   LayoutDashboard,
+  Factory,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -33,6 +34,7 @@ import { SearchableSelect } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
+import { useNavigate } from "react-router-dom";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
 import { CalculatedValue } from "./shared/CalculatedValue";
 import { buildProposalLineMarginExplanation } from "@/src/lib/proposalLineExplain";
@@ -123,6 +125,7 @@ function normalizeProposalItem(
 }
 
 export const ProposalModule = () => {
+  const navigate = useNavigate();
   const [view, setView] = useState<"list" | "form">("list");
   const [tourOpen, setTourOpen] = useState(false);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -1204,6 +1207,15 @@ export const ProposalModule = () => {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 self-start sm:pt-0.5">
+          <button
+            type="button"
+            onClick={() => navigate("/products/material-demand")}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
+            title="Abrir inteligência global de matéria-prima"
+          >
+            <Factory className="h-4 w-4 text-primary" />
+            Relatório Geral de MP
+          </button>
           <TourHelpButton onClick={() => setTourOpen(true)} />
           <button
             onClick={handleCreateNew}

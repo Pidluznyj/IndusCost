@@ -28,7 +28,7 @@ import { ProductMaterialDemandDashboard } from "@/src/components/contextual/Prod
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { fetchJsonOk } from "@/src/lib/http";
-import { AlertCircle, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
+import { AlertCircle, Factory, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
 
 type BootstrapAdminStatus = {
   enabled: boolean;
@@ -424,7 +424,18 @@ export default function App() {
             <ModulePageShell
               title="Propostas Comerciais"
               description="Gestão de propostas, orçamentos e negociações comerciais."
-              headerActions={<ModuleIndicatorsButton to="/proposals/indicators" />}
+              headerActions={
+                <>
+                  <Link
+                    to="/products/material-demand"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <Factory className="h-4 w-4 text-primary" />
+                    Relatório Geral de MP
+                  </Link>
+                  <ModuleIndicatorsButton to="/proposals/indicators" />
+                </>
+              }
             >
               <ProposalModule />
             </ModulePageShell>
