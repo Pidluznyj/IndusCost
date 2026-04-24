@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
-import { SearchableSelect } from "./shared/SearchableSelect";
+import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
@@ -208,6 +208,37 @@ export const ProposalModule = () => {
       listMaxValue,
     ]
   );
+
+  const listCustomerFilterOptions = useMemo((): SelectOption[] => {
+    const sorted = customers
+      .slice()
+      .sort((a, b) => (a.companyName || "").localeCompare(b.companyName || ""));
+    return [
+      { value: "", label: "Todos os clientes", searchTerms: "todos todos os clientes" },
+      ...sorted.map((c) => {
+        const label = (c.companyName || c.tradeName || "Cliente").trim();
+        const tax = (c.taxId || "").trim();
+        const stateTax = (c.stateTaxId || "").trim();
+        return {
+          value: c.id,
+          label,
+          sublabel: tax ? `CNPJ/CPF: ${tax}` : undefined,
+          searchTerms: [label, c.tradeName, c.companyName, tax, stateTax].filter(Boolean).join(" "),
+        };
+      }),
+    ];
+  }, [customers]);
+
+  const listResponsibleFilterOptions = useMemo((): SelectOption[] => {
+    return [
+      { value: "", label: "Todos os responsáveis", searchTerms: "todos todos os responsáveis" },
+      ...responsibleOptions.map((r) => ({
+        value: r,
+        label: r,
+        searchTerms: r,
+      })),
+    ];
+  }, [responsibleOptions]);
 
   const prevListFiltersKeyRef = useRef<string | null>(null);
 
@@ -1119,34 +1150,29 @@ export const ProposalModule = () => {
               ))}
             </select>
 
-            <select
-              className="w-full xl:w-[200px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+            <SearchableSelect
+              className="w-full xl:w-[200px]"
+              options={listResponsibleFilterOptions}
               value={listResponsibleFilter}
-              onChange={(e) => setListResponsibleFilter(e.target.value)}
-            >
-              <option value="">Todos os responsáveis</option>
-              {responsibleOptions.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setListResponsibleFilter(v)}
+              placeholder="Todos os responsáveis"
+              searchInputPlaceholder="Buscar responsável..."
+              emptyMessage="Nenhum responsável encontrado"
+              pinOptionValues={[""]}
+              listMaxHeight={320}
+            />
 
-            <select
-              className="w-full xl:w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+            <SearchableSelect
+              className="w-full xl:w-[220px]"
+              options={listCustomerFilterOptions}
               value={listCustomerIdFilter}
-              onChange={(e) => setListCustomerIdFilter(e.target.value)}
-            >
-              <option value="">Todos os clientes</option>
-              {customers
-                .slice()
-                .sort((a, b) => (a.companyName || "").localeCompare(b.companyName || ""))
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {(c.companyName || c.tradeName || "Cliente").trim()}
-                  </option>
-                ))}
-            </select>
+              onChange={(v) => setListCustomerIdFilter(v)}
+              placeholder="Todos os clientes"
+              searchInputPlaceholder="Buscar cliente..."
+              emptyMessage="Nenhum cliente encontrado"
+              pinOptionValues={[""]}
+              listMaxHeight={320}
+            />
           </div>
 
           <div className="flex flex-col xl:flex-row xl:items-center gap-2">

@@ -22,6 +22,12 @@ interface SearchableSelectProps {
   className?: string;
   required?: boolean;
   disabled?: boolean;
+  /** Placeholder do campo de busca dentro do dropdown */
+  searchInputPlaceholder?: string;
+  /** Valores de opção que permanecem sempre visíveis (ex.: opção “Todos”) quando há texto de busca */
+  pinOptionValues?: string[];
+  /** Altura máxima (px) da área rolável da lista (abaixo da busca), padrão ~300 */
+  listMaxHeight?: number;
 }
 
 function optionSearchHaystack(opt: SelectOption): string {
@@ -38,6 +44,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   className,
   required = false,
   disabled = false,
+  searchInputPlaceholder = "Pesquisar...",
+  pinOptionValues,
+  listMaxHeight = 300,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -58,7 +67,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - r.bottom - 12;
     const spaceAbove = r.top - 12;
-    const preferredMaxHeight = 250;
+    const preferredMaxHeight = Math.min(Math.max(280, listMaxHeight), 360);
     const openUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
     const safeMaxHeight = Math.max(
       120,
@@ -70,7 +79,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
       width: r.width,
       maxHeight: safeMaxHeight,
     });
-  }, []);
+  }, [listMaxHeight]);
 
   const selectedOption = useMemo(
     () => options.find((opt) => opt.value === value),
@@ -78,12 +87,23 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   );
 
   const filteredOptions = useMemo(() => {
-    if (!searchTerm.trim()) return options;
+    const pinSet = new Set(pinOptionValues ?? []);
+    const pinned = pinSet.size > 0 ? options.filter((o) => pinSet.has(o.value)) : [];
+    const unpinned = pinSet.size > 0 ? options.filter((o) => !pinSet.has(o.value)) : options;
+
+    if (!searchTerm.trim()) {
+      return options;
+    }
     const term = normalizeSearchString(searchTerm);
-    return options.filter((opt) =>
+    const matchedUnpinned = unpinned.filter((opt) =>
       normalizeSearchString(optionSearchHaystack(opt)).includes(term)
     );
-  }, [options, searchTerm]);
+    if (!pinSet.size) {
+      return matchedUnpinned;
+    }
+    const pinnedValues = new Set(pinned.map((p) => p.value));
+    return [...pinned, ...matchedUnpinned.filter((m) => !pinnedValues.has(m.value))];
+  }, [options, searchTerm, pinOptionValues]);
 
   useLayoutEffect(() => {
     if (!isOpen) return;
@@ -191,7 +211,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                     ref={inputRef}
                     type="text"
                     className="w-full bg-transparent border-none outline-none text-sm p-1.5"
-                    placeholder="Pesquisar..."
+                    placeholder={searchInputPlaceholder}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onClick={(e) => e.stopPropagation()}
