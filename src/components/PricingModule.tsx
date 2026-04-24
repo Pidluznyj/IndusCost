@@ -12,6 +12,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRICING_TOUR_STEPS } from "@/src/tours/pricingTourSteps";
 import { PricingOpenBookTab } from "@/src/components/pricing/PricingOpenBookTab";
+import { PricingDetailedCompositionTab } from "@/src/components/pricing/PricingDetailedCompositionTab";
 import type { PricingOpenBookPayload } from "@/src/lib/pricingOpenBook";
 import {
   filterAndSortPricingRows,
@@ -33,7 +34,7 @@ export const PricingModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [calculationResult, setCalculationResult] = useState<any | null>(null);
-  const [resultTab, setResultTab] = useState<"summary" | "composition">("summary");
+  const [resultTab, setResultTab] = useState<"summary" | "composition" | "detailed">("summary");
   
   const [searchTermBatch, setSearchTermBatch] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
@@ -699,7 +700,7 @@ export const PricingModule = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
              <motion.div 
                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-               className="bg-card w-full max-w-4xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+               className="bg-card w-full max-w-5xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
              >
                 <div className="p-6 border-b border-border flex items-center justify-between bg-primary text-primary-foreground">
                   <div>
@@ -716,6 +717,7 @@ export const PricingModule = () => {
                     {[
                       { id: "summary" as const, label: "Resumo da Formação", icon: BarChart3 },
                       { id: "composition" as const, label: "Composição do Preço", icon: BookOpen },
+                      { id: "detailed" as const, label: "Composição Detalhada do Preço", icon: Layers },
                     ].map((tab) => {
                       const isActive = resultTab === tab.id;
                       return (
@@ -799,6 +801,25 @@ export const PricingModule = () => {
                            <span className="text-xs font-medium">Frete Saída</span>
                            <span className="text-sm font-bold">-{formatCurrency(calculationResult.premissas.freight, 5)}</span>
                          </div>
+                         {calculationResult.pricingBreakdown?.deductions?.otherVariables != null && (
+                           <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
+                             <span className="text-xs font-medium">
+                               Outras variáveis (
+                               {formatNumber(
+                                 calculationResult.pricingBreakdown.deductions.otherVariables.percentageOnSale ?? 0,
+                                 2
+                               )}
+                               %)
+                             </span>
+                             <span className="text-sm font-bold">
+                               -
+                               {formatCurrency(
+                                 calculationResult.pricingBreakdown.deductions.otherVariables.amountOnSale ?? 0,
+                                 5
+                               )}
+                             </span>
+                           </div>
+                         )}
                        </div>
                      </div>
                    </div>
@@ -829,6 +850,10 @@ export const PricingModule = () => {
                         freight: Number(calculationResult.premissas?.freight ?? 0),
                       }}
                     />
+                  )}
+
+                  {resultTab === "detailed" && (
+                    <PricingDetailedCompositionTab breakdown={calculationResult.pricingBreakdown} />
                   )}
                 </div>
              </motion.div>

@@ -39,6 +39,7 @@ import {
   type ExplosionRowCore,
 } from "./src/lib/openBookMaterialExplosion.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
+import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
 import {
   buildCloneDraftData,
   buildSnapshotSaveData,
@@ -2496,6 +2497,48 @@ app.delete("/api/employees/:id", async (req, res) => {
         };
       }
 
+      const obRecord = openBook as Record<string, unknown> | undefined;
+      const consolidatedForBreakdown =
+        obRecord &&
+        typeof obRecord.error === "undefined" &&
+        Array.isArray(obRecord.consolidatedMaterials)
+          ? (obRecord.consolidatedMaterials as Array<Record<string, unknown>>)
+          : null;
+      const detailsBlock = (costData as { details?: { materials?: unknown[]; processBreakdown?: unknown[] } }).details;
+      const bomMaterialsDetail = Array.isArray(detailsBlock?.materials)
+        ? (detailsBlock!.materials as Array<Record<string, unknown>>)
+        : null;
+      const processBreakdown = Array.isArray(detailsBlock?.processBreakdown)
+        ? detailsBlock!.processBreakdown
+        : null;
+
+      const pricingBreakdown = buildPricingUnitCalculationBreakdown({
+        custoFabril,
+        custoGerencial,
+        totalMaterialCost: Number(costData.totalMaterialCost ?? 0),
+        totalHH_Unit: Number(costData.totalHH_Unit ?? 0),
+        totalHM_Unit: Number(costData.totalHM_Unit ?? 0),
+        totalCIF_Unit: Number(costData.totalCIF_Unit ?? 0),
+        totalOPEX_Unit: Number(costData.totalOPEX_Unit ?? 0),
+        taxRuleName: pricing.TaxRule?.name ? String(pricing.TaxRule.name) : null,
+        taxRuleId: String(pricing.taxRuleId),
+        taxRate,
+        commRate,
+        marginRate,
+        otherRate,
+        freight,
+        divisor,
+        suggestedPrice,
+        totalTaxes,
+        totalCommission,
+        totalOther,
+        contributionMargin,
+        operationalMargin,
+        openBookConsolidatedMaterials: consolidatedForBreakdown,
+        bomMaterialsDetail,
+        processBreakdown,
+      });
+
       res.json({
         product: costData.name,
         sku: costData.sku,
@@ -2517,6 +2560,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           markup: suggestedPrice / custoFabril,
         },
         openBook,
+        pricingBreakdown,
       });
     } catch (error) {
       console.error("Pricing calculation error:", error);
