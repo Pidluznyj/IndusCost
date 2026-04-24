@@ -14,6 +14,7 @@ import { SettingsModule } from "./components/SettingsModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { ProposalModule } from "./components/ProposalModule";
+import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { SystemGuideModule } from "./components/SystemGuideModule";
 import { LandingPage } from "./components/LandingPage";
@@ -433,11 +434,39 @@ export default function App() {
                     <Factory className="h-4 w-4 text-primary" />
                     Relatório Geral de MP
                   </Link>
+                  <Link
+                    to="/sales-orders"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    Pedidos de venda
+                  </Link>
                   <ModuleIndicatorsButton to="/proposals/indicators" />
                 </>
               }
             >
               <ProposalModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="sales-orders/:id"
+          element={
+            <ModulePageShell
+              title="Pedido de venda"
+              description="Pedido interno gerado a partir de proposta aprovada. Envio ao Nomus será acionado em etapa futura."
+            >
+              <SalesOrdersModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="sales-orders"
+          element={
+            <ModulePageShell
+              title="Pedidos de venda"
+              description="Pedidos internos originados de propostas aprovadas. Integração Nomus (POST /rest/pedidos) ainda não ativa."
+            >
+              <SalesOrdersModule />
             </ModulePageShell>
           }
         />

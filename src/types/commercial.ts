@@ -35,6 +35,7 @@ export interface Customer {
 export interface ProposalItem {
   id?: string;
   proposalId?: string;
+  externalProductId?: number | null;
   productId: string;
   Product?: Product;
   quantity: number;
@@ -59,6 +60,9 @@ export interface ProposalItem {
   };
 }
 
+/** Pedido interno vinculado à proposta (quando existir). */
+export type SalesOrderLinkStatus = "DRAFT" | "READY_TO_SEND" | "SENT_TO_NOMUS" | "CANCELLED" | "ERROR";
+
 export interface Proposal {
   id: string;
   number: number;
@@ -66,6 +70,12 @@ export interface Proposal {
   customerId: string;
   Customer?: Customer;
   status: ProposalStatus;
+  /** Pedido de venda gerado a partir desta proposta (lista / detalhe). */
+  salesOrder?: {
+    id: string;
+    orderCode: string;
+    status: SalesOrderLinkStatus;
+  } | null;
   responsible?: string;
   companyIssuer?: string;
   validityDays: number;

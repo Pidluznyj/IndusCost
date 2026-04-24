@@ -1,5 +1,6 @@
 // src/components/ProposalModule.tsx
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { 
   Plus, 
   Search, 
@@ -26,6 +27,7 @@ import {
   ExternalLink,
   Printer,
   LayoutDashboard,
+  ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -129,6 +131,7 @@ function normalizeProposalItem(
 }
 
 export const ProposalModule = () => {
+  const navigate = useNavigate();
   const [view, setView] = useState<"list" | "form">("list");
   const [tourOpen, setTourOpen] = useState(false);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -150,6 +153,7 @@ export const ProposalModule = () => {
   const [formTab, setFormTab] = useState<"items" | "indicators">("items");
   const [proposalIndicatorsDetailOpen, setProposalIndicatorsDetailOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [salesOrderActionId, setSalesOrderActionId] = useState<string | null>(null);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -473,6 +477,29 @@ export const ProposalModule = () => {
       setSaving(false);
     }
   };
+
+  const handleSalesOrderFromProposal = useCallback(
+    async (p: Proposal) => {
+      if (p.salesOrder?.id) {
+        navigate(`/sales-orders/${p.salesOrder.id}`);
+        return;
+      }
+      setSalesOrderActionId(p.id);
+      try {
+        const res = await fetchJsonOk<{ salesOrder: { id: string } }>(`/api/proposals/${p.id}/generate-sales-order`, {
+          method: "POST",
+        });
+        navigate(`/sales-orders/${res.salesOrder.id}`);
+        void loadProposalListPage(currentPage);
+      } catch (error) {
+        console.error("Erro ao gerar pedido de venda:", error);
+        alert(error instanceof Error ? error.message : "Não foi possível gerar o pedido de venda.");
+      } finally {
+        setSalesOrderActionId(null);
+      }
+    },
+    [navigate, loadProposalListPage, currentPage]
+  );
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta proposta permanentemente?")) return;
@@ -1343,6 +1370,21 @@ export const ProposalModule = () => {
                     </td>
                     <td className="p-4 text-right whitespace-nowrap align-middle">
                       <div className="inline-flex flex-shrink-0 items-center justify-end gap-1.5">
+                        {p.status === "APPROVED" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleSalesOrderFromProposal(p)}
+                            disabled={salesOrderActionId === p.id}
+                            className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-violet-600 transition-all disabled:opacity-50"
+                            title={p.salesOrder ? "Abrir pedido de venda" : "Gerar pedido de venda"}
+                          >
+                            {salesOrderActionId === p.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ShoppingCart className="h-4 w-4" />
+                            )}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setAnalysisProposalId(p.id)}

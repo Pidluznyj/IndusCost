@@ -5378,7 +5378,10 @@ app.delete("/api/employees/:id", async (req, res) => {
 
     if (!hasPagination && !hasAnyFilter) {
       const proposals = await prisma.proposal.findMany({
-        include: { Customer: true },
+        include: {
+          Customer: true,
+          salesOrder: { select: { id: true, orderCode: true, status: true } },
+        },
         orderBy: [{ createdAt: "desc" }, { number: "desc" }],
       });
       return res.json(proposals);
@@ -5391,7 +5394,10 @@ app.delete("/api/employees/:id", async (req, res) => {
     const [rowsRaw, total] = await Promise.all([
       prisma.proposal.findMany({
         where,
-        include: { Customer: true },
+        include: {
+          Customer: true,
+          salesOrder: { select: { id: true, orderCode: true, status: true } },
+        },
         orderBy: [{ createdAt: "desc" }, { number: "desc" }],
         skip,
         take: pageSize,
@@ -5421,6 +5427,155 @@ app.delete("/api/employees/:id", async (req, res) => {
       .map((r) => String(r.responsible ?? "").trim())
       .filter((r) => r.length > 0);
     res.json(responsibles);
+  });
+
+  app.post("/api/proposals/:id/generate-sales-order", async (req, res) => {
+    const { id } = req.params;
+
+    const existing = await prisma.salesOrder.findUnique({
+      where: { proposalId: id },
+      include: {
+        items: { include: { Product: true } },
+        Customer: true,
+        Proposal: { select: { id: true, number: true, title: true } },
+      },
+    });
+    if (existing) {
+      return res.status(200).json({ existing: true, salesOrder: existing });
+    }
+
+    const proposal = await prisma.proposal.findUnique({
+      where: { id },
+      include: { items: { include: { Product: true } }, Customer: true },
+    });
+    if (!proposal) return res.status(404).json({ error: "Proposta não encontrada." });
+    if (proposal.status !== "APPROVED") {
+      return res.status(400).json({ error: "Apenas propostas aprovadas podem gerar pedido de venda." });
+    }
+    if (!proposal.customerId) {
+      return res.status(400).json({ error: "Proposta sem cliente." });
+    }
+    if (!proposal.items.length) {
+      return res.status(400).json({ error: "Proposta deve ter pelo menos um item." });
+    }
+
+    for (const item of proposal.items) {
+      if (!item.productId) {
+        return res.status(400).json({ error: "Todos os itens devem ter produto vinculado (productId)." });
+      }
+      const qty = new Prisma.Decimal(item.quantity);
+      if (qty.lte(0)) {
+        return res.status(400).json({ error: "Cada item deve ter quantidade maior que zero." });
+      }
+      const neg = new Prisma.Decimal(item.negotiatedPrice);
+      if (neg.lte(0)) {
+        return res.status(400).json({ error: "Cada item deve ter preço negociado maior que zero." });
+      }
+      if (!item.Product) {
+        return res.status(400).json({ error: `Produto não encontrado para um item da proposta (item ${item.id}).` });
+      }
+    }
+
+    let orderCode = proposal.externalProposalCode?.trim()
+      ? `PV-${proposal.externalProposalCode.trim()}`
+      : `PV-${proposal.number}`;
+    const orderCodeClash = await prisma.salesOrder.findUnique({ where: { orderCode } });
+    if (orderCodeClash) {
+      orderCode = `PV-${proposal.number}-${proposal.id.slice(0, 8)}`;
+    }
+
+    const issueDate = new Date();
+    let expectedDeliveryDate: Date | null = null;
+    if (proposal.deliveryTimeDays != null && Number.isFinite(Number(proposal.deliveryTimeDays))) {
+      const d = new Date(issueDate);
+      d.setDate(d.getDate() + Number(proposal.deliveryTimeDays));
+      expectedDeliveryDate = d;
+    }
+
+    try {
+      const salesOrder = await prisma.$transaction(async (tx) => {
+        const header = await tx.salesOrder.create({
+          data: {
+            proposalId: proposal.id,
+            sourceSystem: proposal.sourceSystem ?? null,
+            orderCode,
+            customerId: proposal.customerId,
+            externalCustomerId: proposal.externalCustomerId ?? null,
+            responsible: proposal.responsible ?? null,
+            externalSellerId: proposal.externalSellerId ?? null,
+            companyIssuer: proposal.companyIssuer ?? null,
+            externalCompanyId: proposal.externalCompanyId ?? null,
+            status: "READY_TO_SEND",
+            issueDate,
+            expectedDeliveryDate,
+            paymentTerms: proposal.paymentTerms ?? null,
+            paymentMethod: proposal.paymentMethod ?? null,
+            freightCondition: proposal.freightCondition ?? null,
+            deliveryLocation: proposal.deliveryLocation ?? null,
+            notes: proposal.notes ?? null,
+            internalNotes: proposal.internalNotes ?? null,
+            totalItems: proposal.totalItems,
+            totalGrossValue: proposal.totalGrossValue,
+            totalDiscount: proposal.totalDiscount,
+            totalNetValue: proposal.totalNetValue,
+            totalCost: proposal.totalCost,
+            totalMarginValue: proposal.totalMarginValue,
+            totalMarginPerc: proposal.totalMarginPerc,
+            totalTaxes: proposal.totalTaxes,
+            totalFreight: proposal.totalFreight,
+          },
+        });
+
+        for (const item of proposal.items) {
+          const qty = new Prisma.Decimal(item.quantity);
+          const neg = new Prisma.Decimal(item.negotiatedPrice);
+          const uc = new Prisma.Decimal(item.unitCost);
+          const totalNetValue = qty.mul(neg);
+          const totalCost = qty.mul(uc);
+          const marginValue = totalNetValue.minus(totalCost);
+          const marginPerc = totalNetValue.gt(0)
+            ? marginValue.div(totalNetValue).mul(new Prisma.Decimal(100))
+            : new Prisma.Decimal(0);
+
+          await tx.salesOrderItem.create({
+            data: {
+              salesOrderId: header.id,
+              proposalItemId: item.id,
+              productId: item.productId,
+              externalProductId: item.externalProductId ?? null,
+              skuSnapshot: item.Product!.sku,
+              productNameSnapshot: item.Product!.name,
+              quantity: item.quantity,
+              unit: item.unit ?? "UN",
+              unitCost: item.unitCost,
+              negotiatedPrice: item.negotiatedPrice,
+              totalNetValue,
+              totalCost,
+              marginValue,
+              marginPerc,
+              notes: item.notes ?? null,
+            },
+          });
+        }
+
+        return tx.salesOrder.findUnique({
+          where: { id: header.id },
+          include: {
+            items: { include: { Product: true } },
+            Customer: true,
+            Proposal: { select: { id: true, number: true, title: true, externalProposalCode: true } },
+          },
+        });
+      });
+
+      return res.status(201).json({ existing: false, salesOrder });
+    } catch (e: any) {
+      console.error("generate-sales-order", e);
+      if (e?.code === "P2002") {
+        return res.status(409).json({ error: "Conflito de código de pedido. Tente novamente." });
+      }
+      return res.status(500).json({ error: e?.message || "Erro ao gerar pedido de venda." });
+    }
   });
 
   app.get("/api/proposals/:id", async (req, res) => {
@@ -5538,6 +5693,74 @@ app.delete("/api/employees/:id", async (req, res) => {
     const { id } = req.params;
     await prisma.proposal.delete({ where: { id } });
     res.json({ success: true });
+  });
+
+  // --- API: Pedidos de venda internos (origem: proposta aprovada; envio Nomus em etapa futura) ---
+  const SALES_ORDER_STATUS_VALUES = ["DRAFT", "READY_TO_SEND", "SENT_TO_NOMUS", "CANCELLED", "ERROR"] as const;
+  function isValidSalesOrderStatus(value: unknown): value is (typeof SALES_ORDER_STATUS_VALUES)[number] {
+    return typeof value === "string" && SALES_ORDER_STATUS_VALUES.includes(value as any);
+  }
+
+  // Futuro: POST /api/sales-orders/:id/send-to-nomus
+  // Enviar corpo alinhado ao Nomus POST /rest/pedidos, ex.:
+  // { codigoPedido, idEmpresa, idPessoaCliente, idPessoaVendedor, dataEmissao, condicaoPagamentoTexto, observacoes,
+  //   itensPedido: [{ item, idProduto, quantidade, valorUnitario, dataEntrega? }] }
+  // Preencher nomusRawResponse / sentToNomusAt após resposta; não implementar nesta etapa.
+
+  app.get("/api/sales-orders", async (req, res) => {
+    try {
+      const status = String(req.query.status ?? "").trim();
+      const customerId = String(req.query.customerId ?? "").trim();
+      const responsible = String(req.query.responsible ?? "").trim();
+      const startDate = parseDateQueryStart(req.query.startDate);
+      const endDate = parseDateQueryEnd(req.query.endDate);
+
+      const where: Prisma.SalesOrderWhereInput = {
+        ...(status && isValidSalesOrderStatus(status) ? { status } : {}),
+        ...(customerId ? { customerId } : {}),
+        ...(responsible ? { responsible } : {}),
+        ...(startDate || endDate
+          ? {
+              issueDate: {
+                ...(startDate ? { gte: startDate } : {}),
+                ...(endDate ? { lte: endDate } : {}),
+              },
+            }
+          : {}),
+      };
+
+      const rows = await prisma.salesOrder.findMany({
+        where,
+        orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
+        include: {
+          Customer: true,
+          Proposal: { select: { id: true, number: true, externalProposalCode: true, title: true } },
+        },
+      });
+      res.json(rows);
+    } catch (e: any) {
+      console.error("GET /api/sales-orders", e);
+      res.status(500).json({ error: e?.message || "Erro ao listar pedidos de venda." });
+    }
+  });
+
+  app.get("/api/sales-orders/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const row = await prisma.salesOrder.findUnique({
+        where: { id },
+        include: {
+          items: { orderBy: { createdAt: "asc" }, include: { Product: true, ProposalItem: true } },
+          Customer: true,
+          Proposal: true,
+        },
+      });
+      if (!row) return res.status(404).json({ error: "Pedido de venda não encontrado." });
+      res.json(row);
+    } catch (e: any) {
+      console.error("GET /api/sales-orders/:id", e);
+      res.status(500).json({ error: e?.message || "Erro ao carregar pedido de venda." });
+    }
   });
 
   // API fallback: garante resposta JSON para rotas /api não registradas
