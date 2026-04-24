@@ -334,7 +334,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Engenharia — Inteligência de Matéria-Prima"
-              description="Demanda estimada de MP derivada de propostas (itens vendidos/orçados)."
+              description="Visão estimada da necessidade de matéria-prima com base nos itens de propostas e pedidos selecionados."
             >
               <ProductMaterialDemandDashboard />
             </ModulePageShell>
