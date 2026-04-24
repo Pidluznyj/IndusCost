@@ -69,18 +69,30 @@ type BlockedProposal = {
   missingCustomerExternalId: number | null;
 };
 
+type IgnoredProposal = {
+  externalProposalId: number;
+  externalProposalCode: string;
+  reasons: string[];
+  inactiveSkus: string[];
+};
+
 type DryRunResult = {
   totalRead: number;
   eligibleCount: number;
   blockedCount: number;
+  ignoredCount: number;
+  ignoredInactiveSkuCount: number;
   unresolvedCustomers: number;
   unresolvedProducts: number;
   missingSkus: string[];
   missingCustomers: number[];
   blockedProposalCodes: string[];
+  ignoredProposalCodes: string[];
+  inactiveSkus: string[];
   createsPreview: Array<{ externalProposalId: number; externalProposalCode: string }>;
   updatesPreview: Array<{ externalProposalId: number; externalProposalCode: string; id: string }>;
   blockedPreview: BlockedProposal[];
+  ignoredPreview: IgnoredProposal[];
 };
 
 function getRequiredEnv(name: string): string {
@@ -127,6 +139,38 @@ function parseNomusDateTime(input: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function parseDateOnlyUtc(input: string): Date | null {
+  const raw = input.trim();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+
+  const yyyy = Number.parseInt(m[1], 10);
+  const mm = Number.parseInt(m[2], 10);
+  const dd = Number.parseInt(m[3], 10);
+  const parsed = new Date(Date.UTC(yyyy, mm - 1, dd, 0, 0, 0));
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getProposalStartDate(): Date | null {
+  const raw = (process.env.NOMUS_PROPOSAL_START_DATE ?? "").trim();
+  if (!raw) return null;
+
+  const parsed = parseDateOnlyUtc(raw);
+  if (!parsed) throw new Error(`NOMUS_PROPOSAL_START_DATE inválida: ${raw}. Use YYYY-MM-DD.`);
+
+  return parsed;
+}
+
+function isProposalOnOrAfterStartDate(proposal: JsonObject, startDate: Date | null): boolean {
+  if (!startDate) return true;
+
+  const openedAt = parseNomusDateTime(proposal.dataHoraAbertura);
+  if (!openedAt) return false;
+
+  return openedAt.getTime() >= startDate.getTime();
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -144,23 +188,44 @@ function buildNomusHeaders(): Record<string, string> {
   return headers;
 }
 
+function buildNomusUrl(baseUrl: string, resource: string): URL {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const normalizedResource = resource.replace(/^\/+/, "");
+  return new URL(normalizedResource, normalizedBase);
+}
+
 async function fetchJsonWithRetry(url: URL, maxRetries: number, retryBaseMs: number): Promise<unknown> {
   const headers = buildNomusHeaders();
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const res = await fetch(url, { method: "GET", headers });
     if (res.ok) return res.json();
 
+    const body = await res.text().catch(() => "");
     const isRetryable = res.status === 429 || res.status >= 500;
     if (!isRetryable || attempt === maxRetries) {
-      const body = await res.text().catch(() => "");
       throw new Error(`Falha HTTP ${res.status} em ${url.toString()}: ${body.slice(0, 300)}`);
     }
 
     const retryAfterSec = Number.parseInt(res.headers.get("retry-after") ?? "", 10);
+    let tempoAteLiberarSec: number | null = null;
+
+    if (res.status === 429 && body) {
+      try {
+        const parsed = JSON.parse(body) as { tempoAteLiberar?: unknown };
+        const parsedTempo = toInt(parsed.tempoAteLiberar);
+        if (parsedTempo != null && parsedTempo > 0) tempoAteLiberarSec = parsedTempo;
+      } catch {
+        tempoAteLiberarSec = null;
+      }
+    }
+
     const waitMs =
-      Number.isFinite(retryAfterSec) && retryAfterSec > 0
-        ? retryAfterSec * 1000
-        : retryBaseMs * Math.pow(2, attempt);
+      tempoAteLiberarSec != null
+        ? (tempoAteLiberarSec + 2) * 1000
+        : Number.isFinite(retryAfterSec) && retryAfterSec > 0
+          ? retryAfterSec * 1000
+          : retryBaseMs * Math.pow(2, attempt);
+
     await sleep(waitMs);
   }
 
@@ -185,12 +250,18 @@ function pickArrayFromUnknown(payload: unknown): unknown[] {
 }
 
 function hasNextPage(payload: unknown, page: number, pageSize: number, currentLen: number): boolean {
-  if (!payload || typeof payload !== "object") return currentLen >= pageSize;
+  if (!payload || typeof payload !== "object") return currentLen > 0;
+
+  if (Array.isArray(payload)) {
+    return currentLen > 0;
+  }
+
   const data = payload as Record<string, unknown>;
   const totalPages = toInt(data.totalPaginas) ?? toInt(data.totalPages) ?? toInt(data.paginas);
   if (totalPages != null) return page < totalPages;
   if (typeof data.hasMore === "boolean") return data.hasMore;
-  return currentLen >= pageSize;
+
+  return currentLen > 0;
 }
 
 async function fetchAllNomusProposals(baseUrl: string): Promise<JsonObject[]> {
@@ -201,22 +272,97 @@ async function fetchAllNomusProposals(baseUrl: string): Promise<JsonObject[]> {
   const proposals: JsonObject[] = [];
   let page = 1;
 
+  const maxPages = Math.max(1, toInt(process.env.NOMUS_MAX_PAGES) ?? 200);
+
   while (true) {
-    const url = new URL("/rest/propostas", baseUrl);
+    const url = buildNomusUrl(baseUrl, "propostas");
     url.searchParams.set("pagina", String(page));
-    url.searchParams.set("limite", String(pageSize));
+    url.searchParams.set("tamanhoPagina", String(pageSize));
 
     const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
     const arr = pickArrayFromUnknown(payload).filter(
       (entry): entry is JsonObject => !!entry && typeof entry === "object"
     );
+
+    if (arr.length === 0) break;
+
     proposals.push(...arr);
+
+    if (page >= maxPages) {
+      console.warn(`[sync-v1] limite de segurança NOMUS_MAX_PAGES=${maxPages} atingido em propostas.`);
+      break;
+    }
 
     if (!hasNextPage(payload, page, pageSize, arr.length)) break;
     page += 1;
   }
 
   return proposals;
+}
+
+function nomusProductSku(product: JsonObject): string | null {
+  return asString(product.codigo) ?? asString(product.codigoProduto) ?? asString(product.nome);
+}
+
+function nomusProductIsActive(product: JsonObject): boolean {
+  const ativo = product.ativo;
+  if (typeof ativo === "boolean") return ativo;
+  if (typeof ativo === "string") return ativo.trim().toLowerCase() !== "false";
+  return true;
+}
+
+async function fetchAllNomusProducts(baseUrl: string): Promise<JsonObject[]> {
+  const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
+  const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
+  const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
+  const maxPages = Math.max(1, toInt(process.env.NOMUS_PRODUCTS_MAX_PAGES) ?? 200);
+
+  const products: JsonObject[] = [];
+  let page = 1;
+
+  while (true) {
+    const url = buildNomusUrl(baseUrl, "produtos");
+    url.searchParams.set("pagina", String(page));
+    url.searchParams.set("tamanhoPagina", String(pageSize));
+
+    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
+    const arr = pickArrayFromUnknown(payload).filter(
+      (entry): entry is JsonObject => !!entry && typeof entry === "object"
+    );
+
+    if (arr.length === 0) break;
+
+    products.push(...arr);
+
+    if (page >= maxPages) {
+      console.warn(`[sync-v1] limite de segurança NOMUS_PRODUCTS_MAX_PAGES=${maxPages} atingido em produtos.`);
+      break;
+    }
+
+    if (!hasNextPage(payload, page, pageSize, arr.length)) break;
+    page += 1;
+  }
+
+  return products;
+}
+
+async function mapNomusProductActiveBySku(baseUrl: string): Promise<Map<string, boolean>> {
+  const products = await fetchAllNomusProducts(baseUrl);
+  const map = new Map<string, boolean>();
+
+  for (const product of products) {
+    const sku = nomusProductSku(product);
+    if (!sku) continue;
+
+    const active = nomusProductIsActive(product);
+    const current = map.get(sku);
+
+    // Se houver duplicidade, produto ativo prevalece sobre inativo.
+    if (current === true) continue;
+    map.set(sku, active);
+  }
+
+  return map;
 }
 
 async function mapPessoaBridgeByExternalCustomerId(
@@ -238,31 +384,38 @@ async function mapPessoaBridgeByExternalCustomerId(
   const bridge = new Map<number, { taxId: string | null; customerId: string | null }>();
   const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
 
-  const concurrency = 12;
-  for (let i = 0; i < uniqueIds.length; i += concurrency) {
-    const chunk = uniqueIds.slice(i, i + concurrency);
-    const chunkResults = await Promise.all(
-      chunk.map(async (idCliente) => {
-        const url = new URL("/rest/pessoas", baseUrl);
-        url.searchParams.set("id", String(idCliente));
-        const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
-        const arr = pickArrayFromUnknown(payload);
-        const pessoa =
-          (arr.find((x): x is JsonObject => !!x && typeof x === "object") as JsonObject | undefined) ??
-          ((payload && typeof payload === "object" ? (payload as JsonObject) : undefined) as JsonObject | undefined);
+  for (const idCliente of uniqueIds) {
+    const url = buildNomusUrl(baseUrl, "pessoas");
+    url.searchParams.set("query", `id==${idCliente}`);
 
-        const taxId = normalizeTaxId((pessoa?.cnpj as unknown) ?? (pessoa?.cpf as unknown));
-        const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
-        return { idCliente, taxId, customerId };
-      })
-    );
+    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
+    const arr = pickArrayFromUnknown(payload);
+    const pessoa =
+      (arr.find((x): x is JsonObject => !!x && typeof x === "object") as JsonObject | undefined) ??
+      ((payload && typeof payload === "object" ? (payload as JsonObject) : undefined) as JsonObject | undefined);
 
-    for (const result of chunkResults) {
-      bridge.set(result.idCliente, { taxId: result.taxId, customerId: result.customerId });
-    }
+    const taxId = normalizeTaxId((pessoa?.cnpj as unknown) ?? (pessoa?.cpf as unknown));
+    const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
+    bridge.set(idCliente, { taxId, customerId });
   }
 
   return bridge;
+}
+
+async function fetchPricingSnapshotUnitCost(productId: string): Promise<number> {
+  const baseUrl = (process.env.INDUSCOST_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
+  const url = `${baseUrl}/api/products/${encodeURIComponent(productId)}/pricing-snapshot`;
+
+  try {
+    const res = await fetch(url, { method: "GET", headers: { Accept: "application/json" } });
+    if (!res.ok) return 0;
+
+    const payload = (await res.json()) as JsonObject;
+    const unitCost = Number(payload.unitCost);
+    return Number.isFinite(unitCost) && unitCost > 0 ? unitCost : 0;
+  } catch {
+    return 0;
+  }
 }
 
 async function mapLatestUnitCostByProductId(productIds: string[]): Promise<Map<string, number>> {
@@ -284,8 +437,18 @@ async function mapLatestUnitCostByProductId(productIds: string[]): Promise<Map<s
   for (const log of logs) {
     if (map.has(log.productId)) continue;
     const unitCost = Number(log.totalCiu) + Number(log.totalCfc) + Number(log.totalCgt);
-    map.set(log.productId, Number.isFinite(unitCost) ? unitCost : 0);
+    map.set(log.productId, Number.isFinite(unitCost) && unitCost > 0 ? unitCost : 0);
   }
+
+  for (const productId of productIds) {
+    const currentCost = map.get(productId) ?? 0;
+    if (currentCost > 0) continue;
+
+    const snapshotUnitCost = await fetchPricingSnapshotUnitCost(productId);
+    if (snapshotUnitCost > 0) map.set(productId, snapshotUnitCost);
+    else if (!map.has(productId)) map.set(productId, 0);
+  }
+
   return map;
 }
 
@@ -300,12 +463,17 @@ function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
 async function buildPlans(): Promise<{
   plans: ProposalPlan[];
   blocked: BlockedProposal[];
+  ignored: IgnoredProposal[];
   missingSkus: Set<string>;
   missingCustomers: Set<number>;
+  inactiveSkus: Set<string>;
   rawProposalsCount: number;
 }> {
   const nomusBaseUrl = getRequiredEnv("NOMUS_BASE_URL");
-  const rawProposals = await fetchAllNomusProposals(nomusBaseUrl);
+  const proposalStartDate = getProposalStartDate();
+  const rawProposalsAll = await fetchAllNomusProposals(nomusBaseUrl);
+  const rawProposals = rawProposalsAll.filter((proposal) => isProposalOnOrAfterStartDate(proposal, proposalStartDate));
+  const nomusProductActiveBySku = await mapNomusProductActiveBySku(nomusBaseUrl);
 
   const externalCustomerIds = rawProposals
     .map((proposal) => toInt(proposal.idCliente))
@@ -331,8 +499,10 @@ async function buildPlans(): Promise<{
 
   const plans: ProposalPlan[] = [];
   const blocked: BlockedProposal[] = [];
+  const ignored: IgnoredProposal[] = [];
   const missingSkus = new Set<string>();
   const missingCustomers = new Set<number>();
+  const inactiveSkus = new Set<string>();
 
   for (const proposal of rawProposals) {
     const externalProposalId = toInt(proposal.id);
@@ -350,11 +520,18 @@ async function buildPlans(): Promise<{
       : [];
 
     const unresolvedSkus = new Set<string>();
+    const inactiveSkusInProposal = new Set<string>();
     const mappedItems: ProposalPlan["items"] = [];
     let totalCost = 0;
 
     for (const item of proposalItemsRaw) {
       const sku = asString(item.codigoProduto);
+
+      if (sku && nomusProductActiveBySku.get(sku) === false) {
+        inactiveSkusInProposal.add(sku);
+        continue;
+      }
+
       const productId = sku ? (productBySku.get(sku) ?? null) : null;
       if (!productId) {
         if (sku) unresolvedSkus.add(sku);
@@ -392,6 +569,18 @@ async function buildPlans(): Promise<{
         freightValue: 0,
         notes: null,
       });
+    }
+
+    if (inactiveSkusInProposal.size > 0) {
+      for (const sku of inactiveSkusInProposal) inactiveSkus.add(sku);
+
+      ignored.push({
+        externalProposalId,
+        externalProposalCode,
+        reasons: ["INACTIVE_PRODUCT_SKU_NOMUS"],
+        inactiveSkus: [...inactiveSkusInProposal].sort(),
+      });
+      continue;
     }
 
     const reasons: string[] = [];
@@ -444,10 +633,15 @@ async function buildPlans(): Promise<{
     });
   }
 
-  return { plans, blocked, missingSkus, missingCustomers, rawProposalsCount: rawProposals.length };
+  return { plans, blocked, ignored, missingSkus, missingCustomers, inactiveSkus, rawProposalsCount: rawProposals.length };
 }
 
-async function runDry(plans: ProposalPlan[], blocked: BlockedProposal[], rawProposalsCount: number): Promise<DryRunResult> {
+async function runDry(
+  plans: ProposalPlan[],
+  blocked: BlockedProposal[],
+  ignored: IgnoredProposal[],
+  rawProposalsCount: number
+): Promise<DryRunResult> {
   const existing = await prisma.proposal.findMany({
     where: {
       sourceSystem: SOURCE_SYSTEM,
@@ -485,14 +679,19 @@ async function runDry(plans: ProposalPlan[], blocked: BlockedProposal[], rawProp
     totalRead: rawProposalsCount,
     eligibleCount: plans.length,
     blockedCount: blocked.length,
+    ignoredCount: ignored.length,
+    ignoredInactiveSkuCount: ignored.filter((b) => b.reasons.includes("INACTIVE_PRODUCT_SKU_NOMUS")).length,
     unresolvedCustomers: blocked.filter((b) => b.reasons.includes("CUSTOMER_NOT_RESOLVED")).length,
     unresolvedProducts: blocked.filter((b) => b.reasons.includes("MISSING_PRODUCT_SKU")).length,
     missingSkus: [...new Set(blocked.flatMap((b) => b.missingSkus))].sort(),
     missingCustomers: [...new Set(blocked.map((b) => b.missingCustomerExternalId).filter((x): x is number => x != null))],
     blockedProposalCodes: blocked.map((b) => b.externalProposalCode),
+    ignoredProposalCodes: ignored.map((b) => b.externalProposalCode),
+    inactiveSkus: [...new Set(ignored.flatMap((b) => b.inactiveSkus))].sort(),
     createsPreview: createsPreview.slice(0, 50),
     updatesPreview: updatesPreview.slice(0, 50),
     blockedPreview: blocked.slice(0, 50),
+    ignoredPreview: ignored.slice(0, 50),
   };
 }
 
@@ -594,8 +793,8 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{ created: number; upd
 
 async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
-  const { plans, blocked, missingSkus, missingCustomers, rawProposalsCount } = await buildPlans();
-  const dry = await runDry(plans, blocked, rawProposalsCount);
+  const { plans, blocked, ignored, missingSkus, missingCustomers, inactiveSkus, rawProposalsCount } = await buildPlans();
+  const dry = await runDry(plans, blocked, ignored, rawProposalsCount);
 
   if (missingSkus.has(KNOWN_MISSING_SKU)) {
     console.warn(`[sync-v1] SKU conhecido ainda sem cadastro local: ${KNOWN_MISSING_SKU}`);
@@ -629,6 +828,7 @@ async function main(): Promise<void> {
         })),
         missingSkus: [...missingSkus].sort(),
         missingCustomers: [...missingCustomers].sort((a, b) => a - b),
+        ignoredInactiveSkus: [...inactiveSkus].sort(),
       },
       null,
       2
