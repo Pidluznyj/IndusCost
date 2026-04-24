@@ -728,6 +728,7 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{ created: number; upd
         title: plan.title,
         customerId: plan.customerId,
         status: plan.status,
+        responsible: asString(plan.header.nomeVendedor),
         totalItems: plan.totalItems,
         totalGrossValue: toPrismaDecimal(plan.totalGrossValue),
         totalDiscount: new Prisma.Decimal(0),
