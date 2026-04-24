@@ -373,7 +373,7 @@ model ProposalItem {
 
 model SalesOrder {
   id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  proposalId             String           @unique @db.Uuid
+  proposalId             String?          @unique @db.Uuid
   sourceSystem           String?
   externalSalesOrderId   Int?
   externalSalesOrderCode String?
@@ -407,7 +407,7 @@ model SalesOrder {
   sentToNomusAt          DateTime?
   nomusRawResponse       Json?
   Customer               Customer         @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  Proposal               Proposal         @relation(fields: [proposalId], references: [id], onUpdate: NoAction)
+  Proposal               Proposal?        @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items                  SalesOrderItem[]
 
   @@index([customerId])
@@ -416,27 +416,27 @@ model SalesOrder {
 }
 
 model SalesOrderItem {
-  id                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  salesOrderId        String       @db.Uuid
-  proposalItemId      String       @db.Uuid
-  productId           String       @db.Uuid
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salesOrderId        String        @db.Uuid
+  proposalItemId      String?       @db.Uuid
+  productId           String        @db.Uuid
   externalProductId   Int?
   skuSnapshot         String
   productNameSnapshot String
-  quantity            Decimal      @db.Decimal(20, 6)
+  quantity            Decimal       @db.Decimal(20, 6)
   unit                String?
-  unitCost            Decimal      @db.Decimal(20, 6)
-  negotiatedPrice     Decimal      @db.Decimal(20, 6)
-  totalNetValue       Decimal      @db.Decimal(20, 6)
-  totalCost           Decimal      @db.Decimal(20, 6)
-  marginValue         Decimal      @db.Decimal(20, 6)
-  marginPerc          Decimal      @db.Decimal(10, 6)
+  unitCost            Decimal       @db.Decimal(20, 6)
+  negotiatedPrice     Decimal       @db.Decimal(20, 6)
+  totalNetValue       Decimal       @db.Decimal(20, 6)
+  totalCost           Decimal       @db.Decimal(20, 6)
+  marginValue         Decimal       @db.Decimal(20, 6)
+  marginPerc          Decimal       @db.Decimal(10, 6)
   notes               String?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @default(now()) @updatedAt
-  Product             Product      @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  ProposalItem        ProposalItem @relation(fields: [proposalItemId], references: [id], onUpdate: NoAction)
-  SalesOrder          SalesOrder   @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @default(now()) @updatedAt
+  Product             Product       @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ProposalItem        ProposalItem? @relation(fields: [proposalItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  SalesOrder          SalesOrder    @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salesOrderId])
   @@index([proposalItemId])
