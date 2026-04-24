@@ -95,7 +95,7 @@ model Material {
   updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   MaterialPriceHistory MaterialPriceHistory[]
   ProductBOM           ProductBOM[]
-  PurchaseRequestItem PurchaseRequestItem[]
+  PurchaseRequestItem  PurchaseRequestItem[]
 }
 
 model MaterialPriceHistory {
@@ -234,134 +234,141 @@ model Simulation {
 }
 
 model NewProductSimulation {
-  id                 String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                 String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name               String
   status             NewProductSimulationStatus @default(SAVED)
-  sourceSimulationId String?                   @db.Uuid
+  sourceSimulationId String?                    @db.Uuid
   productName        String
   productSku         String?
   notes              String?
   snapshot           Json
-  savedAt            DateTime?                 @db.Timestamptz(6)
+  savedAt            DateTime?                  @db.Timestamptz(6)
   createdBy          String?
   origin             String?
-  createdAt          DateTime?                 @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime?                 @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt          DateTime?                  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@index([status, createdAt], map: "idx_NewProductSimulation_status_createdAt")
 }
 
 model Customer {
-  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyName String
-  tradeName   String?
-  taxId       String     @unique
-  stateTaxId  String?
-  contactName String?
-  email       String?
-  phone       String?
-  address     String?
-  city        String?
-  state       String?
-  zipCode     String?
-  country     String     @default("Brasil")
-  segment     String?
-  notes       String?
-  status      String     @default("ACTIVE")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @default(now()) @updatedAt
-  proposals   Proposal[]
-  salesOrders SalesOrder[]
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyName        String
+  tradeName          String?
+  taxId              String               @unique
+  stateTaxId         String?
+  contactName        String?
+  email              String?
+  phone              String?
+  address            String?
+  city               String?
+  state              String?
+  zipCode            String?
+  country            String               @default("Brasil")
+  segment            String?
+  notes              String?
+  status             String               @default("ACTIVE")
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @default(now()) @updatedAt
+  commercialNotes    String?
+  relationshipStatus String?
+  accountOwner       String?
+  CommercialActivity CommercialActivity[]
+  proposals          Proposal[]
+  salesOrders        SalesOrder[]
 }
 
 model Proposal {
-  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  number           Int            @unique @default(autoincrement())
-  sourceSystem     String?
-  externalProposalId Int?
-  externalProposalCode String?
-  externalCustomerId Int?
-  externalSellerId Int?
-  externalCompanyId Int?
+  id                     String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number                 Int                  @unique @default(autoincrement())
+  title                  String?
+  customerId             String               @db.Uuid
+  status                 ProposalStatus       @default(DRAFT)
+  responsible            String?
+  companyIssuer          String?
+  validityDays           Int                  @default(15)
+  paymentTerms           String?
+  paymentMethod          String?
+  deliveryTimeDays       Int?
+  freightCondition       String?              @default("CIF")
+  deliveryLocation       String?
+  notes                  String?
+  internalNotes          String?
+  totalItems             Int                  @default(0)
+  totalGrossValue        Decimal              @default(0) @db.Decimal(20, 6)
+  totalDiscount          Decimal              @default(0) @db.Decimal(20, 6)
+  totalNetValue          Decimal              @default(0) @db.Decimal(20, 6)
+  totalCost              Decimal              @default(0) @db.Decimal(20, 6)
+  totalMarginValue       Decimal              @default(0) @db.Decimal(20, 6)
+  totalMarginPerc        Decimal              @default(0) @db.Decimal(10, 6)
+  totalTaxes             Decimal              @default(0) @db.Decimal(20, 6)
+  totalCommission        Decimal              @default(0) @db.Decimal(20, 6)
+  totalFreight           Decimal              @default(0) @db.Decimal(20, 6)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @default(now()) @updatedAt
+  expectedCloseDate      DateTime?            @db.Timestamp(6)
+  source                 String?
+  lossReason             String?
+  lossReasonDetail       String?
+  probabilityPerc        Decimal?             @db.Decimal(5, 2)
+  priority               Int?
+  nextActionAt           DateTime?            @db.Timestamp(6)
+  nextActionNote         String?
+  sourceSystem           String?
+  externalProposalId     Int?
+  externalProposalCode   String?
+  externalCustomerId     Int?
+  externalSellerId       Int?
+  externalCompanyId      Int?
   externalMovementTypeId Int?
-  externalOpenedAt DateTime?
-  externalRawPayload Json?
-  title            String?
-  customerId       String         @db.Uuid
-  status           ProposalStatus @default(DRAFT)
-  responsible      String?
-  companyIssuer    String?
-  validityDays     Int            @default(15)
-  paymentTerms     String?
-  paymentMethod    String?
-  deliveryTimeDays Int?
-  freightCondition String?        @default("CIF")
-  deliveryLocation String?
-  notes            String?
-  internalNotes    String?
-  totalItems       Int            @default(0)
-  totalGrossValue  Decimal        @default(0) @db.Decimal(20, 6)
-  totalDiscount    Decimal        @default(0) @db.Decimal(20, 6)
-  totalNetValue    Decimal        @default(0) @db.Decimal(20, 6)
-  totalCost        Decimal        @default(0) @db.Decimal(20, 6)
-  totalMarginValue Decimal        @default(0) @db.Decimal(20, 6)
-  totalMarginPerc  Decimal        @default(0) @db.Decimal(10, 6)
-  totalTaxes       Decimal        @default(0) @db.Decimal(20, 6)
-  totalCommission  Decimal        @default(0) @db.Decimal(20, 6)
-  totalFreight     Decimal        @default(0) @db.Decimal(20, 6)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @default(now()) @updatedAt
-  Customer         Customer       @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  items            ProposalItem[]
-  salesOrder       SalesOrder?
+  externalOpenedAt       DateTime?            @db.Timestamptz(6)
+  externalRawPayload     Json?
+  CommercialActivity     CommercialActivity[]
+  Customer               Customer             @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items                  ProposalItem[]
+  salesOrder             SalesOrder?
 
+  @@unique([sourceSystem, externalProposalId])
   @@index([customerId])
   @@index([sourceSystem])
   @@index([externalProposalCode])
-  @@unique([sourceSystem, externalProposalId])
+  @@index([expectedCloseDate])
+  @@index([nextActionAt])
 }
 
 model ProposalItem {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  proposalId      String   @db.Uuid
-  externalItemId  Int?
-  externalProductId Int?
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  proposalId         String           @db.Uuid
+  productId          String           @db.Uuid
+  quantity           Decimal          @db.Decimal(20, 6)
+  unit               String?
+  unitCost           Decimal          @db.Decimal(20, 6)
+  suggestedPrice     Decimal          @db.Decimal(20, 6)
+  negotiatedPrice    Decimal          @db.Decimal(20, 6)
+  discountPerc       Decimal          @default(0) @db.Decimal(10, 6)
+  discountValue      Decimal          @default(0) @db.Decimal(20, 6)
+  marginValue        Decimal          @db.Decimal(20, 6)
+  marginPerc         Decimal          @db.Decimal(10, 6)
+  taxesPerc          Decimal          @default(0) @db.Decimal(10, 6)
+  taxesValue         Decimal          @default(0) @db.Decimal(20, 6)
+  commissionPerc     Decimal          @default(0) @db.Decimal(10, 6)
+  commissionValue    Decimal          @default(0) @db.Decimal(20, 6)
+  freightValue       Decimal          @default(0) @db.Decimal(20, 6)
+  notes              String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @default(now()) @updatedAt
+  externalItemId     Int?
+  externalProductId  Int?
   externalItemStatus String?
   externalRawPayload Json?
-  productId       String   @db.Uuid
-  quantity        Decimal  @db.Decimal(20, 6)
-  unit            String?
-  unitCost        Decimal  @db.Decimal(20, 6)
-  suggestedPrice  Decimal  @db.Decimal(20, 6)
-  negotiatedPrice Decimal  @db.Decimal(20, 6)
-  discountPerc    Decimal  @default(0) @db.Decimal(10, 6)
-  discountValue   Decimal  @default(0) @db.Decimal(20, 6)
-  marginValue     Decimal  @db.Decimal(20, 6)
-  marginPerc      Decimal  @db.Decimal(10, 6)
-  taxesPerc       Decimal  @default(0) @db.Decimal(10, 6)
-  taxesValue      Decimal  @default(0) @db.Decimal(20, 6)
-  commissionPerc  Decimal  @default(0) @db.Decimal(10, 6)
-  commissionValue Decimal  @default(0) @db.Decimal(20, 6)
-  freightValue    Decimal  @default(0) @db.Decimal(20, 6)
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
-  Product         Product  @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  Proposal        Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salesOrderItems SalesOrderItem[]
+  Product            Product          @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Proposal           Proposal         @relation(fields: [proposalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salesOrderItems    SalesOrderItem[]
 
+  @@unique([proposalId, externalItemId])
   @@index([productId])
   @@index([proposalId])
   @@index([externalProductId])
-  @@unique([proposalId, externalItemId])
-}
-
-enum SalesOrderStatus {
-  DRAFT
-  READY_TO_SEND
-  SENT_TO_NOMUS
-  CANCELLED
-  ERROR
 }
 
 model SalesOrder {
@@ -399,10 +406,9 @@ model SalesOrder {
   updatedAt              DateTime         @default(now()) @updatedAt
   sentToNomusAt          DateTime?
   nomusRawResponse       Json?
-
-  Proposal Proposal        @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  Customer Customer        @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  items    SalesOrderItem[]
+  Customer               Customer         @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Proposal               Proposal         @relation(fields: [proposalId], references: [id], onUpdate: NoAction)
+  items                  SalesOrderItem[]
 
   @@index([customerId])
   @@index([status])
@@ -410,28 +416,27 @@ model SalesOrder {
 }
 
 model SalesOrderItem {
-  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  salesOrderId        String   @db.Uuid
-  proposalItemId      String   @db.Uuid
-  productId           String   @db.Uuid
+  id                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salesOrderId        String       @db.Uuid
+  proposalItemId      String       @db.Uuid
+  productId           String       @db.Uuid
   externalProductId   Int?
   skuSnapshot         String
   productNameSnapshot String
-  quantity            Decimal  @db.Decimal(20, 6)
+  quantity            Decimal      @db.Decimal(20, 6)
   unit                String?
-  unitCost            Decimal  @db.Decimal(20, 6)
-  negotiatedPrice     Decimal  @db.Decimal(20, 6)
-  totalNetValue       Decimal  @db.Decimal(20, 6)
-  totalCost           Decimal  @db.Decimal(20, 6)
-  marginValue         Decimal  @db.Decimal(20, 6)
-  marginPerc          Decimal  @db.Decimal(10, 6)
+  unitCost            Decimal      @db.Decimal(20, 6)
+  negotiatedPrice     Decimal      @db.Decimal(20, 6)
+  totalNetValue       Decimal      @db.Decimal(20, 6)
+  totalCost           Decimal      @db.Decimal(20, 6)
+  marginValue         Decimal      @db.Decimal(20, 6)
+  marginPerc          Decimal      @db.Decimal(10, 6)
   notes               String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @default(now()) @updatedAt
-
-  SalesOrder   SalesOrder   @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  ProposalItem ProposalItem @relation(fields: [proposalItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  Product      Product      @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @default(now()) @updatedAt
+  Product             Product      @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ProposalItem        ProposalItem @relation(fields: [proposalItemId], references: [id], onUpdate: NoAction)
+  SalesOrder          SalesOrder   @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salesOrderId])
   @@index([proposalItemId])
@@ -449,6 +454,245 @@ model CostCalculationLog {
   suggestedPrice Decimal   @db.Decimal(20, 6)
   inputSnapshot  String
   Product        Product   @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model CostCenter {
+  id                      String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                    String                @unique
+  name                    String
+  description             String?
+  isActive                Boolean               @default(true)
+  notes                   String?
+  createdAt               DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+  purchaseRequestsDefault PurchaseRequest[]     @relation("PurchaseRequestDefaultCc")
+  purchaseRequestItems    PurchaseRequestItem[]
+}
+
+model PurchaseRequest {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number              Int                   @unique @default(autoincrement())
+  requester           String
+  department          String
+  requestCategory     String?
+  priority            PurchasePriority      @default(NORMAL)
+  status              PurchaseRequestStatus @default(RASCUNHO)
+  justification       String
+  defaultCostCenterId String                @db.Uuid
+  notes               String?
+  createdAt           DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+  defaultCostCenter   CostCenter            @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onUpdate: NoAction)
+  items               PurchaseRequestItem[]
+
+  @@index([status])
+  @@index([defaultCostCenterId])
+}
+
+model PurchaseRequestItem {
+  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseRequestId     String                 @db.Uuid
+  lineType              PurchaseLineType
+  materialId            String?                @db.Uuid
+  description           String
+  quantity              Decimal                @db.Decimal(20, 6)
+  unit                  String
+  costCenterId          String?                @db.Uuid
+  desiredDate           DateTime?              @db.Timestamptz(6)
+  priority              PurchasePriority?
+  notes                 String?
+  suggestedSupplier     String?
+  lineStatus            PurchaseItemLineStatus @default(ABERTA)
+  /// Referência/código no fornecedor (prepara cotação; não altera cadastro de Material)
+  supplierReference     String?
+  /// Embalagem ou apresentação desejada na compra
+  packagingPresentation String?
+  /// Quantidade mínima de pedido sugerida (MOQ) — apenas demanda; não é política de estoque
+  minOrderQtySuggested  Decimal?               @db.Decimal(20, 6)
+  costCenter            CostCenter?            @relation(fields: [costCenterId], references: [id], onUpdate: NoAction)
+  material              Material?              @relation(fields: [materialId], references: [id], onUpdate: NoAction)
+  purchaseRequest       PurchaseRequest        @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([purchaseRequestId])
+  @@index([materialId])
+}
+
+model CommercialActivity {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId   String    @db.Uuid
+  proposalId   String?   @db.Uuid
+  activityType String
+  subject      String?
+  description  String?
+  scheduledAt  DateTime? @db.Timestamp(6)
+  completedAt  DateTime? @db.Timestamp(6)
+  status       String    @default("OPEN")
+  priority     Int?
+  assignedTo   String?
+  closeReason  String?
+  createdAt    DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime  @default(now()) @db.Timestamp(6)
+  Customer     Customer  @relation(fields: [customerId], references: [id])
+  Proposal     Proposal? @relation(fields: [proposalId], references: [id])
+
+  @@index([customerId])
+  @@index([proposalId])
+  @@index([scheduledAt])
+}
+
+model CommercialAuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType  String
+  entityId    String   @db.Uuid
+  action      String
+  fieldName   String?
+  oldValue    String?
+  newValue    String?
+  performedAt DateTime @default(now()) @db.Timestamp(6)
+  performedBy String?
+
+  @@index([entityId])
+  @@index([entityType])
+  @@index([performedAt])
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductBOM_backup_420_01A_20260413 {
+  id             String?  @db.Uuid
+  productId      String?  @db.Uuid
+  materialId     String?  @db.Uuid
+  quantity       Decimal? @db.Decimal(20, 6)
+  lossPercentage Decimal? @db.Decimal(10, 6)
+  notes          String?
+  childProductId String?  @db.Uuid
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductBOM_backup_61051_mola_atual_20260413 {
+  id             String?  @db.Uuid
+  productId      String?  @db.Uuid
+  materialId     String?  @db.Uuid
+  quantity       Decimal? @db.Decimal(20, 6)
+  lossPercentage Decimal? @db.Decimal(10, 6)
+  notes          String?
+  childProductId String?  @db.Uuid
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductBOM_backup_add_80001_montagem_20260413 {
+  id             String?  @db.Uuid
+  productId      String?  @db.Uuid
+  materialId     String?  @db.Uuid
+  quantity       Decimal? @db.Decimal(20, 6)
+  lossPercentage Decimal? @db.Decimal(10, 6)
+  notes          String?
+  childProductId String?  @db.Uuid
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductBOM_backup_auto_remap_componentes_comprados_20260413 {
+  id             String?  @db.Uuid
+  productId      String?  @db.Uuid
+  materialId     String?  @db.Uuid
+  quantity       Decimal? @db.Decimal(20, 6)
+  lossPercentage Decimal? @db.Decimal(10, 6)
+  notes          String?
+  childProductId String?  @db.Uuid
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductBOM_backup_remap_material_lote2_20260413 {
+  id             String?  @db.Uuid
+  productId      String?  @db.Uuid
+  materialId     String?  @db.Uuid
+  quantity       Decimal? @db.Decimal(20, 6)
+  lossPercentage Decimal? @db.Decimal(10, 6)
+  notes          String?
+  childProductId String?  @db.Uuid
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductBOM_backup_remap_material_lote4_20260413 {
+  id             String?  @db.Uuid
+  productId      String?  @db.Uuid
+  materialId     String?  @db.Uuid
+  quantity       Decimal? @db.Decimal(20, 6)
+  lossPercentage Decimal? @db.Decimal(10, 6)
+  notes          String?
+  childProductId String?  @db.Uuid
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductBOM_backup_remove_obsoletos_20260413 {
+  id             String?  @db.Uuid
+  productId      String?  @db.Uuid
+  materialId     String?  @db.Uuid
+  quantity       Decimal? @db.Decimal(20, 6)
+  lossPercentage Decimal? @db.Decimal(10, 6)
+  notes          String?
+  childProductId String?  @db.Uuid
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Product_backup_process_componentes_materiais_20260413 {
+  id                 String?   @db.Uuid
+  sku                String?
+  name               String?
+  description        String?
+  version            String?
+  status             String?
+  defaultLotSize     Decimal?  @db.Decimal(20, 6)
+  createdAt          DateTime? @db.Timestamptz(6)
+  updatedAt          DateTime? @db.Timestamptz(6)
+  type               ItemType?
+  cycleTimeSeconds   Decimal?  @db.Decimal(20, 6)
+  cavities           Int?
+  setupTimeMin       Decimal?  @db.Decimal(20, 6)
+  efficiencyExpected Decimal?  @db.Decimal(10, 6)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Product_backup_process_xlsx_20260413 {
+  id                 String?   @db.Uuid
+  sku                String?
+  name               String?
+  description        String?
+  version            String?
+  status             String?
+  defaultLotSize     Decimal?  @db.Decimal(20, 6)
+  createdAt          DateTime? @db.Timestamptz(6)
+  updatedAt          DateTime? @db.Timestamptz(6)
+  type               ItemType?
+  cycleTimeSeconds   Decimal?  @db.Decimal(20, 6)
+  cavities           Int?
+  setupTimeMin       Decimal?  @db.Decimal(20, 6)
+  efficiencyExpected Decimal?  @db.Decimal(10, 6)
+
+  @@ignore
+}
+
+enum SalesOrderStatus {
+  DRAFT
+  READY_TO_SEND
+  SENT_TO_NOMUS
+  CANCELLED
+  ERROR
 }
 
 enum ItemType {
@@ -469,72 +713,6 @@ enum ProposalStatus {
 enum NewProductSimulationStatus {
   DRAFT
   SAVED
-}
-
-// --- Compras (Bloco 1 — solicitação; sem pedido/recebimento/financeiro) ---
-
-model CostCenter {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code        String   @unique
-  name        String
-  description String?
-  isActive    Boolean  @default(true)
-  notes       String?
-  createdAt   DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
-
-  purchaseRequestsDefault PurchaseRequest[]       @relation("PurchaseRequestDefaultCc")
-  purchaseRequestItems    PurchaseRequestItem[]
-}
-
-model PurchaseRequest {
-  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  number              Int                   @unique @default(autoincrement())
-  requester           String
-  department          String
-  requestCategory     String?
-  priority            PurchasePriority      @default(NORMAL)
-  status              PurchaseRequestStatus @default(RASCUNHO)
-  justification       String                @db.Text
-  defaultCostCenterId String                @db.Uuid
-  notes               String?               @db.Text
-  createdAt           DateTime              @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
-
-  defaultCostCenter CostCenter            @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  items             PurchaseRequestItem[]
-
-  @@index([status])
-  @@index([defaultCostCenterId])
-}
-
-model PurchaseRequestItem {
-  id                String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  purchaseRequestId String                 @db.Uuid
-  lineType          PurchaseLineType
-  materialId        String?                @db.Uuid
-  description       String
-  quantity          Decimal                @db.Decimal(20, 6)
-  unit              String
-  costCenterId      String?                @db.Uuid
-  desiredDate       DateTime?              @db.Timestamptz(6)
-  priority          PurchasePriority?
-  notes             String?
-  suggestedSupplier String?
-  /// Referência/código no fornecedor (prepara cotação; não altera cadastro de Material)
-  supplierReference String?
-  /// Embalagem ou apresentação desejada na compra
-  packagingPresentation String?
-  /// Quantidade mínima de pedido sugerida (MOQ) — apenas demanda; não é política de estoque
-  minOrderQtySuggested Decimal? @db.Decimal(20, 6)
-  lineStatus        PurchaseItemLineStatus @default(ABERTA)
-
-  purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  costCenter      CostCenter?     @relation(fields: [costCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  material        Material?       @relation(fields: [materialId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-
-  @@index([purchaseRequestId])
-  @@index([materialId])
 }
 
 enum PurchaseRequestStatus {
