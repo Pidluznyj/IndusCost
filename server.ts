@@ -3825,178 +3825,238 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  /**
-   * Inteligência de matéria-prima (demanda estimada) derivada de propostas.
-   * Base: itens de proposta + openBook do motor por produto (não é consumo real de chão de fábrica).
-   */
-  app.get("/api/products/material-demand/analysis", async (req, res) => {
-    const q = req.query;
-    const startDate = typeof q.startDate === "string" && q.startDate ? q.startDate : null;
-    const endDate = typeof q.endDate === "string" && q.endDate ? q.endDate : null;
-    const status = typeof q.status === "string" && q.status && q.status !== "ALL" ? q.status : null;
-    const customerId = typeof q.customerId === "string" && q.customerId ? q.customerId : null;
-    const productId = typeof q.productId === "string" && q.productId ? q.productId : null;
-    const materialId = typeof q.materialId === "string" && q.materialId ? q.materialId : null;
-    const companyIssuer =
-      typeof q.companyIssuer === "string" && q.companyIssuer.trim() ? q.companyIssuer.trim() : null;
+  type MaterialDemandMode = "quantity" | "value" | "proposals" | "products";
+  type MaterialDemandFilters = {
+    startDate: string | null;
+    endDate: string | null;
+    status: string | null;
+    customerId: string | null;
+    productId: string | null;
+    materialId: string | null;
+    companyIssuer: string | null;
+    mode: MaterialDemandMode;
+    search: string;
+  };
+
+  const materialDemandSortBySet = new Set([
+    "estimatedValueTotal",
+    "quantityTotal",
+    "proposalCount",
+    "productCount",
+    "latestUsageAt",
+    "description",
+  ]);
+
+  const parseMaterialDemandFilters = (
+    q: Record<string, unknown>,
+    overrides?: Partial<MaterialDemandFilters>
+  ): MaterialDemandFilters => {
     const modeRaw = typeof q.mode === "string" ? q.mode : "";
-    const mode =
+    const mode: MaterialDemandMode =
       modeRaw === "value" || modeRaw === "proposals" || modeRaw === "products" ? modeRaw : "quantity";
-    const search = typeof q.search === "string" ? q.search.trim().toLowerCase() : "";
-
-    const endOfDay = (iso: string) => {
-      const d = new Date(iso);
-      d.setHours(23, 59, 59, 999);
-      return d;
+    const base: MaterialDemandFilters = {
+      startDate: typeof q.startDate === "string" && q.startDate ? q.startDate : null,
+      endDate: typeof q.endDate === "string" && q.endDate ? q.endDate : null,
+      status: typeof q.status === "string" && q.status && q.status !== "ALL" ? q.status : null,
+      customerId: typeof q.customerId === "string" && q.customerId ? q.customerId : null,
+      productId: typeof q.productId === "string" && q.productId ? q.productId : null,
+      materialId: typeof q.materialId === "string" && q.materialId ? q.materialId : null,
+      companyIssuer: typeof q.companyIssuer === "string" && q.companyIssuer.trim() ? q.companyIssuer.trim() : null,
+      mode,
+      search: typeof q.search === "string" ? q.search.trim().toLowerCase() : "",
     };
-    const safeNum = (v: unknown): number | null => {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    };
+    return { ...base, ...(overrides ?? {}) };
+  };
 
-    try {
-      const where: any = {};
-      if (startDate) where.createdAt = { ...(where.createdAt || {}), gte: new Date(startDate) };
-      if (endDate) where.createdAt = { ...(where.createdAt || {}), lte: endOfDay(endDate) };
-      if (status) where.status = status;
-      if (customerId) where.customerId = customerId;
-      if (companyIssuer) where.companyIssuer = companyIssuer;
-      if (productId) where.items = { some: { productId } };
+  const endOfDay = (iso: string) => {
+    const d = new Date(iso);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  };
 
-      const proposals = await prisma.proposal.findMany({
-        where,
-        include: {
-          Customer: { select: { id: true, companyName: true } },
-          items: {
-            include: {
-              Product: { select: { id: true, sku: true, name: true } },
-            },
+  const safeNum = (v: unknown): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const parsePositiveInt = (value: unknown, fallback: number) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  };
+
+  const sortMaterialRows = (
+    rows: Array<Record<string, unknown>>,
+    sortBy: string,
+    sortDir: "asc" | "desc"
+  ) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const safeSortBy = materialDemandSortBySet.has(sortBy) ? sortBy : "estimatedValueTotal";
+    return [...rows].sort((a, b) => {
+      if (safeSortBy === "description") {
+        return ((String(a.description ?? "")).localeCompare(String(b.description ?? ""))) * dir;
+      }
+      if (safeSortBy === "latestUsageAt") {
+        return String(a.latestUsageAt ?? "").localeCompare(String(b.latestUsageAt ?? "")) * dir;
+      }
+      return ((Number(a[safeSortBy] ?? 0) - Number(b[safeSortBy] ?? 0))) * dir;
+    });
+  };
+
+  const sortRowsByMode = (rows: Array<Record<string, unknown>>, mode: MaterialDemandMode) => {
+    return [...rows].sort((a, b) => {
+      if (mode === "value") return Number(b.estimatedValueTotal ?? 0) - Number(a.estimatedValueTotal ?? 0);
+      if (mode === "proposals") return Number(b.proposalCount ?? 0) - Number(a.proposalCount ?? 0);
+      if (mode === "products") return Number(b.productCount ?? 0) - Number(a.productCount ?? 0);
+      return Number(b.quantityTotal ?? 0) - Number(a.quantityTotal ?? 0);
+    });
+  };
+
+  const buildMaterialDemandDataset = async (
+    filters: MaterialDemandFilters,
+    options?: { includeRowDetails?: boolean }
+  ) => {
+    const includeRowDetails = options?.includeRowDetails ?? true;
+    const where: any = {};
+    if (filters.startDate) where.createdAt = { ...(where.createdAt || {}), gte: new Date(filters.startDate) };
+    if (filters.endDate) where.createdAt = { ...(where.createdAt || {}), lte: endOfDay(filters.endDate) };
+    if (filters.status) where.status = filters.status;
+    if (filters.customerId) where.customerId = filters.customerId;
+    if (filters.companyIssuer) where.companyIssuer = filters.companyIssuer;
+    if (filters.productId) where.items = { some: { productId: filters.productId } };
+
+    const proposals = await prisma.proposal.findMany({
+      where,
+      include: {
+        Customer: { select: { id: true, companyName: true } },
+        items: {
+          include: {
+            Product: { select: { id: true, sku: true, name: true } },
           },
         },
-        orderBy: { createdAt: "desc" },
-      });
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-      const analysisCache = await initAnalysisCache();
-      const productAnalysisMemo = new Map<string, any>();
-      /** Mesmo cache da rota GET /cost-analysis — evita reexplodir a BOM por produto. */
-      const openBookExplosionMemo = new Map<string, Map<string, ExplosionRowCore>>();
-      const getProductAnalysis = async (pid: string) => {
-        if (productAnalysisMemo.has(pid)) return productAnalysisMemo.get(pid);
-        const a = await getProductCostAnalysis(pid, analysisCache, true);
-        productAnalysisMemo.set(pid, a);
-        return a;
-      };
+    const analysisCache = await initAnalysisCache();
+    const productAnalysisMemo = new Map<string, any>();
+    const openBookExplosionMemo = new Map<string, Map<string, ExplosionRowCore>>();
+    const getProductAnalysis = async (pid: string) => {
+      if (productAnalysisMemo.has(pid)) return productAnalysisMemo.get(pid);
+      const a = await getProductCostAnalysis(pid, analysisCache, true);
+      productAnalysisMemo.set(pid, a);
+      return a;
+    };
 
-      type MaterialAgg = {
-        materialId: string;
-        code: string | null;
-        description: string;
-        unit: string | null;
-        quantityTotal: number;
-        valueTotal: number;
+    type MaterialAgg = {
+      materialId: string;
+      code: string | null;
+      description: string;
+      unit: string | null;
+      quantityTotal: number;
+      valueTotal: number;
+      unitCostReference: number | null;
+      proposalIds: Set<string>;
+      productIds: Set<string>;
+      customerIds: Set<string>;
+      latestUsageAt: Date | null;
+      origins: Array<{
+        proposalId: string;
+        proposalNumber: number;
+        proposalStatus: string;
+        proposalDate: string;
+        customerId: string | null;
+        customerName: string | null;
+        companyIssuer: string | null;
+        productId: string;
+        productSku: string | null;
+        productName: string | null;
+        proposalQty: number;
+        materialQtyPerUnit: number | null;
+        estimatedQuantity: number | null;
         unitCostReference: number | null;
-        proposalIds: Set<string>;
-        productIds: Set<string>;
-        customerIds: Set<string>;
-        latestUsageAt: Date | null;
-        origins: Array<{
-          proposalId: string;
-          proposalNumber: number;
-          proposalStatus: string;
-          proposalDate: string;
-          customerId: string | null;
-          customerName: string | null;
-          companyIssuer: string | null;
-          productId: string;
-          productSku: string | null;
-          productName: string | null;
-          proposalQty: number;
-          materialQtyPerUnit: number | null;
-          estimatedQuantity: number | null;
-          unitCostReference: number | null;
-          estimatedValue: number | null;
-        }>;
-      };
+        estimatedValue: number | null;
+      }>;
+    };
 
-      const byMaterial = new Map<string, MaterialAgg>();
-      const byPeriod = new Map<string, { quantity: number; value: number; proposalIds: Set<string> }>();
-      const byProduct = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number; proposalIds: Set<string> }>();
-      const byCustomer = new Map<string, { customerId: string; customerName: string; quantity: number; value: number; proposalIds: Set<string> }>();
-      const byCompany = new Map<string, { companyIssuer: string; quantity: number; value: number; proposalIds: Set<string> }>();
+    const byMaterial = new Map<string, MaterialAgg>();
+    const byPeriod = new Map<string, { quantity: number; value: number; proposalIds: Set<string> }>();
+    const byProduct = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number; proposalIds: Set<string> }>();
+    const byCustomer = new Map<string, { customerId: string; customerName: string; quantity: number; value: number; proposalIds: Set<string> }>();
+    const byCompany = new Map<string, { companyIssuer: string; quantity: number; value: number; proposalIds: Set<string> }>();
 
-      for (const p of proposals) {
-        const proposalDate = new Date(p.createdAt);
-        const periodKey = `${proposalDate.getFullYear()}-${String(proposalDate.getMonth() + 1).padStart(2, "0")}`;
-        const customerName = p.Customer?.companyName ?? null;
-        const companyIssuerSafe = p.companyIssuer?.trim() || null;
+    for (const p of proposals) {
+      const proposalDate = new Date(p.createdAt);
+      const periodKey = `${proposalDate.getFullYear()}-${String(proposalDate.getMonth() + 1).padStart(2, "0")}`;
+      const customerName = p.Customer?.companyName ?? null;
+      const companyIssuerSafe = p.companyIssuer?.trim() || null;
 
-        for (const item of p.items) {
-          const proposalQty = safeNum(item.quantity) ?? 0;
-          if (!(proposalQty > 0)) continue;
+      for (const item of p.items) {
+        const proposalQty = safeNum(item.quantity) ?? 0;
+        if (!(proposalQty > 0)) continue;
 
-          const analysis = await getProductAnalysis(item.productId);
-          if (!analysis || isCostAnalysisFailure(analysis)) continue;
-          // openBook não vem em getProductCostAnalysis; explosão de MP é a mesma do GET /api/products/:id/cost-analysis
-          const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
-            item.productId,
-            analysisCache,
-            new Set<string>(),
-            openBookExplosionMemo
-          );
-          if (!(explosion instanceof Map)) continue;
-          const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
-          const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
-          const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
-          if (rows.length === 0) continue;
+        const analysis = await getProductAnalysis(item.productId);
+        if (!analysis || isCostAnalysisFailure(analysis)) continue;
+        const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
+          item.productId,
+          analysisCache,
+          new Set<string>(),
+          openBookExplosionMemo
+        );
+        if (!(explosion instanceof Map)) continue;
+        const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
+        const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
+        const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
+        if (rows.length === 0) continue;
 
-          for (const row of rows) {
-            const mid = typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
-            if (!mid) continue;
-            if (materialId && mid !== materialId) continue;
+        for (const row of rows) {
+          const mid = typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
+          if (!mid) continue;
+          if (filters.materialId && mid !== filters.materialId) continue;
 
-            const code = typeof row.code === "string" && row.code.trim() ? row.code.trim() : null;
-            const desc =
-              typeof row.description === "string" && row.description.trim()
-                ? row.description.trim()
-                : "Matéria-prima";
-            const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
-            const textHaystack = `${mid} ${code ?? ""} ${desc} ${unit ?? ""}`.toLowerCase();
-            if (search && !textHaystack.includes(search)) continue;
+          const code = typeof row.code === "string" && row.code.trim() ? row.code.trim() : null;
+          const desc =
+            typeof row.description === "string" && row.description.trim()
+              ? row.description.trim()
+              : "Matéria-prima";
+          const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
+          const textHaystack = `${mid} ${code ?? ""} ${desc} ${unit ?? ""}`.toLowerCase();
+          if (filters.search && !textHaystack.includes(filters.search)) continue;
 
-            const qtyPerUnit = safeNum(row.quantity);
-            const valuePerUnit = safeNum(row.totalCost);
-            const unitCostRef = safeNum(row.unitCostEffective);
-            const estimatedQuantity = qtyPerUnit != null ? qtyPerUnit * proposalQty : null;
-            const estimatedValue = valuePerUnit != null ? valuePerUnit * proposalQty : null;
+          const qtyPerUnit = safeNum(row.quantity);
+          const valuePerUnit = safeNum(row.totalCost);
+          const unitCostRef = safeNum(row.unitCostEffective);
+          const estimatedQuantity = qtyPerUnit != null ? qtyPerUnit * proposalQty : null;
+          const estimatedValue = valuePerUnit != null ? valuePerUnit * proposalQty : null;
 
-            const current =
-              byMaterial.get(mid) ??
-              {
-                materialId: mid,
-                code,
-                description: desc,
-                unit,
-                quantityTotal: 0,
-                valueTotal: 0,
-                unitCostReference: unitCostRef,
-                proposalIds: new Set<string>(),
-                productIds: new Set<string>(),
-                customerIds: new Set<string>(),
-                latestUsageAt: null,
-                origins: [],
-              };
+          const current =
+            byMaterial.get(mid) ??
+            {
+              materialId: mid,
+              code,
+              description: desc,
+              unit,
+              quantityTotal: 0,
+              valueTotal: 0,
+              unitCostReference: unitCostRef,
+              proposalIds: new Set<string>(),
+              productIds: new Set<string>(),
+              customerIds: new Set<string>(),
+              latestUsageAt: null,
+              origins: [],
+            };
 
-            if (estimatedQuantity != null) current.quantityTotal += estimatedQuantity;
-            if (estimatedValue != null) current.valueTotal += estimatedValue;
-            if (current.unitCostReference == null && unitCostRef != null) {
-              current.unitCostReference = unitCostRef;
-            }
-            current.proposalIds.add(p.id);
-            current.productIds.add(item.productId);
-            if (p.customerId) current.customerIds.add(p.customerId);
-            if (!current.latestUsageAt || proposalDate > current.latestUsageAt) {
-              current.latestUsageAt = proposalDate;
-            }
+          if (estimatedQuantity != null) current.quantityTotal += estimatedQuantity;
+          if (estimatedValue != null) current.valueTotal += estimatedValue;
+          if (current.unitCostReference == null && unitCostRef != null) {
+            current.unitCostReference = unitCostRef;
+          }
+          current.proposalIds.add(p.id);
+          current.productIds.add(item.productId);
+          if (p.customerId) current.customerIds.add(p.customerId);
+          if (!current.latestUsageAt || proposalDate > current.latestUsageAt) {
+            current.latestUsageAt = proposalDate;
+          }
+          if (includeRowDetails) {
             current.origins.push({
               proposalId: p.id,
               proposalNumber: p.number,
@@ -4014,76 +4074,78 @@ app.delete("/api/employees/:id", async (req, res) => {
               unitCostReference: unitCostRef,
               estimatedValue,
             });
-            byMaterial.set(mid, current);
-
-            const periodAgg =
-              byPeriod.get(periodKey) ?? { quantity: 0, value: 0, proposalIds: new Set<string>() };
-            if (estimatedQuantity != null) periodAgg.quantity += estimatedQuantity;
-            if (estimatedValue != null) periodAgg.value += estimatedValue;
-            periodAgg.proposalIds.add(p.id);
-            byPeriod.set(periodKey, periodAgg);
-
-            const pid = item.productId;
-            const prodAgg =
-              byProduct.get(pid) ??
-              {
-                productId: pid,
-                sku: item.Product?.sku?.trim() || null,
-                name: item.Product?.name?.trim() || "Produto",
-                quantity: 0,
-                value: 0,
-                proposalIds: new Set<string>(),
-              };
-            if (estimatedQuantity != null) prodAgg.quantity += estimatedQuantity;
-            if (estimatedValue != null) prodAgg.value += estimatedValue;
-            prodAgg.proposalIds.add(p.id);
-            byProduct.set(pid, prodAgg);
-
-            const cid = p.customerId ?? "__unknown_customer__";
-            const custAgg =
-              byCustomer.get(cid) ??
-              {
-                customerId: p.customerId ?? "",
-                customerName: customerName ?? "Cliente",
-                quantity: 0,
-                value: 0,
-                proposalIds: new Set<string>(),
-              };
-            if (estimatedQuantity != null) custAgg.quantity += estimatedQuantity;
-            if (estimatedValue != null) custAgg.value += estimatedValue;
-            custAgg.proposalIds.add(p.id);
-            byCustomer.set(cid, custAgg);
-
-            const companyKey = companyIssuerSafe ?? "Não informado";
-            const compAgg =
-              byCompany.get(companyKey) ??
-              { companyIssuer: companyKey, quantity: 0, value: 0, proposalIds: new Set<string>() };
-            if (estimatedQuantity != null) compAgg.quantity += estimatedQuantity;
-            if (estimatedValue != null) compAgg.value += estimatedValue;
-            compAgg.proposalIds.add(p.id);
-            byCompany.set(companyKey, compAgg);
           }
+          byMaterial.set(mid, current);
+
+          const periodAgg =
+            byPeriod.get(periodKey) ?? { quantity: 0, value: 0, proposalIds: new Set<string>() };
+          if (estimatedQuantity != null) periodAgg.quantity += estimatedQuantity;
+          if (estimatedValue != null) periodAgg.value += estimatedValue;
+          periodAgg.proposalIds.add(p.id);
+          byPeriod.set(periodKey, periodAgg);
+
+          const pid = item.productId;
+          const prodAgg =
+            byProduct.get(pid) ??
+            {
+              productId: pid,
+              sku: item.Product?.sku?.trim() || null,
+              name: item.Product?.name?.trim() || "Produto",
+              quantity: 0,
+              value: 0,
+              proposalIds: new Set<string>(),
+            };
+          if (estimatedQuantity != null) prodAgg.quantity += estimatedQuantity;
+          if (estimatedValue != null) prodAgg.value += estimatedValue;
+          prodAgg.proposalIds.add(p.id);
+          byProduct.set(pid, prodAgg);
+
+          const cid = p.customerId ?? "__unknown_customer__";
+          const custAgg =
+            byCustomer.get(cid) ??
+            {
+              customerId: p.customerId ?? "",
+              customerName: customerName ?? "Cliente",
+              quantity: 0,
+              value: 0,
+              proposalIds: new Set<string>(),
+            };
+          if (estimatedQuantity != null) custAgg.quantity += estimatedQuantity;
+          if (estimatedValue != null) custAgg.value += estimatedValue;
+          custAgg.proposalIds.add(p.id);
+          byCustomer.set(cid, custAgg);
+
+          const companyKey = companyIssuerSafe ?? "Não informado";
+          const compAgg =
+            byCompany.get(companyKey) ??
+            { companyIssuer: companyKey, quantity: 0, value: 0, proposalIds: new Set<string>() };
+          if (estimatedQuantity != null) compAgg.quantity += estimatedQuantity;
+          if (estimatedValue != null) compAgg.value += estimatedValue;
+          compAgg.proposalIds.add(p.id);
+          byCompany.set(companyKey, compAgg);
         }
       }
+    }
 
-      const materials = [...byMaterial.values()];
-      const totalEstimatedQuantity = materials.reduce((acc, m) => acc + m.quantityTotal, 0);
-      const totalEstimatedValue = materials.reduce((acc, m) => acc + m.valueTotal, 0);
+    const materials = [...byMaterial.values()];
+    const totalEstimatedQuantity = materials.reduce((acc, m) => acc + m.quantityTotal, 0);
+    const totalEstimatedValue = materials.reduce((acc, m) => acc + m.valueTotal, 0);
 
-      const allProposalIds = new Set<string>();
-      const allProductIds = new Set<string>();
-      const allCustomerIds = new Set<string>();
-      for (const m of materials) {
-        m.proposalIds.forEach((x) => allProposalIds.add(x));
-        m.productIds.forEach((x) => allProductIds.add(x));
-        m.customerIds.forEach((x) => allCustomerIds.add(x));
-      }
+    const allProposalIds = new Set<string>();
+    const allProductIds = new Set<string>();
+    const allCustomerIds = new Set<string>();
+    for (const m of materials) {
+      m.proposalIds.forEach((x) => allProposalIds.add(x));
+      m.productIds.forEach((x) => allProductIds.add(x));
+      m.customerIds.forEach((x) => allCustomerIds.add(x));
+    }
 
-      const rows = materials.map((m) => {
-        const byProd = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number }>();
-        const byCust = new Map<string, { customerId: string; customerName: string; quantity: number; value: number }>();
-        const byProp = new Map<string, { proposalId: string; proposalNumber: number; proposalDate: string; proposalStatus: string; quantity: number; value: number }>();
+    const rows = materials.map((m) => {
+      const byProd = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number }>();
+      const byCust = new Map<string, { customerId: string; customerName: string; quantity: number; value: number }>();
+      const byProp = new Map<string, { proposalId: string; proposalNumber: number; proposalDate: string; proposalStatus: string; quantity: number; value: number }>();
 
+      if (includeRowDetails) {
         for (const o of m.origins) {
           const pKey = o.productId;
           const p = byProd.get(pKey) ?? {
@@ -4120,166 +4182,316 @@ app.delete("/api/employees/:id", async (req, res) => {
           if (o.estimatedValue != null) pr.value += o.estimatedValue;
           byProp.set(o.proposalId, pr);
         }
+      }
 
-        return {
-          materialId: m.materialId,
-          code: m.code,
-          description: m.description,
-          unit: m.unit,
-          quantityTotal: m.quantityTotal,
-          unitCostReference:
-            m.unitCostReference != null
-              ? m.unitCostReference
-              : m.quantityTotal > 0
-                ? m.valueTotal / m.quantityTotal
-                : null,
-          estimatedValueTotal: m.valueTotal,
-          proposalCount: m.proposalIds.size,
-          productCount: m.productIds.size,
-          customerCount: m.customerIds.size,
-          latestUsageAt: m.latestUsageAt ? m.latestUsageAt.toISOString() : null,
-          pctOfTotalQuantity:
-            totalEstimatedQuantity > 0 ? (m.quantityTotal / totalEstimatedQuantity) * 100 : null,
-          pctOfTotalValue: totalEstimatedValue > 0 ? (m.valueTotal / totalEstimatedValue) * 100 : null,
-          topProducts: [...byProd.values()]
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 8),
-          topCustomers: [...byCust.values()]
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 8),
-          proposals: [...byProp.values()]
-            .sort((a, b) => b.proposalDate.localeCompare(a.proposalDate))
-            .slice(0, 12),
-        };
+      const baseRow = {
+        materialId: m.materialId,
+        code: m.code,
+        description: m.description,
+        unit: m.unit,
+        quantityTotal: m.quantityTotal,
+        unitCostReference:
+          m.unitCostReference != null
+            ? m.unitCostReference
+            : m.quantityTotal > 0
+              ? m.valueTotal / m.quantityTotal
+              : null,
+        estimatedValueTotal: m.valueTotal,
+        proposalCount: m.proposalIds.size,
+        productCount: m.productIds.size,
+        customerCount: m.customerIds.size,
+        latestUsageAt: m.latestUsageAt ? m.latestUsageAt.toISOString() : null,
+        pctOfTotalQuantity:
+          totalEstimatedQuantity > 0 ? (m.quantityTotal / totalEstimatedQuantity) * 100 : null,
+        pctOfTotalValue: totalEstimatedValue > 0 ? (m.valueTotal / totalEstimatedValue) * 100 : null,
+      };
+
+      if (!includeRowDetails) {
+        return baseRow;
+      }
+
+      return {
+        ...baseRow,
+        topProducts: [...byProd.values()]
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 8),
+        topCustomers: [...byCust.values()]
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 8),
+        proposals: [...byProp.values()]
+          .sort((a, b) => b.proposalDate.localeCompare(a.proposalDate))
+          .slice(0, 12),
+      };
+    });
+
+    const leader = [...rows].sort((a, b) => Number(b.quantityTotal ?? 0) - Number(a.quantityTotal ?? 0))[0] ?? null;
+    const leaderSharePct =
+      leader && totalEstimatedQuantity > 0
+        ? (Number(leader.quantityTotal ?? 0) / totalEstimatedQuantity) * 100
+        : null;
+
+    const semantics = {
+      source: "PROPOSAL_ITEMS_WITH_PRODUCT_OPEN_BOOK",
+      meaning: "DEMANDA_ESTIMADA_MATERIA_PRIMA",
+      label:
+        "Base derivada de itens de proposta. Os valores representam demanda/uso estimado de matéria-prima, não consumo real de produção.",
+    };
+
+    const filtersApplied = {
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      status: filters.status,
+      customerId: filters.customerId,
+      productId: filters.productId,
+      materialId: filters.materialId,
+      companyIssuer: filters.companyIssuer,
+      mode: filters.mode,
+      search: filters.search || null,
+    };
+
+    const summary = {
+      totalEstimatedQuantity,
+      totalEstimatedValue,
+      uniqueMaterials: rows.length,
+      proposalCount: allProposalIds.size,
+      productCount: allProductIds.size,
+      customerCount: allCustomerIds.size,
+      leaderMaterial: leader
+        ? {
+            materialId: leader.materialId,
+            code: leader.code,
+            description: leader.description,
+            quantityTotal: leader.quantityTotal,
+            estimatedValueTotal: leader.estimatedValueTotal,
+          }
+        : null,
+      leaderSharePct,
+    };
+
+    const charts = {
+      paretoByQuantity: [...rows]
+        .sort((a, b) => Number(b.quantityTotal ?? 0) - Number(a.quantityTotal ?? 0))
+        .slice(0, 15),
+      paretoByValue: [...rows]
+        .sort((a, b) => Number(b.estimatedValueTotal ?? 0) - Number(a.estimatedValueTotal ?? 0))
+        .slice(0, 15),
+      evolution: [...byPeriod.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([period, v]) => ({
+          period,
+          quantity: v.quantity,
+          value: v.value,
+          proposalCount: v.proposalIds.size,
+        })),
+      byProduct: [...byProduct.values()]
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 20)
+        .map((x) => ({
+          productId: x.productId,
+          sku: x.sku,
+          name: x.name,
+          quantity: x.quantity,
+          value: x.value,
+          proposalCount: x.proposalIds.size,
+        })),
+      byCustomer: [...byCustomer.values()]
+        .filter((x) => x.customerId)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 20)
+        .map((x) => ({
+          customerId: x.customerId,
+          customerName: x.customerName,
+          quantity: x.quantity,
+          value: x.value,
+          proposalCount: x.proposalIds.size,
+        })),
+      byCompanyIssuer: [...byCompany.values()]
+        .sort((a, b) => b.value - a.value)
+        .map((x) => ({
+          companyIssuer: x.companyIssuer,
+          quantity: x.quantity,
+          value: x.value,
+          proposalCount: x.proposalIds.size,
+        })),
+    };
+
+    const facets = {
+      statuses: [...new Set(proposals.map((p) => p.status))].sort(),
+      customers: [...new Map(
+        proposals
+          .filter((p) => p.Customer?.id)
+          .map((p) => [p.Customer!.id, { id: p.Customer!.id, companyName: p.Customer!.companyName }])
+      ).values()],
+      products: [...new Map(
+        proposals.flatMap((p) =>
+          p.items.map((it) => [
+            it.productId,
+            { id: it.productId, sku: it.Product?.sku ?? null, name: it.Product?.name ?? "Produto" },
+          ] as const)
+        )
+      ).values()],
+      materials: rows
+        .map((r) => ({
+          materialId: r.materialId,
+          code: r.code,
+          description: r.description,
+          unit: r.unit,
+        }))
+        .sort((a, b) => String(a.description ?? "").localeCompare(String(b.description ?? ""))),
+      companyIssuers: [
+        ...new Set(
+          proposals
+            .map((p) => p.companyIssuer?.trim())
+            .filter((v): v is string => Boolean(v))
+        ),
+      ].sort(),
+    };
+
+    return {
+      semantics,
+      filtersApplied,
+      summary,
+      charts,
+      rows,
+      facets,
+      sortedRowsByMode: sortRowsByMode(rows, filters.mode),
+    };
+  };
+
+  app.get("/api/products/material-demand/summary", async (req, res) => {
+    try {
+      const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
+      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
+      res.json({
+        semantics: data.semantics,
+        filtersApplied: data.filtersApplied,
+        summary: data.summary,
+        charts: data.charts,
+        facets: data.facets,
       });
+    } catch (error) {
+      console.error("Material demand summary endpoint error:", error);
+      res.status(500).json({ error: "Erro ao montar resumo de demanda de matéria-prima." });
+    }
+  });
 
-      const sortedRows = [...rows].sort((a, b) => {
-        if (mode === "value") return b.estimatedValueTotal - a.estimatedValueTotal;
-        if (mode === "proposals") return b.proposalCount - a.proposalCount;
-        if (mode === "products") return b.productCount - a.productCount;
-        return b.quantityTotal - a.quantityTotal;
-      });
+  app.get("/api/products/material-demand/rows", async (req, res) => {
+    try {
+      const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
+      const page = parsePositiveInt((req.query as Record<string, unknown>).page, 1);
+      const pageSize = Math.min(parsePositiveInt((req.query as Record<string, unknown>).pageSize, 20), 100);
+      const sortByRaw =
+        typeof (req.query as Record<string, unknown>).sortBy === "string"
+          ? String((req.query as Record<string, unknown>).sortBy)
+          : "estimatedValueTotal";
+      const sortDirRaw =
+        typeof (req.query as Record<string, unknown>).sortDir === "string"
+          ? String((req.query as Record<string, unknown>).sortDir).toLowerCase()
+          : "desc";
+      const sortDir: "asc" | "desc" = sortDirRaw === "asc" ? "asc" : "desc";
+      const sortBy = materialDemandSortBySet.has(sortByRaw) ? sortByRaw : "estimatedValueTotal";
 
-      const leader = [...rows].sort((a, b) => b.quantityTotal - a.quantityTotal)[0] ?? null;
-      const leaderSharePct =
-        leader && totalEstimatedQuantity > 0
-          ? (leader.quantityTotal / totalEstimatedQuantity) * 100
-          : null;
+      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
+      const sorted = sortMaterialRows(data.rows, sortBy, sortDir);
+      const totalItems = sorted.length;
+      const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+      const safePage = Math.min(page, totalPages);
+      const start = (safePage - 1) * pageSize;
+      const rows = sorted.slice(start, start + pageSize);
 
       res.json({
-        semantics: {
-          source: "PROPOSAL_ITEMS_WITH_PRODUCT_OPEN_BOOK",
-          meaning: "DEMANDA_ESTIMADA_MATERIA_PRIMA",
-          label:
-            "Base derivada de itens de proposta. Os valores representam demanda/uso estimado de matéria-prima, não consumo real de produção.",
+        semantics: data.semantics,
+        filtersApplied: data.filtersApplied,
+        pagination: {
+          page: safePage,
+          pageSize,
+          totalItems,
+          totalPages,
         },
-        filtersApplied: {
-          startDate,
-          endDate,
-          status,
-          customerId,
-          productId,
-          materialId,
-          companyIssuer,
-          mode,
-          search: search || null,
+        sort: {
+          sortBy,
+          sortDir,
         },
-        summary: {
-          totalEstimatedQuantity,
-          totalEstimatedValue,
-          uniqueMaterials: rows.length,
-          proposalCount: allProposalIds.size,
-          productCount: allProductIds.size,
-          customerCount: allCustomerIds.size,
-          leaderMaterial: leader
-            ? {
-                materialId: leader.materialId,
-                code: leader.code,
-                description: leader.description,
-                quantityTotal: leader.quantityTotal,
-                estimatedValueTotal: leader.estimatedValueTotal,
-              }
-            : null,
-          leaderSharePct,
+        rows,
+      });
+    } catch (error) {
+      console.error("Material demand rows endpoint error:", error);
+      res.status(500).json({ error: "Erro ao montar linhas de demanda de matéria-prima." });
+    }
+  });
+
+  app.get("/api/products/material-demand/materials/:materialId/details", async (req, res) => {
+    try {
+      const materialIdParam = typeof req.params.materialId === "string" ? req.params.materialId.trim() : "";
+      if (!materialIdParam) {
+        return res.status(400).json({ error: "materialId é obrigatório." });
+      }
+      const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>, {
+        materialId: materialIdParam,
+      });
+      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: true });
+      const target = data.rows.find((r) => r.materialId === materialIdParam) as Record<string, unknown> | undefined;
+      if (!target) {
+        return res.status(404).json({ error: "Matéria-prima não encontrada para os filtros informados." });
+      }
+      res.json({
+        semantics: data.semantics,
+        filtersApplied: data.filtersApplied,
+        material: {
+          materialId: target.materialId,
+          code: target.code,
+          description: target.description,
+          unit: target.unit,
         },
-        charts: {
-          paretoByQuantity: [...rows]
-            .sort((a, b) => b.quantityTotal - a.quantityTotal)
-            .slice(0, 15),
-          paretoByValue: [...rows]
-            .sort((a, b) => b.estimatedValueTotal - a.estimatedValueTotal)
-            .slice(0, 15),
-          evolution: [...byPeriod.entries()]
-            .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([period, v]) => ({
-              period,
-              quantity: v.quantity,
-              value: v.value,
-              proposalCount: v.proposalIds.size,
-            })),
-          byProduct: [...byProduct.values()]
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 20)
-            .map((x) => ({
-              productId: x.productId,
-              sku: x.sku,
-              name: x.name,
-              quantity: x.quantity,
-              value: x.value,
-              proposalCount: x.proposalIds.size,
-            })),
-          byCustomer: [...byCustomer.values()]
-            .filter((x) => x.customerId)
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 20)
-            .map((x) => ({
-              customerId: x.customerId,
-              customerName: x.customerName,
-              quantity: x.quantity,
-              value: x.value,
-              proposalCount: x.proposalIds.size,
-            })),
-          byCompanyIssuer: [...byCompany.values()]
-            .sort((a, b) => b.value - a.value)
-            .map((x) => ({
-              companyIssuer: x.companyIssuer,
-              quantity: x.quantity,
-              value: x.value,
-              proposalCount: x.proposalIds.size,
-            })),
+        totals: {
+          quantityTotal: target.quantityTotal,
+          estimatedValueTotal: target.estimatedValueTotal,
+          proposalCount: target.proposalCount,
+          productCount: target.productCount,
+          customerCount: target.customerCount,
+          unitCostReference: target.unitCostReference,
+          latestUsageAt: target.latestUsageAt,
         },
-        rows: sortedRows,
-        facets: {
-          statuses: [...new Set(proposals.map((p) => p.status))].sort(),
-          customers: [...new Map(
-            proposals
-              .filter((p) => p.Customer?.id)
-              .map((p) => [p.Customer!.id, { id: p.Customer!.id, companyName: p.Customer!.companyName }])
-          ).values()],
-          products: [...new Map(
-            proposals.flatMap((p) =>
-              p.items.map((it) => [
-                it.productId,
-                { id: it.productId, sku: it.Product?.sku ?? null, name: it.Product?.name ?? "Produto" },
-              ] as const)
-            )
-          ).values()],
-          materials: rows
-            .map((r) => ({
-              materialId: r.materialId,
-              code: r.code,
-              description: r.description,
-              unit: r.unit,
-            }))
-            .sort((a, b) => a.description.localeCompare(b.description)),
-          companyIssuers: [
-            ...new Set(
-              proposals
-                .map((p) => p.companyIssuer?.trim())
-                .filter((v): v is string => Boolean(v))
-            ),
-          ].sort(),
-        },
+        topProducts: Array.isArray(target.topProducts) ? target.topProducts : [],
+        topCustomers: Array.isArray(target.topCustomers) ? target.topCustomers : [],
+        proposals: Array.isArray(target.proposals) ? target.proposals : [],
+      });
+    } catch (error) {
+      console.error("Material demand details endpoint error:", error);
+      res.status(500).json({ error: "Erro ao montar detalhes de demanda de matéria-prima." });
+    }
+  });
+
+  app.get("/api/products/material-demand/facets", async (req, res) => {
+    try {
+      const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
+      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
+      res.json({
+        semantics: data.semantics,
+        filtersApplied: data.filtersApplied,
+        facets: data.facets,
+      });
+    } catch (error) {
+      console.error("Material demand facets endpoint error:", error);
+      res.status(500).json({ error: "Erro ao montar filtros de demanda de matéria-prima." });
+    }
+  });
+
+  /**
+   * Inteligência de matéria-prima (demanda estimada) derivada de propostas.
+   * Base: itens de proposta + openBook do motor por produto (não é consumo real de chão de fábrica).
+   */
+  app.get("/api/products/material-demand/analysis", async (req, res) => {
+    try {
+      const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
+      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: true });
+      res.json({
+        semantics: data.semantics,
+        filtersApplied: data.filtersApplied,
+        summary: data.summary,
+        charts: data.charts,
+        rows: data.sortedRowsByMode,
+        facets: data.facets,
       });
     } catch (error) {
       console.error("Material demand analysis endpoint error:", error);
