@@ -15,7 +15,8 @@ type BlockReason =
   | "CUSTOMER_NOT_RESOLVED"
   | "MISSING_PRODUCT_SKU"
   | "INACTIVE_PRODUCT_NOMUS"
-  | "PROPOSAL_ITEM_REQUIRED_BY_SCHEMA";
+  | "INVALID_NOMUS_ORDER"
+  | "ORDER_WITHOUT_ITEMS";
 
 type BlockedSalesOrder = {
   externalSalesOrderId: number;
@@ -30,7 +31,7 @@ type BlockedSalesOrder = {
 type EligibleSalesOrderPlan = {
   externalSalesOrderId: number;
   codigoPedido: string;
-  proposalId: string;
+  proposalId: string | null;
   customerId: string;
   lineCount: number;
 };
@@ -41,7 +42,7 @@ type DryRunResult = {
   blockedCount: number;
   blockedReasons: Record<string, number>;
   nomusItemStatusDistribution: Record<string, number>;
-  createsPreview: Array<{ externalSalesOrderId: number; codigoPedido: string; proposalId: string }>;
+  createsPreview: Array<{ externalSalesOrderId: number; codigoPedido: string; proposalId: string | null }>;
   updatesPreview: Array<{ externalSalesOrderId: number; codigoPedido: string; id: string }>;
   blockedPreview: BlockedSalesOrder[];
   criticalSchemaNote: string;
@@ -359,7 +360,7 @@ function analyzeOrder(
       blocked: {
         externalSalesOrderId: 0,
         codigoPedido,
-        reasons: ["PROPOSAL_ITEM_REQUIRED_BY_SCHEMA"],
+        reasons: ["INVALID_NOMUS_ORDER"],
         missingCustomerExternalId: null,
         missingSkus: [],
         inactiveNomusProductIds: [],
@@ -387,12 +388,12 @@ function analyzeOrder(
     : [];
 
   if (itemsRaw.length === 0) {
-    mergeReasons(reasons, ["PROPOSAL_ITEM_REQUIRED_BY_SCHEMA"]);
-    proposalItemDetail = "Pedido sem itensPedido: não há ProposalItem para satisfazer SalesOrderItem.proposalItemId (schema atual).";
+    mergeReasons(reasons, ["ORDER_WITHOUT_ITEMS"]);
+    proposalItemDetail = "Pedido sem itensPedido no payload Nomus.";
   }
 
   const lineReasons: BlockReason[][] = [];
-  const resolvedLines: Array<{ proposalItemId: string; proposalId: string; productId: string }> = [];
+  const resolvedLines: Array<{ proposalItemId: string | null; proposalId: string | null; productId: string }> = [];
 
   for (const item of itemsRaw) {
     const lineR = new Set<BlockReason>();
@@ -471,27 +472,36 @@ function analyzeOrder(
         continue;
       }
 
-      lineR.add("PROPOSAL_ITEM_REQUIRED_BY_SCHEMA");
-      mergeReasons(reasons, ["PROPOSAL_ITEM_REQUIRED_BY_SCHEMA"]);
-      proposalItemDetail =
-        "Produto resolvido por SKU, porém não existe ProposalItem com externalProductId igual a idProduto para este cliente (SalesOrderItem.proposalItemId obrigatório).";
-      lineReasons.push([...lineR]);
+      resolvedLines.push({
+        proposalItemId: null,
+        proposalId: null,
+        productId: localProduct.id,
+      });
+      lineReasons.push([]);
       continue;
     }
 
-    lineR.add("PROPOSAL_ITEM_REQUIRED_BY_SCHEMA");
-    mergeReasons(reasons, ["PROPOSAL_ITEM_REQUIRED_BY_SCHEMA"]);
-    proposalItemDetail =
-      "Múltiplos ProposalItem candidatos para o mesmo cliente e idProduto; não é possível escolher um vínculo único com segurança.";
+    if (localProduct) {
+      resolvedLines.push({
+        proposalItemId: null,
+        proposalId: null,
+        productId: localProduct.id,
+      });
+      lineReasons.push([]);
+      continue;
+    }
+
+    lineR.add("MISSING_PRODUCT_SKU");
+    missingSkus.add(`idProduto=${idProduto}`);
+    mergeReasons(reasons, ["MISSING_PRODUCT_SKU"]);
     lineReasons.push([...lineR]);
   }
 
-  const proposalIds = new Set(resolvedLines.map((l) => l.proposalId));
-  if (itemsRaw.length > 0 && resolvedLines.length === itemsRaw.length && proposalIds.size > 1) {
-    mergeReasons(reasons, ["PROPOSAL_ITEM_REQUIRED_BY_SCHEMA"]);
-    proposalItemDetail =
-      "Linhas do pedido mapeiam ProposalItems de propostas diferentes; SalesOrder exige um único proposalId.";
-  }
+  const proposalIds = new Set(
+    resolvedLines
+      .map((l) => l.proposalId)
+      .filter((x): x is string => typeof x === "string" && x.length > 0)
+  );
 
   if (reasons.size > 0) {
     return {
@@ -509,7 +519,7 @@ function analyzeOrder(
     };
   }
 
-  const singleProposalId = [...proposalIds][0]!;
+  const singleProposalId = proposalIds.size === 1 ? [...proposalIds][0]! : null;
 
   return {
     eligible: {
@@ -649,7 +659,13 @@ async function main(): Promise<void> {
     if (bl) blocked.push(bl);
   }
 
-  const proposalIdsForSo = [...new Set(eligible.map((e) => e.proposalId))];
+  const proposalIdsForSo = [
+    ...new Set(
+      eligible
+        .map((e) => e.proposalId)
+        .filter((x): x is string => typeof x === "string" && x.length > 0)
+    ),
+  ];
   const salesOrdersForProposals =
     proposalIdsForSo.length === 0
       ? []
@@ -661,27 +677,31 @@ async function main(): Promise<void> {
 
   const eligibleAfterProposalSlot: EligibleSalesOrderPlan[] = [];
   for (const plan of eligible) {
+    if (!plan.proposalId) {
+      eligibleAfterProposalSlot.push(plan);
+      continue;
+    }
+
     const existingSo = salesOrderByProposalId.get(plan.proposalId);
     if (!existingSo) {
       eligibleAfterProposalSlot.push(plan);
       continue;
     }
+
     const sameNomusKey =
       existingSo.sourceSystem === SOURCE_SYSTEM &&
       existingSo.externalSalesOrderId === plan.externalSalesOrderId;
+
     if (sameNomusKey) {
       eligibleAfterProposalSlot.push(plan);
       continue;
     }
 
-    blocked.push({
-      externalSalesOrderId: plan.externalSalesOrderId,
-      codigoPedido: plan.codigoPedido,
-      reasons: ["PROPOSAL_ITEM_REQUIRED_BY_SCHEMA"],
-      missingCustomerExternalId: null,
-      missingSkus: [],
-      inactiveNomusProductIds: [],
-      proposalItemDetail: `A proposta ${plan.proposalId} já possui SalesOrder (${existingSo.id}); SalesOrder.proposalId é único no schema.`,
+    // Como proposalId agora é opcional, não bloqueia o pedido por colisão de proposta.
+    // Mantém o pedido como espelho do Nomus e remove apenas o vínculo ambíguo com a proposta.
+    eligibleAfterProposalSlot.push({
+      ...plan,
+      proposalId: null,
     });
   }
   eligible.length = 0;
@@ -697,7 +717,7 @@ async function main(): Promise<void> {
   const preview = await runDry(eligible);
 
   const criticalSchemaNote =
-    "SalesOrder exige proposalId (@unique) ligado a Proposal; SalesOrderItem exige proposalItemId NOT NULL → importação direta de pedidos Nomus só é viável quando cada linha resolve exatamente um ProposalItem do mesmo cliente (externalProductId + cliente) e todas as linhas compartilham a mesma Proposal. Caso contrário o dry-run bloqueia com PROPOSAL_ITEM_REQUIRED_BY_SCHEMA.";
+    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido.";
 
   const result: DryRunResult = {
     totalRead: pedidos.length,
