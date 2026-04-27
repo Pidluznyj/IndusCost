@@ -95,24 +95,34 @@ function asString(value: unknown): string | null {
 function parseNomusDateTime(input: unknown): Date | null {
   if (input instanceof Date && !Number.isNaN(input.getTime())) return input;
   if (typeof input !== "string") return null;
+
   const raw = input.trim();
   if (!raw) return null;
 
-  const iso = new Date(raw);
-  if (!Number.isNaN(iso.getTime())) return iso;
-
-  const m = raw.match(
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  // Nomus retorna datas brasileiras em vários pontos: DD/MM/YY ou DD/MM/YYYY.
+  // Precisamos interpretar isso antes de chamar new Date(raw), pois JavaScript
+  // pode tratar strings ambíguas como MM/DD/YYYY e inverter dia/mês.
+  const br = raw.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
-  if (!m) return null;
-  const dd = Number.parseInt(m[1], 10);
-  const mm = Number.parseInt(m[2], 10);
-  const yyyy = Number.parseInt(m[3], 10);
-  const hh = Number.parseInt(m[4] ?? "0", 10);
-  const mi = Number.parseInt(m[5] ?? "0", 10);
-  const ss = Number.parseInt(m[6] ?? "0", 10);
-  const parsed = new Date(Date.UTC(yyyy, mm - 1, dd, hh, mi, ss));
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+
+  if (br) {
+    const dd = Number.parseInt(br[1], 10);
+    const mm = Number.parseInt(br[2], 10);
+    const yearRaw = Number.parseInt(br[3], 10);
+    const yyyy = br[3].length === 2 ? 2000 + yearRaw : yearRaw;
+    const hh = Number.parseInt(br[4] ?? "0", 10);
+    const mi = Number.parseInt(br[5] ?? "0", 10);
+    const ss = Number.parseInt(br[6] ?? "0", 10);
+
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+
+    const parsed = new Date(yyyy, mm - 1, dd, hh, mi, ss);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const iso = new Date(raw);
+  return Number.isNaN(iso.getTime()) ? null : iso;
 }
 
 function moneyNumber(value: unknown): number {
