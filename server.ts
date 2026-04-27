@@ -5374,7 +5374,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
         },
-        orderBy: [{ createdAt: "desc" }, { number: "desc" }],
+        orderBy: [{ title: "desc" }, { number: "desc" }, { createdAt: "desc" }],
       });
       return res.json(proposals);
     }
@@ -5390,7 +5390,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
         },
-        orderBy: [{ createdAt: "desc" }, { number: "desc" }],
+        orderBy: [{ title: "desc" }, { number: "desc" }, { createdAt: "desc" }],
         skip,
         take: pageSize,
       }),
