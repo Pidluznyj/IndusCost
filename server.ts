@@ -3,7 +3,13 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { Prisma, type ItemType } from "@prisma/client";
+import {
+  Prisma,
+  type ItemType,
+  type MaintenanceCategory,
+  type MaintenancePriority,
+  type MaintenanceStatus,
+} from "@prisma/client";
 import { prisma } from "./src/lib/prisma.js";
 import multer from "multer";
 import { ServerImporter } from "./src/lib/importer/serverImporter.js";
@@ -5721,15 +5727,31 @@ app.delete("/api/employees/:id", async (req, res) => {
           : {}),
       };
 
-      const rows = await prisma.salesOrder.findMany({
-        where,
-        orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
-        include: {
-          Customer: true,
-          Proposal: { select: { id: true, number: true, externalProposalCode: true, title: true } },
-        },
+      const page = parsePositiveIntQuery(req.query.page, 1);
+      const pageSize = Math.min(parsePositiveIntQuery(req.query.pageSize, 20), 100);
+      const skip = (page - 1) * pageSize;
+
+      const [rows, total] = await Promise.all([
+        prisma.salesOrder.findMany({
+          where,
+          orderBy: [{ createdAt: "desc" }, { issueDate: "desc" }],
+          skip,
+          take: pageSize,
+          include: {
+            Customer: true,
+            Proposal: { select: { id: true, number: true, externalProposalCode: true, title: true } },
+          },
+        }),
+        prisma.salesOrder.count({ where }),
+      ]);
+
+      res.json({
+        data: rows,
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
       });
-      res.json(rows);
     } catch (e: any) {
       console.error("GET /api/sales-orders", e);
       res.status(500).json({ error: e?.message || "Erro ao listar pedidos de venda." });
@@ -5752,6 +5774,405 @@ app.delete("/api/employees/:id", async (req, res) => {
     } catch (e: any) {
       console.error("GET /api/sales-orders/:id", e);
       res.status(500).json({ error: e?.message || "Erro ao carregar pedido de venda." });
+    }
+  });
+
+  // ===============================
+  // Maintenance Requests Module
+  // ===============================
+  const MAINTENANCE_STATUS_VALUES = [
+    "NOVA_SOLICITACAO",
+    "EM_ANALISE",
+    "AGUARDANDO_MATERIAL",
+    "AGUARDANDO_COMPRA",
+    "PROGRAMADO",
+    "EM_EXECUCAO",
+    "CONCLUIDO",
+    "CANCELADO",
+  ] as const satisfies readonly MaintenanceStatus[];
+
+  const MAINTENANCE_PRIORITY_VALUES = ["BAIXA", "MEDIA", "ALTA", "CRITICA"] as const satisfies readonly MaintenancePriority[];
+
+  const MAINTENANCE_CATEGORY_VALUES = [
+    "ELETRICA",
+    "HIDRAULICA",
+    "PINTURA",
+    "CIVIL_ALVENARIA",
+    "TELHADO_CALHA",
+    "INFRAESTRUTURA",
+    "SEGURANCA",
+    "LIMPEZA_CORRETIVA",
+    "OUTRO",
+  ] as const satisfies readonly MaintenanceCategory[];
+
+  function isValidMaintenanceStatus(value: unknown): value is MaintenanceStatus {
+    return typeof value === "string" && (MAINTENANCE_STATUS_VALUES as readonly string[]).includes(value);
+  }
+
+  function isValidMaintenancePriority(value: unknown): value is MaintenancePriority {
+    return typeof value === "string" && (MAINTENANCE_PRIORITY_VALUES as readonly string[]).includes(value);
+  }
+
+  function isValidMaintenanceCategory(value: unknown): value is MaintenanceCategory {
+    return typeof value === "string" && (MAINTENANCE_CATEGORY_VALUES as readonly string[]).includes(value);
+  }
+
+  function parsePage(value: unknown): number {
+    return parsePositiveIntQuery(value, 1);
+  }
+
+  function parsePageSize(value: unknown): number {
+    return Math.min(parsePositiveIntQuery(value, 50), 200);
+  }
+
+  function parseBooleanQuery(value: unknown): boolean | undefined {
+    const raw = Array.isArray(value) ? value[0] : value;
+    const s = String(raw ?? "").trim().toLowerCase();
+    if (!s) return undefined;
+    if (s === "1" || s === "true" || s === "yes") return true;
+    if (s === "0" || s === "false" || s === "no") return false;
+    return undefined;
+  }
+
+  function normalizeOptionalString(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    const t = String(value).trim();
+    return t.length ? t : null;
+  }
+
+  function parseOptionalDate(value: unknown): Date | null {
+    if (value === null || value === undefined || value === "") return null;
+    const d = new Date(String(value));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  app.get("/api/maintenance-requests", async (req, res) => {
+    try {
+      const search = String(req.query.search ?? "").trim();
+      const statusQ = String(req.query.status ?? "").trim();
+      const priorityQ = String(req.query.priority ?? "").trim();
+      const categoryQ = String(req.query.category ?? "").trim();
+      const responsibleQ = String(req.query.responsible ?? "").trim();
+      const areaSectorQ = String(req.query.areaSector ?? "").trim();
+      const lateOnly = parseBooleanQuery(req.query.lateOnly);
+      const page = parsePage(req.query.page);
+      const pageSize = parsePageSize(req.query.pageSize);
+      const skip = (page - 1) * pageSize;
+
+      if (statusQ && !isValidMaintenanceStatus(statusQ)) {
+        return res.status(400).json({ error: "Parâmetro status inválido." });
+      }
+      if (priorityQ && !isValidMaintenancePriority(priorityQ)) {
+        return res.status(400).json({ error: "Parâmetro priority inválido." });
+      }
+      if (categoryQ && !isValidMaintenanceCategory(categoryQ)) {
+        return res.status(400).json({ error: "Parâmetro category inválido." });
+      }
+
+      const now = new Date();
+      const where: Prisma.MaintenanceRequestWhereInput = {
+        ...(statusQ && isValidMaintenanceStatus(statusQ) ? { status: statusQ } : {}),
+        ...(priorityQ && isValidMaintenancePriority(priorityQ) ? { priority: priorityQ } : {}),
+        ...(categoryQ && isValidMaintenanceCategory(categoryQ) ? { category: categoryQ } : {}),
+        ...(responsibleQ ? { responsible: { contains: responsibleQ, mode: "insensitive" } } : {}),
+        ...(areaSectorQ ? { areaSector: { contains: areaSectorQ, mode: "insensitive" } } : {}),
+        ...(search
+          ? {
+              OR: [
+                { title: { contains: search, mode: "insensitive" } },
+                { description: { contains: search, mode: "insensitive" } },
+                { requester: { contains: search, mode: "insensitive" } },
+                { location: { contains: search, mode: "insensitive" } },
+                { areaSector: { contains: search, mode: "insensitive" } },
+                { responsible: { contains: search, mode: "insensitive" } },
+                { materialNotes: { contains: search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+        ...(lateOnly === true
+          ? {
+              desiredDate: { lt: now },
+              status: { notIn: ["CONCLUIDO", "CANCELADO"] },
+            }
+          : {}),
+      };
+
+      const [rows, total] = await Promise.all([
+        prisma.maintenanceRequest.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: pageSize,
+        }),
+        prisma.maintenanceRequest.count({ where }),
+      ]);
+
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      res.json({
+        rows,
+        total,
+        page,
+        pageSize,
+        totalPages,
+      });
+    } catch (e: any) {
+      console.error("GET /api/maintenance-requests", e);
+      res.status(500).json({ error: e?.message || "Erro ao listar solicitações de manutenção." });
+    }
+  });
+
+  app.post("/api/maintenance-requests", async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const title = typeof body.title === "string" ? body.title.trim() : "";
+      const description = typeof body.description === "string" ? body.description.trim() : "";
+      const requester = typeof body.requester === "string" ? body.requester.trim() : "";
+      const areaSector = typeof body.areaSector === "string" ? body.areaSector.trim() : "";
+      const location = typeof body.location === "string" ? body.location.trim() : "";
+      const category = body.category;
+      const priorityRaw = body.priority;
+      const responsible = normalizeOptionalString(body.responsible);
+      const desiredDate = parseOptionalDate(body.desiredDate);
+      const notes = normalizeOptionalString(body.notes);
+      const needsMaterial = Boolean(body.needsMaterial);
+      let materialNotes = normalizeOptionalString(body.materialNotes);
+      const changedByCreate = normalizeOptionalString(body.changedBy);
+
+      if (!title) return res.status(400).json({ error: "Título é obrigatório." });
+      if (!description) return res.status(400).json({ error: "Descrição é obrigatória." });
+      if (!requester) return res.status(400).json({ error: "Solicitante é obrigatório." });
+      if (!areaSector) return res.status(400).json({ error: "Área/setor é obrigatório." });
+      if (!location) return res.status(400).json({ error: "Local é obrigatório." });
+      if (!isValidMaintenanceCategory(category)) {
+        return res.status(400).json({ error: "Categoria inválida ou obrigatória." });
+      }
+      let priority: MaintenancePriority = "MEDIA";
+      if (priorityRaw !== undefined && priorityRaw !== null && priorityRaw !== "") {
+        if (!isValidMaintenancePriority(priorityRaw)) {
+          return res.status(400).json({ error: "Prioridade inválida." });
+        }
+        priority = priorityRaw;
+      }
+      if (!needsMaterial) {
+        materialNotes = null;
+      }
+
+      const created = await prisma.$transaction(async (tx) => {
+        const row = await tx.maintenanceRequest.create({
+          data: {
+            title,
+            description,
+            requester,
+            areaSector,
+            location,
+            category,
+            priority,
+            status: "NOVA_SOLICITACAO",
+            responsible,
+            desiredDate,
+            notes,
+            needsMaterial,
+            materialNotes,
+          },
+        });
+        await tx.maintenanceRequestStatusHistory.create({
+          data: {
+            maintenanceRequestId: row.id,
+            fromStatus: null,
+            toStatus: "NOVA_SOLICITACAO",
+            comment: "Solicitação criada",
+            changedBy: changedByCreate,
+          },
+        });
+        return tx.maintenanceRequest.findUniqueOrThrow({
+          where: { id: row.id },
+          include: { statusHistory: { orderBy: { changedAt: "desc" } } },
+        });
+      });
+
+      res.status(201).json(created);
+    } catch (e: any) {
+      console.error("POST /api/maintenance-requests", e);
+      res.status(500).json({ error: e?.message || "Erro ao criar solicitação de manutenção." });
+    }
+  });
+
+  app.get("/api/maintenance-requests/:id/history", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const exists = await prisma.maintenanceRequest.findUnique({ where: { id }, select: { id: true } });
+      if (!exists) return res.status(404).json({ error: "Solicitação não encontrada." });
+      const history = await prisma.maintenanceRequestStatusHistory.findMany({
+        where: { maintenanceRequestId: id },
+        orderBy: { changedAt: "desc" },
+      });
+      res.json({ history });
+    } catch (e: any) {
+      console.error("GET /api/maintenance-requests/:id/history", e);
+      res.status(500).json({ error: e?.message || "Erro ao carregar histórico." });
+    }
+  });
+
+  app.get("/api/maintenance-requests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const row = await prisma.maintenanceRequest.findUnique({
+        where: { id },
+        include: { statusHistory: { orderBy: { changedAt: "desc" } } },
+      });
+      if (!row) return res.status(404).json({ error: "Solicitação não encontrada." });
+      res.json(row);
+    } catch (e: any) {
+      console.error("GET /api/maintenance-requests/:id", e);
+      res.status(500).json({ error: e?.message || "Erro ao carregar solicitação." });
+    }
+  });
+
+  app.patch("/api/maintenance-requests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const body = req.body ?? {};
+      if (Object.prototype.hasOwnProperty.call(body, "status")) {
+        return res.status(400).json({
+          error: "Alteração de status não é permitida neste endpoint. Use PATCH /api/maintenance-requests/:id/status.",
+        });
+      }
+
+      const existing = await prisma.maintenanceRequest.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Solicitação não encontrada." });
+
+      const data: Prisma.MaintenanceRequestUpdateInput = {};
+      if (Object.prototype.hasOwnProperty.call(body, "title")) {
+        const v = typeof body.title === "string" ? body.title.trim() : "";
+        if (!v) return res.status(400).json({ error: "Título não pode ser vazio." });
+        data.title = v;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "description")) {
+        const v = typeof body.description === "string" ? body.description.trim() : "";
+        if (!v) return res.status(400).json({ error: "Descrição não pode ser vazia." });
+        data.description = v;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "requester")) {
+        const v = typeof body.requester === "string" ? body.requester.trim() : "";
+        if (!v) return res.status(400).json({ error: "Solicitante não pode ser vazio." });
+        data.requester = v;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "areaSector")) {
+        const v = typeof body.areaSector === "string" ? body.areaSector.trim() : "";
+        if (!v) return res.status(400).json({ error: "Área/setor não pode ser vazio." });
+        data.areaSector = v;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "location")) {
+        const v = typeof body.location === "string" ? body.location.trim() : "";
+        if (!v) return res.status(400).json({ error: "Local não pode ser vazio." });
+        data.location = v;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "category")) {
+        if (!isValidMaintenanceCategory(body.category)) {
+          return res.status(400).json({ error: "Categoria inválida." });
+        }
+        data.category = body.category;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "priority")) {
+        if (!isValidMaintenancePriority(body.priority)) {
+          return res.status(400).json({ error: "Prioridade inválida." });
+        }
+        data.priority = body.priority;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "responsible")) {
+        data.responsible = normalizeOptionalString(body.responsible);
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "desiredDate")) {
+        const d = parseOptionalDate(body.desiredDate);
+        data.desiredDate = d;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "notes")) {
+        data.notes = normalizeOptionalString(body.notes);
+      }
+      let nextNeeds = existing.needsMaterial;
+      if (Object.prototype.hasOwnProperty.call(body, "needsMaterial")) {
+        nextNeeds = Boolean(body.needsMaterial);
+        data.needsMaterial = nextNeeds;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "materialNotes")) {
+        data.materialNotes = nextNeeds ? normalizeOptionalString(body.materialNotes) : null;
+      } else if (Object.prototype.hasOwnProperty.call(body, "needsMaterial") && !nextNeeds) {
+        data.materialNotes = null;
+      }
+
+      if (Object.keys(data).length === 0) {
+        const unchanged = await prisma.maintenanceRequest.findUnique({
+          where: { id },
+          include: { statusHistory: { orderBy: { changedAt: "desc" } } },
+        });
+        return res.json(unchanged);
+      }
+
+      const updated = await prisma.maintenanceRequest.update({
+        where: { id },
+        data,
+        include: { statusHistory: { orderBy: { changedAt: "desc" } } },
+      });
+      res.json(updated);
+    } catch (e: any) {
+      console.error("PATCH /api/maintenance-requests/:id", e);
+      res.status(500).json({ error: e?.message || "Erro ao atualizar solicitação." });
+    }
+  });
+
+  app.patch("/api/maintenance-requests/:id/status", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const body = req.body ?? {};
+      const status = body.status;
+      if (!isValidMaintenanceStatus(status)) {
+        return res.status(400).json({ error: "Status obrigatório ou inválido." });
+      }
+      const comment = normalizeOptionalString(body.comment);
+      const changedBy = normalizeOptionalString(body.changedBy);
+
+      const current = await prisma.maintenanceRequest.findUnique({ where: { id } });
+      if (!current) return res.status(404).json({ error: "Solicitação não encontrada." });
+      if (current.status === status) {
+        const row = await prisma.maintenanceRequest.findUnique({
+          where: { id },
+          include: { statusHistory: { orderBy: { changedAt: "desc" } } },
+        });
+        return res.json({
+          maintenanceRequest: row,
+          statusUnchanged: true,
+          message: "Status já era o informado; nenhum registro de histórico foi criado.",
+        });
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        await tx.maintenanceRequest.update({
+          where: { id },
+          data: { status },
+        });
+        await tx.maintenanceRequestStatusHistory.create({
+          data: {
+            maintenanceRequestId: id,
+            fromStatus: current.status,
+            toStatus: status,
+            comment,
+            changedBy,
+          },
+        });
+        return tx.maintenanceRequest.findUniqueOrThrow({
+          where: { id },
+          include: { statusHistory: { orderBy: { changedAt: "desc" } } },
+        });
+      });
+
+      res.json({ maintenanceRequest: updated });
+    } catch (e: any) {
+      console.error("PATCH /api/maintenance-requests/:id/status", e);
+      res.status(500).json({ error: e?.message || "Erro ao alterar status." });
     }
   });
 

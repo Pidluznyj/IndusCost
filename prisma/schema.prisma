@@ -556,6 +556,47 @@ model CommercialAuditLog {
   @@index([performedAt])
 }
 
+model MaintenanceRequest {
+  id              String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number          Int                              @unique @default(autoincrement())
+  title           String
+  description     String
+  requester       String
+  areaSector      String
+  location        String
+  category        MaintenanceCategory
+  priority        MaintenancePriority              @default(MEDIA)
+  status          MaintenanceStatus                @default(NOVA_SOLICITACAO)
+  responsible     String?
+  desiredDate     DateTime?                        @db.Timestamptz(6)
+  notes           String?
+  needsMaterial   Boolean                          @default(false)
+  materialNotes   String?
+  createdAt       DateTime                         @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  statusHistory   MaintenanceRequestStatusHistory[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([category])
+  @@index([createdAt])
+  @@index([status, priority, createdAt])
+}
+
+model MaintenanceRequestStatusHistory {
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  maintenanceRequestId  String              @db.Uuid
+  fromStatus            MaintenanceStatus?
+  toStatus              MaintenanceStatus
+  comment               String?
+  changedBy             String?
+  changedAt             DateTime            @default(now()) @db.Timestamptz(6)
+  maintenanceRequest    MaintenanceRequest  @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([maintenanceRequestId])
+  @@index([changedAt])
+}
+
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model ProductBOM_backup_420_01A_20260413 {
   id             String?  @db.Uuid
@@ -737,4 +778,34 @@ enum PurchaseLineType {
 enum PurchaseItemLineStatus {
   ABERTA
   CANCELADA
+}
+
+enum MaintenanceStatus {
+  NOVA_SOLICITACAO
+  EM_ANALISE
+  AGUARDANDO_MATERIAL
+  AGUARDANDO_COMPRA
+  PROGRAMADO
+  EM_EXECUCAO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum MaintenancePriority {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum MaintenanceCategory {
+  ELETRICA
+  HIDRAULICA
+  PINTURA
+  CIVIL_ALVENARIA
+  TELHADO_CALHA
+  INFRAESTRUTURA
+  SEGURANCA
+  LIMPEZA_CORRETIVA
+  OUTRO
 }

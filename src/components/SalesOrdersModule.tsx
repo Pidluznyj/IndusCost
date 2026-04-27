@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Package } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2, Package } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { SearchableSelect, type SelectOption } from "@/src/components/shared/SearchableSelect";
@@ -50,6 +50,22 @@ type SalesOrderDetail = SalesOrderRow & {
   }>;
 };
 
+const SALES_ORDERS_PAGE_SIZE = 20;
+
+type SalesOrderListResponse = {
+  data: SalesOrderRow[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+function isPaginatedSalesOrderList(value: unknown): value is SalesOrderListResponse {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return Array.isArray(v.data);
+}
+
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Rascunho",
   READY_TO_SEND: "Pronto para envio",
@@ -68,6 +84,9 @@ function SalesOrderList() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<SalesOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [status, setStatus] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [responsible, setResponsible] = useState("");
@@ -84,34 +103,85 @@ function SalesOrderList() {
     }
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (status) params.set("status", status);
-      if (customerId) params.set("customerId", customerId);
-      if (responsible.trim()) params.set("responsible", responsible.trim());
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
-      const q = params.toString();
-      const data = await fetchJsonOk<SalesOrderRow[]>(`/api/sales-orders${q ? `?${q}` : ""}`);
-      setRows(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error(e);
-      alert(e instanceof Error ? e.message : "Não foi possível carregar pedidos.");
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [status, customerId, responsible, startDate, endDate]);
+  const listFiltersKey = useMemo(
+    () => JSON.stringify({ status, customerId, responsible, startDate, endDate }),
+    [status, customerId, responsible, startDate, endDate]
+  );
+  const prevListFiltersKeyRef = useRef<string | null>(null);
+
+  const load = useCallback(
+    async (page: number, signal?: AbortSignal) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("pageSize", String(SALES_ORDERS_PAGE_SIZE));
+        if (status) params.set("status", status);
+        if (customerId) params.set("customerId", customerId);
+        if (responsible.trim()) params.set("responsible", responsible.trim());
+        if (startDate) params.set("startDate", startDate);
+        if (endDate) params.set("endDate", endDate);
+        const q = params.toString();
+        const data = await fetchJsonOk<SalesOrderListResponse | SalesOrderRow[]>(
+          `/api/sales-orders?${q}`,
+          { signal }
+        );
+        if (signal?.aborted) return;
+        if (Array.isArray(data)) {
+          setRows(data);
+          setTotal(data.length);
+          setTotalPages(1);
+          setCurrentPage(1);
+        } else if (isPaginatedSalesOrderList(data)) {
+          setRows(data.data);
+          setTotal(Number.isFinite(Number(data.total)) ? Number(data.total) : 0);
+          setTotalPages(Number.isFinite(Number(data.totalPages)) ? Math.max(1, Number(data.totalPages)) : 1);
+          setCurrentPage(Number.isFinite(Number(data.page)) ? Number(data.page) : page);
+        } else {
+          setRows([]);
+          setTotal(0);
+          setTotalPages(1);
+        }
+      } catch (e) {
+        if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+        console.error(e);
+        alert(e instanceof Error ? e.message : "Não foi possível carregar pedidos.");
+        setRows([]);
+        setTotal(0);
+        setTotalPages(1);
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [status, customerId, responsible, startDate, endDate]
+  );
 
   useEffect(() => {
     void loadCustomers();
   }, [loadCustomers]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    const ac = new AbortController();
+    const prevKey = prevListFiltersKeyRef.current;
+    const filtersChanged = prevKey !== null && prevKey !== listFiltersKey;
+    prevListFiltersKeyRef.current = listFiltersKey;
+
+    const pageToFetch = filtersChanged ? 1 : currentPage;
+    if (filtersChanged && currentPage !== 1) {
+      setCurrentPage(1);
+    }
+
+    void load(pageToFetch, ac.signal);
+
+    return () => ac.abort();
+  }, [currentPage, listFiltersKey, load]);
+
+  const listShownRange = useMemo(() => {
+    if (total === 0 || rows.length === 0) return { from: 0, to: 0 };
+    const from = (currentPage - 1) * SALES_ORDERS_PAGE_SIZE + 1;
+    const to = from + rows.length - 1;
+    return { from, to };
+  }, [total, currentPage, rows.length]);
 
   const customerOptions = useMemo((): SelectOption[] => {
     const sorted = customers.slice().sort((a, b) => (a.companyName || "").localeCompare(b.companyName || ""));
@@ -197,12 +267,28 @@ function SalesOrderList() {
             setResponsible("");
             setStartDate("");
             setEndDate("");
+            setCurrentPage(1);
           }}
           className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
         >
           Limpar filtros
         </button>
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        {total === 0 ? (
+          <>Nenhum pedido no filtro atual.</>
+        ) : (
+          <>
+            Exibindo{" "}
+            <span className="font-semibold text-foreground">
+              {listShownRange.from}–{listShownRange.to}
+            </span>{" "}
+            de <span className="font-semibold text-foreground">{total}</span> pedido(s) · {SALES_ORDERS_PAGE_SIZE} por
+            página · mais recentes primeiro
+          </>
+        )}
+      </p>
 
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
@@ -263,6 +349,33 @@ function SalesOrderList() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+        <p className="text-sm text-muted-foreground">
+          Página <span className="font-semibold text-foreground">{currentPage}</span> de{" "}
+          <span className="font-semibold text-foreground">{totalPages}</span>
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage <= 1 || loading}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:hover:bg-background"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Anterior
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage >= totalPages || loading}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:hover:bg-background"
+          >
+            Próxima
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </div>
