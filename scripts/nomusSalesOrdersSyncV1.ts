@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 
 const prisma = new PrismaClient();
@@ -28,12 +28,30 @@ type BlockedSalesOrder = {
   proposalItemDetail: string | null;
 };
 
+type EligibleSalesOrderLine = {
+  item: JsonObject;
+  proposalItemId: string | null;
+  proposalId: string | null;
+  productId: string;
+  externalProductId: number;
+  skuSnapshot: string;
+  productNameSnapshot: string;
+  unit: string | null;
+  quantity: number;
+  negotiatedPrice: number;
+  totalNetValue: number;
+  notes: string | null;
+};
+
 type EligibleSalesOrderPlan = {
+  pedido: JsonObject;
   externalSalesOrderId: number;
   codigoPedido: string;
   proposalId: string | null;
   customerId: string;
+  externalCustomerId: number | null;
   lineCount: number;
+  lines: EligibleSalesOrderLine[];
 };
 
 type DryRunResult = {
@@ -77,24 +95,67 @@ function asString(value: unknown): string | null {
 function parseNomusDateTime(input: unknown): Date | null {
   if (input instanceof Date && !Number.isNaN(input.getTime())) return input;
   if (typeof input !== "string") return null;
+
   const raw = input.trim();
   if (!raw) return null;
 
-  const iso = new Date(raw);
-  if (!Number.isNaN(iso.getTime())) return iso;
-
-  const m = raw.match(
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  // Nomus retorna datas brasileiras em vários pontos: DD/MM/YY ou DD/MM/YYYY.
+  // Precisamos interpretar isso antes de chamar new Date(raw), pois JavaScript
+  // pode tratar strings ambíguas como MM/DD/YYYY e inverter dia/mês.
+  const br = raw.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
-  if (!m) return null;
-  const dd = Number.parseInt(m[1], 10);
-  const mm = Number.parseInt(m[2], 10);
-  const yyyy = Number.parseInt(m[3], 10);
-  const hh = Number.parseInt(m[4] ?? "0", 10);
-  const mi = Number.parseInt(m[5] ?? "0", 10);
-  const ss = Number.parseInt(m[6] ?? "0", 10);
-  const parsed = new Date(Date.UTC(yyyy, mm - 1, dd, hh, mi, ss));
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+
+  if (br) {
+    const dd = Number.parseInt(br[1], 10);
+    const mm = Number.parseInt(br[2], 10);
+    const yearRaw = Number.parseInt(br[3], 10);
+    const yyyy = br[3].length === 2 ? 2000 + yearRaw : yearRaw;
+    const hh = Number.parseInt(br[4] ?? "0", 10);
+    const mi = Number.parseInt(br[5] ?? "0", 10);
+    const ss = Number.parseInt(br[6] ?? "0", 10);
+
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+
+    const parsed = new Date(yyyy, mm - 1, dd, hh, mi, ss);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const iso = new Date(raw);
+  return Number.isNaN(iso.getTime()) ? null : iso;
+}
+
+function moneyNumber(value: unknown): number {
+  try {
+    const parsed = parseNomusPtBrNumber(value);
+    return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function decimalString(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(6) : "0.000000";
+}
+
+function jsonInput(value: JsonObject): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue;
+}
+
+function calculateItemNetValue(item: JsonObject): number {
+  const quantity = moneyNumber(item.quantidade);
+  const unitPrice = moneyNumber(item.valorUnitario);
+  const discount = moneyNumber(item.valorDesconto);
+  const addition = moneyNumber(item.valorAcrescimo);
+  const computed = quantity * unitPrice - discount + addition;
+
+  const explicit =
+    moneyNumber(item.valorTotal) ||
+    moneyNumber(item.valorTotalItem) ||
+    moneyNumber(item.valorLiquido);
+
+  if (explicit > 0) return explicit;
+  return computed > 0 ? computed : 0;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -194,7 +255,10 @@ async function fetchAllNomusPedidos(baseUrl: string): Promise<JsonObject[]> {
   const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
-  const maxPages = Math.max(1, toInt(process.env.NOMUS_MAX_PAGES) ?? 200);
+  const maxPages = Math.max(
+    1,
+    toInt(process.env.NOMUS_SALES_ORDERS_MAX_PAGES) ?? toInt(process.env.NOMUS_MAX_PAGES) ?? 200
+  );
 
   const dataEmissaoInicial = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_INICIAL", "01/01/2023");
   const dataEmissaoFinal = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_FINAL", "31/12/2030");
@@ -349,7 +413,8 @@ function analyzeOrder(
   customerBridge: Map<number, { taxId: string | null; customerId: string | null }>,
   proposalIndex: Map<string, ProposalItemJoin[]>,
   nomusProductById: Map<number, JsonObject>,
-  productBySku: Map<string, { id: string; sku: string; name: string }>
+  productBySku: Map<string, { id: string; sku: string; name: string }>,
+  productById: Map<string, { id: string; sku: string; name: string }>
 ): { eligible: EligibleSalesOrderPlan | null; blocked: BlockedSalesOrder | null; lineReasons: BlockReason[][] } {
   const externalSalesOrderId = toInt(pedido.id);
   const codigoPedido = asString(pedido.codigoPedido);
@@ -393,7 +458,7 @@ function analyzeOrder(
   }
 
   const lineReasons: BlockReason[][] = [];
-  const resolvedLines: Array<{ proposalItemId: string | null; proposalId: string | null; productId: string }> = [];
+  const resolvedLines: EligibleSalesOrderLine[] = [];
 
   for (const item of itemsRaw) {
     const lineR = new Set<BlockReason>();
@@ -426,11 +491,10 @@ function analyzeOrder(
         if (p) localProduct = p;
       }
       if (!nomusProductIsActive(nomusProduct)) {
-        lineR.add("INACTIVE_PRODUCT_NOMUS");
+        // Pedido vindo do Nomus é espelho histórico/comercial.
+        // Produto inativo no Nomus não invalida pedido já existente,
+        // desde que seja possível resolver o produto local por SKU.
         inactiveNomusProductIds.add(idProduto);
-        mergeReasons(reasons, ["INACTIVE_PRODUCT_NOMUS"]);
-        lineReasons.push([...lineR]);
-        continue;
       }
     }
 
@@ -445,10 +509,28 @@ function analyzeOrder(
     }
 
     if (candidates.length === 1) {
+      const resolvedProduct = localProduct ?? productById.get(candidates[0].productId) ?? null;
+      if (!resolvedProduct) {
+        lineR.add("MISSING_PRODUCT_SKU");
+        missingSkus.add(localSku ?? `idProduto=${idProduto}`);
+        mergeReasons(reasons, ["MISSING_PRODUCT_SKU"]);
+        lineReasons.push([...lineR]);
+        continue;
+      }
+
       resolvedLines.push({
+        item,
         proposalItemId: candidates[0].id,
         proposalId: candidates[0].proposalId,
         productId: candidates[0].productId,
+        externalProductId: idProduto,
+        skuSnapshot: resolvedProduct.sku,
+        productNameSnapshot: resolvedProduct.name,
+        unit: asString(item.unidadeMedida) ?? asString(item.nomeUnidadeMedida) ?? (toInt(item.idUnidadeMedida) != null ? String(toInt(item.idUnidadeMedida)) : null),
+        quantity: moneyNumber(item.quantidade),
+        negotiatedPrice: moneyNumber(item.valorUnitario),
+        totalNetValue: calculateItemNetValue(item),
+        notes: asString(item.observacoes) ?? asString(item.informacoesAdicionaisProduto),
       });
       lineReasons.push([]);
       continue;
@@ -473,9 +555,18 @@ function analyzeOrder(
       }
 
       resolvedLines.push({
+        item,
         proposalItemId: null,
         proposalId: null,
         productId: localProduct.id,
+        externalProductId: idProduto,
+        skuSnapshot: localProduct.sku,
+        productNameSnapshot: localProduct.name,
+        unit: asString(item.unidadeMedida) ?? asString(item.nomeUnidadeMedida) ?? (toInt(item.idUnidadeMedida) != null ? String(toInt(item.idUnidadeMedida)) : null),
+        quantity: moneyNumber(item.quantidade),
+        negotiatedPrice: moneyNumber(item.valorUnitario),
+        totalNetValue: calculateItemNetValue(item),
+        notes: asString(item.observacoes) ?? asString(item.informacoesAdicionaisProduto),
       });
       lineReasons.push([]);
       continue;
@@ -483,9 +574,18 @@ function analyzeOrder(
 
     if (localProduct) {
       resolvedLines.push({
+        item,
         proposalItemId: null,
         proposalId: null,
         productId: localProduct.id,
+        externalProductId: idProduto,
+        skuSnapshot: localProduct.sku,
+        productNameSnapshot: localProduct.name,
+        unit: asString(item.unidadeMedida) ?? asString(item.nomeUnidadeMedida) ?? (toInt(item.idUnidadeMedida) != null ? String(toInt(item.idUnidadeMedida)) : null),
+        quantity: moneyNumber(item.quantidade),
+        negotiatedPrice: moneyNumber(item.valorUnitario),
+        totalNetValue: calculateItemNetValue(item),
+        notes: asString(item.observacoes) ?? asString(item.informacoesAdicionaisProduto),
       });
       lineReasons.push([]);
       continue;
@@ -523,11 +623,14 @@ function analyzeOrder(
 
   return {
     eligible: {
+      pedido,
       externalSalesOrderId,
       codigoPedido: codigoPedido ?? `NOMUS-ORDER-${externalSalesOrderId}`,
       proposalId: singleProposalId,
       customerId: customerId!,
-      lineCount: itemsRaw.length,
+      externalCustomerId: idPessoaCliente,
+      lineCount: resolvedLines.length,
+      lines: resolvedLines,
     },
     blocked: null,
     lineReasons,
@@ -592,15 +695,120 @@ async function runDry(eligible: EligibleSalesOrderPlan[]): Promise<Pick<DryRunRe
   };
 }
 
+
+async function runApply(eligible: EligibleSalesOrderPlan[]): Promise<{ created: number; updated: number; itemsCreated: number }> {
+  let created = 0;
+  let updated = 0;
+  let itemsCreated = 0;
+
+  for (const plan of eligible) {
+    await prisma.$transaction(async (tx) => {
+      const pedido = plan.pedido;
+      const issueDate =
+        parseNomusDateTime(pedido.dataEmissao) ??
+        parseNomusDateTime(pedido.dataCriacao) ??
+        new Date();
+
+      const expectedDeliveryDate = parseNomusDateTime(pedido.dataEntregaPadrao);
+      const totalNetValue = moneyNumber(pedido.valorTotal);
+      const totalFreight = moneyNumber(pedido.valorTotalFrete);
+      const externalSellerId = toInt(pedido.idPessoaVendedor);
+      const externalCompanyId = toInt(pedido.idEmpresa);
+
+      const existing = await tx.salesOrder.findFirst({
+        where: {
+          OR: [
+            { sourceSystem: SOURCE_SYSTEM, externalSalesOrderId: plan.externalSalesOrderId },
+            { orderCode: plan.codigoPedido },
+          ],
+        },
+        select: { id: true },
+      });
+
+      const baseData = {
+        proposalId: plan.proposalId,
+        sourceSystem: SOURCE_SYSTEM,
+        externalSalesOrderId: plan.externalSalesOrderId,
+        externalSalesOrderCode: plan.codigoPedido,
+        orderCode: plan.codigoPedido,
+        customerId: plan.customerId,
+        externalCustomerId: plan.externalCustomerId,
+        responsible: null,
+        externalSellerId,
+        companyIssuer: externalCompanyId != null ? String(externalCompanyId) : null,
+        externalCompanyId,
+        status: "SENT_TO_NOMUS" as any,
+        issueDate,
+        expectedDeliveryDate,
+        paymentTerms: asString(pedido.condicaoPagamentoTexto),
+        paymentMethod: toInt(pedido.idFormaPagamento) != null ? String(toInt(pedido.idFormaPagamento)) : null,
+        freightCondition: asString(pedido.modalidadeTransporte) ?? (toInt(pedido.modalidadeTransporte) != null ? String(toInt(pedido.modalidadeTransporte)) : null),
+        deliveryLocation: null,
+        notes: asString(pedido.observacoes),
+        internalNotes: asString(pedido.observacoesInternas),
+        totalItems: plan.lines.length,
+        totalGrossValue: decimalString(totalNetValue),
+        totalDiscount: decimalString(0),
+        totalNetValue: decimalString(totalNetValue),
+        totalCost: decimalString(0),
+        totalMarginValue: decimalString(totalNetValue),
+        totalMarginPerc: decimalString(totalNetValue > 0 ? 100 : 0),
+        totalTaxes: decimalString(0),
+        totalFreight: decimalString(totalFreight),
+        sentToNomusAt: parseNomusDateTime(pedido.dataCriacao),
+        nomusRawResponse: jsonInput(pedido),
+      };
+
+      let salesOrderId: string;
+
+      if (existing) {
+        const updatedOrder = await tx.salesOrder.update({
+          where: { id: existing.id },
+          data: baseData,
+          select: { id: true },
+        });
+        salesOrderId = updatedOrder.id;
+        await tx.salesOrderItem.deleteMany({ where: { salesOrderId } });
+        updated += 1;
+      } else {
+        const createdOrder = await tx.salesOrder.create({
+          data: baseData,
+          select: { id: true },
+        });
+        salesOrderId = createdOrder.id;
+        created += 1;
+      }
+
+      if (plan.lines.length > 0) {
+        await tx.salesOrderItem.createMany({
+          data: plan.lines.map((line) => ({
+            salesOrderId,
+            proposalItemId: line.proposalItemId,
+            productId: line.productId,
+            externalProductId: line.externalProductId,
+            skuSnapshot: line.skuSnapshot,
+            productNameSnapshot: line.productNameSnapshot,
+            quantity: decimalString(line.quantity),
+            unit: line.unit,
+            unitCost: decimalString(0),
+            negotiatedPrice: decimalString(line.negotiatedPrice),
+            totalNetValue: decimalString(line.totalNetValue),
+            totalCost: decimalString(0),
+            marginValue: decimalString(line.totalNetValue),
+            marginPerc: decimalString(line.totalNetValue > 0 ? 100 : 0),
+            notes: line.notes,
+          })),
+        });
+        itemsCreated += plan.lines.length;
+      }
+    });
+  }
+
+  return { created, updated, itemsCreated };
+}
+
 async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
-  if (isApply) {
-    console.error(
-      "[nomus-sales-orders-v1] --apply está desabilitado: SalesOrder.proposalId é obrigatório e SalesOrderItem.proposalItemId é NOT NULL com FK para ProposalItem. Defina evolução de schema ou regra de vínculo antes do apply."
-    );
-    process.exitCode = 1;
-    return;
-  }
 
   const nomusBaseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
@@ -641,6 +849,7 @@ async function main(): Promise<void> {
     select: { id: true, sku: true, name: true },
   });
   const productBySku = new Map(products.map((p) => [p.sku, { id: p.id, sku: p.sku, name: p.name }]));
+  const productById = new Map(products.map((p) => [p.id, { id: p.id, sku: p.sku, name: p.name }]));
 
   const proposalIndex = await loadProposalItemIndex();
 
@@ -653,7 +862,8 @@ async function main(): Promise<void> {
       customerBridge,
       proposalIndex,
       nomusProductById,
-      productBySku
+      productBySku,
+      productById
     );
     if (el) eligible.push(el);
     if (bl) blocked.push(bl);
@@ -717,7 +927,7 @@ async function main(): Promise<void> {
   const preview = await runDry(eligible);
 
   const criticalSchemaNote =
-    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido.";
+    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido. Produto inativo no Nomus não bloqueia pedido histórico se o SKU for resolvido localmente.";
 
   const result: DryRunResult = {
     totalRead: pedidos.length,
@@ -731,12 +941,14 @@ async function main(): Promise<void> {
     criticalSchemaNote,
   };
 
+  const applied = isApply ? await runApply(eligible) : null;
+
   console.log(
     JSON.stringify(
       {
-        mode: "dry-run",
+        mode: isApply ? "apply" : "dry-run",
         summary: result,
-        applied: null,
+        applied,
       },
       null,
       2
