@@ -426,11 +426,10 @@ function analyzeOrder(
         if (p) localProduct = p;
       }
       if (!nomusProductIsActive(nomusProduct)) {
-        lineR.add("INACTIVE_PRODUCT_NOMUS");
+        // Pedido vindo do Nomus é espelho histórico/comercial.
+        // Produto inativo no Nomus não invalida pedido já existente,
+        // desde que seja possível resolver o produto local por SKU.
         inactiveNomusProductIds.add(idProduto);
-        mergeReasons(reasons, ["INACTIVE_PRODUCT_NOMUS"]);
-        lineReasons.push([...lineR]);
-        continue;
       }
     }
 
@@ -717,7 +716,7 @@ async function main(): Promise<void> {
   const preview = await runDry(eligible);
 
   const criticalSchemaNote =
-    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido.";
+    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido. Produto inativo no Nomus não bloqueia pedido histórico se o SKU for resolvido localmente.";
 
   const result: DryRunResult = {
     totalRead: pedidos.length,
