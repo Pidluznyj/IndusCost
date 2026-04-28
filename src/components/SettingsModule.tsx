@@ -46,10 +46,37 @@ interface PayrollComponent {
 }
 
 type ProductionHourCalcForm = {
+  simulationName: string;
   payrollCostMonth: string;
+  payrollCostComment: string;
   energyCostMonth: string;
+  energyCostComment: string;
   otherProductiveCostsMonth: string;
+  otherProductiveCostsComment: string;
   productiveHoursMonth: string;
+  productiveHoursComment: string;
+  notes: string;
+};
+
+type ProductionHourCostSimulationRow = {
+  id: string;
+  name: string;
+  payrollCostMonth: number | string;
+  payrollCostComment?: string | null;
+  energyCostMonth: number | string;
+  energyCostComment?: string | null;
+  otherProductiveCostsMonth: number | string;
+  otherProductiveCostsComment?: string | null;
+  productiveHoursMonth: number | string;
+  productiveHoursComment?: string | null;
+  payrollCostPerHour: number | string;
+  energyCostPerHour: number | string;
+  otherCostPerHour: number | string;
+  totalProductionHourCost: number | string;
+  formulaText: string;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type HubSection = "globals" | "operational" | "integrations" | "security" | "system";
@@ -148,16 +175,28 @@ export const SettingsModule = () => {
     hhOverride: "" as string | number
   });
   const [productionHourCalcForm, setProductionHourCalcForm] = useState<ProductionHourCalcForm>({
+    simulationName: "",
     payrollCostMonth: "",
+    payrollCostComment: "",
     energyCostMonth: "0",
+    energyCostComment: "",
     otherProductiveCostsMonth: "",
+    otherProductiveCostsComment: "",
     productiveHoursMonth: "0",
+    productiveHoursComment: "",
+    notes: "",
   });
+  const [savedSimulations, setSavedSimulations] = useState<ProductionHourCostSimulationRow[]>([]);
+  const [simulationsLoading, setSimulationsLoading] = useState(false);
+  const [simulationSaving, setSimulationSaving] = useState(false);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [selectedSimulation, setSelectedSimulation] = useState<ProductionHourCostSimulationRow | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
+    setSimulationsLoading(true);
     try {
-      const [rolesData, componentsData, config] = await Promise.all([
+      const [rolesData, componentsData, config, simulationsData] = await Promise.all([
         fetchJsonOk<Role[]>("/api/roles"),
         fetchJsonOk<PayrollComponent[]>("/api/payroll-components"),
         fetchJsonOk<{
@@ -175,6 +214,7 @@ export const SettingsModule = () => {
             hhOverrideId?: string;
           };
         }>("/api/settings/globals"),
+        fetchJsonOk<ProductionHourCostSimulationRow[]>("/api/settings/production-hour-cost-simulations"),
       ]);
       setRoles(Array.isArray(rolesData) ? rolesData : []);
       setComponents(Array.isArray(componentsData) ? componentsData : []);
@@ -198,16 +238,24 @@ export const SettingsModule = () => {
         hhOverride: config.values.hhOverride ?? "",
       });
       setProductionHourCalcForm((prev) => ({
+        simulationName: prev.simulationName,
         payrollCostMonth: prev.payrollCostMonth,
+        payrollCostComment: prev.payrollCostComment,
         energyCostMonth: String(config.values.energyCost ?? 0),
+        energyCostComment: prev.energyCostComment,
         otherProductiveCostsMonth: prev.otherProductiveCostsMonth,
+        otherProductiveCostsComment: prev.otherProductiveCostsComment,
         productiveHoursMonth: String(config.values.factoryHours ?? 0),
+        productiveHoursComment: prev.productiveHoursComment,
+        notes: prev.notes,
       }));
+      setSavedSimulations(Array.isArray(simulationsData) ? simulationsData : []);
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar configurações.");
     } finally {
       setLoading(false);
+      setSimulationsLoading(false);
     }
   };
 
@@ -340,6 +388,18 @@ export const SettingsModule = () => {
     return Number.isFinite(n) ? n : 0;
   };
 
+  const numericFromUnknown = (value: number | string | null | undefined): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const formatDateTime = (value: string): string => {
+    if (!value) return "—";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "—";
+    return dt.toLocaleString("pt-BR");
+  };
+
   const calcPayrollMonth = calcToNumberOrZero(productionHourCalcForm.payrollCostMonth);
   const calcEnergyMonth = calcToNumberOrZero(productionHourCalcForm.energyCostMonth);
   const calcOtherCostsMonth = calcToNumberOrZero(productionHourCalcForm.otherProductiveCostsMonth);
@@ -357,11 +417,106 @@ export const SettingsModule = () => {
 
   const handleClearProductionHourSimulation = () => {
     setProductionHourCalcForm({
+      simulationName: "",
       payrollCostMonth: "",
+      payrollCostComment: "",
       energyCostMonth: "",
+      energyCostComment: "",
       otherProductiveCostsMonth: "",
+      otherProductiveCostsComment: "",
       productiveHoursMonth: "",
+      productiveHoursComment: "",
+      notes: "",
     });
+    setSelectedSimulation(null);
+    setSimulationError(null);
+  };
+
+  const loadSimulationIntoCalculator = (simulation: ProductionHourCostSimulationRow) => {
+    setProductionHourCalcForm({
+      simulationName: simulation.name ?? "",
+      payrollCostMonth: String(numericFromUnknown(simulation.payrollCostMonth)),
+      payrollCostComment: simulation.payrollCostComment ?? "",
+      energyCostMonth: String(numericFromUnknown(simulation.energyCostMonth)),
+      energyCostComment: simulation.energyCostComment ?? "",
+      otherProductiveCostsMonth: String(numericFromUnknown(simulation.otherProductiveCostsMonth)),
+      otherProductiveCostsComment: simulation.otherProductiveCostsComment ?? "",
+      productiveHoursMonth: String(numericFromUnknown(simulation.productiveHoursMonth)),
+      productiveHoursComment: simulation.productiveHoursComment ?? "",
+      notes: simulation.notes ?? "",
+    });
+    setSelectedSimulation(simulation);
+  };
+
+  const handleSaveProductionHourSimulation = async () => {
+    const simulationName = productionHourCalcForm.simulationName.trim();
+    if (!simulationName) {
+      setSimulationError("Informe o nome da simulação.");
+      return;
+    }
+    if (!canCalculateProductionHour || !productionHourSimulation) {
+      setSimulationError("Informe horas produtivas válidas para salvar a simulação.");
+      return;
+    }
+
+    setSimulationSaving(true);
+    setSimulationError(null);
+    try {
+      await fetchJsonOk("/api/settings/production-hour-cost-simulations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: simulationName,
+          payrollCostMonth: calcPayrollMonth,
+          payrollCostComment: productionHourCalcForm.payrollCostComment.trim(),
+          energyCostMonth: calcEnergyMonth,
+          energyCostComment: productionHourCalcForm.energyCostComment.trim(),
+          otherProductiveCostsMonth: calcOtherCostsMonth,
+          otherProductiveCostsComment: productionHourCalcForm.otherProductiveCostsComment.trim(),
+          productiveHoursMonth: calcHoursMonth,
+          productiveHoursComment: productionHourCalcForm.productiveHoursComment.trim(),
+          notes: productionHourCalcForm.notes.trim(),
+        }),
+      });
+      const updated = await fetchJsonOk<ProductionHourCostSimulationRow[]>(
+        "/api/settings/production-hour-cost-simulations"
+      );
+      setSavedSimulations(Array.isArray(updated) ? updated : []);
+    } catch (error) {
+      setSimulationError(error instanceof Error ? error.message : "Não foi possível salvar a simulação.");
+    } finally {
+      setSimulationSaving(false);
+    }
+  };
+
+  const handleDeleteSimulation = async (id: string) => {
+    const confirmed = window.confirm("Deseja realmente excluir esta simulação?");
+    if (!confirmed) return;
+    setSimulationError(null);
+    try {
+      await fetchOk(`/api/settings/production-hour-cost-simulations/${id}`, { method: "DELETE" });
+      const updated = await fetchJsonOk<ProductionHourCostSimulationRow[]>(
+        "/api/settings/production-hour-cost-simulations"
+      );
+      setSavedSimulations(Array.isArray(updated) ? updated : []);
+      if (selectedSimulation?.id === id) {
+        setSelectedSimulation(null);
+      }
+    } catch (error) {
+      setSimulationError(error instanceof Error ? error.message : "Não foi possível excluir a simulação.");
+    }
+  };
+
+  const handleViewSimulationDetails = async (id: string) => {
+    setSimulationError(null);
+    try {
+      const detail = await fetchJsonOk<ProductionHourCostSimulationRow>(
+        `/api/settings/production-hour-cost-simulations/${id}`
+      );
+      setSelectedSimulation(detail);
+    } catch (error) {
+      setSimulationError(error instanceof Error ? error.message : "Não foi possível carregar detalhes da simulação.");
+    }
   };
 
   return (
@@ -680,6 +835,21 @@ export const SettingsModule = () => {
                   </p>
                 </div>
 
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Nome da simulação
+                  </label>
+                  <input
+                    type="text"
+                    value={productionHourCalcForm.simulationName}
+                    onChange={(e) =>
+                      setProductionHourCalcForm((prev) => ({ ...prev, simulationName: e.target.value }))
+                    }
+                    className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                    placeholder="Ex: Cenário Abril/2026 - Turno atual"
+                  />
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
@@ -694,6 +864,15 @@ export const SettingsModule = () => {
                       }
                       className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                       placeholder="80000"
+                    />
+                    <textarea
+                      value={productionHourCalcForm.payrollCostComment}
+                      onChange={(e) =>
+                        setProductionHourCalcForm((prev) => ({ ...prev, payrollCostComment: e.target.value }))
+                      }
+                      rows={2}
+                      className="w-full p-2.5 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                      placeholder="Origem/comentário do custo folha"
                     />
                   </div>
 
@@ -711,6 +890,15 @@ export const SettingsModule = () => {
                       className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                       placeholder="5000"
                     />
+                    <textarea
+                      value={productionHourCalcForm.energyCostComment}
+                      onChange={(e) =>
+                        setProductionHourCalcForm((prev) => ({ ...prev, energyCostComment: e.target.value }))
+                      }
+                      rows={2}
+                      className="w-full p-2.5 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                      placeholder="Origem/comentário do custo energia"
+                    />
                   </div>
 
                   <div className="space-y-1.5">
@@ -727,6 +915,18 @@ export const SettingsModule = () => {
                       className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                       placeholder="12000"
                     />
+                    <textarea
+                      value={productionHourCalcForm.otherProductiveCostsComment}
+                      onChange={(e) =>
+                        setProductionHourCalcForm((prev) => ({
+                          ...prev,
+                          otherProductiveCostsComment: e.target.value,
+                        }))
+                      }
+                      rows={2}
+                      className="w-full p-2.5 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                      placeholder="Origem/comentário de outros custos produtivos"
+                    />
                   </div>
 
                   <div className="space-y-1.5">
@@ -742,6 +942,15 @@ export const SettingsModule = () => {
                       }
                       className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                       placeholder="8448"
+                    />
+                    <textarea
+                      value={productionHourCalcForm.productiveHoursComment}
+                      onChange={(e) =>
+                        setProductionHourCalcForm((prev) => ({ ...prev, productiveHoursComment: e.target.value }))
+                      }
+                      rows={2}
+                      className="w-full p-2.5 bg-background border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm"
+                      placeholder="Origem/comentário das horas produtivas"
                     />
                   </div>
                 </div>
@@ -797,7 +1006,34 @@ export const SettingsModule = () => {
                   </p>
                 </div>
 
-                <div className="flex justify-end">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Observações gerais da simulação
+                  </label>
+                  <textarea
+                    value={productionHourCalcForm.notes}
+                    onChange={(e) => setProductionHourCalcForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    rows={3}
+                    className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                    placeholder="Premissas, justificativas e contexto gerencial da simulação"
+                  />
+                </div>
+
+                {simulationError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {simulationError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveProductionHourSimulation}
+                    disabled={simulationSaving}
+                    className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-60"
+                  >
+                    {simulationSaving ? "Salvando..." : "Salvar Simulação"}
+                  </button>
                   <button
                     type="button"
                     onClick={handleClearProductionHourSimulation}
@@ -806,6 +1042,125 @@ export const SettingsModule = () => {
                     Limpar simulação
                   </button>
                 </div>
+
+                <div className="pt-6 border-t border-border space-y-3">
+                  <h5 className="text-base font-bold">Simulações salvas</h5>
+                  <div className="overflow-x-auto rounded-xl border border-border">
+                    <table className="w-full min-w-[900px] text-sm">
+                      <thead className="bg-accent/30">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold">Nome</th>
+                          <th className="px-3 py-2 text-right font-semibold">Valor hora total</th>
+                          <th className="px-3 py-2 text-right font-semibold">Horas produtivas</th>
+                          <th className="px-3 py-2 text-right font-semibold">Custo folha</th>
+                          <th className="px-3 py-2 text-right font-semibold">Custo energia</th>
+                          <th className="px-3 py-2 text-right font-semibold">Outros custos</th>
+                          <th className="px-3 py-2 text-left font-semibold">Criado em</th>
+                          <th className="px-3 py-2 text-left font-semibold">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {simulationsLoading ? (
+                          <tr>
+                            <td className="px-3 py-3 text-muted-foreground" colSpan={8}>
+                              Carregando simulações...
+                            </td>
+                          </tr>
+                        ) : savedSimulations.length === 0 ? (
+                          <tr>
+                            <td className="px-3 py-3 text-muted-foreground" colSpan={8}>
+                              Nenhuma simulação salva.
+                            </td>
+                          </tr>
+                        ) : (
+                          savedSimulations.map((simulation) => (
+                            <tr key={simulation.id} className="border-t border-border">
+                              <td className="px-3 py-2">{simulation.name}</td>
+                              <td className="px-3 py-2 text-right">
+                                {formatCurrency(numericFromUnknown(simulation.totalProductionHourCost), 2)}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                {formatNumber(numericFromUnknown(simulation.productiveHoursMonth), 2)}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                {formatCurrency(numericFromUnknown(simulation.payrollCostMonth), 2)}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                {formatCurrency(numericFromUnknown(simulation.energyCostMonth), 2)}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                {formatCurrency(numericFromUnknown(simulation.otherProductiveCostsMonth), 2)}
+                              </td>
+                              <td className="px-3 py-2">{formatDateTime(simulation.createdAt)}</td>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewSimulationDetails(simulation.id)}
+                                    className="px-2 py-1 rounded border border-border text-xs hover:bg-accent"
+                                  >
+                                    Ver detalhes
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSimulation(simulation.id)}
+                                    className="px-2 py-1 rounded border border-red-300 text-red-700 text-xs hover:bg-red-50"
+                                  >
+                                    Excluir
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {selectedSimulation && (
+                  <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-bold">Detalhes da simulação</p>
+                        <p className="text-xs text-muted-foreground">{selectedSimulation.name}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => loadSimulationIntoCalculator(selectedSimulation)}
+                        className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:opacity-90"
+                      >
+                        Carregar na calculadora
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="font-semibold">Folha</p>
+                        <p>{formatCurrency(numericFromUnknown(selectedSimulation.payrollCostMonth), 2)}</p>
+                        <p className="text-xs text-muted-foreground">{selectedSimulation.payrollCostComment ?? "—"}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Energia</p>
+                        <p>{formatCurrency(numericFromUnknown(selectedSimulation.energyCostMonth), 2)}</p>
+                        <p className="text-xs text-muted-foreground">{selectedSimulation.energyCostComment ?? "—"}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Outros custos</p>
+                        <p>{formatCurrency(numericFromUnknown(selectedSimulation.otherProductiveCostsMonth), 2)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {selectedSimulation.otherProductiveCostsComment ?? "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Horas produtivas</p>
+                        <p>{formatNumber(numericFromUnknown(selectedSimulation.productiveHoursMonth), 2)}</p>
+                        <p className="text-xs text-muted-foreground">{selectedSimulation.productiveHoursComment ?? "—"}</p>
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground whitespace-pre-line">{selectedSimulation.formulaText}</div>
+                    <div className="text-xs text-muted-foreground">{selectedSimulation.notes ?? "Sem observações."}</div>
+                  </div>
+                )}
               </div>
             </div>
           )}

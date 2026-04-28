@@ -317,11 +317,19 @@ export const SYSTEM_GUIDE_SECTIONS: SystemGuideSection[] = [
         features: [
           "Hub com seções (gerais, operacional, integrações futuras, segurança futura, sistema futuro) conforme a tela.",
           "Gestão de cargos e componentes de folha na parte operacional liberada.",
+          "Calculadora de Valor Hora de Produção com memória de cálculo (nome da simulação, comentários de origem e observações).",
+          "Área de Simulações salvas com ações de ver detalhes, recarregar premissas na calculadora e excluir simulação.",
         ],
-        basicFlow: ["Abra Configurações.", "Revise parâmetros globais e estrutura operacional com perfil autorizado.", "Salve alterações conforme os formulários."],
+        basicFlow: [
+          "Abra Configurações.",
+          "Revise parâmetros globais e estrutura operacional com perfil autorizado.",
+          "Na calculadora de valor hora, preencha custos, horas e comentários de origem; use Salvar Simulação para registrar premissas gerenciais.",
+          "Consulte Simulações salvas para auditar fórmula, observações e recarregar um cenário na calculadora quando necessário.",
+        ],
         notes: [
           "Quando o bootstrap administrativo estiver habilitado, a tela pode solicitar login administrativo temporário antes de exibir o conteúdo completo — comportamento descrito na própria interface.",
           "Integrações e permissionamento avançado podem constar como preparação futura na tela.",
+          "Salvar Simulação não altera automaticamente os parâmetros globais usados nos cálculos oficiais do sistema.",
         ],
         relatedModules: ["Colaboradores", "Todos os módulos que consomem parâmetros globais"],
       },

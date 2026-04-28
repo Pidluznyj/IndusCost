@@ -597,6 +597,29 @@ model MaintenanceRequestStatusHistory {
   @@index([changedAt])
 }
 
+model ProductionHourCostSimulation {
+  id                         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                       String
+  payrollCostMonth           Decimal  @db.Decimal(20, 6)
+  payrollCostComment         String?
+  energyCostMonth            Decimal  @db.Decimal(20, 6)
+  energyCostComment          String?
+  otherProductiveCostsMonth  Decimal  @db.Decimal(20, 6)
+  otherProductiveCostsComment String?
+  productiveHoursMonth       Decimal  @db.Decimal(20, 6)
+  productiveHoursComment     String?
+  payrollCostPerHour         Decimal  @db.Decimal(20, 6)
+  energyCostPerHour          Decimal  @db.Decimal(20, 6)
+  otherCostPerHour           Decimal  @db.Decimal(20, 6)
+  totalProductionHourCost    Decimal  @db.Decimal(20, 6)
+  formulaText                String
+  notes                      String?
+  createdAt                  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([createdAt])
+}
+
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model ProductBOM_backup_420_01A_20260413 {
   id             String?  @db.Uuid
