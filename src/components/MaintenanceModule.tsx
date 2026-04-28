@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, KanbanSquare, List, Loader2, Plus, Search, TriangleAlert, Wrench, X } from "lucide-react";
+import { CheckCircle2, Clock, KanbanSquare, Loader2, Plus, Search, TriangleAlert, Wrench, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import type {
@@ -99,7 +99,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export function MaintenanceModule() {
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const [kanbanOpen, setKanbanOpen] = useState(false);
   const [rows, setRows] = useState<MaintenanceRequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -319,39 +319,24 @@ export function MaintenanceModule() {
             Controle de solicitações, responsáveis, status e materiais necessários.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" />
-          Nova solicitação
-        </button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setViewMode("list")}
-          className={cn(
-            "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-            viewMode === "list" ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent"
-          )}
-        >
-          <List className="h-4 w-4" />
-          Lista
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("kanban")}
-          className={cn(
-            "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-            viewMode === "kanban" ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent"
-          )}
-        >
-          <KanbanSquare className="h-4 w-4" />
-          Kanban
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setKanbanOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card text-sm font-medium hover:bg-accent"
+          >
+            <KanbanSquare className="h-4 w-4" />
+            Abrir Kanban
+          </button>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" />
+            Nova solicitação
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -480,7 +465,6 @@ export function MaintenanceModule() {
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
       ) : null}
 
-      {viewMode === "list" ? (
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="p-3 border-b border-border text-xs text-muted-foreground">
           Exibindo <strong className="text-foreground">{listRange}</strong> de{" "}
@@ -572,90 +556,6 @@ export function MaintenanceModule() {
           </table>
         </div>
       </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {kanbanColumns.map((col) => (
-              <div key={col.status} className="min-w-[280px] max-w-[320px] flex-1 rounded-xl border border-border bg-background/30">
-                <div className="p-3 border-b border-border flex items-center justify-between">
-                  <p className="text-sm font-semibold">{col.label}</p>
-                  <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold">{col.rows.length}</span>
-                </div>
-                <div className="p-2 space-y-2 max-h-[62vh] overflow-y-auto">
-                  {col.rows.length === 0 ? (
-                    <p className="text-xs text-muted-foreground p-2">Sem solicitações nesta coluna.</p>
-                  ) : (
-                    col.rows.map((r) => {
-                      const overdue = isOverdue(r);
-                      return (
-                        <div
-                          key={r.id}
-                          className="rounded-lg border border-border bg-card p-3 space-y-2 cursor-pointer hover:bg-accent/20"
-                          onClick={() => void openDetail(r.id)}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-xs font-mono text-muted-foreground">#{Number.isFinite(Number(r.number)) ? r.number : "—"}</p>
-                            <span
-                              className={cn(
-                                "text-[10px] font-bold uppercase px-2 py-0.5 rounded-full",
-                                r.priority === "CRITICA" && "bg-red-100 text-red-700",
-                                r.priority === "ALTA" && "bg-orange-100 text-orange-700",
-                                r.priority === "MEDIA" && "bg-blue-100 text-blue-700",
-                                r.priority === "BAIXA" && "bg-muted text-muted-foreground"
-                              )}
-                            >
-                              {PRIORITY_LABEL[r.priority] ?? "—"}
-                            </span>
-                          </div>
-                          <p className="font-medium leading-snug">{r.title || "—"}</p>
-                          <div className="text-xs text-muted-foreground space-y-0.5">
-                            <p>{CATEGORY_LABEL[r.category] ?? "—"}</p>
-                            <p>{r.areaSector || "—"} · {r.location || "—"}</p>
-                            <p>Resp.: {r.responsible || "—"}</p>
-                            <p>Desejada: {formatDate(r.desiredDate)}</p>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {r.needsMaterial ? (
-                              <span className="text-[10px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5" title={r.materialNotes || "Precisa de material"}>
-                                Precisa material
-                              </span>
-                            ) : null}
-                            {overdue ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] rounded-full bg-red-100 text-red-700 px-2 py-0.5">
-                                <TriangleAlert className="h-3 w-3" />
-                                Atrasado
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="pt-1 border-t border-border/60 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                            <select
-                              className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
-                              value={kanbanMoveTo[r.id] ?? r.status}
-                              onChange={(e) => setKanbanMoveTo((prev) => ({ ...prev, [r.id]: e.target.value as MaintenanceStatus }))}
-                            >
-                              {STATUS_OPTIONS.map((s) => (
-                                <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              disabled={statusSaving || (kanbanMoveTo[r.id] ?? r.status) === r.status}
-                              onClick={() => void handleKanbanMove(r)}
-                              className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium disabled:opacity-50"
-                            >
-                              Mover
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
         <p className="text-sm text-muted-foreground">
@@ -758,6 +658,117 @@ export function MaintenanceModule() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {kanbanOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card w-[95vw] h-[90vh] rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-border flex items-center justify-between">
+              <div>
+                <h4 className="text-lg font-bold">Kanban de Manutenção Predial</h4>
+                <p className="text-sm text-muted-foreground">
+                  Acompanhamento operacional por status com os filtros atuais aplicados.
+                </p>
+              </div>
+              <button type="button" onClick={() => setKanbanOpen(false)} className="p-2 rounded-md hover:bg-accent">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-x-auto p-4">
+              <div className="min-w-max h-full flex gap-3">
+                {kanbanColumns.map((col) => (
+                  <div
+                    key={col.status}
+                    className="w-[320px] xl:w-[340px] h-full rounded-xl border border-border bg-background/30 flex flex-col"
+                  >
+                    <div className="p-3 border-b border-border flex items-center justify-between">
+                      <p className="text-sm font-semibold">{col.label}</p>
+                      <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold">{col.rows.length}</span>
+                    </div>
+                    <div className="p-2 space-y-2 flex-1 overflow-y-auto">
+                      {col.rows.length === 0 ? (
+                        <p className="text-xs text-muted-foreground p-2">Sem solicitações nesta coluna.</p>
+                      ) : (
+                        col.rows.map((r) => {
+                          const overdue = isOverdue(r);
+                          return (
+                            <div
+                              key={r.id}
+                              className="rounded-lg border border-border bg-card p-3 space-y-2 cursor-pointer hover:bg-accent/20"
+                              onClick={() => void openDetail(r.id)}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-xs font-mono text-muted-foreground">
+                                  #{Number.isFinite(Number(r.number)) ? r.number : "—"}
+                                </p>
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-bold uppercase px-2 py-0.5 rounded-full",
+                                    r.priority === "CRITICA" && "bg-red-100 text-red-700",
+                                    r.priority === "ALTA" && "bg-orange-100 text-orange-700",
+                                    r.priority === "MEDIA" && "bg-blue-100 text-blue-700",
+                                    r.priority === "BAIXA" && "bg-muted text-muted-foreground"
+                                  )}
+                                >
+                                  {PRIORITY_LABEL[r.priority] ?? "—"}
+                                </span>
+                              </div>
+                              <p className="font-medium leading-snug">{r.title || "—"}</p>
+                              <div className="text-xs text-muted-foreground space-y-0.5">
+                                <p>{CATEGORY_LABEL[r.category] ?? "—"}</p>
+                                <p>{r.areaSector || "—"} · {r.location || "—"}</p>
+                                <p>Resp.: {r.responsible || "—"}</p>
+                                <p>Desejada: {formatDate(r.desiredDate)}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {r.needsMaterial ? (
+                                  <span
+                                    className="text-[10px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5"
+                                    title={r.materialNotes || "Precisa de material"}
+                                  >
+                                    Precisa material
+                                  </span>
+                                ) : null}
+                                {overdue ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] rounded-full bg-red-100 text-red-700 px-2 py-0.5">
+                                    <TriangleAlert className="h-3 w-3" />
+                                    Atrasado
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="pt-1 border-t border-border/60 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <select
+                                  className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                                  value={kanbanMoveTo[r.id] ?? r.status}
+                                  onChange={(e) =>
+                                    setKanbanMoveTo((prev) => ({ ...prev, [r.id]: e.target.value as MaintenanceStatus }))
+                                  }
+                                >
+                                  {STATUS_OPTIONS.map((s) => (
+                                    <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  disabled={statusSaving || (kanbanMoveTo[r.id] ?? r.status) === r.status}
+                                  onClick={() => void handleKanbanMove(r)}
+                                  className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium disabled:opacity-50"
+                                >
+                                  Mover
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
