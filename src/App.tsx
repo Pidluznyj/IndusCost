@@ -16,6 +16,7 @@ import { CustomerModule } from "./components/CustomerModule";
 import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { PurchaseModule } from "./components/PurchaseModule";
+import { MaintenanceModule } from "./components/MaintenanceModule";
 import { SystemGuideModule } from "./components/SystemGuideModule";
 import { LandingPage } from "./components/LandingPage";
 import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
@@ -315,6 +316,17 @@ export default function App() {
               headerActions={<ModuleIndicatorsButton to="/purchases/indicators" />}
             >
               <PurchaseModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="maintenance"
+          element={
+            <ModulePageShell
+              title="Manutenção Predial"
+              description="Controle de solicitações de manutenção predial/facilities, responsáveis, status e materiais."
+            >
+              <MaintenanceModule />
             </ModulePageShell>
           }
         />

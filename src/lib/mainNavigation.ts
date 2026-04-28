@@ -8,6 +8,7 @@ export const MAIN_MODULE_PATH_SEGMENTS = [
   "machines",
   "materials",
   "purchases",
+  "maintenance",
   "products",
   "opex",
   "taxes",

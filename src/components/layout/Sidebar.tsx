@@ -19,6 +19,7 @@ import {
   Layers,
   BookOpen,
   ClipboardList,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
@@ -32,6 +33,7 @@ export const Sidebar = () => {
     { id: "machines", icon: Cpu, label: "Máquinas" },
     { id: "materials", icon: Truck, label: "Suprimentos" },
     { id: "purchases", icon: ShoppingCart, label: "Compras" },
+    { id: "maintenance", icon: Wrench, label: "Manutenção Predial" },
     { id: "products", icon: Package, label: "Produtos" },
     { id: "opex", icon: PieChart, label: "Custos Indiretos" },
     { id: "taxes", icon: Scale, label: "Tributos" },
