@@ -45,6 +45,13 @@ interface PayrollComponent {
   value: number;
 }
 
+type ProductionHourCalcForm = {
+  payrollCostMonth: string;
+  energyCostMonth: string;
+  otherProductiveCostsMonth: string;
+  productiveHoursMonth: string;
+};
+
 type HubSection = "globals" | "operational" | "integrations" | "security" | "system";
 type OperationalSubTab = "roles" | "payroll";
 
@@ -140,6 +147,12 @@ export const SettingsModule = () => {
     factoryHours: 8448,
     hhOverride: "" as string | number
   });
+  const [productionHourCalcForm, setProductionHourCalcForm] = useState<ProductionHourCalcForm>({
+    payrollCostMonth: "",
+    energyCostMonth: "0",
+    otherProductiveCostsMonth: "",
+    productiveHoursMonth: "0",
+  });
 
   const fetchData = async () => {
     setLoading(true);
@@ -184,6 +197,12 @@ export const SettingsModule = () => {
         factoryHours: config.values.factoryHours,
         hhOverride: config.values.hhOverride ?? "",
       });
+      setProductionHourCalcForm((prev) => ({
+        payrollCostMonth: prev.payrollCostMonth,
+        energyCostMonth: String(config.values.energyCost ?? 0),
+        otherProductiveCostsMonth: prev.otherProductiveCostsMonth,
+        productiveHoursMonth: String(config.values.factoryHours ?? 0),
+      }));
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar configurações.");
@@ -314,6 +333,35 @@ export const SettingsModule = () => {
       console.error("Erro ao salvar:", error);
       alert(error instanceof Error ? error.message : "Não foi possível salvar.");
     }
+  };
+
+  const calcToNumberOrZero = (value: string): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const calcPayrollMonth = calcToNumberOrZero(productionHourCalcForm.payrollCostMonth);
+  const calcEnergyMonth = calcToNumberOrZero(productionHourCalcForm.energyCostMonth);
+  const calcOtherCostsMonth = calcToNumberOrZero(productionHourCalcForm.otherProductiveCostsMonth);
+  const calcHoursMonth = calcToNumberOrZero(productionHourCalcForm.productiveHoursMonth);
+  const canCalculateProductionHour = calcHoursMonth > 0;
+
+  const productionHourSimulation = canCalculateProductionHour
+    ? {
+        payrollPerHour: calcPayrollMonth / calcHoursMonth,
+        energyPerHour: calcEnergyMonth / calcHoursMonth,
+        otherCostsPerHour: calcOtherCostsMonth / calcHoursMonth,
+        totalPerHour: (calcPayrollMonth + calcEnergyMonth + calcOtherCostsMonth) / calcHoursMonth,
+      }
+    : null;
+
+  const handleClearProductionHourSimulation = () => {
+    setProductionHourCalcForm({
+      payrollCostMonth: "",
+      energyCostMonth: "",
+      otherProductiveCostsMonth: "",
+      productiveHoursMonth: "",
+    });
   };
 
   return (
@@ -622,6 +670,142 @@ export const SettingsModule = () => {
                 >
                   Salvar Parâmetros
                 </button>
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-border space-y-5">
+                <div className="space-y-1">
+                  <h4 className="text-lg font-bold">Calculadora de Valor Hora de Produção</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Simule o custo total por hora produtiva somando folha, energia e outros custos mensais.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Custo folha produção (R$ / mês)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={productionHourCalcForm.payrollCostMonth}
+                      onChange={(e) =>
+                        setProductionHourCalcForm((prev) => ({ ...prev, payrollCostMonth: e.target.value }))
+                      }
+                      className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                      placeholder="80000"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Custo energia (R$ / mês)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={productionHourCalcForm.energyCostMonth}
+                      onChange={(e) =>
+                        setProductionHourCalcForm((prev) => ({ ...prev, energyCostMonth: e.target.value }))
+                      }
+                      className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                      placeholder="5000"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Outros custos produtivos (R$ / mês)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={productionHourCalcForm.otherProductiveCostsMonth}
+                      onChange={(e) =>
+                        setProductionHourCalcForm((prev) => ({ ...prev, otherProductiveCostsMonth: e.target.value }))
+                      }
+                      className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                      placeholder="12000"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Horas produtivas disponíveis no mês
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={productionHourCalcForm.productiveHoursMonth}
+                      onChange={(e) =>
+                        setProductionHourCalcForm((prev) => ({ ...prev, productiveHoursMonth: e.target.value }))
+                      }
+                      className="w-full p-3 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                      placeholder="8448"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                  <div className="rounded-xl border border-border bg-card/40 p-4">
+                    <p className="text-xs text-muted-foreground uppercase font-bold">Parcela folha por hora</p>
+                    <p className="text-lg font-bold mt-1">
+                      {canCalculateProductionHour
+                        ? formatCurrency(productionHourSimulation?.payrollPerHour ?? 0, 2)
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card/40 p-4">
+                    <p className="text-xs text-muted-foreground uppercase font-bold">Parcela energia por hora</p>
+                    <p className="text-lg font-bold mt-1">
+                      {canCalculateProductionHour
+                        ? formatCurrency(productionHourSimulation?.energyPerHour ?? 0, 2)
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card/40 p-4">
+                    <p className="text-xs text-muted-foreground uppercase font-bold">Parcela outros custos por hora</p>
+                    <p className="text-lg font-bold mt-1">
+                      {canCalculateProductionHour
+                        ? formatCurrency(productionHourSimulation?.otherCostsPerHour ?? 0, 2)
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                    <p className="text-xs text-primary uppercase font-bold">Valor hora total de produção</p>
+                    <p className="text-xl font-black mt-1 text-primary">
+                      {canCalculateProductionHour
+                        ? formatCurrency(productionHourSimulation?.totalPerHour ?? 0, 2)
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                {!canCalculateProductionHour && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Informe as horas produtivas para calcular.
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    Valor hora = (Folha + Energia + Outros custos) ÷ Horas produtivas
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Esta calculadora é apenas uma simulação gerencial. Ela não altera automaticamente os parâmetros
+                    usados nos cálculos reais do sistema.
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleClearProductionHourSimulation}
+                    className="px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent transition-colors"
+                  >
+                    Limpar simulação
+                  </button>
+                </div>
               </div>
             </div>
           )}
