@@ -68,6 +68,10 @@ type DryRunResult = {
   criticalSchemaNote: string;
 };
 
+function timeLog(label: string): void {
+  console.warn(`[nomus-sales-orders-v1][timing] ${new Date().toISOString()} ${label}`);
+}
+
 function getRequiredEnv(name: string): string {
   const value = (process.env[name] ?? "").trim();
   if (!value) throw new Error(`Variável obrigatória ausente: ${name}`);
@@ -326,6 +330,45 @@ async function mapPessoaBridgeByExternalCustomerId(
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
 
+  const bridge = new Map<number, { taxId: string | null; customerId: string | null }>();
+  const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
+
+  const cachedSalesOrderCustomers =
+    uniqueIds.length === 0
+      ? []
+      : await prisma.salesOrder.findMany({
+          where: {
+            sourceSystem: SOURCE_SYSTEM,
+            externalCustomerId: { in: uniqueIds },
+          },
+          select: {
+            externalCustomerId: true,
+            Customer: {
+              select: {
+                id: true,
+                taxId: true,
+              },
+            },
+          },
+        });
+
+  for (const row of cachedSalesOrderCustomers) {
+    const externalCustomerId = row.externalCustomerId;
+    if (externalCustomerId == null || !row.Customer?.id) continue;
+    if (!bridge.has(externalCustomerId)) {
+      bridge.set(externalCustomerId, {
+        taxId: normalizeTaxId(row.Customer.taxId),
+        customerId: row.Customer.id,
+      });
+    }
+  }
+
+  timeLog(
+    `mapPessoaBridgeByExternalCustomerId cacheSalesOrder resolved=${bridge.size}/${uniqueIds.length}`
+  );
+
+  const missingIds = uniqueIds.filter((id) => !bridge.has(id));
+
   const localCustomers = await prisma.customer.findMany({
     select: { id: true, taxId: true },
   });
@@ -335,10 +378,17 @@ async function mapPessoaBridgeByExternalCustomerId(
     if (taxId) localByTaxId.set(taxId, customer.id);
   }
 
-  const bridge = new Map<number, { taxId: string | null; customerId: string | null }>();
-  const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
+  let pessoaFetchCount = 0;
+  for (const idCliente of missingIds) {
+    pessoaFetchCount += 1;
+    if (
+      pessoaFetchCount === 1 ||
+      pessoaFetchCount % 25 === 0 ||
+      pessoaFetchCount === missingIds.length
+    ) {
+      timeLog(`fetchPessoa progresso=${pessoaFetchCount}/${missingIds.length}`);
+    }
 
-  for (const idCliente of uniqueIds) {
     const url = buildNomusUrl(baseUrl, "pessoas");
     url.searchParams.set("query", `id==${idCliente}`);
 
@@ -352,6 +402,10 @@ async function mapPessoaBridgeByExternalCustomerId(
     const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
     bridge.set(idCliente, { taxId, customerId });
   }
+
+  timeLog(
+    `mapPessoaBridgeByExternalCustomerId fetchPessoa missing=${missingIds.length} totalResolved=${bridge.size}`
+  );
 
   return bridge;
 }
@@ -447,6 +501,48 @@ async function loadSellerResponsibleMap(): Promise<SellerResponsibleMap> {
 
     if (sellerId == null || !responsible) continue;
     if (!map.has(sellerId)) map.set(sellerId, responsible);
+  }
+
+  return map;
+}
+
+async function loadProductMapFromProposalItems(
+  externalProductIds: number[]
+): Promise<Map<number, { id: string; sku: string; name: string }>> {
+  const uniqueIds = [...new Set(externalProductIds)].filter((id) => id > 0);
+
+  if (uniqueIds.length === 0) return new Map();
+
+  const rows = await prisma.proposalItem.findMany({
+    where: {
+      externalProductId: { in: uniqueIds },
+    },
+    select: {
+      externalProductId: true,
+      Product: {
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  const map = new Map<number, { id: string; sku: string; name: string }>();
+
+  for (const row of rows) {
+    const externalProductId = row.externalProductId;
+    if (externalProductId == null) continue;
+    if (!row.Product?.sku) continue;
+
+    if (!map.has(externalProductId)) {
+      map.set(externalProductId, {
+        id: row.Product.id,
+        sku: row.Product.sku,
+        name: row.Product.name,
+      });
+    }
   }
 
   return map;
@@ -698,6 +794,7 @@ function analyzeOrder(
 
 function collectNomusItemStatuses(pedidos: JsonObject[]): Record<string, number> {
   const dist: Record<string, number> = {};
+  timeLog("INICIO analyzeOrder loop");
   for (const pedido of pedidos) {
     const items = Array.isArray(pedido.itensPedido) ? pedido.itensPedido : [];
     for (const raw of items) {
@@ -873,13 +970,17 @@ async function main(): Promise<void> {
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
 
+  timeLog("INICIO fetchAllNomusPedidos");
   const pedidos = await fetchAllNomusPedidos(nomusBaseUrl);
+  timeLog(`FIM fetchAllNomusPedidos total=${pedidos.length}`);
   const itemStatusDistribution = collectNomusItemStatuses(pedidos);
 
   const externalCustomerIds = pedidos
     .map((p) => toInt(p.idPessoaCliente))
     .filter((id): id is number => id != null);
+  timeLog(`INICIO mapPessoaBridgeByExternalCustomerId totalIds=${externalCustomerIds.length}`);
   const customerBridge = await mapPessoaBridgeByExternalCustomerId(nomusBaseUrl, externalCustomerIds);
+  timeLog(`FIM mapPessoaBridgeByExternalCustomerId resolved=${customerBridge.size}`);
 
   const idProdutos = new Set<number>();
   for (const pedido of pedidos) {
@@ -891,11 +992,32 @@ async function main(): Promise<void> {
     }
   }
 
+  const externalProductIds = [...idProdutos];
+
+  timeLog(`INICIO loadProductMapFromProposalItems totalIds=${externalProductIds.length}`);
+  const proposalProductMap = await loadProductMapFromProposalItems(externalProductIds);
+  timeLog(`FIM loadProductMapFromProposalItems resolved=${proposalProductMap.size}`);
+
+  const idsMissingLocalProduct = externalProductIds.filter((id) => !proposalProductMap.has(id));
+
+  timeLog(
+    `INICIO fetchNomusProductById sequencial missingLocal=${idsMissingLocalProduct.length}/${externalProductIds.length}`
+  );
   const nomusProductById = new Map<number, JsonObject>();
-  for (const id of idProdutos) {
+  let productFetchCount = 0;
+  for (const id of idsMissingLocalProduct) {
+    productFetchCount += 1;
+    if (
+      productFetchCount === 1 ||
+      productFetchCount % 25 === 0 ||
+      productFetchCount === idsMissingLocalProduct.length
+    ) {
+      timeLog(`fetchNomusProductById progresso=${productFetchCount}/${idsMissingLocalProduct.length}`);
+    }
     const prod = await fetchNomusProductById(nomusBaseUrl, id, maxRetries, retryBaseMs);
     if (prod) nomusProductById.set(id, prod);
   }
+  timeLog(`FIM fetchNomusProductById sequencial resolved=${nomusProductById.size}`);
 
   const skus = new Set<string>();
   for (const prod of nomusProductById.values()) {
@@ -903,15 +1025,34 @@ async function main(): Promise<void> {
     if (sku) skus.add(sku);
   }
 
+  timeLog(`INICIO prisma.product.findMany skus=${skus.size}`);
   const products = await prisma.product.findMany({
     where: { sku: { in: [...skus] } },
     select: { id: true, sku: true, name: true },
   });
   const productBySku = new Map(products.map((p) => [p.sku, { id: p.id, sku: p.sku, name: p.name }]));
-  const productById = new Map(products.map((p) => [p.id, { id: p.id, sku: p.sku, name: p.name }]));
 
+  for (const [externalProductId, localProduct] of proposalProductMap.entries()) {
+    productBySku.set(localProduct.sku, localProduct);
+    nomusProductById.set(externalProductId, {
+      id: externalProductId,
+      codigo: localProduct.sku,
+      nome: localProduct.name,
+      ativo: true,
+    });
+  }
+
+  const productById = new Map([...productBySku.values()].map((p) => [p.id, { id: p.id, sku: p.sku, name: p.name }]));
+
+  timeLog(`FIM prisma.product.findMany total=${productBySku.size} localCache=${proposalProductMap.size}`);
+
+  timeLog("INICIO loadProposalItemIndex");
   const proposalIndex = await loadProposalItemIndex();
+  timeLog(`FIM loadProposalItemIndex keys=${proposalIndex.size}`);
+
+  timeLog("INICIO loadSellerResponsibleMap");
   const sellerResponsibleMap = await loadSellerResponsibleMap();
+  timeLog(`FIM loadSellerResponsibleMap sellers=${sellerResponsibleMap.size}`);
 
   const eligible: EligibleSalesOrderPlan[] = [];
   const blocked: BlockedSalesOrder[] = [];
@@ -929,6 +1070,8 @@ async function main(): Promise<void> {
     if (el) eligible.push(el);
     if (bl) blocked.push(bl);
   }
+
+  timeLog(`FIM analyzeOrder loop eligible=${eligible.length} blocked=${blocked.length}`);
 
   const proposalIdsForSo = [
     ...new Set(
@@ -985,7 +1128,9 @@ async function main(): Promise<void> {
     }
   }
 
+  timeLog("INICIO runDry");
   const preview = await runDry(eligible);
+  timeLog("FIM runDry");
 
   const criticalSchemaNote =
     "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido. Produto inativo no Nomus não bloqueia pedido histórico se o SKU for resolvido localmente. SalesOrder.responsible é resolvido por Proposal.externalSellerId -> Proposal.responsible e, como fallback, por Proposal.responsible vinculada ao item.";
@@ -1002,7 +1147,9 @@ async function main(): Promise<void> {
     criticalSchemaNote,
   };
 
+  timeLog(isApply ? "INICIO runApply" : "SKIP runApply dry-run");
   const applied = isApply ? await runApply(eligible) : null;
+  timeLog(isApply ? "FIM runApply" : "FIM dry-run sem apply");
 
   console.log(
     JSON.stringify(
