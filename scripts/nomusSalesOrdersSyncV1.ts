@@ -881,8 +881,25 @@ async function runApply(eligible: EligibleSalesOrderPlan[]): Promise<{ created: 
         select: { id: true },
       });
 
+      let safeProposalId = plan.proposalId;
+
+      if (safeProposalId) {
+        const salesOrderUsingProposal = await tx.salesOrder.findUnique({
+          where: { proposalId: safeProposalId },
+          select: { id: true, externalSalesOrderId: true, orderCode: true },
+        });
+
+        if (salesOrderUsingProposal && (!existing || salesOrderUsingProposal.id !== existing.id)) {
+          console.warn(
+            `[nomus-sales-orders-v1] proposalId ${safeProposalId} já está vinculado ao pedido ${salesOrderUsingProposal.orderCode ?? salesOrderUsingProposal.externalSalesOrderId}; ` +
+              `pedido ${plan.codigoPedido} será espelhado sem vínculo direto com proposalId.`,
+          );
+          safeProposalId = null;
+        }
+      }
+
       const baseData = {
-        proposalId: plan.proposalId,
+        proposalId: safeProposalId,
         sourceSystem: SOURCE_SYSTEM,
         externalSalesOrderId: plan.externalSalesOrderId,
         externalSalesOrderCode: plan.codigoPedido,
