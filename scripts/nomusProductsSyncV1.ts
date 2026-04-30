@@ -518,7 +518,7 @@ function mapProducts(
 async function runDry(eligible: EligibleProduct[]) {
   const existing = await prisma.product.findMany({
     where: { sku: { in: eligible.map((p) => p.sku) } },
-    select: { id: true, sku: true, name: true },
+    select: { id: true, sku: true, name: true, description: true, type: true },
   });
   const bySku = new Map(existing.map((p) => [p.sku, p]));
   const createsPreview: Array<{
@@ -568,9 +568,55 @@ async function runDry(eligible: EligibleProduct[]) {
     inferredType: ItemType;
     typeInferenceConfidence: "HIGH" | "LOW";
   }> = [];
+  let createCount = 0;
+  let updateCount = 0;
+  let noChangeCount = 0;
+  let nameChangeCount = 0;
+  let descriptionChangeCount = 0;
+  let createProductCount = 0;
+  let createComponentCount = 0;
+  let updateExistingProductCount = 0;
+  let updateExistingComponentCount = 0;
+  let createsUsingSkuAsNameCount = 0;
+  let createsUsingDescriptionAsNameCount = 0;
+  let updatesPreservingExistingNameCount = 0;
+  let updatesChangingNameCount = 0;
+  const createsUsingSkuAsNamePreview: Array<{
+    sku: string;
+    name: string;
+    nomusRawName: string | null;
+    nomusDescription: string | null;
+    inferredType: ItemType;
+    nomusTypeName: string | null;
+  }> = [];
+  const nameChangesPreview: Array<{
+    sku: string;
+    currentName: string;
+    nextName: string;
+    nameAction: "update-name-from-nomus";
+    inferredType: ItemType;
+    nomusTypeName: string | null;
+  }> = [];
   for (const p of eligible) {
     const current = bySku.get(p.sku);
-    if (!current)
+    if (!current) {
+      createCount += 1;
+      if (p.type === "PRODUCT") createProductCount += 1;
+      if (p.type === "COMPONENT") createComponentCount += 1;
+      if (p.nameLooksLikeSku) {
+        createsUsingSkuAsNameCount += 1;
+        if (createsUsingSkuAsNamePreview.length < 30) {
+          createsUsingSkuAsNamePreview.push({
+            sku: p.sku,
+            name: p.chosenName,
+            nomusRawName: p.nomusRawName,
+            nomusDescription: p.nomusDescription,
+            inferredType: p.type,
+            nomusTypeName: p.nomusTypeName,
+          });
+        }
+      }
+      if (p.nameSource === "descricao") createsUsingDescriptionAsNameCount += 1;
       createsPreview.push({
         externalId: p.externalId,
         sku: p.sku,
@@ -590,11 +636,17 @@ async function runDry(eligible: EligibleProduct[]) {
         inferredType: p.type,
         typeInferenceConfidence: p.typeInferenceConfidence,
       });
-    else {
+    } else {
+      if (current.type === "PRODUCT") updateExistingProductCount += 1;
+      if (current.type === "COMPONENT") updateExistingComponentCount += 1;
       const fieldsToUpdate: string[] = [];
       const willUpdateName =
         !p.nameLooksLikeSku && p.chosenName.length > 0 && (current.name ?? "") !== p.chosenName;
+      const currentDescription = current.description ?? null;
+      const nextDescription = p.description ?? null;
+      const willUpdateDescription = currentDescription !== nextDescription;
       if (willUpdateName) fieldsToUpdate.push("name");
+      if (willUpdateDescription) fieldsToUpdate.push("description");
       const nextName = willUpdateName ? p.chosenName : current.name;
       let nameAction: (typeof updatesPreview)[number]["nameAction"];
       if (p.nameLooksLikeSku) {
@@ -604,6 +656,25 @@ async function runDry(eligible: EligibleProduct[]) {
       } else {
         nameAction = "update-name-from-nomus";
       }
+      if (willUpdateName) {
+        nameChangeCount += 1;
+        updatesChangingNameCount += 1;
+        if (nameChangesPreview.length < 30) {
+          nameChangesPreview.push({
+            sku: p.sku,
+            currentName: current.name,
+            nextName: p.chosenName,
+            nameAction: "update-name-from-nomus",
+            inferredType: p.type,
+            nomusTypeName: p.nomusTypeName,
+          });
+        }
+      } else {
+        updatesPreservingExistingNameCount += 1;
+      }
+      if (willUpdateDescription) descriptionChangeCount += 1;
+      if (fieldsToUpdate.length > 0) updateCount += 1;
+      else noChangeCount += 1;
       updatesPreview.push({
         id: current.id,
         externalId: p.externalId,
@@ -631,7 +702,25 @@ async function runDry(eligible: EligibleProduct[]) {
       });
     }
   }
-  return { createsPreview: createsPreview.slice(0, 50), updatesPreview: updatesPreview.slice(0, 50) };
+  return {
+    createCount,
+    updateCount,
+    noChangeCount,
+    nameChangeCount,
+    descriptionChangeCount,
+    createProductCount,
+    createComponentCount,
+    updateExistingProductCount,
+    updateExistingComponentCount,
+    createsUsingSkuAsNameCount,
+    createsUsingDescriptionAsNameCount,
+    updatesPreservingExistingNameCount,
+    updatesChangingNameCount,
+    createsUsingSkuAsNamePreview,
+    nameChangesPreview,
+    createsPreview: createsPreview.slice(0, 50),
+    updatesPreview: updatesPreview.slice(0, 50),
+  };
 }
 
 async function runApply(eligible: EligibleProduct[]): Promise<{ created: number; updated: number }> {
@@ -694,6 +783,21 @@ async function main(): Promise<void> {
           eligibleCount: eligible.length,
           blockedCount: blocked.length,
           blockedReasons,
+          createCount: dry.createCount,
+          updateCount: dry.updateCount,
+          noChangeCount: dry.noChangeCount,
+          nameChangeCount: dry.nameChangeCount,
+          descriptionChangeCount: dry.descriptionChangeCount,
+          createProductCount: dry.createProductCount,
+          createComponentCount: dry.createComponentCount,
+          updateExistingProductCount: dry.updateExistingProductCount,
+          updateExistingComponentCount: dry.updateExistingComponentCount,
+          createsUsingSkuAsNameCount: dry.createsUsingSkuAsNameCount,
+          createsUsingDescriptionAsNameCount: dry.createsUsingDescriptionAsNameCount,
+          updatesPreservingExistingNameCount: dry.updatesPreservingExistingNameCount,
+          updatesChangingNameCount: dry.updatesChangingNameCount,
+          createsUsingSkuAsNamePreview: dry.createsUsingSkuAsNamePreview,
+          nameChangesPreview: dry.nameChangesPreview,
           createsPreview: dry.createsPreview,
           updatesPreview: dry.updatesPreview,
           blockedPreview: blocked.slice(0, 50),
