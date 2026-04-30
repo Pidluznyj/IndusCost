@@ -45,6 +45,16 @@ export const PricingModule = () => {
   const [pricingMarginBand, setPricingMarginBand] = useState<PricingMarginBand>("ALL");
   const [pricingCommissionBand, setPricingCommissionBand] = useState<PricingCommissionBand>("ALL");
   const [pricingSortBy, setPricingSortBy] = useState<PricingSortKey>("NAME_ASC");
+  const [simulatorForm, setSimulatorForm] = useState({
+    productId: "",
+    taxRuleId: "",
+    desiredMargin: 15,
+  });
+  const [simulatorCost, setSimulatorCost] = useState<number | null>(null);
+  const [simulatorCostLoading, setSimulatorCostLoading] = useState(false);
+  const [simulatorError, setSimulatorError] = useState<string | null>(null);
+  const [simulatorRunning, setSimulatorRunning] = useState(false);
+  const [simulatorResult, setSimulatorResult] = useState<any | null>(null);
 
   const [formData, setFormData] = useState({
     productId: "",
@@ -85,6 +95,29 @@ export const PricingModule = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!simulatorForm.productId) {
+      setSimulatorCost(null);
+      return;
+    }
+    const loadSnapshot = async () => {
+      setSimulatorCostLoading(true);
+      setSimulatorError(null);
+      try {
+        const qs = simulatorForm.taxRuleId ? `?taxRuleId=${encodeURIComponent(simulatorForm.taxRuleId)}` : "";
+        const data = await fetchJsonOk<{ unitCost?: number | string }>(`/api/products/${simulatorForm.productId}/pricing-snapshot${qs}`);
+        const n = Number(data?.unitCost);
+        setSimulatorCost(Number.isFinite(n) ? n : null);
+      } catch (error) {
+        setSimulatorCost(null);
+        setSimulatorError(error instanceof Error ? error.message : "Não foi possível carregar custo do item selecionado.");
+      } finally {
+        setSimulatorCostLoading(false);
+      }
+    };
+    loadSnapshot();
+  }, [simulatorForm.productId, simulatorForm.taxRuleId]);
 
   const filteredPricings = useMemo(
     () =>
@@ -266,6 +299,41 @@ export const PricingModule = () => {
     }
   };
 
+  const handleRunSimulator = async () => {
+    setSimulatorError(null);
+    setSimulatorResult(null);
+    if (!simulatorForm.productId) {
+      setSimulatorError("Selecione um produto ou componente.");
+      return;
+    }
+    if (!simulatorForm.taxRuleId) {
+      setSimulatorError("Selecione a regra fiscal.");
+      return;
+    }
+    const marginNumber = Number(simulatorForm.desiredMargin);
+    if (!Number.isFinite(marginNumber) || marginNumber < 0) {
+      setSimulatorError("Informe uma margem desejada válida.");
+      return;
+    }
+    setSimulatorRunning(true);
+    try {
+      const data = await fetchJsonOk<any>("/api/pricing/simulate-unit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: simulatorForm.productId,
+          taxRuleId: simulatorForm.taxRuleId,
+          desiredMarginPerc: marginNumber,
+        }),
+      });
+      setSimulatorResult(data);
+    } catch (error) {
+      setSimulatorError(error instanceof Error ? error.message : "Não foi possível calcular a simulação.");
+    } finally {
+      setSimulatorRunning(false);
+    }
+  };
+
   return (
     <div className="space-y-6" data-tour="pricing-root">
       {/* Header */}
@@ -309,6 +377,130 @@ export const PricingModule = () => {
       ) : viewMode === "UNIT" ? (
         // --- VIEW: UNIT ---
         <div className="space-y-6" data-tour="pricing-unit-panel">
+          <section className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold">Calculadora de Preço de Venda</h3>
+              <p className="text-xs text-muted-foreground">Simulação sem gravação de dados, usando o mesmo motor de cálculo.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="md:col-span-2 space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Produto/Componente</label>
+                <SearchableSelect
+                  placeholder="Buscar por SKU ou nome..."
+                  options={products.map((p: { id: string; sku: string; name: string; type?: string }) => ({
+                    value: p.id,
+                    label: `${p.sku} — ${p.name}`,
+                    sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
+                    searchTerms: `${p.sku} ${p.name} ${p.type ?? ""}`,
+                  }))}
+                  value={simulatorForm.productId}
+                  onChange={(value) => setSimulatorForm((prev) => ({ ...prev, productId: value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Regra fiscal</label>
+                <SearchableSelect
+                  placeholder="Selecione..."
+                  options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
+                    value: r.id,
+                    label: r.name,
+                    sublabel: r.description?.trim() || undefined,
+                    searchTerms: [r.name, r.description].filter(Boolean).join(" "),
+                  }))}
+                  value={simulatorForm.taxRuleId}
+                  onChange={(value) => setSimulatorForm((prev) => ({ ...prev, taxRuleId: value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Margem desejada (%)</label>
+                <input
+                  type="number"
+                  step="0.00001"
+                  min={0}
+                  value={simulatorForm.desiredMargin}
+                  onChange={(e) => setSimulatorForm((prev) => ({ ...prev, desiredMargin: Number(e.target.value) }))}
+                  className="w-full p-3 rounded-xl border border-border bg-background outline-none"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-accent/20 p-3">
+              <p className="text-sm text-muted-foreground">
+                Custo para produzir:{" "}
+                <span className="font-bold text-foreground">
+                  {simulatorCostLoading ? "Carregando..." : simulatorCost == null ? "—" : formatCurrency(simulatorCost, 6)}
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={handleRunSimulator}
+                disabled={simulatorRunning}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+              >
+                {simulatorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
+                Calcular simulação
+              </button>
+            </div>
+            {simulatorError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{simulatorError}</div>
+            )}
+            {simulatorResult && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="rounded-xl border border-border bg-card/40 p-4">
+                    <p className="text-xs text-muted-foreground uppercase font-bold">Custo para produzir</p>
+                    <p className="text-base font-bold">{formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card/40 p-4">
+                    <p className="text-xs text-muted-foreground uppercase font-bold">Impostos sobre venda</p>
+                    <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%</p>
+                    <p className="text-xs text-muted-foreground">{formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card/40 p-4">
+                    <p className="text-xs text-muted-foreground uppercase font-bold">Margem desejada</p>
+                    <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%</p>
+                  </div>
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                    <p className="text-xs text-primary uppercase font-bold">Preço sugerido</p>
+                    <p className="text-lg font-black text-primary">
+                      {formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border bg-card/30 p-4">
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-border">
+                      <tr>
+                        <td className="py-2 text-muted-foreground">Custo base de produção</td>
+                        <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 text-muted-foreground">Percentual de impostos</td>
+                        <td className="py-2 text-right font-semibold">{formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 text-muted-foreground">Valor dos impostos embutidos</td>
+                        <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 text-muted-foreground">Percentual de margem</td>
+                        <td className="py-2 text-right font-semibold">{formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 text-muted-foreground">Valor da margem planejada</td>
+                        <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.resultados?.contributionMargin ?? 0), 6)}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 text-muted-foreground font-bold">Preço sugerido final</td>
+                        <td className="py-2 text-right font-black text-primary">{formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <PricingDetailedCompositionTab breakdown={simulatorResult.pricingBreakdown} />
+              </div>
+            )}
+          </section>
+
           <div className="flex justify-end">
              <button 
               onClick={() => {

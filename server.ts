@@ -2842,6 +2842,165 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  app.post("/api/pricing/simulate-unit", async (req, res) => {
+    const { productId, taxRuleId, desiredMarginPerc } = req.body ?? {};
+    const desiredMarginNumber = Number(desiredMarginPerc);
+
+    if (!productId || !taxRuleId) {
+      return res.status(400).json({ error: "Produto e regra fiscal são obrigatórios." });
+    }
+    if (!Number.isFinite(desiredMarginNumber) || desiredMarginNumber < 0) {
+      return res.status(400).json({ error: "Margem desejada inválida." });
+    }
+
+    try {
+      const cache = await initAnalysisCache();
+      const costData = await getProductCostAnalysis(String(productId), cache, true);
+      if (!costData) return res.status(404).json({ error: "Produto não encontrado para análise de custo" });
+      if (isCostAnalysisFailure(costData)) return res.status(400).json(costData);
+
+      const taxRule = await prisma.taxRule.findUnique({
+        where: { id: String(taxRuleId) },
+        include: { TaxComponent: true },
+      });
+      if (!taxRule) {
+        return res.status(404).json({ error: "Regra fiscal não encontrada" });
+      }
+
+      const existingPricing = await prisma.productPricing.findUnique({
+        where: { productId_taxRuleId: { productId: String(productId), taxRuleId: String(taxRuleId) } },
+      });
+
+      const summary = (costData as any).summary || costData;
+      const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
+      const opex = Number(summary.totalOPEX_Unit);
+      const custoFabril = ciu;
+      const custoGerencial = ciu + opex;
+
+      const taxRate = taxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
+      const commRate = Number(existingPricing?.commission ?? 0) / 100;
+      const marginRate = desiredMarginNumber / 100;
+      const otherRate = Number(existingPricing?.otherVariables ?? 0) / 100;
+      const freight = Number(existingPricing?.freightOut ?? 0);
+
+      const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+      if (divisor <= 0) {
+        return res.status(400).json({ error: "A soma de impostos e margem precisa ser menor que 100%." });
+      }
+
+      const suggestedPrice = (custoFabril + freight) / divisor;
+      const totalTaxes = suggestedPrice * taxRate;
+      const totalCommission = suggestedPrice * commRate;
+      const totalOther = suggestedPrice * otherRate;
+      const contributionMargin = suggestedPrice - totalTaxes - totalCommission - freight - custoFabril;
+      const operationalMargin = contributionMargin - opex;
+
+      let openBook: Record<string, unknown> | undefined;
+      try {
+        const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
+          String(productId),
+          cache,
+          new Set<string>(),
+          new Map()
+        );
+        const mp = Number(costData.totalMaterialCost ?? 0);
+        const hh = Number(costData.totalHH_Unit ?? 0);
+        const hm = Number(costData.totalHM_Unit ?? 0);
+        const nat = naturePercentages(mp, hh, hm);
+        if (explosion instanceof Map) {
+          const sumMp = sumExplosionTotalCost(explosion);
+          openBook = {
+            executive: {
+              totalIndustrialCost: ciu,
+              totalMaterialCost: mp,
+              totalHH: hh,
+              totalHM: hm,
+              pctMp: nat.pctMp,
+              pctHh: nat.pctHh,
+              pctHm: nat.pctHm,
+              directMaterialRowsTotal: sumMp,
+            },
+            consolidatedMaterials: finalizeRowsForOpenBook(explosion, ciu, mp),
+          };
+        }
+      } catch (obErr) {
+        openBook = {
+          error: "OPEN_BOOK_FAILED",
+          message: obErr instanceof Error ? obErr.message : String(obErr),
+        };
+      }
+
+      const obRecord = openBook as Record<string, unknown> | undefined;
+      const consolidatedForBreakdown =
+        obRecord &&
+        typeof obRecord.error === "undefined" &&
+        Array.isArray(obRecord.consolidatedMaterials)
+          ? (obRecord.consolidatedMaterials as Array<Record<string, unknown>>)
+          : null;
+      const detailsBlock = (costData as { details?: { materials?: unknown[]; processBreakdown?: unknown[] } }).details;
+      const bomMaterialsDetail = Array.isArray(detailsBlock?.materials)
+        ? (detailsBlock!.materials as Array<Record<string, unknown>>)
+        : null;
+      const processBreakdown = Array.isArray(detailsBlock?.processBreakdown)
+        ? detailsBlock!.processBreakdown
+        : null;
+
+      const pricingBreakdown = buildPricingUnitCalculationBreakdown({
+        custoFabril,
+        custoGerencial,
+        totalMaterialCost: Number(costData.totalMaterialCost ?? 0),
+        totalHH_Unit: Number(costData.totalHH_Unit ?? 0),
+        totalHM_Unit: Number(costData.totalHM_Unit ?? 0),
+        totalCIF_Unit: Number(costData.totalCIF_Unit ?? 0),
+        totalOPEX_Unit: Number(costData.totalOPEX_Unit ?? 0),
+        taxRuleName: taxRule?.name ? String(taxRule.name) : null,
+        taxRuleId: String(taxRuleId),
+        taxRate,
+        commRate,
+        marginRate,
+        otherRate,
+        freight,
+        divisor,
+        suggestedPrice,
+        totalTaxes,
+        totalCommission,
+        totalOther,
+        contributionMargin,
+        operationalMargin,
+        openBookConsolidatedMaterials: consolidatedForBreakdown,
+        bomMaterialsDetail,
+        processBreakdown,
+      });
+
+      return res.json({
+        product: costData.name,
+        sku: costData.sku,
+        ciu,
+        custoFabril,
+        custoGerencial,
+        premissas: {
+          taxRate: taxRate * 100,
+          commRate: commRate * 100,
+          marginRate: marginRate * 100,
+          freight,
+        },
+        resultados: {
+          suggestedPrice,
+          totalTaxes,
+          totalCommission,
+          contributionMargin,
+          operationalMargin,
+          markup: suggestedPrice / custoFabril,
+        },
+        openBook,
+        pricingBreakdown,
+      });
+    } catch (error) {
+      console.error("Pricing simulate-unit error:", error);
+      return res.status(500).json({ error: "Erro ao simular formação de preço." });
+    }
+  });
+
   app.post("/api/pricing/simulate-batch", async (req, res) => {
     const { productIds, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
     
