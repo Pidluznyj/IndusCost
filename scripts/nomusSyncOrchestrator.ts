@@ -25,7 +25,7 @@ type StepExecution = {
   stderr: string;
 };
 
-const ALL_TARGETS: SyncTarget[] = ["products", "customers", "proposals", "sales-orders"];
+const ALL_TARGETS: SyncTarget[] = ["customers", "products", "proposals", "sales-orders"];
 const prisma = new PrismaClient();
 
 function parseArgs(): { mode: SyncMode; only: SyncTarget[] } {
@@ -59,6 +59,14 @@ function fileStamp(): string {
 }
 
 function scriptFor(target: SyncTarget, mode: SyncMode): string | null {
+  if (target === "customers") {
+    return mode === "apply" ? "sync:nomus:customers:apply" : "sync:nomus:customers:dry";
+  }
+
+  if (target === "products") {
+    return mode === "apply" ? "sync:nomus:products:apply" : "sync:nomus:products:dry";
+  }
+
   if (target === "proposals") {
     return mode === "apply" ? "sync:nomus:proposals:apply" : "sync:nomus:proposals:dry";
   }
