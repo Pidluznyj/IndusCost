@@ -184,22 +184,17 @@ async function persistIntegrationRunBestEffort(step: StepResult, stdout: string,
   };
 
   try {
-    const integrationRunDelegate = (prisma as any).integrationRun;
-    if (!integrationRunDelegate) {
-      console.error("[nomus-sync-orchestrator] falha ao registrar IntegrationRun: model indisponível no Prisma Client.");
-      return;
-    }
-    const existing = await integrationRunDelegate.findFirst({
+    const existing = await prisma.integrationRun.findFirst({
       where: { logFile: step.logFile },
     });
     if (existing) {
-      await integrationRunDelegate.update({
+      await prisma.integrationRun.update({
         where: { id: existing.id },
         data: integrationRunData,
       });
       return;
     }
-    await integrationRunDelegate.create({
+    await prisma.integrationRun.create({
       data: integrationRunData,
     });
   } catch (err) {
