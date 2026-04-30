@@ -28,6 +28,7 @@ import { ProductEngineeringIndicatorsDashboard } from "@/src/components/contextu
 import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual/PricingFormationIndicatorsDashboard";
 import { ProductMaterialDemandDashboard } from "@/src/components/contextual/ProductMaterialDemandDashboard";
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
+import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/SalesOrdersIndicatorsDashboard";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { fetchJsonOk } from "@/src/lib/http";
 import { AlertCircle, Factory, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
@@ -461,6 +462,17 @@ export default function App() {
           }
         />
         <Route
+          path="sales-orders/indicators"
+          element={
+            <ModulePageShell
+              title="Pedidos de Venda — Indicadores"
+              description="Dashboard executivo com visão consolidada de volume, valor líquido e distribuição por status."
+            >
+              <SalesOrdersIndicatorsDashboard />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="sales-orders/:id"
           element={
             <ModulePageShell
@@ -477,6 +489,7 @@ export default function App() {
             <ModulePageShell
               title="Pedidos de venda"
               description="Pedidos internos originados de propostas aprovadas. Integração Nomus (POST /rest/pedidos) ainda não ativa."
+              headerActions={<ModuleIndicatorsButton to="/sales-orders/indicators" />}
             >
               <SalesOrdersModule />
             </ModulePageShell>
