@@ -10,6 +10,8 @@ import {
   Save,
   AlertCircle,
   CheckCircle2,
+  FileText,
+  RefreshCw,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -79,7 +81,48 @@ type ProductionHourCostSimulationRow = {
   updatedAt: string;
 };
 
-type HubSection = "globals" | "operational" | "integrations" | "security" | "system";
+type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
+type NomusSyncKind = "runner" | "sync";
+type NomusSyncMode = "apply" | "dry";
+
+type NomusSyncLogSummary = {
+  fileName: string;
+  kind: NomusSyncKind;
+  target: "sales-orders";
+  mode: NomusSyncMode;
+  status: NomusSyncStatus;
+  success: boolean | null;
+  exitCode: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  sizeBytes: number;
+  modifiedAt: string;
+  command: string | null;
+  metrics: {
+    eligibleCount: number | null;
+    blockedCount: number | null;
+    created: number | null;
+    updated: number | null;
+    itemsCreated: number | null;
+    pageRead: number | null;
+    ordersRead: number | null;
+    startPage: number | null;
+    maxPages: number | null;
+    lastPage: number | null;
+  };
+  blockedReasons: Record<string, number>;
+};
+
+type NomusSyncLogDetail = {
+  fileName: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  summary: NomusSyncLogSummary | null;
+  content: string;
+};
+
+type HubSection = "globals" | "operational" | "nomusSync" | "integrations" | "security" | "system";
 type OperationalSubTab = "roles" | "payroll";
 
 const HUB_SECTIONS: Array<{
@@ -100,6 +143,13 @@ const HUB_SECTIONS: Array<{
     id: "operational",
     title: "Estrutura Operacional",
     description: "Cargos, salários, encargos e benefícios da operação.",
+    status: "operational",
+    note: "Operacional hoje",
+  },
+  {
+    id: "nomusSync",
+    title: "Logs de Sincronização Nomus",
+    description: "Observabilidade de execuções dry/apply de pedidos de venda.",
     status: "operational",
     note: "Operacional hoje",
   },
@@ -191,6 +241,16 @@ export const SettingsModule = () => {
   const [simulationSaving, setSimulationSaving] = useState(false);
   const [simulationError, setSimulationError] = useState<string | null>(null);
   const [selectedSimulation, setSelectedSimulation] = useState<ProductionHourCostSimulationRow | null>(null);
+  const [nomusLogs, setNomusLogs] = useState<NomusSyncLogSummary[]>([]);
+  const [nomusLogsLoading, setNomusLogsLoading] = useState(false);
+  const [nomusLogsError, setNomusLogsError] = useState<string | null>(null);
+  const [nomusModeFilter, setNomusModeFilter] = useState<"all" | NomusSyncMode>("all");
+  const [nomusKindFilter, setNomusKindFilter] = useState<"all" | NomusSyncKind>("all");
+  const [nomusStatusFilter, setNomusStatusFilter] = useState<"all" | NomusSyncStatus>("all");
+  const [nomusLimit, setNomusLimit] = useState<25 | 50 | 100>(50);
+  const [nomusDetailLoadingFile, setNomusDetailLoadingFile] = useState<string | null>(null);
+  const [nomusSelectedDetail, setNomusSelectedDetail] = useState<NomusSyncLogDetail | null>(null);
+  const [nomusReloadSeq, setNomusReloadSeq] = useState(0);
 
   const fetchData = async () => {
     setLoading(true);
@@ -262,6 +322,72 @@ export const SettingsModule = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (activeHubSection !== "nomusSync") return;
+    const load = async () => {
+      setNomusLogsLoading(true);
+      setNomusLogsError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set("limit", String(nomusLimit));
+        params.set("target", "sales-orders");
+        params.set("mode", nomusModeFilter);
+        params.set("kind", nomusKindFilter);
+        params.set("status", nomusStatusFilter);
+        const data = await fetchJsonOk<NomusSyncLogSummary[]>(`/api/settings/nomus-sync/logs?${params.toString()}`);
+        setNomusLogs(Array.isArray(data) ? data : []);
+      } catch (error) {
+        setNomusLogsError(error instanceof Error ? error.message : "Não foi possível carregar os logs Nomus.");
+        setNomusLogs([]);
+      } finally {
+        setNomusLogsLoading(false);
+      }
+    };
+    load();
+  }, [activeHubSection, nomusLimit, nomusModeFilter, nomusKindFilter, nomusStatusFilter, nomusReloadSeq]);
+
+  const formatDateTimeSafe = (value: string | null | undefined): string => {
+    if (!value) return "—";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "—";
+    return dt.toLocaleString("pt-BR");
+  };
+
+  const formatDurationMs = (value: number | null | undefined): string => {
+    const totalMs = Number(value);
+    if (!Number.isFinite(totalMs) || totalMs < 0) return "—";
+    const totalSec = Math.floor(totalMs / 1000);
+    const mm = Math.floor(totalSec / 60);
+    const ss = totalSec % 60;
+    return `${mm}m ${ss}s`;
+  };
+
+  const formatIntOrDash = (value: number | null | undefined): string => {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(Math.trunc(n)) : "—";
+  };
+
+  const statusBadgeClass = (status: NomusSyncStatus): string =>
+    status === "SUCCESS"
+      ? "bg-green-100 text-green-700"
+      : status === "FAILED"
+      ? "bg-red-100 text-red-700"
+      : status === "SKIPPED"
+      ? "bg-slate-100 text-slate-700"
+      : "bg-amber-100 text-amber-700";
+
+  const loadNomusLogDetail = async (fileName: string) => {
+    setNomusDetailLoadingFile(fileName);
+    try {
+      const detail = await fetchJsonOk<NomusSyncLogDetail>(`/api/settings/nomus-sync/logs/${encodeURIComponent(fileName)}`);
+      setNomusSelectedDetail(detail);
+    } catch (error) {
+      setNomusLogsError(error instanceof Error ? error.message : "Não foi possível carregar detalhe do log.");
+    } finally {
+      setNomusDetailLoadingFile(null);
+    }
+  };
 
   const handleOpenModal = (item?: any) => {
     if (item) {
@@ -1162,6 +1288,234 @@ export const SettingsModule = () => {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {activeHubSection === "nomusSync" && (
+            <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">Logs de Sincronização Nomus</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Monitoramento em modo somente leitura dos logs de sincronização de pedidos de venda.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Cron configurado para minuto 17 de cada hora.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNomusReloadSeq((prev) => prev + 1)}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Atualizar lista
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-border bg-card/40 p-4">
+                  <p className="text-xs text-muted-foreground uppercase font-bold">Última execução</p>
+                  <p className="text-sm font-semibold mt-1">{formatDateTimeSafe(nomusLogs[0]?.finishedAt ?? nomusLogs[0]?.modifiedAt)}</p>
+                </div>
+                <div className="rounded-xl border border-border bg-card/40 p-4">
+                  <p className="text-xs text-muted-foreground uppercase font-bold">Status</p>
+                  <p className="text-sm font-semibold mt-1">{nomusLogs[0]?.status ?? "—"}</p>
+                </div>
+                <div className="rounded-xl border border-border bg-card/40 p-4">
+                  <p className="text-xs text-muted-foreground uppercase font-bold">Duração</p>
+                  <p className="text-sm font-semibold mt-1">{formatDurationMs(nomusLogs[0]?.durationMs)}</p>
+                </div>
+                <div className="rounded-xl border border-border bg-card/40 p-4">
+                  <p className="text-xs text-muted-foreground uppercase font-bold">Criados / Atualizados / Bloqueados</p>
+                  <p className="text-sm font-semibold mt-1">
+                    {formatIntOrDash(nomusLogs[0]?.metrics?.created)} / {formatIntOrDash(nomusLogs[0]?.metrics?.updated)} /{" "}
+                    {formatIntOrDash(nomusLogs[0]?.metrics?.blockedCount)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <select
+                  value={nomusModeFilter}
+                  onChange={(e) => setNomusModeFilter(e.target.value as "all" | NomusSyncMode)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="all">Modo: Todos</option>
+                  <option value="apply">Modo: Apply</option>
+                  <option value="dry">Modo: Dry</option>
+                </select>
+                <select
+                  value={nomusKindFilter}
+                  onChange={(e) => setNomusKindFilter(e.target.value as "all" | NomusSyncKind)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="all">Tipo: Todos</option>
+                  <option value="runner">Tipo: Runner</option>
+                  <option value="sync">Tipo: Sync</option>
+                </select>
+                <select
+                  value={nomusStatusFilter}
+                  onChange={(e) => setNomusStatusFilter(e.target.value as "all" | NomusSyncStatus)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="all">Status: Todos</option>
+                  <option value="SUCCESS">Status: Success</option>
+                  <option value="FAILED">Status: Failed</option>
+                  <option value="UNKNOWN">Status: Unknown</option>
+                  <option value="SKIPPED">Status: Skipped</option>
+                </select>
+                <select
+                  value={String(nomusLimit)}
+                  onChange={(e) => setNomusLimit(Number(e.target.value) as 25 | 50 | 100)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="25">Limite: 25</option>
+                  <option value="50">Limite: 50</option>
+                  <option value="100">Limite: 100</option>
+                </select>
+              </div>
+
+              {nomusLogsError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{nomusLogsError}</div>
+              )}
+
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <table className="w-full min-w-[1200px] text-sm">
+                  <thead className="bg-accent/30">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">Data/hora</th>
+                      <th className="px-3 py-2 text-left font-semibold">Tipo</th>
+                      <th className="px-3 py-2 text-left font-semibold">Modo</th>
+                      <th className="px-3 py-2 text-left font-semibold">Target</th>
+                      <th className="px-3 py-2 text-left font-semibold">Status</th>
+                      <th className="px-3 py-2 text-right font-semibold">Duração</th>
+                      <th className="px-3 py-2 text-right font-semibold">Exit code</th>
+                      <th className="px-3 py-2 text-right font-semibold">Criados</th>
+                      <th className="px-3 py-2 text-right font-semibold">Atualizados</th>
+                      <th className="px-3 py-2 text-right font-semibold">Bloqueados</th>
+                      <th className="px-3 py-2 text-left font-semibold">Arquivo</th>
+                      <th className="px-3 py-2 text-left font-semibold">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nomusLogsLoading ? (
+                      <tr>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={12}>
+                          Carregando logs...
+                        </td>
+                      </tr>
+                    ) : nomusLogs.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={12}>
+                          Nenhum log encontrado para os filtros aplicados.
+                        </td>
+                      </tr>
+                    ) : (
+                      nomusLogs.map((log) => (
+                        <tr key={log.fileName} className="border-t border-border">
+                          <td className="px-3 py-2">{formatDateTimeSafe(log.finishedAt ?? log.modifiedAt)}</td>
+                          <td className="px-3 py-2">{log.kind}</td>
+                          <td className="px-3 py-2">{log.mode}</td>
+                          <td className="px-3 py-2">{log.target}</td>
+                          <td className="px-3 py-2">
+                            <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", statusBadgeClass(log.status))}>
+                              {log.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right">{formatDurationMs(log.durationMs)}</td>
+                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.exitCode)}</td>
+                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics.created)}</td>
+                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics.updated)}</td>
+                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics.blockedCount)}</td>
+                          <td className="px-3 py-2 font-mono text-xs max-w-[280px] truncate" title={log.fileName}>
+                            {log.fileName}
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => loadNomusLogDetail(log.fileName)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border text-xs hover:bg-accent"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                              {nomusDetailLoadingFile === log.fileName ? "Carregando..." : "Ver detalhes"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {nomusSelectedDetail && (
+                <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold">Detalhe do log</p>
+                      <p className="text-xs text-muted-foreground font-mono break-all">{nomusSelectedDetail.fileName}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(nomusSelectedDetail.content).catch(() => null)}
+                      className="px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-accent"
+                    >
+                      Copiar log
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    <div className="rounded-lg border border-border bg-background px-3 py-2">
+                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Elegíveis</p>
+                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.eligibleCount)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background px-3 py-2">
+                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Bloqueados</p>
+                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.blockedCount)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background px-3 py-2">
+                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Criados</p>
+                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.created)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background px-3 py-2">
+                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Atualizados</p>
+                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.updated)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background px-3 py-2">
+                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Itens criados</p>
+                      <p className="text-sm font-semibold">{formatIntOrDash(nomusSelectedDetail.summary?.metrics?.itemsCreated)}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <p className="font-semibold">Status</p>
+                      <p>{nomusSelectedDetail.summary?.status ?? "—"}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold">Exit code</p>
+                      <p>{formatIntOrDash(nomusSelectedDetail.summary?.exitCode)}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold">Duração</p>
+                      <p>{formatDurationMs(nomusSelectedDetail.summary?.durationMs)}</p>
+                    </div>
+                  </div>
+                  <div className="text-sm">
+                    <p className="font-semibold mb-1">Motivos de bloqueio</p>
+                    {Object.keys(nomusSelectedDetail.summary?.blockedReasons ?? {}).length === 0 ? (
+                      <p className="text-muted-foreground">Sem motivos de bloqueio registrados.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(nomusSelectedDetail.summary?.blockedReasons ?? {}).map(([reason, qty]) => (
+                          <span key={reason} className="rounded-full border border-border px-2 py-0.5 text-xs">
+                            {reason}: {formatIntOrDash(Number(qty))}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <pre className="max-h-96 overflow-auto rounded-lg border border-border bg-background p-3 text-xs leading-relaxed whitespace-pre-wrap">
+                    {nomusSelectedDetail.content || "Sem conteúdo disponível."}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
 

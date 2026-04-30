@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { promises as fs } from "fs";
 import { fileURLToPath } from "url";
 import {
   Prisma,
@@ -70,6 +71,40 @@ type BootstrapAdminSessionPayload = {
   username: string;
   exp: number;
   nonce: string;
+};
+
+type NomusSyncMode = "apply" | "dry";
+type NomusSyncKind = "runner" | "sync";
+type NomusSyncTarget = "sales-orders";
+type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
+
+type NomusSyncLogSummary = {
+  fileName: string;
+  kind: NomusSyncKind;
+  target: NomusSyncTarget;
+  mode: NomusSyncMode;
+  status: NomusSyncStatus;
+  success: boolean | null;
+  exitCode: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  sizeBytes: number;
+  modifiedAt: string;
+  command: string | null;
+  metrics: {
+    eligibleCount: number | null;
+    blockedCount: number | null;
+    created: number | null;
+    updated: number | null;
+    itemsCreated: number | null;
+    pageRead: number | null;
+    ordersRead: number | null;
+    startPage: number | null;
+    maxPages: number | null;
+    lastPage: number | null;
+  };
+  blockedReasons: Record<string, number>;
 };
 
 function parseBooleanEnv(value: string | undefined): boolean {
@@ -150,6 +185,79 @@ function decodeBootstrapSessionToken(
   }
 }
 
+function parseNomusSyncFileName(fileName: string): { kind: NomusSyncKind; mode: NomusSyncMode; target: NomusSyncTarget } | null {
+  const m = /^(runner-)?(sales-orders)_(apply|dry)_.+\.log$/i.exec(fileName);
+  if (!m) return null;
+  return {
+    kind: m[1] ? "runner" : "sync",
+    target: "sales-orders",
+    mode: m[3].toLowerCase() as NomusSyncMode,
+  };
+}
+
+function parseIsoDateOrNull(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const dt = new Date(value.trim());
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt.toISOString();
+}
+
+function safeNumber(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function safeObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function extractFirstJsonObject(raw: string): Record<string, unknown> | null {
+  const start = raw.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        const candidate = raw.slice(start, i + 1);
+        try {
+          const parsed = JSON.parse(candidate);
+          return safeObject(parsed);
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function sanitizeLogContent(content: string): string {
+  const masks: Array<[RegExp, string]> = [
+    [/(authorization\s*[:=]\s*)([^\s]+)/gi, "$1***"],
+    [/(token\s*[:=]\s*)([^\s]+)/gi, "$1***"],
+    [/(password\s*[:=]\s*)([^\s]+)/gi, "$1***"],
+    [/(nomus_auth_header_value\s*[:=]\s*)([^\s]+)/gi, "$1***"],
+    [/(\b(?:Bearer|Basic)\s+)([A-Za-z0-9\-._~+/]+=*)/gi, "$1***"],
+  ];
+  return masks.reduce((acc, [re, replacement]) => acc.replace(re, replacement), content);
+}
+
 async function startServer() {
   const app = express();
   const port = process.env.PORT || 3000;
@@ -217,6 +325,143 @@ async function startServer() {
     }
     return next();
   };
+
+  const nomusSyncLogDir = path.resolve(process.env.NOMUS_SYNC_LOG_DIR || "/tmp/induscost-nomus-sync");
+  const nomusLogDetailMaxBytes = 200 * 1024;
+
+  async function listNomusSyncLogEntries(): Promise<Array<{ fileName: string; absolutePath: string; sizeBytes: number; modifiedAt: string }>> {
+    try {
+      const dirEntries = await fs.readdir(nomusSyncLogDir, { withFileTypes: true });
+      const rows = await Promise.all(
+        dirEntries
+          .filter((entry) => entry.isFile())
+          .map(async (entry) => {
+            const fileName = entry.name;
+            const parsed = parseNomusSyncFileName(fileName);
+            if (!parsed) return null;
+            const absolutePath = path.join(nomusSyncLogDir, fileName);
+            const stats = await fs.stat(absolutePath);
+            return {
+              fileName,
+              absolutePath,
+              sizeBytes: stats.size,
+              modifiedAt: stats.mtime.toISOString(),
+            };
+          })
+      );
+      return rows.filter((x): x is { fileName: string; absolutePath: string; sizeBytes: number; modifiedAt: string } => Boolean(x));
+    } catch {
+      return [];
+    }
+  }
+
+  function buildNomusSummary(
+    fileMeta: { fileName: string; sizeBytes: number; modifiedAt: string },
+    content: string
+  ): NomusSyncLogSummary | null {
+    const parsedFile = parseNomusSyncFileName(fileMeta.fileName);
+    if (!parsedFile) return null;
+
+    const commandMatch = content.match(/^\s*COMMAND\s*:\s*(.+)$/m);
+    const startedMatch = content.match(/^\s*STARTED_AT\s*:\s*(.+)$/m);
+    const finishedMatch = content.match(/^\s*FINISHED_AT\s*:\s*(.+)$/m);
+    const exitCodeMatch = content.match(/^\s*EXIT_CODE\s*:\s*(-?\d+)/m);
+    const pageReadMatch = content.match(/página\s+(\d+)\s+lida\s+com\s+(\d+)\s+pedidos/i);
+    const blockLimitMatch = content.match(/limite\s+de\s+bloco\s+atingido:\s*startPage=(\d+),\s*maxPages=(\d+),\s*lastPage=(\d+)/i);
+
+    const startedAt = parseIsoDateOrNull(startedMatch?.[1] ?? null);
+    const finishedAt = parseIsoDateOrNull(finishedMatch?.[1] ?? null);
+    const durationMs =
+      startedAt && finishedAt
+        ? Math.max(0, new Date(finishedAt).getTime() - new Date(startedAt).getTime())
+        : null;
+    const exitCode = exitCodeMatch ? Number(exitCodeMatch[1]) : null;
+    const jsonObj = extractFirstJsonObject(content);
+    const analysisObj = safeObject(jsonObj?.analysis) ?? {};
+    const appliedObj = safeObject(jsonObj?.applied) ?? {};
+    const rootBlockedReasons = safeObject(jsonObj?.blockedReasons);
+    const analysisBlockedReasons = safeObject(analysisObj.blockedReasons);
+    const blockedReasonsRaw = analysisBlockedReasons ?? rootBlockedReasons ?? {};
+    const blockedReasons = Object.entries(blockedReasonsRaw).reduce<Record<string, number>>((acc, [key, value]) => {
+      const n = safeNumber(value);
+      if (n !== null) acc[key] = n;
+      return acc;
+    }, {});
+
+    const successFromJson = typeof jsonObj?.success === "boolean" ? jsonObj.success : null;
+    const statusFromJson = typeof jsonObj?.status === "string" ? jsonObj.status.toUpperCase() : null;
+    const isSkipped = content.toLowerCase().includes("dry-run sem apply") || statusFromJson === "SKIPPED";
+    const status: NomusSyncStatus =
+      isSkipped
+        ? "SKIPPED"
+        : successFromJson === true || exitCode === 0
+        ? "SUCCESS"
+        : successFromJson === false || (exitCode !== null && exitCode !== 0)
+        ? "FAILED"
+        : "UNKNOWN";
+
+    return {
+      fileName: fileMeta.fileName,
+      kind: parsedFile.kind,
+      target: parsedFile.target,
+      mode: parsedFile.mode,
+      status,
+      success: status === "SUCCESS" ? true : status === "FAILED" ? false : null,
+      exitCode,
+      startedAt,
+      finishedAt,
+      durationMs,
+      sizeBytes: fileMeta.sizeBytes,
+      modifiedAt: fileMeta.modifiedAt,
+      command: commandMatch?.[1]?.trim() || null,
+      metrics: {
+        eligibleCount: safeNumber(analysisObj.eligibleCount ?? jsonObj?.eligibleCount),
+        blockedCount: safeNumber(analysisObj.blockedCount ?? jsonObj?.blockedCount),
+        created: safeNumber(appliedObj.created),
+        updated: safeNumber(appliedObj.updated),
+        itemsCreated: safeNumber(appliedObj.itemsCreated),
+        pageRead: pageReadMatch ? Number(pageReadMatch[1]) : null,
+        ordersRead: pageReadMatch ? Number(pageReadMatch[2]) : null,
+        startPage: blockLimitMatch ? Number(blockLimitMatch[1]) : safeNumber(jsonObj?.startPage),
+        maxPages: blockLimitMatch ? Number(blockLimitMatch[2]) : safeNumber(jsonObj?.maxPages),
+        lastPage: blockLimitMatch ? Number(blockLimitMatch[3]) : safeNumber(jsonObj?.lastPage),
+      },
+      blockedReasons,
+    };
+  }
+
+  async function readNomusSyncLogSafe(fileNameRaw: string): Promise<{
+    fileName: string;
+    absolutePath: string;
+    sizeBytes: number;
+    modifiedAt: string;
+    content: string;
+  } | null> {
+    const fileName = path.basename(String(fileNameRaw || "").trim());
+    if (!fileName || fileName !== fileNameRaw) return null;
+    if (!parseNomusSyncFileName(fileName)) return null;
+    const absolutePath = path.resolve(nomusSyncLogDir, fileName);
+    if (!absolutePath.startsWith(nomusSyncLogDir + path.sep) && absolutePath !== path.join(nomusSyncLogDir, fileName)) {
+      return null;
+    }
+    try {
+      const stats = await fs.stat(absolutePath);
+      const fullContent = await fs.readFile(absolutePath, "utf8");
+      const limitedContent =
+        fullContent.length > nomusLogDetailMaxBytes
+          ? fullContent.slice(-nomusLogDetailMaxBytes)
+          : fullContent;
+      return {
+        fileName,
+        absolutePath,
+        sizeBytes: stats.size,
+        modifiedAt: stats.mtime.toISOString(),
+        content: sanitizeLogContent(limitedContent),
+      };
+    } catch {
+      return null;
+    }
+  }
 
   const requireBootstrapForGlobalParamMutation: express.RequestHandler = async (req, res, next) => {
     const method = req.method.toUpperCase();
@@ -2964,6 +3209,67 @@ app.delete("/api/employees/:id", async (req, res) => {
     } catch (error) {
       console.error("Error fetching global settings:", error);
       res.status(500).json({ error: "Erro ao carregar configurações globais." });
+    }
+  });
+
+  app.get("/api/settings/nomus-sync/logs", requireBootstrapAdmin, async (req, res) => {
+    try {
+      const rawLimit = Number(req.query.limit);
+      const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.trunc(rawLimit))) : 50;
+      const modeFilter = String(req.query.mode || "all").toLowerCase();
+      const kindFilter = String(req.query.kind || "all").toLowerCase();
+      const targetFilter = String(req.query.target || "all").toLowerCase();
+      const statusFilter = String(req.query.status || "all").toUpperCase();
+      const allowedStatus = new Set(["ALL", "SUCCESS", "FAILED", "UNKNOWN", "SKIPPED"]);
+      const normalizedStatusFilter = allowedStatus.has(statusFilter) ? statusFilter : "ALL";
+
+      const allEntries = await listNomusSyncLogEntries();
+      const sorted = allEntries.sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
+
+      const summaries: NomusSyncLogSummary[] = [];
+      for (const entry of sorted) {
+        const raw = await fs.readFile(entry.absolutePath, "utf8");
+        const summary = buildNomusSummary(entry, sanitizeLogContent(raw));
+        if (!summary) continue;
+        if (modeFilter !== "all" && summary.mode !== modeFilter) continue;
+        if (kindFilter !== "all" && summary.kind !== kindFilter) continue;
+        if (targetFilter !== "all" && summary.target !== targetFilter) continue;
+        if (normalizedStatusFilter !== "ALL" && summary.status !== normalizedStatusFilter) continue;
+        summaries.push(summary);
+        if (summaries.length >= limit) break;
+      }
+
+      return res.json(summaries);
+    } catch (error) {
+      console.error("GET /api/settings/nomus-sync/logs:", error);
+      return res.status(500).json({ error: "Erro ao listar logs de sincronização Nomus." });
+    }
+  });
+
+  app.get("/api/settings/nomus-sync/logs/:fileName", requireBootstrapAdmin, async (req, res) => {
+    try {
+      const row = await readNomusSyncLogSafe(String(req.params.fileName || ""));
+      if (!row) {
+        return res.status(404).json({ error: "Log não encontrado." });
+      }
+      const summary = buildNomusSummary(
+        {
+          fileName: row.fileName,
+          sizeBytes: row.sizeBytes,
+          modifiedAt: row.modifiedAt,
+        },
+        row.content
+      );
+      return res.json({
+        fileName: row.fileName,
+        sizeBytes: row.sizeBytes,
+        modifiedAt: row.modifiedAt,
+        summary,
+        content: row.content,
+      });
+    } catch (error) {
+      console.error("GET /api/settings/nomus-sync/logs/:fileName:", error);
+      return res.status(500).json({ error: "Erro ao carregar detalhe do log Nomus." });
     }
   });
 
