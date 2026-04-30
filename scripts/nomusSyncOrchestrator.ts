@@ -135,6 +135,45 @@ function toPrismaJson(value: unknown): Prisma.InputJsonValue | undefined {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
+function sanitizeErrorMessage(step: StepResult, safeStdout: string, safeStderr: string): string | undefined {
+  const failed = step.status === "FAILED" || (step.exitCode != null && step.exitCode !== 0);
+  if (!failed) return undefined;
+
+  const reasonMessage = step.reason ? maskSensitive(step.reason).trim() : "";
+  if (reasonMessage) {
+    return reasonMessage.slice(0, 2000);
+  }
+
+  const keywordRegex =
+    /(erro|error|failed|fail|exception|timeout|econn|etimedout|eai|401|403|404|429|500|502|503|504|prisma|typeerror|referenceerror|syntaxerror|und_err)/i;
+
+  const stderrLines = safeStderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const relevantStderr = stderrLines.filter((line) => keywordRegex.test(line));
+  if (relevantStderr.length > 0) {
+    return relevantStderr.slice(-12).join(" | ").slice(0, 2000);
+  }
+  if (stderrLines.length > 0) {
+    return stderrLines.slice(-12).join(" | ").slice(0, 2000);
+  }
+
+  const stdoutLines = safeStdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const relevantStdout = stdoutLines.filter((line) => keywordRegex.test(line));
+  if (relevantStdout.length > 0) {
+    return relevantStdout.slice(-12).join(" | ").slice(0, 2000);
+  }
+  if (stdoutLines.length > 0) {
+    return stdoutLines.slice(-12).join(" | ").slice(0, 2000);
+  }
+
+  return undefined;
+}
+
 async function persistIntegrationRunBestEffort(step: StepResult, stdout: string, stderr: string): Promise<void> {
   if (!step.command || !step.logFile) return;
 
@@ -151,7 +190,7 @@ async function persistIntegrationRunBestEffort(step: StepResult, stdout: string,
   const blockedPreview = Array.isArray(summary?.blockedPreview) ? summary.blockedPreview : null;
   const ordersReadFromSummary = safeNumber(summary?.totalRead);
   const ordersRead = ordersReadFromSummary ?? metricsFromStderr.ordersReadFromStderr;
-  const errorMessage = step.reason ? maskSensitive(step.reason).slice(0, 500) : null;
+  const errorMessage = sanitizeErrorMessage(step, safeStdout, safeStderr);
 
   const integrationRunData: Prisma.IntegrationRunUncheckedCreateInput = {
     sourceSystem: "NOMUS",
