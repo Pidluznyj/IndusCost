@@ -48,6 +48,8 @@ type BlockedProduct = {
   nomeGrupoProduto: string | null;
   nomeFamiliaProduto: string | null;
   servicoIndustrializacaoTerceiros: boolean | null;
+  nomusRawName: string | null;
+  nomusDescription: string | null;
   typeInferenceConfidence: "HIGH" | "LOW";
   inferredType: ItemType;
 };
@@ -269,6 +271,17 @@ function chooseSafeProductName(
   return { name: null, source: "none", nameLooksLikeSku: true };
 }
 
+function isGenericNonDescriptiveText(value: string | null): boolean {
+  if (value == null) return true;
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized) return true;
+  return ["disponivel", "indisponivel", "teste", "n/a", "na", "-", "--", "."].includes(normalized);
+}
+
 function toNumberOrNull(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -392,6 +405,7 @@ function collectDiagnostics(raw: JsonObject[]): ProductsDiagnostics {
       "MRO_OR_FIXED_ASSET_NOT_PRODUCT",
       "MERCHANDISE_RESALE_UNMAPPED",
       "UNSAFE_PRODUCT_TYPE",
+      "MISSING_DESCRIPTIVE_NAME",
     ],
   };
 }
@@ -425,6 +439,8 @@ function mapProducts(
         nomeGrupoProduto: null,
         nomeFamiliaProduto: null,
         servicoIndustrializacaoTerceiros: null,
+        nomusRawName: asString(p.nome),
+        nomusDescription: asString(p.descricao),
         typeInferenceConfidence: "LOW",
         inferredType: "PRODUCT",
       });
@@ -463,9 +479,17 @@ function mapProducts(
 
     const inferred = inferProductTypeWithConfidence(p);
     const isNewSku = !existingSkuSet.has(sku!);
+    const nomusRawName = asString(p.nome);
+    const nomusDescription = asString(p.descricao);
+    const hasDescriptiveNomusName =
+      (!!nomusRawName && !isSkuLikeName(nomusRawName, sku!) && !isGenericNonDescriptiveText(nomusRawName)) ||
+      (!!nomusDescription && !isSkuLikeName(nomusDescription, sku!) && !isGenericNonDescriptiveText(nomusDescription));
     if (isNewSku && inferred.confidence === "LOW") {
       reasons.push("UNSAFE_PRODUCT_TYPE");
       diagnostics.typeInferenceSummary.blockedUnsafeType += 1;
+    }
+    if (isNewSku && !hasDescriptiveNomusName) {
+      reasons.push("MISSING_DESCRIPTIVE_NAME");
     }
 
     if (reasons.length > 0) {
@@ -480,6 +504,8 @@ function mapProducts(
         nomeGrupoProduto: meta.nomeGrupoProduto,
         nomeFamiliaProduto: meta.nomeFamiliaProduto,
         servicoIndustrializacaoTerceiros: meta.servicoIndustrializacaoTerceiros,
+        nomusRawName,
+        nomusDescription,
         typeInferenceConfidence: inferred.confidence,
         inferredType: inferred.type,
       });
