@@ -29,6 +29,11 @@ type EligibleProduct = {
   unitFromNomus: string | null;
   netWeightFromNomus: number | null;
   grossWeightFromNomus: number | null;
+  nomusRawName: string | null;
+  nomusDescription: string | null;
+  chosenName: string;
+  nameSource: "nome" | "descricao" | "codigo" | "none";
+  nameLooksLikeSku: boolean;
   raw: JsonObject;
 };
 
@@ -212,6 +217,58 @@ function matchAny(values: Array<string | null>, regex: RegExp): boolean {
   return values.some((v) => Boolean(v && regex.test(v)));
 }
 
+/** Normaliza para comparar nome vindo do Nomus com o SKU (trim, maiúsculas, sem espaços internos). */
+function normalizeForSkuCompare(s: string): string {
+  return s.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+/**
+ * Indica se o texto parece código/SKU técnico (e não um nome descritivo).
+ * true: vazio, igual ao SKU normalizado, ou padrão curto alfanumérico sem palavras longas.
+ */
+function isSkuLikeName(value: string | null, sku: string): boolean {
+  if (value == null) return true;
+  const t = value.trim();
+  if (t.length === 0) return true;
+  if (normalizeForSkuCompare(t) === normalizeForSkuCompare(sku)) return true;
+  // Texto descritivo típico: espaços, pontuação, acentos.
+  if (/[\s,;()[\]{}'"“”]/.test(t)) return false;
+  if (/[àáâãäåèéêëìíîïòóôõöùúûüýÿçñ]/i.test(t)) return false;
+  if (/[\u00C0-\u024F\u1E00-\u1EFF]/.test(t)) return false;
+  if (t.length > 48) return false;
+  const letterCount = (t.match(/[A-Za-z]/g) ?? []).length;
+  const digitCount = (t.match(/\d/g) ?? []).length;
+  if (t.length >= 18 && letterCount >= 12 && digitCount <= 2) return false;
+  if (!/^[A-Za-z0-9._\-/]+$/.test(t)) return false;
+  if (/[aeiouAEIOU]{4,}/.test(t)) return false;
+  if (!/\d/.test(t) && t.length > 10) return false;
+  return true;
+}
+
+function chooseSafeProductName(
+  raw: JsonObject,
+  sku: string
+): {
+  name: string | null;
+  source: "nome" | "descricao" | "codigo" | "none";
+  nameLooksLikeSku: boolean;
+} {
+  const nome = asString(raw.nome);
+  const descricao = asString(raw.descricao);
+  const codigo = asString(raw.codigo) ?? asString(raw.codigoProduto) ?? sku;
+
+  if (nome && !isSkuLikeName(nome, sku)) {
+    return { name: nome, source: "nome", nameLooksLikeSku: false };
+  }
+  if (descricao && !isSkuLikeName(descricao, sku)) {
+    return { name: descricao, source: "descricao", nameLooksLikeSku: false };
+  }
+  if (codigo) {
+    return { name: codigo, source: "codigo", nameLooksLikeSku: true };
+  }
+  return { name: null, source: "none", nameLooksLikeSku: true };
+}
+
 function toNumberOrNull(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -337,11 +394,12 @@ function mapProducts(
   for (const p of raw) {
     const externalId = toInt(p.id);
     const sku = asString(p.codigo) ?? asString(p.codigoProduto);
-    const name = asString(p.nome) ?? asString(p.descricao);
     const reasons: string[] = [];
     if (externalId == null) reasons.push("MISSING_EXTERNAL_ID");
     if (!sku) reasons.push("MISSING_SKU");
-    if (!name) reasons.push("MISSING_NAME");
+    const chosenNamePack = sku ? chooseSafeProductName(p, sku) : { name: null as string | null, source: "none" as const, nameLooksLikeSku: true };
+    if (!chosenNamePack.name) reasons.push("MISSING_NAME");
+    const name = chosenNamePack.name ?? asString(p.nome) ?? asString(p.descricao);
     if (reasons.length > 0) {
       blocked.push({
         externalId,
@@ -413,7 +471,7 @@ function mapProducts(
     eligible.push({
       externalId: externalId!,
       sku: sku!,
-      name: name!,
+      name: chosenNamePack.name!,
       description: asString(p.descricao),
       type: inferred.type,
       typeInferenceConfidence: inferred.confidence,
@@ -424,6 +482,11 @@ function mapProducts(
       unitFromNomus: meta.unitFromNomus,
       netWeightFromNomus: meta.netWeightFromNomus,
       grossWeightFromNomus: meta.grossWeightFromNomus,
+      nomusRawName: asString(p.nome),
+      nomusDescription: asString(p.descricao),
+      chosenName: chosenNamePack.name!,
+      nameSource: chosenNamePack.source,
+      nameLooksLikeSku: chosenNamePack.nameLooksLikeSku,
       raw: p,
     });
   }
@@ -440,6 +503,12 @@ async function runDry(eligible: EligibleProduct[]) {
     externalId: number;
     sku: string;
     name: string;
+    nomusRawName: string | null;
+    nomusDescription: string | null;
+    chosenName: string;
+    nameSource: "nome" | "descricao" | "codigo" | "none";
+    nameLooksLikeSku: boolean;
+    nameAction: "create-use-descriptive-nomus-name" | "create-use-sku-as-name-fallback";
     nomusTypeName: string | null;
     nomusGroupName: string | null;
     unitFromNomus: string | null;
@@ -454,6 +523,15 @@ async function runDry(eligible: EligibleProduct[]) {
     name: string;
     currentName: string;
     nextName: string;
+    nomusRawName: string | null;
+    nomusDescription: string | null;
+    chosenName: string;
+    nameSource: "nome" | "descricao" | "codigo" | "none";
+    nameLooksLikeSku: boolean;
+    nameAction:
+      | "preserve-existing-name-nomus-name-is-sku-like"
+      | "no-name-change"
+      | "update-name-from-nomus";
     fieldsToUpdate: string[];
     typeAction: "preserve-existing";
     weightAction: "not-mapped-no-schema-field";
@@ -470,7 +548,13 @@ async function runDry(eligible: EligibleProduct[]) {
       createsPreview.push({
         externalId: p.externalId,
         sku: p.sku,
-        name: p.name,
+        name: p.chosenName,
+        nomusRawName: p.nomusRawName,
+        nomusDescription: p.nomusDescription,
+        chosenName: p.chosenName,
+        nameSource: p.nameSource,
+        nameLooksLikeSku: p.nameLooksLikeSku,
+        nameAction: p.nameLooksLikeSku ? "create-use-sku-as-name-fallback" : "create-use-descriptive-nomus-name",
         nomusTypeName: p.nomusTypeName,
         nomusGroupName: p.nomusGroupName,
         unitFromNomus: p.unitFromNomus,
@@ -480,14 +564,31 @@ async function runDry(eligible: EligibleProduct[]) {
       });
     else {
       const fieldsToUpdate: string[] = [];
-      if ((current.name ?? "") !== p.name) fieldsToUpdate.push("name");
+      const willUpdateName =
+        !p.nameLooksLikeSku && p.chosenName.length > 0 && (current.name ?? "") !== p.chosenName;
+      if (willUpdateName) fieldsToUpdate.push("name");
+      const nextName = willUpdateName ? p.chosenName : current.name;
+      let nameAction: (typeof updatesPreview)[number]["nameAction"];
+      if (p.nameLooksLikeSku) {
+        nameAction = "preserve-existing-name-nomus-name-is-sku-like";
+      } else if (!willUpdateName) {
+        nameAction = "no-name-change";
+      } else {
+        nameAction = "update-name-from-nomus";
+      }
       updatesPreview.push({
         id: current.id,
         externalId: p.externalId,
         sku: p.sku,
-        name: p.name,
+        name: p.chosenName,
         currentName: current.name,
-        nextName: p.name,
+        nextName,
+        nomusRawName: p.nomusRawName,
+        nomusDescription: p.nomusDescription,
+        chosenName: p.chosenName,
+        nameSource: p.nameSource,
+        nameLooksLikeSku: p.nameLooksLikeSku,
+        nameAction,
         fieldsToUpdate,
         typeAction: "preserve-existing",
         weightAction: "not-mapped-no-schema-field",
@@ -507,19 +608,29 @@ async function runApply(eligible: EligibleProduct[]): Promise<{ created: number;
   let created = 0;
   let updated = 0;
   for (const p of eligible) {
-    const current = await prisma.product.findUnique({ where: { sku: p.sku }, select: { id: true, type: true } });
-    const data = {
-      name: p.name,
+    const current = await prisma.product.findUnique({ where: { sku: p.sku }, select: { id: true, type: true, name: true } });
+    const baseData = {
       description: p.description,
-      status: "ACTIVE",
-      // Em update, preservamos o tipo existente para evitar mudança insegura PRODUCT x COMPONENT.
-      ...(current ? {} : { type: p.type }),
+      status: "ACTIVE" as const,
     };
     if (current) {
+      const willUpdateName =
+        !p.nameLooksLikeSku && p.chosenName.length > 0 && (current.name ?? "") !== p.chosenName;
+      const data = {
+        ...baseData,
+        ...(willUpdateName ? { name: p.chosenName } : {}),
+      };
       await prisma.product.update({ where: { id: current.id }, data });
       updated += 1;
     } else {
-      await prisma.product.create({ data: { ...data, sku: p.sku } });
+      await prisma.product.create({
+        data: {
+          ...baseData,
+          sku: p.sku,
+          name: p.chosenName,
+          type: p.type,
+        },
+      });
       created += 1;
     }
   }
