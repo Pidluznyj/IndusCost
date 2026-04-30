@@ -23,6 +23,12 @@ type EligibleProduct = {
     inactive: boolean;
     hasBomLikeData: boolean;
   };
+  nomusTypeName: string | null;
+  nomusGroupName: string | null;
+  nomusFamilyName: string | null;
+  unitFromNomus: string | null;
+  netWeightFromNomus: number | null;
+  grossWeightFromNomus: number | null;
   raw: JsonObject;
 };
 
@@ -31,6 +37,14 @@ type BlockedProduct = {
   sku: string | null;
   name: string | null;
   reasons: string[];
+  ativo: boolean | null;
+  template: boolean | null;
+  nomeTipoProduto: string | null;
+  nomeGrupoProduto: string | null;
+  nomeFamiliaProduto: string | null;
+  servicoIndustrializacaoTerceiros: boolean | null;
+  typeInferenceConfidence: "HIGH" | "LOW";
+  inferredType: ItemType;
 };
 
 type ProductsDiagnostics = {
@@ -66,6 +80,17 @@ function toInt(value: unknown): number | null {
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function asBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    if (["true", "1", "sim", "yes"].includes(v)) return true;
+    if (["false", "0", "nao", "não", "no"].includes(v)) return false;
+  }
+  return null;
 }
 
 function getRequiredEnv(name: string): string {
@@ -183,31 +208,49 @@ async function fetchAllNomusProducts(baseUrl: string): Promise<JsonObject[]> {
   return rows;
 }
 
-function inferProductType(raw: JsonObject): ItemType {
-  const typeText =
-    (asString(raw.tipo) ?? asString(raw.tipoProduto) ?? asString(raw.classificacao) ?? asString(raw.categoria) ?? "").toUpperCase();
-  if (typeText.includes("COMPONENT")) return "COMPONENT";
-  return "PRODUCT";
+function matchAny(values: Array<string | null>, regex: RegExp): boolean {
+  return values.some((v) => Boolean(v && regex.test(v)));
 }
 
-function detectLikeByFieldOrValue(raw: JsonObject, fieldRegex: RegExp, valueRegex: RegExp): boolean {
-  for (const [key, value] of Object.entries(raw)) {
-    if (fieldRegex.test(key)) {
-      if (typeof value === "boolean") return value;
-      if (typeof value === "number") return value !== 0;
-      if (typeof value === "string") return valueRegex.test(value);
-    }
-    if (typeof value === "string" && valueRegex.test(value)) return true;
-  }
-  return false;
+function toNumberOrNull(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extractNomusMeta(raw: JsonObject): {
+  nomeTipoProduto: string | null;
+  nomeGrupoProduto: string | null;
+  nomeFamiliaProduto: string | null;
+  unitFromNomus: string | null;
+  netWeightFromNomus: number | null;
+  grossWeightFromNomus: number | null;
+  ativo: boolean | null;
+  template: boolean | null;
+  servicoIndustrializacaoTerceiros: boolean | null;
+} {
+  return {
+    nomeTipoProduto: asString(raw.nomeTipoProduto),
+    nomeGrupoProduto: asString(raw.nomeGrupoProduto),
+    nomeFamiliaProduto: asString(raw.nomeFamiliaProduto),
+    unitFromNomus: asString(raw.siglaUnidadeMedida) ?? asString(raw.unidade) ?? asString(raw.unidadeMedida),
+    netWeightFromNomus: toNumberOrNull(raw.pesoLiquidoUnitario),
+    grossWeightFromNomus: toNumberOrNull(raw.pesoBrutoUnitario),
+    ativo: asBoolean(raw.ativo),
+    template: asBoolean(raw.template),
+    servicoIndustrializacaoTerceiros: asBoolean(raw.servicoIndustrializacaoTerceiros),
+  };
 }
 
 function inferProductTypeWithConfidence(raw: JsonObject): { type: ItemType; confidence: "HIGH" | "LOW" } {
-  const typeText =
-    (asString(raw.tipo) ?? asString(raw.tipoProduto) ?? asString(raw.classificacao) ?? asString(raw.categoria) ?? "").toUpperCase();
-  if (!typeText) return { type: "PRODUCT", confidence: "LOW" };
-  if (typeText.includes("COMPONENT") || typeText.includes("COMPONENTE")) return { type: "COMPONENT", confidence: "HIGH" };
-  if (typeText.includes("PRODUTO") || typeText.includes("PRODUCT")) return { type: "PRODUCT", confidence: "HIGH" };
+  const typeName = (asString(raw.nomeTipoProduto) ?? "").toUpperCase();
+  const groupName = (asString(raw.nomeGrupoProduto) ?? "").toUpperCase();
+
+  if (typeName.includes("ACABADO") || groupName.includes("PRODUTO ACABADO")) {
+    return { type: "PRODUCT", confidence: "HIGH" };
+  }
+  if (typeName.includes("COMPONENTE") || typeName.includes("COMPONENT") || groupName.includes("COMPONENTE")) {
+    return { type: "COMPONENT", confidence: "HIGH" };
+  }
   return { type: "PRODUCT", confidence: "LOW" };
 }
 
@@ -223,7 +266,7 @@ function collectDiagnostics(raw: JsonObject[]): ProductsDiagnostics {
   const bomLikeFields = new Set<string>();
 
   const weightRegex = /peso|weight/i;
-  const unitRegex = /unidade|unit|^un$/i;
+  const unitRegex = /(siglaUnidadeMedida|idUnidadeMedida|unidade|unidadeMedida)$/i;
   const typeRegex = /tipo|categoria|classificacao/i;
   const optionalRegex = /opcional|optional|produtoOpcional|itemOpcional/i;
   const phantomRegex = /fantasma|phantom|produtoFantasma|itemFantasma/i;
@@ -276,12 +319,17 @@ function collectDiagnostics(raw: JsonObject[]): ProductsDiagnostics {
       "PHANTOM_PRODUCT",
       "SERVICE_ITEM",
       "INACTIVE_PRODUCT_NOMUS",
+      "TEMPLATE_PRODUCT",
+      "MERCHANDISE_RESALE_UNMAPPED",
       "UNSAFE_PRODUCT_TYPE",
     ],
   };
 }
 
-function mapProducts(raw: JsonObject[]): { eligible: EligibleProduct[]; blocked: BlockedProduct[]; diagnostics: ProductsDiagnostics } {
+function mapProducts(
+  raw: JsonObject[],
+  existingSkuSet: Set<string>
+): { eligible: EligibleProduct[]; blocked: BlockedProduct[]; diagnostics: ProductsDiagnostics } {
   const eligible: EligibleProduct[] = [];
   const blocked: BlockedProduct[] = [];
   const diagnostics = collectDiagnostics(raw);
@@ -295,18 +343,33 @@ function mapProducts(raw: JsonObject[]): { eligible: EligibleProduct[]; blocked:
     if (!sku) reasons.push("MISSING_SKU");
     if (!name) reasons.push("MISSING_NAME");
     if (reasons.length > 0) {
-      blocked.push({ externalId, sku, name, reasons });
+      blocked.push({
+        externalId,
+        sku,
+        name,
+        reasons,
+        ativo: null,
+        template: null,
+        nomeTipoProduto: null,
+        nomeGrupoProduto: null,
+        nomeFamiliaProduto: null,
+        servicoIndustrializacaoTerceiros: null,
+        typeInferenceConfidence: "LOW",
+        inferredType: "PRODUCT",
+      });
       continue;
     }
 
-    const optional = detectLikeByFieldOrValue(p, /opcional|optional|produtoOpcional|itemOpcional/i, /opcional|optional/i);
-    const phantom = detectLikeByFieldOrValue(p, /fantasma|phantom|produtoFantasma|itemFantasma/i, /fantasma|phantom/i);
-    const service = detectLikeByFieldOrValue(
-      p,
-      /servic|serviço|servico|itemServico|tipo/i,
-      /servic|serviço|servico|apoio|gen[eé]rico|generico|n[aã]o.?produtivo|tempor[aá]rio|temporario/i
-    );
-    const inactive = detectLikeByFieldOrValue(p, /inativ|cancel|exclu|delet|desativ|ativo|status/i, /inativ|cancel|exclu|delet|desativ|false/i);
+    const meta = extractNomusMeta(p);
+    const textScope = [meta.nomeTipoProduto, meta.nomeGrupoProduto, meta.nomeFamiliaProduto];
+    const optional = matchAny(textScope, /\b(opcional|optional)\b/i);
+    const phantom = matchAny(textScope, /\b(fantasma|phantom)\b/i);
+    const service =
+      meta.servicoIndustrializacaoTerceiros === true ||
+      matchAny(textScope, /\b(servi[cç]o|service)\b/i);
+    const inactive = meta.ativo === false;
+    const template = meta.template === true;
+    const resale = matchAny(textScope, /mercadoria\s+para\s+revenda/i);
     const hasBomLikeData = Object.keys(p).some((k) =>
       /component|estrutura|insumo|materia|filho|compos|produtoPai|produtoFilho|quantidade/i.test(k)
     );
@@ -315,15 +378,31 @@ function mapProducts(raw: JsonObject[]): { eligible: EligibleProduct[]; blocked:
     if (phantom) reasons.push("PHANTOM_PRODUCT");
     if (service) reasons.push("SERVICE_ITEM");
     if (inactive) reasons.push("INACTIVE_PRODUCT_NOMUS");
+    if (template) reasons.push("TEMPLATE_PRODUCT");
+    if (resale) reasons.push("MERCHANDISE_RESALE_UNMAPPED");
 
     const inferred = inferProductTypeWithConfidence(p);
-    if (inferred.type === "PRODUCT" && inferred.confidence === "LOW") {
+    const isNewSku = !existingSkuSet.has(sku!);
+    if (isNewSku && inferred.confidence === "LOW") {
       reasons.push("UNSAFE_PRODUCT_TYPE");
       diagnostics.typeInferenceSummary.blockedUnsafeType += 1;
     }
 
     if (reasons.length > 0) {
-      blocked.push({ externalId, sku, name, reasons });
+      blocked.push({
+        externalId,
+        sku,
+        name,
+        reasons,
+        ativo: meta.ativo,
+        template: meta.template,
+        nomeTipoProduto: meta.nomeTipoProduto,
+        nomeGrupoProduto: meta.nomeGrupoProduto,
+        nomeFamiliaProduto: meta.nomeFamiliaProduto,
+        servicoIndustrializacaoTerceiros: meta.servicoIndustrializacaoTerceiros,
+        typeInferenceConfidence: inferred.confidence,
+        inferredType: inferred.type,
+      });
       continue;
     }
 
@@ -339,6 +418,12 @@ function mapProducts(raw: JsonObject[]): { eligible: EligibleProduct[]; blocked:
       type: inferred.type,
       typeInferenceConfidence: inferred.confidence,
       flags: { optional, phantom, service, inactive, hasBomLikeData },
+      nomusTypeName: meta.nomeTipoProduto,
+      nomusGroupName: meta.nomeGrupoProduto,
+      nomusFamilyName: meta.nomeFamiliaProduto,
+      unitFromNomus: meta.unitFromNomus,
+      netWeightFromNomus: meta.netWeightFromNomus,
+      grossWeightFromNomus: meta.grossWeightFromNomus,
       raw: p,
     });
   }
@@ -351,7 +436,17 @@ async function runDry(eligible: EligibleProduct[]) {
     select: { id: true, sku: true, name: true },
   });
   const bySku = new Map(existing.map((p) => [p.sku, p]));
-  const createsPreview: Array<{ externalId: number; sku: string; name: string }> = [];
+  const createsPreview: Array<{
+    externalId: number;
+    sku: string;
+    name: string;
+    nomusTypeName: string | null;
+    nomusGroupName: string | null;
+    unitFromNomus: string | null;
+    netWeightFromNomus: number | null;
+    grossWeightFromNomus: number | null;
+    typeAction: "create-from-nomus-inference";
+  }> = [];
   const updatesPreview: Array<{
     id: string;
     externalId: number;
@@ -363,10 +458,26 @@ async function runDry(eligible: EligibleProduct[]) {
     typeAction: "preserve-existing";
     weightAction: "not-mapped-no-schema-field";
     unitAction: "not-mapped-no-schema-field";
+    nomusTypeName: string | null;
+    nomusGroupName: string | null;
+    unitFromNomus: string | null;
+    netWeightFromNomus: number | null;
+    grossWeightFromNomus: number | null;
   }> = [];
   for (const p of eligible) {
     const current = bySku.get(p.sku);
-    if (!current) createsPreview.push({ externalId: p.externalId, sku: p.sku, name: p.name });
+    if (!current)
+      createsPreview.push({
+        externalId: p.externalId,
+        sku: p.sku,
+        name: p.name,
+        nomusTypeName: p.nomusTypeName,
+        nomusGroupName: p.nomusGroupName,
+        unitFromNomus: p.unitFromNomus,
+        netWeightFromNomus: p.netWeightFromNomus,
+        grossWeightFromNomus: p.grossWeightFromNomus,
+        typeAction: "create-from-nomus-inference",
+      });
     else {
       const fieldsToUpdate: string[] = [];
       if ((current.name ?? "") !== p.name) fieldsToUpdate.push("name");
@@ -381,6 +492,11 @@ async function runDry(eligible: EligibleProduct[]) {
         typeAction: "preserve-existing",
         weightAction: "not-mapped-no-schema-field",
         unitAction: "not-mapped-no-schema-field",
+        nomusTypeName: p.nomusTypeName,
+        nomusGroupName: p.nomusGroupName,
+        unitFromNomus: p.unitFromNomus,
+        netWeightFromNomus: p.netWeightFromNomus,
+        grossWeightFromNomus: p.grossWeightFromNomus,
       });
     }
   }
@@ -414,7 +530,15 @@ async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
   const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const raw = await fetchAllNomusProducts(baseUrl);
-  const { eligible, blocked, diagnostics } = mapProducts(raw);
+  const candidateSkus = raw
+    .map((p) => asString(p.codigo) ?? asString(p.codigoProduto))
+    .filter((x): x is string => Boolean(x));
+  const existingProducts = candidateSkus.length
+    ? await prisma.product.findMany({ where: { sku: { in: candidateSkus } }, select: { sku: true } })
+    : [];
+  const existingSkuSet = new Set(existingProducts.map((p) => p.sku));
+
+  const { eligible, blocked, diagnostics } = mapProducts(raw, existingSkuSet);
   const dry = await runDry(eligible);
   const blockedReasons: Record<string, number> = {};
   for (const b of blocked) for (const r of b.reasons) blockedReasons[r] = (blockedReasons[r] ?? 0) + 1;
