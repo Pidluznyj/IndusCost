@@ -2,7 +2,7 @@ import "dotenv/config";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 type SyncMode = "dry" | "apply";
 type SyncTarget = "products" | "customers" | "proposals" | "sales-orders";
@@ -130,6 +130,11 @@ function extractPagedMetrics(stderr: string): {
   };
 }
 
+function toPrismaJson(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value == null) return undefined;
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
 async function persistIntegrationRunBestEffort(step: StepResult, stdout: string, stderr: string): Promise<void> {
   if (!step.command || !step.logFile) return;
 
@@ -148,7 +153,7 @@ async function persistIntegrationRunBestEffort(step: StepResult, stdout: string,
   const ordersRead = ordersReadFromSummary ?? metricsFromStderr.ordersReadFromStderr;
   const errorMessage = step.reason ? maskSensitive(step.reason).slice(0, 500) : null;
 
-  const integrationRunData = {
+  const integrationRunData: Prisma.IntegrationRunUncheckedCreateInput = {
     sourceSystem: "NOMUS",
     kind: "sync",
     target: step.target,
@@ -168,19 +173,24 @@ async function persistIntegrationRunBestEffort(step: StepResult, stdout: string,
     lastPage: metricsFromStderr.lastPage,
     eligibleCount: safeNumber(summary?.eligibleCount),
     blockedCount: safeNumber(summary?.blockedCount),
-    blockedReasons: blockedReasonsObj ?? undefined,
-    blockedPreview: blockedPreview ?? undefined,
+    blockedReasons: toPrismaJson(blockedReasonsObj),
+    blockedPreview: toPrismaJson(blockedPreview),
     createdCount: safeNumber(applied?.created),
     updatedCount: safeNumber(applied?.updated),
     itemsCreated: safeNumber(applied?.itemsCreated),
-    summaryJson: parsed
-      ? {
-          mode: parsed.mode ?? null,
-          summary: summary ?? null,
-          applied: applied ?? null,
-        }
-      : null,
+    summaryJson: toPrismaJson(
+      parsed
+        ? {
+            mode: parsed.mode ?? null,
+            summary: summary ?? null,
+            applied: applied ?? null,
+          }
+        : null
+    ),
     errorMessage,
+  };
+  const updateData: Prisma.IntegrationRunUncheckedUpdateInput = {
+    ...integrationRunData,
   };
 
   try {
@@ -190,7 +200,7 @@ async function persistIntegrationRunBestEffort(step: StepResult, stdout: string,
     if (existing) {
       await prisma.integrationRun.update({
         where: { id: existing.id },
-        data: integrationRunData,
+        data: updateData,
       });
       return;
     }
