@@ -55,6 +55,7 @@ export const PricingModule = () => {
   const [simulatorError, setSimulatorError] = useState<string | null>(null);
   const [simulatorRunning, setSimulatorRunning] = useState(false);
   const [simulatorResult, setSimulatorResult] = useState<any | null>(null);
+  const [isSimulatorModalOpen, setIsSimulatorModalOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     productId: "",
@@ -377,131 +378,13 @@ export const PricingModule = () => {
       ) : viewMode === "UNIT" ? (
         // --- VIEW: UNIT ---
         <div className="space-y-6" data-tour="pricing-unit-panel">
-          <section className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-4">
-            <div>
-              <h3 className="text-lg font-bold">Calculadora de Preço de Venda</h3>
-              <p className="text-xs text-muted-foreground">Simulação sem gravação de dados, usando o mesmo motor de cálculo.</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase">Produto/Componente</label>
-                <SearchableSelect
-                  placeholder="Buscar por SKU ou nome..."
-                  options={products.map((p: { id: string; sku: string; name: string; type?: string }) => ({
-                    value: p.id,
-                    label: `${p.sku} — ${p.name}`,
-                    sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
-                    searchTerms: `${p.sku} ${p.name} ${p.type ?? ""}`,
-                  }))}
-                  value={simulatorForm.productId}
-                  onChange={(value) => setSimulatorForm((prev) => ({ ...prev, productId: value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase">Regra fiscal</label>
-                <SearchableSelect
-                  placeholder="Selecione..."
-                  options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
-                    value: r.id,
-                    label: r.name,
-                    sublabel: r.description?.trim() || undefined,
-                    searchTerms: [r.name, r.description].filter(Boolean).join(" "),
-                  }))}
-                  value={simulatorForm.taxRuleId}
-                  onChange={(value) => setSimulatorForm((prev) => ({ ...prev, taxRuleId: value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase">Margem desejada (%)</label>
-                <input
-                  type="number"
-                  step="0.00001"
-                  min={0}
-                  value={simulatorForm.desiredMargin}
-                  onChange={(e) => setSimulatorForm((prev) => ({ ...prev, desiredMargin: Number(e.target.value) }))}
-                  className="w-full p-3 rounded-xl border border-border bg-background outline-none"
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-accent/20 p-3">
-              <p className="text-sm text-muted-foreground">
-                Custo para produzir:{" "}
-                <span className="font-bold text-foreground">
-                  {simulatorCostLoading ? "Carregando..." : simulatorCost == null ? "—" : formatCurrency(simulatorCost, 6)}
-                </span>
-              </p>
-              <button
-                type="button"
-                onClick={handleRunSimulator}
-                disabled={simulatorRunning}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
-              >
-                {simulatorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
-                Calcular simulação
-              </button>
-            </div>
-            {simulatorError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{simulatorError}</div>
-            )}
-            {simulatorResult && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div className="rounded-xl border border-border bg-card/40 p-4">
-                    <p className="text-xs text-muted-foreground uppercase font-bold">Custo para produzir</p>
-                    <p className="text-base font-bold">{formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-card/40 p-4">
-                    <p className="text-xs text-muted-foreground uppercase font-bold">Impostos sobre venda</p>
-                    <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%</p>
-                    <p className="text-xs text-muted-foreground">{formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-card/40 p-4">
-                    <p className="text-xs text-muted-foreground uppercase font-bold">Margem desejada</p>
-                    <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%</p>
-                  </div>
-                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-                    <p className="text-xs text-primary uppercase font-bold">Preço sugerido</p>
-                    <p className="text-lg font-black text-primary">
-                      {formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}
-                    </p>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-card/30 p-4">
-                  <table className="w-full text-sm">
-                    <tbody className="divide-y divide-border">
-                      <tr>
-                        <td className="py-2 text-muted-foreground">Custo base de produção</td>
-                        <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 text-muted-foreground">Percentual de impostos</td>
-                        <td className="py-2 text-right font-semibold">{formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 text-muted-foreground">Valor dos impostos embutidos</td>
-                        <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 text-muted-foreground">Percentual de margem</td>
-                        <td className="py-2 text-right font-semibold">{formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 text-muted-foreground">Valor da margem planejada</td>
-                        <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.resultados?.contributionMargin ?? 0), 6)}</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 text-muted-foreground font-bold">Preço sugerido final</td>
-                        <td className="py-2 text-right font-black text-primary">{formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <PricingDetailedCompositionTab breakdown={simulatorResult.pricingBreakdown} />
-              </div>
-            )}
-          </section>
-
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+             <button
+              onClick={() => setIsSimulatorModalOpen(true)}
+              className="flex items-center gap-2 border border-border bg-card px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
+            >
+              <Calculator className="h-4 w-4" /> Simular preço
+            </button>
              <button 
               onClick={() => {
                 setFormData({ productId: "", taxRuleId: "", desiredMargin: 15, commission: 5, freightOut: 0, otherVariables: 0 });
@@ -895,6 +778,149 @@ export const PricingModule = () => {
           </div>
         </div>
       )}
+
+      {/* Modal Simulador de Preço */}
+      <AnimatePresence>
+        {isSimulatorModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-border flex items-center justify-between bg-accent/30">
+                <div>
+                  <h3 className="text-lg font-bold">Calculadora de Preço de Venda</h3>
+                  <p className="text-xs text-muted-foreground">Simulação sem gravação de dados, usando o mesmo motor de cálculo.</p>
+                </div>
+                <button onClick={() => setIsSimulatorModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="md:col-span-2 space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Produto/Componente</label>
+                    <SearchableSelect
+                      placeholder="Buscar por SKU ou nome..."
+                      options={products.map((p: { id: string; sku: string; name: string; type?: string }) => ({
+                        value: p.id,
+                        label: `${p.sku} — ${p.name}`,
+                        sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
+                        searchTerms: `${p.sku} ${p.name} ${p.type ?? ""}`,
+                      }))}
+                      value={simulatorForm.productId}
+                      onChange={(value) => setSimulatorForm((prev) => ({ ...prev, productId: value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Regra fiscal</label>
+                    <SearchableSelect
+                      placeholder="Selecione..."
+                      options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
+                        value: r.id,
+                        label: r.name,
+                        sublabel: r.description?.trim() || undefined,
+                        searchTerms: [r.name, r.description].filter(Boolean).join(" "),
+                      }))}
+                      value={simulatorForm.taxRuleId}
+                      onChange={(value) => setSimulatorForm((prev) => ({ ...prev, taxRuleId: value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Margem desejada (%)</label>
+                    <input
+                      type="number"
+                      step="0.00001"
+                      min={0}
+                      value={simulatorForm.desiredMargin}
+                      onChange={(e) => setSimulatorForm((prev) => ({ ...prev, desiredMargin: Number(e.target.value) }))}
+                      className="w-full p-3 rounded-xl border border-border bg-background outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-accent/20 p-3">
+                  <p className="text-sm text-muted-foreground">
+                    Custo para produzir:{" "}
+                    <span className="font-bold text-foreground">
+                      {simulatorCostLoading ? "Carregando..." : simulatorCost == null ? "—" : formatCurrency(simulatorCost, 6)}
+                    </span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRunSimulator}
+                    disabled={simulatorRunning}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                  >
+                    {simulatorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
+                    Calcular simulação
+                  </button>
+                </div>
+                {simulatorError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{simulatorError}</div>
+                )}
+                {simulatorResult && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div className="rounded-xl border border-border bg-card/40 p-4">
+                        <p className="text-xs text-muted-foreground uppercase font-bold">Custo para produzir</p>
+                        <p className="text-base font-bold">{formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}</p>
+                      </div>
+                      <div className="rounded-xl border border-border bg-card/40 p-4">
+                        <p className="text-xs text-muted-foreground uppercase font-bold">Impostos sobre venda</p>
+                        <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%</p>
+                        <p className="text-xs text-muted-foreground">{formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}</p>
+                      </div>
+                      <div className="rounded-xl border border-border bg-card/40 p-4">
+                        <p className="text-xs text-muted-foreground uppercase font-bold">Margem desejada</p>
+                        <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%</p>
+                      </div>
+                      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                        <p className="text-xs text-primary uppercase font-bold">Preço sugerido</p>
+                        <p className="text-lg font-black text-primary">
+                          {formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-card/30 p-4">
+                      <table className="w-full text-sm">
+                        <tbody className="divide-y divide-border">
+                          <tr>
+                            <td className="py-2 text-muted-foreground">Custo base de produção</td>
+                            <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 text-muted-foreground">Percentual de impostos</td>
+                            <td className="py-2 text-right font-semibold">{formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 text-muted-foreground">Valor dos impostos embutidos</td>
+                            <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 text-muted-foreground">Percentual de margem</td>
+                            <td className="py-2 text-right font-semibold">{formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 text-muted-foreground">Valor da margem planejada</td>
+                            <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.resultados?.contributionMargin ?? 0), 6)}</td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 text-muted-foreground font-bold">Preço sugerido final</td>
+                            <td className="py-2 text-right font-black text-primary">{formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <PricingDetailedCompositionTab breakdown={simulatorResult.pricingBreakdown} />
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Modal Result Unitario - MANTIDO INTACTO DA ARQUITETURA ORIGINAL */}
       <AnimatePresence>
