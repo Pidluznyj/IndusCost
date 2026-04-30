@@ -97,7 +97,7 @@ export const Layout = () => {
             </div>
             <div className="text-[11px] leading-tight text-muted-foreground text-right hidden md:block">
               <p>
-                Última atualização: <span className="font-medium text-foreground">{lastSyncAt}</span>{" "}
+                Última sincronia com o Nomus: <span className="font-medium text-foreground">{lastSyncAt}</span>{" "}
                 <span className={`font-semibold ${statusClass}`}>({statusLabel})</span>
               </p>
               <p>
