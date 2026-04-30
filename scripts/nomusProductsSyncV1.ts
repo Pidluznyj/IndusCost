@@ -3,7 +3,7 @@ import { ItemType, PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const DEFAULT_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 50;
 const DEFAULT_MAX_RETRIES = 6;
 const DEFAULT_RETRY_BASE_MS = 700;
 
@@ -15,6 +15,14 @@ type EligibleProduct = {
   name: string;
   description: string | null;
   type: ItemType;
+  typeInferenceConfidence: "HIGH" | "LOW";
+  flags: {
+    optional: boolean;
+    phantom: boolean;
+    service: boolean;
+    inactive: boolean;
+    hasBomLikeData: boolean;
+  };
   raw: JsonObject;
 };
 
@@ -23,6 +31,26 @@ type BlockedProduct = {
   sku: string | null;
   name: string | null;
   reasons: string[];
+};
+
+type ProductsDiagnostics = {
+  detectedProductKeys: string[];
+  weightFieldsDetected: string[];
+  unitFieldsDetected: string[];
+  typeFieldsDetected: string[];
+  optionalLikeFieldsDetected: string[];
+  phantomLikeFieldsDetected: string[];
+  serviceLikeFieldsDetected: string[];
+  inactiveLikeFieldsDetected: string[];
+  bomLikeFieldsDetected: string[];
+  typeInferenceSummary: {
+    highConfidenceProduct: number;
+    highConfidenceComponent: number;
+    lowConfidence: number;
+    blockedUnsafeType: number;
+  };
+  safeUpdateFields: string[];
+  blockedBusinessRules: string[];
 };
 
 function toInt(value: unknown): number | null {
@@ -72,6 +100,27 @@ async function fetchJsonWithRetry(url: URL, maxRetries: number, retryBaseMs: num
     const res = await fetch(url, { method: "GET", headers });
     if (res.ok) return res.json();
     const body = await res.text().catch(() => "");
+    if (res.status === 429 && attempt < maxRetries) {
+      let waitMs: number | null = null;
+      try {
+        const parsed = JSON.parse(body) as { tempoAteLiberar?: unknown };
+        const tempoAteLiberar = toInt(parsed?.tempoAteLiberar);
+        if (tempoAteLiberar != null && tempoAteLiberar > 0) {
+          waitMs = tempoAteLiberar * 1000 + 1000;
+        }
+      } catch {
+        waitMs = null;
+      }
+      if (waitMs == null) {
+        const retryAfterSec = Number.parseInt(res.headers.get("retry-after") ?? "", 10);
+        waitMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 + 1000 : retryBaseMs * Math.pow(2, attempt);
+      }
+      console.warn(
+        `[nomus-products-v1] rate limit 429; aguardando ${(waitMs / 1000).toFixed(0)}s antes de tentar novamente.`
+      );
+      await sleep(waitMs);
+      continue;
+    }
     const retryable = res.status === 429 || res.status >= 500;
     if (!retryable || attempt === maxRetries) {
       throw new Error(`Falha HTTP ${res.status} em ${url.toString()}: ${body.slice(0, 300)}`);
@@ -141,9 +190,101 @@ function inferProductType(raw: JsonObject): ItemType {
   return "PRODUCT";
 }
 
-function mapProducts(raw: JsonObject[]): { eligible: EligibleProduct[]; blocked: BlockedProduct[] } {
+function detectLikeByFieldOrValue(raw: JsonObject, fieldRegex: RegExp, valueRegex: RegExp): boolean {
+  for (const [key, value] of Object.entries(raw)) {
+    if (fieldRegex.test(key)) {
+      if (typeof value === "boolean") return value;
+      if (typeof value === "number") return value !== 0;
+      if (typeof value === "string") return valueRegex.test(value);
+    }
+    if (typeof value === "string" && valueRegex.test(value)) return true;
+  }
+  return false;
+}
+
+function inferProductTypeWithConfidence(raw: JsonObject): { type: ItemType; confidence: "HIGH" | "LOW" } {
+  const typeText =
+    (asString(raw.tipo) ?? asString(raw.tipoProduto) ?? asString(raw.classificacao) ?? asString(raw.categoria) ?? "").toUpperCase();
+  if (!typeText) return { type: "PRODUCT", confidence: "LOW" };
+  if (typeText.includes("COMPONENT") || typeText.includes("COMPONENTE")) return { type: "COMPONENT", confidence: "HIGH" };
+  if (typeText.includes("PRODUTO") || typeText.includes("PRODUCT")) return { type: "PRODUCT", confidence: "HIGH" };
+  return { type: "PRODUCT", confidence: "LOW" };
+}
+
+function collectDiagnostics(raw: JsonObject[]): ProductsDiagnostics {
+  const keySet = new Set<string>();
+  const weightFields = new Set<string>();
+  const unitFields = new Set<string>();
+  const typeFields = new Set<string>();
+  const optionalLikeFields = new Set<string>();
+  const phantomLikeFields = new Set<string>();
+  const serviceLikeFields = new Set<string>();
+  const inactiveLikeFields = new Set<string>();
+  const bomLikeFields = new Set<string>();
+
+  const weightRegex = /peso|weight/i;
+  const unitRegex = /unidade|unit|^un$/i;
+  const typeRegex = /tipo|categoria|classificacao/i;
+  const optionalRegex = /opcional|optional|produtoOpcional|itemOpcional/i;
+  const phantomRegex = /fantasma|phantom|produtoFantasma|itemFantasma/i;
+  const serviceRegex = /servic|serviço|servico|apoio|gen[eé]rico|generico|n[aã]o.?produtivo|tempor[aá]rio|temporario/i;
+  const inactiveRegex = /inativ|cancel|exclu|delet|desativ|ativo|status/i;
+  const bomRegex = /component|estrutura|insumo|materia|filho|compos|produtoPai|produtoFilho|quantidade/i;
+
+  for (const row of raw) {
+    for (const [key, value] of Object.entries(row)) {
+      keySet.add(key);
+      if (weightRegex.test(key)) weightFields.add(key);
+      if (unitRegex.test(key)) unitFields.add(key);
+      if (typeRegex.test(key)) typeFields.add(key);
+      if (optionalRegex.test(key)) optionalLikeFields.add(key);
+      if (phantomRegex.test(key)) phantomLikeFields.add(key);
+      if (serviceRegex.test(key)) serviceLikeFields.add(key);
+      if (inactiveRegex.test(key)) inactiveLikeFields.add(key);
+      if (bomRegex.test(key)) bomLikeFields.add(key);
+      if (typeof value === "string") {
+        if (optionalRegex.test(value)) optionalLikeFields.add(key);
+        if (phantomRegex.test(value)) phantomLikeFields.add(key);
+        if (serviceRegex.test(value)) serviceLikeFields.add(key);
+        if (inactiveRegex.test(value)) inactiveLikeFields.add(key);
+      }
+      if (Array.isArray(value) || (value && typeof value === "object")) {
+        if (bomRegex.test(key)) bomLikeFields.add(key);
+      }
+    }
+  }
+
+  return {
+    detectedProductKeys: [...keySet].sort(),
+    weightFieldsDetected: [...weightFields].sort(),
+    unitFieldsDetected: [...unitFields].sort(),
+    typeFieldsDetected: [...typeFields].sort(),
+    optionalLikeFieldsDetected: [...optionalLikeFields].sort(),
+    phantomLikeFieldsDetected: [...phantomLikeFields].sort(),
+    serviceLikeFieldsDetected: [...serviceLikeFields].sort(),
+    inactiveLikeFieldsDetected: [...inactiveLikeFields].sort(),
+    bomLikeFieldsDetected: [...bomLikeFields].sort(),
+    typeInferenceSummary: {
+      highConfidenceProduct: 0,
+      highConfidenceComponent: 0,
+      lowConfidence: 0,
+      blockedUnsafeType: 0,
+    },
+    safeUpdateFields: ["name", "description"],
+    blockedBusinessRules: [
+      "OPTIONAL_PRODUCT",
+      "PHANTOM_PRODUCT",
+      "SERVICE_ITEM",
+      "INACTIVE_PRODUCT_NOMUS",
+      "UNSAFE_PRODUCT_TYPE",
+    ],
+  };
+}
+
+function mapProducts(raw: JsonObject[]): { eligible: EligibleProduct[]; blocked: BlockedProduct[]; diagnostics: ProductsDiagnostics } {
   const eligible: EligibleProduct[] = [];
   const blocked: BlockedProduct[] = [];
+  const diagnostics = collectDiagnostics(raw);
 
   for (const p of raw) {
     const externalId = toInt(p.id);
@@ -157,16 +298,51 @@ function mapProducts(raw: JsonObject[]): { eligible: EligibleProduct[]; blocked:
       blocked.push({ externalId, sku, name, reasons });
       continue;
     }
+
+    const optional = detectLikeByFieldOrValue(p, /opcional|optional|produtoOpcional|itemOpcional/i, /opcional|optional/i);
+    const phantom = detectLikeByFieldOrValue(p, /fantasma|phantom|produtoFantasma|itemFantasma/i, /fantasma|phantom/i);
+    const service = detectLikeByFieldOrValue(
+      p,
+      /servic|serviço|servico|itemServico|tipo/i,
+      /servic|serviço|servico|apoio|gen[eé]rico|generico|n[aã]o.?produtivo|tempor[aá]rio|temporario/i
+    );
+    const inactive = detectLikeByFieldOrValue(p, /inativ|cancel|exclu|delet|desativ|ativo|status/i, /inativ|cancel|exclu|delet|desativ|false/i);
+    const hasBomLikeData = Object.keys(p).some((k) =>
+      /component|estrutura|insumo|materia|filho|compos|produtoPai|produtoFilho|quantidade/i.test(k)
+    );
+
+    if (optional) reasons.push("OPTIONAL_PRODUCT");
+    if (phantom) reasons.push("PHANTOM_PRODUCT");
+    if (service) reasons.push("SERVICE_ITEM");
+    if (inactive) reasons.push("INACTIVE_PRODUCT_NOMUS");
+
+    const inferred = inferProductTypeWithConfidence(p);
+    if (inferred.type === "PRODUCT" && inferred.confidence === "LOW") {
+      reasons.push("UNSAFE_PRODUCT_TYPE");
+      diagnostics.typeInferenceSummary.blockedUnsafeType += 1;
+    }
+
+    if (reasons.length > 0) {
+      blocked.push({ externalId, sku, name, reasons });
+      continue;
+    }
+
+    if (inferred.confidence === "HIGH" && inferred.type === "PRODUCT") diagnostics.typeInferenceSummary.highConfidenceProduct += 1;
+    else if (inferred.confidence === "HIGH" && inferred.type === "COMPONENT") diagnostics.typeInferenceSummary.highConfidenceComponent += 1;
+    else diagnostics.typeInferenceSummary.lowConfidence += 1;
+
     eligible.push({
       externalId: externalId!,
       sku: sku!,
       name: name!,
       description: asString(p.descricao),
-      type: inferProductType(p),
+      type: inferred.type,
+      typeInferenceConfidence: inferred.confidence,
+      flags: { optional, phantom, service, inactive, hasBomLikeData },
       raw: p,
     });
   }
-  return { eligible, blocked };
+  return { eligible, blocked, diagnostics };
 }
 
 async function runDry(eligible: EligibleProduct[]) {
@@ -176,11 +352,37 @@ async function runDry(eligible: EligibleProduct[]) {
   });
   const bySku = new Map(existing.map((p) => [p.sku, p]));
   const createsPreview: Array<{ externalId: number; sku: string; name: string }> = [];
-  const updatesPreview: Array<{ id: string; externalId: number; sku: string; name: string }> = [];
+  const updatesPreview: Array<{
+    id: string;
+    externalId: number;
+    sku: string;
+    name: string;
+    currentName: string;
+    nextName: string;
+    fieldsToUpdate: string[];
+    typeAction: "preserve-existing";
+    weightAction: "not-mapped-no-schema-field";
+    unitAction: "not-mapped-no-schema-field";
+  }> = [];
   for (const p of eligible) {
     const current = bySku.get(p.sku);
     if (!current) createsPreview.push({ externalId: p.externalId, sku: p.sku, name: p.name });
-    else updatesPreview.push({ id: current.id, externalId: p.externalId, sku: p.sku, name: p.name });
+    else {
+      const fieldsToUpdate: string[] = [];
+      if ((current.name ?? "") !== p.name) fieldsToUpdate.push("name");
+      updatesPreview.push({
+        id: current.id,
+        externalId: p.externalId,
+        sku: p.sku,
+        name: p.name,
+        currentName: current.name,
+        nextName: p.name,
+        fieldsToUpdate,
+        typeAction: "preserve-existing",
+        weightAction: "not-mapped-no-schema-field",
+        unitAction: "not-mapped-no-schema-field",
+      });
+    }
   }
   return { createsPreview: createsPreview.slice(0, 50), updatesPreview: updatesPreview.slice(0, 50) };
 }
@@ -189,12 +391,13 @@ async function runApply(eligible: EligibleProduct[]): Promise<{ created: number;
   let created = 0;
   let updated = 0;
   for (const p of eligible) {
-    const current = await prisma.product.findUnique({ where: { sku: p.sku }, select: { id: true } });
+    const current = await prisma.product.findUnique({ where: { sku: p.sku }, select: { id: true, type: true } });
     const data = {
       name: p.name,
       description: p.description,
       status: "ACTIVE",
-      type: p.type,
+      // Em update, preservamos o tipo existente para evitar mudança insegura PRODUCT x COMPONENT.
+      ...(current ? {} : { type: p.type }),
     };
     if (current) {
       await prisma.product.update({ where: { id: current.id }, data });
@@ -211,7 +414,7 @@ async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
   const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const raw = await fetchAllNomusProducts(baseUrl);
-  const { eligible, blocked } = mapProducts(raw);
+  const { eligible, blocked, diagnostics } = mapProducts(raw);
   const dry = await runDry(eligible);
   const blockedReasons: Record<string, number> = {};
   for (const b of blocked) for (const r of b.reasons) blockedReasons[r] = (blockedReasons[r] ?? 0) + 1;
@@ -229,6 +432,18 @@ async function main(): Promise<void> {
           createsPreview: dry.createsPreview,
           updatesPreview: dry.updatesPreview,
           blockedPreview: blocked.slice(0, 50),
+          detectedProductKeys: diagnostics.detectedProductKeys,
+          weightFieldsDetected: diagnostics.weightFieldsDetected,
+          unitFieldsDetected: diagnostics.unitFieldsDetected,
+          typeFieldsDetected: diagnostics.typeFieldsDetected,
+          optionalLikeFieldsDetected: diagnostics.optionalLikeFieldsDetected,
+          phantomLikeFieldsDetected: diagnostics.phantomLikeFieldsDetected,
+          serviceLikeFieldsDetected: diagnostics.serviceLikeFieldsDetected,
+          inactiveLikeFieldsDetected: diagnostics.inactiveLikeFieldsDetected,
+          bomLikeFieldsDetected: diagnostics.bomLikeFieldsDetected,
+          typeInferenceSummary: diagnostics.typeInferenceSummary,
+          safeUpdateFields: diagnostics.safeUpdateFields,
+          blockedBusinessRules: diagnostics.blockedBusinessRules,
         },
         applied,
       },

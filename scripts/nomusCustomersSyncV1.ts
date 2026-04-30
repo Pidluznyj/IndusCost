@@ -4,7 +4,7 @@ import { normalizeTaxId } from "./nomusNumberParser.ts";
 
 const prisma = new PrismaClient();
 
-const DEFAULT_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 50;
 const DEFAULT_MAX_RETRIES = 6;
 const DEFAULT_RETRY_BASE_MS = 700;
 
@@ -76,6 +76,27 @@ async function fetchJsonWithRetry(url: URL, maxRetries: number, retryBaseMs: num
     const res = await fetch(url, { method: "GET", headers });
     if (res.ok) return res.json();
     const body = await res.text().catch(() => "");
+    if (res.status === 429 && attempt < maxRetries) {
+      let waitMs: number | null = null;
+      try {
+        const parsed = JSON.parse(body) as { tempoAteLiberar?: unknown };
+        const tempoAteLiberar = toInt(parsed?.tempoAteLiberar);
+        if (tempoAteLiberar != null && tempoAteLiberar > 0) {
+          waitMs = tempoAteLiberar * 1000 + 1000;
+        }
+      } catch {
+        waitMs = null;
+      }
+      if (waitMs == null) {
+        const retryAfterSec = Number.parseInt(res.headers.get("retry-after") ?? "", 10);
+        waitMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 + 1000 : retryBaseMs * Math.pow(2, attempt);
+      }
+      console.warn(
+        `[nomus-customers-v1] rate limit 429; aguardando ${(waitMs / 1000).toFixed(0)}s antes de tentar novamente.`
+      );
+      await sleep(waitMs);
+      continue;
+    }
     const retryable = res.status === 429 || res.status >= 500;
     if (!retryable || attempt === maxRetries) {
       throw new Error(`Falha HTTP ${res.status} em ${url.toString()}: ${body.slice(0, 300)}`);
