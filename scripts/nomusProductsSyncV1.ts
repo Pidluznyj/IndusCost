@@ -302,11 +302,21 @@ function inferProductTypeWithConfidence(raw: JsonObject): { type: ItemType; conf
   const typeName = (asString(raw.nomeTipoProduto) ?? "").toUpperCase();
   const groupName = (asString(raw.nomeGrupoProduto) ?? "").toUpperCase();
 
-  if (typeName.includes("ACABADO") || groupName.includes("PRODUTO ACABADO")) {
-    return { type: "PRODUCT", confidence: "HIGH" };
+  if (
+    typeName.includes("SEMI-ACABADO") ||
+    typeName.includes("SEMI ACABADO") ||
+    typeName.includes("SEMIACABADO") ||
+    typeName.includes("SEMI-ELABORADO") ||
+    typeName.includes("SEMI ELABORADO") ||
+    typeName.includes("SEMIELABORADO")
+  ) {
+    return { type: "COMPONENT", confidence: "HIGH" };
   }
   if (typeName.includes("COMPONENTE") || typeName.includes("COMPONENT") || groupName.includes("COMPONENTE")) {
     return { type: "COMPONENT", confidence: "HIGH" };
+  }
+  if (typeName.includes("PRODUTO ACABADO") || typeName.includes("ACABADO") || groupName.includes("PRODUTO ACABADO")) {
+    return { type: "PRODUCT", confidence: "HIGH" };
   }
   return { type: "PRODUCT", confidence: "LOW" };
 }
@@ -377,6 +387,9 @@ function collectDiagnostics(raw: JsonObject[]): ProductsDiagnostics {
       "SERVICE_ITEM",
       "INACTIVE_PRODUCT_NOMUS",
       "TEMPLATE_PRODUCT",
+      "RAW_MATERIAL_NOT_PRODUCT",
+      "PACKAGING_NOT_PRODUCT",
+      "MRO_OR_FIXED_ASSET_NOT_PRODUCT",
       "MERCHANDISE_RESALE_UNMAPPED",
       "UNSAFE_PRODUCT_TYPE",
     ],
@@ -428,6 +441,12 @@ function mapProducts(
     const inactive = meta.ativo === false;
     const template = meta.template === true;
     const resale = matchAny(textScope, /mercadoria\s+para\s+revenda/i);
+    const rawMaterial = matchAny(textScope, /mat[ée]ria[\s-]*prima|materia[\s-]*prima/i);
+    const packaging = matchAny(textScope, /\bembalagem\b/i);
+    const mroOrFixedAsset = matchAny(
+      textScope,
+      /\bmro\b|ativo\s+imobilizado|manuten[cç][aã]o,\s*reparo\s*e\s*opera[cç][aã]o|manuten[cç][aã]o|reparo|opera[cç][aã]o/i
+    );
     const hasBomLikeData = Object.keys(p).some((k) =>
       /component|estrutura|insumo|materia|filho|compos|produtoPai|produtoFilho|quantidade/i.test(k)
     );
@@ -437,6 +456,9 @@ function mapProducts(
     if (service) reasons.push("SERVICE_ITEM");
     if (inactive) reasons.push("INACTIVE_PRODUCT_NOMUS");
     if (template) reasons.push("TEMPLATE_PRODUCT");
+    if (rawMaterial) reasons.push("RAW_MATERIAL_NOT_PRODUCT");
+    if (packaging) reasons.push("PACKAGING_NOT_PRODUCT");
+    if (mroOrFixedAsset) reasons.push("MRO_OR_FIXED_ASSET_NOT_PRODUCT");
     if (resale) reasons.push("MERCHANDISE_RESALE_UNMAPPED");
 
     const inferred = inferProductTypeWithConfidence(p);
@@ -515,6 +537,8 @@ async function runDry(eligible: EligibleProduct[]) {
     netWeightFromNomus: number | null;
     grossWeightFromNomus: number | null;
     typeAction: "create-from-nomus-inference";
+    inferredType: ItemType;
+    typeInferenceConfidence: "HIGH" | "LOW";
   }> = [];
   const updatesPreview: Array<{
     id: string;
@@ -541,6 +565,8 @@ async function runDry(eligible: EligibleProduct[]) {
     unitFromNomus: string | null;
     netWeightFromNomus: number | null;
     grossWeightFromNomus: number | null;
+    inferredType: ItemType;
+    typeInferenceConfidence: "HIGH" | "LOW";
   }> = [];
   for (const p of eligible) {
     const current = bySku.get(p.sku);
@@ -561,6 +587,8 @@ async function runDry(eligible: EligibleProduct[]) {
         netWeightFromNomus: p.netWeightFromNomus,
         grossWeightFromNomus: p.grossWeightFromNomus,
         typeAction: "create-from-nomus-inference",
+        inferredType: p.type,
+        typeInferenceConfidence: p.typeInferenceConfidence,
       });
     else {
       const fieldsToUpdate: string[] = [];
@@ -598,6 +626,8 @@ async function runDry(eligible: EligibleProduct[]) {
         unitFromNomus: p.unitFromNomus,
         netWeightFromNomus: p.netWeightFromNomus,
         grossWeightFromNomus: p.grossWeightFromNomus,
+        inferredType: p.type,
+        typeInferenceConfidence: p.typeInferenceConfidence,
       });
     }
   }
