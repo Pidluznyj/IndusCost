@@ -556,6 +556,52 @@ model CommercialAuditLog {
   @@index([performedAt])
 }
 
+
+model IntegrationRun {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceSystem   String    @default("NOMUS")
+  target         String
+  mode           String
+  kind           String?
+  status         String
+  success        Boolean?
+
+  command        String?
+  startedAt      DateTime? @db.Timestamp(3)
+  finishedAt     DateTime? @db.Timestamp(3)
+  durationMs     Int?
+  exitCode       Int?
+
+  logFile        String?
+  runnerLogFile  String?
+
+  pageRead       Int?
+  ordersRead     Int?
+  startPage      Int?
+  maxPages       Int?
+  lastPage       Int?
+
+  eligibleCount  Int?
+  blockedCount   Int?
+  createdCount   Int?
+  updatedCount   Int?
+  itemsCreated   Int?
+
+  blockedReasons Json?
+  blockedPreview Json?
+  summaryJson    Json?
+  errorMessage   String?
+
+  createdAt      DateTime  @default(now()) @db.Timestamp(3)
+  updatedAt      DateTime  @default(now()) @db.Timestamp(3)
+
+  @@index([sourceSystem, target, mode])
+  @@index([status])
+  @@index([startedAt])
+  @@index([createdAt])
+  @@index([target, status, startedAt])
+}
+
 model MaintenanceRequest {
   id              String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   number          Int                              @unique @default(autoincrement())
