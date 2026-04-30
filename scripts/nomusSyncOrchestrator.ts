@@ -2,6 +2,7 @@ import "dotenv/config";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { PrismaClient } from "@prisma/client";
 
 type SyncMode = "dry" | "apply";
 type SyncTarget = "products" | "customers" | "proposals" | "sales-orders";
@@ -18,7 +19,14 @@ type StepResult = {
   reason?: string;
 };
 
+type StepExecution = {
+  step: StepResult;
+  stdout: string;
+  stderr: string;
+};
+
 const ALL_TARGETS: SyncTarget[] = ["products", "customers", "proposals", "sales-orders"];
+const prisma = new PrismaClient();
 
 function parseArgs(): { mode: SyncMode; only: SyncTarget[] } {
   const args = process.argv.slice(2);
@@ -62,7 +70,144 @@ function scriptFor(target: SyncTarget, mode: SyncMode): string | null {
   return null;
 }
 
-function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepResult {
+function maskSensitive(value: string): string {
+  if (!value) return "";
+  const masks: Array<[RegExp, string]> = [
+    [/(authorization\s*[:=]\s*)([^\s]+)/gi, "$1***"],
+    [/(token\s*[:=]\s*)([^\s]+)/gi, "$1***"],
+    [/(password\s*[:=]\s*)([^\s]+)/gi, "$1***"],
+    [/(nomus_auth_header_value\s*[:=]\s*)([^\s]+)/gi, "$1***"],
+    [/(\b(?:Bearer|Basic)\s+)([A-Za-z0-9\-._~+/]+=*)/gi, "$1***"],
+  ];
+  return masks.reduce((acc, [re, replacement]) => acc.replace(re, replacement), value);
+}
+
+function parseJsonObjectFromStdout(stdout: string): Record<string, unknown> | null {
+  const source = String(stdout || "").trim();
+  if (!source) return null;
+  const start = source.indexOf("{");
+  if (start < 0) return null;
+  for (let i = source.length - 1; i > start; i -= 1) {
+    if (source[i] !== "}") continue;
+    const candidate = source.slice(start, i + 1);
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // continue tentando blocos menores
+    }
+  }
+  return null;
+}
+
+function safeNumber(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function safeObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function extractPagedMetrics(stderr: string): {
+  pageRead: number | null;
+  ordersReadFromStderr: number | null;
+  startPage: number | null;
+  maxPages: number | null;
+  lastPage: number | null;
+} {
+  const pageReadMatch = stderr.match(/página\s+(\d+)\s+lida\s+com\s+(\d+)\s+pedidos/i);
+  const blockMatch = stderr.match(/limite\s+de\s+bloco\s+atingido:\s*startPage=(\d+),\s*maxPages=(\d+),\s*lastPage=(\d+)/i);
+  return {
+    pageRead: pageReadMatch ? Number(pageReadMatch[1]) : null,
+    ordersReadFromStderr: pageReadMatch ? Number(pageReadMatch[2]) : null,
+    startPage: blockMatch ? Number(blockMatch[1]) : null,
+    maxPages: blockMatch ? Number(blockMatch[2]) : null,
+    lastPage: blockMatch ? Number(blockMatch[3]) : null,
+  };
+}
+
+async function persistIntegrationRunBestEffort(step: StepResult, stdout: string, stderr: string): Promise<void> {
+  if (!step.command || !step.logFile) return;
+
+  const safeStdout = maskSensitive(stdout);
+  const safeStderr = maskSensitive(stderr);
+  const parsed = parseJsonObjectFromStdout(safeStdout);
+  const summary = safeObject(parsed?.summary);
+  const applied = safeObject(parsed?.applied);
+  const parsedModeRaw = typeof parsed?.mode === "string" ? parsed.mode.toLowerCase() : "";
+  const parsedMode: SyncMode = parsedModeRaw.includes("dry") ? "dry" : "apply";
+  const metricsFromStderr = extractPagedMetrics(safeStderr);
+
+  const blockedReasonsObj = safeObject(summary?.blockedReasons);
+  const blockedPreview = Array.isArray(summary?.blockedPreview) ? summary.blockedPreview : null;
+  const ordersReadFromSummary = safeNumber(summary?.totalRead);
+  const ordersRead = ordersReadFromSummary ?? metricsFromStderr.ordersReadFromStderr;
+  const errorMessage = step.reason ? maskSensitive(step.reason).slice(0, 500) : null;
+
+  const integrationRunData = {
+    sourceSystem: "NOMUS",
+    kind: "sync",
+    target: step.target,
+    mode: parsed ? parsedMode : step.command.includes(":dry") ? "dry" : "apply",
+    status: step.status,
+    success: step.status === "SUCCESS" ? true : step.status === "FAILED" ? false : null,
+    command: step.command,
+    startedAt: new Date(step.startedAt),
+    finishedAt: new Date(step.finishedAt),
+    durationMs: step.durationMs,
+    exitCode: step.exitCode,
+    logFile: step.logFile,
+    ordersRead,
+    pageRead: metricsFromStderr.pageRead,
+    startPage: metricsFromStderr.startPage,
+    maxPages: metricsFromStderr.maxPages,
+    lastPage: metricsFromStderr.lastPage,
+    eligibleCount: safeNumber(summary?.eligibleCount),
+    blockedCount: safeNumber(summary?.blockedCount),
+    blockedReasons: blockedReasonsObj ?? undefined,
+    blockedPreview: blockedPreview ?? undefined,
+    createdCount: safeNumber(applied?.created),
+    updatedCount: safeNumber(applied?.updated),
+    itemsCreated: safeNumber(applied?.itemsCreated),
+    summaryJson: parsed
+      ? {
+          mode: parsed.mode ?? null,
+          summary: summary ?? null,
+          applied: applied ?? null,
+        }
+      : null,
+    errorMessage,
+  };
+
+  try {
+    const integrationRunDelegate = (prisma as any).integrationRun;
+    if (!integrationRunDelegate) {
+      console.error("[nomus-sync-orchestrator] falha ao registrar IntegrationRun: model indisponível no Prisma Client.");
+      return;
+    }
+    const existing = await integrationRunDelegate.findFirst({
+      where: { logFile: step.logFile },
+    });
+    if (existing) {
+      await integrationRunDelegate.update({
+        where: { id: existing.id },
+        data: integrationRunData,
+      });
+      return;
+    }
+    await integrationRunDelegate.create({
+      data: integrationRunData,
+    });
+  } catch (err) {
+    console.error("[nomus-sync-orchestrator] falha ao registrar IntegrationRun:", err);
+  }
+}
+
+function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepExecution {
   const startedAt = nowStamp();
   const started = Date.now();
 
@@ -71,15 +216,19 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepResult
   if (!npmScript) {
     const finishedAt = nowStamp();
     return {
-      target,
-      status: "SKIPPED",
-      command: null,
-      startedAt,
-      finishedAt,
-      durationMs: Date.now() - started,
-      exitCode: null,
-      logFile: null,
-      reason: "Script oficial ainda não existe/foi validado para este target.",
+      step: {
+        target,
+        status: "SKIPPED",
+        command: null,
+        startedAt,
+        finishedAt,
+        durationMs: Date.now() - started,
+        exitCode: null,
+        logFile: null,
+        reason: "Script oficial ainda não existe/foi validado para este target.",
+      },
+      stdout: "",
+      stderr: "",
     };
   }
 
@@ -93,6 +242,8 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepResult
     maxBuffer: 1024 * 1024 * 50,
   });
 
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
   const output = [
     `COMMAND=${command}`,
     `STARTED_AT=${startedAt}`,
@@ -100,10 +251,10 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepResult
     `EXIT_CODE=${result.status ?? "null"}`,
     "",
     "=== STDOUT ===",
-    result.stdout ?? "",
+    stdout,
     "",
     "=== STDERR ===",
-    result.stderr ?? "",
+    stderr,
     "",
     result.error ? `ERROR=${result.error.message}` : "",
   ].join("\n");
@@ -114,64 +265,73 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepResult
   const exitCode = result.status ?? null;
 
   return {
-    target,
-    status: exitCode === 0 ? "SUCCESS" : "FAILED",
-    command,
-    startedAt,
-    finishedAt,
-    durationMs: Date.now() - started,
-    exitCode,
-    logFile,
-    reason: result.error?.message,
+    step: {
+      target,
+      status: exitCode === 0 ? "SUCCESS" : "FAILED",
+      command,
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - started,
+      exitCode,
+      logFile,
+      reason: result.error?.message,
+    },
+    stdout,
+    stderr,
   };
 }
 
 async function main() {
-  const { mode, only } = parseArgs();
+  try {
+    const { mode, only } = parseArgs();
 
-  const logDir = process.env.NOMUS_SYNC_LOG_DIR || "/tmp/induscost-nomus-sync";
-  if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+    const logDir = process.env.NOMUS_SYNC_LOG_DIR || "/tmp/induscost-nomus-sync";
+    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
 
-  const startedAt = nowStamp();
-  const results: StepResult[] = [];
+    const startedAt = nowStamp();
+    const results: StepResult[] = [];
 
-  for (const target of ALL_TARGETS) {
-    if (!only.includes(target)) {
-      results.push({
-        target,
-        status: "SKIPPED",
-        command: null,
-        startedAt: nowStamp(),
-        finishedAt: nowStamp(),
-        durationMs: 0,
-        exitCode: null,
-        logFile: null,
-        reason: "Target fora do filtro --only.",
-      });
-      continue;
+    for (const target of ALL_TARGETS) {
+      if (!only.includes(target)) {
+        results.push({
+          target,
+          status: "SKIPPED",
+          command: null,
+          startedAt: nowStamp(),
+          finishedAt: nowStamp(),
+          durationMs: 0,
+          exitCode: null,
+          logFile: null,
+          reason: "Target fora do filtro --only.",
+        });
+        continue;
+      }
+
+      const execution = runStep(target, mode, logDir);
+      results.push(execution.step);
+      await persistIntegrationRunBestEffort(execution.step, execution.stdout, execution.stderr);
+
+      if (execution.step.status === "FAILED") {
+        break;
+      }
     }
 
-    const step = runStep(target, mode, logDir);
-    results.push(step);
+    const summary = {
+      mode,
+      only,
+      startedAt,
+      finishedAt: nowStamp(),
+      logDir,
+      results,
+      success: results.every((r) => r.status === "SUCCESS" || r.status === "SKIPPED"),
+    };
 
-    if (step.status === "FAILED") {
-      break;
-    }
+    console.log(JSON.stringify(summary, null, 2));
+
+    if (!summary.success) process.exitCode = 1;
+  } finally {
+    await prisma.$disconnect();
   }
-
-  const summary = {
-    mode,
-    only,
-    startedAt,
-    finishedAt: nowStamp(),
-    logDir,
-    results,
-    success: results.every((r) => r.status === "SUCCESS" || r.status === "SKIPPED"),
-  };
-
-  console.log(JSON.stringify(summary, null, 2));
-
-  if (!summary.success) process.exitCode = 1;
 }
 
 main().catch((err) => {
