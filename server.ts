@@ -2583,10 +2583,41 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   // --- API: Product Pricing (Formação de Preço) ---
   app.get("/api/pricing", async (req, res) => {
-    const pricings = await prisma.productPricing.findMany({
-      include: { Product: true, TaxRule: { include: { TaxComponent: true } } },
-    });
-    res.json(pricings);
+    try {
+      const cache = await initAnalysisCache();
+      const pricings = await prisma.productPricing.findMany({
+        include: { Product: true, TaxRule: { include: { TaxComponent: true } } },
+      });
+
+      const rows = await Promise.all(
+        pricings.map(async (pricing) => {
+          try {
+            const costData = await getProductCostAnalysis(pricing.productId, cache, true);
+            if (!costData || isCostAnalysisFailure(costData)) {
+              return { ...pricing, suggestedPrice: null };
+            }
+            const summary = (costData as any).summary || costData;
+            const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
+            const taxRate = pricing.TaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
+            const commRate = Number(pricing.commission) / 100;
+            const marginRate = Number(pricing.desiredMargin) / 100;
+            const otherRate = Number(pricing.otherVariables) / 100;
+            const freight = Number(pricing.freightOut);
+            const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+            if (!Number.isFinite(ciu) || divisor <= 0) {
+              return { ...pricing, suggestedPrice: null };
+            }
+            return { ...pricing, suggestedPrice: (ciu + freight) / divisor };
+          } catch {
+            return { ...pricing, suggestedPrice: null };
+          }
+        })
+      );
+      res.json(rows);
+    } catch (error) {
+      console.error("GET /api/pricing:", error);
+      res.status(500).json({ error: "Erro ao listar formações de preço." });
+    }
   });
 
   app.post("/api/pricing", async (req, res) => {

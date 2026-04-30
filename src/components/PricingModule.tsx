@@ -426,14 +426,15 @@ export const PricingModule = () => {
                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground w-1/4">Produto</th>
                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground">Inf. Trib</th>
                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center">Precificação Base</th>
+                   <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-right">Preço</th>
                    <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center">Ações Lógicas</th>
                  </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {pricings.length === 0 ? (
-                  <tr><td colSpan={5} className="p-12 text-center text-muted-foreground">Nenhuma premissa configurada.</td></tr>
+                  <tr><td colSpan={6} className="p-12 text-center text-muted-foreground">Nenhuma premissa configurada.</td></tr>
                 ) : filteredPricings.length === 0 ? (
-                  <tr><td colSpan={5} className="p-12 text-center text-muted-foreground">Nenhum resultado encontrado com os filtros aplicados.</td></tr>
+                  <tr><td colSpan={6} className="p-12 text-center text-muted-foreground">Nenhum resultado encontrado com os filtros aplicados.</td></tr>
                 ) : (
                   filteredPricings.map((pricing: any) => (
                      <tr key={pricing.id} className="hover:bg-accent/20 cursor-pointer" onClick={(e) => {
@@ -457,6 +458,15 @@ export const PricingModule = () => {
                            <span className="text-xs text-muted-foreground">Mg. <span className="font-bold text-green-600">{pricingListSafeNumber(pricing.desiredMargin) == null ? "—" : `${formatNumber(pricingListSafeNumber(pricing.desiredMargin) ?? 0, 2)}%`}</span></span>
                            <span className="text-xs text-muted-foreground">Comissão. <span className="font-bold text-orange-600">{pricingListSafeNumber(pricing.commission) == null ? "—" : `${formatNumber(pricingListSafeNumber(pricing.commission) ?? 0, 2)}%`}</span></span>
                          </div>
+                       </td>
+                       <td className="p-4 text-right">
+                         {pricingListSafeNumber(pricing.suggestedPrice) == null ? (
+                           <span className="text-muted-foreground">—</span>
+                         ) : (
+                           <span className="font-bold text-primary">
+                             {formatCurrency(pricingListSafeNumber(pricing.suggestedPrice) ?? 0, 2)}
+                           </span>
+                         )}
                        </td>
                        <td className="p-4 btn-acoes">
                          <div className="flex gap-2 justify-center">
