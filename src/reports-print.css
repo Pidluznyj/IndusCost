@@ -19,7 +19,11 @@
   #new-product-report-print-portal,
   #new-product-report-print-portal *,
   #new-product-report-print-root,
-  #new-product-report-print-root * {
+  #new-product-report-print-root *,
+  #pricing-simulator-print-portal,
+  #pricing-simulator-print-portal *,
+  #pricing-simulator-print-root,
+  #pricing-simulator-print-root * {
     visibility: visible !important;
   }
   /* Aba Relatórios: único bloco absoluto na página */
@@ -56,7 +60,8 @@
     overflow: visible !important;
     width: 100% !important;
   }
-  #new-product-report-print-root {
+  #new-product-report-print-root,
+  #pricing-simulator-print-root {
     position: relative !important;
     left: auto !important;
     top: auto !important;

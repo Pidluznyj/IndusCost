@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { 
   Calculator, Plus, Search, Edit2, Trash2, X, Loader2, DollarSign,
   TrendingUp, TrendingDown, Percent, Truck, Users, ShieldCheck, Save,
-  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen
+  BarChart3, Layers, LayoutGrid, Play, AlertCircle, CheckCircle2, ChevronRight, BookOpen, Printer
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -119,6 +120,24 @@ export const PricingModule = () => {
     };
     loadSnapshot();
   }, [simulatorForm.productId, simulatorForm.taxRuleId]);
+
+  useEffect(() => {
+    if (!isSimulatorModalOpen) return;
+    document.body.classList.add("np-report-printing");
+    return () => document.body.classList.remove("np-report-printing");
+  }, [isSimulatorModalOpen]);
+
+  const simulatorProductLabel = useMemo(() => {
+    const p = products.find((x: { id: string }) => x.id === simulatorForm.productId) as
+      | { sku: string; name: string }
+      | undefined;
+    return p ? `${p.sku} — ${p.name}` : "—";
+  }, [products, simulatorForm.productId]);
+
+  const simulatorTaxLabel = useMemo(() => {
+    const r = taxRules.find((x: { id: string }) => x.id === simulatorForm.taxRuleId) as { name: string } | undefined;
+    return r?.name ?? "—";
+  }, [taxRules, simulatorForm.taxRuleId]);
 
   const filteredPricings = useMemo(
     () =>
@@ -779,105 +798,148 @@ export const PricingModule = () => {
         </div>
       )}
 
-      {/* Modal Simulador de Preço */}
-      <AnimatePresence>
-        {isSimulatorModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+      {/* Modal Simulador de Preço (portal + np-report-printing para PDF limpo) */}
+      {isSimulatorModalOpen &&
+        createPortal(
+          <div
+            id="pricing-simulator-print-portal"
+            className="new-product-report-print-shell fixed inset-0 z-[100] flex items-center justify-center p-4 pt-16 sm:pt-8"
+          >
+            <button
+              type="button"
+              aria-label="Fechar simulador"
+              className="absolute inset-0 bg-black/50 reports-no-print"
+              onClick={() => setIsSimulatorModalOpen(false)}
+            />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="new-product-report-print-panel relative flex w-full max-w-6xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
             >
-              <div className="p-6 border-b border-border flex items-center justify-between bg-accent/30">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-accent/30 p-6 reports-no-print">
                 <div>
                   <h3 className="text-lg font-bold">Calculadora de Preço de Venda</h3>
                   <p className="text-xs text-muted-foreground">Simulação sem gravação de dados, usando o mesmo motor de cálculo.</p>
                 </div>
-                <button onClick={() => setIsSimulatorModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div className="md:col-span-2 space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Produto/Componente</label>
-                    <SearchableSelect
-                      placeholder="Buscar por SKU ou nome..."
-                      options={products.map((p: { id: string; sku: string; name: string; type?: string }) => ({
-                        value: p.id,
-                        label: `${p.sku} — ${p.name}`,
-                        sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
-                        searchTerms: `${p.sku} ${p.name} ${p.type ?? ""}`,
-                      }))}
-                      value={simulatorForm.productId}
-                      onChange={(value) => setSimulatorForm((prev) => ({ ...prev, productId: value }))}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Regra fiscal</label>
-                    <SearchableSelect
-                      placeholder="Selecione..."
-                      options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
-                        value: r.id,
-                        label: r.name,
-                        sublabel: r.description?.trim() || undefined,
-                        searchTerms: [r.name, r.description].filter(Boolean).join(" "),
-                      }))}
-                      value={simulatorForm.taxRuleId}
-                      onChange={(value) => setSimulatorForm((prev) => ({ ...prev, taxRuleId: value }))}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Margem desejada (%)</label>
-                    <input
-                      type="number"
-                      step="0.00001"
-                      min={0}
-                      value={simulatorForm.desiredMargin}
-                      onChange={(e) => setSimulatorForm((prev) => ({ ...prev, desiredMargin: Number(e.target.value) }))}
-                      className="w-full p-3 rounded-xl border border-border bg-background outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-accent/20 p-3">
-                  <p className="text-sm text-muted-foreground">
-                    Custo para produzir:{" "}
-                    <span className="font-bold text-foreground">
-                      {simulatorCostLoading ? "Carregando..." : simulatorCost == null ? "—" : formatCurrency(simulatorCost, 6)}
-                    </span>
-                  </p>
+                <div className="ml-auto flex items-center gap-2">
+                  {simulatorResult ? (
+                    <button
+                      type="button"
+                      onClick={() => setTimeout(() => window.print(), 150)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent transition-colors"
+                    >
+                      <Printer className="h-4 w-4" />
+                      Imprimir resultado
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={handleRunSimulator}
-                    disabled={simulatorRunning}
-                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                    onClick={() => setIsSimulatorModalOpen(false)}
+                    className="rounded-full p-2 transition-colors hover:bg-accent"
                   >
-                    {simulatorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
-                    Calcular simulação
+                    <X className="h-5 w-5" />
                   </button>
                 </div>
-                {simulatorError && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{simulatorError}</div>
-                )}
-                {simulatorResult && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              </div>
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
+                <div className="reports-no-print space-y-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-bold uppercase text-muted-foreground">Produto/Componente</label>
+                      <SearchableSelect
+                        placeholder="Buscar por SKU ou nome..."
+                        options={products.map((p: { id: string; sku: string; name: string; type?: string }) => ({
+                          value: p.id,
+                          label: `${p.sku} — ${p.name}`,
+                          sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
+                          searchTerms: `${p.sku} ${p.name} ${p.type ?? ""}`,
+                        }))}
+                        value={simulatorForm.productId}
+                        onChange={(value) => setSimulatorForm((prev) => ({ ...prev, productId: value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold uppercase text-muted-foreground">Regra fiscal</label>
+                      <SearchableSelect
+                        placeholder="Selecione..."
+                        options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
+                          value: r.id,
+                          label: r.name,
+                          sublabel: r.description?.trim() || undefined,
+                          searchTerms: [r.name, r.description].filter(Boolean).join(" "),
+                        }))}
+                        value={simulatorForm.taxRuleId}
+                        onChange={(value) => setSimulatorForm((prev) => ({ ...prev, taxRuleId: value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold uppercase text-muted-foreground">Margem desejada (%)</label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        min={0}
+                        value={simulatorForm.desiredMargin}
+                        onChange={(e) => setSimulatorForm((prev) => ({ ...prev, desiredMargin: Number(e.target.value) }))}
+                        className="w-full rounded-xl border border-border bg-background p-3 outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-accent/20 p-3">
+                    <p className="text-sm text-muted-foreground">
+                      Custo para produzir:{" "}
+                      <span className="font-bold text-foreground">
+                        {simulatorCostLoading ? "Carregando..." : simulatorCost == null ? "—" : formatCurrency(simulatorCost, 6)}
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleRunSimulator}
+                      disabled={simulatorRunning}
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                    >
+                      {simulatorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
+                      Calcular simulação
+                    </button>
+                  </div>
+                  {simulatorError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{simulatorError}</div>
+                  ) : null}
+                </div>
+                {simulatorResult ? (
+                  <div id="pricing-simulator-print-root" className="space-y-4 print:bg-white">
+                    <div className="mb-4 hidden space-y-1 border-b border-black/20 pb-3 text-sm text-black print:block">
+                      <p className="text-lg font-bold">Simulação de formação de preço</p>
+                      <p>
+                        <span className="font-semibold">Produto:</span> {simulatorProductLabel}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Regra fiscal:</span> {simulatorTaxLabel}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Margem informada (%):</span> {formatNumber(Number(simulatorForm.desiredMargin), 5)}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Custo para produzir (referência):</span>{" "}
+                        {simulatorCost == null ? "—" : formatCurrency(simulatorCost, 6)}
+                      </p>
+                      <p className="pt-1 text-xs text-neutral-600">Emitido em {new Date().toLocaleString("pt-BR")}</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                       <div className="rounded-xl border border-border bg-card/40 p-4">
-                        <p className="text-xs text-muted-foreground uppercase font-bold">Custo para produzir</p>
+                        <p className="text-xs font-bold uppercase text-muted-foreground">Custo para produzir</p>
                         <p className="text-base font-bold">{formatCurrency(Number(simulatorResult.ciu ?? 0), 6)}</p>
                       </div>
                       <div className="rounded-xl border border-border bg-card/40 p-4">
-                        <p className="text-xs text-muted-foreground uppercase font-bold">Impostos sobre venda</p>
+                        <p className="text-xs font-bold uppercase text-muted-foreground">Impostos sobre venda</p>
                         <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.taxRate ?? 0), 2)}%</p>
                         <p className="text-xs text-muted-foreground">{formatCurrency(Number(simulatorResult.resultados?.totalTaxes ?? 0), 6)}</p>
                       </div>
                       <div className="rounded-xl border border-border bg-card/40 p-4">
-                        <p className="text-xs text-muted-foreground uppercase font-bold">Margem desejada</p>
+                        <p className="text-xs font-bold uppercase text-muted-foreground">Margem desejada</p>
                         <p className="text-base font-bold">{formatNumber(Number(simulatorResult.premissas?.marginRate ?? 0), 2)}%</p>
                       </div>
                       <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-                        <p className="text-xs text-primary uppercase font-bold">Preço sugerido</p>
+                        <p className="text-xs font-bold uppercase text-primary">Preço sugerido</p>
                         <p className="text-lg font-black text-primary">
                           {formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}
                         </p>
@@ -907,7 +969,7 @@ export const PricingModule = () => {
                             <td className="py-2 text-right font-semibold">{formatCurrency(Number(simulatorResult.resultados?.contributionMargin ?? 0), 6)}</td>
                           </tr>
                           <tr>
-                            <td className="py-2 text-muted-foreground font-bold">Preço sugerido final</td>
+                            <td className="py-2 font-bold text-muted-foreground">Preço sugerido final</td>
                             <td className="py-2 text-right font-black text-primary">{formatCurrency(Number(simulatorResult.resultados?.suggestedPrice ?? 0), 6)}</td>
                           </tr>
                         </tbody>
@@ -915,12 +977,12 @@ export const PricingModule = () => {
                     </div>
                     <PricingDetailedCompositionTab breakdown={simulatorResult.pricingBreakdown} />
                   </div>
-                )}
+                ) : null}
               </div>
             </motion.div>
-          </div>
+          </div>,
+          document.body
         )}
-      </AnimatePresence>
 
       {/* Modal Result Unitario - MANTIDO INTACTO DA ARQUITETURA ORIGINAL */}
       <AnimatePresence>
