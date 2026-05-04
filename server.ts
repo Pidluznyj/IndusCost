@@ -430,6 +430,183 @@ async function startServer() {
     };
   }
 
+  type NomusIntegrationRunPick = {
+    status: string;
+    success: boolean | null;
+    exitCode: number | null;
+    startedAt: Date | null;
+    finishedAt: Date | null;
+    durationMs: number | null;
+    logFile: string | null;
+    runnerLogFile: string | null;
+    pageRead: number | null;
+    ordersRead: number | null;
+    startPage: number | null;
+    maxPages: number | null;
+    lastPage: number | null;
+    eligibleCount: number | null;
+    blockedCount: number | null;
+    createdCount: number | null;
+    updatedCount: number | null;
+    itemsCreated: number | null;
+    blockedReasons: unknown;
+  };
+
+  function mapIntegrationRunStatusToNomusSync(run: {
+    status: string;
+    success: boolean | null;
+    exitCode: number | null;
+  }): NomusSyncStatus {
+    const raw = String(run.status ?? "").trim().toUpperCase();
+    if (raw === "SUCCESS" || raw === "FAILED" || raw === "SKIPPED") return raw;
+    if (run.success === true && (run.exitCode === null || run.exitCode === 0)) return "SUCCESS";
+    if (run.success === false) return "FAILED";
+    if (run.exitCode !== null && run.exitCode !== 0) return "FAILED";
+    if (run.success === true) return "SUCCESS";
+    return "UNKNOWN";
+  }
+
+  function blockedReasonsFromIntegrationJson(value: unknown): Record<string, number> {
+    const obj = safeObject(value);
+    if (!obj) return {};
+    return Object.entries(obj).reduce<Record<string, number>>((acc, [key, val]) => {
+      const n = safeNumber(val);
+      if (n !== null) acc[key] = n;
+      return acc;
+    }, {});
+  }
+
+  function mergeNomusSummaryWithIntegrationRun(
+    summary: NomusSyncLogSummary,
+    run: NomusIntegrationRunPick | undefined
+  ): NomusSyncLogSummary {
+    if (!run) return summary;
+    const dbStatus = mapIntegrationRunStatusToNomusSync(run);
+    const dbBlocked = blockedReasonsFromIntegrationJson(run.blockedReasons);
+    const mergedBlocked =
+      Object.keys(dbBlocked).length > 0 ? { ...summary.blockedReasons, ...dbBlocked } : summary.blockedReasons;
+    return {
+      ...summary,
+      status: dbStatus,
+      success:
+        run.success !== null && run.success !== undefined
+          ? run.success
+          : dbStatus === "SUCCESS"
+            ? true
+            : dbStatus === "FAILED"
+              ? false
+              : summary.success,
+      exitCode: run.exitCode !== null && run.exitCode !== undefined ? run.exitCode : summary.exitCode,
+      startedAt: run.startedAt ? run.startedAt.toISOString() : summary.startedAt,
+      finishedAt: run.finishedAt ? run.finishedAt.toISOString() : summary.finishedAt,
+      durationMs: run.durationMs !== null && run.durationMs !== undefined ? run.durationMs : summary.durationMs,
+      metrics: {
+        eligibleCount: run.eligibleCount ?? summary.metrics.eligibleCount,
+        blockedCount: run.blockedCount ?? summary.metrics.blockedCount,
+        created: run.createdCount ?? summary.metrics.created,
+        updated: run.updatedCount ?? summary.metrics.updated,
+        itemsCreated: run.itemsCreated ?? summary.metrics.itemsCreated,
+        pageRead: run.pageRead ?? summary.metrics.pageRead,
+        ordersRead: run.ordersRead ?? summary.metrics.ordersRead,
+        startPage: run.startPage ?? summary.metrics.startPage,
+        maxPages: run.maxPages ?? summary.metrics.maxPages,
+        lastPage: run.lastPage ?? summary.metrics.lastPage,
+      },
+      blockedReasons: mergedBlocked,
+    };
+  }
+
+  async function loadNomusIntegrationRunByBasename(): Promise<Map<string, NomusIntegrationRunPick>> {
+    const runs = await prisma.integrationRun.findMany({
+      where: {
+        sourceSystem: "NOMUS",
+        OR: [{ logFile: { not: null } }, { runnerLogFile: { not: null } }],
+      },
+      orderBy: { finishedAt: "desc" },
+      take: 3000,
+      select: {
+        status: true,
+        success: true,
+        exitCode: true,
+        startedAt: true,
+        finishedAt: true,
+        durationMs: true,
+        logFile: true,
+        runnerLogFile: true,
+        pageRead: true,
+        ordersRead: true,
+        startPage: true,
+        maxPages: true,
+        lastPage: true,
+        eligibleCount: true,
+        blockedCount: true,
+        createdCount: true,
+        updatedCount: true,
+        itemsCreated: true,
+        blockedReasons: true,
+      },
+    });
+    const map = new Map<string, NomusIntegrationRunPick>();
+    const upsert = (basename: string, row: NomusIntegrationRunPick) => {
+      if (!basename) return;
+      const prev = map.get(basename);
+      if (!prev) {
+        map.set(basename, row);
+        return;
+      }
+      const prevT = prev.finishedAt?.getTime() ?? 0;
+      const nextT = row.finishedAt?.getTime() ?? 0;
+      if (nextT >= prevT) map.set(basename, row);
+    };
+    for (const row of runs) {
+      if (row.logFile) upsert(path.basename(row.logFile), row);
+      if (row.runnerLogFile) upsert(path.basename(row.runnerLogFile), row);
+    }
+    return map;
+  }
+
+  async function findNomusIntegrationRunForLog(
+    fileName: string,
+    absolutePath: string
+  ): Promise<NomusIntegrationRunPick | null> {
+    const row = await prisma.integrationRun.findFirst({
+      where: {
+        sourceSystem: "NOMUS",
+        OR: [
+          { logFile: absolutePath },
+          { runnerLogFile: absolutePath },
+          { logFile: { endsWith: `/${fileName}` } },
+          { runnerLogFile: { endsWith: `/${fileName}` } },
+          { logFile: fileName },
+          { runnerLogFile: fileName },
+        ],
+      },
+      orderBy: { finishedAt: "desc" },
+      select: {
+        status: true,
+        success: true,
+        exitCode: true,
+        startedAt: true,
+        finishedAt: true,
+        durationMs: true,
+        logFile: true,
+        runnerLogFile: true,
+        pageRead: true,
+        ordersRead: true,
+        startPage: true,
+        maxPages: true,
+        lastPage: true,
+        eligibleCount: true,
+        blockedCount: true,
+        createdCount: true,
+        updatedCount: true,
+        itemsCreated: true,
+        blockedReasons: true,
+      },
+    });
+    return row;
+  }
+
   async function readNomusSyncLogSafe(fileNameRaw: string): Promise<{
     fileName: string;
     absolutePath: string;
@@ -3502,16 +3679,19 @@ app.delete("/api/employees/:id", async (req, res) => {
       const allEntries = await listNomusSyncLogEntries();
       const sorted = allEntries.sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
 
+      const integrationByBasename = await loadNomusIntegrationRunByBasename();
+
       const summaries: NomusSyncLogSummary[] = [];
       for (const entry of sorted) {
         const raw = await fs.readFile(entry.absolutePath, "utf8");
         const summary = buildNomusSummary(entry, sanitizeLogContent(raw));
         if (!summary) continue;
-        if (modeFilter !== "all" && summary.mode !== modeFilter) continue;
-        if (kindFilter !== "all" && summary.kind !== kindFilter) continue;
-        if (targetFilter !== "all" && summary.target !== targetFilter) continue;
-        if (normalizedStatusFilter !== "ALL" && summary.status !== normalizedStatusFilter) continue;
-        summaries.push(summary);
+        const merged = mergeNomusSummaryWithIntegrationRun(summary, integrationByBasename.get(entry.fileName));
+        if (modeFilter !== "all" && merged.mode !== modeFilter) continue;
+        if (kindFilter !== "all" && merged.kind !== kindFilter) continue;
+        if (targetFilter !== "all" && merged.target !== targetFilter) continue;
+        if (normalizedStatusFilter !== "ALL" && merged.status !== normalizedStatusFilter) continue;
+        summaries.push(merged);
         if (summaries.length >= limit) break;
       }
 
@@ -3536,11 +3716,14 @@ app.delete("/api/employees/:id", async (req, res) => {
         },
         row.content
       );
+      const integrationRun = await findNomusIntegrationRunForLog(row.fileName, row.absolutePath);
+      const mergedSummary =
+        summary && integrationRun ? mergeNomusSummaryWithIntegrationRun(summary, integrationRun) : summary;
       return res.json({
         fileName: row.fileName,
         sizeBytes: row.sizeBytes,
         modifiedAt: row.modifiedAt,
-        summary,
+        summary: mergedSummary,
         content: row.content,
       });
     } catch (error) {
