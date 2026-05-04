@@ -414,8 +414,8 @@ export const ProductBomTreeContextPanel: React.FC<{
             <p className="text-center">Selecione um item na árvore para editar no contexto.</p>
           </div>
         ) : (
-          <div className="flex flex-col h-full max-h-[70vh] overflow-y-auto">
-            <div className="p-4 border-b border-border flex items-start justify-between gap-2 bg-card/80 sticky top-0 z-10">
+          <div className="flex flex-col">
+            <div className="p-4 border-b border-border flex items-start justify-between gap-2 bg-card/80">
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase text-muted-foreground">Item selecionado</p>
                 <p className="text-sm font-bold truncate">
