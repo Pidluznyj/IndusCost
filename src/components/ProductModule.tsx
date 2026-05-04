@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
-import { SearchableSelect } from "./shared/SearchableSelect";
+import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Product, CreateProductInput, ItemType, ProductBOM, ProductRouting } from "@/src/types/product";
 import { Material } from "@/src/types/material";
 import { motion, AnimatePresence } from "motion/react";
@@ -57,6 +57,11 @@ export type ProductWithCostSummary = Product & {
     | { error: true; code?: string; message?: string }
     | { totalIndustrialCost: number; partial?: boolean };
 };
+
+/** Linha retornada por GET /api/products/bom-item-options (lista unificada para a BOM). */
+type BomItemOptionRow =
+  | { type: "MATERIAL"; id: string; code: string; name: string; label: string }
+  | { type: "PRODUCT"; id: string; sku: string; name: string; productType: ItemType; label: string };
 
 /* -------------------------------------------------------------------------- */
 /*                                Sub-Components                              */
@@ -99,6 +104,8 @@ const Badge = ({
 export const ProductModule = () => {
   const [items, setItems] = useState<ProductWithCostSummary[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [bomItemOptions, setBomItemOptions] = useState<BomItemOptionRow[]>([]);
+  const [bomOptionsLoading, setBomOptionsLoading] = useState(false);
   const [machines, setMachines] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,6 +166,36 @@ export const ProductModule = () => {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!isModalOpen || formData.type === "MATERIAL") {
+      setBomItemOptions([]);
+      setBomOptionsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setBomOptionsLoading(true);
+    const params = new URLSearchParams();
+    if (editingItem?.id) params.set("excludeProductId", editingItem.id);
+    const q = params.toString();
+    void fetchJsonOk<BomItemOptionRow[]>(`/api/products/bom-item-options${q ? `?${q}` : ""}`)
+      .then((data) => {
+        if (!cancelled) setBomItemOptions(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) {
+          setBomItemOptions([]);
+          alert(err instanceof Error ? err.message : "Não foi possível carregar opções da estrutura (BOM).");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBomOptionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isModalOpen, formData.type, editingItem?.id]);
 
   useEffect(() => {
     setSelectedIds([]);
@@ -534,64 +571,69 @@ export const ProductModule = () => {
     setFormData({ ...formData, bom: newBOM });
   };
 
-  const baseBomSelectOptions = useMemo(() => {
-    const compOpts = items
-      .filter((i) => i.type === "COMPONENT" && i.id !== editingItem?.id)
-      .map((i) => ({
-        value: i.id,
-        label: `${i.sku} — ${i.name}`,
-        sublabel: "Componente",
-        searchTerms: `${i.sku} ${i.name}`,
-      }));
-    const matOpts =
-      formData.type === "COMPONENT" || formData.type === "PRODUCT"
-        ? materials.map((m) => ({
-            value: m.id,
-            label: `${m.code} — ${m.description}`,
-            sublabel: "Material",
-            searchTerms: `${m.code} ${m.description}`,
-          }))
-        : [];
-    return [...compOpts, ...matOpts];
-  }, [items, materials, formData.type, editingItem?.id]);
+  const baseBomSelectOptions = useMemo((): SelectOption[] => {
+    return bomItemOptions.map((row) => {
+      if (row.type === "MATERIAL") {
+        return {
+          value: `material:${row.id}`,
+          label: row.label,
+          sublabel: "Matéria-prima",
+          searchTerms: `${row.code} ${row.name} MP material`,
+        };
+      }
+      return {
+        value: `product:${row.id}`,
+        label: row.label,
+        sublabel: row.productType === "COMPONENT" ? "Componente" : "Produto",
+        searchTerms: `${row.sku} ${row.name} produto componente`,
+      };
+    });
+  }, [bomItemOptions]);
 
   /**
    * Em edição, garante label para itens já salvos na BOM mesmo quando o valor
    * não está na lista atual do dropdown (ex.: tela em segmento PRODUCT).
    */
-  const persistedBomSelectOptions = useMemo(() => {
+  const persistedBomSelectOptions = useMemo((): SelectOption[] => {
     const rows = Array.isArray((editingItem as any)?.ProductBOM) ? ((editingItem as any).ProductBOM as any[]) : [];
     return rows
       .map((row) => {
-        const value = row?.materialId || row?.childProductId;
-        if (!value) return null;
-
         const material = row?.Material || row?.material;
-        if (material?.code && material?.description) {
+        if (row?.materialId) {
+          if (material?.code && material?.description) {
+            return {
+              value: `material:${String(row.materialId)}`,
+              label: `${material.code} — ${material.description}`,
+              sublabel: "Material (salvo)",
+              searchTerms: `${material.code} ${material.description}`,
+            };
+          }
           return {
-            value: String(value),
-            label: `${material.code} — ${material.description}`,
+            value: `material:${String(row.materialId)}`,
+            label: "Material (salvo — fora da lista atual)",
             sublabel: "Material (salvo)",
-            searchTerms: `${material.code} ${material.description}`,
+            searchTerms: "material salvo",
           };
         }
-
-        const child = row?.ChildProduct || row?.childProduct;
-        if (child?.sku && child?.name) {
+        if (row?.childProductId) {
+          const child = row?.ChildProduct || row?.childProduct;
+          if (child?.sku && child?.name) {
+            const isComp = child.type === "COMPONENT";
+            return {
+              value: `product:${String(row.childProductId)}`,
+              label: `${child.sku} — ${child.name}`,
+              sublabel: isComp ? "Componente (salvo)" : "Produto (salvo)",
+              searchTerms: `${child.sku} ${child.name}`,
+            };
+          }
           return {
-            value: String(value),
-            label: `${child.sku} — ${child.name}`,
-            sublabel: "Componente (salvo)",
-            searchTerms: `${child.sku} ${child.name}`,
+            value: `product:${String(row.childProductId)}`,
+            label: "Produto/componente (salvo — fora da lista atual)",
+            sublabel: "Produto (salvo)",
+            searchTerms: "produto salvo",
           };
         }
-
-        return {
-          value: String(value),
-          label: "Item salvo (fora da lista atual)",
-          sublabel: row?.materialId ? "Material (salvo)" : "Componente (salvo)",
-          searchTerms: "item salvo",
-        };
+        return null;
       })
       .filter((opt): opt is NonNullable<typeof opt> => Boolean(opt));
   }, [editingItem]);
@@ -609,6 +651,18 @@ export const ProductModule = () => {
     const newBOM = [...formData.bom];
     if (!val) {
       newBOM[index] = { ...newBOM[index], materialId: undefined, childProductId: undefined };
+    } else if (val.startsWith("material:")) {
+      newBOM[index] = {
+        ...newBOM[index],
+        materialId: val.slice("material:".length),
+        childProductId: undefined,
+      };
+    } else if (val.startsWith("product:")) {
+      newBOM[index] = {
+        ...newBOM[index],
+        childProductId: val.slice("product:".length),
+        materialId: undefined,
+      };
     } else {
       const isMat = materials.some((m) => m.id === val);
       if (isMat) {
@@ -1337,8 +1391,8 @@ export const ProductModule = () => {
                               </h4>
                               <p className="text-xs text-muted-foreground mt-1">
                                 {formData.type === "PRODUCT"
-                                  ? "Produtos finais podem listar COMPONENTES fabricados e/ou MATERIAIS comprados (custo aterrissado)."
-                                  : "Componentes podem conter COMPONENTES e MATERIAIS."}
+                                  ? "Produtos finais podem listar outros PRODUTOS ou COMPONENTES fabricados e/ou MATERIAIS comprados (custo aterrissado)."
+                                  : "Componentes podem conter PRODUTOS, outros COMPONENTES e MATERIAIS."}
                               </p>
                             </div>
                             <button
@@ -1352,6 +1406,12 @@ export const ProductModule = () => {
                           </div>
 
                           <div className="space-y-3">
+                            {bomOptionsLoading ? (
+                              <p className="text-xs text-muted-foreground flex items-center gap-2">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Carregando catálogo de itens da estrutura…
+                              </p>
+                            ) : null}
                             {formData.bom.length === 0 ? (
                               <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
                                 <p className="text-sm text-muted-foreground">Nenhum item adicionado à estrutura.</p>
@@ -1360,12 +1420,21 @@ export const ProductModule = () => {
                               formData.bom.map((item, idx) => (
                                 <div key={idx} className="grid grid-cols-12 gap-4 p-4 bg-accent/20 rounded-xl border border-border items-end group relative">
                                   <div className="col-span-4 space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Item (componente ou material)</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                                      Item (matéria-prima, produto ou componente)
+                                    </label>
                                     <SearchableSelect
                                       placeholder="Selecione um item..."
                                       options={bomSelectOptions}
-                                      value={item.materialId || item.childProductId || ""}
+                                      value={
+                                        item.materialId
+                                          ? `material:${item.materialId}`
+                                          : item.childProductId
+                                            ? `product:${item.childProductId}`
+                                            : ""
+                                      }
                                       onChange={(val) => setBomLineMaterialOrChild(idx, val)}
+                                      disabled={bomOptionsLoading}
                                     />
                                   </div>
                                   <div className="col-span-2 space-y-1.5">

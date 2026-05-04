@@ -2093,6 +2093,63 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  /**
+   * Opções para montagem da BOM: matérias-primas + produtos/componentes ativos.
+   * `excludeProductId` evita auto-referência direta na lista (produto não pode ser filho de si mesmo).
+   */
+  app.get("/api/products/bom-item-options", async (req, res) => {
+    try {
+      const excludeId = typeof req.query.excludeProductId === "string" ? req.query.excludeProductId.trim() : "";
+      const activeMaterialWhere: Prisma.MaterialWhereInput = {
+        NOT: { status: "INACTIVE" },
+      };
+      const activeProductWhere: Prisma.ProductWhereInput = {
+        type: { in: ["PRODUCT", "COMPONENT"] },
+        NOT: { status: "INACTIVE" },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      };
+
+      const [materials, products] = await Promise.all([
+        prisma.material.findMany({
+          where: activeMaterialWhere,
+          select: { id: true, code: true, description: true },
+          orderBy: { code: "asc" },
+        }),
+        prisma.product.findMany({
+          where: activeProductWhere,
+          select: { id: true, sku: true, name: true, type: true },
+          orderBy: { sku: "asc" },
+        }),
+      ]);
+
+      const out: Array<
+        | { type: "MATERIAL"; id: string; code: string; name: string; label: string }
+        | { type: "PRODUCT"; id: string; sku: string; name: string; productType: ItemType; label: string }
+      > = [
+        ...materials.map((m) => ({
+          type: "MATERIAL" as const,
+          id: m.id,
+          code: m.code,
+          name: m.description,
+          label: `[MP] ${m.code} — ${m.description}`,
+        })),
+        ...products.map((p) => ({
+          type: "PRODUCT" as const,
+          id: p.id,
+          sku: p.sku,
+          name: p.name,
+          productType: p.type,
+          label: p.type === "COMPONENT" ? `[COMPONENTE] ${p.sku} — ${p.name}` : `[PRODUTO] ${p.sku} — ${p.name}`,
+        })),
+      ];
+
+      res.json(out);
+    } catch (e: any) {
+      console.error("GET /api/products/bom-item-options", e);
+      res.status(500).json({ error: e?.message || "Erro ao listar opções de BOM." });
+    }
+  });
+
   app.get("/api/products/:id", async (req, res) => {
     const { id } = req.params;
     const product = await prisma.product.findUnique({
@@ -2133,17 +2190,29 @@ app.delete("/api/employees/:id", async (req, res) => {
         return res.status(409).json({ error: "SKU já existe.", code: "SKU_ALREADY_EXISTS" });
       }
 
+      if (effectiveType === "MATERIAL" && (bom || []).length > 0) {
+        return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
+      }
+
       // Validações de BOM
-      for (const item of (bom || [])) {
-        if (item.childProductId) {
+      for (const item of bom || []) {
+        const hasMat = Boolean(item.materialId);
+        const hasChild = Boolean(item.childProductId);
+        if (hasMat === hasChild) {
+          return res.status(400).json({
+            error: "Cada linha da BOM deve ter exatamente um vínculo: materialId OU childProductId.",
+          });
+        }
+        if (hasMat) {
+          const mat = await prisma.material.findUnique({ where: { id: item.materialId } });
+          if (!mat) return res.status(400).json({ error: "Matéria-prima não encontrada na linha da BOM." });
+        } else {
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
-          if (!child) return res.status(400).json({ error: "Componente não encontrado." });
-          
-          if (effectiveType === "PRODUCT" && child.type !== "COMPONENT") {
-            return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
-          }
-          if (effectiveType === "MATERIAL") {
-            return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
+          if (!child) return res.status(400).json({ error: "Produto/componente filho não encontrado na linha da BOM." });
+          if (child.type !== "PRODUCT" && child.type !== "COMPONENT") {
+            return res.status(400).json({
+              error: "Filho de BOM via childProductId deve ser do tipo PRODUCT ou COMPONENT.",
+            });
           }
         }
       }
@@ -2242,17 +2311,34 @@ app.delete("/api/employees/:id", async (req, res) => {
         if (existing) return res.status(409).json({ error: "SKU já existe." });
       }
 
-      for (const item of (bom || [])) {
-        if (item.childProductId) {
+      if (effectiveType === "MATERIAL" && (bom || []).length > 0) {
+        return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
+      }
+
+      for (const item of bom || []) {
+        const hasMat = Boolean(item.materialId);
+        const hasChild = Boolean(item.childProductId);
+        if (hasMat === hasChild) {
+          return res.status(400).json({
+            error: "Cada linha da BOM deve ter exatamente um vínculo: materialId OU childProductId.",
+          });
+        }
+        if (hasMat) {
+          const mat = await prisma.material.findUnique({ where: { id: item.materialId } });
+          if (!mat) return res.status(400).json({ error: "Matéria-prima não encontrada na linha da BOM." });
+        } else {
+          if (item.childProductId === id) {
+            return res.status(400).json({ error: "A BOM não pode referenciar o próprio produto como filho." });
+          }
           if (await checkBOMCycle(id, item.childProductId)) {
             return res.status(400).json({ error: "Ciclo detectado!" });
           }
           const child = await prisma.product.findUnique({ where: { id: item.childProductId } });
-          if (effectiveType === "PRODUCT" && child?.type !== "COMPONENT") {
-            return res.status(400).json({ error: "Produtos Finais só aceitam Componentes como filhos diretos." });
-          }
-          if (effectiveType === "MATERIAL") {
-            return res.status(400).json({ error: "Matérias-Primas não podem ter estrutura (BOM)." });
+          if (!child) return res.status(400).json({ error: "Produto/componente filho não encontrado na linha da BOM." });
+          if (child.type !== "PRODUCT" && child.type !== "COMPONENT") {
+            return res.status(400).json({
+              error: "Filho de BOM via childProductId deve ser do tipo PRODUCT ou COMPONENT.",
+            });
           }
         }
       }
