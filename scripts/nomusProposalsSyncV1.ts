@@ -74,14 +74,23 @@ type IgnoredProposal = {
   externalProposalCode: string;
   reasons: string[];
   inactiveSkus: string[];
+  /** Linhas brutas em itensProposta no Nomus (para métricas de dry-run). */
+  rawLineItemCount?: number;
 };
 
 type DryRunResult = {
   totalRead: number;
+  /** Soma de linhas em `itensProposta` no payload Nomus (após filtro de data). */
+  totalItemsRead: number;
   eligibleCount: number;
   blockedCount: number;
   ignoredCount: number;
   ignoredInactiveSkuCount: number;
+  /**
+   * Soma de linhas brutas em `itensProposta` nas propostas ignoradas (só preenchido para ignoradas com `rawLineItemCount`;
+   * hoje: SKU inativo no Nomus).
+   */
+  ignoredItemsCount: number;
   unresolvedCustomers: number;
   unresolvedProducts: number;
   missingSkus: string[];
@@ -89,10 +98,39 @@ type DryRunResult = {
   blockedProposalCodes: string[];
   ignoredProposalCodes: string[];
   inactiveSkus: string[];
+  /** Propostas novas que seriam criadas no apply (total real). */
+  createCount: number;
+  /** Propostas existentes que seriam atualizadas no apply (total real). */
+  updateCount: number;
+  /**
+   * Sempre null: o apply reescreve cabeçalho e substitui todos os ProposalItem (deleteMany + createMany).
+   * Não há detecção de “sem mudança” sem diff profundo — fora do escopo deste dry-run.
+   */
+  noChangeCount: null;
+  /** Soma de `plan.items.length` nas propostas elegíveis (linhas planejadas localmente). */
+  totalItemsPlanned: number;
+  /** Itens que seriam gravados em propostas novas (uma linha ProposalItem por item planejado). */
+  createItemsCount: number;
+  /**
+   * Mesmo valor que `replaceItemsCount`: no apply, cada atualização apaga todos os itens e recria a partir do plano.
+   */
+  updateItemsCount: number;
+  /** Itens que seriam recriados após deleteMany em propostas já existentes. */
+  replaceItemsCount: number;
+  itemsImpactNote: string;
   createsPreview: Array<{ externalProposalId: number; externalProposalCode: string }>;
   updatesPreview: Array<{ externalProposalId: number; externalProposalCode: string; id: string }>;
+  firstCreatesPreview: Array<{ externalProposalId: number; externalProposalCode: string }>;
+  firstUpdatesPreview: Array<{ externalProposalId: number; externalProposalCode: string; id: string }>;
   blockedPreview: BlockedProposal[];
   ignoredPreview: IgnoredProposal[];
+  ignoredInactiveSkuPreview: Array<{
+    externalProposalId: number;
+    externalProposalCode: string;
+    inactiveSkus: string[];
+    reasons: string[];
+    rawLineItemCount?: number;
+  }>;
 };
 
 function getRequiredEnv(name: string): string {
@@ -468,6 +506,7 @@ async function buildPlans(): Promise<{
   missingCustomers: Set<number>;
   inactiveSkus: Set<string>;
   rawProposalsCount: number;
+  totalItemsRead: number;
 }> {
   const nomusBaseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const proposalStartDate = getProposalStartDate();
@@ -503,6 +542,7 @@ async function buildPlans(): Promise<{
   const missingSkus = new Set<string>();
   const missingCustomers = new Set<number>();
   const inactiveSkus = new Set<string>();
+  let totalItemsRead = 0;
 
   for (const proposal of rawProposals) {
     const externalProposalId = toInt(proposal.id);
@@ -518,6 +558,7 @@ async function buildPlans(): Promise<{
     const proposalItemsRaw = Array.isArray(proposal.itensProposta)
       ? (proposal.itensProposta.filter((x): x is JsonObject => !!x && typeof x === "object") as JsonObject[])
       : [];
+    totalItemsRead += proposalItemsRaw.length;
 
     const unresolvedSkus = new Set<string>();
     const inactiveSkusInProposal = new Set<string>();
@@ -579,6 +620,7 @@ async function buildPlans(): Promise<{
         externalProposalCode,
         reasons: ["INACTIVE_PRODUCT_SKU_NOMUS"],
         inactiveSkus: [...inactiveSkusInProposal].sort(),
+        rawLineItemCount: proposalItemsRaw.length,
       });
       continue;
     }
@@ -633,14 +675,24 @@ async function buildPlans(): Promise<{
     });
   }
 
-  return { plans, blocked, ignored, missingSkus, missingCustomers, inactiveSkus, rawProposalsCount: rawProposals.length };
+  return {
+    plans,
+    blocked,
+    ignored,
+    missingSkus,
+    missingCustomers,
+    inactiveSkus,
+    rawProposalsCount: rawProposals.length,
+    totalItemsRead,
+  };
 }
 
 async function runDry(
   plans: ProposalPlan[],
   blocked: BlockedProposal[],
   ignored: IgnoredProposal[],
-  rawProposalsCount: number
+  rawProposalsCount: number,
+  totalItemsRead: number
 ): Promise<DryRunResult> {
   const existing = await prisma.proposal.findMany({
     where: {
@@ -656,31 +708,54 @@ async function runDry(
     existingByExternalId.set(row.externalProposalId, row);
   }
 
-  const createsPreview: DryRunResult["createsPreview"] = [];
-  const updatesPreview: DryRunResult["updatesPreview"] = [];
+  const createsFull: DryRunResult["createsPreview"] = [];
+  const updatesFull: DryRunResult["updatesPreview"] = [];
+  let totalItemsPlanned = 0;
+  let createItemsCount = 0;
+  let replaceItemsCount = 0;
 
   for (const plan of plans) {
+    totalItemsPlanned += plan.items.length;
     const current = existingByExternalId.get(plan.externalProposalId);
     if (!current) {
-      createsPreview.push({
+      createItemsCount += plan.items.length;
+      createsFull.push({
         externalProposalId: plan.externalProposalId,
         externalProposalCode: plan.externalProposalCode,
       });
       continue;
     }
-    updatesPreview.push({
+    replaceItemsCount += plan.items.length;
+    updatesFull.push({
       externalProposalId: plan.externalProposalId,
       externalProposalCode: plan.externalProposalCode,
       id: current.id,
     });
   }
 
+  const createCount = createsFull.length;
+  const updateCount = updatesFull.length;
+  const ignoredItemsCount = ignored.reduce((sum, row) => sum + (row.rawLineItemCount ?? 0), 0);
+  const ignoredInactiveSkuRows = ignored.filter((b) => b.reasons.includes("INACTIVE_PRODUCT_SKU_NOMUS"));
+  const ignoredInactiveSkuPreview = ignoredInactiveSkuRows.slice(0, 30).map((row) => ({
+    externalProposalId: row.externalProposalId,
+    externalProposalCode: row.externalProposalCode,
+    inactiveSkus: row.inactiveSkus,
+    reasons: row.reasons,
+    rawLineItemCount: row.rawLineItemCount,
+  }));
+
+  const itemsImpactNote =
+    "No apply, cada proposta atualizada executa deleteMany em ProposalItem seguido de createMany com o snapshot atual; não há contagem separada de linha alterada vs inalterada sem diff. updateItemsCount e replaceItemsCount refletem o mesmo volume de linhas que seriam recriadas.";
+
   return {
     totalRead: rawProposalsCount,
+    totalItemsRead,
     eligibleCount: plans.length,
     blockedCount: blocked.length,
     ignoredCount: ignored.length,
-    ignoredInactiveSkuCount: ignored.filter((b) => b.reasons.includes("INACTIVE_PRODUCT_SKU_NOMUS")).length,
+    ignoredInactiveSkuCount: ignoredInactiveSkuRows.length,
+    ignoredItemsCount,
     unresolvedCustomers: blocked.filter((b) => b.reasons.includes("CUSTOMER_NOT_RESOLVED")).length,
     unresolvedProducts: blocked.filter((b) => b.reasons.includes("MISSING_PRODUCT_SKU")).length,
     missingSkus: [...new Set(blocked.flatMap((b) => b.missingSkus))].sort(),
@@ -688,10 +763,21 @@ async function runDry(
     blockedProposalCodes: blocked.map((b) => b.externalProposalCode),
     ignoredProposalCodes: ignored.map((b) => b.externalProposalCode),
     inactiveSkus: [...new Set(ignored.flatMap((b) => b.inactiveSkus))].sort(),
-    createsPreview: createsPreview.slice(0, 50),
-    updatesPreview: updatesPreview.slice(0, 50),
+    createCount,
+    updateCount,
+    noChangeCount: null,
+    totalItemsPlanned,
+    createItemsCount,
+    updateItemsCount: replaceItemsCount,
+    replaceItemsCount,
+    itemsImpactNote,
+    createsPreview: createsFull.slice(0, 50),
+    updatesPreview: updatesFull.slice(0, 50),
+    firstCreatesPreview: createsFull.slice(0, 30),
+    firstUpdatesPreview: updatesFull.slice(0, 30),
     blockedPreview: blocked.slice(0, 50),
     ignoredPreview: ignored.slice(0, 50),
+    ignoredInactiveSkuPreview,
   };
 }
 
@@ -794,8 +880,9 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{ created: number; upd
 
 async function main(): Promise<void> {
   const isApply = process.argv.includes("--apply");
-  const { plans, blocked, ignored, missingSkus, missingCustomers, inactiveSkus, rawProposalsCount } = await buildPlans();
-  const dry = await runDry(plans, blocked, ignored, rawProposalsCount);
+  const { plans, blocked, ignored, missingSkus, missingCustomers, inactiveSkus, rawProposalsCount, totalItemsRead } =
+    await buildPlans();
+  const dry = await runDry(plans, blocked, ignored, rawProposalsCount, totalItemsRead);
 
   if (missingSkus.has(KNOWN_MISSING_SKU)) {
     console.warn(`[sync-v1] SKU conhecido ainda sem cadastro local: ${KNOWN_MISSING_SKU}`);
