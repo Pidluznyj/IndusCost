@@ -117,6 +117,17 @@ type DryRunResult = {
   updateItemsCount: number;
   /** Itens que seriam recriados após deleteMany em propostas já existentes. */
   replaceItemsCount: number;
+  preservedProposalsDueToSalesOrderLinkCount: number;
+  preservedProposalItemsCount: number;
+  preservedItemsDueToSalesOrderLinkCount: number;
+  preservedDueToSalesOrderLinkPreview: Array<{
+    externalProposalId: number;
+    externalProposalCode: string;
+    proposalId: string;
+    linkedSalesOrderItemCount: number;
+    existingItemsCount: number;
+    plannedItemsCount: number;
+  }>;
   itemsImpactNote: string;
   createsPreview: Array<{ externalProposalId: number; externalProposalCode: string }>;
   updatesPreview: Array<{ externalProposalId: number; externalProposalCode: string; id: string }>;
@@ -132,6 +143,13 @@ type DryRunResult = {
     rawLineItemCount?: number;
   }>;
 };
+
+type ExistingProposalLinkStats = {
+  existingItemsCount: number;
+  linkedSalesOrderItemCount: number;
+};
+
+type ExistingProposalStatsRow = ExistingProposalRef & ExistingProposalLinkStats;
 
 function getRequiredEnv(name: string): string {
   const value = (process.env[name] ?? "").trim();
@@ -699,13 +717,40 @@ async function runDry(
       sourceSystem: SOURCE_SYSTEM,
       externalProposalId: { in: plans.map((p) => p.externalProposalId) },
     },
-    select: { id: true, externalProposalId: true, externalProposalCode: true },
+    select: { id: true, externalProposalId: true, externalProposalCode: true, items: { select: { id: true } } },
   });
 
-  const existingByExternalId = new Map<number, ExistingProposalRef>();
+  const proposalItemIdToProposalId = new Map<string, string>();
+  for (const row of existing) {
+    for (const item of row.items) proposalItemIdToProposalId.set(item.id, row.id);
+  }
+  const linkedCountByProposalId = new Map<string, number>();
+  const proposalItemIds = [...proposalItemIdToProposalId.keys()];
+  if (proposalItemIds.length > 0) {
+    const linkedByItem = await prisma.salesOrderItem.groupBy({
+      by: ["proposalItemId"],
+      where: { proposalItemId: { in: proposalItemIds } },
+      _count: { _all: true },
+    });
+    for (const row of linkedByItem) {
+      const proposalItemId = row.proposalItemId;
+      if (!proposalItemId) continue;
+      const proposalId = proposalItemIdToProposalId.get(proposalItemId);
+      if (!proposalId) continue;
+      linkedCountByProposalId.set(proposalId, (linkedCountByProposalId.get(proposalId) ?? 0) + row._count._all);
+    }
+  }
+
+  const existingByExternalId = new Map<number, ExistingProposalStatsRow>();
   for (const row of existing) {
     if (row.externalProposalId == null) continue;
-    existingByExternalId.set(row.externalProposalId, row);
+    existingByExternalId.set(row.externalProposalId, {
+      id: row.id,
+      externalProposalId: row.externalProposalId,
+      externalProposalCode: row.externalProposalCode,
+      existingItemsCount: row.items.length,
+      linkedSalesOrderItemCount: linkedCountByProposalId.get(row.id) ?? 0,
+    });
   }
 
   const createsFull: DryRunResult["createsPreview"] = [];
@@ -713,6 +758,10 @@ async function runDry(
   let totalItemsPlanned = 0;
   let createItemsCount = 0;
   let replaceItemsCount = 0;
+  let preservedProposalsDueToSalesOrderLinkCount = 0;
+  let preservedProposalItemsCount = 0;
+  let preservedItemsDueToSalesOrderLinkCount = 0;
+  const preservedDueToSalesOrderLinkPreview: DryRunResult["preservedDueToSalesOrderLinkPreview"] = [];
 
   for (const plan of plans) {
     totalItemsPlanned += plan.items.length;
@@ -725,12 +774,28 @@ async function runDry(
       });
       continue;
     }
-    replaceItemsCount += plan.items.length;
     updatesFull.push({
       externalProposalId: plan.externalProposalId,
       externalProposalCode: plan.externalProposalCode,
       id: current.id,
     });
+    if (current.linkedSalesOrderItemCount > 0) {
+      preservedProposalsDueToSalesOrderLinkCount += 1;
+      preservedProposalItemsCount += current.existingItemsCount;
+      preservedItemsDueToSalesOrderLinkCount += current.linkedSalesOrderItemCount;
+      if (preservedDueToSalesOrderLinkPreview.length < 30) {
+        preservedDueToSalesOrderLinkPreview.push({
+          externalProposalId: plan.externalProposalId,
+          externalProposalCode: plan.externalProposalCode,
+          proposalId: current.id,
+          linkedSalesOrderItemCount: current.linkedSalesOrderItemCount,
+          existingItemsCount: current.existingItemsCount,
+          plannedItemsCount: plan.items.length,
+        });
+      }
+      continue;
+    }
+    replaceItemsCount += plan.items.length;
   }
 
   const createCount = createsFull.length;
@@ -746,7 +811,7 @@ async function runDry(
   }));
 
   const itemsImpactNote =
-    "No apply, cada proposta atualizada executa deleteMany em ProposalItem seguido de createMany com o snapshot atual; não há contagem separada de linha alterada vs inalterada sem diff. updateItemsCount e replaceItemsCount refletem o mesmo volume de linhas que seriam recriadas.";
+    "Propostas com itens vinculados a pedidos de venda não terão ProposalItem apagados/recriados para preservar integridade com SalesOrderItem.proposalItemId. Apenas propostas sem vínculos seguem deleteMany + createMany dos itens.";
 
   return {
     totalRead: rawProposalsCount,
@@ -770,6 +835,10 @@ async function runDry(
     createItemsCount,
     updateItemsCount: replaceItemsCount,
     replaceItemsCount,
+    preservedProposalsDueToSalesOrderLinkCount,
+    preservedProposalItemsCount,
+    preservedItemsDueToSalesOrderLinkCount,
+    preservedDueToSalesOrderLinkPreview,
     itemsImpactNote,
     createsPreview: createsFull.slice(0, 50),
     updatesPreview: updatesFull.slice(0, 50),
@@ -781,7 +850,14 @@ async function runDry(
   };
 }
 
-async function applyPlans(plans: ProposalPlan[]): Promise<{ created: number; updated: number }> {
+async function applyPlans(plans: ProposalPlan[]): Promise<{
+  created: number;
+  updated: number;
+  replacedItemsCount: number;
+  preservedProposalsDueToSalesOrderLinkCount: number;
+  preservedProposalItemsCount: number;
+  preservedItemsDueToSalesOrderLinkCount: number;
+}> {
   const existing = await prisma.proposal.findMany({
     where: {
       sourceSystem: SOURCE_SYSTEM,
@@ -797,6 +873,10 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{ created: number; upd
 
   let created = 0;
   let updated = 0;
+  let replacedItemsCount = 0;
+  let preservedProposalsDueToSalesOrderLinkCount = 0;
+  let preservedProposalItemsCount = 0;
+  let preservedItemsDueToSalesOrderLinkCount = 0;
 
   for (const plan of plans) {
     const current = existingByExternalId.get(plan.externalProposalId);
@@ -841,33 +921,55 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{ created: number; upd
         proposalId = updatedProposal.id;
       }
 
-      await tx.proposalItem.deleteMany({ where: { proposalId } });
-      if (plan.items.length > 0) {
-        await tx.proposalItem.createMany({
-          data: plan.items.map((item) => ({
-            proposalId,
-            externalItemId: item.externalItemId,
-            externalProductId: item.externalProductId,
-            externalItemStatus: item.externalItemStatus,
-            externalRawPayload: toInputJsonValue(item.externalRawPayload),
-            productId: item.productId,
-            quantity: toPrismaDecimal(item.quantity),
-            unit: item.unit,
-            unitCost: toPrismaDecimal(item.unitCost),
-            suggestedPrice: toPrismaDecimal(item.suggestedPrice),
-            negotiatedPrice: toPrismaDecimal(item.negotiatedPrice),
-            discountPerc: toPrismaDecimal(item.discountPerc),
-            discountValue: toPrismaDecimal(item.discountValue),
-            marginValue: toPrismaDecimal(item.marginValue),
-            marginPerc: toPrismaDecimal(item.marginPerc),
-            taxesPerc: toPrismaDecimal(item.taxesPerc),
-            taxesValue: toPrismaDecimal(item.taxesValue),
-            commissionPerc: toPrismaDecimal(item.commissionPerc),
-            commissionValue: toPrismaDecimal(item.commissionValue),
-            freightValue: toPrismaDecimal(item.freightValue),
-            notes: item.notes,
-          })),
+      let canReplaceItems = true;
+      if (current) {
+        const existingItems = await tx.proposalItem.findMany({
+          where: { proposalId },
+          select: { id: true },
         });
+        if (existingItems.length > 0) {
+          const linkedSalesOrderItemCount = await tx.salesOrderItem.count({
+            where: { proposalItemId: { in: existingItems.map((x) => x.id) } },
+          });
+          if (linkedSalesOrderItemCount > 0) {
+            canReplaceItems = false;
+            preservedProposalsDueToSalesOrderLinkCount += 1;
+            preservedProposalItemsCount += existingItems.length;
+            preservedItemsDueToSalesOrderLinkCount += linkedSalesOrderItemCount;
+          }
+        }
+      }
+
+      if (canReplaceItems) {
+        await tx.proposalItem.deleteMany({ where: { proposalId } });
+        if (plan.items.length > 0) {
+          await tx.proposalItem.createMany({
+            data: plan.items.map((item) => ({
+              proposalId,
+              externalItemId: item.externalItemId,
+              externalProductId: item.externalProductId,
+              externalItemStatus: item.externalItemStatus,
+              externalRawPayload: toInputJsonValue(item.externalRawPayload),
+              productId: item.productId,
+              quantity: toPrismaDecimal(item.quantity),
+              unit: item.unit,
+              unitCost: toPrismaDecimal(item.unitCost),
+              suggestedPrice: toPrismaDecimal(item.suggestedPrice),
+              negotiatedPrice: toPrismaDecimal(item.negotiatedPrice),
+              discountPerc: toPrismaDecimal(item.discountPerc),
+              discountValue: toPrismaDecimal(item.discountValue),
+              marginValue: toPrismaDecimal(item.marginValue),
+              marginPerc: toPrismaDecimal(item.marginPerc),
+              taxesPerc: toPrismaDecimal(item.taxesPerc),
+              taxesValue: toPrismaDecimal(item.taxesValue),
+              commissionPerc: toPrismaDecimal(item.commissionPerc),
+              commissionValue: toPrismaDecimal(item.commissionValue),
+              freightValue: toPrismaDecimal(item.freightValue),
+              notes: item.notes,
+            })),
+          });
+          replacedItemsCount += plan.items.length;
+        }
       }
     });
 
@@ -875,7 +977,14 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{ created: number; upd
     else created += 1;
   }
 
-  return { created, updated };
+  return {
+    created,
+    updated,
+    replacedItemsCount,
+    preservedProposalsDueToSalesOrderLinkCount,
+    preservedProposalItemsCount,
+    preservedItemsDueToSalesOrderLinkCount,
+  };
 }
 
 async function main(): Promise<void> {
