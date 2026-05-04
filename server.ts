@@ -75,8 +75,23 @@ type BootstrapAdminSessionPayload = {
 
 type NomusSyncMode = "apply" | "dry";
 type NomusSyncKind = "runner" | "sync";
-type NomusSyncTarget = "sales-orders";
+type NomusSyncTarget = "customers" | "products" | "proposals" | "sales-orders";
 type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
+
+const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = ["customers", "products", "proposals", "sales-orders"];
+const NOMUS_HEALTH_STALE_MS: Record<NomusSyncTarget, number> = {
+  "sales-orders": 2 * 60 * 60 * 1000,
+  customers: 24 * 60 * 60 * 1000,
+  products: 24 * 60 * 60 * 1000,
+  proposals: 24 * 60 * 60 * 1000,
+};
+const NOMUS_PRODUCT_EXPECTED_BLOCK_KEYS = new Set([
+  "RAW_MATERIAL_NOT_PRODUCT",
+  "MRO_OR_FIXED_ASSET_NOT_PRODUCT",
+  "PACKAGING_NOT_PRODUCT",
+  "SERVICE_ITEM",
+  "MISSING_DESCRIPTIVE_NAME",
+]);
 
 type NomusSyncLogSummary = {
   fileName: string;
@@ -86,6 +101,8 @@ type NomusSyncLogSummary = {
   status: NomusSyncStatus;
   success: boolean | null;
   exitCode: number | null;
+  /** ISO: preferência para ordenação (IntegrationRun.createdAt quando houver merge). */
+  createdAt: string | null;
   startedAt: string | null;
   finishedAt: string | null;
   durationMs: number | null;
@@ -186,11 +203,13 @@ function decodeBootstrapSessionToken(
 }
 
 function parseNomusSyncFileName(fileName: string): { kind: NomusSyncKind; mode: NomusSyncMode; target: NomusSyncTarget } | null {
-  const m = /^(runner-)?(sales-orders)_(apply|dry)_.+\.log$/i.exec(fileName);
+  const m = /^(runner-)?(customers|products|proposals|sales-orders)_(apply|dry)_.+\.log$/i.exec(fileName);
   if (!m) return null;
+  const target = m[2].toLowerCase() as NomusSyncTarget;
+  if (!NOMUS_SYNC_TARGETS.includes(target)) return null;
   return {
     kind: m[1] ? "runner" : "sync",
-    target: "sales-orders",
+    target,
     mode: m[3].toLowerCase() as NomusSyncMode,
   };
 }
@@ -408,6 +427,7 @@ async function startServer() {
       status,
       success: status === "SUCCESS" ? true : status === "FAILED" ? false : null,
       exitCode,
+      createdAt: null,
       startedAt,
       finishedAt,
       durationMs,
@@ -431,9 +451,15 @@ async function startServer() {
   }
 
   type NomusIntegrationRunPick = {
+    createdAt: Date;
+    target: string;
+    mode: string;
+    kind: string | null;
     status: string;
     success: boolean | null;
     exitCode: number | null;
+    command: string | null;
+    errorMessage: string | null;
     startedAt: Date | null;
     finishedAt: Date | null;
     durationMs: number | null;
@@ -485,9 +511,19 @@ async function startServer() {
     const dbBlocked = blockedReasonsFromIntegrationJson(run.blockedReasons);
     const mergedBlocked =
       Object.keys(dbBlocked).length > 0 ? { ...summary.blockedReasons, ...dbBlocked } : summary.blockedReasons;
+    const runKind = run.kind === "runner" || run.kind === "sync" ? run.kind : summary.kind;
+    const runMode = run.mode === "apply" || run.mode === "dry" ? run.mode : summary.mode;
+    const runTarget = NOMUS_SYNC_TARGETS.includes(run.target as NomusSyncTarget)
+      ? (run.target as NomusSyncTarget)
+      : summary.target;
+
     return {
       ...summary,
+      kind: runKind,
+      mode: runMode,
+      target: runTarget,
       status: dbStatus,
+      createdAt: run.createdAt ? run.createdAt.toISOString() : summary.createdAt,
       success:
         run.success !== null && run.success !== undefined
           ? run.success
@@ -500,6 +536,7 @@ async function startServer() {
       startedAt: run.startedAt ? run.startedAt.toISOString() : summary.startedAt,
       finishedAt: run.finishedAt ? run.finishedAt.toISOString() : summary.finishedAt,
       durationMs: run.durationMs !== null && run.durationMs !== undefined ? run.durationMs : summary.durationMs,
+      command: run.command ?? summary.command,
       metrics: {
         eligibleCount: run.eligibleCount ?? summary.metrics.eligibleCount,
         blockedCount: run.blockedCount ?? summary.metrics.blockedCount,
@@ -522,12 +559,18 @@ async function startServer() {
         sourceSystem: "NOMUS",
         OR: [{ logFile: { not: null } }, { runnerLogFile: { not: null } }],
       },
-      orderBy: { finishedAt: "desc" },
+      orderBy: [{ finishedAt: "desc" }, { createdAt: "desc" }],
       take: 3000,
       select: {
+        createdAt: true,
+        target: true,
+        mode: true,
+        kind: true,
         status: true,
         success: true,
         exitCode: true,
+        command: true,
+        errorMessage: true,
         startedAt: true,
         finishedAt: true,
         durationMs: true,
@@ -556,7 +599,12 @@ async function startServer() {
       }
       const prevT = prev.finishedAt?.getTime() ?? 0;
       const nextT = row.finishedAt?.getTime() ?? 0;
-      if (nextT >= prevT) map.set(basename, row);
+      if (nextT > prevT) {
+        map.set(basename, row);
+        return;
+      }
+      if (nextT < prevT) return;
+      if (row.createdAt.getTime() >= prev.createdAt.getTime()) map.set(basename, row);
     };
     for (const row of runs) {
       if (row.logFile) upsert(path.basename(row.logFile), row);
@@ -581,11 +629,17 @@ async function startServer() {
           { runnerLogFile: fileName },
         ],
       },
-      orderBy: { finishedAt: "desc" },
+      orderBy: [{ finishedAt: "desc" }, { createdAt: "desc" }],
       select: {
+        createdAt: true,
+        target: true,
+        mode: true,
+        kind: true,
         status: true,
         success: true,
         exitCode: true,
+        command: true,
+        errorMessage: true,
         startedAt: true,
         finishedAt: true,
         durationMs: true,
@@ -606,6 +660,192 @@ async function startServer() {
     });
     return row;
   }
+
+  type NomusIntegrationHealthState = "OK" | "FAILED" | "STALE" | "WARNING" | "NO_DATA";
+
+  function nomusRunReferenceMs(row: NomusIntegrationRunPick): number {
+    return (row.finishedAt ?? row.startedAt ?? row.createdAt).getTime();
+  }
+
+  function nomusRunExplicitlyFailed(row: NomusIntegrationRunPick): boolean {
+    const st = mapIntegrationRunStatusToNomusSync(row);
+    if (st === "FAILED") return true;
+    if (row.success === false) return true;
+    if (row.exitCode !== null && row.exitCode !== undefined && row.exitCode !== 0) return true;
+    return false;
+  }
+
+  function nomusRunSucceededApply(row: NomusIntegrationRunPick): boolean {
+    const st = mapIntegrationRunStatusToNomusSync(row);
+    return st === "SUCCESS" && row.success !== false && (row.exitCode === null || row.exitCode === 0);
+  }
+
+  function nomusProductBlocksOnlyExpected(blockedReasons: unknown): boolean {
+    const o = safeObject(blockedReasons);
+    if (!o || Object.keys(o).length === 0) return true;
+    return Object.keys(o).every((k) => NOMUS_PRODUCT_EXPECTED_BLOCK_KEYS.has(k));
+  }
+
+  function computeNomusTargetHealth(
+    target: NomusSyncTarget,
+    row: NomusIntegrationRunPick | null
+  ): { health: NomusIntegrationHealthState; message: string; warning: string | null } {
+    if (!row) {
+      return {
+        health: "NO_DATA",
+        message: "Ainda não existe execução apply registrada para este destino.",
+        warning: null,
+      };
+    }
+    if (nomusRunExplicitlyFailed(row)) {
+      return {
+        health: "FAILED",
+        message: row.errorMessage?.trim() || "Última execução apply falhou.",
+        warning: null,
+      };
+    }
+    const st = mapIntegrationRunStatusToNomusSync(row);
+    if (st === "SKIPPED") {
+      return {
+        health: "WARNING",
+        message: "Última execução apply foi ignorada (SKIPPED).",
+        warning: null,
+      };
+    }
+    const ageMs = Date.now() - nomusRunReferenceMs(row);
+    if (nomusRunSucceededApply(row) && ageMs > NOMUS_HEALTH_STALE_MS[target]) {
+      return {
+        health: "STALE",
+        message:
+          target === "sales-orders"
+            ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado para pedidos)."
+            : "Última conclusão com sucesso há mais de 24 horas (prazo esperado).",
+        warning: null,
+      };
+    }
+    const blocked = row.blockedCount ?? 0;
+    if (nomusRunSucceededApply(row) && blocked > 0) {
+      if (target === "products" && nomusProductBlocksOnlyExpected(row.blockedReasons)) {
+        return {
+          health: "OK",
+          message: "Última execução apply finalizou com sucesso.",
+          warning:
+            "Há bloqueios catalogados — muitos são esperados em produtos (ex.: matéria-prima sem cadastro de produto). Consulte o último log para detalhes.",
+        };
+      }
+      return {
+        health: "WARNING",
+        message: "Execução concluída com sucesso, porém existem registros bloqueados.",
+        warning: null,
+      };
+    }
+    if (nomusRunSucceededApply(row)) {
+      return { health: "OK", message: "Última execução apply finalizou com sucesso.", warning: null };
+    }
+    return {
+      health: "WARNING",
+      message: "Última execução apply terminou com status a revisar.",
+      warning: null,
+    };
+  }
+
+  function serializeNomusHealthLastRun(row: NomusIntegrationRunPick) {
+    return {
+      mode: row.mode,
+      kind: row.kind,
+      status: mapIntegrationRunStatusToNomusSync(row),
+      success: row.success,
+      exitCode: row.exitCode,
+      ordersRead: row.ordersRead,
+      eligibleCount: row.eligibleCount,
+      blockedCount: row.blockedCount,
+      createdCount: row.createdCount,
+      updatedCount: row.updatedCount,
+      itemsCreated: row.itemsCreated,
+      errorMessage: row.errorMessage,
+      logFile: row.logFile,
+      createdAt: row.createdAt.toISOString(),
+      startedAt: row.startedAt ? row.startedAt.toISOString() : null,
+      finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+      durationMs: row.durationMs,
+    };
+  }
+
+  async function buildNomusIntegrationHealthPayload(): Promise<{
+    targets: Array<{
+      target: NomusSyncTarget;
+      label: string;
+      lastRun: ReturnType<typeof serializeNomusHealthLastRun> | null;
+      health: NomusIntegrationHealthState;
+      message: string;
+      warning: string | null;
+    }>;
+  }> {
+    const labels: Record<NomusSyncTarget, string> = {
+      customers: "Clientes",
+      products: "Produtos",
+      proposals: "Propostas",
+      "sales-orders": "Pedidos de venda",
+    };
+    const select = {
+      createdAt: true,
+      target: true,
+      mode: true,
+      kind: true,
+      status: true,
+      success: true,
+      exitCode: true,
+      command: true,
+      errorMessage: true,
+      startedAt: true,
+      finishedAt: true,
+      durationMs: true,
+      logFile: true,
+      runnerLogFile: true,
+      pageRead: true,
+      ordersRead: true,
+      startPage: true,
+      maxPages: true,
+      lastPage: true,
+      eligibleCount: true,
+      blockedCount: true,
+      createdCount: true,
+      updatedCount: true,
+      itemsCreated: true,
+      blockedReasons: true,
+    } as const;
+
+    const targets: Array<{
+      target: NomusSyncTarget;
+      label: string;
+      lastRun: ReturnType<typeof serializeNomusHealthLastRun> | null;
+      health: NomusIntegrationHealthState;
+      message: string;
+      warning: string | null;
+    }> = [];
+
+    for (const target of NOMUS_SYNC_TARGETS) {
+      const row = await prisma.integrationRun.findFirst({
+        where: { sourceSystem: "NOMUS", target, mode: "apply" },
+        orderBy: { createdAt: "desc" },
+        select,
+      });
+      const typed = row as NomusIntegrationRunPick | null;
+      const { health, message, warning } = computeNomusTargetHealth(target, typed);
+      targets.push({
+        target,
+        label: labels[target],
+        lastRun: typed ? serializeNomusHealthLastRun(typed) : null,
+        health,
+        message,
+        warning,
+      });
+    }
+
+    return { targets };
+  }
+
+  const MAX_NOMUS_LOG_FILES_SCAN = 500;
 
   async function readNomusSyncLogSafe(fileNameRaw: string): Promise<{
     fileName: string;
@@ -3665,6 +3905,16 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  app.get("/api/integrations/nomus/health", requireBootstrapAdmin, async (_req, res) => {
+    try {
+      const payload = await buildNomusIntegrationHealthPayload();
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/integrations/nomus/health:", error);
+      return res.status(500).json({ error: "Erro ao carregar saúde das integrações Nomus." });
+    }
+  });
+
   app.get("/api/settings/nomus-sync/logs", requireBootstrapAdmin, async (req, res) => {
     try {
       const rawLimit = Number(req.query.limit);
@@ -3675,21 +3925,38 @@ app.delete("/api/employees/:id", async (req, res) => {
       const statusFilter = String(req.query.status || "all").toUpperCase();
       const allowedStatus = new Set(["ALL", "SUCCESS", "FAILED", "UNKNOWN", "SKIPPED"]);
       const normalizedStatusFilter = allowedStatus.has(statusFilter) ? statusFilter : "ALL";
+      const allowedTargets = new Set<string>(["all", ...NOMUS_SYNC_TARGETS]);
+      const normalizedTargetFilter = allowedTargets.has(targetFilter) ? targetFilter : "all";
 
       const allEntries = await listNomusSyncLogEntries();
       const sorted = allEntries.sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
 
       const integrationByBasename = await loadNomusIntegrationRunByBasename();
 
-      const summaries: NomusSyncLogSummary[] = [];
+      const scanned: NomusSyncLogSummary[] = [];
+      let scanCount = 0;
       for (const entry of sorted) {
+        if (scanCount >= MAX_NOMUS_LOG_FILES_SCAN) break;
+        scanCount += 1;
         const raw = await fs.readFile(entry.absolutePath, "utf8");
         const summary = buildNomusSummary(entry, sanitizeLogContent(raw));
         if (!summary) continue;
         const merged = mergeNomusSummaryWithIntegrationRun(summary, integrationByBasename.get(entry.fileName));
+        scanned.push(merged);
+      }
+
+      const sortTs = (s: NomusSyncLogSummary) => {
+        const stamp = s.createdAt ?? s.finishedAt ?? s.modifiedAt;
+        const n = Date.parse(stamp);
+        return Number.isFinite(n) ? n : 0;
+      };
+      scanned.sort((a, b) => sortTs(b) - sortTs(a));
+
+      const summaries: NomusSyncLogSummary[] = [];
+      for (const merged of scanned) {
         if (modeFilter !== "all" && merged.mode !== modeFilter) continue;
         if (kindFilter !== "all" && merged.kind !== kindFilter) continue;
-        if (targetFilter !== "all" && merged.target !== targetFilter) continue;
+        if (normalizedTargetFilter !== "all" && merged.target !== normalizedTargetFilter) continue;
         if (normalizedStatusFilter !== "ALL" && merged.status !== normalizedStatusFilter) continue;
         summaries.push(merged);
         if (summaries.length >= limit) break;
