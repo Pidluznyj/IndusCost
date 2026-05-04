@@ -21,7 +21,8 @@
     "postinstall": "prisma generate",
     "sync:nomus:sales-orders:apply": "tsx scripts/nomusSalesOrdersSyncV1.ts --apply",
     "sync:nomus:all:dry": "tsx scripts/nomusSyncOrchestrator.ts --dry",
-    "sync:nomus:all:apply": "tsx scripts/nomusSyncOrchestrator.ts --apply"
+    "sync:nomus:all:apply": "tsx scripts/nomusSyncOrchestrator.ts --apply",
+    "seed:price-tables": "tsx scripts/seedPriceTables.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

@@ -3020,6 +3020,61 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  // --- API: Tabelas de preço comerciais (somente leitura; Fase 1) ---
+  app.get("/api/price-tables", async (_req, res) => {
+    try {
+      const tables = await prisma.priceTable.findMany({
+        orderBy: { code: "asc" },
+        include: {
+          versions: {
+            orderBy: { versionNumber: "desc" },
+            select: {
+              id: true,
+              priceTableId: true,
+              taxRuleId: true,
+              versionNumber: true,
+              status: true,
+              generatedAt: true,
+              publishedAt: true,
+              effectiveFrom: true,
+              effectiveTo: true,
+              notes: true,
+              createdBy: true,
+              approvedBy: true,
+              generationSummaryJson: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
+        },
+      });
+
+      const payload = tables.map((t) => {
+        const published = t.versions.filter((v) => v.status === "PUBLISHED");
+        const drafts = t.versions.filter((v) => v.status === "DRAFT");
+        const latestPublished =
+          published.length === 0
+            ? null
+            : published.reduce((a, b) => (a.versionNumber >= b.versionNumber ? a : b));
+        const latestDraft =
+          drafts.length === 0 ? null : drafts.reduce((a, b) => (a.versionNumber >= b.versionNumber ? a : b));
+
+        const { versions: _v, ...rest } = t;
+        return {
+          ...rest,
+          defaultMarginPct: Number(rest.defaultMarginPct),
+          latestPublishedVersion: latestPublished,
+          latestDraftVersion: latestDraft,
+        };
+      });
+
+      res.json(payload);
+    } catch (e) {
+      console.error("GET /api/price-tables", e);
+      res.status(500).json({ error: "Erro ao listar tabelas de preço." });
+    }
+  });
+
   // --- API: Tax Rules (Módulo Tributário) ---
   app.get("/api/tax-rules", async (req, res) => {
     const rules = await prisma.taxRule.findMany({
