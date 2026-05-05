@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 APP_DIR="/opt/induscost"
 LOG_DIR="${NOMUS_SYNC_LOG_DIR:-/tmp/induscost-nomus-sync}"
-LOCK_FILE="/tmp/induscost-nomus-sales-orders.lock"
+LOCK_FILE="/tmp/induscost-nomus-sync-global.lock"
 MODE="${1:-apply}"
 
 case "$MODE" in
