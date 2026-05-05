@@ -1443,7 +1443,7 @@ export const SettingsModule = () => {
                       <div
                         key={t.target}
                         className={cn(
-                          "rounded-xl border p-4 flex flex-col gap-2 min-h-[200px]",
+                          "min-w-0 rounded-xl border p-4 flex flex-col gap-2 min-h-[200px]",
                           t.health === "OK" && "border-green-200 bg-green-50/40",
                           t.health === "WARNING" && "border-amber-200 bg-amber-50/40",
                           t.health === "FAILED" && "border-red-200 bg-red-50/40",
@@ -1452,9 +1452,9 @@ export const SettingsModule = () => {
                         )}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-xs font-bold uppercase text-muted-foreground">{t.label}</p>
-                            <p className="text-sm font-semibold mt-0.5">{t.message}</p>
+                            <p className="mt-0.5 text-sm font-semibold break-words [overflow-wrap:anywhere]">{t.message}</p>
                           </div>
                           <span
                             className={cn(
@@ -1466,10 +1466,12 @@ export const SettingsModule = () => {
                           </span>
                         </div>
                         {t.warning ? (
-                          <p className="text-xs text-amber-900 bg-amber-100/80 rounded-lg px-2 py-1.5">{t.warning}</p>
+                          <p className="rounded-lg bg-amber-100/80 px-2 py-1.5 text-xs text-amber-900 break-words [overflow-wrap:anywhere]">
+                            {t.warning}
+                          </p>
                         ) : null}
                         {t.lastRun ? (
-                          <div className="text-xs text-muted-foreground space-y-0.5">
+                          <div className="space-y-0.5 text-xs text-muted-foreground break-words [overflow-wrap:anywhere]">
                             <p>
                               <span className="font-semibold text-foreground">Última apply:</span>{" "}
                               {formatDateTimeSafe(t.lastRun.finishedAt ?? t.lastRun.createdAt)}
