@@ -3075,6 +3075,301 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  app.post("/api/price-tables/:priceTableId/versions/generate-draft", async (req, res) => {
+    const { priceTableId } = req.params;
+    const body = (req.body ?? {}) as {
+      taxRuleId?: unknown;
+      includeAllActiveProducts?: unknown;
+      productIds?: unknown;
+      notes?: unknown;
+    };
+
+    const taxRuleId = typeof body.taxRuleId === "string" && body.taxRuleId.trim() ? body.taxRuleId.trim() : null;
+    const includeAllActiveProducts = body.includeAllActiveProducts === true;
+    const productIds = Array.isArray(body.productIds)
+      ? body.productIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      : [];
+    const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
+
+    try {
+      const table = await prisma.priceTable.findUnique({ where: { id: priceTableId } });
+      if (!table) return res.status(404).json({ error: "Tabela de preço não encontrada." });
+      if (table.status !== "ACTIVE") {
+        return res.status(400).json({ error: "Apenas tabelas de preço ativas podem gerar versão DRAFT." });
+      }
+
+      let validatedTaxRule:
+        | (Awaited<ReturnType<typeof prisma.taxRule.findUnique>> & { TaxComponent: Array<{ percentage: Prisma.Decimal }> })
+        | null = null;
+      if (taxRuleId) {
+        const taxRule = await prisma.taxRule.findUnique({
+          where: { id: taxRuleId },
+          include: { TaxComponent: { select: { percentage: true } } },
+        });
+        if (!taxRule) return res.status(404).json({ error: "TaxRule não encontrada." });
+        validatedTaxRule = taxRule;
+      }
+
+      const selectedProducts = await prisma.product.findMany({
+        where: {
+          status: "ACTIVE",
+          type: "PRODUCT",
+          ...(productIds.length > 0
+            ? { id: { in: productIds } }
+            : includeAllActiveProducts
+              ? {}
+              : { id: { in: [] } }),
+        },
+        select: { id: true, sku: true, name: true },
+        orderBy: { sku: "asc" },
+      });
+      if (selectedProducts.length === 0) {
+        return res.status(400).json({ error: "Nenhum produto ativo selecionado para geração da versão." });
+      }
+
+      const version = await prisma.$transaction(async (tx) => {
+        const maxVersion = await tx.priceTableVersion.findFirst({
+          where: { priceTableId },
+          orderBy: { versionNumber: "desc" },
+          select: { versionNumber: true },
+        });
+        return tx.priceTableVersion.create({
+          data: {
+            priceTableId,
+            taxRuleId,
+            versionNumber: Number(maxVersion?.versionNumber ?? 0) + 1,
+            status: "DRAFT",
+            generatedAt: new Date(),
+            notes,
+          },
+        });
+      });
+
+      const defaultMarginPct = Number(table.defaultMarginPct);
+      const marginRate = defaultMarginPct / 100;
+      const fixedTaxRate = validatedTaxRule
+        ? validatedTaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100
+        : null;
+
+      const cache = await initAnalysisCache();
+      const summary: {
+        productsRead: number;
+        itemsCreated: number;
+        itemsSkipped: number;
+        errors: Array<{ productId: string; sku: string; productName: string; reason: string; message: string }>;
+        warnings: Array<{ productId: string; sku: string; productName: string; message: string }>;
+      } = {
+        productsRead: selectedProducts.length,
+        itemsCreated: 0,
+        itemsSkipped: 0,
+        errors: [],
+        warnings: [],
+      };
+
+      for (const product of selectedProducts) {
+        try {
+          const costData = await getProductCostAnalysis(product.id, cache, true);
+          if (!costData) {
+            summary.itemsSkipped += 1;
+            summary.errors.push({
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              reason: "PRODUCT_NOT_FOUND",
+              message: "Produto não encontrado para análise de custo.",
+            });
+            continue;
+          }
+          if (isCostAnalysisFailure(costData)) {
+            summary.itemsSkipped += 1;
+            summary.errors.push({
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              reason: String((costData as { error?: string }).error ?? "COST_ANALYSIS_ERROR"),
+              message: String((costData as { message?: string }).message ?? "Erro na análise de custo."),
+            });
+            continue;
+          }
+
+          const summaryData = (costData as any).summary || costData;
+          const custoFabril = Number(summaryData.costPerUnit || summaryData.totalIndustrialCost);
+          if (!Number.isFinite(custoFabril)) {
+            summary.itemsSkipped += 1;
+            summary.errors.push({
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              reason: "INVALID_COST",
+              message: "Custo industrial inválido para o produto.",
+            });
+            continue;
+          }
+
+          const productPricing = taxRuleId
+            ? await prisma.productPricing.findUnique({
+                where: { productId_taxRuleId: { productId: product.id, taxRuleId } },
+              })
+            : await prisma.productPricing.findFirst({
+                where: { productId: product.id },
+                include: { TaxRule: { include: { TaxComponent: true } } },
+                orderBy: { createdAt: "desc" },
+              });
+          const productPricingAny = productPricing as any;
+
+          const taxRate = fixedTaxRate ?? (
+            productPricingAny?.TaxRule?.TaxComponent
+              ? productPricingAny.TaxRule.TaxComponent.reduce((acc: number, c: any) => acc + Number(c.percentage), 0) / 100
+              : 0
+          );
+          const commRate = Number(productPricingAny?.commission ?? 0) / 100;
+          const otherRate = Number(productPricingAny?.otherVariables ?? 0) / 100;
+          const freight = Number(productPricingAny?.freightOut ?? 0);
+
+          if (!productPricing) {
+            summary.warnings.push({
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              message:
+                "Produto sem premissa em ProductPricing. Comissão/outros/frete/taxa fiscal não informada foram assumidos como zero.",
+            });
+          }
+
+          const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+          if (divisor <= 0) {
+            summary.itemsSkipped += 1;
+            summary.errors.push({
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              reason: "INVALID_DIVISOR",
+              message: "Soma de impostos/comissão/outros/margem maior ou igual a 100%.",
+            });
+            continue;
+          }
+
+          const salePrice = (custoFabril + freight) / divisor;
+          const frozenTaxCost = salePrice * taxRate;
+          const totalCommission = salePrice * commRate;
+          const totalOther = salePrice * otherRate;
+          const frozenOtherCost = totalCommission + totalOther + freight;
+
+          await prisma.priceTableItem.create({
+            data: {
+              priceTableVersionId: version.id,
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              frozenTotalCost: custoFabril,
+              frozenMaterialCost: Number((costData as any).totalMaterialCost ?? summaryData.totalMaterialCost ?? 0),
+              frozenHhCost: Number((costData as any).totalHH_Unit ?? summaryData.totalHH_Unit ?? 0),
+              frozenHmCost: Number((costData as any).totalHM_Unit ?? summaryData.totalHM_Unit ?? 0),
+              frozenTaxCost,
+              frozenOtherCost,
+              marginPct: defaultMarginPct,
+              salePrice,
+              costSnapshotJson: costData as Prisma.InputJsonValue,
+              formulaSnapshotJson: {
+                priceTableId,
+                priceTableVersionId: version.id,
+                taxRuleId: taxRuleId ?? (productPricingAny?.taxRuleId ?? null),
+                marginPct: defaultMarginPct,
+                rates: {
+                  taxRate,
+                  commissionRate: commRate,
+                  otherRate,
+                },
+                freight,
+                divisor,
+                outputs: {
+                  frozenTotalCost: custoFabril,
+                  frozenTaxCost,
+                  frozenOtherCost,
+                  salePrice,
+                },
+              } as Prisma.InputJsonValue,
+            },
+          });
+          summary.itemsCreated += 1;
+        } catch (e) {
+          summary.itemsSkipped += 1;
+          summary.errors.push({
+            productId: product.id,
+            sku: product.sku,
+            productName: product.name,
+            reason: "UNEXPECTED_ERROR",
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+
+      const updatedVersion = await prisma.priceTableVersion.update({
+        where: { id: version.id },
+        data: { generationSummaryJson: summary as Prisma.InputJsonValue },
+        include: { PriceTable: true, TaxRule: true },
+      });
+
+      return res.status(201).json({
+        version: updatedVersion,
+        summary,
+      });
+    } catch (e) {
+      console.error("POST /api/price-tables/:priceTableId/versions/generate-draft", e);
+      return res.status(500).json({ error: "Erro ao gerar versão DRAFT da tabela de preço." });
+    }
+  });
+
+  app.get("/api/price-table-versions/:id/items", async (req, res) => {
+    const { id } = req.params;
+    const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+    const limitRaw = Number.parseInt(String(req.query.limit ?? "50"), 10) || 50;
+    const limit = Math.min(200, Math.max(1, limitRaw));
+    const skip = (page - 1) * limit;
+
+    try {
+      const version = await prisma.priceTableVersion.findUnique({
+        where: { id },
+        include: {
+          PriceTable: true,
+          TaxRule: true,
+        },
+      });
+      if (!version) return res.status(404).json({ error: "Versão de tabela de preço não encontrada." });
+
+      const [items, total] = await Promise.all([
+        prisma.priceTableItem.findMany({
+          where: { priceTableVersionId: id },
+          include: {
+            Product: {
+              select: { id: true, sku: true, name: true, status: true, type: true },
+            },
+          },
+          orderBy: [{ sku: "asc" }, { productName: "asc" }],
+          skip,
+          take: limit,
+        }),
+        prisma.priceTableItem.count({ where: { priceTableVersionId: id } }),
+      ]);
+
+      return res.json({
+        version,
+        table: version.PriceTable,
+        summary: version.generationSummaryJson ?? null,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+        },
+        items,
+      });
+    } catch (e) {
+      console.error("GET /api/price-table-versions/:id/items", e);
+      return res.status(500).json({ error: "Erro ao listar itens da versão da tabela de preço." });
+    }
+  });
+
   // --- API: Tax Rules (Módulo Tributário) ---
   app.get("/api/tax-rules", async (req, res) => {
     const rules = await prisma.taxRule.findMany({
