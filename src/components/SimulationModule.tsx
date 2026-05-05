@@ -129,7 +129,7 @@ export const SimulationModule = () => {
   const [simDraftHh, setSimDraftHh] = useState("0");
   const [simDraftHm, setSimDraftHm] = useState("0");
   const [simDraftMaterials, setSimDraftMaterials] = useState<NewProductMaterialLine[]>([
-    { code: "", description: "", quantity: 0, unit: "kg", unitCost: 0, source: "MANUAL", materialId: null },
+    { code: "", description: "", quantity: 1, unit: "kg", unitCost: 0, source: "CATALOG", materialId: null },
   ]);
   const [existingComponentCosts, setExistingComponentCosts] = useState<Record<string, ExistingComponentCost>>({});
   const [existingCostLoadingId, setExistingCostLoadingId] = useState<string | null>(null);
@@ -479,7 +479,7 @@ export const SimulationModule = () => {
     setSimDraftSku("");
     setSimDraftHh("0");
     setSimDraftHm("0");
-    setSimDraftMaterials([{ code: "", description: "", quantity: 0, unit: "kg", unitCost: 0, source: "MANUAL", materialId: null }]);
+    setSimDraftMaterials([{ code: "", description: "", quantity: 1, unit: "kg", unitCost: 0, source: "CATALOG", materialId: null }]);
   };
 
   const simulatedDraftPreview = computeSimulatedComponent({
@@ -544,7 +544,7 @@ export const SimulationModule = () => {
                   ? "CATALOG"
                   : "MANUAL",
           }))
-        : [{ code: "", description: "", quantity: 0, unit: "kg", unitCost: 0, source: "MANUAL", materialId: null }]
+        : [{ code: "", description: "", quantity: 1, unit: "kg", unitCost: 0, source: "CATALOG", materialId: null }]
     );
     setNewProductInnerTab("SIM_COMPONENTS");
   };
