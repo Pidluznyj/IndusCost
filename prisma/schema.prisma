@@ -325,6 +325,11 @@ model Proposal {
   externalMovementTypeId Int?
   externalOpenedAt       DateTime?            @db.Timestamptz(6)
   externalRawPayload     Json?
+  priceTableId           String?              @db.Uuid
+  priceTableVersionId    String?              @db.Uuid
+  priceTableCode         String?
+  priceTableVersionNumber Int?
+  priceSource            String?
   CommercialActivity     CommercialActivity[]
   Customer               Customer             @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items                  ProposalItem[]
@@ -336,6 +341,9 @@ model Proposal {
   @@index([externalProposalCode])
   @@index([expectedCloseDate])
   @@index([nextActionAt])
+  @@index([priceTableId])
+  @@index([priceTableVersionId])
+  @@index([priceSource])
 }
 
 model ProposalItem {
@@ -362,7 +370,10 @@ model ProposalItem {
   externalItemId     Int?
   externalProductId  Int?
   externalItemStatus String?
-  externalRawPayload Json?
+  externalRawPayload  Json?
+  priceTableItemId    String?          @db.Uuid
+  priceSource         String?
+  pricingSnapshotJson Json?
   Product            Product          @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Proposal           Proposal         @relation(fields: [proposalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salesOrderItems    SalesOrderItem[]
@@ -371,6 +382,8 @@ model ProposalItem {
   @@index([productId])
   @@index([proposalId])
   @@index([externalProductId])
+  @@index([priceTableItemId])
+  @@index([priceSource])
 }
 
 model SalesOrder {
