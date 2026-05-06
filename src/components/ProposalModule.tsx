@@ -127,7 +127,81 @@ function normalizeProposalItem(
     freightValue: safeNum(item.freightValue),
     notes: item.notes,
     calculationExplainability: item.calculationExplainability,
+    priceTableItemId: item.priceTableItemId,
+    priceSource: item.priceSource,
+    pricingSnapshotJson: item.pricingSnapshotJson,
   };
+}
+
+type PriceTableListRow = {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  defaultMarginPct: number;
+  latestPublishedVersion: {
+    id: string;
+    versionNumber: number;
+    status: string;
+    publishedAt?: string | null;
+  } | null;
+};
+
+type PublishedPriceDefaults = {
+  unitCost: number;
+  suggestedPrice: number;
+  negotiatedPrice: number;
+  marginPerc: number;
+  taxesValue: number;
+  freightValue: number;
+};
+
+type PublishedPriceApiResponse = {
+  priceSource: string;
+  priceTable: { id: string; code: string; name: string; defaultMarginPct: number };
+  version: { id: string; versionNumber: number; status: string };
+  product: { id: string; sku: string; name: string };
+  item: {
+    priceTableItemId: string;
+    salePrice: number;
+    frozenTotalCost: number;
+    marginPct: number;
+  };
+  proposalDefaults: PublishedPriceDefaults;
+  warnings: Array<{ code: string; message: string }>;
+};
+
+function mapPublishedPriceHttpError(status: number, body: Record<string, unknown>): string {
+  const code = typeof body.code === "string" ? body.code : "";
+  if (code === "NO_PUBLISHED_PRICE_TABLE_VERSION") {
+    return "A tabela selecionada não possui versão publicada vigente.";
+  }
+  if (code === "NO_PRICE_TABLE_ITEM") {
+    return "Produto não encontrado na versão publicada da tabela selecionada.";
+  }
+  if (code === "PRODUCT_NOT_FOUND") {
+    return "Produto não encontrado.";
+  }
+  const msg = typeof body.message === "string" ? body.message.trim() : "";
+  if (msg) return msg;
+  return "Não foi possível carregar o preço publicado deste produto.";
+}
+
+async function fetchPublishedPriceJson(
+  priceTableId: string,
+  productId: string
+): Promise<PublishedPriceApiResponse> {
+  const res = await fetch(`/api/price-tables/${priceTableId}/products/${productId}/published-price`);
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  if (!res.ok) {
+    throw new Error(mapPublishedPriceHttpError(res.status, body));
+  }
+  return body as unknown as PublishedPriceApiResponse;
 }
 
 export const ProposalModule = () => {
@@ -154,6 +228,9 @@ export const ProposalModule = () => {
   const [proposalIndicatorsDetailOpen, setProposalIndicatorsDetailOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [salesOrderActionId, setSalesOrderActionId] = useState<string | null>(null);
+  const [priceTables, setPriceTables] = useState<PriceTableListRow[]>([]);
+  /** Avisos de preço publicado (piloto etc.) nesta sessão de edição; limpa ao mudar tabela. */
+  const [tablePriceSessionAlerts, setTablePriceSessionAlerts] = useState<string[]>([]);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -183,11 +260,99 @@ export const ProposalModule = () => {
       setCustomers(Array.isArray(c) ? c : []);
       setProducts(Array.isArray(pr) ? pr : []);
       setResponsibleOptions(Array.isArray(r) ? r : []);
+      let pt: PriceTableListRow[] = [];
+      try {
+        pt = await fetchJsonOk<PriceTableListRow[]>("/api/price-tables");
+      } catch (e) {
+        console.warn("GET /api/price-tables (propostas):", e);
+      }
+      setPriceTables(Array.isArray(pt) ? pt.filter((t) => String(t.status).toUpperCase() === "ACTIVE") : []);
     } catch (error) {
       console.error("Erro ao buscar cadastros:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar cadastros.");
     }
   }, []);
+
+  const priceTableSelectOptions = useMemo((): SelectOption[] => {
+    const opts: SelectOption[] = [
+      {
+        value: "",
+        label: "Sem tabela / preço manual",
+        searchTerms: "sem tabela manual legado pricing snapshot",
+      },
+    ];
+    for (const t of priceTables) {
+      const pub = t.latestPublishedVersion;
+      if (!pub) continue;
+      opts.push({
+        value: t.id,
+        label: `${t.name} (${t.code})`,
+        sublabel: `Versão publicada v${pub.versionNumber}`,
+        searchTerms: `${t.name} ${t.code} atacado varejo`,
+      });
+    }
+    return opts;
+  }, [priceTables]);
+
+  const warningsFromItemSnapshots = useMemo(() => {
+    const lines = new Set<string>();
+    for (const it of formData.items || []) {
+      const raw = it.pricingSnapshotJson?.warnings;
+      if (!Array.isArray(raw)) continue;
+      for (const w of raw) {
+        if (w && typeof w === "object" && "message" in w && typeof (w as { message?: unknown }).message === "string") {
+          const m = String((w as { message: string }).message).trim();
+          if (m) lines.add(m);
+        }
+        if (typeof w === "string" && w.trim()) lines.add(w.trim());
+      }
+    }
+    return Array.from(lines);
+  }, [formData.items]);
+
+  const mergedTablePriceAlerts = useMemo(() => {
+    return Array.from(new Set([...warningsFromItemSnapshots, ...tablePriceSessionAlerts]));
+  }, [warningsFromItemSnapshots, tablePriceSessionAlerts]);
+
+  const handlePriceTableSelectionChange = useCallback(
+    (nextTableId: string) => {
+      const hasItems = (formData.items?.length ?? 0) > 0;
+      const currentId = formData.priceTableId ?? "";
+      const nextId = nextTableId.trim();
+      if (hasItems && currentId !== nextId) {
+        alert(
+          "Remova os itens da proposta antes de trocar a tabela de preço, para evitar mistura de preços de origens diferentes."
+        );
+        return;
+      }
+      setTablePriceSessionAlerts([]);
+      if (!nextId) {
+        setFormData((prev) => ({
+          ...prev,
+          priceTableId: null,
+          priceTableVersionId: null,
+          priceTableCode: null,
+          priceTableVersionNumber: null,
+          priceSource: null,
+        }));
+        return;
+      }
+      const table = priceTables.find((t) => t.id === nextId);
+      if (!table?.latestPublishedVersion) {
+        alert("A tabela selecionada não possui versão publicada vigente.");
+        return;
+      }
+      setFormData((prev) => ({
+        ...prev,
+        priceTableId: table.id,
+        priceTableVersionId: table.latestPublishedVersion.id,
+        priceTableCode: table.code,
+        priceTableVersionNumber: table.latestPublishedVersion.versionNumber,
+        priceSource: "PRICE_TABLE",
+      }));
+    },
+    [formData.items, formData.priceTableId, priceTables]
+  );
 
   const listFiltersKey = useMemo(
     () =>
@@ -333,6 +498,7 @@ export const ProposalModule = () => {
     setEditingProposal(null);
     setFormTab("items");
     setProposalIndicatorsDetailOpen(false);
+    setTablePriceSessionAlerts([]);
     setFormData({
       title: "",
       customerId: "",
@@ -345,7 +511,7 @@ export const ProposalModule = () => {
       freightCondition: "CIF",
       deliveryLocation: "",
       notes: "",
-      items: []
+      items: [],
     });
     setAnalysisProposalId(null);
     setView("form");
@@ -360,6 +526,7 @@ export const ProposalModule = () => {
         ? data.items.map((it: ProposalItem) => normalizeProposalItem(it))
         : [];
       setEditingProposal(data);
+      setTablePriceSessionAlerts([]);
       setFormData({ ...data, items });
       setFormTab("items");
     setProposalIndicatorsDetailOpen(false);
@@ -398,7 +565,7 @@ export const ProposalModule = () => {
 
     const items = (formData.items || []).map((raw) => {
       const item = normalizeProposalItem(raw as ProposalItem);
-      return {
+      const row: Record<string, unknown> = {
         productId: item.productId,
         quantity: safeNum(item.quantity, 1),
         unit: item.unit ?? "UN",
@@ -416,9 +583,13 @@ export const ProposalModule = () => {
         freightValue: safeNum(item.freightValue),
         notes: item.notes ?? null,
       };
+      if (item.priceTableItemId !== undefined) row.priceTableItemId = item.priceTableItemId;
+      if (item.priceSource !== undefined) row.priceSource = item.priceSource;
+      if (item.pricingSnapshotJson !== undefined) row.pricingSnapshotJson = item.pricingSnapshotJson;
+      return row;
     });
 
-    return {
+    const payload: Record<string, unknown> = {
       title: formData.title?.trim() || null,
       customerId: formData.customerId,
       status,
@@ -444,6 +615,12 @@ export const ProposalModule = () => {
       totalFreight: safeNum(formData.totalFreight),
       items,
     };
+    if (formData.priceTableId !== undefined) payload.priceTableId = formData.priceTableId;
+    if (formData.priceTableVersionId !== undefined) payload.priceTableVersionId = formData.priceTableVersionId;
+    if (formData.priceTableCode !== undefined) payload.priceTableCode = formData.priceTableCode;
+    if (formData.priceTableVersionNumber !== undefined) payload.priceTableVersionNumber = formData.priceTableVersionNumber;
+    if (formData.priceSource !== undefined) payload.priceSource = formData.priceSource;
+    return payload;
   }, [formData]);
 
   const handleSave = async () => {
@@ -513,10 +690,73 @@ export const ProposalModule = () => {
   };
 
   const addItem = async (productId: string) => {
-    const product = products.find(p => p.id === productId);
+    const product = products.find((p) => p.id === productId);
     if (!product) return;
 
+    const selectedTableId = formData.priceTableId?.trim() || "";
+
     try {
+      const qty = 1;
+
+      if (selectedTableId) {
+        const data = await fetchPublishedPriceJson(selectedTableId, productId);
+        const df = data.proposalDefaults;
+        const unitCost = safeNum(df.unitCost);
+        const suggestedPrice = safeNum(df.suggestedPrice);
+        const negotiatedPrice = safeNum(df.negotiatedPrice);
+        const taxesValueFixed = safeNum(df.taxesValue);
+        const freightVal = safeNum(df.freightValue);
+        const marginPercFromTable = safeNum(df.marginPerc);
+        const gross = qty * suggestedPrice;
+        const totalCost = qty * unitCost;
+        const taxesPerc = gross > 0 ? safeNum((taxesValueFixed / gross) * 100) : 0;
+        const commissionPerc = 0;
+        const commissionValue = 0;
+        const marginValue = safeNum(
+          gross - taxesValueFixed - commissionValue - freightVal - totalCost
+        );
+
+        const snapshotPayload: Record<string, unknown> = {
+          ...(data as unknown as Record<string, unknown>),
+          capturedAt: new Date().toISOString(),
+        };
+
+        const newItem = normalizeProposalItem({
+          productId,
+          Product: product,
+          quantity: qty,
+          unit: "UN",
+          unitCost,
+          suggestedPrice,
+          negotiatedPrice,
+          discountPerc: 0,
+          discountValue: 0,
+          marginValue,
+          marginPerc: marginPercFromTable,
+          taxesPerc,
+          taxesValue: taxesValueFixed,
+          commissionPerc,
+          commissionValue,
+          freightValue: freightVal,
+          priceTableItemId: data.item.priceTableItemId,
+          priceSource: "PRICE_TABLE",
+          pricingSnapshotJson: snapshotPayload,
+        });
+
+        const warnMsgs = (data.warnings ?? [])
+          .map((w) => (typeof w?.message === "string" ? w.message.trim() : ""))
+          .filter(Boolean);
+        if (warnMsgs.length) {
+          setTablePriceSessionAlerts((prev) => Array.from(new Set([...prev, ...warnMsgs])));
+        }
+
+        setFormData((prev) => ({
+          ...prev,
+          items: [...(prev.items || []), newItem],
+        }));
+        return;
+      }
+
       const snapshot = await fetchJsonOk<{
         unitCost?: unknown;
         suggestedPrice?: unknown;
@@ -532,7 +772,6 @@ export const ProposalModule = () => {
       const commissionPerc = safeNum(snapshot.commissionPerc);
       const freightVal = safeNum(snapshot.freightValue);
 
-      const qty = 1;
       const gross = qty * suggestedPrice;
       const totalCost = qty * unitCost;
       const taxesValue = gross * (taxesPerc / 100);
@@ -562,9 +801,9 @@ export const ProposalModule = () => {
         calculationExplainability: snapshot.calculationExplainability,
       });
 
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        items: [...(prev.items || []), newItem]
+        items: [...(prev.items || []), newItem],
       }));
     } catch (error) {
       console.error("Erro ao adicionar item:", error);
@@ -729,6 +968,33 @@ export const ProposalModule = () => {
           </div>
         </div>
 
+        {(formData.priceSource === "PRICE_TABLE" && formData.priceTableCode && formData.priceTableVersionNumber != null) ||
+        mergedTablePriceAlerts.length > 0 ? (
+          <div className="space-y-2">
+            {formData.priceSource === "PRICE_TABLE" &&
+              formData.priceTableCode &&
+              formData.priceTableVersionNumber != null && (
+                <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-4 py-2 text-sm text-emerald-950 dark:text-emerald-50">
+                  Esta proposta utiliza tabela de preço publicada:{" "}
+                  <span className="font-semibold">
+                    {formData.priceTableCode} v{formData.priceTableVersionNumber}
+                  </span>
+                  .
+                </div>
+              )}
+            {mergedTablePriceAlerts.length > 0 && (
+              <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-50">
+                <p className="font-semibold">A tabela publicada possui avisos. Revise antes de enviar a proposta.</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                  {mergedTablePriceAlerts.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column: Client & Conditions */}
           <div className="lg:col-span-1 space-y-6">
@@ -770,6 +1036,23 @@ export const ProposalModule = () => {
                     value={formData.customerId || ""}
                     onChange={(val) => setFormData({...formData, customerId: val})}
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">
+                    Tabela de preço comercial
+                  </label>
+                  <SearchableSelect
+                    placeholder="Sem tabela / preço manual"
+                    options={priceTableSelectOptions}
+                    value={formData.priceTableId ?? ""}
+                    disabled={(formData.items?.length ?? 0) > 0}
+                    unknownSelectionLabel="Tabela não listada (verifique cadastro ou publicação)"
+                    onChange={(val) => handlePriceTableSelectionChange(val ?? "")}
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-snug">
+                    Só aparecem tabelas ativas com versão publicada. Com itens já adicionados, a troca fica bloqueada.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -953,6 +1236,31 @@ export const ProposalModule = () => {
                             <div className="max-w-[200px]">
                               <p className="text-xs font-bold truncate">{item.Product?.sku}</p>
                               <p className="text-[10px] text-muted-foreground truncate">{item.Product?.name}</p>
+                              {item.priceSource === "PRICE_TABLE" && (
+                                <span
+                                  className="mt-1 inline-block rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground"
+                                  title="Preço congelado da tabela publicada"
+                                >
+                                  Preço da tabela
+                                  {(() => {
+                                    if (
+                                      formData.priceTableCode &&
+                                      formData.priceTableVersionNumber != null &&
+                                      Number.isFinite(Number(formData.priceTableVersionNumber))
+                                    ) {
+                                      return ` · ${formData.priceTableCode} v${formData.priceTableVersionNumber}`;
+                                    }
+                                    const s = item.pricingSnapshotJson as Record<string, unknown> | null | undefined;
+                                    const pt = s?.priceTable as { code?: string } | undefined;
+                                    const ver = s?.version as { versionNumber?: unknown } | undefined;
+                                    const vn = Number(ver?.versionNumber);
+                                    if (pt?.code && Number.isFinite(vn)) {
+                                      return ` · ${pt.code} v${vn}`;
+                                    }
+                                    return "";
+                                  })()}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="p-3">

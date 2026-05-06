@@ -58,6 +58,10 @@ export interface ProposalItem {
     unitCost?: CalculationExplanation;
     suggestedPrice?: CalculationExplanation;
   };
+  priceTableItemId?: string | null;
+  priceSource?: string | null;
+  /** Cópia auditável da resposta de preço publicado (ou legível pelo backend). */
+  pricingSnapshotJson?: Record<string, unknown> | null;
 }
 
 /** Pedido interno vinculado à proposta (quando existir). */
@@ -101,6 +105,12 @@ export interface Proposal {
   items: ProposalItem[];
   createdAt: string;
   updatedAt: string;
+
+  priceTableId?: string | null;
+  priceTableVersionId?: string | null;
+  priceTableCode?: string | null;
+  priceTableVersionNumber?: number | null;
+  priceSource?: string | null;
 }
 
 export interface CreateProposalInput {
@@ -128,6 +138,12 @@ export interface CreateProposalInput {
   totalTaxes: number;
   totalCommission: number;
   totalFreight: number;
+
+  priceTableId?: string | null;
+  priceTableVersionId?: string | null;
+  priceTableCode?: string | null;
+  priceTableVersionNumber?: number | null;
+  priceSource?: string | null;
 
   items: Omit<ProposalItem, "id" | "proposalId" | "Product">[];
 }
