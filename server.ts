@@ -3435,6 +3435,107 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  app.post("/api/price-table-versions/:id/publish", async (req, res) => {
+    const { id } = req.params;
+    const body = (req.body ?? {}) as {
+      effectiveFrom?: unknown;
+      approvedBy?: unknown;
+      forcePublishWithWarnings?: unknown;
+    };
+
+    const approvedBy = typeof body.approvedBy === "string" && body.approvedBy.trim().length > 0 ? body.approvedBy.trim() : null;
+    const forcePublishWithWarnings = body.forcePublishWithWarnings === true;
+    const effectiveFromInput =
+      typeof body.effectiveFrom === "string" && body.effectiveFrom.trim().length > 0
+        ? new Date(body.effectiveFrom)
+        : null;
+    if (effectiveFromInput && Number.isNaN(effectiveFromInput.getTime())) {
+      return res.status(400).json({ error: "effectiveFrom inválido." });
+    }
+
+    try {
+      const version = await prisma.priceTableVersion.findUnique({
+        where: { id },
+        include: { PriceTable: true, TaxRule: true },
+      });
+      if (!version) return res.status(404).json({ error: "Versão de tabela de preço não encontrada." });
+      if (version.status !== "DRAFT") {
+        return res.status(400).json({ error: "Apenas versões DRAFT podem ser publicadas." });
+      }
+
+      const itemsCount = await prisma.priceTableItem.count({ where: { priceTableVersionId: id } });
+      if (itemsCount <= 0) {
+        return res.status(400).json({ error: "Versão DRAFT sem itens. Gere itens antes de publicar." });
+      }
+
+      const summaryRaw = version.generationSummaryJson as Record<string, unknown> | null;
+      const summaryErrors = Array.isArray(summaryRaw?.errors) ? (summaryRaw!.errors as Array<Record<string, unknown>>) : [];
+      const summaryWarnings = Array.isArray(summaryRaw?.warnings)
+        ? (summaryRaw!.warnings as Array<Record<string, unknown>>)
+        : [];
+
+      if (summaryErrors.length > 0) {
+        return res.status(409).json({
+          error: "A versão possui errors no generationSummaryJson e não pode ser publicada.",
+          errorsCount: summaryErrors.length,
+          errorsPreview: summaryErrors.slice(0, 20),
+        });
+      }
+
+      if (summaryWarnings.length > 0 && !forcePublishWithWarnings) {
+        return res.status(409).json({
+          error: "A versão possui warnings. Confirme forcePublishWithWarnings=true para publicar mesmo assim.",
+          warningsCount: summaryWarnings.length,
+          warnings: summaryWarnings.slice(0, 20),
+        });
+      }
+
+      const effectiveFrom = effectiveFromInput ?? new Date();
+      const publishedAt = new Date();
+
+      const published = await prisma.$transaction(async (tx) => {
+        const archiveWhere: Prisma.PriceTableVersionWhereInput = {
+          id: { not: id },
+          priceTableId: version.priceTableId,
+          taxRuleId: version.taxRuleId,
+          status: "PUBLISHED",
+        };
+
+        const archived = await tx.priceTableVersion.updateMany({
+          where: archiveWhere,
+          data: {
+            status: "ARCHIVED",
+            effectiveTo: effectiveFrom,
+          },
+        });
+
+        const currentPublished = await tx.priceTableVersion.update({
+          where: { id },
+          data: {
+            status: "PUBLISHED",
+            publishedAt,
+            effectiveFrom,
+            effectiveTo: null,
+            approvedBy,
+          },
+          include: { PriceTable: true, TaxRule: true },
+        });
+
+        return { currentPublished, archivedVersionsCount: archived.count };
+      });
+
+      return res.json({
+        version: published.currentPublished,
+        archivedVersionsCount: published.archivedVersionsCount,
+        published: true,
+        warningsAccepted: summaryWarnings.length > 0,
+      });
+    } catch (e) {
+      console.error("POST /api/price-table-versions/:id/publish", e);
+      return res.status(500).json({ error: "Erro ao publicar versão da tabela de preço." });
+    }
+  });
+
   // --- API: Tax Rules (Módulo Tributário) ---
   app.get("/api/tax-rules", async (req, res) => {
     const rules = await prisma.taxRule.findMany({
