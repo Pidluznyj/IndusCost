@@ -7144,6 +7144,96 @@ app.delete("/api/employees/:id", async (req, res) => {
     return typeof value === "string" && PROPOSAL_STATUS_VALUES.includes(value as any);
   }
 
+  /** Escalares persistíveis em Proposal (POST/PUT); evita chaves desconhecidas/relações no spread para o Prisma. */
+  const PROPOSAL_WRITE_SCALAR_KEYS = [
+    "title",
+    "customerId",
+    "status",
+    "responsible",
+    "companyIssuer",
+    "validityDays",
+    "paymentTerms",
+    "paymentMethod",
+    "deliveryTimeDays",
+    "freightCondition",
+    "deliveryLocation",
+    "notes",
+    "internalNotes",
+    "totalItems",
+    "totalGrossValue",
+    "totalDiscount",
+    "totalNetValue",
+    "totalCost",
+    "totalMarginValue",
+    "totalMarginPerc",
+    "totalTaxes",
+    "totalCommission",
+    "totalFreight",
+    "expectedCloseDate",
+    "source",
+    "lossReason",
+    "lossReasonDetail",
+    "probabilityPerc",
+    "priority",
+    "nextActionAt",
+    "nextActionNote",
+    "sourceSystem",
+    "externalProposalId",
+    "externalProposalCode",
+    "externalCustomerId",
+    "externalSellerId",
+    "externalCompanyId",
+    "externalMovementTypeId",
+    "externalOpenedAt",
+    "externalRawPayload",
+    "priceTableId",
+    "priceTableVersionId",
+    "priceTableCode",
+    "priceTableVersionNumber",
+    "priceSource",
+  ] as const;
+
+  function pickProposalWriteScalars(body: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const key of PROPOSAL_WRITE_SCALAR_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(body, key)) {
+        out[key] = body[key];
+      }
+    }
+    return out;
+  }
+
+  function buildProposalItemCreateInput(item: Record<string, unknown>) {
+    const row: Record<string, unknown> = {
+      productId: item.productId,
+      quantity: item.quantity,
+      unit: item.unit,
+      unitCost: item.unitCost,
+      suggestedPrice: item.suggestedPrice,
+      negotiatedPrice: item.negotiatedPrice,
+      discountPerc: item.discountPerc,
+      discountValue: item.discountValue,
+      marginValue: item.marginValue,
+      marginPerc: item.marginPerc,
+      taxesPerc: item.taxesPerc,
+      taxesValue: item.taxesValue,
+      commissionPerc: item.commissionPerc,
+      commissionValue: item.commissionValue,
+      freightValue: item.freightValue,
+      notes: item.notes,
+    };
+    if (Object.prototype.hasOwnProperty.call(item, "priceTableItemId")) {
+      row.priceTableItemId = item.priceTableItemId;
+    }
+    if (Object.prototype.hasOwnProperty.call(item, "priceSource")) {
+      row.priceSource = item.priceSource;
+    }
+    if (Object.prototype.hasOwnProperty.call(item, "pricingSnapshotJson")) {
+      row.pricingSnapshotJson = item.pricingSnapshotJson;
+    }
+    return row;
+  }
+
   function parsePositiveIntQuery(value: unknown, fallback: number): number {
     const raw = Array.isArray(value) ? value[0] : value;
     const parsed = Number.parseInt(String(raw ?? ""), 10);
@@ -7454,31 +7544,15 @@ app.delete("/api/employees/:id", async (req, res) => {
         error: `Status inválido. Use um dos valores: ${PROPOSAL_STATUS_VALUES.join(", ")}.`,
       });
     }
+    const proposalScalars = pickProposalWriteScalars(proposalData as Record<string, unknown>);
     const proposal = await prisma.proposal.create({
       data: {
-        ...proposalData,
+        ...(proposalScalars as any),
         items: {
-          create: items.map((item: any) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            unit: item.unit,
-            unitCost: item.unitCost,
-            suggestedPrice: item.suggestedPrice,
-            negotiatedPrice: item.negotiatedPrice,
-            discountPerc: item.discountPerc,
-            discountValue: item.discountValue,
-            marginValue: item.marginValue,
-            marginPerc: item.marginPerc,
-            taxesPerc: item.taxesPerc,
-            taxesValue: item.taxesValue,
-            commissionPerc: item.commissionPerc,
-            commissionValue: item.commissionValue,
-            freightValue: item.freightValue,
-            notes: item.notes,
-          }))
-        }
+          create: items.map((item: any) => buildProposalItemCreateInput(item as Record<string, unknown>)),
+        },
       },
-      include: { items: true }
+      include: { items: true },
     });
     res.json(proposal);
   });
@@ -7495,34 +7569,18 @@ app.delete("/api/employees/:id", async (req, res) => {
       });
     }
 
+    const proposalScalars = pickProposalWriteScalars(proposalData as Record<string, unknown>);
     const proposal = await prisma.$transaction(async (tx) => {
       await tx.proposalItem.deleteMany({ where: { proposalId: id } });
       return await tx.proposal.update({
         where: { id },
         data: {
-          ...proposalData,
+          ...(proposalScalars as any),
           items: {
-            create: items.map((item: any) => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              unit: item.unit,
-              unitCost: item.unitCost,
-              suggestedPrice: item.suggestedPrice,
-              negotiatedPrice: item.negotiatedPrice,
-              discountPerc: item.discountPerc,
-              discountValue: item.discountValue,
-              marginValue: item.marginValue,
-              marginPerc: item.marginPerc,
-              taxesPerc: item.taxesPerc,
-              taxesValue: item.taxesValue,
-              commissionPerc: item.commissionPerc,
-              commissionValue: item.commissionValue,
-              freightValue: item.freightValue,
-              notes: item.notes,
-            }))
-          }
+            create: items.map((item: any) => buildProposalItemCreateInput(item as Record<string, unknown>)),
+          },
         },
-        include: { items: true }
+        include: { items: true },
       });
     });
     res.json(proposal);
