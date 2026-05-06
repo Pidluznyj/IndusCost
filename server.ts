@@ -3156,8 +3156,8 @@ app.delete("/api/employees/:id", async (req, res) => {
         productsRead: number;
         itemsCreated: number;
         itemsSkipped: number;
-        errors: Array<{ productId: string; sku: string; productName: string; reason: string; message: string }>;
-        warnings: Array<{ productId: string; sku: string; productName: string; message: string }>;
+        errors: Array<Record<string, unknown>>;
+        warnings: Array<Record<string, unknown>>;
       } = {
         productsRead: selectedProducts.length,
         itemsCreated: 0,
@@ -3172,10 +3172,10 @@ app.delete("/api/employees/:id", async (req, res) => {
           if (!costData) {
             summary.itemsSkipped += 1;
             summary.errors.push({
+              code: "PRODUCT_NOT_FOUND",
               productId: product.id,
               sku: product.sku,
               productName: product.name,
-              reason: "PRODUCT_NOT_FOUND",
               message: "Produto não encontrado para análise de custo.",
             });
             continue;
@@ -3183,25 +3183,67 @@ app.delete("/api/employees/:id", async (req, res) => {
           if (isCostAnalysisFailure(costData)) {
             summary.itemsSkipped += 1;
             summary.errors.push({
+              code: String((costData as { error?: string }).error ?? "COST_ANALYSIS_ERROR"),
               productId: product.id,
               sku: product.sku,
               productName: product.name,
-              reason: String((costData as { error?: string }).error ?? "COST_ANALYSIS_ERROR"),
               message: String((costData as { message?: string }).message ?? "Erro na análise de custo."),
             });
             continue;
           }
 
-          const summaryData = (costData as any).summary || costData;
-          const custoFabril = Number(summaryData.costPerUnit || summaryData.totalIndustrialCost);
-          if (!Number.isFinite(custoFabril)) {
-            summary.itemsSkipped += 1;
-            summary.errors.push({
+          const excludedBomLines = Array.isArray((costData as any).excludedBomLines)
+            ? ((costData as any).excludedBomLines as Array<Record<string, unknown>>)
+            : [];
+          const costWarnings = Array.isArray((costData as any).warnings)
+            ? ((costData as any).warnings as Array<Record<string, unknown>>)
+            : [];
+          const isPartialCost = Boolean((costData as any).costAnalysisPartial) || excludedBomLines.length > 0;
+          if (isPartialCost) {
+            summary.warnings.push({
+              code: "PARTIAL_COST_ANALYSIS",
               productId: product.id,
               sku: product.sku,
               productName: product.name,
-              reason: "INVALID_COST",
-              message: "Custo industrial inválido para o produto.",
+              excludedBomLinesCount: excludedBomLines.length,
+              excludedBomLinesPreview: excludedBomLines.slice(0, 10).map((line) => ({
+                sku: line.sku ?? line.childSku ?? null,
+                name: line.name ?? line.childName ?? null,
+                errorCode: line.errorCode ?? line.code ?? null,
+                message: line.message ?? null,
+              })),
+              message: "Produto gerado com custo parcial. Existem componentes excluídos do cálculo.",
+            });
+          }
+          if (costWarnings.length > 0) {
+            summary.warnings.push({
+              code: "COST_ANALYSIS_WARNINGS",
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              warningsCount: costWarnings.length,
+              warningsPreview: costWarnings.slice(0, 10).map((w) => ({
+                code: w.code ?? null,
+                severity: w.severity ?? null,
+                message: w.message ?? null,
+              })),
+              message: "Produto com warnings internos no motor de custo.",
+            });
+          }
+
+          const summaryData = (costData as any).summary || costData;
+          const custoFabril = Number(summaryData.costPerUnit || summaryData.totalIndustrialCost);
+          if (!Number.isFinite(custoFabril) || custoFabril <= 0) {
+            summary.itemsSkipped += 1;
+            summary.errors.push({
+              code: "NO_COST_AVAILABLE",
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              frozenTotalCost: Number.isFinite(custoFabril) ? custoFabril : null,
+              salePrice: null,
+              message:
+                "Produto sem custo calculável (> 0). PriceTableItem não foi criado para evitar preço comercial inválido.",
             });
             continue;
           }
@@ -3240,16 +3282,38 @@ app.delete("/api/employees/:id", async (req, res) => {
           if (divisor <= 0) {
             summary.itemsSkipped += 1;
             summary.errors.push({
+              code: "INVALID_PRICING_DIVISOR",
               productId: product.id,
               sku: product.sku,
               productName: product.name,
-              reason: "INVALID_DIVISOR",
+              divisor,
+              rates: {
+                taxRate,
+                commRate,
+                otherRate,
+                marginRate,
+              },
               message: "Soma de impostos/comissão/outros/margem maior ou igual a 100%.",
             });
             continue;
           }
 
           const salePrice = (custoFabril + freight) / divisor;
+          if (!Number.isFinite(salePrice) || salePrice <= 0) {
+            summary.itemsSkipped += 1;
+            summary.errors.push({
+              code: "INVALID_PRICE_RESULT",
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              frozenTotalCost: custoFabril,
+              salePrice: Number.isFinite(salePrice) ? salePrice : null,
+              message:
+                "Preço calculado inválido (<= 0). PriceTableItem não foi criado para evitar snapshot comercial inconsistente.",
+            });
+            continue;
+          }
+
           const frozenTaxCost = salePrice * taxRate;
           const totalCommission = salePrice * commRate;
           const totalOther = salePrice * otherRate;
@@ -3295,10 +3359,10 @@ app.delete("/api/employees/:id", async (req, res) => {
         } catch (e) {
           summary.itemsSkipped += 1;
           summary.errors.push({
+            code: "UNEXPECTED_ERROR",
             productId: product.id,
             sku: product.sku,
             productName: product.name,
-            reason: "UNEXPECTED_ERROR",
             message: e instanceof Error ? e.message : String(e),
           });
         }
@@ -3310,9 +3374,10 @@ app.delete("/api/employees/:id", async (req, res) => {
         include: { PriceTable: true, TaxRule: true },
       });
 
+      const persistedSummary = (updatedVersion.generationSummaryJson ?? summary) as Prisma.JsonValue;
       return res.status(201).json({
         version: updatedVersion,
-        summary,
+        summary: persistedSummary,
       });
     } catch (e) {
       console.error("POST /api/price-tables/:priceTableId/versions/generate-draft", e);
