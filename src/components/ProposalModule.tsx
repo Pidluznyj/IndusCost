@@ -974,18 +974,20 @@ export const ProposalModule = () => {
             {formData.priceSource === "PRICE_TABLE" &&
               formData.priceTableCode &&
               formData.priceTableVersionNumber != null && (
-                <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-4 py-2 text-sm text-emerald-950 dark:text-emerald-50">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-950 dark:border-emerald-700 dark:bg-emerald-50 dark:text-emerald-950">
                   Esta proposta utiliza tabela de preço publicada:{" "}
-                  <span className="font-semibold">
+                  <span className="font-semibold text-emerald-950">
                     {formData.priceTableCode} v{formData.priceTableVersionNumber}
                   </span>
                   .
                 </div>
               )}
             {mergedTablePriceAlerts.length > 0 && (
-              <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-50">
-                <p className="font-semibold">A tabela publicada possui avisos. Revise antes de enviar a proposta.</p>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-50 dark:text-amber-950">
+                <p className="font-semibold text-amber-950">
+                  A tabela publicada possui avisos. Revise antes de enviar a proposta.
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-950">
                   {mergedTablePriceAlerts.map((line) => (
                     <li key={line}>{line}</li>
                   ))}
