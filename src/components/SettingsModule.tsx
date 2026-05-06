@@ -21,6 +21,7 @@ import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { SETTINGS_TOUR_STEPS } from "@/src/tours/settingsTourSteps";
+import { AppAlert } from "@/src/components/shared/AppAlert";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -157,7 +158,93 @@ type NomusSyncLogDetail = {
   content: string;
 };
 
-type HubSection = "globals" | "operational" | "nomusSync" | "integrations" | "security" | "system";
+type PriceTableVersionSummary = {
+  productsRead?: unknown;
+  itemsCreated?: unknown;
+  itemsSkipped?: unknown;
+  errors?: unknown;
+  warnings?: unknown;
+};
+
+type PriceTableVersionView = {
+  id: string;
+  priceTableId: string;
+  taxRuleId?: string | null;
+  versionNumber: number;
+  status: string;
+  generatedAt?: string | null;
+  publishedAt?: string | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  notes?: string | null;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  generationSummaryJson?: PriceTableVersionSummary | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PriceTableView = {
+  id: string;
+  code: string;
+  name: string;
+  defaultMarginPct: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  latestPublishedVersion?: PriceTableVersionView | null;
+  latestDraftVersion?: PriceTableVersionView | null;
+  versions?: PriceTableVersionView[];
+};
+
+type PriceTableVersionItemView = {
+  sku?: string | null;
+  productName?: string | null;
+  frozenTotalCost?: number | string | null;
+  frozenMaterialCost?: number | string | null;
+  frozenHhCost?: number | string | null;
+  frozenHmCost?: number | string | null;
+  frozenTaxCost?: number | string | null;
+  frozenOtherCost?: number | string | null;
+  marginPct?: number | string | null;
+  salePrice?: number | string | null;
+};
+
+type PriceTableVersionItemsResponse = {
+  version: PriceTableVersionView;
+  table: PriceTableView;
+  summary?: PriceTableVersionSummary | null;
+  pagination?: {
+    page?: number;
+    limit?: number;
+    total?: number;
+    totalPages?: number;
+  };
+  items?: PriceTableVersionItemView[];
+};
+
+type TaxRuleLite = {
+  id: string;
+  name: string;
+  status?: string | null;
+  TaxComponent?: Array<{ percentage?: number | string | null }>;
+};
+
+type DraftGenerationSummary = {
+  productsRead: number;
+  itemsCreated: number;
+  itemsSkipped: number;
+  errorsCount: number;
+  warningsCount: number;
+};
+
+type PublishBlockState = {
+  reason: "ERRORS" | "WARNINGS";
+  count: number;
+  message: string;
+};
+
+type HubSection = "globals" | "operational" | "nomusSync" | "priceTables" | "integrations" | "security" | "system";
 type OperationalSubTab = "roles" | "payroll";
 
 const HUB_SECTIONS: Array<{
@@ -185,6 +272,13 @@ const HUB_SECTIONS: Array<{
     id: "nomusSync",
     title: "Logs de Sincronização Nomus",
     description: "Monitoramento das sincronizações Nomus: clientes, produtos, propostas e pedidos de venda.",
+    status: "operational",
+    note: "Operacional hoje",
+  },
+  {
+    id: "priceTables",
+    title: "Tabelas de Preço Comerciais",
+    description: "Gerencie versões comerciais de preço por canal, com custos e margens congelados.",
     status: "operational",
     note: "Operacional hoje",
   },
@@ -289,6 +383,43 @@ export const SettingsModule = () => {
   const [nomusDetailLoadingFile, setNomusDetailLoadingFile] = useState<string | null>(null);
   const [nomusSelectedDetail, setNomusSelectedDetail] = useState<NomusSyncLogDetail | null>(null);
   const [nomusReloadSeq, setNomusReloadSeq] = useState(0);
+  const [priceTables, setPriceTables] = useState<PriceTableView[]>([]);
+  const [priceTablesLoading, setPriceTablesLoading] = useState(false);
+  const [priceTablesError, setPriceTablesError] = useState<string | null>(null);
+  const [selectedPriceTableId, setSelectedPriceTableId] = useState<string>("");
+  const [selectedPriceTableVersionId, setSelectedPriceTableVersionId] = useState<string>("");
+  const [priceTableItemsPage, setPriceTableItemsPage] = useState(1);
+  const [priceTableItemsLoading, setPriceTableItemsLoading] = useState(false);
+  const [priceTableItemsError, setPriceTableItemsError] = useState<string | null>(null);
+  const [priceTableItems, setPriceTableItems] = useState<PriceTableVersionItemView[]>([]);
+  const [priceTableItemsPagination, setPriceTableItemsPagination] = useState({
+    page: 1,
+    limit: 50,
+    total: 0,
+    totalPages: 1,
+  });
+  const [draftModalOpen, setDraftModalOpen] = useState(false);
+  const [taxRulesLoading, setTaxRulesLoading] = useState(false);
+  const [taxRulesError, setTaxRulesError] = useState<string | null>(null);
+  const [taxRules, setTaxRules] = useState<TaxRuleLite[]>([]);
+  const [selectedTaxRuleId, setSelectedTaxRuleId] = useState<string>("");
+  const [draftNotes, setDraftNotes] = useState("");
+  const [draftConfirmChecked, setDraftConfirmChecked] = useState(false);
+  const [draftSubmitting, setDraftSubmitting] = useState(false);
+  const [draftFeedbackError, setDraftFeedbackError] = useState<string | null>(null);
+  const [draftFeedbackSuccess, setDraftFeedbackSuccess] = useState<string | null>(null);
+  const [draftGenerationSummary, setDraftGenerationSummary] = useState<DraftGenerationSummary | null>(null);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [publishEffectiveFrom, setPublishEffectiveFrom] = useState("");
+  const [publishApprovedBy, setPublishApprovedBy] = useState("");
+  const [publishConfirmChecked, setPublishConfirmChecked] = useState(false);
+  const [publishForceConfirmChecked, setPublishForceConfirmChecked] = useState(false);
+  const [publishSubmitting, setPublishSubmitting] = useState(false);
+  const [publishFeedbackError, setPublishFeedbackError] = useState<string | null>(null);
+  const [publishFeedbackSuccess, setPublishFeedbackSuccess] = useState<string | null>(null);
+  const [publishForceRequired, setPublishForceRequired] = useState(false);
+  const [publishBlockState, setPublishBlockState] = useState<PublishBlockState | null>(null);
+  const [suppressAutoVersionSelect, setSuppressAutoVersionSelect] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -415,12 +546,418 @@ export const SettingsModule = () => {
     load();
   }, [activeHubSection, nomusLimit, nomusTargetFilter, nomusModeFilter, nomusKindFilter, nomusStatusFilter, nomusReloadSeq]);
 
+  const loadPriceTables = async (options?: { keepSelection?: boolean; preferredVersionId?: string | null }) => {
+    setPriceTablesLoading(true);
+    setPriceTablesError(null);
+    try {
+      const rows = await fetchJsonOk<PriceTableView[]>("/api/price-tables");
+      const list = Array.isArray(rows) ? rows : [];
+      const prevTableId = selectedPriceTableId;
+      const prevVersionId = selectedPriceTableVersionId;
+      setPriceTables(list);
+      const keepSelection = options?.keepSelection === true;
+      setSelectedPriceTableId((prev) => {
+        if (keepSelection && prev && list.some((t) => t.id === prev)) return prev;
+        return list[0]?.id ?? "";
+      });
+      if (!keepSelection) {
+        setSelectedPriceTableVersionId("");
+        setSuppressAutoVersionSelect(false);
+        setPriceTableItems([]);
+        setPriceTableItemsError(null);
+        setPriceTableItemsPage(1);
+      } else if (options?.preferredVersionId) {
+        setSelectedPriceTableVersionId(options.preferredVersionId);
+        setSuppressAutoVersionSelect(false);
+        setPriceTableItemsPage(1);
+      } else {
+        const tableAfterRefresh = list.find((t) => t.id === prevTableId);
+        const versionStillExists = !!tableAfterRefresh?.versions?.some((v) => v.id === prevVersionId);
+        if (!versionStillExists) {
+          setSelectedPriceTableVersionId("");
+          setSuppressAutoVersionSelect(true);
+          setPriceTableItems([]);
+          setPriceTableItemsError(null);
+        }
+      }
+    } catch (error) {
+      setPriceTables([]);
+      setPriceTablesError(error instanceof Error ? error.message : "Não foi possível carregar as tabelas de preço.");
+    } finally {
+      setPriceTablesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeHubSection !== "priceTables") return;
+    loadPriceTables();
+  }, [activeHubSection]);
+
   const formatDateTimeSafe = (value: string | null | undefined): string => {
     if (!value) return "—";
     const dt = new Date(value);
     if (Number.isNaN(dt.getTime())) return "—";
     return dt.toLocaleString("pt-BR");
   };
+
+  const formatPercentSafe = (value: unknown): string => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return `${formatNumber(n, 2)}%`;
+  };
+
+  const formatCurrencySafe = (value: unknown): string => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return formatCurrency(n, 2);
+  };
+
+  const asSummaryCounts = (summary?: PriceTableVersionSummary | null): { errors: number; warnings: number; itemsCreated: number | null } => {
+    if (!summary || typeof summary !== "object") return { errors: 0, warnings: 0, itemsCreated: null };
+    const errors = Array.isArray(summary.errors) ? summary.errors.length : 0;
+    const warnings = Array.isArray(summary.warnings) ? summary.warnings.length : 0;
+    const itemsCreatedRaw = Number(summary.itemsCreated);
+    const itemsCreated = Number.isFinite(itemsCreatedRaw) ? itemsCreatedRaw : null;
+    return { errors, warnings, itemsCreated };
+  };
+
+  const normalizeIssuePreview = (
+    raw: unknown,
+    fallbackMessage: string
+  ): { productCode: string; warningOrErrorCode: string; message: string }[] => {
+    if (!Array.isArray(raw)) return [];
+    return raw.slice(0, 5).map((entry) => {
+      const o = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+      const productCode = [o.sku, o.productName]
+        .map((v) => (typeof v === "string" && v.trim() ? v.trim() : ""))
+        .find((v) => v.length > 0) || "—";
+      const warningOrErrorCode = [o.code, o.reason, o.errorCode]
+        .map((v) => (typeof v === "string" && v.trim() ? v.trim() : ""))
+        .find((v) => v.length > 0) || "—";
+      const message = typeof o.message === "string" && o.message.trim() ? o.message.trim() : fallbackMessage;
+      return { productCode, warningOrErrorCode, message };
+    });
+  };
+
+  const isPublishedPilotVersion = (table: PriceTableView): boolean => {
+    const published = table.latestPublishedVersion;
+    if (!published) return false;
+    if (published.id === "151a3cbf-ce7c-435c-97ff-7758015db6bf") return true;
+    if (table.id === "6a50aa2a-36ad-4a5f-9cbc-9f548264d308") {
+      const counts = asSummaryCounts(published.generationSummaryJson ?? null);
+      if (counts.itemsCreated !== null && counts.itemsCreated <= 2) return true;
+    }
+    return false;
+  };
+
+  const selectedPriceTable = priceTables.find((t) => t.id === selectedPriceTableId) ?? null;
+  const selectedPriceTableVersions = (selectedPriceTable?.versions ?? []).slice().sort((a, b) => b.versionNumber - a.versionNumber);
+  const selectedTaxRulesActive = taxRules.filter((r) => String(r.status ?? "ACTIVE").toUpperCase() === "ACTIVE");
+  const selectedPriceTableVersion = selectedPriceTableVersions.find((v) => v.id === selectedPriceTableVersionId) ?? null;
+  const selectedVersionSummaryCounts = asSummaryCounts(selectedPriceTableVersion?.generationSummaryJson ?? null);
+  const selectedVersionSummaryRaw =
+    selectedPriceTableVersion?.generationSummaryJson && typeof selectedPriceTableVersion.generationSummaryJson === "object"
+      ? (selectedPriceTableVersion.generationSummaryJson as Record<string, unknown>)
+      : null;
+  const selectedVersionWarningsPreview = normalizeIssuePreview(
+    selectedVersionSummaryRaw?.warnings,
+    "Aviso de geração identificado. Revise esta versão antes de publicar."
+  );
+  const selectedVersionErrorsPreview = normalizeIssuePreview(
+    selectedVersionSummaryRaw?.errors,
+    "Erro de geração identificado. Revise esta versão antes de publicar."
+  );
+  const selectedVersionCanPublish = selectedPriceTableVersion?.status === "DRAFT" && selectedVersionSummaryCounts.errors === 0;
+  const selectedVersionItemsCount =
+    selectedPriceTableVersionId && selectedPriceTableVersion?.id === selectedPriceTableVersionId
+      ? priceTableItemsPagination.total
+      : selectedVersionSummaryCounts.itemsCreated ?? null;
+
+  const openGenerateDraftModal = async () => {
+    if (!selectedPriceTable) return;
+    setDraftFeedbackError(null);
+    setDraftFeedbackSuccess(null);
+    setDraftGenerationSummary(null);
+    setDraftNotes("");
+    setDraftConfirmChecked(false);
+    setSelectedTaxRuleId("");
+    setDraftModalOpen(true);
+    setTaxRulesLoading(true);
+    setTaxRulesError(null);
+    try {
+      const rows = await fetchJsonOk<TaxRuleLite[]>("/api/tax-rules");
+      const list = Array.isArray(rows) ? rows : [];
+      setTaxRules(list);
+      const firstActive = list.find((r) => String(r.status ?? "ACTIVE").toUpperCase() === "ACTIVE");
+      setSelectedTaxRuleId(firstActive?.id ?? "");
+    } catch (error) {
+      setTaxRules([]);
+      setTaxRulesError(error instanceof Error ? error.message : "Não foi possível carregar regras fiscais.");
+    } finally {
+      setTaxRulesLoading(false);
+    }
+  };
+
+  const closeGenerateDraftModal = () => {
+    if (draftSubmitting) return;
+    setDraftModalOpen(false);
+  };
+
+  const handleGenerateDraftSubmit = async () => {
+    if (!selectedPriceTable) return;
+    if (!selectedTaxRuleId) {
+      setDraftFeedbackError("Selecione uma regra fiscal ativa para gerar a DRAFT.");
+      return;
+    }
+    if (!draftConfirmChecked) {
+      setDraftFeedbackError("Confirme explicitamente a geração da nova versão DRAFT antes de continuar.");
+      return;
+    }
+    setDraftSubmitting(true);
+    setDraftFeedbackError(null);
+    setDraftFeedbackSuccess(null);
+    setDraftGenerationSummary(null);
+    try {
+      const payload = await fetchJsonOk<{
+        version?: { id?: string; versionNumber?: number };
+        summary?: {
+          productsRead?: unknown;
+          itemsCreated?: unknown;
+          itemsSkipped?: unknown;
+          errors?: unknown[];
+          warnings?: unknown[];
+        };
+      }>(`/api/price-tables/${selectedPriceTable.id}/versions/generate-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taxRuleId: selectedTaxRuleId,
+          includeAllActiveProducts: true,
+          notes: draftNotes.trim() || null,
+        }),
+      });
+
+      const summaryRaw = payload?.summary ?? {};
+      const errorsCount = Array.isArray(summaryRaw.errors) ? summaryRaw.errors.length : 0;
+      const warningsCount = Array.isArray(summaryRaw.warnings) ? summaryRaw.warnings.length : 0;
+      const summaryNormalized: DraftGenerationSummary = {
+        productsRead: Number(summaryRaw.productsRead) || 0,
+        itemsCreated: Number(summaryRaw.itemsCreated) || 0,
+        itemsSkipped: Number(summaryRaw.itemsSkipped) || 0,
+        errorsCount,
+        warningsCount,
+      };
+      setDraftGenerationSummary(summaryNormalized);
+      setDraftFeedbackSuccess(
+        errorsCount > 0 || warningsCount > 0
+          ? "Nova versão DRAFT gerada. Revise warnings/erros antes de qualquer publicação."
+          : "Nova versão DRAFT gerada com sucesso."
+      );
+
+      const preferredVersionId = typeof payload?.version?.id === "string" ? payload.version.id : null;
+      await loadPriceTables({ keepSelection: true, preferredVersionId });
+    } catch (error) {
+      setDraftFeedbackError(error instanceof Error ? error.message : "Não foi possível gerar a versão DRAFT.");
+    } finally {
+      setDraftSubmitting(false);
+    }
+  };
+
+  const openPublishModal = () => {
+    if (!selectedPriceTableVersion) return;
+    setPublishModalOpen(true);
+    setPublishEffectiveFrom("");
+    setPublishApprovedBy("");
+    setPublishConfirmChecked(false);
+    setPublishForceConfirmChecked(false);
+    setPublishSubmitting(false);
+    setPublishFeedbackError(null);
+    setPublishFeedbackSuccess(null);
+    setPublishForceRequired(false);
+    if (selectedVersionSummaryCounts.errors > 0) {
+      setPublishBlockState({
+        reason: "ERRORS",
+        count: selectedVersionSummaryCounts.errors,
+        message:
+          "Esta versão possui erros de geração e não pode ser publicada. Gere uma nova DRAFT corrigida ou revise os produtos com erro.",
+      });
+    } else {
+      setPublishBlockState(null);
+    }
+  };
+
+  const closePublishModal = () => {
+    if (publishSubmitting) return;
+    setPublishModalOpen(false);
+  };
+
+  const parseErrorPayload = async (res: Response): Promise<Record<string, unknown>> => {
+    try {
+      const ct = res.headers.get("content-type");
+      if (ct?.includes("application/json")) {
+        const data = (await res.json()) as unknown;
+        return data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+      }
+    } catch {
+      // ignore parse error
+    }
+    return {};
+  };
+
+  const handlePublishSubmit = async (forcePublishWithWarnings: boolean) => {
+    if (!selectedPriceTableVersion || !selectedPriceTable) return;
+    if (selectedPriceTableVersion.status !== "DRAFT") {
+      setPublishFeedbackError("Apenas versões DRAFT podem ser publicadas.");
+      return;
+    }
+    if (selectedVersionSummaryCounts.errors > 0) {
+      setPublishBlockState({
+        reason: "ERRORS",
+        count: selectedVersionSummaryCounts.errors,
+        message:
+          "Esta versão possui erros de geração e não pode ser publicada. Gere uma nova DRAFT corrigida ou revise os produtos com erro.",
+      });
+      return;
+    }
+    if (!publishConfirmChecked) {
+      setPublishFeedbackError("Confirme explicitamente a publicação da versão DRAFT antes de continuar.");
+      return;
+    }
+    if (forcePublishWithWarnings && !publishForceConfirmChecked) {
+      setPublishFeedbackError("Confirme explicitamente que aceita publicar mesmo com warnings.");
+      return;
+    }
+
+    setPublishSubmitting(true);
+    setPublishFeedbackError(null);
+    setPublishFeedbackSuccess(null);
+    try {
+      const bodyPayload = {
+        effectiveFrom: publishEffectiveFrom ? new Date(publishEffectiveFrom).toISOString() : undefined,
+        approvedBy: publishApprovedBy.trim() || null,
+        forcePublishWithWarnings,
+      };
+      const res = await fetch(`/api/price-table-versions/${selectedPriceTableVersion.id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyPayload),
+      });
+
+      if (!res.ok) {
+        const payload = await parseErrorPayload(res);
+        const msg = typeof payload.error === "string" && payload.error.trim() ? payload.error.trim() : `Erro HTTP ${res.status}`;
+        const warningsCount = Number(payload.warningsCount);
+        const errorsCount = Number(payload.errorsCount);
+        if (
+          res.status === 409 &&
+          (msg.toLowerCase().includes("warnings") || (Number.isFinite(warningsCount) && warningsCount > 0))
+        ) {
+          setPublishForceRequired(true);
+          setPublishBlockState({
+            reason: "WARNINGS",
+            count: Number.isFinite(warningsCount) ? warningsCount : selectedVersionSummaryCounts.warnings,
+            message:
+              "O backend bloqueou a publicação porque existem warnings. Revise os avisos antes de continuar ou confirme a publicação forçada.",
+          });
+          return;
+        }
+        if (
+          msg.toLowerCase().includes("errors") ||
+          (Number.isFinite(errorsCount) && errorsCount > 0)
+        ) {
+          setPublishBlockState({
+            reason: "ERRORS",
+            count: Number.isFinite(errorsCount) ? errorsCount : selectedVersionSummaryCounts.errors,
+            message:
+              "Esta versão possui erros de geração e não pode ser publicada. Gere uma nova DRAFT corrigida ou revise os produtos com erro.",
+          });
+          return;
+        }
+        setPublishFeedbackError(msg);
+        return;
+      }
+
+      const payload = (await res.json()) as {
+        archivedVersionsCount?: unknown;
+        warningsAccepted?: unknown;
+        version?: { id?: string };
+      };
+      const archivedVersionsCount = Number(payload.archivedVersionsCount);
+      const warningsAccepted = payload.warningsAccepted === true;
+      const preferredVersionId =
+        payload?.version && typeof payload.version.id === "string" ? payload.version.id : selectedPriceTableVersion.id;
+
+      setPublishFeedbackSuccess(
+        `Versão publicada com sucesso. Versões arquivadas: ${
+          Number.isFinite(archivedVersionsCount) ? archivedVersionsCount : 0
+        }${warningsAccepted ? " (warnings aceitos)." : "."}`
+      );
+      setPublishForceRequired(false);
+      setPublishForceConfirmChecked(false);
+      setPublishBlockState(null);
+
+      await loadPriceTables({ keepSelection: true, preferredVersionId });
+    } catch (error) {
+      setPublishFeedbackError(error instanceof Error ? error.message : "Não foi possível publicar a versão.");
+    } finally {
+      setPublishSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeHubSection !== "priceTables") return;
+    if (!selectedPriceTable) {
+      setSelectedPriceTableVersionId("");
+      return;
+    }
+    const fallbackVersion =
+      selectedPriceTable.latestDraftVersion?.id ||
+      selectedPriceTable.latestPublishedVersion?.id ||
+      selectedPriceTableVersions[0]?.id ||
+      "";
+    setSelectedPriceTableVersionId((prev) => {
+      if (suppressAutoVersionSelect) return prev;
+      if (prev && selectedPriceTableVersions.some((v) => v.id === prev)) return prev;
+      return fallbackVersion;
+    });
+    if (suppressAutoVersionSelect) return;
+    setPriceTableItemsPage(1);
+  }, [activeHubSection, selectedPriceTableId, selectedPriceTable, selectedPriceTableVersions, suppressAutoVersionSelect]);
+
+  useEffect(() => {
+    if (activeHubSection !== "priceTables") return;
+    if (!selectedPriceTableVersionId) {
+      setPriceTableItems([]);
+      setPriceTableItemsError(null);
+      return;
+    }
+    const loadItems = async () => {
+      setPriceTableItemsLoading(true);
+      setPriceTableItemsError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set("page", String(priceTableItemsPage));
+        params.set("limit", "50");
+        const payload = await fetchJsonOk<PriceTableVersionItemsResponse>(
+          `/api/price-table-versions/${selectedPriceTableVersionId}/items?${params.toString()}`
+        );
+        setPriceTableItems(Array.isArray(payload.items) ? payload.items : []);
+        const p = payload.pagination ?? {};
+        setPriceTableItemsPagination({
+          page: Number.isFinite(Number(p.page)) ? Number(p.page) : priceTableItemsPage,
+          limit: Number.isFinite(Number(p.limit)) ? Number(p.limit) : 50,
+          total: Number.isFinite(Number(p.total)) ? Number(p.total) : 0,
+          totalPages: Number.isFinite(Number(p.totalPages)) ? Math.max(1, Number(p.totalPages)) : 1,
+        });
+      } catch (error) {
+        setPriceTableItems([]);
+        setPriceTableItemsError(error instanceof Error ? error.message : "Não foi possível carregar os itens da versão.");
+      } finally {
+        setPriceTableItemsLoading(false);
+      }
+    };
+    loadItems();
+  }, [activeHubSection, selectedPriceTableVersionId, priceTableItemsPage]);
 
   const formatDurationMs = (value: number | null | undefined): string => {
     const totalMs = Number(value);
@@ -1723,6 +2260,434 @@ export const SettingsModule = () => {
             </div>
           )}
 
+          {activeHubSection === "priceTables" && (
+            <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">Tabelas de Preço Comerciais</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Visualização administrativa das tabelas e versões congeladas de preço (somente leitura).
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
+                    <Info className="h-3.5 w-3.5" />
+                    Modo leitura
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!selectedPriceTable || priceTablesLoading}
+                    onClick={() => void openGenerateDraftModal()}
+                    className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Gerar nova DRAFT
+                  </button>
+                  <button
+                    type="button"
+                    disabled={priceTablesLoading}
+                    onClick={() => void loadPriceTables({ keepSelection: true })}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", priceTablesLoading && "animate-spin")} />
+                    Atualizar dados
+                  </button>
+                </div>
+              </div>
+
+              {priceTablesLoading ? (
+                <div className="p-8 text-center">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
+                </div>
+              ) : priceTablesError ? (
+                <AppAlert variant="destructive" title="Falha ao carregar tabelas de preço">
+                  {priceTablesError}
+                </AppAlert>
+              ) : priceTables.length === 0 ? (
+                <AppAlert variant="info" title="Sem tabelas cadastradas">
+                  Nenhuma tabela de preço foi encontrada no momento.
+                </AppAlert>
+              ) : (
+                <>
+                  {priceTables.some((t) => isPublishedPilotVersion(t)) && (
+                    <AppAlert variant="warning" title="Versão piloto/incompleta identificada">
+                      Atenção: a versão publicada atual é piloto/incompleta e contém apenas uma amostra de produtos. Ela
+                      ainda não deve ser tratada como tabela comercial oficial completa.
+                    </AppAlert>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                    {priceTables.map((table) => {
+                      const selected = selectedPriceTableId === table.id;
+                      const latestReference = table.latestDraftVersion ?? table.latestPublishedVersion ?? null;
+                      const latestCounts = asSummaryCounts(latestReference?.generationSummaryJson ?? null);
+                      return (
+                        <button
+                          key={table.id}
+                          type="button"
+                          onClick={() => {
+                            setSuppressAutoVersionSelect(false);
+                            setSelectedPriceTableId(table.id);
+                          }}
+                          className={cn(
+                            "text-left rounded-xl border p-4 space-y-2 transition-all min-w-0",
+                            selected ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card hover:border-primary/40"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold truncate">{table.name || "—"}</p>
+                              <p className="text-xs text-muted-foreground">{table.code || "—"}</p>
+                            </div>
+                            <span className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-700">
+                              {table.status || "—"}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground space-y-1">
+                            <p>Margem padrão: <span className="font-semibold text-foreground">{formatPercentSafe(table.defaultMarginPct)}</span></p>
+                            <p>Versões: <span className="font-semibold text-foreground">{table.versions?.length ?? 0}</span></p>
+                            <p>
+                              Publicada:{" "}
+                              <span className="font-semibold text-foreground">
+                                {table.latestPublishedVersion ? `v${table.latestPublishedVersion.versionNumber}` : "—"}
+                              </span>
+                            </p>
+                            <p>
+                              Draft:{" "}
+                              <span className="font-semibold text-foreground">
+                                {table.latestDraftVersion ? `v${table.latestDraftVersion.versionNumber}` : "—"}
+                              </span>
+                            </p>
+                            <p>
+                              Erros/Avisos (últ. geração):{" "}
+                              <span className="font-semibold text-foreground">
+                                {latestCounts.errors}/{latestCounts.warnings}
+                              </span>
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedPriceTable && (
+                    <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-bold">Versões — {selectedPriceTable.name || "—"}</h4>
+                        <div className="w-full sm:w-72">
+                          <SearchableSelect
+                            options={priceTables.map((t) => ({
+                              value: t.id,
+                              label: `${t.name || "—"} (${t.code || "—"})`,
+                              searchTerms: `${t.code || ""} ${t.name || ""}`,
+                            }))}
+                            value={selectedPriceTableId}
+                            onChange={(v) => {
+                              setSuppressAutoVersionSelect(false);
+                              setSelectedPriceTableId(v);
+                            }}
+                            placeholder="Selecionar tabela..."
+                            emptyMessage="Nenhuma tabela encontrada."
+                            className="text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      {selectedPriceTable.latestPublishedVersion ? null : (
+                        <AppAlert variant="info" density="compact" title="Sem versão publicada">
+                          Esta tabela ainda não possui versão publicada.
+                        </AppAlert>
+                      )}
+
+                      {selectedPriceTable.latestDraftVersion ? null : (
+                        <AppAlert variant="info" density="compact" title="Sem versão DRAFT">
+                          Esta tabela não possui versão draft no momento.
+                        </AppAlert>
+                      )}
+
+                      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                        <h5 className="text-sm font-bold">Resumo da geração (versão selecionada)</h5>
+                        {!selectedPriceTableVersion ? (
+                          <p className="text-sm text-muted-foreground">Selecione uma versão para visualizar o resumo de geração.</p>
+                        ) : !selectedVersionSummaryRaw ? (
+                          <p className="text-sm text-muted-foreground">Resumo de geração não disponível para esta versão.</p>
+                        ) : (
+                          <>
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                              <div className="rounded-lg border border-border bg-background px-3 py-2">
+                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Produtos lidos</p>
+                                <p className="font-semibold">{Number.isFinite(Number(selectedVersionSummaryRaw.productsRead)) ? Number(selectedVersionSummaryRaw.productsRead) : "—"}</p>
+                              </div>
+                              <div className="rounded-lg border border-border bg-background px-3 py-2">
+                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Itens criados</p>
+                                <p className="font-semibold">{selectedVersionSummaryCounts.itemsCreated ?? "—"}</p>
+                              </div>
+                              <div className="rounded-lg border border-border bg-background px-3 py-2">
+                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Itens ignorados</p>
+                                <p className="font-semibold">{Number.isFinite(Number(selectedVersionSummaryRaw.itemsSkipped)) ? Number(selectedVersionSummaryRaw.itemsSkipped) : "—"}</p>
+                              </div>
+                              <div className="rounded-lg border border-border bg-background px-3 py-2">
+                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Warnings</p>
+                                <p className="font-semibold">{selectedVersionSummaryCounts.warnings}</p>
+                              </div>
+                              <div className="rounded-lg border border-border bg-background px-3 py-2">
+                                <p className="text-[10px] uppercase font-bold text-muted-foreground">Errors</p>
+                                <p className="font-semibold">{selectedVersionSummaryCounts.errors}</p>
+                              </div>
+                            </div>
+
+                            {selectedVersionWarningsPreview.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Prévia de warnings</p>
+                                <div className="space-y-2">
+                                  {selectedVersionWarningsPreview.map((w, idx) => (
+                                    <div key={`warn-${idx}`} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
+                                      <p><span className="font-semibold">Produto:</span> {w.productCode || "—"}</p>
+                                      <p><span className="font-semibold">Código:</span> {w.warningOrErrorCode || "—"}</p>
+                                      <p><span className="font-semibold">Mensagem:</span> {w.message || "—"}</p>
+                                    </div>
+                                  ))}
+                                  {selectedVersionSummaryCounts.warnings > selectedVersionWarningsPreview.length && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Existem mais {selectedVersionSummaryCounts.warnings - selectedVersionWarningsPreview.length} avisos não exibidos.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {selectedVersionErrorsPreview.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-xs font-bold uppercase tracking-wide text-red-700">Prévia de errors</p>
+                                <div className="space-y-2">
+                                  {selectedVersionErrorsPreview.map((e, idx) => (
+                                    <div key={`err-${idx}`} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs">
+                                      <p><span className="font-semibold">Produto:</span> {e.productCode || "—"}</p>
+                                      <p><span className="font-semibold">Código:</span> {e.warningOrErrorCode || "—"}</p>
+                                      <p><span className="font-semibold">Mensagem:</span> {e.message || "—"}</p>
+                                    </div>
+                                  ))}
+                                  {selectedVersionSummaryCounts.errors > selectedVersionErrorsPreview.length && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Existem mais {selectedVersionSummaryCounts.errors - selectedVersionErrorsPreview.length} erros não exibidos.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {selectedPriceTableVersions.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Nenhuma versão registrada para esta tabela.</p>
+                      ) : (
+                        <div className="overflow-x-auto rounded-xl border border-border">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-accent/30 border-b border-border">
+                                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Versão</th>
+                                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Status</th>
+                                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Criada em</th>
+                                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Publicada em</th>
+                                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Vigência inicial</th>
+                                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Aprovado por</th>
+                                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Erros</th>
+                                <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Warnings</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {selectedPriceTableVersions.map((version) => {
+                                const counts = asSummaryCounts(version.generationSummaryJson ?? null);
+                                const isSelectedVersion = selectedPriceTableVersionId === version.id;
+                                return (
+                                  <tr
+                                    key={version.id}
+                                    onClick={() => {
+                                      setSuppressAutoVersionSelect(false);
+                                      setSelectedPriceTableVersionId(version.id);
+                                      setPriceTableItemsPage(1);
+                                    }}
+                                    className={cn(
+                                      "hover:bg-accent/20 cursor-pointer",
+                                      isSelectedVersion && "bg-primary/5"
+                                    )}
+                                  >
+                                    <td className="px-3 py-2 text-sm font-semibold">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSuppressAutoVersionSelect(false);
+                                          setSelectedPriceTableVersionId(version.id);
+                                          setPriceTableItemsPage(1);
+                                        }}
+                                        className={cn(
+                                          "underline-offset-2 hover:underline",
+                                          isSelectedVersion && "text-primary"
+                                        )}
+                                      >
+                                        v{version.versionNumber}
+                                      </button>
+                                    </td>
+                                    <td className="px-3 py-2 text-xs">
+                                      <span
+                                        className={cn(
+                                          "inline-flex rounded-full px-2 py-0.5 font-bold",
+                                          version.status === "PUBLISHED" && "bg-green-100 text-green-700",
+                                          version.status === "DRAFT" && "bg-amber-100 text-amber-700",
+                                          version.status === "ARCHIVED" && "bg-slate-100 text-slate-700",
+                                          !["PUBLISHED", "DRAFT", "ARCHIVED"].includes(version.status) &&
+                                            "bg-slate-100 text-slate-700"
+                                        )}
+                                      >
+                                        {version.status || "—"}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-sm">{formatDateTimeSafe(version.createdAt)}</td>
+                                    <td className="px-3 py-2 text-sm">{formatDateTimeSafe(version.publishedAt)}</td>
+                                    <td className="px-3 py-2 text-sm">{formatDateTimeSafe(version.effectiveFrom)}</td>
+                                    <td className="px-3 py-2 text-sm">{version.approvedBy?.trim() ? version.approvedBy : "—"}</td>
+                                    <td className="px-3 py-2 text-sm">{counts.errors}</td>
+                                    <td className="px-3 py-2 text-sm">{counts.warnings}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h5 className="text-sm font-bold">Itens da versão selecionada</h5>
+                          <div className="flex items-center gap-2">
+                            {selectedPriceTableVersionId ? (
+                              <span className="text-xs text-muted-foreground">
+                                Página {priceTableItemsPagination.page} de {priceTableItemsPagination.totalPages}
+                              </span>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={openPublishModal}
+                              disabled={!selectedVersionCanPublish}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Save className="h-3.5 w-3.5" />
+                              Publicar versão
+                            </button>
+                          </div>
+                        </div>
+
+                        {selectedPriceTableVersion && selectedPriceTableVersion.status !== "DRAFT" ? (
+                          <AppAlert variant="info" density="compact" title="Publicação indisponível">
+                            Apenas versões DRAFT podem ser publicadas nesta etapa.
+                          </AppAlert>
+                        ) : null}
+
+                        {selectedPriceTableVersion && selectedVersionSummaryCounts.errors > 0 ? (
+                          <AppAlert variant="destructive" density="compact" title="Versão bloqueada por erros">
+                            Esta versão possui erros de geração e não pode ser publicada. Gere uma nova DRAFT corrigida ou
+                            revise os produtos com erro.
+                          </AppAlert>
+                        ) : null}
+
+                        {selectedPriceTableVersionId === "151a3cbf-ce7c-435c-97ff-7758015db6bf" && (
+                          <AppAlert variant="warning" density="compact" title="Versão piloto/incompleta">
+                            Atenção: esta versão é piloto/incompleta e possui apenas uma amostra de produtos.
+                          </AppAlert>
+                        )}
+
+                        {!selectedPriceTableVersionId ? (
+                          <AppAlert variant="info" density="compact" title="Nenhuma versão selecionada">
+                            Selecione uma versão acima para visualizar os itens congelados.
+                          </AppAlert>
+                        ) : priceTableItemsLoading ? (
+                          <div className="p-6 text-center">
+                            <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                          </div>
+                        ) : priceTableItemsError ? (
+                          <AppAlert variant="destructive" density="compact" title="Erro ao carregar itens">
+                            {priceTableItemsError}
+                          </AppAlert>
+                        ) : priceTableItems.length === 0 ? (
+                          <AppAlert variant="info" density="compact" title="Versão sem itens">
+                            Esta versão não possui itens de tabela para exibição.
+                          </AppAlert>
+                        ) : (
+                          <>
+                            <div className="overflow-x-auto rounded-xl border border-border">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="bg-accent/30 border-b border-border">
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">SKU</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Produto</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Custo total</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">MP</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">HH</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">HM</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Imposto</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Outros</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Margem</th>
+                                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Preço venda</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                  {priceTableItems.map((item, idx) => (
+                                    <tr key={`${item.sku ?? "item"}-${idx}`} className="hover:bg-accent/20">
+                                      <td className="px-3 py-2 text-sm">{item.sku?.trim() ? item.sku : "—"}</td>
+                                      <td className="px-3 py-2 text-sm">{item.productName?.trim() ? item.productName : "—"}</td>
+                                      <td className="px-3 py-2 text-sm">{formatCurrencySafe(item.frozenTotalCost)}</td>
+                                      <td className="px-3 py-2 text-sm">{formatCurrencySafe(item.frozenMaterialCost)}</td>
+                                      <td className="px-3 py-2 text-sm">{formatCurrencySafe(item.frozenHhCost)}</td>
+                                      <td className="px-3 py-2 text-sm">{formatCurrencySafe(item.frozenHmCost)}</td>
+                                      <td className="px-3 py-2 text-sm">{formatCurrencySafe(item.frozenTaxCost)}</td>
+                                      <td className="px-3 py-2 text-sm">{formatCurrencySafe(item.frozenOtherCost)}</td>
+                                      <td className="px-3 py-2 text-sm">{formatPercentSafe(item.marginPct)}</td>
+                                      <td className="px-3 py-2 text-sm font-semibold">{formatCurrencySafe(item.salePrice)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-xs text-muted-foreground">
+                                Total de itens: <span className="font-semibold text-foreground">{priceTableItemsPagination.total}</span>
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={priceTableItemsPagination.page <= 1 || priceTableItemsLoading}
+                                  onClick={() => setPriceTableItemsPage((prev) => Math.max(1, prev - 1))}
+                                  className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent disabled:opacity-50"
+                                >
+                                  Anterior
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={
+                                    priceTableItemsPagination.page >= priceTableItemsPagination.totalPages ||
+                                    priceTableItemsLoading
+                                  }
+                                  onClick={() =>
+                                    setPriceTableItemsPage((prev) => Math.min(priceTableItemsPagination.totalPages, prev + 1))
+                                  }
+                                  className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent disabled:opacity-50"
+                                >
+                                  Próximo
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {(activeHubSection === "integrations" ||
             activeHubSection === "security" ||
             activeHubSection === "system") && (
@@ -1763,6 +2728,342 @@ export const SettingsModule = () => {
           )}
         </div>
       )}
+
+      <AnimatePresence>
+        {draftModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-card w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden"
+            >
+              <div className="p-5 border-b border-border bg-accent/30 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">Gerar nova versão DRAFT</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Esta ação cria uma nova versão DRAFT e não publica automaticamente.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeGenerateDraftModal}
+                  disabled={draftSubmitting}
+                  className="p-2 rounded-full hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground">Tabela selecionada</p>
+                    <p className="font-semibold">{selectedPriceTable?.name || "—"}</p>
+                    <p className="text-xs text-muted-foreground">{selectedPriceTable?.code || "—"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground">Margem padrão</p>
+                    <p className="font-semibold">{formatPercentSafe(selectedPriceTable?.defaultMarginPct)}</p>
+                  </div>
+                </div>
+
+                <AppAlert variant="warning" density="compact" title="Antes de gerar">
+                  A geração usará os produtos ativos. Produtos sem custo válido podem ser ignorados. A versão criada ficará
+                  em DRAFT para revisão posterior.
+                </AppAlert>
+
+                {taxRulesLoading ? (
+                  <div className="p-4 text-center">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                  </div>
+                ) : taxRulesError ? (
+                  <AppAlert variant="destructive" density="compact" title="Erro ao carregar regras fiscais">
+                    {taxRulesError}
+                  </AppAlert>
+                ) : selectedTaxRulesActive.length === 0 ? (
+                  <AppAlert variant="info" density="compact" title="Nenhuma regra fiscal ativa disponível">
+                    Cadastre ou ative uma regra fiscal antes de gerar uma tabela de preço.
+                  </AppAlert>
+                ) : (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Regra fiscal ativa</label>
+                    <SearchableSelect
+                      options={selectedTaxRulesActive.map((rule) => ({
+                        value: rule.id,
+                        label: rule.name || "—",
+                        searchTerms: `${rule.name || ""} ${rule.status || ""}`,
+                        sublabel: `${Array.isArray(rule.TaxComponent) ? rule.TaxComponent.length : 0} componente(s) fiscal(is)`,
+                      }))}
+                      value={selectedTaxRuleId}
+                      onChange={setSelectedTaxRuleId}
+                      placeholder="Selecionar regra fiscal..."
+                      emptyMessage="Nenhuma regra fiscal encontrada."
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Observações (opcional)</label>
+                  <textarea
+                    value={draftNotes}
+                    onChange={(e) => setDraftNotes(e.target.value)}
+                    rows={3}
+                    className="w-full p-2.5 rounded-lg border border-border bg-background text-sm resize-none"
+                    placeholder="Ex.: Geração de revisão comercial do mês."
+                    disabled={draftSubmitting}
+                  />
+                </div>
+
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={draftConfirmChecked}
+                    onChange={(e) => setDraftConfirmChecked(e.target.checked)}
+                    disabled={draftSubmitting}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Confirmo que desejo gerar uma nova versão DRAFT para esta tabela usando os produtos ativos e a regra
+                    fiscal selecionada.
+                  </span>
+                </label>
+
+                {draftFeedbackError && (
+                  <AppAlert variant="destructive" density="compact" title="Não foi possível gerar a DRAFT">
+                    {draftFeedbackError}
+                  </AppAlert>
+                )}
+
+                {draftFeedbackSuccess && (
+                  <AppAlert variant="success" density="compact" title="Geração concluída">
+                    <div className="space-y-1">
+                      <p>{draftFeedbackSuccess}</p>
+                      {draftGenerationSummary && (
+                        <p className="text-xs">
+                          Produtos lidos: {draftGenerationSummary.productsRead} | Itens criados: {draftGenerationSummary.itemsCreated} |
+                          Itens ignorados: {draftGenerationSummary.itemsSkipped} | Warnings: {draftGenerationSummary.warningsCount} |
+                          Errors: {draftGenerationSummary.errorsCount}
+                        </p>
+                      )}
+                    </div>
+                  </AppAlert>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-border flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeGenerateDraftModal}
+                  disabled={draftSubmitting}
+                  className="px-4 py-2 rounded-lg border border-border text-sm hover:bg-accent disabled:opacity-50"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateDraftSubmit()}
+                  disabled={draftSubmitting || !selectedTaxRuleId || !draftConfirmChecked || selectedTaxRulesActive.length === 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+                >
+                  {draftSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Gerar DRAFT
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {publishModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-card w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden"
+            >
+              <div className="p-5 border-b border-border bg-accent/30 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">Publicar versão DRAFT</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    A publicação arquiva a versão vigente anterior da mesma tabela/regra fiscal e não recalcula preços.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePublishModal}
+                  disabled={publishSubmitting}
+                  className="p-2 rounded-full hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground">Tabela</p>
+                    <p className="font-semibold">{selectedPriceTable?.name || "—"}</p>
+                    <p className="text-xs text-muted-foreground">{selectedPriceTable?.code || "—"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground">Versão selecionada</p>
+                    <p className="font-semibold">
+                      {selectedPriceTableVersion ? `v${selectedPriceTableVersion.versionNumber}` : "—"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Status: {selectedPriceTableVersion?.status || "—"}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground">Itens</p>
+                    <p className="font-semibold">
+                      {selectedVersionItemsCount != null && Number.isFinite(Number(selectedVersionItemsCount))
+                        ? String(selectedVersionItemsCount)
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-background px-3 py-2">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground">Warnings / Errors</p>
+                    <p className="font-semibold">
+                      {selectedVersionSummaryCounts.warnings} / {selectedVersionSummaryCounts.errors}
+                    </p>
+                  </div>
+                </div>
+
+                <AppAlert variant="info" density="compact" title="Regra de publicação">
+                  Esta ação publica a versão DRAFT como vigente. A versão publicada anterior da mesma tabela/regra fiscal
+                  será arquivada conforme validações do backend.
+                </AppAlert>
+
+                {selectedVersionSummaryCounts.warnings > 0 && selectedVersionSummaryCounts.errors === 0 && (
+                  <AppAlert variant="warning" density="compact" title="Esta versão possui warnings">
+                    A primeira tentativa será enviada sem force. Se o backend bloquear por warnings (409), você poderá
+                    confirmar explicitamente a publicação com warnings.
+                  </AppAlert>
+                )}
+
+                {publishBlockState?.reason === "ERRORS" && (
+                  <AppAlert variant="destructive" density="compact" title="Publicação bloqueada por erros">
+                    {publishBlockState.message}
+                  </AppAlert>
+                )}
+
+                {publishBlockState?.reason === "WARNINGS" && (
+                  <AppAlert variant="warning" density="compact" title="Warnings detectados">
+                    {publishBlockState.message}
+                  </AppAlert>
+                )}
+
+                {publishForceRequired && selectedVersionWarningsPreview.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Prévia de warnings</p>
+                    <div className="space-y-2">
+                      {selectedVersionWarningsPreview.map((w, idx) => (
+                        <div key={`pub-warn-${idx}`} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
+                          <p><span className="font-semibold">Produto:</span> {w.productCode || "—"}</p>
+                          <p><span className="font-semibold">Código:</span> {w.warningOrErrorCode || "—"}</p>
+                          <p><span className="font-semibold">Mensagem:</span> {w.message || "—"}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                      Início de vigência (opcional)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={publishEffectiveFrom}
+                      onChange={(e) => setPublishEffectiveFrom(e.target.value)}
+                      disabled={publishSubmitting || publishBlockState?.reason === "ERRORS"}
+                      className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                      Aprovado por (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={publishApprovedBy}
+                      onChange={(e) => setPublishApprovedBy(e.target.value)}
+                      disabled={publishSubmitting || publishBlockState?.reason === "ERRORS"}
+                      className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                      placeholder="Ex.: Gerência Comercial"
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={publishConfirmChecked}
+                    onChange={(e) => setPublishConfirmChecked(e.target.checked)}
+                    disabled={publishSubmitting || publishBlockState?.reason === "ERRORS"}
+                    className="mt-0.5"
+                  />
+                  <span>Confirmo que revisei esta versão DRAFT e desejo publicá-la como versão vigente.</span>
+                </label>
+
+                {publishForceRequired && (
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={publishForceConfirmChecked}
+                      onChange={(e) => setPublishForceConfirmChecked(e.target.checked)}
+                      disabled={publishSubmitting}
+                      className="mt-0.5"
+                    />
+                    <span>Estou ciente dos warnings e autorizo a publicação mesmo assim.</span>
+                  </label>
+                )}
+
+                {publishFeedbackError && (
+                  <AppAlert variant="destructive" density="compact" title="Falha na publicação">
+                    {publishFeedbackError}
+                  </AppAlert>
+                )}
+
+                {publishFeedbackSuccess && (
+                  <AppAlert variant="success" density="compact" title="Publicação concluída">
+                    {publishFeedbackSuccess}
+                  </AppAlert>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-border flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closePublishModal}
+                  disabled={publishSubmitting}
+                  className="px-4 py-2 rounded-lg border border-border text-sm hover:bg-accent disabled:opacity-50"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handlePublishSubmit(publishForceRequired)}
+                  disabled={
+                    publishSubmitting ||
+                    publishBlockState?.reason === "ERRORS" ||
+                    !publishConfirmChecked ||
+                    (publishForceRequired && !publishForceConfirmChecked) ||
+                    selectedPriceTableVersion?.status !== "DRAFT"
+                  }
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+                >
+                  {publishSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {publishForceRequired ? "Publicar com warnings" : "Publicar versão"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <GuidedTour
         open={tourOpen}
