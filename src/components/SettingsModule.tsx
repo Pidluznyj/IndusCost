@@ -571,8 +571,8 @@ export const SettingsModule = () => {
         setSuppressAutoVersionSelect(false);
         setPriceTableItemsPage(1);
       } else {
-        const tableAfterRefresh = list.find((t) => t.id === prevTableId);
-        const versionStillExists = !!tableAfterRefresh?.versions?.some((v) => v.id === prevVersionId);
+        const tableAfterRefresh = list.find((t) => t.id === prevTableId) ?? null;
+        const versionStillExists = !!getDisplayVersions(tableAfterRefresh).some((v) => v.id === prevVersionId);
         if (!versionStillExists) {
           setSelectedPriceTableVersionId("");
           setSuppressAutoVersionSelect(true);
@@ -621,6 +621,19 @@ export const SettingsModule = () => {
     return { errors, warnings, itemsCreated };
   };
 
+  const getDisplayVersions = (table: PriceTableView | null): PriceTableVersionView[] => {
+    if (!table) return [];
+    const raw = Array.isArray(table.versions) ? table.versions : [];
+    const source = raw.length > 0 ? raw : [table.latestPublishedVersion, table.latestDraftVersion].filter(Boolean) as PriceTableVersionView[];
+    const dedup = new Map<string, PriceTableVersionView>();
+    for (const v of source) {
+      const byId = typeof v?.id === "string" && v.id.trim() ? `id:${v.id}` : null;
+      const key = byId ?? `vs:${String(v?.versionNumber ?? "")}:${String(v?.status ?? "")}`;
+      if (!dedup.has(key)) dedup.set(key, v);
+    }
+    return Array.from(dedup.values()).sort((a, b) => Number(b.versionNumber) - Number(a.versionNumber));
+  };
+
   const normalizeIssuePreview = (
     raw: unknown,
     fallbackMessage: string
@@ -651,7 +664,7 @@ export const SettingsModule = () => {
   };
 
   const selectedPriceTable = priceTables.find((t) => t.id === selectedPriceTableId) ?? null;
-  const selectedPriceTableVersions = (selectedPriceTable?.versions ?? []).slice().sort((a, b) => b.versionNumber - a.versionNumber);
+  const selectedPriceTableVersions = getDisplayVersions(selectedPriceTable);
   const selectedTaxRulesActive = taxRules.filter((r) => String(r.status ?? "ACTIVE").toUpperCase() === "ACTIVE");
   const selectedPriceTableVersion = selectedPriceTableVersions.find((v) => v.id === selectedPriceTableVersionId) ?? null;
   const selectedVersionSummaryCounts = asSummaryCounts(selectedPriceTableVersion?.generationSummaryJson ?? null);
@@ -667,11 +680,14 @@ export const SettingsModule = () => {
     selectedVersionSummaryRaw?.errors,
     "Erro de geração identificado. Revise esta versão antes de publicar."
   );
-  const selectedVersionCanPublish = selectedPriceTableVersion?.status === "DRAFT" && selectedVersionSummaryCounts.errors === 0;
   const selectedVersionItemsCount =
     selectedPriceTableVersionId && selectedPriceTableVersion?.id === selectedPriceTableVersionId
       ? priceTableItemsPagination.total
       : selectedVersionSummaryCounts.itemsCreated ?? null;
+  const selectedVersionCanPublish =
+    selectedPriceTableVersion?.status === "DRAFT" &&
+    selectedVersionSummaryCounts.errors === 0 &&
+    (selectedVersionItemsCount == null || Number(selectedVersionItemsCount) > 0);
 
   const openGenerateDraftModal = async () => {
     if (!selectedPriceTable) return;
@@ -911,8 +927,8 @@ export const SettingsModule = () => {
       return;
     }
     const fallbackVersion =
-      selectedPriceTable.latestDraftVersion?.id ||
       selectedPriceTable.latestPublishedVersion?.id ||
+      selectedPriceTable.latestDraftVersion?.id ||
       selectedPriceTableVersions[0]?.id ||
       "";
     setSelectedPriceTableVersionId((prev) => {
@@ -2345,7 +2361,10 @@ export const SettingsModule = () => {
                           </div>
                           <div className="text-xs text-muted-foreground space-y-1">
                             <p>Margem padrão: <span className="font-semibold text-foreground">{formatPercentSafe(table.defaultMarginPct)}</span></p>
-                            <p>Versões: <span className="font-semibold text-foreground">{table.versions?.length ?? 0}</span></p>
+                            <p>
+                              Versões conhecidas:{" "}
+                              <span className="font-semibold text-foreground">{getDisplayVersions(table).length}</span>
+                            </p>
                             <p>
                               Publicada:{" "}
                               <span className="font-semibold text-foreground">
@@ -2566,15 +2585,17 @@ export const SettingsModule = () => {
                                 Página {priceTableItemsPagination.page} de {priceTableItemsPagination.totalPages}
                               </span>
                             ) : null}
-                            <button
-                              type="button"
-                              onClick={openPublishModal}
-                              disabled={!selectedVersionCanPublish}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              <Save className="h-3.5 w-3.5" />
-                              Publicar versão
-                            </button>
+                            {selectedPriceTableVersion ? (
+                              <button
+                                type="button"
+                                onClick={openPublishModal}
+                                disabled={!selectedVersionCanPublish}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Save className="h-3.5 w-3.5" />
+                                Publicar versão
+                              </button>
+                            ) : null}
                           </div>
                         </div>
 
@@ -2588,6 +2609,15 @@ export const SettingsModule = () => {
                           <AppAlert variant="destructive" density="compact" title="Versão bloqueada por erros">
                             Esta versão possui erros de geração e não pode ser publicada. Gere uma nova DRAFT corrigida ou
                             revise os produtos com erro.
+                          </AppAlert>
+                        ) : null}
+
+                        {selectedPriceTableVersion &&
+                        selectedVersionSummaryCounts.errors === 0 &&
+                        selectedVersionItemsCount != null &&
+                        Number(selectedVersionItemsCount) <= 0 ? (
+                          <AppAlert variant="warning" density="compact" title="Versão sem itens criados">
+                            Esta DRAFT não possui itens criados e não pode ser publicada.
                           </AppAlert>
                         ) : null}
 
