@@ -3435,6 +3435,176 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  app.get("/api/price-tables/:priceTableId/products/:productId/published-price", async (req, res) => {
+    const { priceTableId, productId } = req.params;
+    const now = new Date();
+    try {
+      const priceTable = await prisma.priceTable.findUnique({
+        where: { id: priceTableId },
+        select: { id: true, code: true, name: true, defaultMarginPct: true, status: true },
+      });
+      if (!priceTable) {
+        return res.status(404).json({
+          code: "PRICE_TABLE_NOT_FOUND",
+          message: "Tabela de preço não encontrada.",
+        });
+      }
+      if (String(priceTable.status).toUpperCase() !== "ACTIVE") {
+        return res.status(409).json({
+          code: "PRICE_TABLE_INACTIVE",
+          message: "A tabela de preço informada está inativa.",
+        });
+      }
+
+      const product = await prisma.product.findUnique({
+        where: { id: productId },
+        select: { id: true, sku: true, name: true, status: true, type: true },
+      });
+      if (!product) {
+        return res.status(404).json({
+          code: "PRODUCT_NOT_FOUND",
+          message: "Produto não encontrado.",
+        });
+      }
+
+      const publishedVersion = await prisma.priceTableVersion.findFirst({
+        where: {
+          priceTableId,
+          status: "PUBLISHED",
+          AND: [
+            {
+              OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: now } }],
+            },
+            {
+              OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+            },
+          ],
+        },
+        orderBy: [{ effectiveFrom: "desc" }, { publishedAt: "desc" }, { versionNumber: "desc" }],
+        select: {
+          id: true,
+          versionNumber: true,
+          status: true,
+          publishedAt: true,
+          effectiveFrom: true,
+          effectiveTo: true,
+          approvedBy: true,
+          generationSummaryJson: true,
+        },
+      });
+      if (!publishedVersion) {
+        return res.status(404).json({
+          code: "NO_PUBLISHED_PRICE_TABLE_VERSION",
+          message: "Não existe versão publicada vigente para a tabela informada.",
+        });
+      }
+
+      const item = await prisma.priceTableItem.findUnique({
+        where: {
+          priceTableVersionId_productId: {
+            priceTableVersionId: publishedVersion.id,
+            productId,
+          },
+        },
+        select: {
+          id: true,
+          frozenTotalCost: true,
+          frozenMaterialCost: true,
+          frozenHhCost: true,
+          frozenHmCost: true,
+          frozenTaxCost: true,
+          frozenOtherCost: true,
+          marginPct: true,
+          salePrice: true,
+          formulaSnapshotJson: true,
+        },
+      });
+      if (!item) {
+        return res.status(404).json({
+          code: "NO_PRICE_TABLE_ITEM",
+          message: "Produto não encontrado na versão publicada da tabela de preço.",
+        });
+      }
+
+      const formulaSnapshot = item.formulaSnapshotJson as Record<string, unknown> | null;
+      const freightFromSnapshot = Number((formulaSnapshot?.freight as unknown) ?? 0);
+      const freightValue = Number.isFinite(freightFromSnapshot) ? freightFromSnapshot : 0;
+
+      const warnings: Array<{ code: string; message: string }> = [];
+      const versionSummary =
+        publishedVersion.generationSummaryJson && typeof publishedVersion.generationSummaryJson === "object"
+          ? (publishedVersion.generationSummaryJson as Record<string, unknown>)
+          : null;
+      const summaryItemsCreated = Number(versionSummary?.itemsCreated);
+      if (
+        publishedVersion.id === "151a3cbf-ce7c-435c-97ff-7758015db6bf" ||
+        (Number.isFinite(summaryItemsCreated) && summaryItemsCreated <= 2)
+      ) {
+        warnings.push({
+          code: "PILOT_OR_INCOMPLETE_VERSION",
+          message:
+            "A versão publicada atual é piloto/incompleta e possui poucos itens. Revise antes de usar comercialmente.",
+        });
+      }
+
+      return res.json({
+        priceSource: "PRICE_TABLE",
+        priceTable: {
+          id: priceTable.id,
+          code: priceTable.code,
+          name: priceTable.name,
+          defaultMarginPct: Number(priceTable.defaultMarginPct),
+        },
+        version: {
+          id: publishedVersion.id,
+          versionNumber: publishedVersion.versionNumber,
+          status: publishedVersion.status,
+          publishedAt: publishedVersion.publishedAt,
+          effectiveFrom: publishedVersion.effectiveFrom,
+          effectiveTo: publishedVersion.effectiveTo,
+          approvedBy: publishedVersion.approvedBy ?? null,
+        },
+        product: {
+          id: product.id,
+          sku: product.sku,
+          name: product.name,
+        },
+        item: {
+          priceTableItemId: item.id,
+          frozenTotalCost: Number(item.frozenTotalCost),
+          frozenMaterialCost: Number(item.frozenMaterialCost),
+          frozenHhCost: Number(item.frozenHhCost),
+          frozenHmCost: Number(item.frozenHmCost),
+          frozenTaxCost: Number(item.frozenTaxCost),
+          frozenOtherCost: Number(item.frozenOtherCost),
+          marginPct: Number(item.marginPct),
+          salePrice: Number(item.salePrice),
+        },
+        proposalDefaults: {
+          unitCost: Number(item.frozenTotalCost),
+          suggestedPrice: Number(item.salePrice),
+          negotiatedPrice: Number(item.salePrice),
+          marginPerc: Number(item.marginPct),
+          taxesValue: Number(item.frozenTaxCost),
+          freightValue,
+        },
+        warnings,
+      });
+    } catch (e: any) {
+      if (e?.code === "P2023") {
+        return res.status(404).json({
+          code: "INVALID_IDENTIFIER",
+          message: "Identificador inválido para tabela de preço ou produto.",
+        });
+      }
+      console.error("GET /api/price-tables/:priceTableId/products/:productId/published-price", e);
+      return res.status(500).json({
+        code: "INTERNAL_ERROR",
+        message: "Erro interno ao consultar preço publicado da tabela.",
+      });
+    }
+  });
+
   app.post("/api/price-table-versions/:id/publish", async (req, res) => {
     const { id } = req.params;
     const body = (req.body ?? {}) as {
