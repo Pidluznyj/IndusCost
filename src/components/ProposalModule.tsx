@@ -1242,15 +1242,15 @@ export const ProposalModule = () => {
 
               {formTab === "items" ? (
                 <div className="flex-1 overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+                  <table className="min-w-[1020px] w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-accent/20 border-b border-border">
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Produto</th>
-                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Qtd</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[110px] w-[110px]">Qtd</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Custo Unit.</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Sugerido</th>
-                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Negociado</th>
-                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-20">Desc %</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[140px] w-[140px]">Negociado</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Desc %</th>
                         <th
                           className="p-3 text-[10px] font-bold uppercase text-muted-foreground max-w-[120px]"
                           title="Margem líquida sobre faturamento bruto da linha, após impostos, comissão, frete e custo industrial (CIU do motor)."
@@ -1288,11 +1288,11 @@ export const ProposalModule = () => {
                               )}
                             </div>
                           </td>
-                          <td className="p-3">
+                          <td className="p-3 min-w-[110px]">
                             <input
                               type="number"
                               step="0.00001"
-                              className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
+                              className="w-full min-w-[96px] p-1 rounded border border-border bg-background text-xs text-right tabular-nums outline-none"
                               value={item.quantity}
                               onChange={(e) => updateItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
                             />
@@ -1311,20 +1311,20 @@ export const ProposalModule = () => {
                               </span>
                             </CalculatedValue>
                           </td>
-                          <td className="p-3">
+                          <td className="p-3 min-w-[140px]">
                             <input
                               type="number"
                               step="0.00001"
-                              className="w-full p-1 rounded border border-border bg-background text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                              className="w-full min-w-[128px] p-1 rounded border border-border bg-background text-xs font-mono text-right tabular-nums outline-none focus:ring-1 focus:ring-primary"
                               value={item.negotiatedPrice}
                               onChange={(e) => updateItem(idx, { negotiatedPrice: parseFloat(e.target.value) || 0 })}
                             />
                           </td>
-                          <td className="p-3">
+                          <td className="p-3 min-w-[100px]">
                             <input
                               type="number"
                               step="0.00001"
-                              className="w-full p-1 rounded border border-border bg-background text-xs outline-none"
+                              className="w-full min-w-[80px] p-1 rounded border border-border bg-background text-xs text-right tabular-nums outline-none"
                               value={item.discountPerc}
                               onChange={(e) => updateItem(idx, { discountPerc: parseFloat(e.target.value) || 0 })}
                             />
