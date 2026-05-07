@@ -103,6 +103,80 @@ function safeOptionalInt(value: unknown): number | undefined {
   return Math.trunc(n);
 }
 
+const PROPOSAL_MAX_ABS_MONEY = 999_999_999_999.99;
+const PROPOSAL_MAX_QTY = 1_000_000;
+const PROPOSAL_MAX_PERCENT = 100;
+
+function validateProposalPayloadForSafeDecimals(payload: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+  const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  const checkAbsMax = (label: string, value: unknown, maxAbs = PROPOSAL_MAX_ABS_MONEY) => {
+    if (!isFiniteNumber(value)) {
+      errors.push(`${label}: valor inválido.`);
+      return;
+    }
+    if (Math.abs(value) > maxAbs) {
+      errors.push(`${label}: valor acima do limite permitido.`);
+    }
+  };
+  const checkPercentRange = (label: string, value: unknown, min = 0, max = PROPOSAL_MAX_PERCENT) => {
+    if (!isFiniteNumber(value)) {
+      errors.push(`${label}: percentual inválido.`);
+      return;
+    }
+    if (value < min || value > max) {
+      errors.push(`${label}: percentual deve estar entre ${min}% e ${max}%.`);
+    }
+  };
+
+  checkAbsMax("Total bruto da proposta", payload.totalGrossValue);
+  checkAbsMax("Total de desconto da proposta", payload.totalDiscount);
+  checkAbsMax("Total líquido da proposta", payload.totalNetValue);
+  checkAbsMax("Total de custo da proposta", payload.totalCost);
+  checkAbsMax("Total de margem da proposta", payload.totalMarginValue);
+  checkAbsMax("Total de impostos da proposta", payload.totalTaxes);
+  checkAbsMax("Total de comissão da proposta", payload.totalCommission);
+  checkAbsMax("Total de frete da proposta", payload.totalFreight);
+
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!Array.isArray(payload.items)) {
+    errors.push("Itens da proposta: formato inválido.");
+    return errors;
+  }
+
+  items.forEach((row, idx) => {
+    const item = (row ?? {}) as Record<string, unknown>;
+    const skuOrProduct = typeof item.productId === "string" ? item.productId : `#${idx + 1}`;
+    const prefix = `Item ${skuOrProduct}`;
+
+    if (!isFiniteNumber(item.quantity)) {
+      errors.push(`${prefix}: quantidade inválida.`);
+    } else if (item.quantity <= 0) {
+      errors.push(`${prefix}: quantidade deve ser maior que zero.`);
+    } else if (item.quantity > PROPOSAL_MAX_QTY) {
+      errors.push(`${prefix}: quantidade acima do limite permitido (${PROPOSAL_MAX_QTY.toLocaleString("pt-BR")}).`);
+    }
+
+    checkAbsMax(`${prefix}: custo unitário`, item.unitCost);
+    checkAbsMax(`${prefix}: preço sugerido`, item.suggestedPrice);
+    checkAbsMax(`${prefix}: preço negociado`, item.negotiatedPrice);
+    checkPercentRange(`${prefix}: desconto`, item.discountPerc, 0, PROPOSAL_MAX_PERCENT);
+    checkAbsMax(`${prefix}: valor de desconto`, item.discountValue);
+    checkAbsMax(`${prefix}: valor de margem`, item.marginValue);
+    checkAbsMax(`${prefix}: valor de impostos`, item.taxesValue);
+    checkAbsMax(`${prefix}: valor de comissão`, item.commissionValue);
+    checkAbsMax(`${prefix}: valor de frete`, item.freightValue);
+
+    if (isFiniteNumber(item.marginPerc) && Math.abs(item.marginPerc) > 10_000) {
+      errors.push(`${prefix}: margem percentual fora do intervalo permitido.`);
+    } else if (!isFiniteNumber(item.marginPerc)) {
+      errors.push(`${prefix}: margem percentual inválida.`);
+    }
+  });
+
+  return errors;
+}
+
 function normalizeProposalItem(
   item: Partial<ProposalItem> & { productId: string }
 ): ProposalItem {
@@ -657,6 +731,15 @@ export const ProposalModule = () => {
     try {
       setSaving(true);
       const payload = buildSavePayload();
+      const validationErrors = validateProposalPayloadForSafeDecimals(payload);
+      if (validationErrors.length > 0) {
+        alert(
+          `Existem valores muito altos ou inválidos na proposta. Revise quantidade, desconto e preço negociado antes de salvar.\n\n- ${validationErrors
+            .slice(0, 4)
+            .join("\n- ")}`
+        );
+        return;
+      }
       await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },

@@ -7144,6 +7144,16 @@ app.delete("/api/employees/:id", async (req, res) => {
     return typeof value === "string" && PROPOSAL_STATUS_VALUES.includes(value as any);
   }
 
+  function isNumericOverflowError(error: unknown): boolean {
+    const e = error as any;
+    const text = `${e?.message ?? ""} ${e?.code ?? ""} ${e?.meta?.message ?? ""}`.toLowerCase();
+    return (
+      text.includes("numeric field overflow") ||
+      text.includes("precision 20, scale 6") ||
+      text.includes("22003")
+    );
+  }
+
   /** Escalares persistíveis em Proposal (POST/PUT); evita chaves desconhecidas/relações no spread para o Prisma. */
   const PROPOSAL_WRITE_SCALAR_KEYS = [
     "title",
@@ -7544,17 +7554,28 @@ app.delete("/api/employees/:id", async (req, res) => {
         error: `Status inválido. Use um dos valores: ${PROPOSAL_STATUS_VALUES.join(", ")}.`,
       });
     }
-    const proposalScalars = pickProposalWriteScalars(proposalData as Record<string, unknown>);
-    const proposal = await prisma.proposal.create({
-      data: {
-        ...(proposalScalars as any),
-        items: {
-          create: items.map((item: any) => buildProposalItemCreateInput(item as Record<string, unknown>)),
+    try {
+      const proposalScalars = pickProposalWriteScalars(proposalData as Record<string, unknown>);
+      const proposal = await prisma.proposal.create({
+        data: {
+          ...(proposalScalars as any),
+          items: {
+            create: items.map((item: any) => buildProposalItemCreateInput(item as Record<string, unknown>)),
+          },
         },
-      },
-      include: { items: true },
-    });
-    res.json(proposal);
+        include: { items: true },
+      });
+      res.json(proposal);
+    } catch (e: any) {
+      console.error("POST /api/proposals", e);
+      if (isNumericOverflowError(e)) {
+        return res.status(422).json({
+          error: "Valores numéricos inválidos ou muito altos na proposta.",
+          code: "NUMERIC_FIELD_OVERFLOW",
+        });
+      }
+      return res.status(500).json({ error: "Erro ao salvar proposta." });
+    }
   });
 
   app.put("/api/proposals/:id", async (req, res) => {
@@ -7569,21 +7590,32 @@ app.delete("/api/employees/:id", async (req, res) => {
       });
     }
 
-    const proposalScalars = pickProposalWriteScalars(proposalData as Record<string, unknown>);
-    const proposal = await prisma.$transaction(async (tx) => {
-      await tx.proposalItem.deleteMany({ where: { proposalId: id } });
-      return await tx.proposal.update({
-        where: { id },
-        data: {
-          ...(proposalScalars as any),
-          items: {
-            create: items.map((item: any) => buildProposalItemCreateInput(item as Record<string, unknown>)),
+    try {
+      const proposalScalars = pickProposalWriteScalars(proposalData as Record<string, unknown>);
+      const proposal = await prisma.$transaction(async (tx) => {
+        await tx.proposalItem.deleteMany({ where: { proposalId: id } });
+        return await tx.proposal.update({
+          where: { id },
+          data: {
+            ...(proposalScalars as any),
+            items: {
+              create: items.map((item: any) => buildProposalItemCreateInput(item as Record<string, unknown>)),
+            },
           },
-        },
-        include: { items: true },
+          include: { items: true },
+        });
       });
-    });
-    res.json(proposal);
+      res.json(proposal);
+    } catch (e: any) {
+      console.error("PUT /api/proposals/:id", e);
+      if (isNumericOverflowError(e)) {
+        return res.status(422).json({
+          error: "Valores numéricos inválidos ou muito altos na proposta.",
+          code: "NUMERIC_FIELD_OVERFLOW",
+        });
+      }
+      return res.status(500).json({ error: "Erro ao atualizar proposta." });
+    }
   });
 
   app.patch("/api/proposals/:id/status", async (req, res) => {
