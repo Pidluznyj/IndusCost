@@ -369,6 +369,20 @@ export const SimulationModule = () => {
     });
   }, [savedNewProductSimulations, savedSnapshotSearch]);
 
+  const headerSimulatedProductName = useMemo(() => {
+    if (workspaceTab === "NEW_PRODUCT") {
+      const name = finalProductName.trim();
+      return name || null;
+    }
+    const compared = String(comparing?.base?.product ?? "").trim();
+    if (compared) return compared;
+    const selectedId = String(formData.productId ?? "").trim();
+    if (!selectedId) return null;
+    const selected = products.find((p) => String(p?.id ?? "") === selectedId);
+    const selectedName = String(selected?.name ?? "").trim();
+    return selectedName || null;
+  }, [workspaceTab, finalProductName, comparing, formData.productId, products]);
+
   const updateSimDraftMaterial = (idx: number, field: keyof NewProductMaterialLine, value: string) => {
     setSimDraftMaterials((prev) => {
       const next = [...prev];
@@ -980,6 +994,11 @@ export const SimulationModule = () => {
         <div className="flex flex-col gap-1">
           <h2 className="text-2xl font-bold tracking-tight">Cenários e Simulações</h2>
           <p className="text-xs text-muted-foreground">Teste o impacto de variações de mercado sem alterar seus dados oficiais.</p>
+          {headerSimulatedProductName ? (
+            <p className="text-sm font-medium text-foreground/90">
+              Produto simulado: <span className="font-bold">{headerSimulatedProductName}</span>
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
