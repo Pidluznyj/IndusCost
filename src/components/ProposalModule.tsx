@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  AlertTriangle,
   ChevronRight,
   Save,
   ArrowLeft,
@@ -231,6 +232,8 @@ export const ProposalModule = () => {
   const [priceTables, setPriceTables] = useState<PriceTableListRow[]>([]);
   /** Avisos de preço publicado (piloto etc.) nesta sessão de edição; limpa ao mudar tabela. */
   const [tablePriceSessionAlerts, setTablePriceSessionAlerts] = useState<string[]>([]);
+  /** Aviso discreto ao trocar a tabela padrão com itens já na proposta. */
+  const [defaultTableChangedNotice, setDefaultTableChangedNotice] = useState<string | null>(null);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -314,19 +317,21 @@ export const ProposalModule = () => {
     return Array.from(new Set([...warningsFromItemSnapshots, ...tablePriceSessionAlerts]));
   }, [warningsFromItemSnapshots, tablePriceSessionAlerts]);
 
+  useEffect(() => {
+    if (!defaultTableChangedNotice) return;
+    const id = window.setTimeout(() => setDefaultTableChangedNotice(null), 10000);
+    return () => window.clearTimeout(id);
+  }, [defaultTableChangedNotice]);
+
   const handlePriceTableSelectionChange = useCallback(
     (nextTableId: string) => {
       const hasItems = (formData.items?.length ?? 0) > 0;
-      const currentId = formData.priceTableId ?? "";
-      const nextId = nextTableId.trim();
-      if (hasItems && currentId !== nextId) {
-        alert(
-          "Remova os itens da proposta antes de trocar a tabela de preço, para evitar mistura de preços de origens diferentes."
-        );
-        return;
-      }
+      const prevTrim = (formData.priceTableId ?? "").trim();
+      const nextTrim = nextTableId.trim();
+      const selectionChanged = prevTrim !== nextTrim;
+
       setTablePriceSessionAlerts([]);
-      if (!nextId) {
+      if (!nextTrim) {
         setFormData((prev) => ({
           ...prev,
           priceTableId: null,
@@ -335,9 +340,14 @@ export const ProposalModule = () => {
           priceTableVersionNumber: null,
           priceSource: null,
         }));
+        if (hasItems && selectionChanged) {
+          setDefaultTableChangedNotice(
+            "A tabela padrão foi alterada. Os itens já adicionados não foram recalculados; a nova tabela será usada apenas para os próximos itens."
+          );
+        }
         return;
       }
-      const table = priceTables.find((t) => t.id === nextId);
+      const table = priceTables.find((t) => t.id === nextTrim);
       if (!table?.latestPublishedVersion) {
         alert("A tabela selecionada não possui versão publicada vigente.");
         return;
@@ -350,6 +360,11 @@ export const ProposalModule = () => {
         priceTableVersionNumber: table.latestPublishedVersion.versionNumber,
         priceSource: "PRICE_TABLE",
       }));
+      if (hasItems && selectionChanged) {
+        setDefaultTableChangedNotice(
+          "A tabela padrão foi alterada. Os itens já adicionados não foram recalculados; a nova tabela será usada apenas para os próximos itens."
+        );
+      }
     },
     [formData.items, formData.priceTableId, priceTables]
   );
@@ -499,6 +514,7 @@ export const ProposalModule = () => {
     setFormTab("items");
     setProposalIndicatorsDetailOpen(false);
     setTablePriceSessionAlerts([]);
+    setDefaultTableChangedNotice(null);
     setFormData({
       title: "",
       customerId: "",
@@ -527,6 +543,7 @@ export const ProposalModule = () => {
         : [];
       setEditingProposal(data);
       setTablePriceSessionAlerts([]);
+      setDefaultTableChangedNotice(null);
       setFormData({ ...data, items });
       setFormTab("items");
     setProposalIndicatorsDetailOpen(false);
@@ -969,29 +986,42 @@ export const ProposalModule = () => {
         </div>
 
         {(formData.priceSource === "PRICE_TABLE" && formData.priceTableCode && formData.priceTableVersionNumber != null) ||
-        mergedTablePriceAlerts.length > 0 ? (
+        mergedTablePriceAlerts.length > 0 ||
+        defaultTableChangedNotice ? (
           <div className="space-y-2">
             {formData.priceSource === "PRICE_TABLE" &&
               formData.priceTableCode &&
               formData.priceTableVersionNumber != null && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-950 dark:border-emerald-700 dark:bg-emerald-50 dark:text-emerald-950">
-                  Esta proposta utiliza tabela de preço publicada:{" "}
-                  <span className="font-semibold text-emerald-950">
-                    {formData.priceTableCode} v{formData.priceTableVersionNumber}
-                  </span>
-                  .
+                <div className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-slate-900 dark:border-emerald-700 dark:bg-emerald-50">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-emerald-800" aria-hidden />
+                  <div className="text-slate-900">
+                    Tabela padrão para novos itens:{" "}
+                    <span className="font-semibold text-emerald-950">
+                      {formData.priceTableCode} v{formData.priceTableVersionNumber}
+                    </span>
+                    .
+                  </div>
                 </div>
               )}
+            {defaultTableChangedNotice && (
+              <div className="flex gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-xs leading-relaxed text-slate-900 dark:border-slate-600 dark:bg-slate-100 dark:text-slate-900">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-700" aria-hidden />
+                <p>{defaultTableChangedNotice}</p>
+              </div>
+            )}
             {mergedTablePriceAlerts.length > 0 && (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-50 dark:text-amber-950">
-                <p className="font-semibold text-amber-950">
-                  A tabela publicada possui avisos. Revise antes de enviar a proposta.
-                </p>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-950">
-                  {mergedTablePriceAlerts.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
+              <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-slate-900 dark:border-amber-700 dark:bg-amber-50">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-900" aria-hidden />
+                <div className="min-w-0 flex-1 text-slate-900">
+                  <p className="font-semibold text-amber-950">
+                    A tabela publicada possui avisos. Revise antes de enviar a proposta.
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-900">
+                    {mergedTablePriceAlerts.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )}
           </div>
@@ -1042,18 +1072,18 @@ export const ProposalModule = () => {
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">
-                    Tabela de preço comercial
+                    Tabela padrão para novos itens
                   </label>
                   <SearchableSelect
                     placeholder="Sem tabela / preço manual"
                     options={priceTableSelectOptions}
                     value={formData.priceTableId ?? ""}
-                    disabled={(formData.items?.length ?? 0) > 0}
                     unknownSelectionLabel="Tabela não listada (verifique cadastro ou publicação)"
                     onChange={(val) => handlePriceTableSelectionChange(val ?? "")}
                   />
                   <p className="text-[10px] text-muted-foreground leading-snug">
-                    Só aparecem tabelas ativas com versão publicada. Com itens já adicionados, a troca fica bloqueada.
+                    Esta tabela será usada apenas para novos itens. Itens já adicionados mantêm a origem de preço em
+                    que foram criados. Só aparecem tabelas ativas com versão publicada.
                   </p>
                 </div>
 
@@ -1245,13 +1275,6 @@ export const ProposalModule = () => {
                                 >
                                   Preço da tabela
                                   {(() => {
-                                    if (
-                                      formData.priceTableCode &&
-                                      formData.priceTableVersionNumber != null &&
-                                      Number.isFinite(Number(formData.priceTableVersionNumber))
-                                    ) {
-                                      return ` · ${formData.priceTableCode} v${formData.priceTableVersionNumber}`;
-                                    }
                                     const s = item.pricingSnapshotJson as Record<string, unknown> | null | undefined;
                                     const pt = s?.priceTable as { code?: string } | undefined;
                                     const ver = s?.version as { versionNumber?: unknown } | undefined;
