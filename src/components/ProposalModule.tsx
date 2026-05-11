@@ -1425,7 +1425,7 @@ export const ProposalModule = () => {
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[110px] w-[110px]">Qtd</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Custo Unit.</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Sugerido</th>
-                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[140px] w-[140px]">Negociado</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Negociado</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Desc %</th>
                         <th
                           className="p-3 text-[10px] font-bold uppercase text-muted-foreground max-w-[120px]"
@@ -1490,10 +1490,10 @@ export const ProposalModule = () => {
                               <span>{formatMoneyDisplay(item.suggestedPrice)}</span>
                             </CalculatedValue>
                           </td>
-                          <td className="p-3 min-w-[140px]">
+                          <td className="p-3 min-w-[100px] w-[100px]">
                             <NumericInputCell
                               ariaLabel="Preço negociado"
-                              className="w-full min-w-[128px] p-1 rounded border border-border bg-background text-xs font-mono text-right tabular-nums outline-none focus:ring-1 focus:ring-primary"
+                              className="w-full min-w-[88px] p-1 rounded border border-border bg-background text-xs font-mono text-right tabular-nums outline-none focus:ring-1 focus:ring-primary"
                               value={safeNum(item.negotiatedPrice)}
                               onChange={(v) => updateItem(idx, { negotiatedPrice: v })}
                             />
