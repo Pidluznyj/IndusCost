@@ -7241,6 +7241,18 @@ app.delete("/api/employees/:id", async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(item, "pricingSnapshotJson")) {
       row.pricingSnapshotJson = item.pricingSnapshotJson;
     }
+    if (Object.prototype.hasOwnProperty.call(item, "priceTableId")) {
+      row.priceTableId = item.priceTableId;
+    }
+    if (Object.prototype.hasOwnProperty.call(item, "priceTableVersionId")) {
+      row.priceTableVersionId = item.priceTableVersionId;
+    }
+    if (Object.prototype.hasOwnProperty.call(item, "priceTableCode")) {
+      row.priceTableCode = item.priceTableCode;
+    }
+    if (Object.prototype.hasOwnProperty.call(item, "priceTableVersionNumber")) {
+      row.priceTableVersionNumber = item.priceTableVersionNumber;
+    }
     return row;
   }
 
