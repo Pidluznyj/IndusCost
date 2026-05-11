@@ -103,6 +103,35 @@ function safeOptionalInt(value: unknown): number | undefined {
   return Math.trunc(n);
 }
 
+/** Formata valor monetário para exibição na grade (R$ 1.234,56). */
+function formatMoneyDisplay(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** Formata percentual para exibição na grade (15,50%). */
+function formatPercentDisplay(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
+/** Formata valor numérico para o atributo `value` de input type="number". */
+function formatMoneyInputValue(value: unknown, decimals = 2): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "";
+  return n.toFixed(decimals);
+}
+
 const PROPOSAL_MAX_ABS_MONEY = 999_999_999_999.99;
 const PROPOSAL_MAX_QTY = 1_000_000;
 const PROPOSAL_MAX_PERCENT = 100;
@@ -281,6 +310,58 @@ async function fetchPublishedPriceJson(
     throw new Error(mapPublishedPriceHttpError(res.status, body));
   }
   return body as unknown as PublishedPriceApiResponse;
+}
+
+type NumericInputCellProps = {
+  value: number;
+  onChange: (next: number) => void;
+  className?: string;
+  step?: string;
+  decimals?: number;
+  ariaLabel?: string;
+};
+
+/**
+ * Input numérico controlado que mostra o valor formatado (2 casas) quando não focado
+ * e o rascunho cru enquanto o usuário digita. O estado numérico exposto via `onChange`
+ * NÃO é forçado a 2 casas — apenas a apresentação é arredondada. Evita exibir
+ * NaN/undefined/null e mantém compatibilidade com `parseFloat`/`type="number"`.
+ */
+function NumericInputCell({
+  value,
+  onChange,
+  className,
+  step = "0.01",
+  decimals = 2,
+  ariaLabel,
+}: NumericInputCellProps) {
+  const [focused, setFocused] = useState(false);
+  const [draft, setDraft] = useState<string>("");
+
+  const displayValue = focused ? draft : formatMoneyInputValue(value, decimals);
+
+  return (
+    <input
+      type="number"
+      step={step}
+      aria-label={ariaLabel}
+      className={className}
+      value={displayValue}
+      onFocus={() => {
+        setFocused(true);
+        setDraft(formatMoneyInputValue(value, decimals));
+      }}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDraft(raw);
+        const parsed = parseFloat(raw);
+        onChange(Number.isFinite(parsed) ? parsed : 0);
+      }}
+      onBlur={() => {
+        setFocused(false);
+      }}
+    />
+  );
 }
 
 export const ProposalModule = () => {
@@ -1401,34 +1482,28 @@ export const ProposalModule = () => {
                           </td>
                           <td className="p-3 text-xs font-mono text-muted-foreground">
                             <CalculatedValue meta={item.calculationExplainability?.unitCost ?? null} hideIcon>
-                              <span>
-                                {safeNum(item.unitCost).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
-                              </span>
+                              <span>{formatMoneyDisplay(item.unitCost)}</span>
                             </CalculatedValue>
                           </td>
                           <td className="p-3 text-xs font-mono text-blue-600 font-medium">
                             <CalculatedValue meta={item.calculationExplainability?.suggestedPrice ?? null} hideIcon>
-                              <span>
-                                {safeNum(item.suggestedPrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 5 })}
-                              </span>
+                              <span>{formatMoneyDisplay(item.suggestedPrice)}</span>
                             </CalculatedValue>
                           </td>
                           <td className="p-3 min-w-[140px]">
-                            <input
-                              type="number"
-                              step="0.00001"
+                            <NumericInputCell
+                              ariaLabel="Preço negociado"
                               className="w-full min-w-[128px] p-1 rounded border border-border bg-background text-xs font-mono text-right tabular-nums outline-none focus:ring-1 focus:ring-primary"
-                              value={item.negotiatedPrice}
-                              onChange={(e) => updateItem(idx, { negotiatedPrice: parseFloat(e.target.value) || 0 })}
+                              value={safeNum(item.negotiatedPrice)}
+                              onChange={(v) => updateItem(idx, { negotiatedPrice: v })}
                             />
                           </td>
                           <td className="p-3 min-w-[100px]">
-                            <input
-                              type="number"
-                              step="0.00001"
+                            <NumericInputCell
+                              ariaLabel="Desconto percentual"
                               className="w-full min-w-[80px] p-1 rounded border border-border bg-background text-xs text-right tabular-nums outline-none"
-                              value={item.discountPerc}
-                              onChange={(e) => updateItem(idx, { discountPerc: parseFloat(e.target.value) || 0 })}
+                              value={safeNum(item.discountPerc)}
+                              onChange={(v) => updateItem(idx, { discountPerc: v })}
                             />
                           </td>
                           <td className="p-3">
@@ -1456,12 +1531,14 @@ export const ProposalModule = () => {
                                       : "text-red-600"
                                 )}
                               >
-                                {safeNum(item.marginPerc).toFixed(3)}%
+                                {formatPercentDisplay(item.marginPerc)}
                               </div>
                             </CalculatedValue>
                           </td>
                           <td className="p-3 text-right text-xs font-bold font-mono">
-                            {(safeNum(item.quantity) * safeNum(item.negotiatedPrice) - safeNum(item.discountValue)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })}
+                            {formatMoneyDisplay(
+                              safeNum(item.quantity) * safeNum(item.negotiatedPrice) - safeNum(item.discountValue)
+                            )}
                           </td>
                           <td className="p-3 text-center">
                             <button 
@@ -1509,15 +1586,15 @@ export const ProposalModule = () => {
               <div className="p-6 bg-accent/30 border-t border-border grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">Valor Bruto Total</p>
-                  <p className="text-lg font-bold font-mono">{totals.totalGross.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p className="text-lg font-bold font-mono">{formatMoneyDisplay(totals.totalGross)}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">Descontos Concedidos</p>
-                  <p className="text-lg font-bold font-mono text-red-600">-{totals.totalDiscount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p className="text-lg font-bold font-mono text-red-600">-{formatMoneyDisplay(totals.totalDiscount)}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">Receita Líquida</p>
-                  <p className="text-lg font-bold font-mono text-primary">{totals.totalNet.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p className="text-lg font-bold font-mono text-primary">{formatMoneyDisplay(totals.totalNet)}</p>
                 </div>
                 <div className="space-y-1 border-l border-border pl-6">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">Margem de Contribuição</p>
@@ -1526,9 +1603,9 @@ export const ProposalModule = () => {
                       "text-lg font-bold font-mono",
                       totals.totalMarginPerc >= 20 ? "text-green-600" : totals.totalMarginPerc >= 10 ? "text-orange-600" : "text-red-600"
                     )}>
-                      {totals.totalMarginPerc.toFixed(3)}%
+                      {formatPercentDisplay(totals.totalMarginPerc)}
                     </p>
-                    <span className="text-xs text-muted-foreground">({totals.totalMarginValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span>
+                    <span className="text-xs text-muted-foreground">({formatMoneyDisplay(totals.totalMarginValue)})</span>
                   </div>
                 </div>
               </div>
