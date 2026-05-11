@@ -374,6 +374,10 @@ model ProposalItem {
   priceTableItemId    String?          @db.Uuid
   priceSource         String?
   pricingSnapshotJson Json?
+  priceTableId            String?          @db.Uuid
+  priceTableVersionId     String?          @db.Uuid
+  priceTableCode          String?
+  priceTableVersionNumber Int?
   Product            Product          @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Proposal           Proposal         @relation(fields: [proposalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salesOrderItems    SalesOrderItem[]
@@ -384,6 +388,9 @@ model ProposalItem {
   @@index([externalProductId])
   @@index([priceTableItemId])
   @@index([priceSource])
+  @@index([priceTableId])
+  @@index([priceTableVersionId])
+  @@index([priceTableCode])
 }
 
 model SalesOrder {
