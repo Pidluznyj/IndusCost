@@ -23,6 +23,57 @@ import {
   type PricingSortKey,
 } from "@/src/lib/pricingListFilters";
 
+type PriceTableLite = {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  defaultMarginPct: number | string;
+};
+
+type CommercialGenIssuePreview = {
+  sku?: string;
+  productName?: string;
+  code?: string;
+  message?: string;
+};
+
+type CommercialGenResult = {
+  priceTableId: string;
+  priceTableCode: string;
+  priceTableName: string;
+  status: "SUCCESS" | "ERROR";
+  versionNumber: number | null;
+  versionStatus: string;
+  productsRead: number;
+  itemsCreated: number;
+  itemsSkipped: number;
+  errorsCount: number;
+  warningsCount: number;
+  errorsPreview: CommercialGenIssuePreview[];
+  warningsPreview: CommercialGenIssuePreview[];
+  fatalErrorMessage?: string;
+};
+
+const COMMERCIAL_TABLE_CODES = ["ATACADO", "VAREJO_1", "VAREJO_2", "VAREJO_3"] as const;
+const COMMERCIAL_TABLE_LABELS: Record<string, string> = {
+  ATACADO: "Atacado",
+  VAREJO_1: "Varejo 1",
+  VAREJO_2: "Varejo 2",
+  VAREJO_3: "Varejo 3",
+};
+
+function extractIssuePreview(raw: unknown): CommercialGenIssuePreview {
+  if (!raw || typeof raw !== "object") return {};
+  const o = raw as Record<string, unknown>;
+  const out: CommercialGenIssuePreview = {};
+  if (typeof o.sku === "string" && o.sku.trim()) out.sku = o.sku.trim();
+  if (typeof o.productName === "string" && o.productName.trim()) out.productName = o.productName.trim();
+  if (typeof o.code === "string" && o.code.trim()) out.code = o.code.trim();
+  if (typeof o.message === "string" && o.message.trim()) out.message = o.message.trim();
+  return out;
+}
+
 export const PricingModule = () => {
   const [tourOpen, setTourOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"UNIT" | "BATCH">("UNIT");
@@ -75,17 +126,36 @@ export const PricingModule = () => {
     otherVariables: 0,
   });
 
+  const [priceTables, setPriceTables] = useState<PriceTableLite[]>([]);
+  const [commercialGenOpen, setCommercialGenOpen] = useState(false);
+  const [commercialGenTaxRuleId, setCommercialGenTaxRuleId] = useState("");
+  const [commercialGenEffectiveFrom, setCommercialGenEffectiveFrom] = useState("");
+  const [commercialGenNotes, setCommercialGenNotes] = useState("");
+  const [commercialGenSelectedCodes, setCommercialGenSelectedCodes] = useState<Set<string>>(
+    () => new Set(COMMERCIAL_TABLE_CODES)
+  );
+  const [commercialGenRunning, setCommercialGenRunning] = useState(false);
+  const [commercialGenCurrentCode, setCommercialGenCurrentCode] = useState<string | null>(null);
+  const [commercialGenResults, setCommercialGenResults] = useState<CommercialGenResult[] | null>(null);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [p, prod, tax] = await Promise.all([
+      const [p, prod, tax, pt] = await Promise.all([
         fetchJsonOk("/api/pricing"),
         fetchJsonOk("/api/products"),
         fetchJsonOk("/api/tax-rules"),
+        fetchJsonOk<PriceTableLite[]>("/api/price-tables").catch((e) => {
+          console.warn("GET /api/price-tables (PricingModule):", e);
+          return [] as PriceTableLite[];
+        }),
       ]);
       setPricings(Array.isArray(p) ? p : []);
       setProducts(Array.isArray(prod) ? prod : []);
       setTaxRules(Array.isArray(tax) ? tax : []);
+      setPriceTables(
+        Array.isArray(pt) ? pt.filter((t) => String(t.status).toUpperCase() === "ACTIVE") : []
+      );
     } catch (error) {
       console.error("Erro ao buscar dados de preço:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar precificação.");
@@ -319,6 +389,121 @@ export const PricingModule = () => {
     }
   };
 
+  const toggleCommercialTable = (code: string) => {
+    setCommercialGenSelectedCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  const handleGenerateCommercialDrafts = async () => {
+    if (!commercialGenTaxRuleId) {
+      alert("Selecione uma regra fiscal.");
+      return;
+    }
+    const selectedTables = COMMERCIAL_TABLE_CODES
+      .map((code) => priceTables.find((t) => t.code === code))
+      .filter((t): t is PriceTableLite => !!t && commercialGenSelectedCodes.has(t.code));
+    if (selectedTables.length === 0) {
+      alert("Selecione pelo menos uma tabela disponível.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Gerar DRAFTs para ${selectedTables.length} tabela(s)? Nenhuma versão será publicada automaticamente.`
+      )
+    ) {
+      return;
+    }
+
+    const taxRuleName = (taxRules.find((r: { id: string; name?: string }) => r.id === commercialGenTaxRuleId)?.name as string | undefined) ?? "Regra fiscal";
+    const generatedAt = new Date().toLocaleString("pt-BR");
+    const vig = commercialGenEffectiveFrom?.trim();
+    const userNotes = commercialGenNotes?.trim();
+
+    setCommercialGenRunning(true);
+    setCommercialGenResults([]);
+    try {
+      const accumulated: CommercialGenResult[] = [];
+      for (const table of selectedTables) {
+        setCommercialGenCurrentCode(table.code);
+        const noteParts: string[] = [
+          "Gerado pela Formação de Preço Comercial.",
+          `Tabela: ${table.code}.`,
+          `Regra fiscal: ${taxRuleName}.`,
+        ];
+        if (vig) noteParts.push(`Vigência desejada: ${vig}.`);
+        if (userNotes) noteParts.push(`Observações: ${userNotes}`);
+        noteParts.push(`Geração: ${generatedAt}.`);
+        const consolidatedNotes = noteParts.join(" ");
+
+        try {
+          const payload = await fetchJsonOk<{
+            version?: { id?: string; versionNumber?: number | string; status?: string };
+            summary?: {
+              productsRead?: number | string;
+              itemsCreated?: number | string;
+              itemsSkipped?: number | string;
+              errors?: Array<Record<string, unknown>>;
+              warnings?: Array<Record<string, unknown>>;
+            };
+          }>(`/api/price-tables/${table.id}/versions/generate-draft`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              taxRuleId: commercialGenTaxRuleId,
+              includeAllActiveProducts: true,
+              notes: consolidatedNotes,
+            }),
+          });
+
+          const errors = Array.isArray(payload.summary?.errors) ? payload.summary?.errors ?? [] : [];
+          const warnings = Array.isArray(payload.summary?.warnings) ? payload.summary?.warnings ?? [] : [];
+          const vn = Number(payload.version?.versionNumber);
+
+          accumulated.push({
+            priceTableId: table.id,
+            priceTableCode: table.code,
+            priceTableName: table.name,
+            status: "SUCCESS",
+            versionNumber: Number.isFinite(vn) ? vn : null,
+            versionStatus: typeof payload.version?.status === "string" ? payload.version.status : "DRAFT",
+            productsRead: Number(payload.summary?.productsRead) || 0,
+            itemsCreated: Number(payload.summary?.itemsCreated) || 0,
+            itemsSkipped: Number(payload.summary?.itemsSkipped) || 0,
+            errorsCount: errors.length,
+            warningsCount: warnings.length,
+            errorsPreview: errors.slice(0, 3).map(extractIssuePreview),
+            warningsPreview: warnings.slice(0, 3).map(extractIssuePreview),
+          });
+        } catch (error) {
+          accumulated.push({
+            priceTableId: table.id,
+            priceTableCode: table.code,
+            priceTableName: table.name,
+            status: "ERROR",
+            versionNumber: null,
+            versionStatus: "—",
+            productsRead: 0,
+            itemsCreated: 0,
+            itemsSkipped: 0,
+            errorsCount: 0,
+            warningsCount: 0,
+            errorsPreview: [],
+            warningsPreview: [],
+            fatalErrorMessage: error instanceof Error ? error.message : "Falha ao gerar DRAFT.",
+          });
+        }
+        setCommercialGenResults([...accumulated]);
+      }
+    } finally {
+      setCommercialGenRunning(false);
+      setCommercialGenCurrentCode(null);
+    }
+  };
+
   const handleRunSimulator = async () => {
     setSimulatorError(null);
     setSimulatorResult(null);
@@ -364,6 +549,279 @@ export const PricingModule = () => {
             <p className="text-xs text-muted-foreground">Estratégia e precificação do portfólio industrial.</p>
           </div>
           <TourHelpButton onClick={() => setTourOpen(true)} />
+        </div>
+
+        {/* Gerar Tabelas Comerciais (card colapsável) */}
+        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <button
+            type="button"
+            onClick={() => setCommercialGenOpen((v) => !v)}
+            aria-expanded={commercialGenOpen}
+            aria-controls="pricing-generate-commercial-body"
+            className="w-full flex items-start justify-between gap-3 text-left"
+          >
+            <div className="min-w-0">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" /> Gerar Tabelas Comerciais
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Crie versões DRAFT revisáveis para Atacado e Varejo. Nenhuma tabela será publicada automaticamente.
+              </p>
+            </div>
+            <ChevronRight
+              className={cn(
+                "h-5 w-5 text-muted-foreground transition-transform shrink-0",
+                commercialGenOpen && "rotate-90"
+              )}
+            />
+          </button>
+
+          {commercialGenOpen && (
+            <div id="pricing-generate-commercial-body" className="mt-5 space-y-5">
+              <div className="rounded-xl border border-border bg-accent/20 p-3 text-xs text-muted-foreground">
+                Esta seção gera apenas DRAFTs. Revisão e publicação continuam em
+                {" "}<span className="font-bold text-foreground">Configurações &gt; Tabelas de Preço Comerciais</span>.
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Regra fiscal</label>
+                  <SearchableSelect
+                    placeholder="Selecione a regra fiscal..."
+                    options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
+                      value: r.id,
+                      label: r.name,
+                      sublabel: r.description?.trim() || undefined,
+                      searchTerms: [r.name, r.description].filter(Boolean).join(" "),
+                    }))}
+                    value={commercialGenTaxRuleId}
+                    onChange={(val) => setCommercialGenTaxRuleId(val)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Vigência desejada (referência)</label>
+                  <input
+                    type="date"
+                    className="w-full p-3 rounded-xl border border-border bg-background text-sm outline-none"
+                    value={commercialGenEffectiveFrom}
+                    onChange={(e) => setCommercialGenEffectiveFrom(e.target.value)}
+                    disabled={commercialGenRunning}
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-snug">
+                    A vigência será usada como referência para publicação. Nesta etapa serão geradas apenas DRAFTs para revisão.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase text-muted-foreground">Observações (opcional)</label>
+                <textarea
+                  className="w-full p-3 rounded-xl border border-border bg-background text-sm outline-none min-h-[72px]"
+                  value={commercialGenNotes}
+                  onChange={(e) => setCommercialGenNotes(e.target.value)}
+                  placeholder="Detalhes para a equipe que vai revisar / publicar (opcional)."
+                  disabled={commercialGenRunning}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase text-muted-foreground">Tabelas a gerar</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {COMMERCIAL_TABLE_CODES.map((code) => {
+                    const table = priceTables.find((t) => t.code === code);
+                    const available = !!table;
+                    const checked = available && commercialGenSelectedCodes.has(code);
+                    const margin = table ? Number(table.defaultMarginPct) : null;
+                    return (
+                      <label
+                        key={code}
+                        className={cn(
+                          "flex items-center gap-3 p-3 rounded-xl border bg-background",
+                          available
+                            ? "border-border cursor-pointer hover:bg-accent/30"
+                            : "border-dashed border-muted-foreground/30 opacity-60 cursor-not-allowed"
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          disabled={!available || commercialGenRunning}
+                          checked={checked}
+                          onChange={() => available && toggleCommercialTable(code)}
+                          className="rounded accent-primary w-4 h-4"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold">
+                            {COMMERCIAL_TABLE_LABELS[code] ?? code}
+                            <span className="ml-2 text-[10px] font-mono text-muted-foreground">({code})</span>
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {available && margin != null && Number.isFinite(margin)
+                              ? `Margem padrão: ${formatNumber(margin, 2)}%`
+                              : "Tabela não encontrada ou inativa"}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                Tabela personalizada será adicionada em uma próxima etapa.
+              </div>
+
+              {(() => {
+                const availableSelectedCount = COMMERCIAL_TABLE_CODES.filter((code) =>
+                  priceTables.some((t) => t.code === code) && commercialGenSelectedCodes.has(code)
+                ).length;
+                return (
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <p className="text-xs text-muted-foreground">
+                      Selecionadas: <span className="font-bold text-foreground">{availableSelectedCount}</span> · serão geradas DRAFTs sequencialmente.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleGenerateCommercialDrafts}
+                      disabled={
+                        !commercialGenTaxRuleId ||
+                        availableSelectedCount === 0 ||
+                        commercialGenRunning
+                      }
+                      className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                    >
+                      {commercialGenRunning ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          {commercialGenCurrentCode
+                            ? `Gerando ${COMMERCIAL_TABLE_LABELS[commercialGenCurrentCode] ?? commercialGenCurrentCode}...`
+                            : "Gerando..."}
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4" />
+                          Gerar DRAFTs comerciais
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {commercialGenResults && commercialGenResults.length > 0 && (
+                <div className="space-y-3 border-t border-border pt-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold">Resultado da geração</h4>
+                    <button
+                      type="button"
+                      onClick={() => setCommercialGenResults(null)}
+                      disabled={commercialGenRunning}
+                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    >
+                      Limpar resultados
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {commercialGenResults.map((r) => {
+                      const cardBorder =
+                        r.status === "ERROR"
+                          ? "border-red-200 bg-red-50"
+                          : r.errorsCount > 0
+                            ? "border-orange-200 bg-orange-50"
+                            : r.warningsCount > 0
+                              ? "border-amber-200 bg-amber-50"
+                              : "border-green-200 bg-green-50";
+                      return (
+                        <div key={r.priceTableCode} className={cn("rounded-xl border p-4 space-y-3", cardBorder)}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold truncate">
+                                {COMMERCIAL_TABLE_LABELS[r.priceTableCode] ?? r.priceTableName}
+                                <span className="ml-2 text-[10px] font-mono text-muted-foreground">({r.priceTableCode})</span>
+                              </p>
+                              {r.status === "SUCCESS" && r.versionNumber != null && (
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Versão gerada:{" "}
+                                  <span className="font-bold text-foreground">v{r.versionNumber}</span>
+                                  <span className="ml-1.5 px-1.5 py-0.5 rounded bg-muted-foreground/10 text-[10px] font-bold uppercase tracking-wide">
+                                    {r.versionStatus || "DRAFT"}
+                                  </span>
+                                </p>
+                              )}
+                            </div>
+                            <div className="shrink-0">
+                              {r.status === "ERROR" ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-red-700">
+                                  <AlertCircle className="h-4 w-4" /> Erro
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-green-700">
+                                  <CheckCircle2 className="h-4 w-4" /> Sucesso
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {r.status === "ERROR" && r.fatalErrorMessage && (
+                            <p className="text-xs text-red-700">{r.fatalErrorMessage}</p>
+                          )}
+
+                          {r.status === "SUCCESS" && (
+                            <>
+                              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                                <div>Produtos lidos: <span className="font-bold">{r.productsRead}</span></div>
+                                <div>Itens criados: <span className="font-bold">{r.itemsCreated}</span></div>
+                                <div>Itens ignorados: <span className="font-bold">{r.itemsSkipped}</span></div>
+                                <div>
+                                  Warnings:{" "}
+                                  <span className={cn("font-bold", r.warningsCount > 0 ? "text-orange-700" : "text-foreground")}>
+                                    {r.warningsCount}
+                                  </span>
+                                </div>
+                                <div className="col-span-2">
+                                  Errors:{" "}
+                                  <span className={cn("font-bold", r.errorsCount > 0 ? "text-red-700" : "text-foreground")}>
+                                    {r.errorsCount}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {r.errorsCount > 0 && (
+                                <div className="rounded-md border border-red-300 bg-red-100 p-2 space-y-1 text-[11px]">
+                                  <p className="font-bold text-red-800">Existem erros de custo. Revise antes de publicar.</p>
+                                  {r.errorsPreview.map((it, idx) => (
+                                    <p key={idx} className="text-red-700">
+                                      • <span className="font-mono">{it.sku ?? "—"}</span>
+                                      {it.productName ? ` ${it.productName}` : ""}
+                                      {it.code ? ` (${it.code})` : ""}
+                                      {it.message ? ` — ${it.message}` : ""}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+
+                              {r.warningsCount > 0 && (
+                                <div className="rounded-md border border-orange-300 bg-orange-100 p-2 space-y-1 text-[11px]">
+                                  <p className="font-bold text-orange-800">Existem avisos de custo parcial. Revise antes de publicar.</p>
+                                  {r.warningsPreview.map((it, idx) => (
+                                    <p key={idx} className="text-orange-700">
+                                      • <span className="font-mono">{it.sku ?? "—"}</span>
+                                      {it.productName ? ` ${it.productName}` : ""}
+                                      {it.code ? ` (${it.code})` : ""}
+                                      {it.message ? ` — ${it.message}` : ""}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Toggle View Mode */}
