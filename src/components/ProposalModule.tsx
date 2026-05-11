@@ -205,6 +205,10 @@ function normalizeProposalItem(
     priceTableItemId: item.priceTableItemId,
     priceSource: item.priceSource,
     pricingSnapshotJson: item.pricingSnapshotJson,
+    priceTableId: item.priceTableId,
+    priceTableVersionId: item.priceTableVersionId,
+    priceTableCode: item.priceTableCode,
+    priceTableVersionNumber: item.priceTableVersionNumber,
   };
 }
 
@@ -677,6 +681,10 @@ export const ProposalModule = () => {
       if (item.priceTableItemId !== undefined) row.priceTableItemId = item.priceTableItemId;
       if (item.priceSource !== undefined) row.priceSource = item.priceSource;
       if (item.pricingSnapshotJson !== undefined) row.pricingSnapshotJson = item.pricingSnapshotJson;
+      if (item.priceTableId !== undefined) row.priceTableId = item.priceTableId;
+      if (item.priceTableVersionId !== undefined) row.priceTableVersionId = item.priceTableVersionId;
+      if (item.priceTableCode !== undefined) row.priceTableCode = item.priceTableCode;
+      if (item.priceTableVersionNumber !== undefined) row.priceTableVersionNumber = item.priceTableVersionNumber;
       return row;
     });
 
@@ -841,6 +849,10 @@ export const ProposalModule = () => {
           priceTableItemId: data.item.priceTableItemId,
           priceSource: "PRICE_TABLE",
           pricingSnapshotJson: snapshotPayload,
+          priceTableId: data.priceTable.id,
+          priceTableVersionId: data.version.id,
+          priceTableCode: data.priceTable.code,
+          priceTableVersionNumber: data.version.versionNumber,
         });
 
         const warnMsgs = (data.warnings ?? [])
@@ -1358,6 +1370,13 @@ export const ProposalModule = () => {
                                 >
                                   Preço da tabela
                                   {(() => {
+                                    const directCode = typeof item.priceTableCode === "string"
+                                      ? item.priceTableCode.trim()
+                                      : "";
+                                    const directVn = Number(item.priceTableVersionNumber);
+                                    if (directCode && Number.isFinite(directVn)) {
+                                      return ` · ${directCode} v${directVn}`;
+                                    }
                                     const s = item.pricingSnapshotJson as Record<string, unknown> | null | undefined;
                                     const pt = s?.priceTable as { code?: string } | undefined;
                                     const ver = s?.version as { versionNumber?: unknown } | undefined;

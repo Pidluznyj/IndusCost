@@ -62,6 +62,11 @@ export interface ProposalItem {
   priceSource?: string | null;
   /** Cópia auditável da resposta de preço publicado (ou legível pelo backend). */
   pricingSnapshotJson?: Record<string, unknown> | null;
+  /** Rastreio direto da tabela/versão usada no item (proposta mista). */
+  priceTableId?: string | null;
+  priceTableVersionId?: string | null;
+  priceTableCode?: string | null;
+  priceTableVersionNumber?: number | null;
 }
 
 /** Pedido interno vinculado à proposta (quando existir). */
