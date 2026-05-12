@@ -453,15 +453,30 @@ export const ProposalModule = () => {
         searchTerms: "sem tabela manual legado pricing snapshot",
       },
     ];
-    for (const t of priceTables) {
+    const sorted = [...priceTables].sort((a, b) => {
+      const aPub = a.latestPublishedVersion ? 0 : 1;
+      const bPub = b.latestPublishedVersion ? 0 : 1;
+      if (aPub !== bPub) return aPub - bPub;
+      return a.code.localeCompare(b.code);
+    });
+    for (const t of sorted) {
       const pub = t.latestPublishedVersion;
-      if (!pub) continue;
-      opts.push({
-        value: t.id,
-        label: `${t.name} (${t.code})`,
-        sublabel: `Versão publicada v${pub.versionNumber}`,
-        searchTerms: `${t.name} ${t.code} atacado varejo`,
-      });
+      if (pub) {
+        opts.push({
+          value: t.id,
+          label: `${t.name} (${t.code})`,
+          sublabel: `Versão publicada v${pub.versionNumber}`,
+          searchTerms: `${t.name} ${t.code} atacado varejo`,
+        });
+      } else {
+        opts.push({
+          value: `__unpublished__${t.id}`,
+          label: `${t.name} (${t.code})`,
+          sublabel: "Sem versão publicada — publique na Formação de Preço",
+          searchTerms: `${t.name} ${t.code} draft indisponivel`,
+          disabled: true,
+        });
+      }
     }
     return opts;
   }, [priceTables]);
@@ -1407,7 +1422,8 @@ export const ProposalModule = () => {
                   />
                   <p className="text-[10px] text-muted-foreground leading-snug">
                     Esta tabela será usada apenas para novos itens. Itens já adicionados mantêm a origem de preço em
-                    que foram criados. Só aparecem tabelas ativas com versão publicada.
+                    que foram criados. Tabelas sem versão publicada aparecem listadas, mas indisponíveis até serem
+                    publicadas na Formação de Preço.
                   </p>
                 </div>
 
@@ -1681,44 +1697,70 @@ export const ProposalModule = () => {
                                       </button>
                                       <div className="my-1 border-t border-border" />
                                       {(() => {
-                                        const usable = priceTables.filter((t) => t.latestPublishedVersion);
-                                        if (usable.length === 0) {
+                                        if (priceTables.length === 0) {
                                           return (
                                             <p className="px-2 py-1 text-[11px] text-muted-foreground">
-                                              Nenhuma tabela com versão publicada.
+                                              Nenhuma tabela comercial ativa.
                                             </p>
                                           );
                                         }
-                                        return usable.map((t) => {
-                                          const pub = t.latestPublishedVersion!;
+                                        const sorted = [...priceTables].sort((a, b) => {
+                                          const aPub = a.latestPublishedVersion ? 0 : 1;
+                                          const bPub = b.latestPublishedVersion ? 0 : 1;
+                                          if (aPub !== bPub) return aPub - bPub;
+                                          return a.code.localeCompare(b.code);
+                                        });
+                                        return sorted.map((t) => {
+                                          const pub = t.latestPublishedVersion;
                                           const isCurrent =
+                                            !!pub &&
                                             item.priceSource === ITEM_PRICE_SOURCE_PRICE_TABLE &&
                                             item.priceTableId === t.id &&
                                             item.priceTableVersionId === pub.id;
+                                          const isUnpublished = !pub;
                                           return (
                                             <button
                                               key={t.id}
                                               type="button"
                                               role="menuitem"
                                               onClick={() => {
+                                                if (isUnpublished) return;
                                                 setItemOriginMenuOpenIndex(null);
                                                 void applyPriceTableToItem(idx, t.id);
                                               }}
-                                              disabled={itemPriceTableUpdatingIndex !== null || isCurrent}
+                                              disabled={
+                                                isUnpublished ||
+                                                itemPriceTableUpdatingIndex !== null ||
+                                                isCurrent
+                                              }
+                                              title={
+                                                isUnpublished
+                                                  ? "Sem versão publicada — publique na Formação de Preço"
+                                                  : undefined
+                                              }
                                               className={cn(
                                                 "w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50",
-                                                isCurrent && "bg-accent/40 font-bold"
+                                                isCurrent && "bg-accent/40 font-bold",
+                                                isUnpublished && "hover:bg-transparent"
                                               )}
                                             >
-                                              <span className="font-mono">{t.code}</span> v{pub.versionNumber}
+                                              <span className="font-mono">{t.code}</span>
+                                              {pub ? ` v${pub.versionNumber}` : ""}
                                               {isCurrent ? " · atual" : ""}
                                               <span className="block text-[10px] text-muted-foreground truncate">
-                                                {t.name}
+                                                {isUnpublished
+                                                  ? "Sem versão publicada"
+                                                  : t.name}
                                               </span>
                                             </button>
                                           );
                                         });
                                       })()}
+                                      <div className="mt-1 border-t border-border pt-1">
+                                        <p className="px-2 py-0.5 text-[10px] leading-snug text-muted-foreground">
+                                          DRAFTs geradas na Formação de Preço ficam disponíveis na proposta somente após publicação.
+                                        </p>
+                                      </div>
                                     </div>
                                   )}
                                 </div>

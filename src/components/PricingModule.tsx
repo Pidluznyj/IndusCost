@@ -43,8 +43,10 @@ type CommercialGenResult = {
   priceTableCode: string;
   priceTableName: string;
   status: "SUCCESS" | "ERROR";
+  versionId: string | null;
   versionNumber: number | null;
   versionStatus: string;
+  publishedAt: string | null;
   productsRead: number;
   itemsCreated: number;
   itemsSkipped: number;
@@ -137,6 +139,10 @@ export const PricingModule = () => {
   const [commercialGenRunning, setCommercialGenRunning] = useState(false);
   const [commercialGenCurrentCode, setCommercialGenCurrentCode] = useState<string | null>(null);
   const [commercialGenResults, setCommercialGenResults] = useState<CommercialGenResult[] | null>(null);
+  /** "Aprovado por" usado na publicação das DRAFTs comerciais. Opcional. */
+  const [commercialPublishApprovedBy, setCommercialPublishApprovedBy] = useState("");
+  /** versionId atualmente em publicação (loading discreto por card). */
+  const [publishingVersionId, setPublishingVersionId] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -462,14 +468,17 @@ export const PricingModule = () => {
           const errors = Array.isArray(payload.summary?.errors) ? payload.summary?.errors ?? [] : [];
           const warnings = Array.isArray(payload.summary?.warnings) ? payload.summary?.warnings ?? [] : [];
           const vn = Number(payload.version?.versionNumber);
+          const versionId = typeof payload.version?.id === "string" ? payload.version.id : null;
 
           accumulated.push({
             priceTableId: table.id,
             priceTableCode: table.code,
             priceTableName: table.name,
             status: "SUCCESS",
+            versionId,
             versionNumber: Number.isFinite(vn) ? vn : null,
             versionStatus: typeof payload.version?.status === "string" ? payload.version.status : "DRAFT",
+            publishedAt: null,
             productsRead: Number(payload.summary?.productsRead) || 0,
             itemsCreated: Number(payload.summary?.itemsCreated) || 0,
             itemsSkipped: Number(payload.summary?.itemsSkipped) || 0,
@@ -484,8 +493,10 @@ export const PricingModule = () => {
             priceTableCode: table.code,
             priceTableName: table.name,
             status: "ERROR",
+            versionId: null,
             versionNumber: null,
             versionStatus: "—",
+            publishedAt: null,
             productsRead: 0,
             itemsCreated: 0,
             itemsSkipped: 0,
@@ -501,6 +512,114 @@ export const PricingModule = () => {
     } finally {
       setCommercialGenRunning(false);
       setCommercialGenCurrentCode(null);
+    }
+  };
+
+  /**
+   * Publica uma DRAFT recém-gerada usando POST /api/price-table-versions/:id/publish.
+   * - Exige vigência (commercialGenEffectiveFrom) para garantir contrato.
+   * - Bloqueia se a DRAFT tem errors > 0 (o backend rejeita com 409 também).
+   * - Pede confirmação extra se warnings > 0 e envia forcePublishWithWarnings.
+   * - Em sucesso, atualiza o card e recarrega priceTables para refletir latestPublishedVersion.
+   */
+  const handlePublishDraftVersion = async (result: CommercialGenResult) => {
+    if (!result.versionId) return;
+    if (publishingVersionId !== null) return;
+
+    if (!commercialGenEffectiveFrom.trim()) {
+      alert("Informe a vigência desejada antes de publicar.");
+      return;
+    }
+
+    const tableLabel =
+      COMMERCIAL_TABLE_LABELS[result.priceTableCode] ?? result.priceTableName ?? result.priceTableCode;
+    const versionLabel = result.versionNumber != null ? `v${result.versionNumber}` : "DRAFT";
+    const vigParts = commercialGenEffectiveFrom.split("-");
+    const vigPretty =
+      vigParts.length === 3
+        ? `${vigParts[2]}/${vigParts[1]}/${vigParts[0]}`
+        : commercialGenEffectiveFrom;
+
+    if (result.errorsCount > 0) {
+      if (
+        !window.confirm(
+          `Esta DRAFT possui ${result.errorsCount} erro(s) de custo e itens ignorados. O backend bloqueia publicação com erros. Tentar mesmo assim?`
+        )
+      ) {
+        return;
+      }
+    }
+
+    if (
+      !window.confirm(
+        `Publicar a versão ${versionLabel} da tabela ${result.priceTableCode} com vigência a partir de ${vigPretty}? Esta tabela ficará disponível para propostas.`
+      )
+    ) {
+      return;
+    }
+
+    if (
+      result.warningsCount > 0 &&
+      !window.confirm(
+        `Esta DRAFT possui ${result.warningsCount} aviso(s) de custo parcial. Deseja publicar mesmo assim?`
+      )
+    ) {
+      return;
+    }
+
+    setPublishingVersionId(result.versionId);
+    try {
+      const approvedBy = commercialPublishApprovedBy.trim();
+      const body: Record<string, unknown> = {
+        effectiveFrom: commercialGenEffectiveFrom,
+        forcePublishWithWarnings: result.warningsCount > 0,
+      };
+      if (approvedBy) body.approvedBy = approvedBy;
+
+      const resp = await fetchJsonOk<{
+        version?: { id?: string; versionNumber?: number | string; status?: string; publishedAt?: string | null };
+        published?: boolean;
+        warningsAccepted?: boolean;
+      }>(`/api/price-table-versions/${result.versionId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const newStatus =
+        typeof resp.version?.status === "string" && resp.version.status.trim().length > 0
+          ? resp.version.status
+          : "PUBLISHED";
+      const newPublishedAt =
+        typeof resp.version?.publishedAt === "string" ? resp.version.publishedAt : new Date().toISOString();
+
+      setCommercialGenResults((prev) =>
+        prev
+          ? prev.map((r) =>
+              r.versionId === result.versionId
+                ? { ...r, versionStatus: newStatus, publishedAt: newPublishedAt }
+                : r
+            )
+          : prev
+      );
+
+      alert(
+        `Tabela ${result.priceTableCode} ${versionLabel} publicada com sucesso. Ela agora ficará disponível nas propostas.`
+      );
+
+      try {
+        const pt = await fetchJsonOk<PriceTableLite[]>("/api/price-tables");
+        if (Array.isArray(pt)) {
+          setPriceTables(pt.filter((t) => String(t.status).toUpperCase() === "ACTIVE"));
+        }
+      } catch (reloadErr) {
+        console.warn("GET /api/price-tables after publish failed:", reloadErr);
+      }
+    } catch (error) {
+      console.error("POST /api/price-table-versions/:id/publish", error);
+      alert(error instanceof Error ? error.message : "Falha ao publicar a versão DRAFT.");
+    } finally {
+      setPublishingVersionId(null);
     }
   };
 
@@ -579,7 +698,9 @@ export const PricingModule = () => {
           {commercialGenOpen && (
             <div id="pricing-generate-commercial-body" className="mt-5 space-y-5">
               <div className="rounded-xl border border-border bg-accent/20 p-3 text-xs text-muted-foreground">
-                Esta seção gera apenas DRAFTs. Revisão e publicação continuam em
+                Esta seção gera DRAFTs revisáveis. Depois da geração você pode publicar cada DRAFT
+                diretamente nos cards abaixo (ação explícita). A revisão completa também continua
+                disponível em
                 {" "}<span className="font-bold text-foreground">Configurações &gt; Tabelas de Preço Comerciais</span>.
               </div>
 
@@ -622,6 +743,23 @@ export const PricingModule = () => {
                   placeholder="Detalhes para a equipe que vai revisar / publicar (opcional)."
                   disabled={commercialGenRunning}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase text-muted-foreground">
+                  Aprovado por (para publicação · opcional)
+                </label>
+                <input
+                  type="text"
+                  className="w-full p-3 rounded-xl border border-border bg-background text-sm outline-none"
+                  value={commercialPublishApprovedBy}
+                  onChange={(e) => setCommercialPublishApprovedBy(e.target.value)}
+                  placeholder='Ex.: "Diretoria Comercial" ou nome do aprovador.'
+                  disabled={publishingVersionId !== null}
+                />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Este texto é registrado na versão publicada. Não tem efeito na geração de DRAFTs.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -812,6 +950,66 @@ export const PricingModule = () => {
                                   ))}
                                 </div>
                               )}
+
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/60">
+                                {r.versionStatus === "PUBLISHED" ? (
+                                  <div className="text-xs text-green-800">
+                                    <p className="font-bold inline-flex items-center gap-1">
+                                      <CheckCircle2 className="h-3.5 w-3.5" /> Publicada
+                                    </p>
+                                    <p className="text-[10px] text-green-700">
+                                      Agora esta tabela poderá aparecer na Proposta Comercial.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="text-[11px] text-muted-foreground">
+                                    {commercialGenEffectiveFrom.trim()
+                                      ? `Vigência a partir de ${(() => {
+                                          const parts = commercialGenEffectiveFrom.split("-");
+                                          return parts.length === 3
+                                            ? `${parts[2]}/${parts[1]}/${parts[0]}`
+                                            : commercialGenEffectiveFrom;
+                                        })()}.`
+                                      : "Informe a vigência desejada acima para publicar."}
+                                  </div>
+                                )}
+                                {r.versionStatus !== "PUBLISHED" && r.versionId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handlePublishDraftVersion(r)}
+                                    disabled={
+                                      publishingVersionId !== null ||
+                                      commercialGenRunning ||
+                                      !commercialGenEffectiveFrom.trim()
+                                    }
+                                    title={
+                                      !commercialGenEffectiveFrom.trim()
+                                        ? "Informe a vigência desejada antes de publicar."
+                                        : r.warningsCount > 0
+                                          ? "Publicar mesmo com avisos (forcePublishWithWarnings)."
+                                          : "Publicar esta DRAFT."
+                                    }
+                                    className={cn(
+                                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors",
+                                      r.errorsCount > 0
+                                        ? "bg-red-600 text-white hover:opacity-90 disabled:opacity-50"
+                                        : r.warningsCount > 0
+                                          ? "bg-orange-600 text-white hover:opacity-90 disabled:opacity-50"
+                                          : "bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                                    )}
+                                  >
+                                    {publishingVersionId === r.versionId ? (
+                                      <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Publicando...
+                                      </>
+                                    ) : r.warningsCount > 0 || r.errorsCount > 0 ? (
+                                      "Publicar mesmo com avisos"
+                                    ) : (
+                                      "Publicar DRAFT"
+                                    )}
+                                  </button>
+                                )}
+                              </div>
                             </>
                           )}
                         </div>

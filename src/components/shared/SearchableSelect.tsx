@@ -9,6 +9,8 @@ export interface SelectOption {
   label: string;
   sublabel?: string;
   searchTerms?: string; // Additional terms to match against (e.g. SKU)
+  /** Quando true, a opção aparece na lista mas não é selecionável. */
+  disabled?: boolean;
 }
 
 interface SearchableSelectProps {
@@ -241,15 +243,21 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                       <button
                         key={option.value}
                         type="button"
+                        disabled={option.disabled === true}
+                        aria-disabled={option.disabled === true}
+                        title={option.disabled ? option.sublabel ?? "Opção indisponível" : undefined}
                         onClick={() => {
+                          if (option.disabled) return;
                           onChange(option.value);
                           setIsOpen(false);
                         }}
                         className={cn(
                           "w-full flex items-center justify-between p-2 rounded-lg text-left text-sm transition-colors group mb-0.5",
-                          value === option.value
-                            ? "bg-primary text-primary-foreground font-bold"
-                            : "hover:bg-primary/10 text-foreground"
+                          option.disabled
+                            ? "cursor-not-allowed opacity-50 text-muted-foreground hover:bg-transparent"
+                            : value === option.value
+                              ? "bg-primary text-primary-foreground font-bold"
+                              : "hover:bg-primary/10 text-foreground"
                         )}
                       >
                         <div className="flex flex-col min-w-0">
@@ -258,14 +266,18 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                             <span
                               className={cn(
                                 "text-[10px] truncate leading-tight",
-                                value === option.value ? "text-primary-foreground/80" : "text-muted-foreground"
+                                value === option.value && !option.disabled
+                                  ? "text-primary-foreground/80"
+                                  : "text-muted-foreground"
                               )}
                             >
                               {option.sublabel}
                             </span>
                           )}
                         </div>
-                        {value === option.value && <Check className="h-4 w-4 flex-shrink-0 ml-2" />}
+                        {value === option.value && !option.disabled && (
+                          <Check className="h-4 w-4 flex-shrink-0 ml-2" />
+                        )}
                       </button>
                     ))
                   )}
