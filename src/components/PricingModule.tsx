@@ -59,6 +59,12 @@ type CommercialGenResult = {
   errorsPreview: CommercialGenIssuePreview[];
   warningsPreview: CommercialGenIssuePreview[];
   fatalErrorMessage?: string;
+  /**
+   * Comissão de vendedor aplicada na geração desta tabela (em %).
+   * Pode vir de version.commissionPerc, summary.commissionOverridePerc ou
+   * do valor informado no formulário (fallback). null se desconhecida.
+   */
+  commissionPerc?: number | null;
 };
 
 const COMMERCIAL_TABLE_CODES = ["ATACADO", "VAREJO_1", "VAREJO_2", "VAREJO_3"] as const;
@@ -137,6 +143,8 @@ export const PricingModule = () => {
   const [commercialGenTaxRuleId, setCommercialGenTaxRuleId] = useState("");
   const [commercialGenEffectiveFrom, setCommercialGenEffectiveFrom] = useState("");
   const [commercialGenNotes, setCommercialGenNotes] = useState("");
+  /** Comissão de vendedor (%) informada para a geração das tabelas comerciais. Default 0. */
+  const [commercialGenCommissionPerc, setCommercialGenCommissionPerc] = useState<string>("0");
   const [commercialGenSelectedCodes, setCommercialGenSelectedCodes] = useState<Set<string>>(
     () => new Set(COMMERCIAL_TABLE_CODES)
   );
@@ -420,6 +428,20 @@ export const PricingModule = () => {
       alert("Selecione pelo menos uma tabela disponível.");
       return;
     }
+
+    // Comissão vendedor: obrigatório informar um número válido entre 0 e 50.
+    const commissionRaw = commercialGenCommissionPerc.trim().replace(",", ".");
+    const commissionParsed = Number(commissionRaw);
+    if (
+      commissionRaw === "" ||
+      !Number.isFinite(commissionParsed) ||
+      commissionParsed < 0 ||
+      commissionParsed > 50
+    ) {
+      alert("Comissão do vendedor deve estar entre 0% e 50%.");
+      return;
+    }
+
     if (
       !window.confirm(
         `Gerar DRAFTs para ${selectedTables.length} tabela(s)? Nenhuma versão será publicada automaticamente.`
@@ -443,6 +465,7 @@ export const PricingModule = () => {
           "Gerado pela Formação de Preço Comercial.",
           `Tabela: ${table.code}.`,
           `Regra fiscal: ${taxRuleName}.`,
+          `Comissão vendedor: ${formatNumber(commissionParsed, 2)}%.`,
         ];
         if (vig) noteParts.push(`Vigência desejada: ${vig}.`);
         if (userNotes) noteParts.push(`Observações: ${userNotes}`);
@@ -451,13 +474,19 @@ export const PricingModule = () => {
 
         try {
           const payload = await fetchJsonOk<{
-            version?: { id?: string; versionNumber?: number | string; status?: string };
+            version?: {
+              id?: string;
+              versionNumber?: number | string;
+              status?: string;
+              commissionPerc?: number | string | null;
+            };
             summary?: {
               productsRead?: number | string;
               itemsCreated?: number | string;
               itemsSkipped?: number | string;
               errors?: Array<Record<string, unknown>>;
               warnings?: Array<Record<string, unknown>>;
+              commissionOverridePerc?: number | string | null;
             };
           }>(`/api/price-tables/${table.id}/versions/generate-draft`, {
             method: "POST",
@@ -465,6 +494,7 @@ export const PricingModule = () => {
             body: JSON.stringify({
               taxRuleId: commercialGenTaxRuleId,
               includeAllActiveProducts: true,
+              commissionPerc: commissionParsed,
               notes: consolidatedNotes,
             }),
           });
@@ -473,6 +503,15 @@ export const PricingModule = () => {
           const warnings = Array.isArray(payload.summary?.warnings) ? payload.summary?.warnings ?? [] : [];
           const vn = Number(payload.version?.versionNumber);
           const versionId = typeof payload.version?.id === "string" ? payload.version.id : null;
+
+          // Comissão exibida no card: prefere version.commissionPerc, depois summary.commissionOverridePerc,
+          // e usa o valor digitado como fallback final (já validado acima).
+          const versionCommission = Number(payload.version?.commissionPerc);
+          const summaryCommission = Number(payload.summary?.commissionOverridePerc);
+          let appliedCommissionPerc: number | null = null;
+          if (Number.isFinite(versionCommission)) appliedCommissionPerc = versionCommission;
+          else if (Number.isFinite(summaryCommission)) appliedCommissionPerc = summaryCommission;
+          else appliedCommissionPerc = commissionParsed;
 
           accumulated.push({
             priceTableId: table.id,
@@ -490,6 +529,7 @@ export const PricingModule = () => {
             warningsCount: warnings.length,
             errorsPreview: errors.slice(0, 3).map(extractIssuePreview),
             warningsPreview: warnings.slice(0, 3).map(extractIssuePreview),
+            commissionPerc: appliedCommissionPerc,
           });
         } catch (error) {
           accumulated.push({
@@ -509,6 +549,7 @@ export const PricingModule = () => {
             errorsPreview: [],
             warningsPreview: [],
             fatalErrorMessage: error instanceof Error ? error.message : "Falha ao gerar DRAFT.",
+            commissionPerc: null,
           });
         }
         setCommercialGenResults([...accumulated]);
@@ -782,6 +823,28 @@ export const PricingModule = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-muted-foreground">Comissão vendedor %</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={50}
+                    step="0.01"
+                    className="w-full p-3 rounded-xl border border-border bg-background text-sm outline-none tabular-nums"
+                    value={commercialGenCommissionPerc}
+                    onChange={(e) => setCommercialGenCommissionPerc(e.target.value)}
+                    disabled={commercialGenRunning}
+                    placeholder="0,00"
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-snug">
+                    Percentual de comissão considerado no cálculo do preço sugerido da tabela.
+                    Aceita de 0% a 50%. Quando informado, sobrepõe a comissão por produto.
+                  </p>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase text-muted-foreground">Observações (opcional)</label>
                 <textarea
@@ -969,6 +1032,14 @@ export const PricingModule = () => {
                                     {r.errorsCount}
                                   </span>
                                 </div>
+                                {r.commissionPerc != null && Number.isFinite(r.commissionPerc) && (
+                                  <div className="col-span-2">
+                                    Comissão:{" "}
+                                    <span className="font-bold text-foreground">
+                                      {formatNumber(r.commissionPerc, 2)}%
+                                    </span>
+                                  </div>
+                                )}
                               </div>
 
                               {r.errorsCount > 0 && (
