@@ -47,6 +47,10 @@ type CommercialGenResult = {
   versionNumber: number | null;
   versionStatus: string;
   publishedAt: string | null;
+  /** Indica que a versão foi publicada parcialmente, com errors aceitos pelo usuário. */
+  publishedWithErrors?: boolean;
+  /** Indica que a versão foi publicada com warnings aceitos. */
+  publishedWithWarnings?: boolean;
   productsRead: number;
   itemsCreated: number;
   itemsSkipped: number;
@@ -517,9 +521,11 @@ export const PricingModule = () => {
 
   /**
    * Publica uma DRAFT recém-gerada usando POST /api/price-table-versions/:id/publish.
-   * - Exige vigência (commercialGenEffectiveFrom) para garantir contrato.
-   * - Bloqueia se a DRAFT tem errors > 0 (o backend rejeita com 409 também).
-   * - Pede confirmação extra se warnings > 0 e envia forcePublishWithWarnings.
+   * - Exige vigência (commercialGenEffectiveFrom).
+   * - Se a vigência for anterior à data de hoje, pede confirmação extra (evita 21/05/1986 acidental).
+   * - Se há warnings, envia forcePublishWithWarnings=true após confirmação.
+   * - Se há errors, envia forcePublishWithErrors=true após duas confirmações (publicação parcial).
+   *   Publicação parcial NÃO cria itens novos; apenas publica os itens válidos já criados na DRAFT.
    * - Em sucesso, atualiza o card e recarrega priceTables para refletir latestPublishedVersion.
    */
   const handlePublishDraftVersion = async (result: CommercialGenResult) => {
@@ -531,8 +537,6 @@ export const PricingModule = () => {
       return;
     }
 
-    const tableLabel =
-      COMMERCIAL_TABLE_LABELS[result.priceTableCode] ?? result.priceTableName ?? result.priceTableCode;
     const versionLabel = result.versionNumber != null ? `v${result.versionNumber}` : "DRAFT";
     const vigParts = commercialGenEffectiveFrom.split("-");
     const vigPretty =
@@ -540,10 +544,44 @@ export const PricingModule = () => {
         ? `${vigParts[2]}/${vigParts[1]}/${vigParts[0]}`
         : commercialGenEffectiveFrom;
 
+    // Defesa contra datas absurdas (ex.: 21/05/1986). Permite backdate explícito se confirmado.
+    if (vigParts.length === 3) {
+      const [y, m, d] = vigParts.map((p) => Number(p));
+      if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+        const vigDate = new Date(y, m - 1, d);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (vigDate.getTime() < today.getTime()) {
+          if (
+            !window.confirm(
+              `A vigência informada (${vigPretty}) é anterior à data atual. Deseja publicar assim mesmo?`
+            )
+          ) {
+            return;
+          }
+        }
+      }
+    }
+
     if (result.errorsCount > 0) {
       if (
         !window.confirm(
-          `Esta DRAFT possui ${result.errorsCount} erro(s) de custo e itens ignorados. O backend bloqueia publicação com erros. Tentar mesmo assim?`
+          `Esta versão possui ${result.errorsCount} erro(s) de custo e ${result.itemsSkipped} item(ns) ignorado(s). Os produtos com erro NÃO terão preço publicado nesta tabela. Deseja continuar?`
+        )
+      ) {
+        return;
+      }
+      if (
+        !window.confirm(
+          `Confirma a publicação parcial da tabela ${result.priceTableCode} ${versionLabel}? Ela ficará disponível para propostas, mas alguns produtos entrarão somente como preço manual quando não houver preço na tabela.`
+        )
+      ) {
+        return;
+      }
+    } else {
+      if (
+        !window.confirm(
+          `Publicar a versão ${versionLabel} da tabela ${result.priceTableCode} com vigência a partir de ${vigPretty}? Esta tabela ficará disponível para propostas.`
         )
       ) {
         return;
@@ -551,17 +589,9 @@ export const PricingModule = () => {
     }
 
     if (
-      !window.confirm(
-        `Publicar a versão ${versionLabel} da tabela ${result.priceTableCode} com vigência a partir de ${vigPretty}? Esta tabela ficará disponível para propostas.`
-      )
-    ) {
-      return;
-    }
-
-    if (
       result.warningsCount > 0 &&
       !window.confirm(
-        `Esta DRAFT possui ${result.warningsCount} aviso(s) de custo parcial. Deseja publicar mesmo assim?`
+        `Esta versão possui ${result.warningsCount} aviso(s) de custo parcial. Deseja publicar mesmo assim?`
       )
     ) {
       return;
@@ -573,6 +603,7 @@ export const PricingModule = () => {
       const body: Record<string, unknown> = {
         effectiveFrom: commercialGenEffectiveFrom,
         forcePublishWithWarnings: result.warningsCount > 0,
+        forcePublishWithErrors: result.errorsCount > 0,
       };
       if (approvedBy) body.approvedBy = approvedBy;
 
@@ -580,6 +611,9 @@ export const PricingModule = () => {
         version?: { id?: string; versionNumber?: number | string; status?: string; publishedAt?: string | null };
         published?: boolean;
         warningsAccepted?: boolean;
+        errorsAccepted?: boolean;
+        errorsCount?: number;
+        warningsCount?: number;
       }>(`/api/price-table-versions/${result.versionId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -592,20 +626,34 @@ export const PricingModule = () => {
           : "PUBLISHED";
       const newPublishedAt =
         typeof resp.version?.publishedAt === "string" ? resp.version.publishedAt : new Date().toISOString();
+      const errorsAccepted = resp.errorsAccepted === true || result.errorsCount > 0;
+      const warningsAccepted = resp.warningsAccepted === true || result.warningsCount > 0;
 
       setCommercialGenResults((prev) =>
         prev
           ? prev.map((r) =>
               r.versionId === result.versionId
-                ? { ...r, versionStatus: newStatus, publishedAt: newPublishedAt }
+                ? {
+                    ...r,
+                    versionStatus: newStatus,
+                    publishedAt: newPublishedAt,
+                    publishedWithErrors: errorsAccepted,
+                    publishedWithWarnings: warningsAccepted,
+                  }
                 : r
             )
           : prev
       );
 
-      alert(
-        `Tabela ${result.priceTableCode} ${versionLabel} publicada com sucesso. Ela agora ficará disponível nas propostas.`
-      );
+      if (errorsAccepted) {
+        alert(
+          `Tabela ${result.priceTableCode} ${versionLabel} publicada com pendências. Produtos sem preço publicado precisarão ser tratados como preço manual nas propostas.`
+        );
+      } else {
+        alert(
+          `Tabela ${result.priceTableCode} ${versionLabel} publicada com sucesso. Ela agora ficará disponível nas propostas.`
+        );
+      }
 
       try {
         const pt = await fetchJsonOk<PriceTableLite[]>("/api/price-tables");
@@ -953,14 +1001,26 @@ export const PricingModule = () => {
 
                               <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/60">
                                 {r.versionStatus === "PUBLISHED" ? (
-                                  <div className="text-xs text-green-800">
-                                    <p className="font-bold inline-flex items-center gap-1">
-                                      <CheckCircle2 className="h-3.5 w-3.5" /> Publicada
-                                    </p>
-                                    <p className="text-[10px] text-green-700">
-                                      Agora esta tabela poderá aparecer na Proposta Comercial.
-                                    </p>
-                                  </div>
+                                  r.publishedWithErrors ? (
+                                    <div className="text-xs text-amber-900">
+                                      <p className="font-bold inline-flex items-center gap-1">
+                                        <AlertCircle className="h-3.5 w-3.5" /> Publicada com pendências
+                                      </p>
+                                      <p className="text-[10px] text-amber-800">
+                                        Esta tabela está disponível para propostas. Produtos sem preço publicado
+                                        precisarão ser tratados como preço manual.
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <div className="text-xs text-green-800">
+                                      <p className="font-bold inline-flex items-center gap-1">
+                                        <CheckCircle2 className="h-3.5 w-3.5" /> Publicada
+                                      </p>
+                                      <p className="text-[10px] text-green-700">
+                                        Agora esta tabela poderá aparecer na Proposta Comercial.
+                                      </p>
+                                    </div>
+                                  )
                                 ) : (
                                   <div className="text-[11px] text-muted-foreground">
                                     {commercialGenEffectiveFrom.trim()
@@ -985,9 +1045,11 @@ export const PricingModule = () => {
                                     title={
                                       !commercialGenEffectiveFrom.trim()
                                         ? "Informe a vigência desejada antes de publicar."
-                                        : r.warningsCount > 0
-                                          ? "Publicar mesmo com avisos (forcePublishWithWarnings)."
-                                          : "Publicar esta DRAFT."
+                                        : r.errorsCount > 0
+                                          ? "Publicar parcialmente (forcePublishWithErrors). Itens com erro não terão preço publicado."
+                                          : r.warningsCount > 0
+                                            ? "Publicar com avisos (forcePublishWithWarnings)."
+                                            : "Publicar esta DRAFT."
                                     }
                                     className={cn(
                                       "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors",
@@ -1002,8 +1064,10 @@ export const PricingModule = () => {
                                       <>
                                         <Loader2 className="h-3.5 w-3.5 animate-spin" /> Publicando...
                                       </>
-                                    ) : r.warningsCount > 0 || r.errorsCount > 0 ? (
-                                      "Publicar mesmo com avisos"
+                                    ) : r.errorsCount > 0 ? (
+                                      "Publicar parcialmente"
+                                    ) : r.warningsCount > 0 ? (
+                                      "Publicar com avisos"
                                     ) : (
                                       "Publicar DRAFT"
                                     )}

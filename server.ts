@@ -3611,10 +3611,12 @@ app.delete("/api/employees/:id", async (req, res) => {
       effectiveFrom?: unknown;
       approvedBy?: unknown;
       forcePublishWithWarnings?: unknown;
+      forcePublishWithErrors?: unknown;
     };
 
     const approvedBy = typeof body.approvedBy === "string" && body.approvedBy.trim().length > 0 ? body.approvedBy.trim() : null;
     const forcePublishWithWarnings = body.forcePublishWithWarnings === true;
+    const forcePublishWithErrors = body.forcePublishWithErrors === true;
     const effectiveFromInput =
       typeof body.effectiveFrom === "string" && body.effectiveFrom.trim().length > 0
         ? new Date(body.effectiveFrom)
@@ -3644,9 +3646,10 @@ app.delete("/api/employees/:id", async (req, res) => {
         ? (summaryRaw!.warnings as Array<Record<string, unknown>>)
         : [];
 
-      if (summaryErrors.length > 0) {
+      if (summaryErrors.length > 0 && !forcePublishWithErrors) {
         return res.status(409).json({
-          error: "A versão possui errors no generationSummaryJson e não pode ser publicada.",
+          error:
+            "A versão possui errors no generationSummaryJson. Confirme forcePublishWithErrors=true para publicar parcialmente (somente os itens válidos já criados na DRAFT serão publicados).",
           errorsCount: summaryErrors.length,
           errorsPreview: summaryErrors.slice(0, 20),
         });
@@ -3694,11 +3697,27 @@ app.delete("/api/employees/:id", async (req, res) => {
         return { currentPublished, archivedVersionsCount: archived.count };
       });
 
+      const errorsAccepted = summaryErrors.length > 0;
+      const warningsAccepted = summaryWarnings.length > 0;
+
+      if (errorsAccepted) {
+        console.warn("PriceTableVersion publicada com pendências (publicação parcial):", {
+          versionId: id,
+          priceTableId: version.priceTableId,
+          errorsCount: summaryErrors.length,
+          warningsCount: summaryWarnings.length,
+          approvedBy,
+        });
+      }
+
       return res.json({
         version: published.currentPublished,
         archivedVersionsCount: published.archivedVersionsCount,
         published: true,
-        warningsAccepted: summaryWarnings.length > 0,
+        warningsAccepted,
+        errorsAccepted,
+        errorsCount: summaryErrors.length,
+        warningsCount: summaryWarnings.length,
       });
     } catch (e) {
       console.error("POST /api/price-table-versions/:id/publish", e);
