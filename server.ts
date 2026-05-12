@@ -3082,6 +3082,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       includeAllActiveProducts?: unknown;
       productIds?: unknown;
       notes?: unknown;
+      commissionPerc?: unknown;
     };
 
     const taxRuleId = typeof body.taxRuleId === "string" && body.taxRuleId.trim() ? body.taxRuleId.trim() : null;
@@ -3090,6 +3091,21 @@ app.delete("/api/employees/:id", async (req, res) => {
       ? body.productIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
       : [];
     const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
+
+    // Comissão de vendedor opcional informada na geração da tabela.
+    // - Se vier (qualquer número finito >= 0 e <= 50), sobrepõe ProductPricing.commission para TODOS os produtos.
+    // - Se NÃO vier (undefined/null/""), comportamento atual: usa ProductPricing.commission por produto.
+    let hasCommissionOverride = false;
+    let generationCommissionPerc: number | null = null;
+    const rawCommission = body.commissionPerc;
+    if (rawCommission !== undefined && rawCommission !== null && rawCommission !== "") {
+      const parsed = typeof rawCommission === "number" ? rawCommission : Number(rawCommission);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 50) {
+        return res.status(400).json({ error: "Comissão do vendedor deve estar entre 0% e 50%." });
+      }
+      hasCommissionOverride = true;
+      generationCommissionPerc = parsed;
+    }
 
     try {
       const table = await prisma.priceTable.findUnique({ where: { id: priceTableId } });
@@ -3141,6 +3157,7 @@ app.delete("/api/employees/:id", async (req, res) => {
             status: "DRAFT",
             generatedAt: new Date(),
             notes,
+            commissionPerc: hasCommissionOverride ? generationCommissionPerc : null,
           },
         });
       });
@@ -3158,12 +3175,14 @@ app.delete("/api/employees/:id", async (req, res) => {
         itemsSkipped: number;
         errors: Array<Record<string, unknown>>;
         warnings: Array<Record<string, unknown>>;
+        commissionOverridePerc: number | null;
       } = {
         productsRead: selectedProducts.length,
         itemsCreated: 0,
         itemsSkipped: 0,
         errors: [],
         warnings: [],
+        commissionOverridePerc: hasCommissionOverride ? generationCommissionPerc : null,
       };
 
       for (const product of selectedProducts) {
@@ -3264,7 +3283,10 @@ app.delete("/api/employees/:id", async (req, res) => {
               ? productPricingAny.TaxRule.TaxComponent.reduce((acc: number, c: any) => acc + Number(c.percentage), 0) / 100
               : 0
           );
-          const commRate = Number(productPricingAny?.commission ?? 0) / 100;
+          // Quando a geração veio com commissionPerc no body, sobrepõe ProductPricing.commission para todos os produtos.
+          const commRate = hasCommissionOverride
+            ? Number(generationCommissionPerc) / 100
+            : Number(productPricingAny?.commission ?? 0) / 100;
           const otherRate = Number(productPricingAny?.otherVariables ?? 0) / 100;
           const freight = Number(productPricingAny?.freightOut ?? 0);
 
@@ -3333,6 +3355,8 @@ app.delete("/api/employees/:id", async (req, res) => {
               frozenOtherCost,
               marginPct: defaultMarginPct,
               salePrice,
+              commissionPerc: commRate * 100,
+              commissionValue: totalCommission,
               costSnapshotJson: costData as Prisma.InputJsonValue,
               formulaSnapshotJson: {
                 priceTableId,
@@ -3516,6 +3540,8 @@ app.delete("/api/employees/:id", async (req, res) => {
           frozenOtherCost: true,
           marginPct: true,
           salePrice: true,
+          commissionPerc: true,
+          commissionValue: true,
           formulaSnapshotJson: true,
         },
       });
@@ -3529,6 +3555,22 @@ app.delete("/api/employees/:id", async (req, res) => {
       const formulaSnapshot = item.formulaSnapshotJson as Record<string, unknown> | null;
       const freightFromSnapshot = Number((formulaSnapshot?.freight as unknown) ?? 0);
       const freightValue = Number.isFinite(freightFromSnapshot) ? freightFromSnapshot : 0;
+
+      // Comissão: prefere colunas dedicadas (C2). Para itens antigos com 0 na coluna,
+      // tenta resgatar do formulaSnapshotJson.rates.commissionRate (taxa em fração: 0.05 = 5%).
+      const salePriceNum = Number(item.salePrice);
+      const colCommissionPerc = Number(item.commissionPerc);
+      const colCommissionValue = Number(item.commissionValue);
+      let finalCommissionPerc = Number.isFinite(colCommissionPerc) ? colCommissionPerc : 0;
+      let finalCommissionValue = Number.isFinite(colCommissionValue) ? colCommissionValue : 0;
+      if (finalCommissionPerc <= 0) {
+        const rates = (formulaSnapshot?.rates as Record<string, unknown> | undefined) ?? undefined;
+        const legacyCommRate = Number(rates?.commissionRate);
+        if (Number.isFinite(legacyCommRate) && legacyCommRate > 0) {
+          finalCommissionPerc = legacyCommRate * 100;
+          finalCommissionValue = Number.isFinite(salePriceNum) ? salePriceNum * legacyCommRate : 0;
+        }
+      }
 
       const warnings: Array<{ code: string; message: string }> = [];
       const versionSummary =
@@ -3579,6 +3621,8 @@ app.delete("/api/employees/:id", async (req, res) => {
           frozenOtherCost: Number(item.frozenOtherCost),
           marginPct: Number(item.marginPct),
           salePrice: Number(item.salePrice),
+          commissionPerc: finalCommissionPerc,
+          commissionValue: finalCommissionValue,
         },
         proposalDefaults: {
           unitCost: Number(item.frozenTotalCost),
@@ -3587,6 +3631,8 @@ app.delete("/api/employees/:id", async (req, res) => {
           marginPerc: Number(item.marginPct),
           taxesValue: Number(item.frozenTaxCost),
           freightValue,
+          commissionPerc: finalCommissionPerc,
+          commissionValue: finalCommissionValue,
         },
         warnings,
       });
