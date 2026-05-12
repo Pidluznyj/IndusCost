@@ -29,6 +29,7 @@ import {
   Printer,
   LayoutDashboard,
   ShoppingCart,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -295,6 +296,10 @@ function mapPublishedPriceHttpError(status: number, body: Record<string, unknown
   return "Não foi possível carregar o preço publicado deste produto.";
 }
 
+/** Valores reconhecidos hoje em ProposalItem.priceSource. String livre no banco. */
+const ITEM_PRICE_SOURCE_PRICE_TABLE = "PRICE_TABLE";
+const ITEM_PRICE_SOURCE_MANUAL = "MANUAL";
+
 async function fetchPublishedPriceJson(
   priceTableId: string,
   productId: string
@@ -393,6 +398,11 @@ export const ProposalModule = () => {
   const [tablePriceSessionAlerts, setTablePriceSessionAlerts] = useState<string[]>([]);
   /** Aviso discreto ao trocar a tabela padrão com itens já na proposta. */
   const [defaultTableChangedNotice, setDefaultTableChangedNotice] = useState<string | null>(null);
+  /** Índice do item cuja tabela está sendo trocada (loading discreto por linha). */
+  const [itemPriceTableUpdatingIndex, setItemPriceTableUpdatingIndex] = useState<number | null>(null);
+  /** Índice do item com o popover de origem de preço aberto. */
+  const [itemOriginMenuOpenIndex, setItemOriginMenuOpenIndex] = useState<number | null>(null);
+  const itemOriginMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -481,6 +491,27 @@ export const ProposalModule = () => {
     const id = window.setTimeout(() => setDefaultTableChangedNotice(null), 10000);
     return () => window.clearTimeout(id);
   }, [defaultTableChangedNotice]);
+
+  useEffect(() => {
+    if (itemOriginMenuOpenIndex === null) return;
+    const onDown = (e: MouseEvent) => {
+      if (
+        itemOriginMenuRef.current &&
+        !itemOriginMenuRef.current.contains(e.target as Node)
+      ) {
+        setItemOriginMenuOpenIndex(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setItemOriginMenuOpenIndex(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [itemOriginMenuOpenIndex]);
 
   const handlePriceTableSelectionChange = useCallback(
     (nextTableId: string) => {
@@ -1004,6 +1035,123 @@ export const ProposalModule = () => {
     }
   };
 
+  /**
+   * Aplica a versão publicada vigente de uma tabela a um item já existente.
+   * Reusa exatamente a mesma matemática usada em addItem (ramo published-price),
+   * preservando quantity, notes e id do item. Desconto é zerado, igual ao addItem.
+   */
+  const applyPriceTableToItem = async (index: number, priceTableId: string) => {
+    if (itemPriceTableUpdatingIndex !== null) return;
+    const items = formData.items ?? [];
+    const current = items[index];
+    if (!current?.productId) return;
+
+    setItemPriceTableUpdatingIndex(index);
+    try {
+      const data = await fetchPublishedPriceJson(priceTableId, current.productId);
+      const qty = safeNum(current.quantity, 1);
+
+      const df = data.proposalDefaults;
+      const unitCost = safeNum(df.unitCost);
+      const suggestedPrice = safeNum(df.suggestedPrice);
+      const negotiatedPrice = safeNum(df.negotiatedPrice);
+      const taxesValueFixed = safeNum(df.taxesValue);
+      const freightVal = safeNum(df.freightValue);
+      const marginPercFromTable = safeNum(df.marginPerc);
+      const gross = qty * suggestedPrice;
+      const totalCost = qty * unitCost;
+      const taxesPerc = gross > 0 ? safeNum((taxesValueFixed / gross) * 100) : 0;
+      const commissionPerc = 0;
+      const commissionValue = 0;
+      const marginValue = safeNum(
+        gross - taxesValueFixed - commissionValue - freightVal - totalCost
+      );
+
+      const snapshotPayload: Record<string, unknown> = {
+        ...(data as unknown as Record<string, unknown>),
+        capturedAt: new Date().toISOString(),
+      };
+
+      const updated = normalizeProposalItem({
+        ...current,
+        productId: current.productId,
+        quantity: qty,
+        unitCost,
+        suggestedPrice,
+        negotiatedPrice,
+        discountPerc: 0,
+        discountValue: 0,
+        marginValue,
+        marginPerc: marginPercFromTable,
+        taxesPerc,
+        taxesValue: taxesValueFixed,
+        commissionPerc,
+        commissionValue,
+        freightValue: freightVal,
+        priceTableItemId: data.item.priceTableItemId,
+        priceSource: ITEM_PRICE_SOURCE_PRICE_TABLE,
+        pricingSnapshotJson: snapshotPayload,
+        priceTableId: data.priceTable.id,
+        priceTableVersionId: data.version.id,
+        priceTableCode: data.priceTable.code,
+        priceTableVersionNumber: data.version.versionNumber,
+        calculationExplainability: undefined,
+      });
+
+      setFormData((prev) => {
+        const arr = [...(prev.items ?? [])];
+        if (arr[index]) arr[index] = updated;
+        return { ...prev, items: arr };
+      });
+
+      const warnMsgs = (data.warnings ?? [])
+        .map((w) => (typeof w?.message === "string" ? w.message.trim() : ""))
+        .filter(Boolean);
+      if (warnMsgs.length) {
+        setTablePriceSessionAlerts((prev) => Array.from(new Set([...prev, ...warnMsgs])));
+      }
+    } catch (error) {
+      console.error("Erro ao trocar tabela do item:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível trocar a tabela deste item.");
+    } finally {
+      setItemPriceTableUpdatingIndex(null);
+    }
+  };
+
+  /**
+   * Marca o item como preço manual. Limpa os campos diretos de tabela,
+   * mas preserva pricingSnapshotJson com uma anotação de auditoria.
+   * Não recalcula nada.
+   */
+  const markItemAsManual = (index: number) => {
+    if (itemPriceTableUpdatingIndex !== null) return;
+    setFormData((prev) => {
+      const arr = [...(prev.items ?? [])];
+      const cur = arr[index];
+      if (!cur) return prev;
+      const prevSnapshot = cur.pricingSnapshotJson;
+      const annotatedSnapshot: Record<string, unknown> | null =
+        prevSnapshot && typeof prevSnapshot === "object"
+          ? {
+              ...(prevSnapshot as Record<string, unknown>),
+              previousPriceSource: cur.priceSource ?? null,
+              manualMarkedAt: new Date().toISOString(),
+            }
+          : prevSnapshot ?? null;
+      arr[index] = normalizeProposalItem({
+        ...cur,
+        priceTableId: null,
+        priceTableVersionId: null,
+        priceTableCode: null,
+        priceTableVersionNumber: null,
+        priceTableItemId: null,
+        priceSource: ITEM_PRICE_SOURCE_MANUAL,
+        pricingSnapshotJson: annotatedSnapshot,
+      });
+      return { ...prev, items: arr };
+    });
+  };
+
   const updateItem = (index: number, updates: Partial<ProposalItem>) => {
     const newItems = [...(formData.items || [])];
     const merged = { ...newItems[index], ...updates };
@@ -1444,31 +1592,137 @@ export const ProposalModule = () => {
                             <div className="max-w-[200px]">
                               <p className="text-xs font-bold truncate">{item.Product?.sku}</p>
                               <p className="text-[10px] text-muted-foreground truncate">{item.Product?.name}</p>
-                              {item.priceSource === "PRICE_TABLE" && (
-                                <span
-                                  className="mt-1 inline-block rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground"
-                                  title="Preço congelado da tabela publicada"
-                                >
-                                  Preço da tabela
-                                  {(() => {
-                                    const directCode = typeof item.priceTableCode === "string"
-                                      ? item.priceTableCode.trim()
-                                      : "";
-                                    const directVn = Number(item.priceTableVersionNumber);
-                                    if (directCode && Number.isFinite(directVn)) {
-                                      return ` · ${directCode} v${directVn}`;
+                              <div className="mt-1 flex items-center gap-1 flex-wrap">
+                                {item.priceSource === ITEM_PRICE_SOURCE_PRICE_TABLE && (
+                                  <span
+                                    className="rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground"
+                                    title="Preço congelado da tabela publicada"
+                                  >
+                                    Preço da tabela
+                                    {(() => {
+                                      const directCode = typeof item.priceTableCode === "string"
+                                        ? item.priceTableCode.trim()
+                                        : "";
+                                      const directVn = Number(item.priceTableVersionNumber);
+                                      if (directCode && Number.isFinite(directVn)) {
+                                        return ` · ${directCode} v${directVn}`;
+                                      }
+                                      const s = item.pricingSnapshotJson as Record<string, unknown> | null | undefined;
+                                      const pt = s?.priceTable as { code?: string } | undefined;
+                                      const ver = s?.version as { versionNumber?: unknown } | undefined;
+                                      const vn = Number(ver?.versionNumber);
+                                      if (pt?.code && Number.isFinite(vn)) {
+                                        return ` · ${pt.code} v${vn}`;
+                                      }
+                                      return "";
+                                    })()}
+                                  </span>
+                                )}
+                                {item.priceSource === ITEM_PRICE_SOURCE_MANUAL && (
+                                  <span
+                                    className="rounded border border-border bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800"
+                                    title="Preço definido manualmente (sem tabela publicada vinculada)"
+                                  >
+                                    Preço manual
+                                  </span>
+                                )}
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setItemOriginMenuOpenIndex(
+                                        itemOriginMenuOpenIndex === idx ? null : idx
+                                      );
+                                    }}
+                                    disabled={
+                                      itemPriceTableUpdatingIndex !== null &&
+                                      itemPriceTableUpdatingIndex !== idx
                                     }
-                                    const s = item.pricingSnapshotJson as Record<string, unknown> | null | undefined;
-                                    const pt = s?.priceTable as { code?: string } | undefined;
-                                    const ver = s?.version as { versionNumber?: unknown } | undefined;
-                                    const vn = Number(ver?.versionNumber);
-                                    if (pt?.code && Number.isFinite(vn)) {
-                                      return ` · ${pt.code} v${vn}`;
-                                    }
-                                    return "";
-                                  })()}
-                                </span>
-                              )}
+                                    aria-haspopup="menu"
+                                    aria-expanded={itemOriginMenuOpenIndex === idx}
+                                    title="Trocar origem do preço deste item"
+                                    className="inline-flex items-center justify-center rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+                                  >
+                                    {itemPriceTableUpdatingIndex === idx ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Tag className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                  {itemOriginMenuOpenIndex === idx && (
+                                    <div
+                                      ref={itemOriginMenuRef}
+                                      role="menu"
+                                      className="absolute z-50 left-0 top-full mt-1 w-60 rounded-xl border border-border bg-card p-2 shadow-xl"
+                                    >
+                                      <p className="text-[10px] font-bold uppercase text-muted-foreground px-2 py-1">
+                                        Origem do preço
+                                      </p>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setItemOriginMenuOpenIndex(null);
+                                          markItemAsManual(idx);
+                                        }}
+                                        disabled={
+                                          itemPriceTableUpdatingIndex !== null ||
+                                          item.priceSource === ITEM_PRICE_SOURCE_MANUAL
+                                        }
+                                        className={cn(
+                                          "w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50",
+                                          item.priceSource === ITEM_PRICE_SOURCE_MANUAL &&
+                                            "bg-accent/40 font-bold"
+                                        )}
+                                      >
+                                        Preço manual
+                                        {item.priceSource === ITEM_PRICE_SOURCE_MANUAL ? " · atual" : ""}
+                                      </button>
+                                      <div className="my-1 border-t border-border" />
+                                      {(() => {
+                                        const usable = priceTables.filter((t) => t.latestPublishedVersion);
+                                        if (usable.length === 0) {
+                                          return (
+                                            <p className="px-2 py-1 text-[11px] text-muted-foreground">
+                                              Nenhuma tabela com versão publicada.
+                                            </p>
+                                          );
+                                        }
+                                        return usable.map((t) => {
+                                          const pub = t.latestPublishedVersion!;
+                                          const isCurrent =
+                                            item.priceSource === ITEM_PRICE_SOURCE_PRICE_TABLE &&
+                                            item.priceTableId === t.id &&
+                                            item.priceTableVersionId === pub.id;
+                                          return (
+                                            <button
+                                              key={t.id}
+                                              type="button"
+                                              role="menuitem"
+                                              onClick={() => {
+                                                setItemOriginMenuOpenIndex(null);
+                                                void applyPriceTableToItem(idx, t.id);
+                                              }}
+                                              disabled={itemPriceTableUpdatingIndex !== null || isCurrent}
+                                              className={cn(
+                                                "w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50",
+                                                isCurrent && "bg-accent/40 font-bold"
+                                              )}
+                                            >
+                                              <span className="font-mono">{t.code}</span> v{pub.versionNumber}
+                                              {isCurrent ? " · atual" : ""}
+                                              <span className="block text-[10px] text-muted-foreground truncate">
+                                                {t.name}
+                                              </span>
+                                            </button>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="p-3 min-w-[110px]">
