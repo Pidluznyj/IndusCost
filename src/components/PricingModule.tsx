@@ -75,6 +75,24 @@ const COMMERCIAL_TABLE_LABELS: Record<string, string> = {
   VAREJO_3: "Varejo 3",
 };
 
+/**
+ * Comissão padrão (%) por código de tabela comercial.
+ * Política: ATACADO 1%, VAREJO_1 2%, VAREJO_2 3%, VAREJO_3 4%, VAREJO_4 5%.
+ * Códigos fora desta lista usam 0 como default.
+ */
+const DEFAULT_COMMISSION_BY_TABLE_CODE: Record<string, number> = {
+  ATACADO: 1,
+  VAREJO_1: 2,
+  VAREJO_2: 3,
+  VAREJO_3: 4,
+  VAREJO_4: 5,
+};
+
+const getDefaultCommissionForCode = (code: string): number =>
+  Number.isFinite(DEFAULT_COMMISSION_BY_TABLE_CODE[code])
+    ? DEFAULT_COMMISSION_BY_TABLE_CODE[code]
+    : 0;
+
 function extractIssuePreview(raw: unknown): CommercialGenIssuePreview {
   if (!raw || typeof raw !== "object") return {};
   const o = raw as Record<string, unknown>;
@@ -143,8 +161,20 @@ export const PricingModule = () => {
   const [commercialGenTaxRuleId, setCommercialGenTaxRuleId] = useState("");
   const [commercialGenEffectiveFrom, setCommercialGenEffectiveFrom] = useState("");
   const [commercialGenNotes, setCommercialGenNotes] = useState("");
-  /** Comissão de vendedor (%) informada para a geração das tabelas comerciais. Default 0. */
-  const [commercialGenCommissionPerc, setCommercialGenCommissionPerc] = useState<string>("0");
+  /**
+   * Comissão de vendedor (%) por código de tabela comercial.
+   * Cada tabela pode ter uma comissão diferente. Defaults vêm de DEFAULT_COMMISSION_BY_TABLE_CODE.
+   * Mantido como string para permitir digitação livre (vírgula/ponto).
+   */
+  const [commercialGenCommissionByCode, setCommercialGenCommissionByCode] = useState<Record<string, string>>(
+    () => {
+      const initial: Record<string, string> = {};
+      for (const code of COMMERCIAL_TABLE_CODES) {
+        initial[code] = String(getDefaultCommissionForCode(code));
+      }
+      return initial;
+    }
+  );
   const [commercialGenSelectedCodes, setCommercialGenSelectedCodes] = useState<Set<string>>(
     () => new Set(COMMERCIAL_TABLE_CODES)
   );
@@ -185,6 +215,24 @@ export const PricingModule = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Garante que toda tabela comercial ativa tenha um valor default de comissão no estado,
+  // sem sobrescrever digitação do usuário. Cobre tabelas futuras (ex.: VAREJO_4).
+  useEffect(() => {
+    if (priceTables.length === 0) return;
+    setCommercialGenCommissionByCode((prev) => {
+      let changed = false;
+      const next: Record<string, string> = { ...prev };
+      for (const t of priceTables) {
+        if (!t?.code) continue;
+        if (next[t.code] === undefined) {
+          next[t.code] = String(getDefaultCommissionForCode(t.code));
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [priceTables]);
 
   useEffect(() => {
     if (!simulatorForm.productId) {
@@ -429,17 +477,17 @@ export const PricingModule = () => {
       return;
     }
 
-    // Comissão vendedor: obrigatório informar um número válido entre 0 e 50.
-    const commissionRaw = commercialGenCommissionPerc.trim().replace(",", ".");
-    const commissionParsed = Number(commissionRaw);
-    if (
-      commissionRaw === "" ||
-      !Number.isFinite(commissionParsed) ||
-      commissionParsed < 0 ||
-      commissionParsed > 50
-    ) {
-      alert("Comissão do vendedor deve estar entre 0% e 50%.");
-      return;
+    // Comissão por tabela: cada tabela selecionada precisa ter um número válido entre 0 e 50.
+    // Valida todas antes de gerar qualquer DRAFT. Aceita vírgula ou ponto como separador.
+    const commissionParsedByCode: Record<string, number> = {};
+    for (const table of selectedTables) {
+      const raw = (commercialGenCommissionByCode[table.code] ?? "").trim().replace(",", ".");
+      const parsed = Number(raw);
+      if (raw === "" || !Number.isFinite(parsed) || parsed < 0 || parsed > 50) {
+        alert(`Comissão do vendedor da tabela ${table.code} deve estar entre 0% e 50%.`);
+        return;
+      }
+      commissionParsedByCode[table.code] = parsed;
     }
 
     if (
@@ -461,11 +509,12 @@ export const PricingModule = () => {
       const accumulated: CommercialGenResult[] = [];
       for (const table of selectedTables) {
         setCommercialGenCurrentCode(table.code);
+        const tableCommissionParsed = commissionParsedByCode[table.code];
         const noteParts: string[] = [
           "Gerado pela Formação de Preço Comercial.",
           `Tabela: ${table.code}.`,
           `Regra fiscal: ${taxRuleName}.`,
-          `Comissão vendedor: ${formatNumber(commissionParsed, 2)}%.`,
+          `Comissão vendedor da tabela ${table.code}: ${formatNumber(tableCommissionParsed, 2)}%.`,
         ];
         if (vig) noteParts.push(`Vigência desejada: ${vig}.`);
         if (userNotes) noteParts.push(`Observações: ${userNotes}`);
@@ -494,7 +543,7 @@ export const PricingModule = () => {
             body: JSON.stringify({
               taxRuleId: commercialGenTaxRuleId,
               includeAllActiveProducts: true,
-              commissionPerc: commissionParsed,
+              commissionPerc: tableCommissionParsed,
               notes: consolidatedNotes,
             }),
           });
@@ -505,13 +554,13 @@ export const PricingModule = () => {
           const versionId = typeof payload.version?.id === "string" ? payload.version.id : null;
 
           // Comissão exibida no card: prefere version.commissionPerc, depois summary.commissionOverridePerc,
-          // e usa o valor digitado como fallback final (já validado acima).
+          // e usa a comissão enviada para esta tabela como fallback final (já validada acima).
           const versionCommission = Number(payload.version?.commissionPerc);
           const summaryCommission = Number(payload.summary?.commissionOverridePerc);
           let appliedCommissionPerc: number | null = null;
           if (Number.isFinite(versionCommission)) appliedCommissionPerc = versionCommission;
           else if (Number.isFinite(summaryCommission)) appliedCommissionPerc = summaryCommission;
-          else appliedCommissionPerc = commissionParsed;
+          else appliedCommissionPerc = tableCommissionParsed;
 
           accumulated.push({
             priceTableId: table.id,
@@ -823,27 +872,6 @@ export const PricingModule = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-muted-foreground">Comissão vendedor %</label>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    max={50}
-                    step="0.01"
-                    className="w-full p-3 rounded-xl border border-border bg-background text-sm outline-none tabular-nums"
-                    value={commercialGenCommissionPerc}
-                    onChange={(e) => setCommercialGenCommissionPerc(e.target.value)}
-                    disabled={commercialGenRunning}
-                    placeholder="0,00"
-                  />
-                  <p className="text-[10px] text-muted-foreground leading-snug">
-                    Percentual de comissão considerado no cálculo do preço sugerido da tabela.
-                    Aceita de 0% a 50%. Quando informado, sobrepõe a comissão por produto.
-                  </p>
-                </div>
-              </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase text-muted-foreground">Observações (opcional)</label>
@@ -875,41 +903,77 @@ export const PricingModule = () => {
 
               <div className="space-y-2">
                 <p className="text-xs font-bold uppercase text-muted-foreground">Tabelas a gerar</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Cada tabela pode ter uma comissão diferente. A comissão entra no cálculo do preço sugerido e
+                  será levada para a proposta.
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {COMMERCIAL_TABLE_CODES.map((code) => {
                     const table = priceTables.find((t) => t.code === code);
                     const available = !!table;
                     const checked = available && commercialGenSelectedCodes.has(code);
                     const margin = table ? Number(table.defaultMarginPct) : null;
+                    const commissionValue =
+                      commercialGenCommissionByCode[code] ??
+                      String(getDefaultCommissionForCode(code));
                     return (
-                      <label
+                      <div
                         key={code}
                         className={cn(
-                          "flex items-center gap-3 p-3 rounded-xl border bg-background",
+                          "flex flex-col gap-2 p-3 rounded-xl border bg-background",
                           available
-                            ? "border-border cursor-pointer hover:bg-accent/30"
-                            : "border-dashed border-muted-foreground/30 opacity-60 cursor-not-allowed"
+                            ? "border-border"
+                            : "border-dashed border-muted-foreground/30 opacity-60"
                         )}
                       >
-                        <input
-                          type="checkbox"
-                          disabled={!available || commercialGenRunning}
-                          checked={checked}
-                          onChange={() => available && toggleCommercialTable(code)}
-                          className="rounded accent-primary w-4 h-4"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold">
-                            {COMMERCIAL_TABLE_LABELS[code] ?? code}
-                            <span className="ml-2 text-[10px] font-mono text-muted-foreground">({code})</span>
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {available && margin != null && Number.isFinite(margin)
-                              ? `Margem padrão: ${formatNumber(margin, 2)}%`
-                              : "Tabela não encontrada ou inativa"}
-                          </p>
+                        <label
+                          className={cn(
+                            "flex items-center gap-3",
+                            available ? "cursor-pointer" : "cursor-not-allowed"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={!available || commercialGenRunning}
+                            checked={checked}
+                            onChange={() => available && toggleCommercialTable(code)}
+                            className="rounded accent-primary w-4 h-4"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold">
+                              {COMMERCIAL_TABLE_LABELS[code] ?? code}
+                              <span className="ml-2 text-[10px] font-mono text-muted-foreground">({code})</span>
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {available && margin != null && Number.isFinite(margin)
+                                ? `Margem padrão: ${formatNumber(margin, 2)}%`
+                                : "Tabela não encontrada ou inativa"}
+                            </p>
+                          </div>
+                        </label>
+                        <div className="flex items-center gap-2 pl-7">
+                          <label className="text-[11px] font-bold uppercase text-muted-foreground shrink-0">
+                            Comissão %
+                          </label>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            max={50}
+                            step="0.01"
+                            className="w-24 px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right disabled:opacity-50"
+                            value={commissionValue}
+                            onChange={(e) =>
+                              setCommercialGenCommissionByCode((prev) => ({
+                                ...prev,
+                                [code]: e.target.value,
+                              }))
+                            }
+                            disabled={!available || commercialGenRunning}
+                            placeholder="0,00"
+                          />
                         </div>
-                      </label>
+                      </div>
                     );
                   })}
                 </div>
