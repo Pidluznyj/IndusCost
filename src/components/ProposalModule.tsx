@@ -299,6 +299,48 @@ function mapPublishedPriceHttpError(status: number, body: Record<string, unknown
 /** Valores reconhecidos hoje em ProposalItem.priceSource. String livre no banco. */
 const ITEM_PRICE_SOURCE_PRICE_TABLE = "PRICE_TABLE";
 const ITEM_PRICE_SOURCE_MANUAL = "MANUAL";
+/** Item nasceu de uma tabela publicada mas teve preço/desconto ajustado manualmente.
+ * Preserva os metadados de tabela (priceTableId/Code/Version/...) para auditoria. */
+const ITEM_PRICE_SOURCE_MANUAL_OVERRIDE = "MANUAL_OVERRIDE";
+
+/**
+ * Recalcula campos derivados de um ProposalItem após uma mudança.
+ * Centraliza a fórmula usada por updateItem para permitir reúso em ações em lote
+ * (ex.: desconto em massa). Não altera regra de cálculo.
+ */
+function recomputeItemDerivedFields(
+  itemIn: ProposalItem,
+  discountPath: "perc" | "value" | "none"
+): ProposalItem {
+  const item = { ...itemIn };
+  const qty = safeNum(item.quantity);
+  const negotiated = safeNum(item.negotiatedPrice);
+  const unitCost = safeNum(item.unitCost);
+  const gross = qty * negotiated;
+
+  if (discountPath === "perc") {
+    item.discountValue = safeNum(gross * (safeNum(item.discountPerc) / 100));
+  } else if (discountPath === "value") {
+    const dv = safeNum(item.discountValue);
+    item.discountPerc = gross > 0 ? safeNum((dv / gross) * 100) : 0;
+    item.discountValue = dv;
+  }
+
+  const discountVal = safeNum(item.discountValue);
+  const net = gross - discountVal;
+  const totalCost = qty * unitCost;
+
+  item.taxesValue = safeNum(net * (safeNum(item.taxesPerc) / 100));
+  item.commissionValue = safeNum(net * (safeNum(item.commissionPerc) / 100));
+
+  const freight = safeNum(item.freightValue);
+  item.marginValue = safeNum(
+    net - item.taxesValue - item.commissionValue - freight - totalCost
+  );
+  item.marginPerc = net > 0 ? safeNum((item.marginValue / net) * 100) : 0;
+
+  return normalizeProposalItem(item);
+}
 
 async function fetchPublishedPriceJson(
   priceTableId: string,
@@ -403,6 +445,10 @@ export const ProposalModule = () => {
   /** Índice do item com o popover de origem de preço aberto. */
   const [itemOriginMenuOpenIndex, setItemOriginMenuOpenIndex] = useState<number | null>(null);
   const itemOriginMenuRef = useRef<HTMLDivElement | null>(null);
+  /** Índices dos itens selecionados para ações em massa (desconto em lote etc.). */
+  const [selectedItemIndexes, setSelectedItemIndexes] = useState<Set<number>>(new Set());
+  /** Input de desconto % para ação em massa. String para permitir vazio/parcial enquanto digita. */
+  const [bulkDiscountInput, setBulkDiscountInput] = useState<string>("");
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -720,6 +766,8 @@ export const ProposalModule = () => {
     setProposalIndicatorsDetailOpen(false);
     setTablePriceSessionAlerts([]);
     setDefaultTableChangedNotice(null);
+    setSelectedItemIndexes(new Set());
+    setBulkDiscountInput("");
     setFormData({
       title: "",
       customerId: "",
@@ -749,6 +797,8 @@ export const ProposalModule = () => {
       setEditingProposal(data);
       setTablePriceSessionAlerts([]);
       setDefaultTableChangedNotice(null);
+      setSelectedItemIndexes(new Set());
+      setBulkDiscountInput("");
       setFormData({ ...data, items });
       setFormTab("items");
     setProposalIndicatorsDetailOpen(false);
@@ -1173,42 +1223,130 @@ export const ProposalModule = () => {
     if (updates.unitCost !== undefined || updates.suggestedPrice !== undefined) {
       (merged as ProposalItem).calculationExplainability = undefined;
     }
-    let item = normalizeProposalItem(merged);
-
-    const qty = safeNum(item.quantity);
-    const negotiated = safeNum(item.negotiatedPrice);
-    const unitCost = safeNum(item.unitCost);
-    const gross = qty * negotiated;
-
-    if (updates.discountPerc !== undefined) {
-      item.discountValue = safeNum(gross * (safeNum(item.discountPerc) / 100));
-    } else if (updates.discountValue !== undefined) {
-      const dv = safeNum(item.discountValue);
-      item.discountPerc = gross > 0 ? safeNum((dv / gross) * 100) : 0;
-      item.discountValue = dv;
-    }
-
-    const discountVal = safeNum(item.discountValue);
-    const net = gross - discountVal;
-    const totalCost = qty * unitCost;
-
-    item.taxesValue = safeNum(net * (safeNum(item.taxesPerc) / 100));
-    item.commissionValue = safeNum(net * (safeNum(item.commissionPerc) / 100));
-
-    const freight = safeNum(item.freightValue);
-    item.marginValue = safeNum(
-      net - item.taxesValue - item.commissionValue - freight - totalCost
-    );
-    item.marginPerc = net > 0 ? safeNum((item.marginValue / net) * 100) : 0;
-
-    newItems[index] = normalizeProposalItem(item);
-    setFormData(prev => ({ ...prev, items: newItems }));
+    const normalized = normalizeProposalItem(merged);
+    const discountPath: "perc" | "value" | "none" =
+      updates.discountPerc !== undefined
+        ? "perc"
+        : updates.discountValue !== undefined
+          ? "value"
+          : "none";
+    newItems[index] = recomputeItemDerivedFields(normalized, discountPath);
+    setFormData((prev) => ({ ...prev, items: newItems }));
   };
 
   const removeItem = (index: number) => {
     const newItems = [...(formData.items || [])];
     newItems.splice(index, 1);
-    setFormData(prev => ({ ...prev, items: newItems }));
+    setFormData((prev) => ({ ...prev, items: newItems }));
+    setSelectedItemIndexes((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set<number>();
+      prev.forEach((i) => {
+        if (i === index) return;
+        next.add(i > index ? i - 1 : i);
+      });
+      return next;
+    });
+  };
+
+  const toggleItemSelection = (index: number) => {
+    setSelectedItemIndexes((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const toggleAllItemsSelected = () => {
+    const total = formData.items?.length ?? 0;
+    if (total === 0) return;
+    setSelectedItemIndexes((prev) => {
+      if (prev.size === total) return new Set();
+      const all = new Set<number>();
+      for (let i = 0; i < total; i++) all.add(i);
+      return all;
+    });
+  };
+
+  const clearItemSelection = () => {
+    setSelectedItemIndexes(new Set());
+  };
+
+  /**
+   * Aplica um desconto percentual a todos os itens selecionados.
+   * - Reusa recomputeItemDerivedFields para preservar a fórmula existente.
+   * - Itens vindos de tabela viram MANUAL_OVERRIDE preservando metadados de tabela.
+   * - Anota pricingSnapshotJson com manualOverrideAt/Reason/bulkDiscountPerc para auditoria.
+   * - Não toca em itens não selecionados, em cabeçalho, em produto ou em outros campos.
+   */
+  const applyBulkDiscount = () => {
+    const raw = bulkDiscountInput.trim();
+    if (!raw) {
+      alert("Informe um desconto entre 0 e 100.");
+      return;
+    }
+    const perc = parseFloat(raw.replace(",", "."));
+    if (!Number.isFinite(perc)) {
+      alert("Desconto inválido. Use um número entre 0 e 100.");
+      return;
+    }
+    if (perc < 0) {
+      alert("Desconto não pode ser negativo.");
+      return;
+    }
+    if (perc > 100) {
+      alert("Desconto não pode ser maior que 100%.");
+      return;
+    }
+    if (selectedItemIndexes.size === 0) return;
+
+    const overrideAt = new Date().toISOString();
+    const indexes: number[] = Array.from(selectedItemIndexes);
+
+    setFormData((prev) => {
+      const items = [...(prev.items ?? [])];
+      indexes.forEach((idx) => {
+        const cur = items[idx];
+        if (!cur) return;
+
+        const wasTable =
+          cur.priceSource === ITEM_PRICE_SOURCE_PRICE_TABLE ||
+          (typeof cur.priceTableId === "string" && cur.priceTableId.trim() !== "");
+        const alreadyManual = cur.priceSource === ITEM_PRICE_SOURCE_MANUAL;
+        const alreadyOverride = cur.priceSource === ITEM_PRICE_SOURCE_MANUAL_OVERRIDE;
+
+        let nextItem: ProposalItem = normalizeProposalItem({ ...cur, discountPerc: perc });
+
+        if (wasTable && !alreadyManual && !alreadyOverride) {
+          nextItem.priceSource = ITEM_PRICE_SOURCE_MANUAL_OVERRIDE;
+          const prevSnap = nextItem.pricingSnapshotJson;
+          const baseSnap: Record<string, unknown> =
+            prevSnap && typeof prevSnap === "object"
+              ? { ...(prevSnap as Record<string, unknown>) }
+              : prevSnap != null
+                ? { previousSnapshot: prevSnap }
+                : {};
+          baseSnap.manualOverrideAt = overrideAt;
+          baseSnap.manualOverrideReason = "BULK_DISCOUNT";
+          baseSnap.bulkDiscountPerc = perc;
+          nextItem.pricingSnapshotJson = baseSnap;
+        } else if (alreadyOverride) {
+          const prevSnap = nextItem.pricingSnapshotJson;
+          if (prevSnap && typeof prevSnap === "object") {
+            nextItem.pricingSnapshotJson = {
+              ...(prevSnap as Record<string, unknown>),
+              manualOverrideAt: overrideAt,
+              manualOverrideReason: "BULK_DISCOUNT",
+              bulkDiscountPerc: perc,
+            };
+          }
+        }
+
+        items[idx] = recomputeItemDerivedFields(nextItem, "perc");
+      });
+      return { ...prev, items };
+    });
   };
 
   // Totais Consolidados
@@ -1580,11 +1718,82 @@ export const ProposalModule = () => {
                 ) : null}
               </div>
 
+              {formTab === "items" && (formData.items?.length ?? 0) > 0 ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-accent/20 px-3 py-2 text-xs">
+                  <span className="font-bold">
+                    Itens selecionados:{" "}
+                    <span className={cn(selectedItemIndexes.size > 0 ? "text-primary" : "text-muted-foreground")}>
+                      {selectedItemIndexes.size}
+                    </span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground" htmlFor="bulk-discount-input">
+                      Desconto %
+                    </label>
+                    <input
+                      id="bulk-discount-input"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={bulkDiscountInput}
+                      onChange={(e) => setBulkDiscountInput(e.target.value)}
+                      placeholder="0,00"
+                      className="w-24 rounded-md border border-border bg-background px-2 py-1 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyBulkDiscount}
+                    disabled={selectedItemIndexes.size === 0 || bulkDiscountInput.trim() === ""}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                    title={
+                      selectedItemIndexes.size === 0
+                        ? "Selecione ao menos um item."
+                        : "Aplica o desconto % aos itens selecionados."
+                    }
+                  >
+                    <Percent className="h-3.5 w-3.5" /> Aplicar desconto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearItemSelection}
+                    disabled={selectedItemIndexes.size === 0}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-bold hover:bg-accent disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" /> Limpar seleção
+                  </button>
+                  <p className="text-[10px] text-muted-foreground leading-snug ml-auto max-w-[360px]">
+                    Itens vindos de tabela passam para <span className="font-bold">Manual sobre …</span> ao receber desconto manual,
+                    preservando a origem para auditoria.
+                  </p>
+                </div>
+              ) : null}
+
               {formTab === "items" ? (
                 <div className="flex-1 overflow-x-auto">
-                  <table className="min-w-[1020px] w-full text-left border-collapse">
+                  <table className="min-w-[1060px] w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-accent/20 border-b border-border">
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-[36px] min-w-[36px]">
+                          <input
+                            type="checkbox"
+                            aria-label="Selecionar todos os itens"
+                            checked={
+                              (formData.items?.length ?? 0) > 0 &&
+                              selectedItemIndexes.size === (formData.items?.length ?? 0)
+                            }
+                            ref={(el) => {
+                              if (!el) return;
+                              const total = formData.items?.length ?? 0;
+                              el.indeterminate =
+                                selectedItemIndexes.size > 0 && selectedItemIndexes.size < total;
+                            }}
+                            onChange={toggleAllItemsSelected}
+                            className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
+                          />
+                        </th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Produto</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[110px] w-[110px]">Qtd</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Custo Unit.</th>
@@ -1603,7 +1812,22 @@ export const ProposalModule = () => {
                     </thead>
                     <tbody className="divide-y divide-border">
                       {formData.items?.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-accent/10 transition-colors group">
+                        <tr
+                          key={idx}
+                          className={cn(
+                            "hover:bg-accent/10 transition-colors group",
+                            selectedItemIndexes.has(idx) && "bg-primary/5"
+                          )}
+                        >
+                          <td className="p-3 align-top">
+                            <input
+                              type="checkbox"
+                              aria-label={`Selecionar item ${idx + 1}`}
+                              checked={selectedItemIndexes.has(idx)}
+                              onChange={() => toggleItemSelection(idx)}
+                              className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
+                            />
+                          </td>
                           <td className="p-3">
                             <div className="max-w-[200px]">
                               <p className="text-xs font-bold truncate">{item.Product?.sku}</p>
@@ -1640,6 +1864,35 @@ export const ProposalModule = () => {
                                     title="Preço definido manualmente (sem tabela publicada vinculada)"
                                   >
                                     Preço manual
+                                  </span>
+                                )}
+                                {item.priceSource === ITEM_PRICE_SOURCE_MANUAL_OVERRIDE && (
+                                  <span
+                                    className="rounded border border-orange-300 bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-orange-800"
+                                    title="Item originalmente da tabela, com ajuste manual aplicado. Metadados da tabela preservados."
+                                  >
+                                    Manual sobre
+                                    {(() => {
+                                      const directCode =
+                                        typeof item.priceTableCode === "string"
+                                          ? item.priceTableCode.trim()
+                                          : "";
+                                      const directVn = Number(item.priceTableVersionNumber);
+                                      if (directCode && Number.isFinite(directVn)) {
+                                        return ` ${directCode} v${directVn}`;
+                                      }
+                                      const s = item.pricingSnapshotJson as
+                                        | Record<string, unknown>
+                                        | null
+                                        | undefined;
+                                      const pt = s?.priceTable as { code?: string } | undefined;
+                                      const ver = s?.version as { versionNumber?: unknown } | undefined;
+                                      const vn = Number(ver?.versionNumber);
+                                      if (pt?.code && Number.isFinite(vn)) {
+                                        return ` ${pt.code} v${vn}`;
+                                      }
+                                      return " tabela";
+                                    })()}
                                   </span>
                                 )}
                                 <div className="relative">
@@ -1848,7 +2101,7 @@ export const ProposalModule = () => {
                       ))}
                       {(!formData.items || formData.items.length === 0) && (
                         <tr>
-                          <td colSpan={9} className="p-12 text-center text-muted-foreground italic text-sm">
+                          <td colSpan={10} className="p-12 text-center text-muted-foreground italic text-sm">
                             Nenhum produto adicionado. Use o seletor acima para começar.
                           </td>
                         </tr>
