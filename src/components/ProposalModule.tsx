@@ -47,9 +47,12 @@ import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
 import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
 import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
-import { ProposalClientPreview } from "@/src/components/ProposalClientPreview";
-
 const PAGE_SIZE = 20;
+
+/** Mesma aba de impressão para cliente que o ícone de impressora da listagem (`/proposals/:id/print`). */
+function openProposalClientPrintTab(proposalId: string) {
+  window.open(`/proposals/${proposalId}/print`, "_blank", "noopener,noreferrer");
+}
 
 type ProposalListResponse = {
   data: Proposal[];
@@ -451,7 +454,6 @@ export const ProposalModule = () => {
   const [selectedItemIndexes, setSelectedItemIndexes] = useState<Set<number>>(new Set());
   /** Input de desconto % para ação em massa. String para permitir vazio/parcial enquanto digita. */
   const [bulkDiscountInput, setBulkDiscountInput] = useState<string>("");
-  const [clientPreviewOpen, setClientPreviewOpen] = useState(false);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -576,12 +578,6 @@ export const ProposalModule = () => {
       document.removeEventListener("keydown", onKey);
     };
   }, [itemOriginMenuOpenIndex]);
-
-  useEffect(() => {
-    if (view !== "form") {
-      setClientPreviewOpen(false);
-    }
-  }, [view]);
 
   const handlePriceTableSelectionChange = useCallback(
     (nextTableId: string) => {
@@ -1409,26 +1405,13 @@ export const ProposalModule = () => {
     }));
   }, [totals]);
 
-  const clientPreviewCustomer = useMemo((): Customer | null => {
-    const emb = formData.Customer;
-    if (emb && ((emb.companyName?.trim() ?? "") !== "" || (emb.tradeName?.trim() ?? "") !== "")) {
-      return emb;
-    }
-    const id = formData.customerId?.trim();
-    if (!id) return null;
-    return customers.find((c) => c.id === id) ?? null;
-  }, [formData.Customer, formData.customerId, customers]);
-
-  const handleOpenClientPreview = () => {
-    if (!formData.customerId?.trim()) {
-      alert("Selecione um cliente antes de visualizar a proposta.");
+  const handleOpenClientPrintView = () => {
+    const id = editingProposal?.id?.trim();
+    if (!id) {
+      alert("Salve a proposta antes de visualizar a versão para cliente.");
       return;
     }
-    if (!formData.items || formData.items.length === 0) {
-      alert("Adicione ao menos um item antes de visualizar a proposta.");
-      return;
-    }
-    setClientPreviewOpen(true);
+    openProposalClientPrintTab(id);
   };
 
   const filteredProposals = proposals;
@@ -1476,7 +1459,8 @@ export const ProposalModule = () => {
             <TourHelpButton onClick={() => setTourOpen(true)} />
             <button
               type="button"
-              onClick={handleOpenClientPreview}
+              onClick={handleOpenClientPrintView}
+              title="Abre a versão para cliente em nova aba. Salve a proposta antes para refletir as últimas alterações."
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-accent"
             >
               <Eye className="h-4 w-4" aria-hidden />
@@ -2242,18 +2226,6 @@ export const ProposalModule = () => {
           tourName="Tour de Propostas"
         />
       </div>
-      <ProposalClientPreview
-        open={clientPreviewOpen}
-        onClose={() => setClientPreviewOpen(false)}
-        formData={formData}
-        resolvedCustomer={clientPreviewCustomer}
-        proposalNumber={editingProposal?.number ?? null}
-        totals={{
-          totalGross: totals.totalGross,
-          totalDiscount: totals.totalDiscount,
-          totalNet: totals.totalNet,
-        }}
-      />
       </>
     );
   }
@@ -2515,7 +2487,7 @@ export const ProposalModule = () => {
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button 
-                          onClick={() => window.open(`/proposals/${p.id}/print`, "_blank", "noopener,noreferrer")}
+                          onClick={() => openProposalClientPrintTab(p.id)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-blue-500 transition-all"
                           title="Imprimir proposta"
                         >
