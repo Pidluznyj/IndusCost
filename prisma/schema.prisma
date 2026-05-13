@@ -406,6 +406,7 @@ model BrandingSettings {
   darkLogoDataUrl           String?  @db.Text
   faviconDataUrl            String?  @db.Text
   proposalCoverDataUrl      String?  @db.Text
+  proposalSideImageDataUrl  String?  @db.Text
   watermarkDataUrl          String?  @db.Text
   createdAt                 DateTime @default(now()) @db.Timestamptz(6)
   updatedAt                 DateTime @default(now()) @updatedAt @db.Timestamptz(6)

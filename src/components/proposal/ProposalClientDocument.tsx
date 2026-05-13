@@ -106,6 +106,12 @@ export function ProposalClientDocument({
     b.proposalLogoDataUrl.trim().toLowerCase().startsWith("data:image/")
       ? b.proposalLogoDataUrl.trim()
       : null;
+  const proposalSideImageSrc =
+    typeof b.proposalSideImageDataUrl === "string" &&
+    b.proposalSideImageDataUrl.trim().length > 0 &&
+    b.proposalSideImageDataUrl.trim().toLowerCase().startsWith("data:image/")
+      ? b.proposalSideImageDataUrl.trim()
+      : null;
   const sloganLine = nonEmpty(b.slogan);
 
   const validityDays = safeNum(formData.validityDays, 15);
@@ -121,6 +127,8 @@ export function ProposalClientDocument({
   return (
     <article className="proposal-print-document proposal-print-sheet mx-auto w-full max-w-[1180px] rounded-xl border border-slate-200 bg-white shadow-md md:shadow-md">
       <div className="proposal-print-document-inner p-6 md:p-10">
+        <div className="proposal-client-document-layout flex min-w-0 flex-col gap-3 md:flex-row md:items-stretch md:gap-4 print:flex-row print:items-stretch print:gap-4">
+          <main className="proposal-client-main min-w-0 flex-1">
         <header
           className="proposal-print-section border-b-2 border-slate-200 pb-6"
           style={{ borderBottomColor: b.primaryColor }}
@@ -326,6 +334,20 @@ export function ProposalClientDocument({
             {companyIssuer ?? b.companyName}
           </p>
         </footer>
+          </main>
+          {proposalSideImageSrc ? (
+            <aside
+              className="proposal-client-side-brand hidden flex-col items-center border-l border-slate-100 pt-1 md:flex md:w-[88px] md:min-w-[72px] md:max-w-[96px] md:flex-shrink-0 md:border-slate-100 md:pl-3 print:flex print:w-[80px] print:min-w-[72px] print:max-w-[88px] print:flex-shrink-0 print:border-slate-100 print:pl-3"
+              aria-hidden
+            >
+              <img
+                src={proposalSideImageSrc}
+                alt=""
+                className="h-auto w-full max-w-[88px] object-contain object-top opacity-95 md:max-h-[560px] print:max-h-[520px]"
+              />
+            </aside>
+          ) : null}
+        </div>
       </div>
     </article>
   );

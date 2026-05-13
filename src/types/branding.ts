@@ -10,6 +10,7 @@ export type BrandingSettingsDTO = {
   darkLogoDataUrl: string | null;
   faviconDataUrl: string | null;
   proposalCoverDataUrl: string | null;
+  proposalSideImageDataUrl: string | null;
   watermarkDataUrl: string | null;
 };
 
@@ -24,5 +25,6 @@ export const DEFAULT_BRANDING: BrandingSettingsDTO = {
   darkLogoDataUrl: null,
   faviconDataUrl: null,
   proposalCoverDataUrl: null,
+  proposalSideImageDataUrl: null,
   watermarkDataUrl: null,
 };

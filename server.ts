@@ -4668,6 +4668,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     darkLogoDataUrl: string | null;
     faviconDataUrl: string | null;
     proposalCoverDataUrl: string | null;
+    proposalSideImageDataUrl: string | null;
     watermarkDataUrl: string | null;
   } | null) {
     if (!row) {
@@ -4682,6 +4683,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         darkLogoDataUrl: null,
         faviconDataUrl: null,
         proposalCoverDataUrl: null,
+        proposalSideImageDataUrl: null,
         watermarkDataUrl: null,
       };
     }
@@ -4696,6 +4698,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       darkLogoDataUrl: row.darkLogoDataUrl,
       faviconDataUrl: row.faviconDataUrl,
       proposalCoverDataUrl: row.proposalCoverDataUrl,
+      proposalSideImageDataUrl: row.proposalSideImageDataUrl,
       watermarkDataUrl: row.watermarkDataUrl,
     };
   }
@@ -4737,6 +4740,7 @@ app.delete("/api/employees/:id", async (req, res) => {
       let darkLogoDataUrl: string | null;
       let faviconDataUrl: string | null;
       let proposalCoverDataUrl: string | null;
+      let proposalSideImageDataUrl: string | null;
       let watermarkDataUrl: string | null;
       try {
         systemCompactLogoDataUrl = validateOptionalBrandingImageDataUrl(body.systemCompactLogoDataUrl, "Logo compacta");
@@ -4745,6 +4749,10 @@ app.delete("/api/employees/:id", async (req, res) => {
         darkLogoDataUrl = validateOptionalBrandingImageDataUrl(body.darkLogoDataUrl, "Logo para fundo escuro");
         faviconDataUrl = validateOptionalBrandingImageDataUrl(body.faviconDataUrl, "Favicon");
         proposalCoverDataUrl = validateOptionalBrandingImageDataUrl(body.proposalCoverDataUrl, "Capa institucional");
+        proposalSideImageDataUrl = validateOptionalBrandingImageDataUrl(
+          body.proposalSideImageDataUrl,
+          "Imagem lateral da proposta",
+        );
         watermarkDataUrl = validateOptionalBrandingImageDataUrl(body.watermarkDataUrl, "Marca d'água");
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Dados de imagem inválidos.";
@@ -4763,6 +4771,7 @@ app.delete("/api/employees/:id", async (req, res) => {
         darkLogoDataUrl,
         faviconDataUrl,
         proposalCoverDataUrl,
+        proposalSideImageDataUrl,
         watermarkDataUrl,
       };
 

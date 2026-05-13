@@ -15,6 +15,7 @@ type ImageFieldKey =
   | "darkLogoDataUrl"
   | "faviconDataUrl"
   | "proposalCoverDataUrl"
+  | "proposalSideImageDataUrl"
   | "watermarkDataUrl";
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -304,6 +305,13 @@ export function BrandingSettingsPanel() {
           help="Imagem opcional para capa ou página inicial de proposta."
           value={form.proposalCoverDataUrl}
           onChange={(v) => setImage("proposalCoverDataUrl", v)}
+          disabled={saving}
+        />
+        <ImageSlot
+          label="Imagem lateral da proposta"
+          help="Imagem vertical/decorativa exibida na lateral da proposta comercial para cliente."
+          value={form.proposalSideImageDataUrl}
+          onChange={(v) => setImage("proposalSideImageDataUrl", v)}
           disabled={saving}
         />
         <ImageSlot
