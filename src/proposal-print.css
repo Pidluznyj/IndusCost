@@ -172,6 +172,138 @@
     pointer-events: none !important;
   }
 
+  /* --- Proposta cliente: hero, cards, resumo e tabela (alinhamento A4) --- */
+  .proposal-print-document .proposal-client-hero {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .proposal-print-document .proposal-client-hero-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 72mm !important;
+    gap: 8mm !important;
+    align-items: start !important;
+  }
+
+  .proposal-print-document .proposal-client-hero-logo img {
+    max-width: 52mm !important;
+    max-height: 24mm !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+  }
+
+  .proposal-print-document .proposal-client-hero-card {
+    width: 72mm !important;
+    max-width: 72mm !important;
+    margin-left: auto !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .proposal-print-document .proposal-client-section:not(.proposal-print-items-section),
+  .proposal-print-document .proposal-client-summary,
+  .proposal-print-document .proposal-client-financial-summary,
+  .proposal-print-document .proposal-client-acceptance {
+    margin-top: 6mm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .proposal-print-document .proposal-client-card {
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Tabela de itens: permitir várias páginas; card genérico acima não aplica ao wrapper da tabela */
+  .proposal-print-document .proposal-print-items-section {
+    margin-top: 6mm !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+
+  .proposal-print-document .proposal-client-conditions-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3mm !important;
+  }
+
+  .proposal-print-document .proposal-client-customer-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3mm !important;
+  }
+
+  .proposal-print-document .proposal-client-summary-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 4mm !important;
+  }
+
+  .proposal-print-document .proposal-client-summary-grid .proposal-client-card {
+    padding: 2.5mm 2mm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .proposal-print-document .proposal-client-financial-summary .proposal-client-card {
+    max-width: 85mm !important;
+    width: 100% !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table th,
+  .proposal-print-document .proposal-client-items-table td {
+    padding: 2.5mm 2mm !important;
+    vertical-align: top !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table thead {
+    display: table-header-group !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table .proposal-col-item {
+    width: 8mm !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table .proposal-col-code {
+    width: 22mm !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table .proposal-col-description {
+    width: auto !important;
+    overflow-wrap: anywhere !important;
+    word-wrap: break-word !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table .proposal-col-qty {
+    width: 14mm !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table .proposal-col-unit {
+    width: 24mm !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table .proposal-col-discount {
+    width: 16mm !important;
+  }
+
+  .proposal-print-document .proposal-client-items-table .proposal-col-total {
+    width: 26mm !important;
+  }
+
+  /* Linhas da tabela de itens: podem paginar; thead repete */
+  .proposal-print-document .proposal-client-items-table tbody tr {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
   /* --- Modal (edição): isolar app e fluxo multi-página (sem flex/viewport preso) --- */
   html.printing-proposal-client-preview {
     overflow: visible !important;

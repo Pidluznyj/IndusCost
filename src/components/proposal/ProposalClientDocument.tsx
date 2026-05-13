@@ -197,13 +197,13 @@ export function ProposalClientDocument({
 
         {/* A — Cabeçalho */}
         <header className="proposal-client-hero proposal-print-section pb-6">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 flex-1">
+          <div className="proposal-client-hero-row flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="proposal-client-hero-logo min-w-0 flex-1">
               {proposalLogoSrc ? (
                 <img
                   src={proposalLogoSrc}
                   alt={b.companyName}
-                  className="max-h-[80px] max-w-[280px] w-auto object-contain object-left"
+                  className="max-h-[100px] w-auto max-w-[200px] object-contain object-left sm:max-h-[112px] sm:max-w-[220px]"
                 />
               ) : (
                 <p
@@ -220,7 +220,7 @@ export function ProposalClientDocument({
               ) : null}
             </div>
             <div
-              className="proposal-client-card w-full shrink-0 rounded-xl border border-slate-200 bg-slate-50/90 p-4 shadow-sm lg:max-w-[380px] print:max-w-[360px]"
+              className="proposal-client-hero-card proposal-client-card w-full shrink-0 rounded-xl border border-slate-200 bg-slate-50/90 p-4 shadow-sm lg:max-w-[380px]"
             >
               <h1
                 id={titleHeadingId}
@@ -264,7 +264,7 @@ export function ProposalClientDocument({
           <SectionTitle accentColor={b.primaryColor}>Cliente</SectionTitle>
           <div className="proposal-client-card rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm">
             <p className="text-lg font-bold text-slate-900">{customerBlock.name}</p>
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <dl className="proposal-client-customer-grid mt-4 grid gap-3 text-sm sm:grid-cols-2">
               {customerBlock.tax ? (
                 <div>
                   <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">CNPJ / CPF</dt>
@@ -296,7 +296,7 @@ export function ProposalClientDocument({
         {/* D — Condições comerciais */}
         <section className="proposal-client-section proposal-print-section mt-8 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Condições comerciais</SectionTitle>
-          <div className="proposal-client-card grid gap-4 rounded-xl border border-slate-200 bg-white p-5 text-sm shadow-sm sm:grid-cols-2 lg:grid-cols-3">
+          <div className="proposal-client-card proposal-client-conditions-grid grid gap-4 rounded-xl border border-slate-200 bg-white p-5 text-sm shadow-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Condição de pagamento</p>
               <p className="mt-1 font-medium text-slate-900">{paymentTerms ?? "—"}</p>
@@ -329,13 +329,13 @@ export function ProposalClientDocument({
         </section>
 
         {/* B — Resumo da proposta */}
-        <section className="proposal-client-summary proposal-print-section mt-10 space-y-4">
+        <section className="proposal-client-summary proposal-client-section proposal-print-section mt-10 space-y-4">
           <SectionTitle accentColor={b.primaryColor}>Resumo da proposta</SectionTitle>
           <p className="max-w-3xl text-sm leading-relaxed text-slate-700">
             Esta proposta contempla o fornecimento dos itens listados abaixo, conforme condições comerciais acordadas entre
             as partes. Os valores apresentados consideram as quantidades, prazos e condições descritas neste documento.
           </p>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+          <div className="proposal-client-summary-grid grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             <InfoCard label="Itens distintos" value={String(summaryMetrics.distinctItems)} />
             <InfoCard label="Total de unidades" value={summaryMetrics.totalUnits} />
             <InfoCard label="Valor total" value={summaryMetrics.totalValue} />
@@ -360,19 +360,27 @@ export function ProposalClientDocument({
             Itens
           </SectionTitle>
           <div className="proposal-print-table-wrap overflow-x-auto rounded-xl border border-slate-200 print:overflow-visible">
-            <table className="w-full min-w-0 border-collapse text-sm md:min-w-[720px]">
+            <table className="proposal-client-items-table w-full min-w-0 table-auto border-collapse text-sm md:min-w-[720px] print:table-fixed">
               <thead>
                 <tr
                   className="border-b-2 text-left text-slate-800"
                   style={{ borderBottomColor: b.primaryColor, backgroundColor: "rgb(241 245 249)" }}
                 >
-                  <th className="px-3 py-3 text-xs font-bold uppercase tracking-wide">Item</th>
-                  <th className="px-3 py-3 text-xs font-bold uppercase tracking-wide">Código</th>
-                  <th className="min-w-[140px] px-3 py-3 text-xs font-bold uppercase tracking-wide">Descrição</th>
-                  <th className="px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">Qtd.</th>
-                  <th className="px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">Valor unit.</th>
-                  <th className="px-3 py-3 text-right text-xs font-bold uppercase tracking-wide text-slate-600">Desc. %</th>
-                  <th className="px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">Valor total</th>
+                  <th className="proposal-col-item px-3 py-3 text-xs font-bold uppercase tracking-wide">Item</th>
+                  <th className="proposal-col-code px-3 py-3 text-xs font-bold uppercase tracking-wide">Código</th>
+                  <th className="proposal-col-description min-w-[140px] px-3 py-3 text-xs font-bold uppercase tracking-wide">
+                    Descrição
+                  </th>
+                  <th className="proposal-col-qty px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">Qtd.</th>
+                  <th className="proposal-col-unit px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">
+                    Valor unit.
+                  </th>
+                  <th className="proposal-col-discount px-3 py-3 text-right text-xs font-bold uppercase tracking-wide text-slate-600">
+                    Desc. %
+                  </th>
+                  <th className="proposal-col-total px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">
+                    Valor total
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -396,19 +404,23 @@ export function ProposalClientDocument({
                       key={item.id ?? `row-${idx}`}
                       className={`proposal-print-table-row border-b border-slate-100 last:border-0 ${stripe}`}
                     >
-                      <td className="px-3 py-2.5 align-middle text-slate-600">{idx + 1}</td>
-                      <td className="px-3 py-2.5 align-middle font-mono text-xs font-semibold text-slate-800">{sku}</td>
-                      <td className="px-3 py-2.5 align-middle pr-4 text-slate-800 leading-snug">{desc}</td>
-                      <td className="px-3 py-2.5 align-middle text-right font-mono tabular-nums text-slate-700">
+                      <td className="proposal-col-item px-3 py-2.5 align-middle text-slate-600">{idx + 1}</td>
+                      <td className="proposal-col-code px-3 py-2.5 align-middle font-mono text-xs font-semibold text-slate-800">
+                        {sku}
+                      </td>
+                      <td className="proposal-col-description px-3 py-2.5 align-middle pr-4 leading-snug text-slate-800">
+                        {desc}
+                      </td>
+                      <td className="proposal-col-qty px-3 py-2.5 align-middle text-right font-mono tabular-nums text-slate-700">
                         {formatQty(qty)}
                       </td>
-                      <td className="px-3 py-2.5 align-middle text-right font-mono tabular-nums text-slate-700">
+                      <td className="proposal-col-unit px-3 py-2.5 align-middle text-right font-mono tabular-nums text-slate-700">
                         {formatMoney(unit)}
                       </td>
-                      <td className="px-3 py-2.5 align-middle text-right font-mono text-xs tabular-nums text-slate-500">
+                      <td className="proposal-col-discount px-3 py-2.5 align-middle text-right font-mono text-xs tabular-nums text-slate-500">
                         {formatPercent(discPerc)}
                       </td>
-                      <td className="px-3 py-2.5 align-middle text-right font-mono text-sm font-bold tabular-nums text-slate-900">
+                      <td className="proposal-col-total px-3 py-2.5 align-middle text-right font-mono text-sm font-bold tabular-nums text-slate-900">
                         {formatMoney(lineTotal)}
                       </td>
                     </tr>
