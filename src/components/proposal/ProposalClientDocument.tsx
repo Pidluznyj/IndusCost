@@ -220,7 +220,7 @@ export function ProposalClientDocument({
               ) : null}
             </div>
             <div
-              className="proposal-client-hero-card proposal-client-card w-full shrink-0 rounded-xl border border-slate-200 bg-slate-50/90 p-4 shadow-sm lg:max-w-[380px]"
+              className="proposal-client-hero-card proposal-client-card w-full max-w-full shrink-0 rounded-xl border border-slate-200 bg-slate-50/90 p-4 shadow-sm lg:max-w-[460px] xl:max-w-[500px]"
             >
               <h1
                 id={titleHeadingId}

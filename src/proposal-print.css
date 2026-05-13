@@ -180,7 +180,7 @@
 
   .proposal-print-document .proposal-client-hero-row {
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) 72mm !important;
+    grid-template-columns: minmax(0, 1fr) 92mm !important;
     gap: 8mm !important;
     align-items: start !important;
   }
@@ -194,8 +194,8 @@
   }
 
   .proposal-print-document .proposal-client-hero-card {
-    width: 72mm !important;
-    max-width: 72mm !important;
+    width: 92mm !important;
+    max-width: 92mm !important;
     margin-left: auto !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
