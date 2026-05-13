@@ -75,7 +75,7 @@ function SectionTitle({
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="proposal-client-card rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="proposal-client-card proposal-client-info-metric rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
       <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
     </div>
@@ -196,7 +196,7 @@ export function ProposalClientDocument({
         ) : null}
 
         {/* A — Cabeçalho */}
-        <header className="proposal-client-hero proposal-print-section pb-6">
+        <header className="proposal-client-hero proposal-print-section pb-6 print:pb-0">
           <div className="proposal-client-hero-row flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="proposal-client-hero-logo min-w-0 flex-1">
               {proposalLogoSrc ? (
@@ -263,7 +263,7 @@ export function ProposalClientDocument({
         <section className="proposal-client-section proposal-print-section mt-8 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Cliente</SectionTitle>
           <div className="proposal-client-card rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm">
-            <p className="text-lg font-bold text-slate-900">{customerBlock.name}</p>
+            <p className="proposal-client-customer-name text-lg font-bold text-slate-900">{customerBlock.name}</p>
             <dl className="proposal-client-customer-grid mt-4 grid gap-3 text-sm sm:grid-cols-2">
               {customerBlock.tax ? (
                 <div>
@@ -331,7 +331,7 @@ export function ProposalClientDocument({
         {/* B — Resumo da proposta */}
         <section className="proposal-client-summary proposal-client-section proposal-print-section mt-10 space-y-4">
           <SectionTitle accentColor={b.primaryColor}>Resumo da proposta</SectionTitle>
-          <p className="max-w-3xl text-sm leading-relaxed text-slate-700">
+          <p className="proposal-client-summary-lead max-w-3xl text-sm leading-relaxed text-slate-700">
             Esta proposta contempla o fornecimento dos itens listados abaixo, conforme condições comerciais acordadas entre
             as partes. Os valores apresentados consideram as quantidades, prazos e condições descritas neste documento.
           </p>
@@ -346,7 +346,7 @@ export function ProposalClientDocument({
         </section>
 
         {/* J — Sobre a empresa */}
-        <section className="proposal-client-section proposal-print-section mt-8 space-y-3">
+        <section className="proposal-client-about proposal-client-section proposal-print-section mt-8 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Sobre a {b.companyName}</SectionTitle>
           <div className="proposal-client-card rounded-lg border border-slate-200 bg-slate-50/60 p-4 text-sm leading-relaxed text-slate-700">
             A {b.companyName} atua no desenvolvimento e fornecimento de soluções em plásticos, com foco em qualidade,
@@ -460,9 +460,9 @@ export function ProposalClientDocument({
         {/* G — Observações */}
         <section className="proposal-client-section proposal-print-section mt-10 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Observações</SectionTitle>
-          <div className="proposal-client-card rounded-xl border border-slate-200 bg-white p-5 text-sm shadow-sm">
+          <div className="proposal-client-observations proposal-client-card rounded-xl border border-slate-200 bg-white p-5 text-sm shadow-sm">
             {notes ? <p className="whitespace-pre-wrap leading-relaxed text-slate-800">{notes}</p> : <p className="text-slate-500">Sem observações adicionais.</p>}
-            <ul className="mt-4 list-disc space-y-1.5 border-t border-slate-100 pt-4 pl-5 text-xs leading-relaxed text-slate-600">
+            <ul className="proposal-client-observations-bullets mt-4 list-disc space-y-1.5 border-t border-slate-100 pt-4 pl-5 text-xs leading-relaxed text-slate-600">
               <li>Valores sujeitos às condições comerciais descritas nesta proposta.</li>
               <li>Proposta válida pelo prazo informado.</li>
               <li>Alterações de quantidade, prazo, frete ou escopo poderão exigir revisão dos valores.</li>
@@ -473,8 +473,8 @@ export function ProposalClientDocument({
         {/* H — Condições gerais */}
         <section className="proposal-client-section proposal-print-section mt-10 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Condições gerais</SectionTitle>
-          <div className="proposal-client-card rounded-xl border border-slate-200 bg-white p-5 text-sm leading-relaxed text-slate-700 shadow-sm">
-            <ul className="list-disc space-y-2 pl-5">
+          <div className="proposal-client-general-conditions proposal-client-card rounded-xl border border-slate-200 bg-white p-5 text-sm leading-relaxed text-slate-700 shadow-sm">
+            <ul className="proposal-client-general-conditions-list list-disc space-y-2 pl-5">
               <li>Esta proposta é válida pelo prazo informado neste documento.</li>
               <li>Os valores apresentados consideram as quantidades e condições comerciais descritas nesta proposta.</li>
               <li>Alterações de quantidade, prazo, frete ou escopo poderão exigir revisão dos valores.</li>
@@ -495,18 +495,18 @@ export function ProposalClientDocument({
               Ao aprovar esta proposta, o cliente declara estar de acordo com os itens, valores e condições comerciais
               apresentados.
             </p>
-            <div className="mt-8 space-y-5 text-sm">
+            <div className="signature-lines mt-8 space-y-5 text-sm print:mt-4">
               <div>
                 <p className="font-semibold text-slate-700">Nome do responsável</p>
-                <div className="mt-2 border-b border-slate-400 pb-1">&nbsp;</div>
+                <div className="mt-2 border-b border-slate-400 pb-1 print:mt-1 print:pb-px">&nbsp;</div>
               </div>
               <div>
                 <p className="font-semibold text-slate-700">Assinatura</p>
-                <div className="mt-2 border-b border-slate-400 pb-1">&nbsp;</div>
+                <div className="mt-2 border-b border-slate-400 pb-1 print:mt-1 print:pb-px">&nbsp;</div>
               </div>
               <div className="max-w-xs">
                 <p className="font-semibold text-slate-700">Data</p>
-                <div className="mt-2 border-b border-slate-400 pb-1 text-slate-400">____/____/________</div>
+                <div className="mt-2 border-b border-slate-400 pb-1 text-slate-400 print:mt-1 print:pb-px">____/____/________</div>
               </div>
             </div>
             <div className="mt-8 border-t border-slate-200 pt-4 text-sm text-slate-700">
