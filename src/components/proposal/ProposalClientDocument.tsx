@@ -125,10 +125,20 @@ export function ProposalClientDocument({
   const titleLine = nonEmpty(formData.title);
 
   return (
-    <article className="proposal-print-document proposal-print-sheet mx-auto w-full max-w-[1180px] rounded-xl border border-slate-200 bg-white shadow-md md:shadow-md">
-      <div className="proposal-print-document-inner p-6 md:p-10">
-        <div className="proposal-client-document-layout flex min-w-0 flex-col gap-3 md:flex-row md:items-stretch md:gap-4 print:flex-row print:items-stretch print:gap-4">
-          <main className="proposal-client-main min-w-0 flex-1">
+    <article className="proposal-print-document proposal-print-sheet mx-auto w-full max-w-[1180px] overflow-visible rounded-xl border border-slate-200 bg-white shadow-md md:shadow-md">
+      <div className="proposal-client-document-root proposal-print-document-inner relative p-6 md:p-10">
+        {proposalSideImageSrc ? (
+          <div
+            className="proposal-side-brand-floating pointer-events-none absolute top-1/2 z-0 hidden -translate-y-1/2 md:right-3 md:block md:w-[176px] print:right-4 print:block print:w-[168px]"
+            aria-hidden
+          >
+            <img
+              src={proposalSideImageSrc}
+              alt=""
+              className="mx-auto h-auto max-h-[min(82vh,720px)] w-full max-w-[176px] object-contain object-center opacity-95 print:max-h-[680px] print:max-w-[168px]"
+            />
+          </div>
+        ) : null}
         <header
           className="proposal-print-section border-b-2 border-slate-200 pb-6"
           style={{ borderBottomColor: b.primaryColor }}
@@ -334,20 +344,6 @@ export function ProposalClientDocument({
             {companyIssuer ?? b.companyName}
           </p>
         </footer>
-          </main>
-          {proposalSideImageSrc ? (
-            <aside
-              className="proposal-client-side-brand hidden flex-col items-center border-l border-slate-100 pt-1 md:flex md:w-[88px] md:min-w-[72px] md:max-w-[96px] md:flex-shrink-0 md:border-slate-100 md:pl-3 print:flex print:w-[80px] print:min-w-[72px] print:max-w-[88px] print:flex-shrink-0 print:border-slate-100 print:pl-3"
-              aria-hidden
-            >
-              <img
-                src={proposalSideImageSrc}
-                alt=""
-                className="h-auto w-full max-w-[88px] object-contain object-top opacity-95 md:max-h-[560px] print:max-h-[520px]"
-              />
-            </aside>
-          ) : null}
-        </div>
       </div>
     </article>
   );

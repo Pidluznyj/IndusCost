@@ -162,6 +162,16 @@
     page-break-inside: avoid;
   }
 
+  /* Imagem lateral decorativa: não reserva coluna; posicionada no bloco do documento */
+  .proposal-client-document-root {
+    position: relative !important;
+  }
+
+  .proposal-side-brand-floating {
+    position: absolute !important;
+    pointer-events: none !important;
+  }
+
   /* --- Modal (edição): isolar app e fluxo multi-página (sem flex/viewport preso) --- */
   html.printing-proposal-client-preview {
     overflow: visible !important;
