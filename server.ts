@@ -4620,6 +4620,169 @@ app.delete("/api/employees/:id", async (req, res) => {
     };
   }
 
+  // --- API: Branding / Identidade visual (linha única) ---
+  const BRANDING_DEFAULT_COMPANY = "Lazarios Koppetel";
+  const BRANDING_DEFAULT_SLOGAN = "Soluções e qualidade em plásticos";
+  const BRANDING_DEFAULT_PRIMARY = "#0EA5E9";
+  const BRANDING_DEFAULT_SECONDARY = "#1D4ED8";
+  const BRANDING_MAX_DATA_URL_CHARS = 7_200_000;
+  const BRANDING_IMAGE_PREFIXES = [
+    "data:image/png;base64,",
+    "data:image/jpeg;base64,",
+    "data:image/jpg;base64,",
+    "data:image/webp;base64,",
+    "data:image/svg+xml;base64,",
+  ] as const;
+
+  function isValidBrandingHexColor(s: string): boolean {
+    return /^#[0-9A-Fa-f]{6}$/.test(s);
+  }
+
+  function validateOptionalBrandingImageDataUrl(value: unknown, fieldLabel: string): string | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== "string") {
+      throw new Error(`${fieldLabel}: formato inválido.`);
+    }
+    const t = value.trim();
+    if (t === "") return null;
+    if (t.length > BRANDING_MAX_DATA_URL_CHARS) {
+      throw new Error(`${fieldLabel}: imagem muito grande. Use um arquivo de até 5 MB.`);
+    }
+    const head = t.slice(0, 120).toLowerCase();
+    const prefixOk = BRANDING_IMAGE_PREFIXES.some((p) => t.startsWith(p));
+    const svgOk = head.startsWith("data:image/svg+xml") && t.includes("base64,");
+    if (!prefixOk && !svgOk) {
+      throw new Error(`${fieldLabel}: envie uma imagem em Data URL (PNG, JPEG, WebP ou SVG em Base64).`);
+    }
+    return t;
+  }
+
+  function mapBrandingRowToDto(row: {
+    companyName: string | null;
+    slogan: string | null;
+    primaryColor: string | null;
+    secondaryColor: string | null;
+    systemCompactLogoDataUrl: string | null;
+    systemExpandedLogoDataUrl: string | null;
+    proposalLogoDataUrl: string | null;
+    darkLogoDataUrl: string | null;
+    faviconDataUrl: string | null;
+    proposalCoverDataUrl: string | null;
+    watermarkDataUrl: string | null;
+  } | null) {
+    if (!row) {
+      return {
+        companyName: BRANDING_DEFAULT_COMPANY,
+        slogan: BRANDING_DEFAULT_SLOGAN,
+        primaryColor: BRANDING_DEFAULT_PRIMARY,
+        secondaryColor: BRANDING_DEFAULT_SECONDARY,
+        systemCompactLogoDataUrl: null,
+        systemExpandedLogoDataUrl: null,
+        proposalLogoDataUrl: null,
+        darkLogoDataUrl: null,
+        faviconDataUrl: null,
+        proposalCoverDataUrl: null,
+        watermarkDataUrl: null,
+      };
+    }
+    return {
+      companyName: row.companyName?.trim() || BRANDING_DEFAULT_COMPANY,
+      slogan: row.slogan == null ? BRANDING_DEFAULT_SLOGAN : String(row.slogan),
+      primaryColor: row.primaryColor?.trim() || BRANDING_DEFAULT_PRIMARY,
+      secondaryColor: row.secondaryColor?.trim() || BRANDING_DEFAULT_SECONDARY,
+      systemCompactLogoDataUrl: row.systemCompactLogoDataUrl,
+      systemExpandedLogoDataUrl: row.systemExpandedLogoDataUrl,
+      proposalLogoDataUrl: row.proposalLogoDataUrl,
+      darkLogoDataUrl: row.darkLogoDataUrl,
+      faviconDataUrl: row.faviconDataUrl,
+      proposalCoverDataUrl: row.proposalCoverDataUrl,
+      watermarkDataUrl: row.watermarkDataUrl,
+    };
+  }
+
+  app.get("/api/branding-settings", async (_req, res) => {
+    try {
+      const row = await prisma.brandingSettings.findFirst({
+        orderBy: { createdAt: "asc" },
+      });
+      res.json(mapBrandingRowToDto(row));
+    } catch (error) {
+      console.error("GET /api/branding-settings:", error);
+      res.status(500).json({ error: "Erro ao carregar identidade visual." });
+    }
+  });
+
+  app.put("/api/branding-settings", requireBootstrapAdmin, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const companyNameRaw = typeof body.companyName === "string" ? body.companyName.trim() : BRANDING_DEFAULT_COMPANY;
+      const sloganRaw = typeof body.slogan === "string" ? body.slogan.trim() : BRANDING_DEFAULT_SLOGAN;
+      const primaryRaw = typeof body.primaryColor === "string" ? body.primaryColor.trim() : BRANDING_DEFAULT_PRIMARY;
+      const secondaryRaw = typeof body.secondaryColor === "string" ? body.secondaryColor.trim() : BRANDING_DEFAULT_SECONDARY;
+
+      if (companyNameRaw.length > 120) {
+        return res.status(400).json({ error: "Nome da empresa deve ter no máximo 120 caracteres." });
+      }
+      const companyNameFinal = companyNameRaw.length > 0 ? companyNameRaw : BRANDING_DEFAULT_COMPANY;
+      if (sloganRaw.length > 180) {
+        return res.status(400).json({ error: "Slogan deve ter no máximo 180 caracteres." });
+      }
+      if (!isValidBrandingHexColor(primaryRaw) || !isValidBrandingHexColor(secondaryRaw)) {
+        return res.status(400).json({ error: "Cores primária e secundária devem estar no formato hexadecimal (#RRGGBB)." });
+      }
+
+      let systemCompactLogoDataUrl: string | null;
+      let systemExpandedLogoDataUrl: string | null;
+      let proposalLogoDataUrl: string | null;
+      let darkLogoDataUrl: string | null;
+      let faviconDataUrl: string | null;
+      let proposalCoverDataUrl: string | null;
+      let watermarkDataUrl: string | null;
+      try {
+        systemCompactLogoDataUrl = validateOptionalBrandingImageDataUrl(body.systemCompactLogoDataUrl, "Logo compacta");
+        systemExpandedLogoDataUrl = validateOptionalBrandingImageDataUrl(body.systemExpandedLogoDataUrl, "Logo expandida");
+        proposalLogoDataUrl = validateOptionalBrandingImageDataUrl(body.proposalLogoDataUrl, "Logo da proposta/PDF");
+        darkLogoDataUrl = validateOptionalBrandingImageDataUrl(body.darkLogoDataUrl, "Logo para fundo escuro");
+        faviconDataUrl = validateOptionalBrandingImageDataUrl(body.faviconDataUrl, "Favicon");
+        proposalCoverDataUrl = validateOptionalBrandingImageDataUrl(body.proposalCoverDataUrl, "Capa institucional");
+        watermarkDataUrl = validateOptionalBrandingImageDataUrl(body.watermarkDataUrl, "Marca d'água");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Dados de imagem inválidos.";
+        return res.status(400).json({ error: msg });
+      }
+
+      const existing = await prisma.brandingSettings.findFirst({ orderBy: { createdAt: "asc" } });
+      const data = {
+        companyName: companyNameFinal,
+        slogan: sloganRaw,
+        primaryColor: primaryRaw,
+        secondaryColor: secondaryRaw,
+        systemCompactLogoDataUrl,
+        systemExpandedLogoDataUrl,
+        proposalLogoDataUrl,
+        darkLogoDataUrl,
+        faviconDataUrl,
+        proposalCoverDataUrl,
+        watermarkDataUrl,
+      };
+
+      if (!existing) {
+        await prisma.brandingSettings.create({ data });
+      } else {
+        await prisma.brandingSettings.update({
+          where: { id: existing.id },
+          data,
+        });
+      }
+
+      const saved = await prisma.brandingSettings.findFirst({ orderBy: { createdAt: "asc" } });
+      res.json(mapBrandingRowToDto(saved));
+    } catch (error) {
+      console.error("PUT /api/branding-settings:", error);
+      res.status(500).json({ error: "Erro ao salvar identidade visual." });
+    }
+  });
+
   // --- API: Global Settings Preview ---
   app.get("/api/settings/globals", requireBootstrapAdmin, async (req, res) => {
     try {

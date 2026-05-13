@@ -22,6 +22,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { SETTINGS_TOUR_STEPS } from "@/src/tours/settingsTourSteps";
 import { AppAlert } from "@/src/components/shared/AppAlert";
+import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -244,7 +245,7 @@ type PublishBlockState = {
   message: string;
 };
 
-type HubSection = "globals" | "operational" | "nomusSync" | "priceTables" | "integrations" | "security" | "system";
+type HubSection = "globals" | "branding" | "operational" | "nomusSync" | "priceTables" | "integrations" | "security" | "system";
 type OperationalSubTab = "roles" | "payroll";
 
 const HUB_SECTIONS: Array<{
@@ -258,6 +259,13 @@ const HUB_SECTIONS: Array<{
     id: "globals",
     title: "Gerais / Parâmetros Globais",
     description: "Parâmetros corporativos usados nos cálculos do sistema.",
+    status: "operational",
+    note: "Operacional hoje",
+  },
+  {
+    id: "branding",
+    title: "Identidade Visual",
+    description: "Logos, cores e dados institucionais usados na proposta ao cliente.",
     status: "operational",
     note: "Operacional hoje",
   },
@@ -1956,6 +1964,12 @@ export const SettingsModule = () => {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {activeHubSection === "branding" && (
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <BrandingSettingsPanel />
             </div>
           )}
 

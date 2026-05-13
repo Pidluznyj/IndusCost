@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Printer, X } from "lucide-react";
 import type { Customer, Proposal, ProposalItem } from "@/src/types/commercial";
+import { fetchJsonOk } from "@/src/lib/http";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+
+const CLIENT_PREVIEW_BRANDING_TTL_MS = 120_000;
+let clientPreviewBrandingCache: BrandingSettingsDTO | null = null;
+let clientPreviewBrandingCacheAt = 0;
 
 function safeNum(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -63,6 +69,61 @@ export function ProposalClientPreview({
   totals,
 }: ProposalClientPreviewProps) {
   const [emissionDate, setEmissionDate] = useState("");
+  const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
+
+  useEffect(() => {
+    const clearCache = () => {
+      clientPreviewBrandingCache = null;
+      clientPreviewBrandingCacheAt = 0;
+    };
+    window.addEventListener("induscost:branding-updated", clearCache);
+    return () => window.removeEventListener("induscost:branding-updated", clearCache);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const now = Date.now();
+    if (
+      clientPreviewBrandingCache &&
+      now - clientPreviewBrandingCacheAt < CLIENT_PREVIEW_BRANDING_TTL_MS
+    ) {
+      setBranding(clientPreviewBrandingCache);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const data = await fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings");
+        if (cancelled) return;
+        const merged: BrandingSettingsDTO = {
+          ...DEFAULT_BRANDING,
+          ...data,
+          companyName:
+            typeof data.companyName === "string" && data.companyName.trim()
+              ? data.companyName.trim()
+              : DEFAULT_BRANDING.companyName,
+          slogan: typeof data.slogan === "string" ? data.slogan : DEFAULT_BRANDING.slogan,
+          primaryColor:
+            typeof data.primaryColor === "string" && data.primaryColor.trim()
+              ? data.primaryColor.trim()
+              : DEFAULT_BRANDING.primaryColor,
+          secondaryColor:
+            typeof data.secondaryColor === "string" && data.secondaryColor.trim()
+              ? data.secondaryColor.trim()
+              : DEFAULT_BRANDING.secondaryColor,
+        };
+        clientPreviewBrandingCache = merged;
+        clientPreviewBrandingCacheAt = Date.now();
+        setBranding(merged);
+      } catch {
+        if (!cancelled) setBranding(DEFAULT_BRANDING);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -136,6 +197,15 @@ export function ProposalClientPreview({
 
   if (!open) return null;
 
+  const b = branding ?? DEFAULT_BRANDING;
+  const proposalLogoSrc =
+    typeof b.proposalLogoDataUrl === "string" &&
+    b.proposalLogoDataUrl.trim().length > 0 &&
+    b.proposalLogoDataUrl.trim().toLowerCase().startsWith("data:image/")
+      ? b.proposalLogoDataUrl.trim()
+      : null;
+  const sloganLine = nonEmpty(b.slogan);
+
   const validityDays = safeNum(formData.validityDays, 15);
   const paymentTerms = nonEmpty(formData.paymentTerms);
   const paymentMethod = nonEmpty(formData.paymentMethod);
@@ -179,9 +249,28 @@ export function ProposalClientPreview({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         <article className="proposal-print-sheet proposal-print-break mx-auto max-w-[210mm] rounded-xl border border-slate-200 bg-white p-8 shadow-md">
-          <header className="proposal-print-break border-b border-slate-200 pb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lazarios Koppetel</p>
-            <h1 id="proposal-client-preview-title" className="mt-2 text-2xl font-bold text-slate-900">
+          <header
+            className="proposal-print-break border-b-2 border-slate-200 pb-6"
+            style={{ borderBottomColor: b.primaryColor }}
+          >
+            <div className="mb-3">
+              {proposalLogoSrc ? (
+                <img
+                  src={proposalLogoSrc}
+                  alt={b.companyName}
+                  className="max-h-[72px] max-w-[260px] w-auto object-contain object-left"
+                />
+              ) : (
+                <p
+                  className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700"
+                  style={{ color: b.secondaryColor }}
+                >
+                  {b.companyName}
+                </p>
+              )}
+              {sloganLine ? <p className="mt-1.5 text-sm text-slate-600">{sloganLine}</p> : null}
+            </div>
+            <h1 id="proposal-client-preview-title" className="text-2xl font-bold text-slate-900" style={{ color: b.primaryColor }}>
               Proposta Comercial
             </h1>
             {titleLine ? <p className="mt-1 text-sm text-slate-600">{titleLine}</p> : null}
@@ -202,7 +291,12 @@ export function ProposalClientPreview({
           </header>
 
           <section className="proposal-print-break mt-8 space-y-4">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Cliente</h2>
+            <h2
+              className="text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
+              style={{ borderLeftColor: b.primaryColor }}
+            >
+              Cliente
+            </h2>
             <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-800">
               <p className="text-base font-semibold text-slate-900">{customerBlock.name}</p>
               {customerBlock.tax ? <p className="mt-1">CNPJ / CPF: {customerBlock.tax}</p> : null}
@@ -217,7 +311,12 @@ export function ProposalClientPreview({
           </section>
 
           <section className="proposal-print-break mt-8 space-y-4">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Condições comerciais</h2>
+            <h2
+              className="text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
+              style={{ borderLeftColor: b.primaryColor }}
+            >
+              Condições comerciais
+            </h2>
             <div className="grid gap-3 rounded-lg border border-slate-200 p-4 text-sm text-slate-800 sm:grid-cols-2">
               <p>
                 <span className="font-semibold">Condição de pagamento: </span>
@@ -245,7 +344,12 @@ export function ProposalClientPreview({
           </section>
 
           <section className="proposal-print-break mt-8">
-            <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Itens</h2>
+            <h2
+              className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
+              style={{ borderLeftColor: b.primaryColor }}
+            >
+              Itens
+            </h2>
             <div className="overflow-x-auto rounded-lg border border-slate-200">
               <table className="w-full min-w-[640px] border-collapse text-sm">
                 <thead>
@@ -287,7 +391,12 @@ export function ProposalClientPreview({
           </section>
 
           <section className="proposal-print-break mt-8 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
-            <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Totais</h2>
+            <h2
+              className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
+              style={{ borderLeftColor: b.primaryColor }}
+            >
+              Totais
+            </h2>
             <div className="max-w-md space-y-2 text-sm text-slate-800">
               <div className="flex justify-between gap-4">
                 <span>Subtotal (valor bruto)</span>
@@ -299,13 +408,20 @@ export function ProposalClientPreview({
               </div>
               <div className="flex justify-between gap-4 border-t border-slate-200 pt-2 text-base font-bold text-slate-900">
                 <span>Valor total da proposta</span>
-                <span className="font-mono tabular-nums">{formatMoney(totals.totalNet)}</span>
+                <span className="font-mono tabular-nums" style={{ color: b.secondaryColor }}>
+                  {formatMoney(totals.totalNet)}
+                </span>
               </div>
             </div>
           </section>
 
           <section className="proposal-print-break mt-8 space-y-3">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Observações</h2>
+            <h2
+              className="text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
+              style={{ borderLeftColor: b.primaryColor }}
+            >
+              Observações
+            </h2>
             <div className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
               {notes ? <p className="whitespace-pre-wrap">{notes}</p> : <p className="text-slate-500">Sem observações adicionais.</p>}
               <ul className="mt-4 list-disc space-y-1 pl-5 text-xs text-slate-600">
@@ -323,7 +439,7 @@ export function ProposalClientPreview({
             </p>
             <p className="mt-1">
               <span className="text-slate-600">Empresa: </span>
-              {companyIssuer ?? "Lazarios Koppetel"}
+              {companyIssuer ?? b.companyName}
             </p>
           </footer>
         </article>

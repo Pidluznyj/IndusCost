@@ -393,6 +393,24 @@ model ProposalItem {
   @@index([priceTableCode])
 }
 
+/// Identidade visual global (linha única). Logos armazenados como Data URL em TEXT.
+model BrandingSettings {
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyName               String?  @default("Lazarios Koppetel")
+  slogan                    String?  @default("Soluções e qualidade em plásticos")
+  primaryColor              String?  @default("#0EA5E9")
+  secondaryColor            String?  @default("#1D4ED8")
+  systemCompactLogoDataUrl  String?  @db.Text
+  systemExpandedLogoDataUrl String?  @db.Text
+  proposalLogoDataUrl       String?  @db.Text
+  darkLogoDataUrl           String?  @db.Text
+  faviconDataUrl            String?  @db.Text
+  proposalCoverDataUrl      String?  @db.Text
+  watermarkDataUrl          String?  @db.Text
+  createdAt                 DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt                 DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
 model SalesOrder {
   id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   proposalId             String?          @unique @db.Uuid
