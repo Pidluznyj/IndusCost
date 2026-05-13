@@ -6,7 +6,7 @@ import type { Proposal, ProposalItem } from "@/src/types/commercial";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { ProposalClientDocument } from "@/src/components/proposal/ProposalClientDocument";
 
-const PRINT_TITLE_CLEANUP_MS = 800;
+const ROUTE_BODY_CLASS = "proposal-print-route";
 
 function safeNum(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -47,57 +47,37 @@ export const ProposalPrintView = () => {
   const [proposal, setProposal] = useState<(Proposal & { items?: ProposalItem[] }) | null>(null);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [error, setError] = useState<string | null>(null);
-  const printCleanupTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  const savedDocumentTitleRef = useRef<string | null>(null);
+  const routeEntryTitleRef = useRef<string | null>(null);
 
-  const clearPrintTitleState = useCallback(() => {
-    if (printCleanupTimerRef.current != null) {
-      window.clearTimeout(printCleanupTimerRef.current);
-      printCleanupTimerRef.current = null;
-    }
-    if (savedDocumentTitleRef.current !== null) {
-      document.title = savedDocumentTitleRef.current;
-      savedDocumentTitleRef.current = null;
-    }
+  useEffect(() => {
+    document.body.classList.add(ROUTE_BODY_CLASS);
+    routeEntryTitleRef.current = document.title;
+    return () => {
+      document.body.classList.remove(ROUTE_BODY_CLASS);
+      if (routeEntryTitleRef.current !== null) {
+        document.title = routeEntryTitleRef.current;
+        routeEntryTitleRef.current = null;
+      }
+    };
   }, []);
 
-  const handlePrint = useCallback(() => {
+  useEffect(() => {
     if (!proposal) return;
-    savedDocumentTitleRef.current = document.title;
     const cp =
       proposal.number != null && Number.isFinite(Number(proposal.number))
         ? ` CP ${proposal.number}`
         : "";
     document.title = `Proposta Comercial${cp}`.trim();
+  }, [proposal]);
 
-    const onAfterPrint = () => {
-      window.removeEventListener("afterprint", onAfterPrint);
-      if (printCleanupTimerRef.current != null) {
-        window.clearTimeout(printCleanupTimerRef.current);
-        printCleanupTimerRef.current = null;
-      }
-      clearPrintTitleState();
-    };
-
-    window.addEventListener("afterprint", onAfterPrint);
-    printCleanupTimerRef.current = window.setTimeout(() => {
-      printCleanupTimerRef.current = null;
-      window.removeEventListener("afterprint", onAfterPrint);
-      clearPrintTitleState();
-    }, PRINT_TITLE_CLEANUP_MS);
-
+  const handlePrint = useCallback(() => {
+    if (!proposal) return;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         window.print();
       });
     });
-  }, [proposal, clearPrintTitleState]);
-
-  useEffect(() => {
-    return () => {
-      clearPrintTitleState();
-    };
-  }, [clearPrintTitleState]);
+  }, [proposal]);
 
   useEffect(() => {
     if (!id) {
@@ -158,7 +138,7 @@ export const ProposalPrintView = () => {
   const proposalNumber = proposal != null && Number.isFinite(Number(proposal.number)) ? proposal.number : null;
 
   return (
-    <div className="proposal-print-page min-h-screen bg-slate-100 px-4 py-4 md:px-6 md:py-6 print:bg-white print:p-0">
+    <div className="proposal-print-route-page proposal-print-page min-h-screen bg-slate-100 px-4 py-4 md:px-6 md:py-6 print:bg-white print:p-0">
       <div className="proposal-print-no-print mx-auto mb-4 flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-3">
         <button
           type="button"

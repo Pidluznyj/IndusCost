@@ -2,6 +2,8 @@ import React, { useMemo } from "react";
 import type { Customer, Proposal, ProposalItem } from "@/src/types/commercial";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 
+/** Conteúdo único do PDF; cabeçalho/rodapé (URL, data) vêm do navegador — desmarcar "Cabeçalhos e rodapés" no diálogo de impressão para PDF limpo. */
+
 function safeNum(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;

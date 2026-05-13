@@ -1,4 +1,13 @@
-/* Impressão — proposta comercial para cliente (ProposalClientDocument + shells) */
+/* Impressão — proposta comercial para cliente
+ *
+ * Dois contextos:
+ * - Rota /proposals/:id/print: body.proposal-print-route — sem esconder #root/body com visibility.
+ * - Modal ProposalClientPreview: body.printing-proposal-client-preview — visibility só no modal (.proposal-print-modal-page).
+ *
+ * Cabeçalho/rodapé do navegador (título, URL, data, numeração):
+ * não são removíveis de forma confiável via CSS. O app ajusta document.title na rota/modal;
+ * para PDF sem esses elementos, o usuário deve desmarcar "Cabeçalhos e rodapés" em Mais definições (Chrome/Edge).
+ */
 @media print {
   @page {
     size: A4 portrait;
@@ -13,6 +22,57 @@
     background: white !important;
   }
 
+  /* --- Rota dedicada: impressão normal, só esconde toolbar --- */
+  body.proposal-print-route {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.proposal-print-route * {
+    visibility: visible !important;
+  }
+
+  body.proposal-print-route .proposal-print-no-print {
+    display: none !important;
+  }
+
+  body.proposal-print-route .proposal-print-page,
+  body.proposal-print-route .proposal-print-route-page,
+  body.proposal-print-route .proposal-print-scroll {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body.proposal-print-route .proposal-print-document {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  body.proposal-print-route .proposal-print-document-inner {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.proposal-print-route .proposal-print-table-wrap {
+    overflow: visible !important;
+    max-width: none !important;
+  }
+
+  /* --- Layout comum (incl. rota quando .proposal-print-page no wrapper) --- */
   .proposal-print-page {
     position: static !important;
     inset: auto !important;
@@ -78,21 +138,21 @@
   }
 
   .proposal-print-table-row,
-  .proposal-print-page table tr {
+  .proposal-print-document tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .proposal-print-page table {
+  .proposal-print-document table {
     width: 100% !important;
     min-width: 0 !important;
   }
 
-  .proposal-print-page table thead {
+  .proposal-print-document table thead {
     display: table-header-group !important;
   }
 
-  .proposal-print-page table tfoot {
+  .proposal-print-document table tfoot {
     display: table-footer-group !important;
   }
 
@@ -101,7 +161,7 @@
     page-break-inside: avoid;
   }
 
-  /* Modal dentro do app: ocultar chrome e mostrar só .proposal-print-page */
+  /* --- Modal dentro do app: esconder o restante da aplicação --- */
   html.printing-proposal-client-preview,
   body.printing-proposal-client-preview {
     width: 100% !important;
@@ -115,8 +175,8 @@
     visibility: hidden !important;
   }
 
-  body.printing-proposal-client-preview .proposal-print-page,
-  body.printing-proposal-client-preview .proposal-print-page * {
+  body.printing-proposal-client-preview .proposal-print-modal-page,
+  body.printing-proposal-client-preview .proposal-print-modal-page * {
     visibility: visible !important;
   }
 
@@ -125,7 +185,7 @@
     visibility: hidden !important;
   }
 
-  body.printing-proposal-client-preview .proposal-print-page {
+  body.printing-proposal-client-preview .proposal-print-modal-page {
     display: block !important;
     z-index: auto !important;
     max-height: none !important;
@@ -133,8 +193,12 @@
     backdrop-filter: none !important;
   }
 
-  body.printing-proposal-client-preview .proposal-print-scroll {
+  body.printing-proposal-client-preview .proposal-print-modal-page .proposal-print-scroll {
     flex: none !important;
     min-height: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 0 !important;
   }
 }

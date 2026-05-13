@@ -167,7 +167,7 @@ export function ProposalClientPreview({
 
   return (
     <div
-      className="proposal-print-page fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-200/95 backdrop-blur-sm print:bg-white"
+      className="proposal-print-modal-page fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-200/95 backdrop-blur-sm print:bg-white"
       role="dialog"
       aria-modal="true"
       aria-labelledby="proposal-client-preview-title"
