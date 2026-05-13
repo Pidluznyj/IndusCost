@@ -74,31 +74,50 @@ export function ProposalClientPreview({
   const [emissionDate, setEmissionDate] = useState("");
   const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
   const printCleanupTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const savedDocumentTitleRef = useRef<string | null>(null);
 
-  const clearPrintingBodyClass = useCallback(() => {
+  const clearClientPrintState = useCallback(() => {
+    document.documentElement.classList.remove(PRINTING_BODY_CLASS);
     document.body.classList.remove(PRINTING_BODY_CLASS);
     if (printCleanupTimerRef.current != null) {
       window.clearTimeout(printCleanupTimerRef.current);
       printCleanupTimerRef.current = null;
     }
+    if (savedDocumentTitleRef.current !== null) {
+      document.title = savedDocumentTitleRef.current;
+      savedDocumentTitleRef.current = null;
+    }
   }, []);
 
   const handlePrint = useCallback(() => {
+    savedDocumentTitleRef.current = document.title;
+    const num =
+      proposalNumber != null && Number.isFinite(proposalNumber) ? ` nº ${proposalNumber}` : "";
+    document.title = `Proposta Comercial${num}`.trim();
+
+    document.documentElement.classList.add(PRINTING_BODY_CLASS);
     document.body.classList.add(PRINTING_BODY_CLASS);
+
     const onAfterPrint = () => {
-      clearPrintingBodyClass();
       window.removeEventListener("afterprint", onAfterPrint);
+      if (printCleanupTimerRef.current != null) {
+        window.clearTimeout(printCleanupTimerRef.current);
+        printCleanupTimerRef.current = null;
+      }
+      clearClientPrintState();
     };
+
     window.addEventListener("afterprint", onAfterPrint);
     printCleanupTimerRef.current = window.setTimeout(() => {
       printCleanupTimerRef.current = null;
       window.removeEventListener("afterprint", onAfterPrint);
-      document.body.classList.remove(PRINTING_BODY_CLASS);
+      clearClientPrintState();
     }, PRINT_CLEANUP_MS);
+
     requestAnimationFrame(() => {
       window.print();
     });
-  }, [clearPrintingBodyClass]);
+  }, [proposalNumber, clearClientPrintState]);
 
   useEffect(() => {
     const clearCache = () => {
@@ -166,9 +185,9 @@ export function ProposalClientPreview({
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
-      clearPrintingBodyClass();
+      clearClientPrintState();
     };
-  }, [open, clearPrintingBodyClass]);
+  }, [open, clearClientPrintState]);
 
   const items = useMemo(() => (Array.isArray(formData.items) ? formData.items : []) as ProposalItem[], [formData.items]);
 
@@ -242,6 +261,7 @@ export function ProposalClientPreview({
             <button
               type="button"
               onClick={handlePrint}
+              title="Para PDF sem título e URL do navegador no topo/rodapé, desative “Cabeçalhos e rodapés” nas opções de impressão (Chrome/Edge: Mais definições)."
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:opacity-90"
             >
               <Printer className="h-4 w-4" aria-hidden />
@@ -253,9 +273,10 @@ export function ProposalClientPreview({
       </div>
 
       <div className="proposal-print-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6 print:p-0">
-        <article className="proposal-print-document proposal-print-sheet proposal-print-break mx-auto w-full max-w-[1180px] rounded-xl border border-slate-200 bg-white p-6 shadow-md md:p-10">
+        <article className="proposal-print-document proposal-print-sheet mx-auto w-full max-w-[1180px] rounded-xl border border-slate-200 bg-white shadow-md md:shadow-md">
+          <div className="proposal-print-document-inner p-6 md:p-10">
           <header
-            className="proposal-print-break border-b-2 border-slate-200 pb-6"
+            className="proposal-print-section border-b-2 border-slate-200 pb-6"
             style={{ borderBottomColor: b.primaryColor }}
           >
             <div className="mb-3">
@@ -295,7 +316,7 @@ export function ProposalClientPreview({
             </div>
           </header>
 
-          <section className="proposal-print-break mt-8 space-y-4">
+          <section className="proposal-print-section mt-8 space-y-4">
             <h2
               className="text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
               style={{ borderLeftColor: b.primaryColor }}
@@ -315,7 +336,7 @@ export function ProposalClientPreview({
             </div>
           </section>
 
-          <section className="proposal-print-break mt-8 space-y-4">
+          <section className="proposal-print-section mt-8 space-y-4">
             <h2
               className="text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
               style={{ borderLeftColor: b.primaryColor }}
@@ -348,14 +369,14 @@ export function ProposalClientPreview({
             </div>
           </section>
 
-          <section className="proposal-print-break mt-8">
+          <section className="proposal-print-items-section mt-8">
             <h2
               className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
               style={{ borderLeftColor: b.primaryColor }}
             >
               Itens
             </h2>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <div className="proposal-print-table-wrap overflow-x-auto rounded-lg border border-slate-200 print:overflow-visible">
               <table className="w-full min-w-0 border-collapse text-sm md:min-w-[720px]">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-700">
@@ -377,7 +398,10 @@ export function ProposalClientPreview({
                     const sku = nonEmpty(item.Product?.sku) ?? "—";
                     const desc = nonEmpty(item.Product?.name) ?? "—";
                     return (
-                      <tr key={item.id ?? `row-${idx}`} className="border-b border-slate-100 last:border-0">
+                      <tr
+                        key={item.id ?? `row-${idx}`}
+                        className="proposal-print-table-row border-b border-slate-100 last:border-0"
+                      >
                         <td className="px-3 py-2 text-slate-600">{idx + 1}</td>
                         <td className="px-3 py-2 font-mono text-xs text-slate-800">{sku}</td>
                         <td className="px-3 py-2 text-slate-800">{desc}</td>
@@ -395,7 +419,7 @@ export function ProposalClientPreview({
             </div>
           </section>
 
-          <section className="proposal-print-break mt-8 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+          <section className="proposal-print-section mt-8 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
             <h2
               className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
               style={{ borderLeftColor: b.primaryColor }}
@@ -420,7 +444,7 @@ export function ProposalClientPreview({
             </div>
           </section>
 
-          <section className="proposal-print-break mt-8 space-y-3">
+          <section className="proposal-print-section mt-8 space-y-3">
             <h2
               className="text-xs font-bold uppercase tracking-wider text-slate-500 border-l-4 pl-3"
               style={{ borderLeftColor: b.primaryColor }}
@@ -436,7 +460,7 @@ export function ProposalClientPreview({
             </div>
           </section>
 
-          <footer className="proposal-print-break mt-10 border-t border-slate-200 pt-6 text-sm text-slate-700">
+          <footer className="proposal-print-section mt-10 border-t border-slate-200 pt-6 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">Assinatura / identificação</p>
             <p className="mt-2">
               <span className="text-slate-600">Responsável comercial: </span>
@@ -447,6 +471,7 @@ export function ProposalClientPreview({
               {companyIssuer ?? b.companyName}
             </p>
           </footer>
+          </div>
         </article>
       </div>
     </div>
