@@ -10,7 +10,7 @@ import {
 
 const CLIENT_PREVIEW_BRANDING_TTL_MS = 120_000;
 const PRINTING_BODY_CLASS = "printing-proposal-client-preview";
-const PRINT_CLEANUP_MS = 800;
+const PRINT_CLEANUP_MS = 1000;
 
 let clientPreviewBrandingCache: BrandingSettingsDTO | null = null;
 let clientPreviewBrandingCacheAt = 0;
@@ -167,7 +167,7 @@ export function ProposalClientPreview({
 
   return (
     <div
-      className="proposal-print-modal-page fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-200/95 backdrop-blur-sm print:bg-white"
+      className="proposal-print-page proposal-print-modal-page fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-200/95 backdrop-blur-sm print:bg-white"
       role="dialog"
       aria-modal="true"
       aria-labelledby="proposal-client-preview-title"
@@ -197,7 +197,7 @@ export function ProposalClientPreview({
         </div>
       </div>
 
-      <div className="proposal-print-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6 print:p-0">
+      <div className="proposal-print-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 md:px-6 md:py-6 print:p-0">
         <ProposalClientDocument
           formData={formData}
           resolvedCustomer={resolvedCustomer}

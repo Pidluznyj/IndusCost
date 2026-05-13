@@ -2,7 +2,8 @@
  *
  * Dois contextos:
  * - Rota /proposals/:id/print: body.proposal-print-route — sem esconder #root/body com visibility.
- * - Modal ProposalClientPreview: body.printing-proposal-client-preview — visibility só no modal (.proposal-print-modal-page).
+ * - Modal ProposalClientPreview: body.printing-proposal-client-preview — visibility no shell
+ *   (.proposal-print-page.proposal-print-modal-page); na impressão o modal vira fluxo contínuo (várias páginas A4).
  *
  * Cabeçalho/rodapé do navegador (título, URL, data, numeração):
  * não são removíveis de forma confiável via CSS. O app ajusta document.title na rota/modal;
@@ -161,22 +162,27 @@
     page-break-inside: avoid;
   }
 
-  /* --- Modal dentro do app: esconder o restante da aplicação --- */
-  html.printing-proposal-client-preview,
-  body.printing-proposal-client-preview {
-    width: 100% !important;
-    height: auto !important;
-    min-height: 0 !important;
+  /* --- Modal (edição): isolar app e fluxo multi-página (sem flex/viewport preso) --- */
+  html.printing-proposal-client-preview {
     overflow: visible !important;
-    background: #fff !important;
+    height: auto !important;
+    width: 100% !important;
+  }
+
+  body.printing-proposal-client-preview {
+    background: white !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+    min-height: 0 !important;
   }
 
   body.printing-proposal-client-preview * {
     visibility: hidden !important;
   }
 
-  body.printing-proposal-client-preview .proposal-print-modal-page,
-  body.printing-proposal-client-preview .proposal-print-modal-page * {
+  body.printing-proposal-client-preview .proposal-print-page,
+  body.printing-proposal-client-preview .proposal-print-page * {
     visibility: visible !important;
   }
 
@@ -185,20 +191,62 @@
     visibility: hidden !important;
   }
 
-  body.printing-proposal-client-preview .proposal-print-modal-page {
-    display: block !important;
-    z-index: auto !important;
+  body.printing-proposal-client-preview .proposal-print-page {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
     max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
     box-shadow: none !important;
     backdrop-filter: none !important;
+    z-index: auto !important;
   }
 
-  body.printing-proposal-client-preview .proposal-print-modal-page .proposal-print-scroll {
-    flex: none !important;
-    min-height: 0 !important;
-    overflow: visible !important;
+  body.printing-proposal-client-preview .proposal-print-scroll {
+    position: static !important;
+    width: 100% !important;
     height: auto !important;
+    min-height: 0 !important;
     max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    flex: none !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    flex-basis: auto !important;
     padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-document {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-document-inner {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-table-wrap {
+    overflow: visible !important;
+    max-height: none !important;
   }
 }
