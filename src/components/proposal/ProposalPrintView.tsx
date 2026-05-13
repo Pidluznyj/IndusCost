@@ -1,24 +1,43 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Printer } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import type { Proposal, ProposalItem } from "@/src/types/commercial";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+import { ProposalClientDocument } from "@/src/components/proposal/ProposalClientDocument";
+
+const PRINT_TITLE_CLEANUP_MS = 800;
 
 function safeNum(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function formatCurrency(value: unknown): string {
-  const n = safeNum(value, 0);
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatDate(value: string | undefined): string {
+function formatIssueDate(value: string | undefined): string {
   if (!value) return "—";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "—";
   return parsed.toLocaleDateString("pt-BR");
+}
+
+function mergeBranding(data: BrandingSettingsDTO): BrandingSettingsDTO {
+  return {
+    ...DEFAULT_BRANDING,
+    ...data,
+    companyName:
+      typeof data.companyName === "string" && data.companyName.trim()
+        ? data.companyName.trim()
+        : DEFAULT_BRANDING.companyName,
+    slogan: typeof data.slogan === "string" ? data.slogan : DEFAULT_BRANDING.slogan,
+    primaryColor:
+      typeof data.primaryColor === "string" && data.primaryColor.trim()
+        ? data.primaryColor.trim()
+        : DEFAULT_BRANDING.primaryColor,
+    secondaryColor:
+      typeof data.secondaryColor === "string" && data.secondaryColor.trim()
+        ? data.secondaryColor.trim()
+        : DEFAULT_BRANDING.secondaryColor,
+  };
 }
 
 export const ProposalPrintView = () => {
@@ -26,7 +45,59 @@ export const ProposalPrintView = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [proposal, setProposal] = useState<(Proposal & { items?: ProposalItem[] }) | null>(null);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [error, setError] = useState<string | null>(null);
+  const printCleanupTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const savedDocumentTitleRef = useRef<string | null>(null);
+
+  const clearPrintTitleState = useCallback(() => {
+    if (printCleanupTimerRef.current != null) {
+      window.clearTimeout(printCleanupTimerRef.current);
+      printCleanupTimerRef.current = null;
+    }
+    if (savedDocumentTitleRef.current !== null) {
+      document.title = savedDocumentTitleRef.current;
+      savedDocumentTitleRef.current = null;
+    }
+  }, []);
+
+  const handlePrint = useCallback(() => {
+    if (!proposal) return;
+    savedDocumentTitleRef.current = document.title;
+    const cp =
+      proposal.number != null && Number.isFinite(Number(proposal.number))
+        ? ` CP ${proposal.number}`
+        : "";
+    document.title = `Proposta Comercial${cp}`.trim();
+
+    const onAfterPrint = () => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      if (printCleanupTimerRef.current != null) {
+        window.clearTimeout(printCleanupTimerRef.current);
+        printCleanupTimerRef.current = null;
+      }
+      clearPrintTitleState();
+    };
+
+    window.addEventListener("afterprint", onAfterPrint);
+    printCleanupTimerRef.current = window.setTimeout(() => {
+      printCleanupTimerRef.current = null;
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintTitleState();
+    }, PRINT_TITLE_CLEANUP_MS);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  }, [proposal, clearPrintTitleState]);
+
+  useEffect(() => {
+    return () => {
+      clearPrintTitleState();
+    };
+  }, [clearPrintTitleState]);
 
   useEffect(() => {
     if (!id) {
@@ -34,29 +105,61 @@ export const ProposalPrintView = () => {
       setLoading(false);
       return;
     }
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchJsonOk<Proposal & { items?: ProposalItem[] }>(`/api/proposals/${id}`)
-      .then((data) => {
-        if (!data) {
+    setProposal(null);
+
+    const run = async () => {
+      try {
+        const [prop, brandRes] = await Promise.all([
+          fetchJsonOk<Proposal & { items?: ProposalItem[] }>(`/api/proposals/${id}`),
+          fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings").catch(() => DEFAULT_BRANDING),
+        ]);
+        if (cancelled) return;
+        if (!prop) {
           setError("Proposta não encontrada.");
           setProposal(null);
           return;
         }
-        setProposal(data);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Não foi possível carregar a proposta.");
-      })
-      .finally(() => setLoading(false));
+        setProposal(prop);
+        setBranding(mergeBranding(brandRes));
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Não foi possível carregar a proposta.");
+          setProposal(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
-  const issueDate = useMemo(() => formatDate(proposal?.createdAt), [proposal?.createdAt]);
-  const items = useMemo(() => proposal?.items ?? [], [proposal?.items]);
+  const issuedAt = useMemo(() => formatIssueDate(proposal?.createdAt), [proposal?.createdAt]);
+
+  const totals = useMemo(
+    () =>
+      proposal
+        ? {
+            totalGross: safeNum(proposal.totalGrossValue),
+            totalDiscount: safeNum(proposal.totalDiscount),
+            totalNet: safeNum(proposal.totalNetValue),
+          }
+        : { totalGross: 0, totalDiscount: 0, totalNet: 0 },
+    [proposal],
+  );
+
+  const resolvedCustomer = proposal?.Customer ?? null;
+  const proposalNumber = proposal != null && Number.isFinite(Number(proposal.number)) ? proposal.number : null;
 
   return (
-    <div className="proposal-print-page min-h-screen bg-slate-100 p-4 md:p-8">
-      <div className="proposal-print-no-print mx-auto mb-4 flex max-w-5xl items-center justify-between gap-3">
+    <div className="proposal-print-page min-h-screen bg-slate-100 px-4 py-4 md:px-6 md:py-6 print:bg-white print:p-0">
+      <div className="proposal-print-no-print mx-auto mb-4 flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => navigate("/proposals")}
@@ -67,18 +170,20 @@ export const ProposalPrintView = () => {
         </button>
         <button
           type="button"
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:opacity-90"
+          onClick={handlePrint}
+          disabled={!proposal || !!error}
+          title="Para PDF sem título e URL do navegador no topo/rodapé, desative “Cabeçalhos e rodapés” nas opções de impressão (Chrome/Edge: Mais definições)."
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
         >
           <Printer className="h-4 w-4" />
-          Imprimir / PDF
+          Imprimir / Salvar PDF
         </button>
       </div>
 
-      <article className="proposal-print-sheet mx-auto max-w-5xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="proposal-print-scroll mx-auto w-full max-w-[1180px] overflow-x-hidden print:overflow-visible">
         {loading ? (
-          <div className="py-24 text-center">
-            <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+          <div className="flex min-h-[40vh] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white py-24">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="mt-2 text-sm text-muted-foreground">Carregando proposta…</p>
           </div>
         ) : error ? (
@@ -88,123 +193,16 @@ export const ProposalPrintView = () => {
             Proposta não localizada.
           </div>
         ) : (
-          <div className="space-y-8">
-            <header className="proposal-print-break border-b border-slate-200 pb-6">
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">IndusCost</p>
-                  <h1 className="mt-2 text-2xl font-bold text-slate-900">Proposta Comercial</h1>
-                  <p className="mt-1 text-sm text-slate-600">{proposal.title?.trim() || "Sem título informado"}</p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                  <p className="font-semibold text-slate-700">Proposta #{proposal.number}</p>
-                  <p className="text-slate-600">Data de emissão: {issueDate}</p>
-                  <p className="text-slate-600">
-                    Status: <span className="font-medium">{proposal.status}</span>
-                  </p>
-                </div>
-              </div>
-            </header>
-
-            <section className="proposal-print-break grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Cliente</p>
-                <p className="mt-2 text-base font-semibold text-slate-900">
-                  {proposal.Customer?.companyName || proposal.Customer?.tradeName || "Cliente não informado"}
-                </p>
-                {proposal.Customer?.taxId ? <p className="text-sm text-slate-600">CPF/CNPJ: {proposal.Customer.taxId}</p> : null}
-              </div>
-              <div className="rounded-xl border border-slate-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Condições comerciais</p>
-                <div className="mt-2 space-y-1 text-sm text-slate-700">
-                  {proposal.validityDays ? <p>Validade: {proposal.validityDays} dia(s)</p> : null}
-                  {proposal.paymentTerms ? <p>Pagamento: {proposal.paymentTerms}</p> : null}
-                  {proposal.paymentMethod ? <p>Método: {proposal.paymentMethod}</p> : null}
-                  {proposal.deliveryTimeDays ? <p>Prazo de entrega: {proposal.deliveryTimeDays} dia(s)</p> : null}
-                  {proposal.freightCondition ? <p>Frete: {proposal.freightCondition}</p> : null}
-                  {proposal.deliveryLocation ? <p>Local de entrega: {proposal.deliveryLocation}</p> : null}
-                </div>
-              </div>
-            </section>
-
-            <section className="proposal-print-break overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-700">
-                    <th className="px-4 py-3 font-semibold">Item</th>
-                    <th className="px-4 py-3 font-semibold">Produto</th>
-                    <th className="px-4 py-3 font-semibold text-right">Quantidade</th>
-                    <th className="px-4 py-3 font-semibold text-right">Preço unitário</th>
-                    <th className="px-4 py-3 font-semibold text-right">Total linha</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
-                        Nenhum item informado nesta proposta.
-                      </td>
-                    </tr>
-                  ) : (
-                    items.map((item, idx) => {
-                      const qty = safeNum(item.quantity);
-                      const unit = safeNum(item.negotiatedPrice);
-                      return (
-                        <tr key={item.id ?? `${idx}-${item.productId}`} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-slate-600">{idx + 1}</td>
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-slate-900">{item.Product?.name || "Produto"}</p>
-                            <p className="text-xs text-slate-500">{item.Product?.sku || "SKU não informado"}</p>
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-slate-700">{qty.toLocaleString("pt-BR")}</td>
-                          <td className="px-4 py-3 text-right font-mono text-slate-700">{formatCurrency(unit)}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold text-slate-900">
-                            {formatCurrency(qty * unit)}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </section>
-
-            <section className="proposal-print-break grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Observações</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-                  {proposal.notes?.trim() ? proposal.notes : "Sem observações registradas."}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Totais</p>
-                <div className="mt-2 space-y-2 text-sm">
-                  <div className="flex items-center justify-between text-slate-700">
-                    <span>Valor bruto</span>
-                    <span className="font-mono">{formatCurrency(proposal.totalGrossValue)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-700">
-                    <span>Descontos</span>
-                    <span className="font-mono">-{formatCurrency(proposal.totalDiscount)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-base font-bold text-slate-900">
-                    <span>Total líquido</span>
-                    <span className="font-mono">{formatCurrency(proposal.totalNetValue)}</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <footer className="border-t border-slate-200 pt-6 text-xs text-slate-500">
-              <p>
-                Documento gerado pelo IndusCost em {new Date().toLocaleString("pt-BR")}. Esta proposta é destinada ao
-                processo comercial e pode ser salva em PDF pelo navegador.
-              </p>
-            </footer>
-          </div>
+          <ProposalClientDocument
+            formData={proposal}
+            resolvedCustomer={resolvedCustomer}
+            proposalNumber={proposalNumber}
+            totals={totals}
+            branding={branding}
+            issuedAt={issuedAt}
+          />
         )}
-      </article>
+      </div>
     </div>
   );
 };
-

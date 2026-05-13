@@ -1,21 +1,35 @@
-/* Impressão dedicada de proposta comercial */
+/* Impressão — proposta comercial para cliente (ProposalClientDocument + shells) */
 @media print {
   @page {
     size: A4 portrait;
     margin: 10mm;
   }
 
-  body {
-    background: #fff !important;
-  }
-
   .proposal-print-no-print {
     display: none !important;
   }
 
+  body {
+    background: white !important;
+  }
+
   .proposal-print-page {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    background: white !important;
     padding: 0 !important;
-    background: #fff !important;
+  }
+
+  .proposal-print-scroll {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 0 !important;
+    background: white !important;
   }
 
   .proposal-print-sheet {
@@ -28,9 +42,29 @@
     padding: 0 !important;
   }
 
-  .proposal-print-break {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  .proposal-print-document {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  .proposal-print-document-inner {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .proposal-print-table-wrap {
+    overflow: visible !important;
+    max-width: none !important;
   }
 
   .proposal-print-section {
@@ -38,7 +72,36 @@
     page-break-inside: avoid;
   }
 
-  /* Pré-visualização cliente: só o relatório (modal em #root — não ocultar #root). */
+  .proposal-print-items-section {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .proposal-print-table-row,
+  .proposal-print-page table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .proposal-print-page table {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .proposal-print-page table thead {
+    display: table-header-group !important;
+  }
+
+  .proposal-print-page table tfoot {
+    display: table-footer-group !important;
+  }
+
+  .proposal-print-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Modal dentro do app: ocultar chrome e mostrar só .proposal-print-page */
   html.printing-proposal-client-preview,
   body.printing-proposal-client-preview {
     width: 100% !important;
@@ -63,20 +126,9 @@
   }
 
   body.printing-proposal-client-preview .proposal-print-page {
-    position: static !important;
-    inset: auto !important;
-    top: auto !important;
-    right: auto !important;
-    bottom: auto !important;
-    left: auto !important;
-    z-index: auto !important;
     display: block !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: 0 !important;
+    z-index: auto !important;
     max-height: none !important;
-    overflow: visible !important;
-    background: #fff !important;
     box-shadow: none !important;
     backdrop-filter: none !important;
   }
@@ -84,64 +136,5 @@
   body.printing-proposal-client-preview .proposal-print-scroll {
     flex: none !important;
     min-height: 0 !important;
-    overflow: visible !important;
-    height: auto !important;
-    max-height: none !important;
-    padding: 0 !important;
-    background: #fff !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-document {
-    width: 100% !important;
-    max-width: none !important;
-    min-height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    overflow: visible !important;
-    background: #fff !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-document-inner {
-    box-sizing: border-box !important;
-    width: 100% !important;
-    max-width: none !important;
-    padding: 0 !important;
-    overflow: visible !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-table-wrap {
-    overflow: visible !important;
-    max-width: none !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-items-section {
-    break-inside: auto !important;
-    page-break-inside: auto !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-page table {
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-page table thead {
-    display: table-header-group !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-page table tfoot {
-    display: table-footer-group !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-page table tr {
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
-  }
-
-  body.printing-proposal-client-preview .proposal-print-table-row {
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
   }
 }
