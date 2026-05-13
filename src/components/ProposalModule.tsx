@@ -30,6 +30,7 @@ import {
   LayoutDashboard,
   ShoppingCart,
   Tag,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -46,6 +47,7 @@ import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
 import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
 import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
+import { ProposalClientPreview } from "@/src/components/ProposalClientPreview";
 
 const PAGE_SIZE = 20;
 
@@ -449,6 +451,7 @@ export const ProposalModule = () => {
   const [selectedItemIndexes, setSelectedItemIndexes] = useState<Set<number>>(new Set());
   /** Input de desconto % para ação em massa. String para permitir vazio/parcial enquanto digita. */
   const [bulkDiscountInput, setBulkDiscountInput] = useState<string>("");
+  const [clientPreviewOpen, setClientPreviewOpen] = useState(false);
 
   // Form State
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -573,6 +576,12 @@ export const ProposalModule = () => {
       document.removeEventListener("keydown", onKey);
     };
   }, [itemOriginMenuOpenIndex]);
+
+  useEffect(() => {
+    if (view !== "form") {
+      setClientPreviewOpen(false);
+    }
+  }, [view]);
 
   const handlePriceTableSelectionChange = useCallback(
     (nextTableId: string) => {
@@ -1400,6 +1409,28 @@ export const ProposalModule = () => {
     }));
   }, [totals]);
 
+  const clientPreviewCustomer = useMemo((): Customer | null => {
+    const emb = formData.Customer;
+    if (emb && ((emb.companyName?.trim() ?? "") !== "" || (emb.tradeName?.trim() ?? "") !== "")) {
+      return emb;
+    }
+    const id = formData.customerId?.trim();
+    if (!id) return null;
+    return customers.find((c) => c.id === id) ?? null;
+  }, [formData.Customer, formData.customerId, customers]);
+
+  const handleOpenClientPreview = () => {
+    if (!formData.customerId?.trim()) {
+      alert("Selecione um cliente antes de visualizar a proposta.");
+      return;
+    }
+    if (!formData.items || formData.items.length === 0) {
+      alert("Adicione ao menos um item antes de visualizar a proposta.");
+      return;
+    }
+    setClientPreviewOpen(true);
+  };
+
   const filteredProposals = proposals;
   const pagedProposals = useMemo(() => filteredProposals.slice(0, PAGE_SIZE), [filteredProposals]);
 
@@ -1423,6 +1454,7 @@ export const ProposalModule = () => {
 
   if (view === "form") {
     return (
+      <>
       <div className="space-y-6 pb-20" data-tour="proposals-root">
         {/* Form Header */}
         <div className="flex items-center justify-between" data-tour="proposals-form-actions">
@@ -1440,8 +1472,16 @@ export const ProposalModule = () => {
               <p className="text-sm text-muted-foreground">Preencha os dados e configure os itens para gerar a proposta.</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <TourHelpButton onClick={() => setTourOpen(true)} />
+            <button
+              type="button"
+              onClick={handleOpenClientPreview}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-accent"
+            >
+              <Eye className="h-4 w-4" aria-hidden />
+              Pré-visualizar para cliente
+            </button>
             <div className={cn("min-w-[200px]", STATUS_CONFIG[formData.status as ProposalStatus]?.color, "rounded-lg border border-border p-0.5")}>
               <SearchableSelect
                 className="border-0 bg-transparent"
@@ -2202,6 +2242,19 @@ export const ProposalModule = () => {
           tourName="Tour de Propostas"
         />
       </div>
+      <ProposalClientPreview
+        open={clientPreviewOpen}
+        onClose={() => setClientPreviewOpen(false)}
+        formData={formData}
+        resolvedCustomer={clientPreviewCustomer}
+        proposalNumber={editingProposal?.number ?? null}
+        totals={{
+          totalGross: totals.totalGross,
+          totalDiscount: totals.totalDiscount,
+          totalNet: totals.totalNet,
+        }}
+      />
+      </>
     );
   }
 
