@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Printer, X } from "lucide-react";
 import type { Customer, Proposal, ProposalItem } from "@/src/types/commercial";
 import { fetchJsonOk } from "@/src/lib/http";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
 const CLIENT_PREVIEW_BRANDING_TTL_MS = 120_000;
+const PRINTING_BODY_CLASS = "printing-proposal-client-preview";
+const PRINT_CLEANUP_MS = 800;
+
 let clientPreviewBrandingCache: BrandingSettingsDTO | null = null;
 let clientPreviewBrandingCacheAt = 0;
 
@@ -70,6 +73,32 @@ export function ProposalClientPreview({
 }: ProposalClientPreviewProps) {
   const [emissionDate, setEmissionDate] = useState("");
   const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
+  const printCleanupTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  const clearPrintingBodyClass = useCallback(() => {
+    document.body.classList.remove(PRINTING_BODY_CLASS);
+    if (printCleanupTimerRef.current != null) {
+      window.clearTimeout(printCleanupTimerRef.current);
+      printCleanupTimerRef.current = null;
+    }
+  }, []);
+
+  const handlePrint = useCallback(() => {
+    document.body.classList.add(PRINTING_BODY_CLASS);
+    const onAfterPrint = () => {
+      clearPrintingBodyClass();
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+    window.addEventListener("afterprint", onAfterPrint);
+    printCleanupTimerRef.current = window.setTimeout(() => {
+      printCleanupTimerRef.current = null;
+      window.removeEventListener("afterprint", onAfterPrint);
+      document.body.classList.remove(PRINTING_BODY_CLASS);
+    }, PRINT_CLEANUP_MS);
+    requestAnimationFrame(() => {
+      window.print();
+    });
+  }, [clearPrintingBodyClass]);
 
   useEffect(() => {
     const clearCache = () => {
@@ -137,33 +166,9 @@ export function ProposalClientPreview({
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
+      clearPrintingBodyClass();
     };
-  }, [open]);
-
-  /** Na impressão, oculta o restante da aplicação e mantém só este painel (modal = .proposal-print-page). */
-  useEffect(() => {
-    if (!open) return;
-    const style = document.createElement("style");
-    style.setAttribute("data-proposal-client-preview-print", "1");
-    style.textContent = `@media print {
-      #root, #root * { visibility: hidden !important; }
-      .proposal-print-page,
-      .proposal-print-page * { visibility: visible !important; }
-      .proposal-print-page {
-        position: absolute !important;
-        left: 0 !important;
-        top: 0 !important;
-        width: 100% !important;
-        height: auto !important;
-        overflow: visible !important;
-        background: #fff !important;
-      }
-    }`;
-    document.head.appendChild(style);
-    return () => {
-      style.remove();
-    };
-  }, [open]);
+  }, [open, clearPrintingBodyClass]);
 
   const items = useMemo(() => (Array.isArray(formData.items) ? formData.items : []) as ProposalItem[], [formData.items]);
 
@@ -218,13 +223,13 @@ export function ProposalClientPreview({
 
   return (
     <div
-      className="proposal-print-page fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-200/90 backdrop-blur-sm"
+      className="proposal-print-page fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-200/95 backdrop-blur-sm print:bg-white"
       role="dialog"
       aria-modal="true"
       aria-labelledby="proposal-client-preview-title"
     >
       <div className="proposal-print-no-print shrink-0 border-b border-border bg-card px-4 py-3 shadow-sm">
-        <div className="mx-auto flex max-w-[210mm] flex-wrap items-center justify-between gap-3">
+        <div className="mx-auto flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -236,7 +241,7 @@ export function ProposalClientPreview({
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:opacity-90"
             >
               <Printer className="h-4 w-4" aria-hidden />
@@ -247,8 +252,8 @@ export function ProposalClientPreview({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
-        <article className="proposal-print-sheet proposal-print-break mx-auto max-w-[210mm] rounded-xl border border-slate-200 bg-white p-8 shadow-md">
+      <div className="proposal-print-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6 print:p-0">
+        <article className="proposal-print-document proposal-print-sheet proposal-print-break mx-auto w-full max-w-[1180px] rounded-xl border border-slate-200 bg-white p-6 shadow-md md:p-10">
           <header
             className="proposal-print-break border-b-2 border-slate-200 pb-6"
             style={{ borderBottomColor: b.primaryColor }}
@@ -351,7 +356,7 @@ export function ProposalClientPreview({
               Itens
             </h2>
             <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full min-w-[640px] border-collapse text-sm">
+              <table className="w-full min-w-0 border-collapse text-sm md:min-w-[720px]">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-700">
                     <th className="px-3 py-2 font-semibold">Item</th>
@@ -397,7 +402,7 @@ export function ProposalClientPreview({
             >
               Totais
             </h2>
-            <div className="max-w-md space-y-2 text-sm text-slate-800">
+            <div className="max-w-full space-y-2 text-sm text-slate-800 md:max-w-xl">
               <div className="flex justify-between gap-4">
                 <span>Subtotal (valor bruto)</span>
                 <span className="font-mono font-medium tabular-nums">{formatMoney(totals.totalGross)}</span>

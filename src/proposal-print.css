@@ -32,5 +32,45 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
+
+  /* Pré-visualização cliente: impressão só do relatório (modal dentro de #root — não ocultar #root). */
+  body.printing-proposal-client-preview * {
+    visibility: hidden !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-page,
+  body.printing-proposal-client-preview .proposal-print-page * {
+    visibility: visible !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-page {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    z-index: 2147483646 !important;
+  }
+
+  body.printing-proposal-client-preview .proposal-print-document {
+    width: 210mm !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+  }
 }
 
