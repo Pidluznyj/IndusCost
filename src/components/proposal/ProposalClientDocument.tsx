@@ -131,6 +131,7 @@ export function ProposalClientDocument({
   const notes = nonEmpty(formData.notes);
   const responsible = nonEmpty(formData.responsible);
   const totalFreight = safeNum(formData.totalFreight);
+  const hasDiscount = Math.abs(safeNum(totals.totalDiscount)) > 0.000001;
 
   const deliveryLine =
     deliveryDays != null && Number.isFinite(Number(deliveryDays)) && Number(deliveryDays) > 0
@@ -275,12 +276,14 @@ export function ProposalClientDocument({
               <span className="text-slate-600">Produto / mercadorias</span>
               <span className="font-mono font-semibold tabular-nums text-slate-900">{formatMoney(totals.totalGross)}</span>
             </div>
-            <div className="grid grid-cols-[1fr_auto] border-b border-slate-200 px-2 py-1 sm:px-3 sm:py-1.5">
-              <span className="text-slate-600">Desconto</span>
-              <span className="font-mono font-semibold tabular-nums text-red-700">
-                −{formatMoney(totals.totalDiscount)}
-              </span>
-            </div>
+            {hasDiscount ? (
+              <div className="grid grid-cols-[1fr_auto] border-b border-slate-200 px-2 py-1 sm:px-3 sm:py-1.5">
+                <span className="text-slate-600">Desconto concedido</span>
+                <span className="font-mono font-semibold tabular-nums text-red-700">
+                  −{formatMoney(totals.totalDiscount)}
+                </span>
+              </div>
+            ) : null}
             <div className="grid grid-cols-[1fr_auto] border-b border-slate-200 px-2 py-1 sm:px-3 sm:py-1.5">
               <span className="text-slate-600">Frete</span>
               <span className="font-mono font-semibold tabular-nums text-slate-900">{formatMoney(totalFreight)}</span>
