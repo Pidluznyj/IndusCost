@@ -8037,12 +8037,8 @@ app.delete("/api/employees/:id", async (req, res) => {
       const pageRows = rows.slice(0, limit);
       const ids = pageRows.map((r) => r.id);
 
-      type AggRow = {
-        customerId: string;
-        contactCount: bigint;
-        lastContactAt: Date | null;
-        nextFollowUpAt: Date | null;
-      };
+      const isClosedStatus = (status?: string | null) =>
+        ["done", "closed", "cancelled", "canceled"].includes(String(status ?? "").trim().toLowerCase());
 
       const aggMap = new Map<
         string,
@@ -8050,31 +8046,46 @@ app.delete("/api/employees/:id", async (req, res) => {
       >();
 
       if (ids.length > 0) {
-        const aggRows = await prisma.$queryRaw<AggRow[]>(
-          Prisma.sql`
-            SELECT
-              a."customerId",
-              COUNT(*)::bigint AS "contactCount",
-              MAX(COALESCE(a."contactDate", a."createdAt")) AS "lastContactAt",
-              MIN(a."nextActionAt") FILTER (
-                WHERE a."nextActionAt" IS NOT NULL
-                  AND a."nextActionAt" > ${now}
-                  AND (
-                    a."status" IS NULL
-                    OR LOWER(TRIM(a."status")) NOT IN ('done', 'closed', 'cancelled', 'canceled')
-                  )
-              ) AS "nextFollowUpAt"
-            FROM "CommercialActivity" a
-            WHERE a."customerId" IN (${Prisma.join(ids)})
-            GROUP BY a."customerId"
-          `
-        );
-        for (const ar of aggRows) {
-          aggMap.set(ar.customerId, {
-            contactCount: Number(ar.contactCount ?? 0n),
-            lastContactAt: ar.lastContactAt,
-            nextFollowUpAt: ar.nextFollowUpAt,
-          });
+        const activities = await prisma.commercialActivity.findMany({
+          where: { customerId: { in: ids } },
+          select: {
+            customerId: true,
+            contactDate: true,
+            createdAt: true,
+            nextActionAt: true,
+            status: true,
+          },
+        });
+
+        for (const activity of activities) {
+          const key = activity.customerId;
+          const current = aggMap.get(key) ?? {
+            contactCount: 0,
+            lastContactAt: null as Date | null,
+            nextFollowUpAt: null as Date | null,
+          };
+
+          current.contactCount += 1;
+
+          const effectiveContactDate = activity.contactDate ?? activity.createdAt;
+          if (
+            effectiveContactDate &&
+            (!current.lastContactAt || effectiveContactDate > current.lastContactAt)
+          ) {
+            current.lastContactAt = effectiveContactDate;
+          }
+
+          if (
+            activity.nextActionAt &&
+            activity.nextActionAt > now &&
+            !isClosedStatus(activity.status)
+          ) {
+            if (!current.nextFollowUpAt || activity.nextActionAt < current.nextFollowUpAt) {
+              current.nextFollowUpAt = activity.nextActionAt;
+            }
+          }
+
+          aggMap.set(key, current);
         }
       }
 
