@@ -1,4 +1,4 @@
-// src/components/CrmModule.tsx — CRM Comercial (Fase 1B): indicadores, carteira, timeline e novo contato.
+// src/components/CrmModule.tsx — CRM Comercial (Fases 1B/1C): indicadores, busca backend, ficha, timeline e contatos.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Loader2,
@@ -17,8 +17,35 @@ import {
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 
-/** Cliente vindo de GET /api/customers (campos reais do Prisma + tolerância a aliases). */
-export type CrmCustomer = Record<string, unknown> & { id: string };
+/** Cliente normalizado vindo de GET /api/crm/customers. */
+export type CrmCustomerListItem = {
+  id: string;
+  displayName: string;
+  tradeName: string | null;
+  taxId: string;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  state: string | null;
+  address: string | null;
+  lastContactAt: string | null;
+  nextFollowUpAt: string | null;
+  contactCount: number;
+};
+
+export type CrmCustomer = CrmCustomerListItem;
+
+export type CrmCustomerListFilter =
+  | "all"
+  | "withoutContact30"
+  | "withContact30"
+  | "overdueFollowUp"
+  | "upcomingFollowUp7";
+
+type CrmCustomersApiResponse = {
+  customers: CrmCustomerListItem[];
+  pagination: { limit: number; offset: number; returned: number; hasMore: boolean };
+};
 
 export type CrmActivity = {
   id: string;
@@ -90,7 +117,9 @@ function strField(v: unknown): string {
 
 /** Nome exibido: prioriza campos reais do IndusCost (`companyName`, `tradeName`, …). */
 export function getCustomerDisplayName(customer: CrmCustomer): string {
+  const row = customer as unknown as Record<string, unknown>;
   const keys = [
+    "displayName",
     "companyName",
     "tradeName",
     "legalName",
@@ -102,7 +131,7 @@ export function getCustomerDisplayName(customer: CrmCustomer): string {
     "customerName",
   ] as const;
   for (const k of keys) {
-    const s = strField(customer[k]);
+    const s = strField(row[k]);
     if (s) return s;
   }
   const doc = getCustomerTaxId(customer);
@@ -111,9 +140,10 @@ export function getCustomerDisplayName(customer: CrmCustomer): string {
 }
 
 export function getCustomerTaxId(customer: CrmCustomer): string {
+  const row = customer as unknown as Record<string, unknown>;
   const keys = ["taxId", "cnpj", "cnpjCpf", "document", "taxDocument", "cpf"] as const;
   for (const k of keys) {
-    const s = strField(customer[k]);
+    const s = strField(row[k]);
     if (s) return s;
   }
   return "—";
@@ -137,6 +167,19 @@ function parseActivityDate(iso: string | null | undefined): number {
   if (!iso) return 0;
   const t = new Date(iso).getTime();
   return Number.isNaN(t) ? 0 : t;
+}
+
+function formatDateShortPt(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function clampMessage(msg: string, max = 220): string {
+  const t = msg.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max)}…`;
 }
 
 function formatDateTimePt(iso: string | null | undefined): string {
@@ -186,16 +229,26 @@ function channelBadgeClass(channel: string | null): string {
   return "bg-muted text-muted-foreground border-border";
 }
 
+const CRM_FILTER_CHIPS: { value: CrmCustomerListFilter; label: string }[] = [
+  { value: "all", label: "Todos" },
+  { value: "withoutContact30", label: "Sem contato" },
+  { value: "withContact30", label: "Com contato 30d" },
+  { value: "overdueFollowUp", label: "Follow-up atrasado" },
+  { value: "upcomingFollowUp7", label: "Próx. 7 dias" },
+];
+
 export const CrmModule = () => {
   const [dashboard, setDashboard] = useState<CrmDashboardBasic | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
 
-  const [customers, setCustomers] = useState<CrmCustomer[]>([]);
+  const [customers, setCustomers] = useState<CrmCustomerListItem[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customersError, setCustomersError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
+  const [listFilter, setListFilter] = useState<CrmCustomerListFilter>("all");
+  const [listHasMore, setListHasMore] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activities, setActivities] = useState<CrmActivity[]>([]);
@@ -235,21 +288,36 @@ export const CrmModule = () => {
     }
   }, []);
 
-  const loadCustomers = useCallback(async () => {
-    setCustomersLoading(true);
-    setCustomersError(null);
-    try {
-      const data = await fetchJsonOk<CrmCustomer[]>("/api/customers");
-      const list = Array.isArray(data) ? data : [];
-      const withId = list.filter((c) => typeof c?.id === "string" && c.id.length > 0);
-      setCustomers(withId);
-    } catch (e) {
-      setCustomers([]);
-      setCustomersError(e instanceof Error ? e.message : "Não foi possível carregar a lista de clientes.");
-    } finally {
-      setCustomersLoading(false);
-    }
-  }, []);
+  const loadCrmCustomers = useCallback(
+    async (search: string, filter: CrmCustomerListFilter, offset: number) => {
+      setCustomersLoading(true);
+      setCustomersError(null);
+      try {
+        const params = new URLSearchParams();
+        const q = search.trim();
+        if (q) params.set("search", q);
+        params.set("limit", String(CRM_LIST_LIMIT));
+        params.set("offset", String(offset));
+        params.set("filter", filter);
+        const data = await fetchJsonOk<CrmCustomersApiResponse>(`/api/crm/customers?${params.toString()}`);
+        const list = Array.isArray(data?.customers) ? data.customers : [];
+        setCustomers(list);
+        setListHasMore(Boolean(data?.pagination?.hasMore));
+        setSelectedId((prev) => {
+          if (!prev) return null;
+          return list.some((c) => c.id === prev) ? prev : null;
+        });
+      } catch (e) {
+        setCustomers([]);
+        setListHasMore(false);
+        const raw = e instanceof Error ? e.message : "Não foi possível carregar a lista de clientes.";
+        setCustomersError(clampMessage(raw));
+      } finally {
+        setCustomersLoading(false);
+      }
+    },
+    []
+  );
 
   const loadActivities = useCallback(async (customerId: string) => {
     setActivitiesLoading(true);
@@ -270,13 +338,8 @@ export const CrmModule = () => {
 
   useEffect(() => {
     void loadDashboard();
-    void loadCustomers();
-  }, [loadDashboard, loadCustomers]);
-
-  const selectedCustomer = useMemo(
-    () => (selectedId ? customers.find((c) => c.id === selectedId) ?? null : null),
-    [customers, selectedId]
-  );
+    void loadCrmCustomers("", "all", 0);
+  }, [loadDashboard, loadCrmCustomers]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -287,22 +350,9 @@ export const CrmModule = () => {
     void loadActivities(selectedId);
   }, [selectedId, loadActivities]);
 
-  const filteredCustomers = useMemo(() => {
-    const q = searchApplied.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter((c) => {
-      const name = getCustomerDisplayName(c).toLowerCase();
-      const trade = strField(c.tradeName).toLowerCase();
-      const tax = getCustomerTaxId(c).toLowerCase().replace(/\D/g, "");
-      const qDigits = q.replace(/\D/g, "");
-      if (qDigits.length >= 3 && tax.includes(qDigits)) return true;
-      return name.includes(q) || trade.includes(q) || strField(c.taxId).toLowerCase().includes(q);
-    });
-  }, [customers, searchApplied]);
-
-  const visibleCustomers = useMemo(
-    () => filteredCustomers.slice(0, CRM_LIST_LIMIT),
-    [filteredCustomers]
+  const selectedCustomer = useMemo(
+    () => (selectedId ? customers.find((c) => c.id === selectedId) ?? null : null),
+    [customers, selectedId]
   );
 
   const sheetStats = useMemo(() => {
@@ -354,7 +404,14 @@ export const CrmModule = () => {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setSearchApplied(searchInput);
+    const q = searchInput.trim();
+    setSearchApplied(q);
+    void loadCrmCustomers(q, listFilter, 0);
+  };
+
+  const applyListFilter = (next: CrmCustomerListFilter) => {
+    setListFilter(next);
+    void loadCrmCustomers(searchApplied, next, 0);
   };
 
   const handleSaveContact = async (e: React.FormEvent) => {
@@ -408,6 +465,7 @@ export const CrmModule = () => {
       window.setTimeout(() => setToast(null), 4000);
       await loadActivities(selectedId);
       await loadDashboard();
+      await loadCrmCustomers(searchApplied, listFilter, 0);
     } catch (err) {
       setModalError(err instanceof Error ? err.message : "Falha ao salvar o contato.");
     } finally {
@@ -427,6 +485,7 @@ export const CrmModule = () => {
       window.setTimeout(() => setToast(null), 3500);
       if (selectedId) await loadActivities(selectedId);
       await loadDashboard();
+      await loadCrmCustomers(searchApplied, listFilter, 0);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Não foi possível atualizar o contato.");
     }
@@ -491,7 +550,7 @@ export const CrmModule = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Nome, fantasia ou CNPJ…"
+                placeholder="Razão social, fantasia, CNPJ, e-mail, telefone, cidade ou UF…"
                 className="w-full pl-10 pr-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
@@ -504,10 +563,26 @@ export const CrmModule = () => {
               <Search className="h-4 w-4" />
               Buscar
             </button>
-            <p className="text-xs text-muted-foreground">
-              Lista limitada a {CRM_LIST_LIMIT} clientes após o filtro (endpoint sem paginação).
-            </p>
+            <p className="text-xs text-muted-foreground">Busca em clientes cadastrados no IndusCost.</p>
           </form>
+
+          <div className="flex flex-wrap gap-2">
+            {CRM_FILTER_CHIPS.map((chip) => (
+              <button
+                key={chip.value}
+                type="button"
+                onClick={() => applyListFilter(chip.value)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                  listFilter === chip.value
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
 
           <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
             <div className="border-b border-border px-4 py-3 bg-accent/40">
@@ -519,11 +594,11 @@ export const CrmModule = () => {
               </div>
             ) : customersError ? (
               <div className="p-4 text-sm text-red-700">{customersError}</div>
-            ) : visibleCustomers.length === 0 ? (
+            ) : customers.length === 0 ? (
               <div className="p-6 text-sm text-muted-foreground text-center">Nenhum cliente encontrado.</div>
             ) : (
               <ul className="max-h-[min(520px,55vh)] overflow-y-auto divide-y divide-border">
-                {visibleCustomers.map((c) => {
+                {customers.map((c) => {
                   const active = c.id === selectedId;
                   return (
                     <li key={c.id}>
@@ -535,11 +610,26 @@ export const CrmModule = () => {
                           active && "bg-primary/10 border-l-4 border-l-primary"
                         )}
                       >
-                        <div className="font-medium text-foreground line-clamp-2">
-                          {getCustomerDisplayName(c)}
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="font-medium text-foreground line-clamp-2 min-w-0 flex-1">
+                            {getCustomerDisplayName(c)}
+                          </div>
+                          {!c.lastContactAt ? (
+                            <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                              Sem contato
+                            </span>
+                          ) : null}
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {getCustomerTaxId(c) !== "—" ? getCustomerTaxId(c) : "—"}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
+                          <div>{formatCityState(c.city, c.state)}</div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
+                            <span>Últ. contato: {formatDateShortPt(c.lastContactAt)}</span>
+                            <span>Próx. follow-up: {formatDateShortPt(c.nextFollowUpAt)}</span>
+                            <span>Total: {c.contactCount}</span>
+                          </div>
                         </div>
                       </button>
                     </li>
@@ -547,6 +637,11 @@ export const CrmModule = () => {
                 })}
               </ul>
             )}
+            {!customersLoading && !customersError && listHasMore ? (
+              <div className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground text-center">
+                Há mais resultados. Refine a busca ou use filtros para achar o cliente.
+              </div>
+            ) : null}
           </div>
         </div>
 

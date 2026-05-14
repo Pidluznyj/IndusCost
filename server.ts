@@ -7890,6 +7890,230 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  /** Busca paginada de clientes para o CRM + agregados de CommercialActivity (sem alterar /api/customers). */
+  app.get("/api/crm/customers", async (req, res) => {
+    try {
+      const searchRaw = typeof req.query.search === "string" ? req.query.search.trim() : "";
+      const limitRaw = typeof req.query.limit === "string" ? req.query.limit.trim() : "";
+      const offsetRaw = typeof req.query.offset === "string" ? req.query.offset.trim() : "";
+      const filterRaw = typeof req.query.filter === "string" ? req.query.filter.trim() : "all";
+
+      let limit = Number.parseInt(limitRaw || "50", 10);
+      if (!Number.isFinite(limit) || limit < 1) limit = 50;
+      limit = Math.min(limit, 100);
+
+      let offset = Number.parseInt(offsetRaw || "0", 10);
+      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+
+      const filterAllowed = new Set([
+        "all",
+        "withContact30",
+        "withoutContact30",
+        "overdueFollowUp",
+        "upcomingFollowUp7",
+      ]);
+      const filter = filterAllowed.has(filterRaw) ? filterRaw : "all";
+
+      const now = new Date();
+      const since30 = new Date(now);
+      since30.setUTCDate(since30.getUTCDate() - 30);
+      const in7 = new Date(now);
+      in7.setUTCDate(in7.getUTCDate() + 7);
+
+      const doneLikeStatuses = [
+        "DONE",
+        "done",
+        "Done",
+        "CLOSED",
+        "closed",
+        "CANCELLED",
+        "Canceled",
+        "CANCELED",
+        "canceled",
+        "cancelled",
+      ];
+
+      let searchWhere: Prisma.CustomerWhereInput | undefined;
+      if (searchRaw.length > 0) {
+        const digits = searchRaw.replace(/\D/g, "");
+        let taxIdIds: string[] = [];
+        if (digits.length >= 2) {
+          const like = `%${digits}%`;
+          taxIdIds = (
+            await prisma.$queryRaw<{ id: string }[]>(
+              Prisma.sql`
+                SELECT c."id"
+                FROM "Customer" c
+                WHERE regexp_replace(COALESCE(c."taxId", ''), '[^0-9]', '', 'g') LIKE ${like}
+              `
+            )
+          ).map((r) => r.id);
+        }
+        const ors: Prisma.CustomerWhereInput[] = [
+          { companyName: { contains: searchRaw, mode: "insensitive" } },
+          { tradeName: { contains: searchRaw, mode: "insensitive" } },
+          { email: { contains: searchRaw, mode: "insensitive" } },
+          { phone: { contains: searchRaw, mode: "insensitive" } },
+          { city: { contains: searchRaw, mode: "insensitive" } },
+          { state: { contains: searchRaw, mode: "insensitive" } },
+        ];
+        if (taxIdIds.length > 0) {
+          ors.push({ id: { in: taxIdIds } });
+        }
+        searchWhere = { OR: ors };
+      }
+
+      let filterWhere: Prisma.CustomerWhereInput | undefined;
+      if (filter === "withContact30") {
+        filterWhere = {
+          CommercialActivity: {
+            some: {
+              OR: [
+                { AND: [{ contactDate: { not: null } }, { contactDate: { gte: since30 } }] },
+                { AND: [{ contactDate: null }, { createdAt: { gte: since30 } }] },
+              ],
+            },
+          },
+        };
+      } else if (filter === "withoutContact30") {
+        filterWhere = {
+          NOT: {
+            CommercialActivity: {
+              some: {
+                OR: [
+                  { AND: [{ contactDate: { not: null } }, { contactDate: { gte: since30 } }] },
+                  { AND: [{ contactDate: null }, { createdAt: { gte: since30 } }] },
+                ],
+              },
+            },
+          },
+        };
+      } else if (filter === "overdueFollowUp") {
+        filterWhere = {
+          CommercialActivity: {
+            some: {
+              nextActionAt: { not: null, lt: now },
+              OR: [{ status: null }, { NOT: { status: { in: doneLikeStatuses } } }],
+            },
+          },
+        };
+      } else if (filter === "upcomingFollowUp7") {
+        filterWhere = {
+          CommercialActivity: {
+            some: {
+              nextActionAt: { not: null, gte: now, lt: in7 },
+              OR: [{ status: null }, { NOT: { status: { in: doneLikeStatuses } } }],
+            },
+          },
+        };
+      }
+
+      const andParts: Prisma.CustomerWhereInput[] = [];
+      if (filterWhere) andParts.push(filterWhere);
+      if (searchWhere) andParts.push(searchWhere);
+      const where: Prisma.CustomerWhereInput =
+        andParts.length === 0 ? {} : andParts.length === 1 ? andParts[0]! : { AND: andParts };
+
+      const take = limit + 1;
+      const rows = await prisma.customer.findMany({
+        where,
+        orderBy: { companyName: "asc" },
+        skip: offset,
+        take,
+        select: {
+          id: true,
+          companyName: true,
+          tradeName: true,
+          taxId: true,
+          email: true,
+          phone: true,
+          city: true,
+          state: true,
+          address: true,
+        },
+      });
+
+      const hasMore = rows.length > limit;
+      const pageRows = rows.slice(0, limit);
+      const ids = pageRows.map((r) => r.id);
+
+      type AggRow = {
+        customerId: string;
+        contactCount: bigint;
+        lastContactAt: Date | null;
+        nextFollowUpAt: Date | null;
+      };
+
+      const aggMap = new Map<
+        string,
+        { contactCount: number; lastContactAt: Date | null; nextFollowUpAt: Date | null }
+      >();
+
+      if (ids.length > 0) {
+        const aggRows = await prisma.$queryRaw<AggRow[]>(
+          Prisma.sql`
+            SELECT
+              a."customerId",
+              COUNT(*)::bigint AS "contactCount",
+              MAX(COALESCE(a."contactDate", a."createdAt")) AS "lastContactAt",
+              MIN(a."nextActionAt") FILTER (
+                WHERE a."nextActionAt" IS NOT NULL
+                  AND a."nextActionAt" > ${now}
+                  AND (
+                    a."status" IS NULL
+                    OR LOWER(TRIM(a."status")) NOT IN ('done', 'closed', 'cancelled', 'canceled')
+                  )
+              ) AS "nextFollowUpAt"
+            FROM "CommercialActivity" a
+            WHERE a."customerId" IN (${Prisma.join(ids)})
+            GROUP BY a."customerId"
+          `
+        );
+        for (const ar of aggRows) {
+          aggMap.set(ar.customerId, {
+            contactCount: Number(ar.contactCount ?? 0n),
+            lastContactAt: ar.lastContactAt,
+            nextFollowUpAt: ar.nextFollowUpAt,
+          });
+        }
+      }
+
+      const customers = pageRows.map((c) => {
+        const agg = aggMap.get(c.id);
+        const lastContactAt = agg?.lastContactAt ? agg.lastContactAt.toISOString() : null;
+        const nextFollowUpAt = agg?.nextFollowUpAt ? agg.nextFollowUpAt.toISOString() : null;
+        const contactCount = agg?.contactCount ?? 0;
+        return {
+          id: c.id,
+          displayName: c.companyName,
+          tradeName: c.tradeName ?? null,
+          taxId: c.taxId,
+          email: c.email ?? null,
+          phone: c.phone ?? null,
+          city: c.city ?? null,
+          state: c.state ?? null,
+          address: c.address ?? null,
+          lastContactAt,
+          nextFollowUpAt,
+          contactCount,
+        };
+      });
+
+      res.json({
+        customers,
+        pagination: {
+          limit,
+          offset,
+          returned: customers.length,
+          hasMore,
+        },
+      });
+    } catch (error) {
+      console.error("GET /api/crm/customers", error);
+      res.status(500).json({ error: "Erro ao buscar clientes para o CRM." });
+    }
+  });
+
   app.post("/api/customers", async (req, res) => {
     const customer = await prisma.customer.create({ data: req.body });
     res.json(customer);
