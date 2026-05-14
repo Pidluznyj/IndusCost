@@ -280,11 +280,13 @@
   }
 
   .proposal-print-document .proposal-client-hero-logo img {
-    max-width: 52mm !important;
-    max-height: 20mm !important;
+    /* Cabe em ~1fr da grade (hero-row) ao lado do card 92mm; object-fit mantém proporção */
+    max-width: 72mm !important;
+    max-height: 36mm !important;
     width: auto !important;
     height: auto !important;
     object-fit: contain !important;
+    object-position: left center !important;
   }
 
   .proposal-print-document .proposal-client-hero-logo img + p {

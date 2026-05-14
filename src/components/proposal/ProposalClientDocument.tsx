@@ -203,7 +203,7 @@ export function ProposalClientDocument({
                 <img
                   src={proposalLogoSrc}
                   alt={b.companyName}
-                  className="block h-auto w-full max-w-[360px] object-contain object-left sm:max-w-[430px] print:max-w-[62mm] print:max-h-[28mm]"
+                  className="block h-auto w-full max-w-[360px] object-contain object-left sm:max-w-[430px] print:max-w-[72mm] print:max-h-[36mm]"
                 />
               ) : (
                 <div className="text-3xl font-black tracking-tight text-slate-900 print:text-2xl">
