@@ -9,6 +9,8 @@
  * Aqui ficam só ajustes de “papel”: fundo branco, wrappers sem scroll, sombra externa off,
  * A4, quebras de página e thead da tabela — sem grids, paddings, fontes ou bordas alternativos.
  *
+ * Atenção: reports-print.css usa `body * { visibility: hidden }` no @media print; na rota
+ * proposal-print-route é obrigatório restaurar visibility (regra abaixo), senão PDF em branco.
  * Cabeçalho/rodapé do navegador: desmarcar "Cabeçalhos e rodapés" no diálogo de impressão
  * (Chrome/Edge) para PDF sem título/URL.
  */
@@ -32,6 +34,13 @@
   body.proposal-print-route {
     background: white !important;
     overflow: visible !important;
+  }
+
+  /* Sobrescreve reports-print.css (`body * { visibility: hidden }` em @media print),
+     senão a rota /proposals/:id/print gera PDF em branco. */
+  body.proposal-print-route,
+  body.proposal-print-route * {
+    visibility: visible !important;
   }
 
   body.proposal-print-route .proposal-print-no-print {
@@ -208,6 +217,7 @@
     max-height: none !important;
     overflow: visible !important;
     display: block !important;
+    visibility: visible !important;
     background: white !important;
     padding: 0 !important;
     margin: 0 !important;
