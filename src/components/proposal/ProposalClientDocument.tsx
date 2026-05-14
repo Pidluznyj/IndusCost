@@ -75,7 +75,7 @@ function SectionTitle({
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="proposal-client-card proposal-client-info-metric rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="proposal-client-card proposal-client-info-metric rounded-lg border border-slate-400 bg-white p-3 shadow-sm">
       <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
     </div>
@@ -180,7 +180,7 @@ export function ProposalClientDocument({
     proposalNumber != null && Number.isFinite(proposalNumber) ? `nº ${proposalNumber}` : "rascunho (sem número ainda)";
 
   return (
-    <article className="proposal-print-document proposal-print-sheet mx-auto w-full max-w-[1180px] overflow-visible rounded-xl border border-slate-200 bg-white text-slate-800 shadow-md md:shadow-md">
+    <article className="proposal-print-document proposal-print-sheet mx-auto w-full max-w-[1180px] overflow-visible rounded-xl border border-slate-400 bg-white text-slate-800 shadow-md md:shadow-md">
       <div className="proposal-client-document-root proposal-print-document-inner relative p-6 md:p-8 md:py-10 print:p-6">
         {proposalSideImageSrc ? (
           <div
@@ -218,7 +218,7 @@ export function ProposalClientDocument({
               ) : null}
             </div>
             <div
-              className="proposal-client-hero-card proposal-client-card w-full max-w-full shrink-0 rounded-xl border border-slate-200 bg-slate-50/90 p-4 shadow-sm lg:max-w-[460px] xl:max-w-[500px]"
+              className="proposal-client-hero-card proposal-client-card w-full max-w-full shrink-0 rounded-xl border border-slate-400 bg-slate-50/90 p-4 shadow-sm lg:max-w-[460px] xl:max-w-[500px]"
             >
               <h1
                 id={titleHeadingId}
@@ -228,7 +228,7 @@ export function ProposalClientDocument({
                 Proposta Comercial
               </h1>
               {titleLine ? <p className="mt-1 text-sm font-medium text-slate-600">{titleLine}</p> : null}
-              <dl className="mt-4 space-y-2 border-t border-slate-200/80 pt-4 text-sm">
+              <dl className="mt-4 space-y-2 border-t border-slate-300 pt-4 text-sm">
                 <div className="flex justify-between gap-3">
                   <dt className="font-semibold text-slate-600">Proposta</dt>
                   <dd className="text-right font-semibold text-slate-900">{proposalRefLabel}</dd>
@@ -260,7 +260,7 @@ export function ProposalClientDocument({
         {/* C — Cliente */}
         <section className="proposal-client-section proposal-print-section mt-8 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Cliente</SectionTitle>
-          <div className="proposal-client-card rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm">
+          <div className="proposal-client-card rounded-xl border border-slate-400 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm">
             <p className="proposal-client-customer-name text-lg font-bold text-slate-900">{customerBlock.name}</p>
             <dl className="proposal-client-customer-grid mt-4 grid gap-3 text-sm sm:grid-cols-2">
               {customerBlock.tax ? (
@@ -294,7 +294,7 @@ export function ProposalClientDocument({
         {/* D — Condições comerciais */}
         <section className="proposal-client-section proposal-print-section mt-8 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Condições comerciais</SectionTitle>
-          <div className="proposal-client-card proposal-client-conditions-grid grid gap-4 rounded-xl border border-slate-200 bg-white p-5 text-sm shadow-sm sm:grid-cols-2 lg:grid-cols-3">
+          <div className="proposal-client-card proposal-client-conditions-grid grid gap-4 rounded-xl border border-slate-400 bg-white p-5 text-sm shadow-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Condição de pagamento</p>
               <p className="mt-1 font-medium text-slate-900">{paymentTerms ?? "—"}</p>
@@ -346,7 +346,7 @@ export function ProposalClientDocument({
         {/* J — Sobre a empresa */}
         <section className="proposal-client-about proposal-client-section proposal-print-section mt-8 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Sobre a {b.companyName}</SectionTitle>
-          <div className="proposal-client-card rounded-lg border border-slate-200 bg-slate-50/60 p-4 text-sm leading-relaxed text-slate-700">
+          <div className="proposal-client-card rounded-lg border border-slate-400 bg-slate-50/60 p-4 text-sm leading-relaxed text-slate-700">
             A {b.companyName} atua no desenvolvimento e fornecimento de soluções em plásticos, com foco em qualidade,
             padronização e atendimento às necessidades de cada cliente.
           </div>
@@ -357,7 +357,7 @@ export function ProposalClientDocument({
           <SectionTitle accentColor={b.primaryColor} className="mb-4">
             Itens
           </SectionTitle>
-          <div className="proposal-print-table-wrap overflow-x-auto rounded-xl border border-slate-200 print:overflow-visible">
+          <div className="proposal-print-table-wrap overflow-x-auto rounded-xl border border-slate-400 print:overflow-visible">
             <table className="proposal-client-items-table w-full min-w-0 table-auto border-collapse text-sm md:min-w-[720px] print:table-fixed">
               <thead>
                 <tr
@@ -400,7 +400,7 @@ export function ProposalClientDocument({
                   return (
                     <tr
                       key={item.id ?? `row-${idx}`}
-                      className={`proposal-print-table-row border-b border-slate-100 last:border-0 ${stripe}`}
+                      className={`proposal-print-table-row border-b border-slate-200 last:border-0 ${stripe}`}
                     >
                       <td className="proposal-col-item px-3 py-2.5 align-middle text-slate-600">{idx + 1}</td>
                       <td className="proposal-col-code px-3 py-2.5 align-middle font-mono text-xs font-semibold text-slate-800">
@@ -432,13 +432,13 @@ export function ProposalClientDocument({
         {/* F — Resumo financeiro */}
         <section className="proposal-client-financial-summary proposal-print-section mt-10 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Resumo financeiro</SectionTitle>
-          <div className="proposal-client-card ml-auto max-w-full rounded-xl border border-slate-200 bg-slate-50/80 p-5 shadow-sm md:max-w-md print:max-w-sm">
+          <div className="proposal-client-card ml-auto max-w-full rounded-xl border border-slate-400 bg-slate-50/80 p-5 shadow-sm md:max-w-md print:max-w-sm">
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between gap-4 border-b border-slate-200/80 pb-2">
+              <div className="flex justify-between gap-4 border-b border-slate-300 pb-2">
                 <span className="text-slate-600">Subtotal (valor bruto)</span>
                 <span className="font-mono font-semibold tabular-nums text-slate-900">{formatMoney(totals.totalGross)}</span>
               </div>
-              <div className="flex justify-between gap-4 border-b border-slate-200/80 pb-2">
+              <div className="flex justify-between gap-4 border-b border-slate-300 pb-2">
                 <span className="text-slate-600">Descontos concedidos</span>
                 <span className="font-mono font-semibold tabular-nums text-red-700">−{formatMoney(totals.totalDiscount)}</span>
               </div>
@@ -458,9 +458,9 @@ export function ProposalClientDocument({
         {/* G — Observações */}
         <section className="proposal-client-section proposal-print-section mt-10 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Observações</SectionTitle>
-          <div className="proposal-client-observations proposal-client-card rounded-xl border border-slate-200 bg-white p-5 text-sm shadow-sm">
+          <div className="proposal-client-observations proposal-client-card rounded-xl border border-slate-400 bg-white p-5 text-sm shadow-sm">
             {notes ? <p className="whitespace-pre-wrap leading-relaxed text-slate-800">{notes}</p> : <p className="text-slate-500">Sem observações adicionais.</p>}
-            <ul className="proposal-client-observations-bullets mt-4 list-disc space-y-1.5 border-t border-slate-100 pt-4 pl-5 text-xs leading-relaxed text-slate-600">
+            <ul className="proposal-client-observations-bullets mt-4 list-disc space-y-1.5 border-t border-slate-300 pt-4 pl-5 text-xs leading-relaxed text-slate-600">
               <li>Valores sujeitos às condições comerciais descritas nesta proposta.</li>
               <li>Proposta válida pelo prazo informado.</li>
               <li>Alterações de quantidade, prazo, frete ou escopo poderão exigir revisão dos valores.</li>
@@ -471,7 +471,7 @@ export function ProposalClientDocument({
         {/* H — Condições gerais */}
         <section className="proposal-client-section proposal-print-section mt-10 space-y-3">
           <SectionTitle accentColor={b.primaryColor}>Condições gerais</SectionTitle>
-          <div className="proposal-client-general-conditions proposal-client-card rounded-xl border border-slate-200 bg-white p-5 text-sm leading-relaxed text-slate-700 shadow-sm">
+          <div className="proposal-client-general-conditions proposal-client-card rounded-xl border border-slate-400 bg-white p-5 text-sm leading-relaxed text-slate-700 shadow-sm">
             <ul className="proposal-client-general-conditions-list list-disc space-y-2 pl-5">
               <li>Esta proposta é válida pelo prazo informado neste documento.</li>
               <li>Os valores apresentados consideram as quantidades e condições comerciais descritas nesta proposta.</li>
@@ -488,7 +488,7 @@ export function ProposalClientDocument({
         {/* I — Aceite */}
         <section className="proposal-client-acceptance proposal-print-section mt-10 space-y-4">
           <SectionTitle accentColor={b.primaryColor}>Aceite da proposta</SectionTitle>
-          <div className="proposal-client-card rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="proposal-client-card rounded-xl border border-slate-400 bg-white p-6 shadow-sm">
             <p className="text-sm leading-relaxed text-slate-800">
               Ao aprovar esta proposta, o cliente declara estar de acordo com os itens, valores e condições comerciais
               apresentados.
@@ -496,18 +496,18 @@ export function ProposalClientDocument({
             <div className="signature-lines mt-8 space-y-5 text-sm print:mt-4">
               <div>
                 <p className="font-semibold text-slate-700">Nome do responsável</p>
-                <div className="mt-2 border-b border-slate-400 pb-1 print:mt-1 print:pb-px">&nbsp;</div>
+                <div className="mt-2 border-b border-slate-500 pb-1 print:mt-1 print:pb-px">&nbsp;</div>
               </div>
               <div>
                 <p className="font-semibold text-slate-700">Assinatura</p>
-                <div className="mt-2 border-b border-slate-400 pb-1 print:mt-1 print:pb-px">&nbsp;</div>
+                <div className="mt-2 border-b border-slate-500 pb-1 print:mt-1 print:pb-px">&nbsp;</div>
               </div>
               <div className="max-w-xs">
                 <p className="font-semibold text-slate-700">Data</p>
-                <div className="mt-2 border-b border-slate-400 pb-1 text-slate-400 print:mt-1 print:pb-px">____/____/________</div>
+                <div className="mt-2 border-b border-slate-500 pb-1 text-slate-400 print:mt-1 print:pb-px">____/____/________</div>
               </div>
             </div>
-            <div className="mt-8 border-t border-slate-200 pt-4 text-sm text-slate-700">
+            <div className="mt-8 border-t border-slate-300 pt-4 text-sm text-slate-700">
               <p>
                 <span className="font-semibold text-slate-600">Responsável comercial: </span>
                 {responsible ?? "—"}
