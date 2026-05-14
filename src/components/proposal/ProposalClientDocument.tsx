@@ -198,7 +198,7 @@ export function ProposalClientDocument({
         {/* A — Cabeçalho */}
         <header className="proposal-client-hero proposal-print-section pb-6 print:pb-0">
           <div className="proposal-client-hero-row flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="proposal-client-hero-logo flex min-h-[180px] min-w-0 flex-1 flex-col items-start justify-center gap-5 sm:min-h-[210px] print:min-h-[42mm] print:gap-2">
+            <div className="proposal-client-hero-logo flex min-h-[180px] min-w-0 flex-1 flex-col items-start justify-center gap-2 sm:min-h-[210px] sm:gap-3 print:min-h-[42mm] print:gap-1">
               {proposalLogoSrc ? (
                 <img
                   src={proposalLogoSrc}
@@ -212,7 +212,9 @@ export function ProposalClientDocument({
               )}
 
               {sloganLine ? (
-                <p className="max-w-[420px] text-sm text-slate-700 print:text-[9pt]">{sloganLine}</p>
+                <p className="max-w-[430px] pl-1 text-base font-medium tracking-tight text-slate-700 sm:text-lg print:max-w-[62mm] print:pl-0 print:text-[9.5pt]">
+                  {sloganLine}
+                </p>
               ) : null}
             </div>
             <div

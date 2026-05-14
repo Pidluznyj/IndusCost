@@ -223,6 +223,42 @@
     page-break-inside: auto !important;
   }
 
+  /* Contornos mais visíveis no PDF: blocos delimitados sem pesar a tela (só @media print) */
+  .proposal-print-document .proposal-client-card {
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .proposal-print-document .proposal-client-hero-card {
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .proposal-print-document .proposal-client-summary-grid > * {
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .proposal-print-document .proposal-client-conditions-grid > div {
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 2mm !important;
+    box-shadow: none !important;
+  }
+
+  .proposal-print-document .proposal-client-customer-grid > div {
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 2mm !important;
+    box-shadow: none !important;
+  }
+
+  .proposal-print-document .proposal-print-table-wrap {
+    border-color: #cbd5e1 !important;
+  }
+
+  .proposal-print-document .proposal-client-financial-summary .border-b {
+    border-color: #cbd5e1 !important;
+  }
+
   .proposal-print-document .proposal-client-customer-name {
     font-size: 11pt !important;
     line-height: 1.2 !important;
@@ -429,6 +465,7 @@
   .proposal-print-document .proposal-client-acceptance .proposal-client-card > div.border-t {
     margin-top: 3mm !important;
     padding-top: 2.5mm !important;
+    border-top-color: #cbd5e1 !important;
   }
 
   /* Tabela de itens: mesma estrutura visual (colunas, thead, larguras) */
