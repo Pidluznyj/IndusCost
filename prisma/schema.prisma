@@ -629,26 +629,38 @@ model PurchaseRequestItem {
 }
 
 model CommercialActivity {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  customerId   String    @db.Uuid
-  proposalId   String?   @db.Uuid
-  activityType String
-  subject      String?
-  description  String?
-  scheduledAt  DateTime? @db.Timestamp(6)
-  completedAt  DateTime? @db.Timestamp(6)
-  status       String    @default("OPEN")
-  priority     Int?
-  assignedTo   String?
-  closeReason  String?
-  createdAt    DateTime  @default(now()) @db.Timestamp(6)
-  updatedAt    DateTime  @default(now()) @db.Timestamp(6)
-  Customer     Customer  @relation(fields: [customerId], references: [id])
-  Proposal     Proposal? @relation(fields: [proposalId], references: [id])
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId            String    @db.Uuid
+  proposalId            String?   @db.Uuid
+  activityType          String
+  subject               String?
+  description           String?
+  scheduledAt           DateTime? @db.Timestamp(6)
+  completedAt           DateTime? @db.Timestamp(6)
+  status                String    @default("OPEN")
+  priority              Int?
+  assignedTo            String?
+  closeReason           String?
+  contactDate           DateTime? @db.Timestamp(6)
+  channel               String?
+  reason                String?
+  outcome               String?
+  nextActionAt          DateTime? @db.Timestamp(6)
+  nextActionDescription String?
+  createdByName         String?
+  createdByPhone        String?
+  createdByEmail        String?
+  createdAt             DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime  @default(now()) @db.Timestamp(6)
+  Customer              Customer  @relation(fields: [customerId], references: [id])
+  Proposal              Proposal? @relation(fields: [proposalId], references: [id])
 
   @@index([customerId])
+  @@index([customerId, contactDate])
   @@index([proposalId])
   @@index([scheduledAt])
+  @@index([nextActionAt])
+  @@index([status])
 }
 
 model CommercialAuditLog {

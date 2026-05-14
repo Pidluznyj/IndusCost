@@ -7346,6 +7346,550 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  /** --- CRM comercial (Fase 1A): atividades em `CommercialActivity` --- */
+  const CRM_COMMERCIAL_ACTIVITY_DEFAULT_LIMIT = 50;
+  const CRM_COMMERCIAL_ACTIVITY_MAX_LIMIT = 200;
+  const CRM_COMMERCIAL_ACTIVITY_MAX_BODY_CHARS = 32000;
+  const CRM_COMMERCIAL_ACTIVITY_SUBJECT_MAX = 500;
+  const CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX = 8000;
+  const CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX = 128;
+  const CRM_COMMERCIAL_ACTIVITY_CHANNEL_REASON_MAX = 64;
+  const CRM_COMMERCIAL_ACTIVITY_CREATED_BY_NAME_FALLBACK = "Comercial Lazarios";
+
+  function parseCommercialActivitiesLimit(raw: unknown): number {
+    const s = typeof raw === "string" ? raw.trim() : "";
+    const n = s ? Number.parseInt(s, 10) : NaN;
+    if (!Number.isFinite(n) || n < 1) return CRM_COMMERCIAL_ACTIVITY_DEFAULT_LIMIT;
+    return Math.min(n, CRM_COMMERCIAL_ACTIVITY_MAX_LIMIT);
+  }
+
+  function normalizeCrmOptionalString(
+    value: unknown,
+    maxLen: number,
+    uppercase?: boolean
+  ): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== "string") return undefined;
+    const t = value.trim();
+    if (!t) return undefined;
+    const cut = t.length > maxLen ? t.slice(0, maxLen) : t;
+    return uppercase ? cut.toUpperCase() : cut;
+  }
+
+  function parseOptionalIsoDate(value: unknown): Date | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (typeof value !== "string") return undefined;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+
+  function isUuidParam(id: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      id
+    );
+  }
+
+  function mapCommercialActivityForApi(
+    row: {
+      id: string;
+      activityType: string;
+      subject: string | null;
+      description: string | null;
+      scheduledAt: Date | null;
+      completedAt: Date | null;
+      status: string;
+      priority: number | null;
+      assignedTo: string | null;
+      closeReason: string | null;
+      contactDate: Date | null;
+      channel: string | null;
+      reason: string | null;
+      outcome: string | null;
+      nextActionAt: Date | null;
+      nextActionDescription: string | null;
+      createdByName: string | null;
+      createdByPhone: string | null;
+      createdByEmail: string | null;
+      createdAt: Date;
+      Proposal: {
+        number: number;
+        title: string | null;
+        status: string;
+      } | null;
+    }
+  ) {
+    const proposal = row.Proposal
+      ? {
+          number: row.Proposal.number,
+          title: row.Proposal.title,
+          status: row.Proposal.status,
+        }
+      : null;
+    return {
+      id: row.id,
+      activityType: row.activityType,
+      subject: row.subject,
+      description: row.description,
+      scheduledAt: row.scheduledAt,
+      completedAt: row.completedAt,
+      status: row.status,
+      priority: row.priority,
+      assignedTo: row.assignedTo,
+      closeReason: row.closeReason,
+      contactDate: row.contactDate,
+      channel: row.channel,
+      reason: row.reason,
+      outcome: row.outcome,
+      nextActionAt: row.nextActionAt,
+      nextActionDescription: row.nextActionDescription,
+      createdByName: row.createdByName,
+      createdByPhone: row.createdByPhone,
+      createdByEmail: row.createdByEmail,
+      createdAt: row.createdAt,
+      proposal,
+    };
+  }
+
+  app.get("/api/customers/:customerId/commercial-activities", async (req, res) => {
+    const { customerId } = req.params;
+    if (!isUuidParam(customerId)) {
+      return res.status(400).json({ error: "customerId inválido." });
+    }
+    const limit = parseCommercialActivitiesLimit(req.query.limit);
+    const statusFilter =
+      typeof req.query.status === "string" && req.query.status.trim()
+        ? req.query.status.trim()
+        : undefined;
+    const channelFilter =
+      typeof req.query.channel === "string" && req.query.channel.trim()
+        ? req.query.channel.trim().toUpperCase()
+        : undefined;
+    try {
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { id: true },
+      });
+      if (!customer) return res.status(404).json({ error: "Cliente não encontrado." });
+
+      const rows = await prisma.commercialActivity.findMany({
+        where: {
+          customerId,
+          ...(statusFilter ? { status: statusFilter } : {}),
+          ...(channelFilter ? { channel: channelFilter } : {}),
+        },
+        take: limit,
+        orderBy: [
+          { contactDate: { sort: "desc", nulls: "last" } },
+          { createdAt: "desc" },
+        ],
+        include: {
+          Proposal: {
+            select: { number: true, title: true, status: true },
+          },
+        },
+      });
+      res.json({ activities: rows.map(mapCommercialActivityForApi) });
+    } catch (error) {
+      console.error("GET /api/customers/:customerId/commercial-activities", error);
+      res.status(500).json({ error: "Erro ao listar atividades comerciais." });
+    }
+  });
+
+  app.post("/api/customers/:customerId/commercial-activities", async (req, res) => {
+    const { customerId } = req.params;
+    if (!isUuidParam(customerId)) {
+      return res.status(400).json({ error: "customerId inválido." });
+    }
+    try {
+      const rawBody = req.body;
+      if (rawBody && typeof rawBody === "object") {
+        const approx = JSON.stringify(rawBody).length;
+        if (approx > CRM_COMMERCIAL_ACTIVITY_MAX_BODY_CHARS) {
+          return res.status(400).json({ error: "Payload muito grande." });
+        }
+      }
+
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { id: true },
+      });
+      if (!customer) return res.status(404).json({ error: "Cliente não encontrado." });
+
+      const body = (rawBody && typeof rawBody === "object" ? rawBody : {}) as Record<
+        string,
+        unknown
+      >;
+
+      const subject = normalizeCrmOptionalString(
+        body.subject,
+        CRM_COMMERCIAL_ACTIVITY_SUBJECT_MAX
+      );
+      const description = normalizeCrmOptionalString(
+        body.description,
+        CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX
+      );
+      if (!subject && !description) {
+        return res
+          .status(400)
+          .json({ error: "Informe subject ou description (texto não vazio)." });
+      }
+
+      const channel = normalizeCrmOptionalString(
+        body.channel,
+        CRM_COMMERCIAL_ACTIVITY_CHANNEL_REASON_MAX,
+        true
+      );
+      const reason = normalizeCrmOptionalString(
+        body.reason,
+        CRM_COMMERCIAL_ACTIVITY_CHANNEL_REASON_MAX,
+        true
+      );
+      const activityType = reason || "CONTACT";
+
+      const contactDate = parseOptionalIsoDate(body.contactDate) ?? new Date();
+      const nextActionAt = parseOptionalIsoDate(body.nextActionAt);
+
+      let statusRaw =
+        typeof body.status === "string" && body.status.trim()
+          ? body.status.trim()
+          : undefined;
+      if (!statusRaw) {
+        statusRaw = nextActionAt ? "OPEN" : "DONE";
+      }
+
+      const outcome = normalizeCrmOptionalString(
+        body.outcome,
+        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
+      );
+      const nextActionDescription = normalizeCrmOptionalString(
+        body.nextActionDescription,
+        CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX
+      );
+      const assignedTo = normalizeCrmOptionalString(
+        body.assignedTo,
+        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
+      );
+
+      let priority: number | undefined;
+      if (body.priority !== undefined && body.priority !== null) {
+        if (typeof body.priority === "number" && Number.isFinite(body.priority)) {
+          priority = Math.trunc(body.priority);
+        } else if (typeof body.priority === "string" && body.priority.trim()) {
+          const p = Number.parseInt(body.priority.trim(), 10);
+          if (Number.isFinite(p)) priority = p;
+        }
+      }
+
+      let createdByName = normalizeCrmOptionalString(
+        body.createdByName,
+        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
+      );
+      if (!createdByName) {
+        createdByName = CRM_COMMERCIAL_ACTIVITY_CREATED_BY_NAME_FALLBACK;
+      }
+      const createdByPhone = normalizeCrmOptionalString(
+        body.createdByPhone,
+        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
+      );
+      const createdByEmail = normalizeCrmOptionalString(
+        body.createdByEmail,
+        CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
+      );
+
+      const scheduledAt = parseOptionalIsoDate(body.scheduledAt);
+      const completedAt = parseOptionalIsoDate(body.completedAt);
+
+      const createData: Prisma.CommercialActivityCreateInput = {
+        Customer: { connect: { id: customerId } },
+        activityType,
+        status: statusRaw,
+        contactDate,
+        ...(subject !== undefined ? { subject } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(channel !== undefined ? { channel } : {}),
+        ...(reason !== undefined ? { reason } : {}),
+        ...(outcome !== undefined ? { outcome } : {}),
+        ...(nextActionAt !== undefined ? { nextActionAt } : {}),
+        ...(nextActionDescription !== undefined ? { nextActionDescription } : {}),
+        ...(assignedTo !== undefined ? { assignedTo } : {}),
+        ...(priority !== undefined ? { priority } : {}),
+        ...(scheduledAt !== undefined ? { scheduledAt } : {}),
+        ...(completedAt !== undefined ? { completedAt } : {}),
+        createdByName,
+        ...(createdByPhone !== undefined ? { createdByPhone } : {}),
+        ...(createdByEmail !== undefined ? { createdByEmail } : {}),
+      };
+
+      const created = await prisma.commercialActivity.create({
+        data: createData,
+        include: {
+          Proposal: { select: { number: true, title: true, status: true } },
+        },
+      });
+      res.status(201).json(mapCommercialActivityForApi(created));
+    } catch (error) {
+      console.error("POST /api/customers/:customerId/commercial-activities", error);
+      res.status(500).json({ error: "Erro ao registrar atividade comercial." });
+    }
+  });
+
+  app.patch("/api/commercial-activities/:id", async (req, res) => {
+    const { id } = req.params;
+    if (!isUuidParam(id)) {
+      return res.status(400).json({ error: "id inválido." });
+    }
+    try {
+      const rawBody = req.body;
+      if (rawBody && typeof rawBody === "object") {
+        const approx = JSON.stringify(rawBody).length;
+        if (approx > CRM_COMMERCIAL_ACTIVITY_MAX_BODY_CHARS) {
+          return res.status(400).json({ error: "Payload muito grande." });
+        }
+      }
+      const body = (rawBody && typeof rawBody === "object" ? rawBody : {}) as Record<
+        string,
+        unknown
+      >;
+
+      const existing = await prisma.commercialActivity.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Atividade não encontrada." });
+
+      const data: Prisma.CommercialActivityUpdateInput = {};
+
+      if ("contactDate" in body) {
+        if (body.contactDate === null) data.contactDate = null;
+        else {
+          const d = parseOptionalIsoDate(body.contactDate);
+          if (d === undefined && body.contactDate !== "" && body.contactDate != null) {
+            return res.status(400).json({ error: "contactDate inválido." });
+          }
+          if (d !== undefined) data.contactDate = d;
+        }
+      }
+      if ("channel" in body) {
+        if (body.channel === null || body.channel === "") {
+          data.channel = null;
+        } else {
+          const v = normalizeCrmOptionalString(
+            body.channel,
+            CRM_COMMERCIAL_ACTIVITY_CHANNEL_REASON_MAX,
+            true
+          );
+          if (v === undefined) {
+            return res.status(400).json({ error: "channel inválido." });
+          }
+          data.channel = v;
+        }
+      }
+      if ("reason" in body) {
+        if (body.reason === null || body.reason === "") {
+          data.reason = null;
+        } else {
+          const v = normalizeCrmOptionalString(
+            body.reason,
+            CRM_COMMERCIAL_ACTIVITY_CHANNEL_REASON_MAX,
+            true
+          );
+          if (v === undefined) {
+            return res.status(400).json({ error: "reason inválido." });
+          }
+          data.reason = v;
+        }
+      }
+      if ("subject" in body) {
+        const v = normalizeCrmOptionalString(body.subject, CRM_COMMERCIAL_ACTIVITY_SUBJECT_MAX);
+        data.subject = v === undefined ? null : v;
+      }
+      if ("description" in body) {
+        const v = normalizeCrmOptionalString(
+          body.description,
+          CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX
+        );
+        data.description = v === undefined ? null : v;
+      }
+      if ("outcome" in body) {
+        const v = normalizeCrmOptionalString(body.outcome, CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX);
+        data.outcome = v === undefined ? null : v;
+      }
+      if ("status" in body) {
+        const v = normalizeCrmOptionalString(body.status, 64);
+        if (v === undefined) {
+          return res.status(400).json({ error: "status inválido (use texto não vazio ou omita o campo)." });
+        }
+        data.status = v;
+      }
+      if ("priority" in body) {
+        if (body.priority === null) data.priority = null;
+        else if (typeof body.priority === "number" && Number.isFinite(body.priority)) {
+          data.priority = Math.trunc(body.priority);
+        } else if (typeof body.priority === "string" && body.priority.trim()) {
+          const p = Number.parseInt(body.priority.trim(), 10);
+          if (!Number.isFinite(p)) return res.status(400).json({ error: "priority inválido." });
+          data.priority = p;
+        } else if (body.priority !== undefined) {
+          return res.status(400).json({ error: "priority inválido." });
+        }
+      }
+      if ("assignedTo" in body) {
+        const v = normalizeCrmOptionalString(
+          body.assignedTo,
+          CRM_COMMERCIAL_ACTIVITY_SHORT_TEXT_MAX
+        );
+        data.assignedTo = v === undefined ? null : v;
+      }
+      if ("scheduledAt" in body) {
+        if (body.scheduledAt === null) data.scheduledAt = null;
+        else {
+          const d = parseOptionalIsoDate(body.scheduledAt);
+          if (
+            d === undefined &&
+            body.scheduledAt !== "" &&
+            body.scheduledAt != null
+          ) {
+            return res.status(400).json({ error: "scheduledAt inválido." });
+          }
+          if (d !== undefined) data.scheduledAt = d;
+        }
+      }
+      if ("completedAt" in body) {
+        if (body.completedAt === null) data.completedAt = null;
+        else {
+          const d = parseOptionalIsoDate(body.completedAt);
+          if (
+            d === undefined &&
+            body.completedAt !== "" &&
+            body.completedAt != null
+          ) {
+            return res.status(400).json({ error: "completedAt inválido." });
+          }
+          if (d !== undefined) data.completedAt = d;
+        }
+      }
+      if ("nextActionAt" in body) {
+        if (body.nextActionAt === null) data.nextActionAt = null;
+        else {
+          const d = parseOptionalIsoDate(body.nextActionAt);
+          if (
+            d === undefined &&
+            body.nextActionAt !== "" &&
+            body.nextActionAt != null
+          ) {
+            return res.status(400).json({ error: "nextActionAt inválido." });
+          }
+          if (d !== undefined) data.nextActionAt = d;
+        }
+      }
+      if ("nextActionDescription" in body) {
+        const v = normalizeCrmOptionalString(
+          body.nextActionDescription,
+          CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX
+        );
+        data.nextActionDescription = v === undefined ? null : v;
+      }
+      if ("closeReason" in body) {
+        const v = normalizeCrmOptionalString(
+          body.closeReason,
+          CRM_COMMERCIAL_ACTIVITY_DESCRIPTION_MAX
+        );
+        data.closeReason = v === undefined ? null : v;
+      }
+
+      if (Object.keys(data).length === 0) {
+        return res.status(400).json({ error: "Nenhum campo para atualizar." });
+      }
+
+      const updated = await prisma.commercialActivity.update({
+        where: { id },
+        data,
+        include: {
+          Proposal: { select: { number: true, title: true, status: true } },
+        },
+      });
+      res.json(mapCommercialActivityForApi(updated));
+    } catch (error) {
+      console.error("PATCH /api/commercial-activities/:id", error);
+      res.status(500).json({ error: "Erro ao atualizar atividade comercial." });
+    }
+  });
+
+  app.get("/api/crm/dashboard/basic", async (_req, res) => {
+    try {
+      const now = new Date();
+      const since30 = new Date(now);
+      since30.setUTCDate(since30.getUTCDate() - 30);
+      const in7 = new Date(now);
+      in7.setUTCDate(in7.getUTCDate() + 7);
+
+      const [totalCustomersRow] = await prisma.$queryRaw<{ c: bigint }[]>(
+        Prisma.sql`SELECT COUNT(*)::bigint AS c FROM "Customer"`
+      );
+      const totalCustomers = Number(totalCustomersRow?.c ?? 0n);
+
+      const [withContactRow] = await prisma.$queryRaw<{ c: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(DISTINCT a."customerId")::bigint AS c
+          FROM "CommercialActivity" a
+          WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
+        `
+      );
+      const customersWithContactLast30Days = Number(withContactRow?.c ?? 0n);
+
+      const [withoutContactRow] = await prisma.$queryRaw<{ c: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(*)::bigint AS c
+          FROM "Customer" c
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM "CommercialActivity" a
+            WHERE a."customerId" = c."id"
+              AND COALESCE(a."contactDate", a."createdAt") >= ${since30}
+          )
+        `
+      );
+      const customersWithoutContactLast30Days = Number(withoutContactRow?.c ?? 0n);
+
+      const [overdueRow] = await prisma.$queryRaw<{ c: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(*)::bigint AS c
+          FROM "CommercialActivity" a
+          WHERE a."nextActionAt" IS NOT NULL
+            AND a."nextActionAt" < ${now}
+            AND (
+              a."status" IS NULL
+              OR LOWER(TRIM(a."status")) NOT IN ('done', 'closed', 'cancelled', 'canceled')
+            )
+        `
+      );
+      const overdueFollowUps = Number(overdueRow?.c ?? 0n);
+
+      const [upcomingRow] = await prisma.$queryRaw<{ c: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(*)::bigint AS c
+          FROM "CommercialActivity" a
+          WHERE a."nextActionAt" IS NOT NULL
+            AND a."nextActionAt" >= ${now}
+            AND a."nextActionAt" < ${in7}
+            AND (
+              a."status" IS NULL
+              OR LOWER(TRIM(a."status")) NOT IN ('done', 'closed', 'cancelled', 'canceled')
+            )
+        `
+      );
+      const upcomingFollowUpsNext7Days = Number(upcomingRow?.c ?? 0n);
+
+      res.json({
+        totalCustomers,
+        customersWithContactLast30Days,
+        customersWithoutContactLast30Days,
+        overdueFollowUps,
+        upcomingFollowUpsNext7Days,
+      });
+    } catch (error) {
+      console.error("GET /api/crm/dashboard/basic", error);
+      res.status(500).json({ error: "Erro ao montar indicadores do CRM." });
+    }
+  });
+
   app.post("/api/customers", async (req, res) => {
     const customer = await prisma.customer.create({ data: req.body });
     res.json(customer);
