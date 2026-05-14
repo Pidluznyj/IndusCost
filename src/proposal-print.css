@@ -1,23 +1,15 @@
-/* Impressão — proposta comercial para cliente
+/* Impressão — proposta comercial para cliente (layout compacto = mesmo na tela e no PDF)
  *
- * Dois contextos:
- * - Rota /proposals/:id/print: body.proposal-print-route.
- * - Modal ProposalClientPreview: body.printing-proposal-client-preview — visibility no shell
- *   (.proposal-print-page); na impressão o modal vira fluxo contínuo (várias páginas A4).
+ * - Rota /proposals/:id/print: body.proposal-print-route
+ * - Modal ProposalClientPreview: body.printing-proposal-client-preview
  *
- * Regra: o PDF herda o layout visual definido em Tailwind/ProposalClientDocument.tsx.
- * Aqui ficam só ajustes de “papel”: fundo branco, wrappers sem scroll, sombra externa off,
- * A4, quebras de página e thead da tabela — sem grids, paddings, fontes ou bordas alternativos.
- *
- * Atenção: reports-print.css usa `body * { visibility: hidden }` no @media print; na rota
- * proposal-print-route é obrigatório restaurar visibility (regra abaixo), senão PDF em branco.
- * Cabeçalho/rodapé do navegador: desmarcar "Cabeçalhos e rodapés" no diálogo de impressão
- * (Chrome/Edge) para PDF sem título/URL.
+ * reports-print.css usa `body * { visibility: hidden }` no @media print; na rota
+ * proposal-print-route é obrigatório restaurar visibility, senão PDF em branco.
  */
 @media print {
   @page {
     size: A4 portrait;
-    margin: 10mm;
+    margin: 8mm;
   }
 
   html,
@@ -30,14 +22,11 @@
     display: none !important;
   }
 
-  /* --- Rota dedicada --- */
   body.proposal-print-route {
     background: white !important;
     overflow: visible !important;
   }
 
-  /* Sobrescreve reports-print.css (`body * { visibility: hidden }` em @media print),
-     senão a rota /proposals/:id/print gera PDF em branco. */
   body.proposal-print-route,
   body.proposal-print-route * {
     visibility: visible !important;
@@ -47,75 +36,44 @@
     display: none !important;
   }
 
+  .proposal-print-page,
+  .proposal-print-route-page,
+  .proposal-print-scroll {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
   body.proposal-print-route .proposal-print-page,
   body.proposal-print-route .proposal-print-route-page,
   body.proposal-print-route .proposal-print-scroll {
     position: static !important;
     inset: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    background: white !important;
-    padding: 0 !important;
-    margin: 0 !important;
   }
 
-  body.proposal-print-route .proposal-print-document {
+  .proposal-print-document,
+  body.proposal-print-route .proposal-print-document,
+  body.printing-proposal-client-preview .proposal-print-document {
     width: 100% !important;
     max-width: none !important;
     margin: 0 auto !important;
     overflow: visible !important;
     background: white !important;
     box-shadow: none !important;
-  }
-
-  body.proposal-print-route .proposal-print-document-inner {
-    overflow: visible !important;
-  }
-
-  body.proposal-print-route .proposal-print-table-wrap {
-    overflow: visible !important;
-    max-width: none !important;
-  }
-
-  /* --- Wrappers comuns (rota + preview quando usam estas classes) --- */
-  .proposal-print-page {
-    position: static !important;
-    inset: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    background: white !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  .proposal-print-scroll {
-    overflow: visible !important;
-    height: auto !important;
-    max-height: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    background: white !important;
+    border: none !important;
   }
 
   .proposal-print-sheet {
     box-shadow: none !important;
+    border: none !important;
     max-width: none !important;
     width: 100% !important;
-  }
-
-  .proposal-print-document {
-    width: 100% !important;
-    max-width: none !important;
-    margin: 0 auto !important;
-    overflow: visible !important;
-    background: white !important;
-    box-shadow: none !important;
   }
 
   .proposal-print-document-inner {
@@ -125,18 +83,28 @@
     overflow: visible !important;
   }
 
+  body.proposal-print-route .proposal-print-document-inner,
+  body.printing-proposal-client-preview .proposal-print-document-inner {
+    overflow: visible !important;
+  }
+
   .proposal-print-table-wrap {
     overflow: visible !important;
     max-width: none !important;
   }
 
-  /* Quebras: não redesenhar blocos, só paginação */
+  body.proposal-print-route .proposal-print-table-wrap,
+  body.printing-proposal-client-preview .proposal-print-table-wrap {
+    overflow: visible !important;
+    max-width: none !important;
+  }
+
   .proposal-print-section {
     break-inside: auto !important;
     page-break-inside: auto !important;
   }
 
-  header.proposal-client-hero.proposal-print-section {
+  header.proposal-compact-header {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
@@ -146,22 +114,22 @@
     page-break-inside: auto !important;
   }
 
-  .proposal-print-table-row,
-  .proposal-print-document tr {
+  .proposal-compact-table thead {
+    display: table-header-group !important;
+  }
+
+  .proposal-compact-table tfoot {
+    display: table-footer-group !important;
+  }
+
+  .proposal-compact-table tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .proposal-print-document table {
-    width: 100% !important;
-  }
-
-  .proposal-print-document table thead {
-    display: table-header-group !important;
-  }
-
-  .proposal-print-document table tfoot {
-    display: table-footer-group !important;
+  .proposal-compact-table tbody tr {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
   }
 
   .proposal-print-break {
@@ -169,17 +137,7 @@
     page-break-inside: avoid;
   }
 
-  /* Imagem lateral: posicionamento no fluxo do documento */
-  .proposal-client-document-root {
-    position: relative !important;
-  }
-
-  .proposal-side-brand-floating {
-    position: absolute !important;
-    pointer-events: none !important;
-  }
-
-  /* --- Modal (edição): só o conteúdo da proposta visível na impressão --- */
+  /* --- Modal: só o conteúdo da proposta visível --- */
   html.printing-proposal-client-preview {
     overflow: visible !important;
     height: auto !important;
@@ -245,24 +203,16 @@
 
   body.printing-proposal-client-preview .proposal-print-document {
     position: static !important;
-    width: 100% !important;
-    max-width: none !important;
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
-    overflow: visible !important;
-    margin: 0 auto !important;
-    box-shadow: none !important;
-    background: white !important;
   }
 
   body.printing-proposal-client-preview .proposal-print-document-inner {
-    overflow: visible !important;
     max-height: none !important;
   }
 
   body.printing-proposal-client-preview .proposal-print-table-wrap {
-    overflow: visible !important;
     max-height: none !important;
   }
 }

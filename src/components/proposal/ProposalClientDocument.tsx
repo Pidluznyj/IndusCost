@@ -2,8 +2,6 @@ import React, { useMemo } from "react";
 import type { Customer, Proposal, ProposalItem } from "@/src/types/commercial";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 
-/** Conteúdo único do PDF; cabeçalho/rodapé (URL, data) vêm do navegador — desmarcar "Cabeçalhos e rodapés" no diálogo de impressão para PDF limpo. */
-
 function safeNum(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -19,11 +17,6 @@ function formatMoney(value: unknown): string {
   });
 }
 
-function formatPercent(value: unknown): string {
-  const n = safeNum(value);
-  return `${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
-}
-
 function formatQty(value: unknown): string {
   const n = safeNum(value);
   if (!Number.isFinite(n)) return "—";
@@ -35,6 +28,24 @@ function nonEmpty(s: unknown): string | null {
   const t = s.trim();
   return t.length > 0 ? t : null;
 }
+
+/** Número de item no padrão 00010, 00020… (referência comercial). */
+function formatItemLineNo(index: number): string {
+  return String((index + 1) * 10).padStart(5, "0");
+}
+
+/**
+ * Fallback institucional (dados da Lazarios/Koppetel) até existir configuração
+ * estruturada de endereço/CNPJ/contato no branding — não persiste em banco.
+ */
+const COMPANY_DOC_FALLBACK = {
+  taxId: "14.055.501/0001-80",
+  addressLine: "Rua Carlos Essenfelder, Boqueirão, Curitiba - PR, CEP 81730-060",
+  email: "paulo@grupolazarios.com.br",
+} as const;
+
+/** Unidade comercial quando o item não traz unidade — apenas rótulo visual. */
+const DEFAULT_ITEM_UNIT = "PC";
 
 export type ProposalClientDocumentTotals = {
   totalGross: number;
@@ -54,36 +65,16 @@ export type ProposalClientDocumentProps = {
   titleHeadingId?: string;
 };
 
-function SectionTitle({
-  children,
-  accentColor,
-  className = "",
-}: {
-  children: React.ReactNode;
-  accentColor: string;
-  className?: string;
-}) {
+function CompactSectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h2
-      className={`proposal-client-section-title text-xs font-bold uppercase tracking-wider text-slate-600 border-l-4 pl-3 ${className}`}
-      style={{ borderLeftColor: accentColor }}
-    >
+    <h2 className="proposal-compact-section-title mt-5 border-t border-slate-300 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-700 first:mt-0 first:border-t-0 first:pt-0">
       {children}
     </h2>
   );
 }
 
-function InfoCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="proposal-client-card proposal-client-info-metric rounded-lg border border-slate-400 bg-white p-3 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
-    </div>
-  );
-}
-
 /**
- * Conteúdo visual único da proposta comercial para cliente (sem modal, sem botões).
+ * Proposta comercial para cliente: layout compacto (referência tipo ERP/PDF comercial).
  * Não renderiza custo, margem, comissão, tabela de preço, origem, UUID, JSON nem snapshots.
  */
 export function ProposalClientDocument({
@@ -101,28 +92,23 @@ export function ProposalClientDocument({
   );
 
   const customerBlock = useMemo(() => {
-    if (!resolvedCustomer) {
-      return {
-        name: "—" as string,
-        tax: null as string | null,
-        address: null as string | null,
-        cityUf: null as string | null,
-        zip: null as string | null,
-      };
-    }
+    if (!resolvedCustomer) return null;
     const name =
       nonEmpty(resolvedCustomer.companyName) ||
       nonEmpty(resolvedCustomer.tradeName) ||
-      "—";
+      null;
+    const trade = nonEmpty(resolvedCustomer.tradeName);
     const tax = nonEmpty(resolvedCustomer.taxId);
+    const stateTax = nonEmpty(resolvedCustomer.stateTaxId);
     const addr = nonEmpty(resolvedCustomer.address);
     const city = nonEmpty(resolvedCustomer.city);
     const st = nonEmpty(resolvedCustomer.state);
     const zip = nonEmpty(resolvedCustomer.zipCode);
+    const phone = nonEmpty(resolvedCustomer.phone);
+    const contact = nonEmpty(resolvedCustomer.contactName);
     const locParts = [city, st].filter(Boolean);
-    const cityUf = locParts.length > 0 ? locParts.join(" / ") : null;
-    const zipVal = zip;
-    return { name, tax, address: addr, cityUf, zip: zipVal };
+    const cityUf = locParts.length > 0 ? locParts.join(" - ") : null;
+    return { name, trade, tax, stateTax, addr, cityUf, zip, phone, contact };
   }, [resolvedCustomer]);
 
   const freightLabel = useMemo(() => {
@@ -132,40 +118,6 @@ export function ProposalClientDocument({
     return fc || "—";
   }, [formData.freightCondition]);
 
-  const summaryMetrics = useMemo(() => {
-    const distinctItems = items.length;
-    const totalUnits = items.reduce((acc, it) => acc + safeNum(it.quantity), 0);
-    const deliveryDays = formData.deliveryTimeDays;
-    const deliveryLabel =
-      deliveryDays != null && Number.isFinite(Number(deliveryDays)) && Number(deliveryDays) > 0
-        ? `${Number(deliveryDays)} dia(s)`
-        : "—";
-    const validityDays = safeNum(formData.validityDays, 15);
-    const validityLabel = validityDays > 0 ? `${validityDays} dia(s)` : "—";
-    return {
-      distinctItems,
-      totalUnits: totalUnits > 0 ? formatQty(totalUnits) : "—",
-      totalValue: formatMoney(totals.totalNet),
-      validityLabel,
-      freight: freightLabel,
-      deliveryLabel,
-    };
-  }, [items, formData.deliveryTimeDays, formData.validityDays, totals.totalNet, freightLabel]);
-
-  const proposalLogoSrc =
-    typeof b.proposalLogoDataUrl === "string" &&
-    b.proposalLogoDataUrl.trim().length > 0 &&
-    b.proposalLogoDataUrl.trim().toLowerCase().startsWith("data:image/")
-      ? b.proposalLogoDataUrl.trim()
-      : null;
-  const proposalSideImageSrc =
-    typeof b.proposalSideImageDataUrl === "string" &&
-    b.proposalSideImageDataUrl.trim().length > 0 &&
-    b.proposalSideImageDataUrl.trim().toLowerCase().startsWith("data:image/")
-      ? b.proposalSideImageDataUrl.trim()
-      : null;
-  const sloganLine = nonEmpty(b.slogan);
-
   const validityDays = safeNum(formData.validityDays, 15);
   const paymentTerms = nonEmpty(formData.paymentTerms);
   const paymentMethod = nonEmpty(formData.paymentMethod);
@@ -173,218 +125,192 @@ export function ProposalClientDocument({
   const deliveryLocation = nonEmpty(formData.deliveryLocation);
   const notes = nonEmpty(formData.notes);
   const responsible = nonEmpty(formData.responsible);
-  const companyIssuer = nonEmpty(formData.companyIssuer);
-  const titleLine = nonEmpty(formData.title);
+  const totalFreight = safeNum(formData.totalFreight);
 
-  const proposalRefLabel =
-    proposalNumber != null && Number.isFinite(proposalNumber) ? `nº ${proposalNumber}` : "rascunho (sem número ainda)";
+  const deliveryLine =
+    deliveryDays != null && Number.isFinite(Number(deliveryDays)) && Number(deliveryDays) > 0
+      ? `${Number(deliveryDays)} dia(s)`
+      : null;
+
+  const proposalLogoSrc =
+    typeof b.proposalLogoDataUrl === "string" &&
+    b.proposalLogoDataUrl.trim().length > 0 &&
+    b.proposalLogoDataUrl.trim().toLowerCase().startsWith("data:image/")
+      ? b.proposalLogoDataUrl.trim()
+      : null;
+  const sloganLine = nonEmpty(b.slogan);
+
+  const cpHeading =
+    proposalNumber != null && Number.isFinite(proposalNumber)
+      ? `CP ${String(Math.floor(Number(proposalNumber))).padStart(5, "0")}`
+      : "Rascunho";
 
   return (
-    <article className="proposal-print-document proposal-print-sheet mx-auto w-full max-w-[1180px] overflow-visible rounded-xl border border-slate-400 bg-white text-slate-800 shadow-md md:shadow-md">
-      <div className="proposal-client-document-root proposal-print-document-inner relative p-6 md:p-8 md:py-10 print:p-6">
-        {proposalSideImageSrc ? (
-          <div
-            className="proposal-side-brand-floating pointer-events-none absolute top-1/2 z-0 hidden -translate-y-1/2 md:right-3 md:block md:w-[176px] print:right-4 print:block print:w-[168px]"
-            aria-hidden
-          >
-            <img
-              src={proposalSideImageSrc}
-              alt=""
-              className="mx-auto h-auto max-h-[min(82vh,720px)] w-full max-w-[176px] object-contain object-center opacity-95 print:max-h-[680px] print:max-w-[168px]"
-            />
-          </div>
-        ) : null}
+    <article className="proposal-print-document proposal-compact-document proposal-print-sheet mx-auto w-full max-w-[1180px] border border-slate-300 bg-white text-slate-800 shadow-sm print:max-w-none print:border-0 print:shadow-none">
+      <div className="proposal-client-document-root proposal-print-document-inner p-4 text-xs leading-snug md:p-5 md:text-[13px] md:leading-normal print:p-3">
+        <h1 id={titleHeadingId} className="sr-only">
+          Proposta comercial {cpHeading !== "Rascunho" ? cpHeading : ""}
+        </h1>
 
-        {/* A — Cabeçalho */}
-        <header className="proposal-client-hero proposal-print-section pb-6 print:pb-0">
-          <div className="proposal-client-hero-row flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="proposal-client-hero-logo flex min-h-[180px] min-w-0 flex-1 flex-col items-start justify-center gap-2 sm:min-h-[210px] sm:gap-3 print:min-h-[42mm] print:gap-1">
+        {/* Cabeçalho compacto */}
+        <header className="proposal-compact-header proposal-print-section border-b border-slate-300 pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+            <div className="proposal-compact-company flex min-w-0 flex-1 gap-3">
               {proposalLogoSrc ? (
                 <img
                   src={proposalLogoSrc}
                   alt={b.companyName}
-                  className="block h-auto w-full max-w-[360px] object-contain object-left sm:max-w-[430px] print:max-w-[72mm] print:max-h-[36mm]"
+                  className="h-14 w-auto max-w-[200px] shrink-0 object-contain object-left sm:h-16 sm:max-w-[240px]"
                 />
-              ) : (
-                <div className="text-3xl font-black tracking-tight text-slate-900 print:text-2xl">
-                  {b.companyName}
-                </div>
-              )}
-
-              {sloganLine ? (
-                <p className="max-w-[430px] pl-1 text-base font-medium tracking-tight text-slate-700 sm:text-lg print:max-w-[62mm] print:pl-0 print:text-[9.5pt]">
-                  {sloganLine}
+              ) : null}
+              <div className="min-w-0 space-y-0.5 text-[11px] text-slate-700 sm:text-xs">
+                <p className="text-sm font-bold leading-tight text-slate-900 sm:text-base">{b.companyName}</p>
+                {sloganLine ? <p className="text-[10px] italic text-slate-500 sm:text-[11px]">{sloganLine}</p> : null}
+                <p>
+                  <span className="font-semibold text-slate-600">CNPJ: </span>
+                  {COMPANY_DOC_FALLBACK.taxId}
                 </p>
-              ) : null}
+                <p className="break-words">{COMPANY_DOC_FALLBACK.addressLine}</p>
+                <p>
+                  <span className="font-semibold text-slate-600">E-mail: </span>
+                  {COMPANY_DOC_FALLBACK.email}
+                </p>
+              </div>
             </div>
-            <div
-              className="proposal-client-hero-card proposal-client-card w-full max-w-full shrink-0 rounded-xl border border-slate-400 bg-slate-50/90 p-4 shadow-sm lg:max-w-[460px] xl:max-w-[500px]"
-            >
-              <h1
-                id={titleHeadingId}
-                className="text-2xl font-extrabold tracking-tight text-slate-900 md:text-3xl"
-                style={{ color: b.primaryColor }}
-              >
-                Proposta Comercial
-              </h1>
-              {titleLine ? <p className="mt-1 text-sm font-medium text-slate-600">{titleLine}</p> : null}
-              <dl className="mt-4 space-y-2 border-t border-slate-300 pt-4 text-sm">
-                <div className="flex justify-between gap-3">
-                  <dt className="font-semibold text-slate-600">Proposta</dt>
-                  <dd className="text-right font-semibold text-slate-900">{proposalRefLabel}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="font-semibold text-slate-600">Data de emissão</dt>
-                  <dd className="text-right text-slate-800">{issuedAt || "—"}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="font-semibold text-slate-600">Validade</dt>
-                  <dd className="text-right text-slate-800">
-                    {validityDays > 0 ? `${validityDays} dia(s)` : "—"}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="font-semibold text-slate-600">Responsável comercial</dt>
-                  <dd className="text-right text-slate-800">{responsible ?? "—"}</dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-          <div
-            className="proposal-client-hero-accent mt-6 h-1 w-full rounded-full print:mt-5"
-            style={{ backgroundColor: b.primaryColor }}
-            aria-hidden
-          />
-        </header>
-
-        {/* C — Cliente */}
-        <section className="proposal-client-section proposal-print-section mt-8 space-y-3">
-          <SectionTitle accentColor={b.primaryColor}>Cliente</SectionTitle>
-          <div className="proposal-client-card rounded-xl border border-slate-400 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm">
-            <p className="proposal-client-customer-name text-lg font-bold text-slate-900">{customerBlock.name}</p>
-            <dl className="proposal-client-customer-grid mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              {customerBlock.tax ? (
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">CNPJ / CPF</dt>
-                  <dd className="mt-0.5 font-medium text-slate-800">{customerBlock.tax}</dd>
-                </div>
-              ) : null}
-              {customerBlock.address ? (
-                <div className="sm:col-span-2">
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Endereço</dt>
-                  <dd className="mt-0.5 text-slate-800">{customerBlock.address}</dd>
-                </div>
-              ) : null}
-              {customerBlock.cityUf ? (
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Cidade / UF</dt>
-                  <dd className="mt-0.5 text-slate-800">{customerBlock.cityUf}</dd>
-                </div>
-              ) : null}
-              {customerBlock.zip ? (
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">CEP</dt>
-                  <dd className="mt-0.5 text-slate-800">{customerBlock.zip}</dd>
-                </div>
-              ) : null}
-            </dl>
-          </div>
-        </section>
-
-        {/* D — Condições comerciais */}
-        <section className="proposal-client-section proposal-print-section mt-8 space-y-3">
-          <SectionTitle accentColor={b.primaryColor}>Condições comerciais</SectionTitle>
-          <div className="proposal-client-card proposal-client-conditions-grid grid gap-4 rounded-xl border border-slate-400 bg-white p-5 text-sm shadow-sm sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Condição de pagamento</p>
-              <p className="mt-1 font-medium text-slate-900">{paymentTerms ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Forma de pagamento</p>
-              <p className="mt-1 font-medium text-slate-900">{paymentMethod ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Frete</p>
-              <p className="mt-1 font-medium text-slate-900">{freightLabel}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Prazo de entrega</p>
-              <p className="mt-1 font-medium text-slate-900">
-                {deliveryDays != null && Number.isFinite(Number(deliveryDays)) && Number(deliveryDays) > 0
-                  ? `${Number(deliveryDays)} dia(s)`
-                  : "—"}
+            <div className="proposal-compact-proposal-meta shrink-0 border-t border-slate-200 pt-2 text-[11px] sm:border-t-0 sm:border-l sm:pl-5 sm:pt-0 sm:text-xs">
+              <p className="text-sm font-extrabold tracking-tight text-slate-900 sm:text-base">
+                PROPOSTA: {cpHeading}
+              </p>
+              <p className="mt-1">
+                <span className="font-semibold text-slate-600">Data: </span>
+                {issuedAt || "—"}
+              </p>
+              <p className="mt-0.5">
+                <span className="font-semibold text-slate-600">Vendedor: </span>
+                {responsible ?? "—"}
               </p>
             </div>
-            <div className="sm:col-span-2 lg:col-span-2">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Local de entrega</p>
-              <p className="mt-1 font-medium text-slate-900">{deliveryLocation ?? "—"}</p>
+          </div>
+        </header>
+
+        {/* Dados do cliente */}
+        <section className="proposal-compact-section proposal-compact-client proposal-print-section mt-4">
+          <CompactSectionTitle>Dados do cliente</CompactSectionTitle>
+          {customerBlock?.name ? (
+            <div className="mt-2 border-y border-slate-200 py-2">
+              <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                <div>
+                  <p className="font-semibold text-slate-900">{customerBlock.name}</p>
+                  {customerBlock.trade && customerBlock.trade !== customerBlock.name ? (
+                    <p className="text-slate-600">{customerBlock.trade}</p>
+                  ) : null}
+                </div>
+                {customerBlock.phone ? (
+                  <div className="sm:text-right">
+                    <span className="font-semibold text-slate-600">Tel.: </span>
+                    {customerBlock.phone}
+                  </div>
+                ) : null}
+                {customerBlock.tax ? (
+                  <p>
+                    <span className="font-semibold text-slate-600">CNPJ/CPF: </span>
+                    {customerBlock.tax}
+                  </p>
+                ) : null}
+                {customerBlock.stateTax ? (
+                  <p className="sm:text-right">
+                    <span className="font-semibold text-slate-600">Inscr. estadual: </span>
+                    {customerBlock.stateTax}
+                  </p>
+                ) : null}
+                {customerBlock.contact ? (
+                  <p className="sm:col-span-2">
+                    <span className="font-semibold text-slate-600">Contato: </span>
+                    {customerBlock.contact}
+                  </p>
+                ) : null}
+                {customerBlock.addr ? (
+                  <p className="break-words sm:col-span-2">
+                    <span className="font-semibold text-slate-600">Endereço: </span>
+                    {customerBlock.addr}
+                  </p>
+                ) : null}
+                {customerBlock.cityUf || customerBlock.zip ? (
+                  <p className="sm:col-span-2">
+                    {customerBlock.cityUf ? (
+                      <>
+                        <span className="font-semibold text-slate-600">Município/UF: </span>
+                        {customerBlock.cityUf}
+                      </>
+                    ) : null}
+                    {customerBlock.cityUf && customerBlock.zip ? " · " : null}
+                    {customerBlock.zip ? (
+                      <>
+                        <span className="font-semibold text-slate-600">CEP: </span>
+                        {customerBlock.zip}
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Validade da proposta</p>
-              <p className="mt-1 font-medium text-slate-900">{validityDays > 0 ? `${validityDays} dia(s)` : "—"}</p>
+          ) : (
+            <p className="mt-2 border-y border-slate-200 py-2 text-slate-500">Cliente não informado.</p>
+          )}
+        </section>
+
+        {/* Totais antes dos itens */}
+        <section className="proposal-compact-section proposal-compact-totals proposal-print-section mt-4">
+          <CompactSectionTitle>Totais da proposta</CompactSectionTitle>
+          <div className="proposal-compact-totals-grid mt-2 border border-slate-200 bg-slate-50/80 text-[11px] sm:text-xs">
+            <div className="grid grid-cols-[1fr_auto] border-b border-slate-200 px-2 py-1 sm:px-3 sm:py-1.5">
+              <span className="text-slate-600">Produto / mercadorias</span>
+              <span className="font-mono font-semibold tabular-nums text-slate-900">{formatMoney(totals.totalGross)}</span>
+            </div>
+            <div className="grid grid-cols-[1fr_auto] border-b border-slate-200 px-2 py-1 sm:px-3 sm:py-1.5">
+              <span className="text-slate-600">Desconto</span>
+              <span className="font-mono font-semibold tabular-nums text-red-700">
+                −{formatMoney(totals.totalDiscount)}
+              </span>
+            </div>
+            <div className="grid grid-cols-[1fr_auto] border-b border-slate-200 px-2 py-1 sm:px-3 sm:py-1.5">
+              <span className="text-slate-600">Frete</span>
+              <span className="font-mono font-semibold tabular-nums text-slate-900">{formatMoney(totalFreight)}</span>
+            </div>
+            <div
+              className="grid grid-cols-[1fr_auto] px-2 py-1.5 sm:px-3 sm:py-2"
+              style={{ backgroundColor: `${b.primaryColor}14` }}
+            >
+              <span className="font-bold text-slate-900">Total</span>
+              <span className="font-mono text-sm font-extrabold tabular-nums text-slate-900 sm:text-base">
+                {formatMoney(totals.totalNet)}
+              </span>
             </div>
           </div>
+          <p className="mt-1 text-[10px] text-slate-500">Tributos (ICMS, PIS, COFINS, etc.): não detalhados neste documento.</p>
         </section>
 
-        {/* B — Resumo da proposta */}
-        <section className="proposal-client-summary proposal-client-section proposal-print-section mt-10 space-y-4">
-          <SectionTitle accentColor={b.primaryColor}>Resumo da proposta</SectionTitle>
-          <p className="proposal-client-summary-lead max-w-3xl text-sm leading-relaxed text-slate-700">
-            Esta proposta contempla o fornecimento dos itens listados abaixo, conforme condições comerciais acordadas entre
-            as partes. Os valores apresentados consideram as quantidades, prazos e condições descritas neste documento.
-          </p>
-          <div className="proposal-client-summary-grid grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-            <InfoCard label="Itens distintos" value={String(summaryMetrics.distinctItems)} />
-            <InfoCard label="Total de unidades" value={summaryMetrics.totalUnits} />
-            <InfoCard label="Valor total" value={summaryMetrics.totalValue} />
-            <InfoCard label="Validade" value={summaryMetrics.validityLabel} />
-            <InfoCard label="Frete" value={summaryMetrics.freight} />
-            <InfoCard label="Prazo de entrega" value={summaryMetrics.deliveryLabel} />
-          </div>
-        </section>
-
-        {/* J — Sobre a empresa */}
-        <section className="proposal-client-about proposal-client-section proposal-print-section mt-8 space-y-3">
-          <SectionTitle accentColor={b.primaryColor}>Sobre a {b.companyName}</SectionTitle>
-          <div className="proposal-client-card rounded-lg border border-slate-400 bg-slate-50/60 p-4 text-sm leading-relaxed text-slate-700">
-            A {b.companyName} atua no desenvolvimento e fornecimento de soluções em plásticos, com foco em qualidade,
-            padronização e atendimento às necessidades de cada cliente.
-          </div>
-        </section>
-
-        {/* E — Itens */}
-        <section className="proposal-print-items-section proposal-client-section mt-10">
-          <SectionTitle accentColor={b.primaryColor} className="mb-4">
-            Itens
-          </SectionTitle>
-          <div className="proposal-print-table-wrap overflow-x-auto rounded-xl border border-slate-400 print:overflow-visible">
-            <table className="proposal-client-items-table w-full min-w-0 table-auto border-collapse text-sm md:min-w-[720px] print:table-fixed">
+        {/* Itens — tabela principal */}
+        <section className="proposal-print-items-section proposal-compact-section proposal-print-section mt-5">
+          <CompactSectionTitle>Itens da proposta</CompactSectionTitle>
+          <div className="proposal-print-table-wrap mt-2 overflow-visible">
+            <table className="proposal-compact-table proposal-client-items-table w-full border-collapse border border-slate-300 text-left text-[10px] sm:text-[11px]">
               <thead>
-                <tr
-                  className="border-b-2 text-left text-slate-800"
-                  style={{ borderBottomColor: b.primaryColor, backgroundColor: "rgb(241 245 249)" }}
-                >
-                  <th className="proposal-col-item px-3 py-3 text-xs font-bold uppercase tracking-wide">Item</th>
-                  <th className="proposal-col-code px-3 py-3 text-xs font-bold uppercase tracking-wide">Código</th>
-                  <th className="proposal-col-description min-w-[140px] px-3 py-3 text-xs font-bold uppercase tracking-wide">
-                    Descrição
-                  </th>
-                  <th className="proposal-col-qty px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">Qtd.</th>
-                  <th className="proposal-col-unit px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">
-                    Valor unit.
-                  </th>
-                  <th className="proposal-col-discount px-3 py-3 text-right text-xs font-bold uppercase tracking-wide text-slate-600">
-                    Desc. %
-                  </th>
-                  <th className="proposal-col-total px-3 py-3 text-right text-xs font-bold uppercase tracking-wide">
-                    Valor total
-                  </th>
+                <tr className="border-b border-slate-300 bg-slate-100 text-[10px] font-bold uppercase tracking-wide text-slate-800 sm:text-[11px]">
+                  <th className="border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Item</th>
+                  <th className="border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Produto</th>
+                  <th className="border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Descrição</th>
+                  <th className="border-r border-slate-200 px-1.5 py-1.5 text-center sm:px-2">Un.</th>
+                  <th className="border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Qtde</th>
+                  <th className="border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Preço un. (R$)</th>
+                  <th className="border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Subtotal (R$)</th>
+                  <th className="px-1.5 py-1.5 text-right sm:px-2">Prazo entrega</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-3 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={8} className="px-2 py-6 text-center text-slate-500">
                       Nenhum item nesta proposta.
                     </td>
                   </tr>
@@ -392,34 +318,39 @@ export function ProposalClientDocument({
                 {items.map((item, idx) => {
                   const qty = safeNum(item.quantity);
                   const unit = safeNum(item.negotiatedPrice);
-                  const discPerc = safeNum(item.discountPerc);
                   const lineTotal = qty * unit - safeNum(item.discountValue);
                   const sku = nonEmpty(item.Product?.sku) ?? "—";
                   const desc = nonEmpty(item.Product?.name) ?? "—";
-                  const stripe = idx % 2 === 1 ? "bg-slate-50/70" : "bg-white";
+                  const unitLabel = nonEmpty(item.unit) ?? DEFAULT_ITEM_UNIT;
+                  const stripe = idx % 2 === 1 ? "bg-slate-50/90" : "bg-white";
                   return (
                     <tr
                       key={item.id ?? `row-${idx}`}
-                      className={`proposal-print-table-row border-b border-slate-200 last:border-0 ${stripe}`}
+                      className={`proposal-print-table-row border-b border-slate-200 ${stripe}`}
                     >
-                      <td className="proposal-col-item px-3 py-2.5 align-middle text-slate-600">{idx + 1}</td>
-                      <td className="proposal-col-code px-3 py-2.5 align-middle font-mono text-xs font-semibold text-slate-800">
+                      <td className="border-r border-slate-100 px-1.5 py-1 font-mono tabular-nums text-slate-600 sm:px-2 sm:py-1.5">
+                        {formatItemLineNo(idx)}
+                      </td>
+                      <td className="border-r border-slate-100 px-1.5 py-1 font-mono text-[10px] font-semibold text-slate-800 sm:px-2 sm:py-1.5 sm:text-[11px]">
                         {sku}
                       </td>
-                      <td className="proposal-col-description px-3 py-2.5 align-middle pr-4 leading-snug text-slate-800">
+                      <td className="max-w-[min(40vw,220px)] border-r border-slate-100 px-1.5 py-1 break-words text-slate-800 print:max-w-none sm:max-w-none sm:px-2 sm:py-1.5">
                         {desc}
                       </td>
-                      <td className="proposal-col-qty px-3 py-2.5 align-middle text-right font-mono tabular-nums text-slate-700">
+                      <td className="border-r border-slate-100 px-1.5 py-1 text-center text-slate-700 sm:px-2 sm:py-1.5">
+                        {unitLabel}
+                      </td>
+                      <td className="border-r border-slate-100 px-1.5 py-1 text-right font-mono tabular-nums text-slate-700 sm:px-2 sm:py-1.5">
                         {formatQty(qty)}
                       </td>
-                      <td className="proposal-col-unit px-3 py-2.5 align-middle text-right font-mono tabular-nums text-slate-700">
+                      <td className="border-r border-slate-100 px-1.5 py-1 text-right font-mono tabular-nums text-slate-800 sm:px-2 sm:py-1.5">
                         {formatMoney(unit)}
                       </td>
-                      <td className="proposal-col-discount px-3 py-2.5 align-middle text-right font-mono text-xs tabular-nums text-slate-500">
-                        {formatPercent(discPerc)}
-                      </td>
-                      <td className="proposal-col-total px-3 py-2.5 align-middle text-right font-mono text-sm font-bold tabular-nums text-slate-900">
+                      <td className="border-r border-slate-100 px-1.5 py-1 text-right font-mono text-[11px] font-semibold tabular-nums text-slate-900 sm:px-2 sm:py-1.5 sm:text-xs">
                         {formatMoney(lineTotal)}
+                      </td>
+                      <td className="px-1.5 py-1 text-right text-slate-700 sm:px-2 sm:py-1.5">
+                        {deliveryLine ?? "—"}
                       </td>
                     </tr>
                   );
@@ -429,96 +360,56 @@ export function ProposalClientDocument({
           </div>
         </section>
 
-        {/* F — Resumo financeiro */}
-        <section className="proposal-client-financial-summary proposal-print-section mt-10 space-y-3">
-          <SectionTitle accentColor={b.primaryColor}>Resumo financeiro</SectionTitle>
-          <div className="proposal-client-card ml-auto max-w-full rounded-xl border border-slate-400 bg-slate-50/80 p-5 shadow-sm md:max-w-md print:max-w-sm">
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between gap-4 border-b border-slate-300 pb-2">
-                <span className="text-slate-600">Subtotal (valor bruto)</span>
-                <span className="font-mono font-semibold tabular-nums text-slate-900">{formatMoney(totals.totalGross)}</span>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-300 pb-2">
-                <span className="text-slate-600">Descontos concedidos</span>
-                <span className="font-mono font-semibold tabular-nums text-red-700">−{formatMoney(totals.totalDiscount)}</span>
-              </div>
-              <div
-                className="flex flex-col gap-1 rounded-lg px-3 py-4 sm:flex-row sm:items-center sm:justify-between"
-                style={{ backgroundColor: `${b.primaryColor}12` }}
-              >
-                <span className="text-base font-bold text-slate-900">Valor total da proposta</span>
-                <span className="text-2xl font-extrabold tabular-nums tracking-tight" style={{ color: b.secondaryColor }}>
-                  {formatMoney(totals.totalNet)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* G — Observações */}
-        <section className="proposal-client-section proposal-print-section mt-10 space-y-3">
-          <SectionTitle accentColor={b.primaryColor}>Observações</SectionTitle>
-          <div className="proposal-client-observations proposal-client-card rounded-xl border border-slate-400 bg-white p-5 text-sm shadow-sm">
-            {notes ? <p className="whitespace-pre-wrap leading-relaxed text-slate-800">{notes}</p> : <p className="text-slate-500">Sem observações adicionais.</p>}
-            <ul className="proposal-client-observations-bullets mt-4 list-disc space-y-1.5 border-t border-slate-300 pt-4 pl-5 text-xs leading-relaxed text-slate-600">
-              <li>Valores sujeitos às condições comerciais descritas nesta proposta.</li>
-              <li>Proposta válida pelo prazo informado.</li>
-              <li>Alterações de quantidade, prazo, frete ou escopo poderão exigir revisão dos valores.</li>
-            </ul>
-          </div>
-        </section>
-
-        {/* H — Condições gerais */}
-        <section className="proposal-client-section proposal-print-section mt-10 space-y-3">
-          <SectionTitle accentColor={b.primaryColor}>Condições gerais</SectionTitle>
-          <div className="proposal-client-general-conditions proposal-client-card rounded-xl border border-slate-400 bg-white p-5 text-sm leading-relaxed text-slate-700 shadow-sm">
-            <ul className="proposal-client-general-conditions-list list-disc space-y-2 pl-5">
-              <li>Esta proposta é válida pelo prazo informado neste documento.</li>
-              <li>Os valores apresentados consideram as quantidades e condições comerciais descritas nesta proposta.</li>
-              <li>Alterações de quantidade, prazo, frete ou escopo poderão exigir revisão dos valores.</li>
-              <li>O início do atendimento do pedido está condicionado à aprovação formal desta proposta.</li>
+        {/* Condições comerciais — final */}
+        <section className="proposal-compact-section proposal-compact-commercial-terms proposal-print-section mt-5">
+          <CompactSectionTitle>Condições comerciais</CompactSectionTitle>
+          <ul className="mt-2 space-y-1 border-t border-slate-200 pt-2 text-[11px] text-slate-800 sm:text-xs">
+            <li>
+              <span className="font-semibold text-slate-600">Pagamento: </span>
+              {[paymentTerms, paymentMethod].filter(Boolean).join(" · ") || "—"}
+            </li>
+            <li>
+              <span className="font-semibold text-slate-600">Validade: </span>
+              {validityDays > 0 ? `${validityDays} dia(s)` : "—"}
+            </li>
+            <li>
+              <span className="font-semibold text-slate-600">Frete: </span>
+              {freightLabel}
+            </li>
+            <li>
+              <span className="font-semibold text-slate-600">Prazo de entrega: </span>
+              {deliveryLine ?? "—"}
+            </li>
+            {deliveryLocation ? (
               <li>
-                Salvo condição específica, tributos, frete e demais condições seguem as regras comerciais indicadas neste
-                documento.
+                <span className="font-semibold text-slate-600">Local de entrega: </span>
+                {deliveryLocation}
               </li>
-            </ul>
+            ) : null}
+          </ul>
+        </section>
+
+        {/* Observações */}
+        <section className="proposal-compact-section proposal-compact-observations proposal-print-section mt-5">
+          <CompactSectionTitle>Observações sobre a proposta</CompactSectionTitle>
+          <div className="mt-2 border-t border-slate-200 pt-2 text-[11px] text-slate-800 sm:text-xs">
+            {notes ? (
+              <p className="whitespace-pre-wrap break-words">{notes}</p>
+            ) : (
+              <p className="text-slate-500">Sem observações adicionais.</p>
+            )}
           </div>
         </section>
 
-        {/* I — Aceite */}
-        <section className="proposal-client-acceptance proposal-print-section mt-10 space-y-4">
-          <SectionTitle accentColor={b.primaryColor}>Aceite da proposta</SectionTitle>
-          <div className="proposal-client-card rounded-xl border border-slate-400 bg-white p-6 shadow-sm">
-            <p className="text-sm leading-relaxed text-slate-800">
-              Ao aprovar esta proposta, o cliente declara estar de acordo com os itens, valores e condições comerciais
-              apresentados.
-            </p>
-            <div className="signature-lines mt-8 space-y-5 text-sm print:mt-4">
-              <div>
-                <p className="font-semibold text-slate-700">Nome do responsável</p>
-                <div className="mt-2 border-b border-slate-500 pb-1 print:mt-1 print:pb-px">&nbsp;</div>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-700">Assinatura</p>
-                <div className="mt-2 border-b border-slate-500 pb-1 print:mt-1 print:pb-px">&nbsp;</div>
-              </div>
-              <div className="max-w-xs">
-                <p className="font-semibold text-slate-700">Data</p>
-                <div className="mt-2 border-b border-slate-500 pb-1 text-slate-400 print:mt-1 print:pb-px">____/____/________</div>
-              </div>
-            </div>
-            <div className="mt-8 border-t border-slate-300 pt-4 text-sm text-slate-700">
-              <p>
-                <span className="font-semibold text-slate-600">Responsável comercial: </span>
-                {responsible ?? "—"}
-              </p>
-              <p className="mt-1">
-                <span className="font-semibold text-slate-600">Empresa: </span>
-                {companyIssuer ?? b.companyName}
-              </p>
-            </div>
+        {/* Rodapé */}
+        <footer className="proposal-compact-footer proposal-print-section mt-6 flex flex-col justify-between gap-1 border-t border-slate-300 pt-2 text-[10px] text-slate-600 sm:flex-row sm:text-[11px]">
+          <div>
+            <span className="font-semibold text-slate-700">{responsible ?? "—"}</span>
           </div>
-        </section>
+          <div className="sm:text-right">
+            <span>{issuedAt || "—"}</span>
+          </div>
+        </footer>
       </div>
     </article>
   );
