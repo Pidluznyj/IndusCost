@@ -20,6 +20,7 @@ import {
   BookOpen,
   ClipboardList,
   Wrench,
+  Contact,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
@@ -41,6 +42,7 @@ export const Sidebar = () => {
     { id: "proposals", icon: FileText, label: "Propostas" },
     { id: "sales-orders", icon: ClipboardList, label: "Pedidos de venda" },
     { id: "customers", icon: Users, label: "Clientes" },
+    { id: "crm-commercial", icon: Contact, label: "CRM Comercial" },
     { id: "simulations", icon: Layers, label: "Simulações" },
     { id: "reports", icon: FileText, label: "Relatórios" },
     { id: "guide", icon: BookOpen, label: "Guia do Sistema" },

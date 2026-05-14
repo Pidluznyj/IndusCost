@@ -13,6 +13,7 @@ import { SimulationModule } from "./components/SimulationModule";
 import { SettingsModule } from "./components/SettingsModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
+import { CrmModule } from "./components/CrmModule";
 import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { PurchaseModule } from "./components/PurchaseModule";
@@ -515,6 +516,17 @@ export default function App() {
               headerActions={<ModuleIndicatorsButton to="/customers/indicators" />}
             >
               <CustomerModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="crm-commercial"
+          element={
+            <ModulePageShell
+              title="CRM Comercial"
+              description="Gestão de relacionamento e follow-up de clientes."
+            >
+              <CrmModule />
             </ModulePageShell>
           }
         />
