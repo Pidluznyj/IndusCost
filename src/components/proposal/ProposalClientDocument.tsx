@@ -45,7 +45,12 @@ const COMPANY_DOC_FALLBACK = {
 } as const;
 
 /** Unidade comercial quando o item não traz unidade — apenas rótulo visual. */
-const DEFAULT_ITEM_UNIT = "PC";
+function formatProposalUnit(unit?: string | null): string {
+  const normalized = String(unit ?? "").trim().toUpperCase();
+  if (!normalized) return "PC";
+  if (["PEÇA", "PECA", "PÇ", "PCA"].includes(normalized)) return "PC";
+  return normalized;
+}
 
 export type ProposalClientDocumentTotals = {
   totalGross: number;
@@ -146,7 +151,10 @@ export function ProposalClientDocument({
       : "Rascunho";
 
   return (
-    <article className="proposal-print-document proposal-compact-document proposal-print-sheet mx-auto w-full max-w-[1180px] border border-slate-300 bg-white text-slate-800 shadow-sm print:max-w-none print:border-0 print:shadow-none">
+    <article
+      lang="pt-BR"
+      className="proposal-print-document proposal-compact-document proposal-print-sheet mx-auto w-full max-w-[1180px] border border-slate-300 bg-white text-slate-800 shadow-sm print:max-w-none print:border-0 print:shadow-none"
+    >
       <div className="proposal-client-document-root proposal-print-document-inner p-4 text-xs leading-snug md:p-5 md:text-[13px] md:leading-normal print:p-3">
         <h1 id={titleHeadingId} className="sr-only">
           Proposta comercial {cpHeading !== "Rascunho" ? cpHeading : ""}
@@ -160,7 +168,7 @@ export function ProposalClientDocument({
                 <img
                   src={proposalLogoSrc}
                   alt={b.companyName}
-                  className="h-14 w-auto max-w-[200px] shrink-0 object-contain object-left sm:h-16 sm:max-w-[240px]"
+                  className="h-16 w-auto max-w-[240px] shrink-0 object-contain object-left sm:h-[4.5rem] sm:max-w-[280px] md:max-w-[300px]"
                 />
               ) : null}
               <div className="min-w-0 space-y-0.5 text-[11px] text-slate-700 sm:text-xs">
@@ -297,14 +305,14 @@ export function ProposalClientDocument({
             <table className="proposal-compact-table proposal-client-items-table w-full border-collapse border border-slate-300 text-left text-[10px] sm:text-[11px]">
               <thead>
                 <tr className="border-b border-slate-300 bg-slate-100 text-[10px] font-bold uppercase tracking-wide text-slate-800 sm:text-[11px]">
-                  <th className="border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Item</th>
-                  <th className="border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Produto</th>
-                  <th className="border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Descrição</th>
-                  <th className="border-r border-slate-200 px-1.5 py-1.5 text-center sm:px-2">Un.</th>
-                  <th className="border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Qtde</th>
-                  <th className="border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Preço un. (R$)</th>
-                  <th className="border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Subtotal (R$)</th>
-                  <th className="px-1.5 py-1.5 text-right sm:px-2">Prazo entrega</th>
+                  <th className="proposal-col-item border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Item</th>
+                  <th className="proposal-col-code border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Produto</th>
+                  <th className="proposal-col-description border-r border-slate-200 px-1.5 py-1.5 sm:px-2">Descrição</th>
+                  <th className="proposal-col-unit border-r border-slate-200 px-1.5 py-1.5 text-center sm:px-2">Un.</th>
+                  <th className="proposal-col-qty border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Qtde</th>
+                  <th className="proposal-col-unit-price border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Preço</th>
+                  <th className="proposal-col-total border-r border-slate-200 px-1.5 py-1.5 text-right sm:px-2">Subtotal</th>
+                  <th className="proposal-col-delivery px-1.5 py-1.5 text-right sm:px-2">Prazo</th>
                 </tr>
               </thead>
               <tbody>
@@ -321,35 +329,35 @@ export function ProposalClientDocument({
                   const lineTotal = qty * unit - safeNum(item.discountValue);
                   const sku = nonEmpty(item.Product?.sku) ?? "—";
                   const desc = nonEmpty(item.Product?.name) ?? "—";
-                  const unitLabel = nonEmpty(item.unit) ?? DEFAULT_ITEM_UNIT;
+                  const unitLabel = formatProposalUnit(item.unit);
                   const stripe = idx % 2 === 1 ? "bg-slate-50/90" : "bg-white";
                   return (
                     <tr
                       key={item.id ?? `row-${idx}`}
                       className={`proposal-print-table-row border-b border-slate-200 ${stripe}`}
                     >
-                      <td className="border-r border-slate-100 px-1.5 py-1 font-mono tabular-nums text-slate-600 sm:px-2 sm:py-1.5">
+                      <td className="proposal-col-item proposal-cell-item border-r border-slate-100 px-1.5 py-1 font-mono tabular-nums text-slate-600 sm:px-2 sm:py-1.5">
                         {formatItemLineNo(idx)}
                       </td>
-                      <td className="border-r border-slate-100 px-1.5 py-1 font-mono text-[10px] font-semibold text-slate-800 sm:px-2 sm:py-1.5 sm:text-[11px]">
+                      <td className="proposal-col-code proposal-cell-code border-r border-slate-100 px-1.5 py-1 font-mono text-[10px] font-semibold text-slate-800 sm:px-2 sm:py-1.5 sm:text-[11px]">
                         {sku}
                       </td>
-                      <td className="max-w-[min(40vw,220px)] border-r border-slate-100 px-1.5 py-1 break-words text-slate-800 print:max-w-none sm:max-w-none sm:px-2 sm:py-1.5">
+                      <td className="proposal-col-description proposal-cell-description max-w-[min(40vw,220px)] border-r border-slate-100 px-1.5 py-1 break-words text-slate-800 print:max-w-none sm:max-w-none sm:px-2 sm:py-1.5">
                         {desc}
                       </td>
-                      <td className="border-r border-slate-100 px-1.5 py-1 text-center text-slate-700 sm:px-2 sm:py-1.5">
+                      <td className="proposal-col-unit proposal-cell-unit border-r border-slate-100 px-1.5 py-1 text-center text-slate-700 sm:px-2 sm:py-1.5">
                         {unitLabel}
                       </td>
-                      <td className="border-r border-slate-100 px-1.5 py-1 text-right font-mono tabular-nums text-slate-700 sm:px-2 sm:py-1.5">
+                      <td className="proposal-col-qty proposal-cell-qty border-r border-slate-100 px-1.5 py-1 text-right font-mono tabular-nums text-slate-700 sm:px-2 sm:py-1.5">
                         {formatQty(qty)}
                       </td>
-                      <td className="border-r border-slate-100 px-1.5 py-1 text-right font-mono tabular-nums text-slate-800 sm:px-2 sm:py-1.5">
+                      <td className="proposal-col-unit-price proposal-cell-money border-r border-slate-100 px-1.5 py-1 text-right font-mono tabular-nums text-slate-800 sm:px-2 sm:py-1.5">
                         {formatMoney(unit)}
                       </td>
-                      <td className="border-r border-slate-100 px-1.5 py-1 text-right font-mono text-[11px] font-semibold tabular-nums text-slate-900 sm:px-2 sm:py-1.5 sm:text-xs">
+                      <td className="proposal-col-total proposal-cell-money border-r border-slate-100 px-1.5 py-1 text-right font-mono text-[11px] font-semibold tabular-nums text-slate-900 sm:px-2 sm:py-1.5 sm:text-xs">
                         {formatMoney(lineTotal)}
                       </td>
-                      <td className="px-1.5 py-1 text-right text-slate-700 sm:px-2 sm:py-1.5">
+                      <td className="proposal-col-delivery proposal-cell-delivery px-1.5 py-1 text-right text-slate-700 sm:px-2 sm:py-1.5">
                         {deliveryLine ?? "—"}
                       </td>
                     </tr>

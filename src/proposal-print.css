@@ -132,6 +132,103 @@
     page-break-inside: auto !important;
   }
 
+  /* Espaçamento entre blocos (só impressão; tela mantém Tailwind) */
+  .proposal-compact-document .proposal-compact-section {
+    margin-top: 3mm !important;
+  }
+
+  .proposal-compact-document .proposal-compact-section-title {
+    margin-bottom: 1.5mm !important;
+    padding-top: 1.5mm !important;
+  }
+
+  .proposal-compact-document .proposal-compact-totals {
+    margin-bottom: 3mm !important;
+  }
+
+  /* Logo do cabeçalho um pouco maior no PDF */
+  .proposal-compact-company img {
+    max-height: 24mm !important;
+    max-width: 58mm !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+  }
+
+  /* Tabela: mais densa, mais itens por página */
+  .proposal-compact-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    font-size: 7.2pt !important;
+    line-height: 1.08 !important;
+  }
+
+  .proposal-compact-table th,
+  .proposal-compact-table td {
+    padding: 1.1mm 1.2mm !important;
+    vertical-align: middle !important;
+  }
+
+  .proposal-compact-table th {
+    font-size: 6.8pt !important;
+    line-height: 1.05 !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  .proposal-compact-table td {
+    line-height: 1.08 !important;
+  }
+
+  .proposal-compact-table .proposal-col-item {
+    width: 11mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-code {
+    width: 18mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-unit {
+    width: 9mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-qty {
+    width: 11mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-unit-price {
+    width: 20mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-total {
+    width: 22mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-delivery {
+    width: 16mm !important;
+  }
+
+  .proposal-compact-table .proposal-col-description {
+    width: auto !important;
+  }
+
+  .proposal-compact-table .proposal-cell-item,
+  .proposal-compact-table .proposal-cell-code,
+  .proposal-compact-table .proposal-cell-unit,
+  .proposal-compact-table .proposal-cell-qty,
+  .proposal-compact-table .proposal-cell-money,
+  .proposal-compact-table .proposal-cell-delivery {
+    white-space: nowrap !important;
+  }
+
+  .proposal-compact-table .proposal-cell-description {
+    font-size: 7.2pt !important;
+    line-height: 1.08 !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+    hyphens: auto !important;
+    white-space: normal !important;
+  }
+
   .proposal-print-break {
     break-inside: avoid;
     page-break-inside: avoid;
