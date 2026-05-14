@@ -198,25 +198,21 @@ export function ProposalClientDocument({
         {/* A — Cabeçalho */}
         <header className="proposal-client-hero proposal-print-section pb-6 print:pb-0">
           <div className="proposal-client-hero-row flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="proposal-client-hero-logo min-w-0 flex-1">
+            <div className="proposal-client-hero-logo flex min-h-[180px] min-w-0 flex-1 flex-col items-start justify-center gap-5 sm:min-h-[210px] print:min-h-[42mm] print:gap-2">
               {proposalLogoSrc ? (
                 <img
                   src={proposalLogoSrc}
                   alt={b.companyName}
-                  className="max-h-[100px] w-auto max-w-[200px] object-contain object-left sm:max-h-[112px] sm:max-w-[220px]"
+                  className="block h-auto w-full max-w-[360px] object-contain object-left sm:max-w-[430px] print:max-w-[62mm] print:max-h-[28mm]"
                 />
               ) : (
-                <p
-                  className="text-lg font-bold tracking-tight text-slate-900"
-                  style={{ color: b.primaryColor }}
-                >
+                <div className="text-3xl font-black tracking-tight text-slate-900 print:text-2xl">
                   {b.companyName}
-                </p>
+                </div>
               )}
-              {proposalLogoSrc && sloganLine ? (
-                <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-600">{sloganLine}</p>
-              ) : !proposalLogoSrc && sloganLine ? (
-                <p className="mt-1 max-w-md text-sm leading-relaxed text-slate-600">{sloganLine}</p>
+
+              {sloganLine ? (
+                <p className="max-w-[420px] text-sm text-slate-700 print:text-[9pt]">{sloganLine}</p>
               ) : null}
             </div>
             <div
