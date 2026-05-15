@@ -33,6 +33,10 @@ import {
   Shield,
   ArrowRight,
   ListTodo,
+  Info,
+  TrendingUp,
+  ShoppingCart,
+  FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -97,6 +101,73 @@ type CrmDashboardBasic = {
   customersWithoutContactLast30Days: number;
   overdueFollowUps: number;
   upcomingFollowUpsNext7Days: number;
+};
+
+/** GET /api/crm/customers/:customerId/commercial-intelligence (Fase 1H-B). */
+type CommercialIntelSignal = {
+  type: "RISK" | "OPPORTUNITY" | "INFO" | string;
+  severity: "LOW" | "MEDIUM" | "HIGH" | string;
+  title: string;
+  description: string;
+};
+
+type CommercialIntelOrderLite = {
+  id: string;
+  orderCode: string | null;
+  issueDate: string | null;
+  status: string | null;
+  totalNetValue: number;
+};
+
+type CommercialIntelProposalLite = {
+  id: string;
+  number: number;
+  title: string | null;
+  status: string;
+  totalNetValue: number;
+  createdAt: string;
+  updatedAt: string;
+  responsible: string | null;
+};
+
+type CommercialIntelProposalNoFollowUp = Omit<
+  CommercialIntelProposalLite,
+  "createdAt" | "responsible"
+> & {
+  updatedAt: string;
+  daysWithoutFollowUp: number;
+};
+
+type CommercialIntelResponse = {
+  customer: {
+    id: string;
+    displayName: string;
+    taxId: string;
+  };
+  summary: {
+    hasPurchaseHistory: boolean;
+    daysSinceLastPurchase: number | null;
+    hasOpenProposals: boolean;
+    hasProposalWithoutFollowUp: boolean;
+    riskLevel: "LOW" | "MEDIUM" | "HIGH" | string;
+    nextSuggestedAction: string;
+  };
+  orders: {
+    lastOrder: CommercialIntelOrderLite | null;
+    lastOrders: CommercialIntelOrderLite[];
+    totalPurchasedLast12Months: number;
+    ordersLast12MonthsCount: number;
+  };
+  proposals: {
+    lastProposal: CommercialIntelProposalLite | null;
+    latestProposals: CommercialIntelProposalLite[];
+    openProposalsCount: number;
+    openProposalsValue: number;
+    latestOpenProposals: CommercialIntelProposalLite[];
+    proposalsWithoutFollowUpCount: number;
+    proposalsWithoutFollowUp: CommercialIntelProposalNoFollowUp[];
+  };
+  signals: CommercialIntelSignal[];
 };
 
 type ActivitiesResponse = { activities: CrmActivity[] };
@@ -381,6 +452,46 @@ function formatDateShortPt(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function formatIntelCurrency(value: unknown): string {
+  const n = typeof value === "number" ? value : Number(value ?? 0);
+  if (!Number.isFinite(n)) {
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(0);
+  }
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+}
+
+/** Texto específico do KPI “dias desde última compra” na inteligência (0 = “0 dias”). */
+function formatIntelDaysSinceLastPurchase(value: number | null): string {
+  if (value === null) return "—";
+  if (!Number.isFinite(value)) return "—";
+  if (value === 0) return "0 dias";
+  if (value === 1) return "1 dia";
+  return `${value} dias`;
+}
+
+function formatCommercialStatusLabel(raw: string | null | undefined): string {
+  if (raw === null || raw === undefined || raw === "") return "—";
+  const u = String(raw).trim();
+  const proposalLabels: Record<string, string> = {
+    DRAFT: "Rascunho",
+    ANALYSIS: "Em análise",
+    SENT: "Enviada",
+    APPROVED: "Aprovada",
+    REJECTED: "Rejeitada",
+    EXPIRED: "Expirada",
+    CANCELED: "Cancelada",
+    CANCELLED: "Cancelada",
+  };
+  const orderLabels: Record<string, string> = {
+    DRAFT: "Rascunho",
+    READY_TO_SEND: "Pronto para envio",
+    SENT_TO_NOMUS: "Enviado ao Nomus",
+    CANCELLED: "Cancelado",
+    ERROR: "Erro",
+  };
+  return proposalLabels[u] ?? orderLabels[u] ?? displayLine(u.replace(/_/g, " "));
 }
 
 function clampMessage(msg: string, max = 220): string {
@@ -846,6 +957,320 @@ const CommercialTimelineItem: React.FC<CommercialTimelineItemProps> = ({
   );
 };
 
+function intelRiskBadgeClasses(level: string): string {
+  const u = level.toUpperCase();
+  if (u === "HIGH") return "border-rose-300 bg-rose-50 text-rose-950";
+  if (u === "MEDIUM") return "border-amber-300 bg-amber-50 text-amber-950";
+  return "border-emerald-300 bg-emerald-50 text-emerald-950";
+}
+
+function intelRiskLevelLabelPt(level: string): string {
+  const u = level.toUpperCase();
+  if (u === "HIGH") return "Alto";
+  if (u === "MEDIUM") return "Médio";
+  return "Baixo";
+}
+
+function intelSeverityBadgeClasses(severity: string): string {
+  const u = severity.toUpperCase();
+  if (u === "HIGH") return "border-rose-200 bg-rose-50 text-rose-900";
+  if (u === "MEDIUM") return "border-amber-200 bg-amber-50 text-amber-900";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function intelSeverityLabelPt(severity: string): string {
+  const u = severity.toUpperCase();
+  if (u === "HIGH") return "Alta";
+  if (u === "MEDIUM") return "Média";
+  return "Baixa";
+}
+
+function intelSignalSurfaceClass(signal: CommercialIntelSignal): string {
+  const ty = String(signal.type ?? "").toUpperCase();
+  const sev = String(signal.severity ?? "").toUpperCase();
+  if (ty === "RISK" || sev === "HIGH") {
+    return "border-red-200/90 bg-gradient-to-br from-red-50/80 to-card";
+  }
+  if (ty === "OPPORTUNITY") {
+    return "border-emerald-200/90 bg-gradient-to-br from-emerald-50/50 to-card";
+  }
+  return "border-sky-100/90 bg-gradient-to-br from-sky-50/40 to-card";
+}
+
+function SignalRowIcon({ signal }: { signal: CommercialIntelSignal }) {
+  const ty = String(signal.type ?? "").toUpperCase();
+  if (ty === "OPPORTUNITY") {
+    return (
+      <div className="rounded-lg bg-emerald-100 p-2 text-emerald-800 shrink-0">
+        <TrendingUp className="h-4 w-4" />
+      </div>
+    );
+  }
+  if (ty === "INFO") {
+    return (
+      <div className="rounded-lg bg-sky-100 p-2 text-sky-800 shrink-0">
+        <Info className="h-4 w-4" />
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg bg-rose-100 p-2 text-rose-800 shrink-0">
+      <AlertTriangle className="h-4 w-4" />
+    </div>
+  );
+}
+
+function CommercialIntelBoard({
+  loading,
+  error,
+  intel,
+  onRetry,
+}: {
+  loading: boolean;
+  error: string | null;
+  intel: CommercialIntelResponse | null;
+  onRetry: () => void;
+}) {
+  if (loading) {
+    return (
+      <section
+        className="rounded-2xl border border-dashed border-primary/25 bg-gradient-to-br from-primary/5 to-card p-6 shadow-sm"
+        aria-busy="true"
+        aria-label="Inteligência comercial"
+      >
+        <div className="flex flex-col items-center justify-center gap-3 py-10 text-sm text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          Carregando inteligência comercial…
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="rounded-2xl border border-amber-200 bg-amber-50/90 p-6 shadow-sm space-y-4">
+        <div>
+          <h3 className="text-lg font-bold text-amber-950">Inteligência comercial</h3>
+          <p className="text-sm text-amber-900/85 mt-1">
+            Não foi possível carregar a inteligência comercial deste cliente.
+          </p>
+          <p className="text-xs text-amber-900/70 mt-2">{clampMessage(error, 180)}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex items-center justify-center rounded-xl border border-amber-400/60 bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-amber-100/50"
+        >
+          Tentar novamente
+        </button>
+      </section>
+    );
+  }
+
+  if (!intel) return null;
+
+  const { summary, orders, proposals: propBlock, signals } = intel;
+  const lastThreeOrders = orders.lastOrders.slice(0, 3);
+  const lastThreeProposals = propBlock.latestProposals.slice(0, 3);
+
+  return (
+    <section className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 via-card to-card p-6 sm:p-7 shadow-sm space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="rounded-xl bg-primary/12 p-2.5 text-primary shrink-0">
+            <FileSpreadsheet className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-bold text-foreground">Inteligência comercial</h3>
+            <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
+              Compras, propostas e sinais comerciais calculados a partir dos dados do IndusCost.
+            </p>
+          </div>
+        </div>
+        <span
+          className={cn(
+            "self-start rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide shrink-0",
+            intelRiskBadgeClasses(summary.riskLevel)
+          )}
+        >
+          Risco {intelRiskLevelLabelPt(summary.riskLevel)}
+        </span>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="rounded-xl border border-border/70 bg-card/80 p-4 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Última compra
+          </p>
+          {orders.lastOrder ? (
+            <div className="space-y-1 text-sm">
+              <p className="font-bold text-foreground">
+                {displayLine(orders.lastOrder.orderCode)}
+              </p>
+              <p className="text-muted-foreground">
+                {formatDateShortPt(orders.lastOrder.issueDate)}
+                <span className="text-foreground font-medium">
+                  {" "}
+                  · {formatIntelCurrency(orders.lastOrder.totalNetValue)}
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatCommercialStatusLabel(orders.lastOrder.status)}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm font-medium text-muted-foreground">Sem compra registrada</p>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-card/80 p-4 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Dias sem compra
+          </p>
+          <p className="text-lg font-bold tabular-nums text-foreground">
+            {formatIntelDaysSinceLastPurchase(summary.daysSinceLastPurchase)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-card/80 p-4 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Total comprado (12 meses)
+          </p>
+          <p className="text-lg font-bold text-foreground">{formatIntelCurrency(orders.totalPurchasedLast12Months)}</p>
+          <p className="text-xs text-muted-foreground">
+            {orders.ordersLast12MonthsCount} pedido(s) no período
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-card/80 p-4 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Propostas abertas
+          </p>
+          <p className="text-lg font-bold tabular-nums text-foreground">{propBlock.openProposalsCount}</p>
+          <p className="text-sm text-muted-foreground">
+            Valor total aberto:{" "}
+            <span className="font-semibold text-foreground">{formatIntelCurrency(propBlock.openProposalsValue)}</span>
+          </p>
+        </div>
+
+        <div
+          className={cn(
+            "rounded-xl border p-4 space-y-2",
+            propBlock.proposalsWithoutFollowUpCount > 0
+              ? "border-rose-200 bg-rose-50/50"
+              : "border-border/70 bg-card/80"
+          )}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Propostas sem follow-up
+          </p>
+          <p className="text-lg font-bold tabular-nums text-foreground">
+            {propBlock.proposalsWithoutFollowUpCount}
+          </p>
+          {propBlock.proposalsWithoutFollowUpCount > 0 ? (
+            <p className="text-xs font-semibold text-rose-900">Ação comercial recomendada</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">Nenhuma pendência neste critério</p>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Próxima ação sugerida</p>
+        <p className="text-sm font-medium text-foreground mt-1.5 leading-relaxed">
+          {displayLine(summary.nextSuggestedAction)}
+        </p>
+      </div>
+
+      <div>
+        <p className="text-sm font-bold text-foreground mb-2">Sinais comerciais</p>
+        {signals.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">Nenhum sinal comercial crítico identificado.</p>
+        ) : (
+          <ul className="space-y-2">
+            {signals.map((s, idx) => (
+              <li
+                key={`${idx}-${s.title.slice(0, 32)}`}
+                className={cn("rounded-xl border p-4 flex gap-3", intelSignalSurfaceClass(s))}
+              >
+                <SignalRowIcon signal={s} />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-bold text-foreground">{displayLine(s.title)}</p>
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase",
+                        intelSeverityBadgeClasses(s.severity)
+                      )}
+                    >
+                      {intelSeverityLabelPt(s.severity)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{displayLine(s.description)}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-bold text-foreground">Últimos pedidos</p>
+          </div>
+          {lastThreeOrders.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum pedido válido encontrado.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {lastThreeOrders.map((o) => (
+                <li key={o.id} className="rounded-lg border border-border/50 bg-card/70 px-3 py-2">
+                  <span className="font-semibold text-foreground">{displayLine(o.orderCode)}</span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {formatDateShortPt(o.issueDate)} · {formatIntelCurrency(o.totalNetValue)}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground mt-0.5">
+                    {formatCommercialStatusLabel(o.status)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-bold text-foreground">Últimas propostas</p>
+          </div>
+          {lastThreeProposals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhuma proposta encontrada.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {lastThreeProposals.map((p) => (
+                <li key={p.id} className="rounded-lg border border-border/50 bg-card/70 px-3 py-2">
+                  <span className="font-semibold text-foreground">
+                    {typeof p.number === "number" && Number.isFinite(p.number)
+                      ? `#${p.number}`
+                      : strField(p.title) || "Proposta"}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {formatCommercialStatusLabel(p.status)} · {formatIntelCurrency(p.totalNetValue)}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground mt-0.5">{formatDateShortPt(p.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function CockpitTabs({
   active,
   onChange,
@@ -1131,6 +1556,10 @@ export const CrmModule = () => {
   const [profileForm, setProfileForm] = useState<ProfileFormState>({ ...EMPTY_PROFILE_FORM });
   const [activeCockpitTab, setActiveCockpitTab] = useState<CockpitTab>("timeline");
 
+  const [commercialIntel, setCommercialIntel] = useState<CommercialIntelResponse | null>(null);
+  const [commercialIntelLoading, setCommercialIntelLoading] = useState(false);
+  const [commercialIntelError, setCommercialIntelError] = useState<string | null>(null);
+
   const loadDashboard = useCallback(async () => {
     setDashboardLoading(true);
     setDashboardError(null);
@@ -1235,6 +1664,28 @@ export const CrmModule = () => {
     }
   }, []);
 
+  const loadCommercialIntel = useCallback(async (customerId: string) => {
+    setCommercialIntelLoading(true);
+    setCommercialIntelError(null);
+    try {
+      const data = await fetchJsonOk<CommercialIntelResponse>(
+        `/api/crm/customers/${customerId}/commercial-intelligence`
+      );
+      setCommercialIntel(data);
+    } catch (e) {
+      setCommercialIntel(null);
+      setCommercialIntelError(
+        clampMessage(
+          e instanceof Error
+            ? e.message
+            : "Não foi possível carregar a inteligência comercial deste cliente."
+        )
+      );
+    } finally {
+      setCommercialIntelLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadDashboard();
     void loadAgendaBuckets();
@@ -1247,12 +1698,18 @@ export const CrmModule = () => {
       setActivitiesError(null);
       setSelectedCustomerProfile(null);
       setProfileError(null);
+      setCommercialIntel(null);
+      setCommercialIntelError(null);
+      setCommercialIntelLoading(false);
       return;
     }
+    setCommercialIntel(null);
+    setCommercialIntelError(null);
     setActiveCockpitTab("timeline");
     void loadActivities(selectedId);
     void loadProfile(selectedId);
-  }, [selectedId, loadActivities, loadProfile]);
+    void loadCommercialIntel(selectedId);
+  }, [selectedId, loadActivities, loadProfile, loadCommercialIntel]);
 
   const openFollowUpSummary = useMemo(() => {
     const now = Date.now();
@@ -1463,6 +1920,7 @@ export const CrmModule = () => {
       setToast("Contato registrado com sucesso.");
       window.setTimeout(() => setToast(null), 4000);
       await loadActivities(selectedId);
+      await loadCommercialIntel(selectedId);
       await loadDashboard();
       await loadAgendaBuckets();
       await loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
@@ -1484,6 +1942,7 @@ export const CrmModule = () => {
       setToast("Contato marcado como concluído.");
       window.setTimeout(() => setToast(null), 3500);
       if (selectedId) await loadActivities(selectedId);
+      if (selectedId) await loadCommercialIntel(selectedId);
       await loadDashboard();
       await loadAgendaBuckets();
       await loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
@@ -1867,6 +2326,15 @@ export const CrmModule = () => {
                   <StatChip label="Canal preferido" value={heroChannelLabel} icon={Radio} />
                 </div>
               </div>
+
+              <CommercialIntelBoard
+                loading={commercialIntelLoading}
+                error={commercialIntelError}
+                intel={commercialIntel}
+                onRetry={() => {
+                  if (selectedId) void loadCommercialIntel(selectedId);
+                }}
+              />
 
               <CockpitTabs active={activeCockpitTab} onChange={setActiveCockpitTab} />
 
