@@ -1,4 +1,4 @@
-// src/components/CrmModule.tsx — CRM Comercial (Fases 1B/1C): indicadores, busca backend, ficha, timeline e contatos.
+// src/components/CrmModule.tsx — CRM Comercial: indicadores, busca, ficha, perfil, timeline e contatos.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Loader2,
@@ -13,6 +13,8 @@ import {
   X,
   CheckCircle2,
   Clock,
+  UserCircle,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -107,6 +109,125 @@ const REASON_OPTIONS = [
 ] as const;
 
 const STATUS_OPTIONS = ["DONE", "OPEN", "WAITING", "CANCELLED"] as const;
+
+export type CrmCustomerProfile = {
+  id: string;
+  customerId: string;
+  preferredChannel: string | null;
+  bestContactTime: string | null;
+  contactFrequency: string | null;
+  communicationStyle: string | null;
+  commercialProfile: string | null;
+  buyingMotivation: string | null;
+  commonObjections: string | null;
+  relationshipLevel: string | null;
+  commercialTemperature: string | null;
+  interests: string | null;
+  favoriteTeam: string | null;
+  importantDates: string | null;
+  personalPreferences: string | null;
+  avoidTopics: string | null;
+  relationshipNotes: string | null;
+  informationSource: string | null;
+  sensitivityLevel: string;
+  lastConfirmedAt: string | null;
+  updatedByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CrmProfileApiResponse = {
+  customer: { id: string; displayName: string; taxId: string };
+  profile: CrmCustomerProfile | null;
+};
+
+type ProfileFormState = {
+  preferredChannel: string;
+  bestContactTime: string;
+  contactFrequency: string;
+  communicationStyle: string;
+  commercialProfile: string;
+  buyingMotivation: string;
+  commonObjections: string;
+  relationshipLevel: string;
+  commercialTemperature: string;
+  interests: string;
+  favoriteTeam: string;
+  importantDates: string;
+  personalPreferences: string;
+  avoidTopics: string;
+  relationshipNotes: string;
+  informationSource: string;
+  sensitivityLevel: string;
+  lastConfirmedAt: string;
+  updatedByName: string;
+};
+
+const PROFILE_CHANNEL_OPTIONS = [
+  "WHATSAPP",
+  "PHONE",
+  "EMAIL",
+  "MEETING",
+  "VISIT",
+  "VIDEO_CALL",
+  "OTHER",
+] as const;
+
+const PROFILE_CONTACT_FREQUENCY_OPTIONS = [
+  "Semanal",
+  "Quinzenal",
+  "Mensal",
+  "A cada 30 dias",
+  "A cada 60 dias",
+  "Sob demanda",
+] as const;
+
+const PROFILE_COMMERCIAL_PROFILE_OPTIONS = [
+  "Compra recorrente",
+  "Cliente estratégico",
+  "Reativação",
+  "Novo cliente",
+  "Sensível a preço",
+  "Sensível a prazo",
+  "Técnico/detalhista",
+] as const;
+
+const PROFILE_RELATIONSHIP_LEVEL_OPTIONS = [
+  "NOVO",
+  "ATIVO",
+  "ESTRATEGICO",
+  "EM_RISCO",
+  "INATIVO",
+  "REATIVACAO",
+] as const;
+
+const PROFILE_TEMPERATURE_OPTIONS = ["FRIO", "MORNO", "QUENTE"] as const;
+
+const PROFILE_SENSITIVITY_OPTIONS = ["NORMAL", "ATTENTION", "SENSITIVE_AVOID"] as const;
+
+const PROFILE_UPDATED_BY_DEFAULT = "Comercial Lazarios";
+
+const EMPTY_PROFILE_FORM: ProfileFormState = {
+  preferredChannel: "WHATSAPP",
+  bestContactTime: "",
+  contactFrequency: "",
+  communicationStyle: "",
+  commercialProfile: "",
+  buyingMotivation: "",
+  commonObjections: "",
+  relationshipLevel: "",
+  commercialTemperature: "",
+  interests: "",
+  favoriteTeam: "",
+  importantDates: "",
+  personalPreferences: "",
+  avoidTopics: "",
+  relationshipNotes: "",
+  informationSource: "",
+  sensitivityLevel: "NORMAL",
+  lastConfirmedAt: "",
+  updatedByName: PROFILE_UPDATED_BY_DEFAULT,
+};
 
 function strField(v: unknown): string {
   if (v == null) return "";
@@ -229,6 +350,110 @@ function channelBadgeClass(channel: string | null): string {
   return "bg-muted text-muted-foreground border-border";
 }
 
+function isoToDateInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function dateInputToIso(value: string): string | null {
+  const t = value.trim();
+  if (!t) return null;
+  const d = new Date(`${t}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function profileToForm(profile: CrmCustomerProfile | null): ProfileFormState {
+  if (!profile) return { ...EMPTY_PROFILE_FORM };
+  return {
+    preferredChannel: profile.preferredChannel ?? "WHATSAPP",
+    bestContactTime: profile.bestContactTime ?? "",
+    contactFrequency: profile.contactFrequency ?? "",
+    communicationStyle: profile.communicationStyle ?? "",
+    commercialProfile: profile.commercialProfile ?? "",
+    buyingMotivation: profile.buyingMotivation ?? "",
+    commonObjections: profile.commonObjections ?? "",
+    relationshipLevel: profile.relationshipLevel ?? "",
+    commercialTemperature: profile.commercialTemperature ?? "",
+    interests: profile.interests ?? "",
+    favoriteTeam: profile.favoriteTeam ?? "",
+    importantDates: profile.importantDates ?? "",
+    personalPreferences: profile.personalPreferences ?? "",
+    avoidTopics: profile.avoidTopics ?? "",
+    relationshipNotes: profile.relationshipNotes ?? "",
+    informationSource: profile.informationSource ?? "",
+    sensitivityLevel: profile.sensitivityLevel || "NORMAL",
+    lastConfirmedAt: isoToDateInput(profile.lastConfirmedAt),
+    updatedByName: profile.updatedByName?.trim() || PROFILE_UPDATED_BY_DEFAULT,
+  };
+}
+
+function sensitivityLabel(value: string | null | undefined): string {
+  const u = String(value ?? "").trim().toUpperCase();
+  if (u === "ATTENTION") return "Atenção";
+  if (u === "SENSITIVE_AVOID") return "Evitar abordagem sensível";
+  return "Normal";
+}
+
+function buildApproachGuide(profile: CrmCustomerProfile | null): string[] {
+  if (!profile) {
+    return ["Complete o perfil para orientar melhor os próximos contatos."];
+  }
+  const lines: string[] = [];
+  const channel = strField(profile.preferredChannel);
+  const style = strField(profile.communicationStyle);
+  if (channel && style) {
+    lines.push(
+      `Abordagem sugerida: entrar por ${channel}, com comunicação ${style.toLowerCase()}, retomando o último contexto comercial.`
+    );
+  } else if (channel) {
+    lines.push(
+      `Abordagem sugerida: entrar por ${channel}, retomando o último contexto comercial.`
+    );
+  }
+  const motivation = strField(profile.buyingMotivation);
+  if (motivation) lines.push(`Destaque na conversa: ${motivation}.`);
+  const objections = strField(profile.commonObjections);
+  if (objections) lines.push(`Ponto de atenção: ${objections}.`);
+  if (lines.length === 0) {
+    lines.push("Complete o perfil para orientar melhor os próximos contatos.");
+  }
+  return lines;
+}
+
+function ProfileDetailRow({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold uppercase text-muted-foreground">{label}</dt>
+      <dd className="text-sm break-words">{displayLine(value)}</dd>
+    </div>
+  );
+}
+
+function ProfileFormField({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("space-y-1", className)}>
+      <label className="text-xs font-semibold uppercase text-muted-foreground">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inputClass =
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20";
+const textareaClass =
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20";
+
 const CRM_FILTER_CHIPS: { value: CrmCustomerListFilter; label: string }[] = [
   { value: "all", label: "Todos" },
   { value: "withoutContact30", label: "Sem contato" },
@@ -273,6 +498,16 @@ export const CrmModule = () => {
   const [formCreatedByEmail, setFormCreatedByEmail] = useState("");
   const [formNextActionAt, setFormNextActionAt] = useState("");
   const [formNextActionDescription, setFormNextActionDescription] = useState("");
+
+  const [selectedCustomerProfile, setSelectedCustomerProfile] = useState<CrmCustomerProfile | null>(
+    null
+  );
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileFormError, setProfileFormError] = useState<string | null>(null);
+  const [profileForm, setProfileForm] = useState<ProfileFormState>({ ...EMPTY_PROFILE_FORM });
 
   const loadDashboard = useCallback(async () => {
     setDashboardLoading(true);
@@ -336,6 +571,26 @@ export const CrmModule = () => {
     }
   }, []);
 
+  const loadProfile = useCallback(async (customerId: string) => {
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      const res = await fetchJsonOk<CrmProfileApiResponse>(
+        `/api/crm/customers/${customerId}/profile`
+      );
+      setSelectedCustomerProfile(res.profile ?? null);
+    } catch (e) {
+      setSelectedCustomerProfile(null);
+      setProfileError(
+        clampMessage(
+          e instanceof Error ? e.message : "Não foi possível carregar o perfil de relacionamento."
+        )
+      );
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadDashboard();
     void loadCrmCustomers("", "all", 0);
@@ -345,10 +600,13 @@ export const CrmModule = () => {
     if (!selectedId) {
       setActivities([]);
       setActivitiesError(null);
+      setSelectedCustomerProfile(null);
+      setProfileError(null);
       return;
     }
     void loadActivities(selectedId);
-  }, [selectedId, loadActivities]);
+    void loadProfile(selectedId);
+  }, [selectedId, loadActivities, loadProfile]);
 
   const selectedCustomer = useMemo(
     () => (selectedId ? customers.find((c) => c.id === selectedId) ?? null : null),
@@ -383,6 +641,72 @@ export const CrmModule = () => {
 
     return { lastContact, nextFollowUp, nextFollowUpDetail, total: activities.length };
   }, [activities]);
+
+  const approachGuideLines = useMemo(
+    () => buildApproachGuide(selectedCustomerProfile),
+    [selectedCustomerProfile]
+  );
+
+  const openProfileModal = () => {
+    setProfileFormError(null);
+    setProfileForm(profileToForm(selectedCustomerProfile));
+    setProfileModalOpen(true);
+  };
+
+  const updateProfileForm = <K extends keyof ProfileFormState>(key: K, value: ProfileFormState[K]) => {
+    setProfileForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedId) {
+      setProfileFormError("Selecione um cliente na lista.");
+      return;
+    }
+    setProfileSaving(true);
+    setProfileFormError(null);
+    try {
+      const body: Record<string, string | null> = {
+        preferredChannel: profileForm.preferredChannel.trim(),
+        bestContactTime: profileForm.bestContactTime.trim(),
+        contactFrequency: profileForm.contactFrequency.trim(),
+        communicationStyle: profileForm.communicationStyle.trim(),
+        commercialProfile: profileForm.commercialProfile.trim(),
+        buyingMotivation: profileForm.buyingMotivation.trim(),
+        commonObjections: profileForm.commonObjections.trim(),
+        relationshipLevel: profileForm.relationshipLevel.trim(),
+        commercialTemperature: profileForm.commercialTemperature.trim(),
+        interests: profileForm.interests.trim(),
+        favoriteTeam: profileForm.favoriteTeam.trim(),
+        importantDates: profileForm.importantDates.trim(),
+        personalPreferences: profileForm.personalPreferences.trim(),
+        avoidTopics: profileForm.avoidTopics.trim(),
+        relationshipNotes: profileForm.relationshipNotes.trim(),
+        informationSource: profileForm.informationSource.trim(),
+        sensitivityLevel: profileForm.sensitivityLevel,
+        lastConfirmedAt: dateInputToIso(profileForm.lastConfirmedAt),
+        updatedByName: profileForm.updatedByName.trim() || PROFILE_UPDATED_BY_DEFAULT,
+      };
+      const res = await fetchJsonOk<CrmProfileApiResponse>(
+        `/api/crm/customers/${selectedId}/profile`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      setSelectedCustomerProfile(res.profile ?? null);
+      setProfileModalOpen(false);
+      setToast("Perfil salvo com sucesso.");
+      window.setTimeout(() => setToast(null), 4000);
+    } catch (err) {
+      setProfileFormError(
+        clampMessage(err instanceof Error ? err.message : "Falha ao salvar o perfil.")
+      );
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const openModal = () => {
     setModalError(null);
@@ -733,6 +1057,104 @@ export const CrmModule = () => {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <UserCircle className="h-5 w-5 text-primary shrink-0" />
+                    <h3 className="text-base font-bold">Perfil de relacionamento</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openProfileModal}
+                    disabled={profileLoading}
+                    className="inline-flex items-center justify-center gap-2 shrink-0 rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    {selectedCustomerProfile ? "Editar perfil" : "Criar perfil"}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                  Registre apenas informações úteis para melhorar o atendimento comercial. Evite dados
+                  sensíveis, íntimos ou desnecessários.
+                </p>
+                {profileLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando perfil…
+                  </div>
+                ) : profileError ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    {profileError}
+                  </div>
+                ) : !selectedCustomerProfile ? (
+                  <p className="text-sm text-muted-foreground py-2">
+                    Nenhum perfil de relacionamento registrado para este cliente.
+                  </p>
+                ) : (
+                  <>
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                        Guia rápido para abordagem
+                      </p>
+                      <ul className="text-sm text-foreground space-y-1 list-disc pl-4">
+                        {approachGuideLines.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="space-y-4 text-sm">
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Comunicação</h4>
+                        <dl className="grid gap-2 sm:grid-cols-2">
+                          <ProfileDetailRow label="Canal preferido" value={selectedCustomerProfile.preferredChannel} />
+                          <ProfileDetailRow label="Melhor horário" value={selectedCustomerProfile.bestContactTime} />
+                          <ProfileDetailRow label="Frequência de contato" value={selectedCustomerProfile.contactFrequency} />
+                          <ProfileDetailRow label="Estilo de comunicação" value={selectedCustomerProfile.communicationStyle} />
+                        </dl>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Comercial</h4>
+                        <dl className="grid gap-2 sm:grid-cols-2">
+                          <ProfileDetailRow label="Perfil comercial" value={selectedCustomerProfile.commercialProfile} />
+                          <ProfileDetailRow label="Motivação de compra" value={selectedCustomerProfile.buyingMotivation} />
+                          <ProfileDetailRow label="Objeções comuns" value={selectedCustomerProfile.commonObjections} />
+                          <ProfileDetailRow label="Nível de relacionamento" value={selectedCustomerProfile.relationshipLevel} />
+                          <ProfileDetailRow label="Temperatura comercial" value={selectedCustomerProfile.commercialTemperature} />
+                        </dl>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">
+                          Empatia / contexto permitido
+                        </h4>
+                        <dl className="grid gap-2 sm:grid-cols-2">
+                          <ProfileDetailRow label="Interesses" value={selectedCustomerProfile.interests} />
+                          <ProfileDetailRow label="Time / hobby" value={selectedCustomerProfile.favoriteTeam} />
+                          <ProfileDetailRow label="Datas importantes" value={selectedCustomerProfile.importantDates} />
+                          <ProfileDetailRow label="Preferências pessoais" value={selectedCustomerProfile.personalPreferences} />
+                          <ProfileDetailRow label="Assuntos a evitar" value={selectedCustomerProfile.avoidTopics} />
+                        </dl>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">
+                          Nota de relacionamento
+                        </h4>
+                        <p className="text-sm whitespace-pre-wrap break-words">
+                          {displayLine(selectedCustomerProfile.relationshipNotes)}
+                        </p>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Governança</h4>
+                        <dl className="grid gap-2 sm:grid-cols-2">
+                          <ProfileDetailRow label="Fonte da informação" value={selectedCustomerProfile.informationSource} />
+                          <ProfileDetailRow label="Sensibilidade" value={sensitivityLabel(selectedCustomerProfile.sensitivityLevel)} />
+                          <ProfileDetailRow label="Última confirmação" value={formatDateShortPt(selectedCustomerProfile.lastConfirmedAt)} />
+                          <ProfileDetailRow label="Atualizado por" value={selectedCustomerProfile.updatedByName} />
+                        </dl>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
                   <MessageSquare className="h-4 w-4" />
@@ -826,6 +1248,268 @@ export const CrmModule = () => {
           )}
         </div>
       </div>
+
+      {/* Modal perfil de relacionamento */}
+      {profileModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4 sticky top-0 bg-card z-10">
+              <h4 className="text-lg font-bold">Perfil de relacionamento</h4>
+              <button
+                type="button"
+                onClick={() => !profileSaving && setProfileModalOpen(false)}
+                className="rounded-lg p-2 hover:bg-accent text-muted-foreground"
+                aria-label="Fechar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveProfile} className="p-5 space-y-6">
+              {profileFormError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  {profileFormError}
+                </div>
+              ) : null}
+              <p className="text-xs text-muted-foreground rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                Registre apenas informações úteis para melhorar o atendimento comercial. Evite dados
+                sensíveis, íntimos ou desnecessários.
+              </p>
+
+              <fieldset className="space-y-3 border-0 p-0">
+                <legend className="text-xs font-semibold uppercase text-muted-foreground">Comunicação</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ProfileFormField label="Canal preferido">
+                    <select
+                      value={profileForm.preferredChannel}
+                      onChange={(e) => updateProfileForm("preferredChannel", e.target.value)}
+                      className={inputClass}
+                    >
+                      {PROFILE_CHANNEL_OPTIONS.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </ProfileFormField>
+                  <ProfileFormField label="Melhor horário">
+                    <input
+                      value={profileForm.bestContactTime}
+                      onChange={(e) => updateProfileForm("bestContactTime", e.target.value)}
+                      className={inputClass}
+                      placeholder="Ex.: Fim da tarde"
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Frequência de contato">
+                    <select
+                      value={profileForm.contactFrequency}
+                      onChange={(e) => updateProfileForm("contactFrequency", e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">—</option>
+                      {PROFILE_CONTACT_FREQUENCY_OPTIONS.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </ProfileFormField>
+                  <ProfileFormField label="Estilo de comunicação" className="sm:col-span-2">
+                    <textarea
+                      value={profileForm.communicationStyle}
+                      onChange={(e) => updateProfileForm("communicationStyle", e.target.value)}
+                      rows={2}
+                      className={textareaClass}
+                      placeholder="Ex.: Objetivo, prefere mensagens curtas"
+                    />
+                  </ProfileFormField>
+                </div>
+              </fieldset>
+
+              <fieldset className="space-y-3 border-0 p-0">
+                <legend className="text-xs font-semibold uppercase text-muted-foreground">Comercial</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ProfileFormField label="Perfil comercial">
+                    <select
+                      value={profileForm.commercialProfile}
+                      onChange={(e) => updateProfileForm("commercialProfile", e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">—</option>
+                      {PROFILE_COMMERCIAL_PROFILE_OPTIONS.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </ProfileFormField>
+                  <ProfileFormField label="Nível de relacionamento">
+                    <select
+                      value={profileForm.relationshipLevel}
+                      onChange={(e) => updateProfileForm("relationshipLevel", e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">—</option>
+                      {PROFILE_RELATIONSHIP_LEVEL_OPTIONS.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </ProfileFormField>
+                  <ProfileFormField label="Temperatura comercial">
+                    <select
+                      value={profileForm.commercialTemperature}
+                      onChange={(e) => updateProfileForm("commercialTemperature", e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">—</option>
+                      {PROFILE_TEMPERATURE_OPTIONS.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </ProfileFormField>
+                  <ProfileFormField label="Motivação de compra" className="sm:col-span-2">
+                    <textarea
+                      value={profileForm.buyingMotivation}
+                      onChange={(e) => updateProfileForm("buyingMotivation", e.target.value)}
+                      rows={2}
+                      className={textareaClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Objeções comuns" className="sm:col-span-2">
+                    <textarea
+                      value={profileForm.commonObjections}
+                      onChange={(e) => updateProfileForm("commonObjections", e.target.value)}
+                      rows={2}
+                      className={textareaClass}
+                    />
+                  </ProfileFormField>
+                </div>
+              </fieldset>
+
+              <fieldset className="space-y-3 border-0 p-0">
+                <legend className="text-xs font-semibold uppercase text-muted-foreground">
+                  Empatia / contexto permitido
+                </legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ProfileFormField label="Interesses" className="sm:col-span-2">
+                    <textarea
+                      value={profileForm.interests}
+                      onChange={(e) => updateProfileForm("interests", e.target.value)}
+                      rows={2}
+                      className={textareaClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Time / hobby">
+                    <input
+                      value={profileForm.favoriteTeam}
+                      onChange={(e) => updateProfileForm("favoriteTeam", e.target.value)}
+                      className={inputClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Datas importantes">
+                    <input
+                      value={profileForm.importantDates}
+                      onChange={(e) => updateProfileForm("importantDates", e.target.value)}
+                      className={inputClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Preferências pessoais permitidas" className="sm:col-span-2">
+                    <textarea
+                      value={profileForm.personalPreferences}
+                      onChange={(e) => updateProfileForm("personalPreferences", e.target.value)}
+                      rows={2}
+                      className={textareaClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Assuntos a evitar" className="sm:col-span-2">
+                    <textarea
+                      value={profileForm.avoidTopics}
+                      onChange={(e) => updateProfileForm("avoidTopics", e.target.value)}
+                      rows={2}
+                      className={textareaClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Nota de relacionamento" className="sm:col-span-2">
+                    <textarea
+                      value={profileForm.relationshipNotes}
+                      onChange={(e) => updateProfileForm("relationshipNotes", e.target.value)}
+                      rows={3}
+                      className={textareaClass}
+                    />
+                  </ProfileFormField>
+                </div>
+              </fieldset>
+
+              <fieldset className="space-y-3 border-0 p-0">
+                <legend className="text-xs font-semibold uppercase text-muted-foreground">Governança</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ProfileFormField label="Fonte da informação">
+                    <input
+                      value={profileForm.informationSource}
+                      onChange={(e) => updateProfileForm("informationSource", e.target.value)}
+                      className={inputClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Sensibilidade">
+                    <select
+                      value={profileForm.sensitivityLevel}
+                      onChange={(e) => updateProfileForm("sensitivityLevel", e.target.value)}
+                      className={inputClass}
+                    >
+                      {PROFILE_SENSITIVITY_OPTIONS.map((o) => (
+                        <option key={o} value={o}>
+                          {sensitivityLabel(o)}
+                        </option>
+                      ))}
+                    </select>
+                  </ProfileFormField>
+                  <ProfileFormField label="Última confirmação">
+                    <input
+                      type="date"
+                      value={profileForm.lastConfirmedAt}
+                      onChange={(e) => updateProfileForm("lastConfirmedAt", e.target.value)}
+                      className={inputClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Atualizado por">
+                    <input
+                      value={profileForm.updatedByName}
+                      onChange={(e) => updateProfileForm("updatedByName", e.target.value)}
+                      className={inputClass}
+                    />
+                  </ProfileFormField>
+                </div>
+              </fieldset>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  disabled={profileSaving}
+                  onClick={() => setProfileModalOpen(false)}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                >
+                  {profileSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Salvar perfil
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       {/* Modal novo contato */}
       {modalOpen ? (
