@@ -27,6 +27,10 @@ import {
   History,
   Thermometer,
   Radio,
+  MessageCircle,
+  Video,
+  Briefcase,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -354,12 +358,93 @@ function statusIsOpenLike(s: string): boolean {
 }
 
 function channelBadgeClass(channel: string | null): string {
+  return getActivityChannelIcon(channel).badgeClass;
+}
+
+type CockpitTab = "timeline" | "profile";
+
+type ChannelVisual = {
+  Icon: LucideIcon;
+  dotClass: string;
+  badgeClass: string;
+};
+
+function getActivityChannelIcon(channel: string | null): ChannelVisual {
   const c = (channel ?? "").toUpperCase();
-  if (c === "WHATSAPP") return "bg-emerald-100 text-emerald-800 border-emerald-200";
-  if (c === "PHONE" || c === "VIDEO_CALL") return "bg-sky-100 text-sky-800 border-sky-200";
-  if (c === "EMAIL") return "bg-violet-100 text-violet-800 border-violet-200";
-  if (c === "MEETING" || c === "VISIT") return "bg-amber-100 text-amber-900 border-amber-200";
-  return "bg-muted text-muted-foreground border-border";
+  if (c === "WHATSAPP") {
+    return {
+      Icon: MessageCircle,
+      dotClass: "bg-emerald-100 text-emerald-700 border-emerald-200",
+      badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    };
+  }
+  if (c === "PHONE") {
+    return {
+      Icon: Phone,
+      dotClass: "bg-sky-100 text-sky-700 border-sky-200",
+      badgeClass: "bg-sky-100 text-sky-800 border-sky-200",
+    };
+  }
+  if (c === "VIDEO_CALL") {
+    return {
+      Icon: Video,
+      dotClass: "bg-cyan-100 text-cyan-800 border-cyan-200",
+      badgeClass: "bg-cyan-100 text-cyan-800 border-cyan-200",
+    };
+  }
+  if (c === "EMAIL") {
+    return {
+      Icon: Mail,
+      dotClass: "bg-indigo-100 text-indigo-800 border-indigo-200",
+      badgeClass: "bg-indigo-100 text-indigo-800 border-indigo-200",
+    };
+  }
+  if (c === "MEETING") {
+    return {
+      Icon: Briefcase,
+      dotClass: "bg-amber-100 text-amber-900 border-amber-200",
+      badgeClass: "bg-amber-100 text-amber-900 border-amber-200",
+    };
+  }
+  if (c === "VISIT") {
+    return {
+      Icon: MapPin,
+      dotClass: "bg-orange-100 text-orange-900 border-orange-200",
+      badgeClass: "bg-orange-100 text-orange-900 border-orange-200",
+    };
+  }
+  return {
+    Icon: MessageSquare,
+    dotClass: "bg-slate-100 text-slate-700 border-slate-200",
+    badgeClass: "bg-muted text-muted-foreground border-border",
+  };
+}
+
+function getActivityStatusBadge(status: string): { label: string; className: string } {
+  const u = status.trim().toUpperCase();
+  if (u === "DONE") {
+    return { label: "Concluído", className: "bg-emerald-50 text-emerald-800 border-emerald-200" };
+  }
+  if (u === "OPEN") {
+    return { label: "Aberto", className: "bg-sky-50 text-sky-800 border-sky-200" };
+  }
+  if (u === "WAITING") {
+    return { label: "Aguardando", className: "bg-amber-50 text-amber-900 border-amber-200" };
+  }
+  if (u === "CANCELLED" || u === "CANCELED") {
+    return { label: "Cancelado", className: "bg-slate-100 text-slate-600 border-slate-200" };
+  }
+  return {
+    label: displayLine(status),
+    className: "bg-muted/80 text-muted-foreground border-border",
+  };
+}
+
+function isActivityFollowUpOverdue(activity: CrmActivity): boolean {
+  if (!activity.nextActionAt) return false;
+  const u = activity.status.trim().toUpperCase();
+  if (u === "DONE" || u === "CANCELLED" || u === "CANCELED") return false;
+  return parseActivityDate(activity.nextActionAt) < Date.now();
 }
 
 function isoToDateInput(iso: string | null | undefined): string {
@@ -462,26 +547,38 @@ function ProfileDetailRow({ label, value }: { label: string; value: unknown }) {
 
 function ProfileBlockSection({
   title,
-  emptyHint,
+  icon: Icon,
+  emptyHint = "Ainda sem dados registrados.",
   children,
 }: {
   title: string;
-  emptyHint: string;
+  icon?: LucideIcon;
+  emptyHint?: string;
   children: React.ReactNode;
 }) {
   const childArray = React.Children.toArray(children).filter(Boolean);
   if (childArray.length === 0) {
     return (
-      <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">{title}</h4>
+      <div className="rounded-xl border border-border/60 bg-muted/15 p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-2 text-muted-foreground">
+          {Icon ? <Icon className="h-4 w-4 shrink-0" /> : null}
+          <h4 className="text-sm font-bold text-foreground">{title}</h4>
+        </div>
         <p className="text-sm text-muted-foreground">{emptyHint}</p>
       </div>
     );
   }
   return (
-    <div className="rounded-xl border border-border/70 bg-muted/10 p-4 sm:p-5 space-y-3">
-      <h4 className="text-xs font-bold uppercase tracking-wide text-foreground">{title}</h4>
-      <dl className="grid gap-1 sm:grid-cols-2">{children}</dl>
+    <div className="rounded-xl border border-border/60 bg-card/80 p-5 shadow-sm space-y-4">
+      <div className="flex items-center gap-2">
+        {Icon ? (
+          <div className="rounded-lg bg-primary/10 p-2 text-primary shrink-0">
+            <Icon className="h-4 w-4" />
+          </div>
+        ) : null}
+        <h4 className="text-sm font-bold text-foreground">{title}</h4>
+      </div>
+      <dl className="grid gap-2 sm:grid-cols-2">{children}</dl>
     </div>
   );
 }
@@ -559,6 +656,172 @@ function ApproachGuideCard({ guide, hasProfile }: { guide: ApproachGuideBlocks; 
   );
 }
 
+function ActivityStatusBadge({ activity }: { activity: CrmActivity }) {
+  const statusBadge = getActivityStatusBadge(activity.status);
+  const overdue = isActivityFollowUpOverdue(activity);
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span
+        className={cn(
+          "text-[10px] uppercase font-bold px-2.5 py-1 rounded-full border",
+          statusBadge.className
+        )}
+      >
+        {statusBadge.label}
+      </span>
+      {overdue ? (
+        <span className="text-[10px] uppercase font-bold px-2.5 py-1 rounded-full border bg-red-50 text-red-800 border-red-200">
+          Atrasado
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+type CommercialTimelineItemProps = {
+  activity: CrmActivity;
+  isLast: boolean;
+  onMarkDone: (activity: CrmActivity) => void | Promise<void>;
+};
+
+const CommercialTimelineItem: React.FC<CommercialTimelineItemProps> = ({
+  activity,
+  isLast,
+  onMarkDone,
+}) => {
+  const channel = getActivityChannelIcon(activity.channel);
+  const ChannelIcon = channel.Icon;
+  return (
+    <li className="relative pl-10 pb-8 last:pb-0">
+      {!isLast ? (
+        <span className="absolute left-[15px] top-10 bottom-0 w-0.5 bg-slate-200" aria-hidden />
+      ) : null}
+      <div
+        className={cn(
+          "absolute left-0 top-1 z-10 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm",
+          channel.dotClass
+        )}
+      >
+        <ChannelIcon className="h-4 w-4" />
+      </div>
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <span className="text-sm font-bold text-foreground tabular-nums">
+              {formatDateTimePt(activity.contactDate ?? activity.createdAt)}
+            </span>
+            <span
+              className={cn(
+                "text-[10px] uppercase font-bold px-2.5 py-1 rounded-full border",
+                channel.badgeClass
+              )}
+            >
+              {displayLine(activity.channel)}
+            </span>
+            <span className="text-[10px] uppercase font-semibold px-2.5 py-1 rounded-full border border-border bg-muted/50 text-muted-foreground">
+              {displayLine(activity.reason)}
+            </span>
+            <ActivityStatusBadge activity={activity} />
+          </div>
+          {statusIsOpenLike(activity.status) ? (
+            <button
+              type="button"
+              onClick={() => onMarkDone(activity)}
+              className="text-xs font-semibold rounded-xl border border-border px-3 py-1.5 hover:bg-accent shrink-0"
+            >
+              Marcar como concluído
+            </button>
+          ) : null}
+        </div>
+        {activity.subject ? (
+          <p className="text-base font-semibold text-foreground">{displayLine(activity.subject)}</p>
+        ) : null}
+        {activity.description ? (
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
+            {displayLine(activity.description)}
+          </p>
+        ) : null}
+        <div className="grid gap-3 text-sm sm:grid-cols-2 pt-2 border-t border-border/80">
+          <p>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
+              Resultado
+            </span>
+            <span className="font-medium">{displayLine(activity.outcome)}</span>
+          </p>
+          <p>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
+              Responsável
+            </span>
+            <span className="font-medium">{displayLine(activity.assignedTo)}</span>
+          </p>
+          {(activity.nextActionAt || activity.nextActionDescription) && (
+            <p className="sm:col-span-2 flex items-start gap-2 rounded-xl bg-muted/30 border border-border/60 px-3 py-2">
+              <Clock className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+              <span>
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block">
+                  Próxima ação
+                </span>
+                <span className="font-medium">
+                  {activity.nextActionAt ? formatDateTimePt(activity.nextActionAt) : "—"}
+                  {activity.nextActionDescription
+                    ? ` — ${displayLine(activity.nextActionDescription)}`
+                    : ""}
+                </span>
+              </span>
+            </p>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+};
+
+function CockpitTabs({
+  active,
+  onChange,
+}: {
+  active: CockpitTab;
+  onChange: (tab: CockpitTab) => void;
+}) {
+  const tabs: { id: CockpitTab; label: string; description: string }[] = [
+    {
+      id: "timeline",
+      label: "Histórico Comercial",
+      description: "Contatos, follow-ups e interações registradas.",
+    },
+    {
+      id: "profile",
+      label: "Dossiê do Cliente",
+      description: "Perfil de relacionamento, preferências e guia de abordagem.",
+    },
+  ];
+  return (
+    <div className="rounded-2xl border border-border/80 bg-muted/30 p-1.5 grid gap-1.5 sm:grid-cols-2">
+      {tabs.map((tab) => {
+        const isActive = active === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={cn(
+              "rounded-xl px-4 py-3 text-left transition-all w-full",
+              isActive
+                ? "bg-card shadow-sm border border-primary/25 ring-1 ring-primary/15"
+                : "border border-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground"
+            )}
+          >
+            <span className={cn("text-sm font-bold block", isActive ? "text-foreground" : "")}>
+              {tab.label}
+            </span>
+            <span className="text-xs mt-0.5 block leading-snug opacity-90">{tab.description}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function CustomerListBadges({ customer }: { customer: CrmCustomerListItem }) {
   const hasContact = Boolean(customer.lastContactAt);
   const hasFutureFollowUp =
@@ -602,9 +865,13 @@ function ProfileFormField({
 }
 
 const inputClass =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20";
+  "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
 const textareaClass =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20";
+  "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
+const modalInputClass =
+  "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
+const modalTextareaClass =
+  "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
 
 const CRM_FILTER_CHIPS: { value: CrmCustomerListFilter; label: string }[] = [
   { value: "all", label: "Todos" },
@@ -660,6 +927,7 @@ export const CrmModule = () => {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileFormError, setProfileFormError] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState>({ ...EMPTY_PROFILE_FORM });
+  const [activeCockpitTab, setActiveCockpitTab] = useState<CockpitTab>("timeline");
 
   const loadDashboard = useCallback(async () => {
     setDashboardLoading(true);
@@ -756,9 +1024,22 @@ export const CrmModule = () => {
       setProfileError(null);
       return;
     }
+    setActiveCockpitTab("timeline");
     void loadActivities(selectedId);
     void loadProfile(selectedId);
   }, [selectedId, loadActivities, loadProfile]);
+
+  const openFollowUpSummary = useMemo(() => {
+    const now = Date.now();
+    let open = 0;
+    let overdue = 0;
+    for (const a of activities) {
+      if (!statusIsOpenLike(a.status)) continue;
+      open += 1;
+      if (a.nextActionAt && parseActivityDate(a.nextActionAt) < now) overdue += 1;
+    }
+    return { open, overdue };
+  }, [activities]);
 
   const selectedCustomer = useMemo(
     () => (selectedId ? customers.find((c) => c.id === selectedId) ?? null : null),
@@ -1145,7 +1426,7 @@ export const CrmModule = () => {
               <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
                 <p className="text-sm font-semibold text-foreground">Nenhum cliente encontrado</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Ajuste a busca ou os filtros para localizar o cliente.
+                  Nenhum cliente encontrado para os filtros informados.
                 </p>
               </div>
             ) : (
@@ -1198,9 +1479,9 @@ export const CrmModule = () => {
           {!selectedCustomer ? (
             <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-12 text-center">
               <UserCircle className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-              <p className="text-base font-semibold text-foreground">Selecione um cliente para visualizar o CRM</p>
+              <p className="text-base font-semibold text-foreground">Selecione um cliente da carteira</p>
               <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-                Escolha um cliente na carteira à esquerda para ver dados, perfil de relacionamento e linha do tempo.
+                Selecione um cliente da carteira para visualizar o cockpit comercial.
               </p>
             </div>
           ) : (
@@ -1301,174 +1582,166 @@ export const CrmModule = () => {
                 </div>
               </div>
 
-              <ApproachGuideCard guide={approachGuide} hasProfile={Boolean(selectedCustomerProfile)} />
+              <CockpitTabs active={activeCockpitTab} onChange={setActiveCockpitTab} />
 
-              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <UserCircle className="h-5 w-5 text-primary shrink-0" />
-                    <h3 className="text-lg font-bold">Perfil de relacionamento</h3>
+              {activeCockpitTab === "timeline" ? (
+                <section className="space-y-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold text-foreground">Linha do tempo comercial</h3>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        Esteira cronológica de contatos e follow-ups.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openModal}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 shrink-0"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Novo contato
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={openProfileModal}
-                    disabled={profileLoading}
-                    className="inline-flex items-center justify-center gap-2 shrink-0 rounded-xl border border-border bg-background px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    {selectedCustomerProfile ? "Editar perfil" : "Criar perfil"}
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground rounded-xl border border-border/60 bg-muted/30 px-4 py-3 leading-relaxed">
-                  Registre apenas informações úteis para melhorar o atendimento comercial. Evite dados
-                  sensíveis, íntimos ou desnecessários.
-                </p>
-                {profileLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                    Carregando perfil…
-                  </div>
-                ) : profileError ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                    {profileError}
-                  </div>
-                ) : !selectedCustomerProfile ? (
-                  <p className="text-sm text-muted-foreground py-2">
-                    Nenhum perfil de relacionamento registrado para este cliente.
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    <ProfileBlockSection title="Comunicação" emptyHint="Nenhuma preferência de comunicação registrada.">
-                      <ProfileDetailRow label="Canal preferido" value={selectedCustomerProfile.preferredChannel} />
-                      <ProfileDetailRow label="Melhor horário" value={selectedCustomerProfile.bestContactTime} />
-                      <ProfileDetailRow label="Frequência" value={selectedCustomerProfile.contactFrequency} />
-                      <ProfileDetailRow label="Estilo" value={selectedCustomerProfile.communicationStyle} />
-                    </ProfileBlockSection>
-                    <ProfileBlockSection title="Comercial" emptyHint="Nenhum dado comercial registrado no perfil.">
-                      <ProfileDetailRow label="Perfil comercial" value={selectedCustomerProfile.commercialProfile} />
-                      <ProfileDetailRow label="Motivação" value={selectedCustomerProfile.buyingMotivation} />
-                      <ProfileDetailRow label="Objeções" value={selectedCustomerProfile.commonObjections} />
-                      <ProfileDetailRow label="Relacionamento" value={selectedCustomerProfile.relationshipLevel} />
-                      <ProfileDetailRow label="Temperatura" value={selectedCustomerProfile.commercialTemperature} />
-                    </ProfileBlockSection>
-                    <ProfileBlockSection title="Empatia permitida" emptyHint="Nenhum contexto de empatia registrado.">
-                      <ProfileDetailRow label="Interesses" value={selectedCustomerProfile.interests} />
-                      <ProfileDetailRow label="Time / hobby" value={selectedCustomerProfile.favoriteTeam} />
-                      <ProfileDetailRow label="Preferências" value={selectedCustomerProfile.personalPreferences} />
-                      <ProfileDetailRow label="Assuntos a evitar" value={selectedCustomerProfile.avoidTopics} />
-                      <ProfileDetailRow label="Datas importantes" value={selectedCustomerProfile.importantDates} />
-                    </ProfileBlockSection>
-                    <ProfileBlockSection title="Notas" emptyHint="Nenhuma nota de relacionamento registrada.">
-                      <ProfileDetailRow label="Notas de relacionamento" value={selectedCustomerProfile.relationshipNotes} />
-                      <ProfileDetailRow label="Fonte" value={selectedCustomerProfile.informationSource} />
-                      <ProfileDetailRow label="Sensibilidade" value={sensitivityLabel(selectedCustomerProfile.sensitivityLevel)} />
-                      <ProfileDetailRow label="Atualizado por" value={selectedCustomerProfile.updatedByName} />
-                      <ProfileDetailRow label="Última confirmação" value={formatDateShortPt(selectedCustomerProfile.lastConfirmedAt)} />
-                    </ProfileBlockSection>
-                  </div>
-                )}
-              </div>
 
-              <section className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <History className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-bold text-foreground">Linha do tempo comercial</h3>
-                </div>
-                {activitiesLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center rounded-2xl border border-dashed border-border bg-muted/20">
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                    Carregando contatos…
-                  </div>
-                ) : activitiesError ? (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">{activitiesError}</div>
-                ) : activities.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-10 text-center">
-                    <MessageSquare className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-foreground">Nenhum contato registrado</p>
-                    <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-                      Comece registrando o primeiro contato comercial deste cliente.
-                    </p>
-                  </div>
-                ) : (
-                  <ul className="space-y-4">
-                    {activities.map((a) => (
-                      <li
-                        key={a.id}
-                        className="rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-sm flex flex-col gap-4"
+                  {(openFollowUpSummary.open > 0 || openFollowUpSummary.overdue > 0) && (
+                    <div className="flex flex-wrap gap-2">
+                      {openFollowUpSummary.open > 0 ? (
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900">
+                          {openFollowUpSummary.open} follow-up(s) em aberto
+                        </span>
+                      ) : null}
+                      {openFollowUpSummary.overdue > 0 ? (
+                        <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-800">
+                          {openFollowUpSummary.overdue} atrasado(s)
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {activitiesLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center rounded-2xl border border-dashed border-border bg-muted/20">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      Carregando contatos…
+                    </div>
+                  ) : activitiesError ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+                      {activitiesError}
+                    </div>
+                  ) : activities.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-10 text-center">
+                      <MessageSquare className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                      <p className="text-sm font-semibold text-foreground">Nenhum contato registrado</p>
+                      <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+                        Nenhum contato registrado. Comece registrando o primeiro contato comercial deste cliente.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={openModal}
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="flex flex-wrap items-center gap-2 min-w-0">
-                            <span className="text-sm font-bold text-foreground tabular-nums">
-                              {formatDateTimePt(a.contactDate ?? a.createdAt)}
-                            </span>
-                            <span
-                              className={cn(
-                                "text-[10px] uppercase font-bold px-2.5 py-1 rounded-full border",
-                                channelBadgeClass(a.channel)
-                              )}
-                            >
-                              {displayLine(a.channel)}
-                            </span>
-                            <span className="text-[10px] uppercase font-semibold px-2.5 py-1 rounded-full border border-border bg-muted/50 text-muted-foreground">
-                              {displayLine(a.reason)}
-                            </span>
-                            <span className="text-[10px] uppercase font-semibold px-2.5 py-1 rounded-full border border-border bg-background">
-                              {displayLine(a.status)}
-                            </span>
-                          </div>
-                          {statusIsOpenLike(a.status) ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleMarkDone(a)}
-                              className="text-xs font-semibold rounded-xl border border-border px-3 py-1.5 hover:bg-accent shrink-0"
-                            >
-                              Marcar como concluído
-                            </button>
-                          ) : null}
-                        </div>
-                        {a.subject ? (
-                          <p className="text-base font-semibold text-foreground">{displayLine(a.subject)}</p>
-                        ) : null}
-                        {a.description ? (
-                          <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
-                            {displayLine(a.description)}
-                          </p>
-                        ) : null}
-                        <div className="grid gap-3 text-sm sm:grid-cols-2 pt-2 border-t border-border/80">
-                          <p>
-                            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
-                              Resultado
-                            </span>
-                            <span className="font-medium">{displayLine(a.outcome)}</span>
-                          </p>
-                          <p>
-                            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
-                              Responsável
-                            </span>
-                            <span className="font-medium">{displayLine(a.assignedTo)}</span>
-                          </p>
-                          {(a.nextActionAt || a.nextActionDescription) && (
-                            <p className="sm:col-span-2 flex items-start gap-2 rounded-xl bg-muted/30 border border-border/60 px-3 py-2">
-                              <Clock className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                              <span>
-                                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block">
-                                  Próxima ação
-                                </span>
-                                <span className="font-medium">
-                                  {a.nextActionAt ? formatDateTimePt(a.nextActionAt) : "—"}
-                                  {a.nextActionDescription
-                                    ? ` — ${displayLine(a.nextActionDescription)}`
-                                    : ""}
-                                </span>
-                              </span>
-                            </p>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
+                        <Plus className="h-4 w-4" />
+                        Registrar primeiro contato
+                      </button>
+                    </div>
+                  ) : (
+                    <ul className="relative space-y-0 pl-1">
+                      {activities.map((a, index) => (
+                        <CommercialTimelineItem
+                          key={a.id}
+                          activity={a}
+                          isLast={index === activities.length - 1}
+                          onMarkDone={handleMarkDone}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ) : (
+                <section className="space-y-5">
+                  <ApproachGuideCard
+                    guide={approachGuide}
+                    hasProfile={Boolean(selectedCustomerProfile)}
+                  />
+
+                  <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <UserCircle className="h-5 w-5 text-primary shrink-0" />
+                        <h3 className="text-lg font-bold">Perfil de relacionamento</h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={openProfileModal}
+                        disabled={profileLoading}
+                        className="inline-flex items-center justify-center gap-2 shrink-0 rounded-xl border border-border bg-background px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        {selectedCustomerProfile ? "Editar perfil" : "Criar perfil"}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground rounded-xl border border-border/60 bg-muted/30 px-4 py-3 leading-relaxed">
+                      Registre apenas informações úteis para melhorar o atendimento comercial. Evite dados
+                      sensíveis, íntimos ou desnecessários.
+                    </p>
+                    {profileLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        Carregando perfil…
+                      </div>
+                    ) : profileError ? (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                        {profileError}
+                      </div>
+                    ) : !selectedCustomerProfile ? (
+                      <div className="rounded-xl border border-dashed border-border bg-muted/20 p-6 text-center">
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum perfil de relacionamento registrado. Cadastre preferências e informações
+                          comerciais para orientar melhor o atendimento.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={openProfileModal}
+                          className="mt-3 inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-semibold hover:bg-accent"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Criar perfil
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <ProfileBlockSection title="Canais & Comunicação" icon={Radio}>
+                          <ProfileDetailRow label="Canal preferido" value={selectedCustomerProfile.preferredChannel} />
+                          <ProfileDetailRow label="Melhor horário" value={selectedCustomerProfile.bestContactTime} />
+                          <ProfileDetailRow label="Frequência de contato" value={selectedCustomerProfile.contactFrequency} />
+                          <ProfileDetailRow label="Estilo de comunicação" value={selectedCustomerProfile.communicationStyle} />
+                        </ProfileBlockSection>
+                        <ProfileBlockSection title="Posicionamento Comercial" icon={Target}>
+                          <ProfileDetailRow label="Perfil comercial" value={selectedCustomerProfile.commercialProfile} />
+                          <ProfileDetailRow label="Motivação de compra" value={selectedCustomerProfile.buyingMotivation} />
+                          <ProfileDetailRow label="Objeções comuns" value={selectedCustomerProfile.commonObjections} />
+                          <ProfileDetailRow label="Nível de relacionamento" value={selectedCustomerProfile.relationshipLevel} />
+                          <ProfileDetailRow label="Temperatura comercial" value={selectedCustomerProfile.commercialTemperature} />
+                        </ProfileBlockSection>
+                        <ProfileBlockSection title="Preferências e Afinidades" icon={Sparkles}>
+                          <ProfileDetailRow label="Interesses" value={selectedCustomerProfile.interests} />
+                          <ProfileDetailRow label="Time / hobby" value={selectedCustomerProfile.favoriteTeam} />
+                          <ProfileDetailRow label="Datas importantes" value={selectedCustomerProfile.importantDates} />
+                          <ProfileDetailRow label="Preferências pessoais" value={selectedCustomerProfile.personalPreferences} />
+                          <ProfileDetailRow label="Assuntos a evitar" value={selectedCustomerProfile.avoidTopics} />
+                        </ProfileBlockSection>
+                        <ProfileBlockSection title="Governança dos Dados" icon={Shield}>
+                          <ProfileDetailRow label="Fonte da informação" value={selectedCustomerProfile.informationSource} />
+                          <ProfileDetailRow label="Sensibilidade" value={sensitivityLabel(selectedCustomerProfile.sensitivityLevel)} />
+                          <ProfileDetailRow label="Última confirmação" value={formatDateShortPt(selectedCustomerProfile.lastConfirmedAt)} />
+                          <ProfileDetailRow label="Atualizado por" value={selectedCustomerProfile.updatedByName} />
+                          <ProfileDetailRow label="Notas de relacionamento" value={selectedCustomerProfile.relationshipNotes} />
+                        </ProfileBlockSection>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
             </>
           )}
         </main>
@@ -1499,13 +1772,13 @@ export const CrmModule = () => {
                   {profileFormError}
                 </div>
               ) : null}
-              <p className="text-xs text-muted-foreground rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+              <p className="text-xs text-muted-foreground rounded-xl border border-border/60 bg-muted/30 px-4 py-3 leading-relaxed">
                 Registre apenas informações úteis para melhorar o atendimento comercial. Evite dados
                 sensíveis, íntimos ou desnecessários.
               </p>
 
-              <fieldset className="space-y-3 border-0 p-0">
-                <legend className="text-xs font-semibold uppercase text-muted-foreground">Comunicação</legend>
+              <fieldset className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                <legend className="text-sm font-bold text-foreground px-1">Canais & Comunicação</legend>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ProfileFormField label="Canal preferido">
                     <select
@@ -1546,7 +1819,7 @@ export const CrmModule = () => {
                     <textarea
                       value={profileForm.communicationStyle}
                       onChange={(e) => updateProfileForm("communicationStyle", e.target.value)}
-                      rows={2}
+                      rows={3}
                       className={textareaClass}
                       placeholder="Ex.: Objetivo, prefere mensagens curtas"
                     />
@@ -1554,8 +1827,8 @@ export const CrmModule = () => {
                 </div>
               </fieldset>
 
-              <fieldset className="space-y-3 border-0 p-0">
-                <legend className="text-xs font-semibold uppercase text-muted-foreground">Comercial</legend>
+              <fieldset className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                <legend className="text-sm font-bold text-foreground px-1">Posicionamento Comercial</legend>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ProfileFormField label="Perfil comercial">
                     <select
@@ -1603,7 +1876,7 @@ export const CrmModule = () => {
                     <textarea
                       value={profileForm.buyingMotivation}
                       onChange={(e) => updateProfileForm("buyingMotivation", e.target.value)}
-                      rows={2}
+                      rows={3}
                       className={textareaClass}
                     />
                   </ProfileFormField>
@@ -1611,23 +1884,23 @@ export const CrmModule = () => {
                     <textarea
                       value={profileForm.commonObjections}
                       onChange={(e) => updateProfileForm("commonObjections", e.target.value)}
-                      rows={2}
+                      rows={3}
                       className={textareaClass}
                     />
                   </ProfileFormField>
                 </div>
               </fieldset>
 
-              <fieldset className="space-y-3 border-0 p-0">
-                <legend className="text-xs font-semibold uppercase text-muted-foreground">
-                  Empatia / contexto permitido
+              <fieldset className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                <legend className="text-sm font-bold text-foreground px-1">
+                  Preferências e Afinidades
                 </legend>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ProfileFormField label="Interesses" className="sm:col-span-2">
                     <textarea
                       value={profileForm.interests}
                       onChange={(e) => updateProfileForm("interests", e.target.value)}
-                      rows={2}
+                      rows={3}
                       className={textareaClass}
                     />
                   </ProfileFormField>
@@ -1649,7 +1922,7 @@ export const CrmModule = () => {
                     <textarea
                       value={profileForm.personalPreferences}
                       onChange={(e) => updateProfileForm("personalPreferences", e.target.value)}
-                      rows={2}
+                      rows={3}
                       className={textareaClass}
                     />
                   </ProfileFormField>
@@ -1657,23 +1930,15 @@ export const CrmModule = () => {
                     <textarea
                       value={profileForm.avoidTopics}
                       onChange={(e) => updateProfileForm("avoidTopics", e.target.value)}
-                      rows={2}
-                      className={textareaClass}
-                    />
-                  </ProfileFormField>
-                  <ProfileFormField label="Nota de relacionamento" className="sm:col-span-2">
-                    <textarea
-                      value={profileForm.relationshipNotes}
-                      onChange={(e) => updateProfileForm("relationshipNotes", e.target.value)}
-                      rows={5}
+                      rows={3}
                       className={textareaClass}
                     />
                   </ProfileFormField>
                 </div>
               </fieldset>
 
-              <fieldset className="space-y-3 border-0 p-0">
-                <legend className="text-xs font-semibold uppercase text-muted-foreground">Governança</legend>
+              <fieldset className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                <legend className="text-sm font-bold text-foreground px-1">Governança dos Dados</legend>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ProfileFormField label="Fonte da informação">
                     <input
@@ -1710,6 +1975,14 @@ export const CrmModule = () => {
                       className={inputClass}
                     />
                   </ProfileFormField>
+                  <ProfileFormField label="Notas de relacionamento" className="sm:col-span-2">
+                    <textarea
+                      value={profileForm.relationshipNotes}
+                      onChange={(e) => updateProfileForm("relationshipNotes", e.target.value)}
+                      rows={5}
+                      className={textareaClass}
+                    />
+                  </ProfileFormField>
                 </div>
               </fieldset>
               </div>
@@ -1718,14 +1991,14 @@ export const CrmModule = () => {
                   type="button"
                   disabled={profileSaving}
                   onClick={() => setProfileModalOpen(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-50"
+                  className="rounded-xl border border-border px-4 py-2.5 text-sm font-semibold hover:bg-accent disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={profileSaving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
                 >
                   {profileSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Salvar perfil
@@ -1742,9 +2015,9 @@ export const CrmModule = () => {
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-lg max-h-[92vh] flex flex-col rounded-2xl border border-border bg-card shadow-xl overflow-hidden"
+            className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl border border-border bg-card shadow-xl overflow-hidden"
           >
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4 shrink-0">
               <h4 className="text-lg font-bold">Novo contato</h4>
               <button
                 type="button"
@@ -1755,161 +2028,165 @@ export const CrmModule = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <form onSubmit={handleSaveContact} className="flex flex-col flex-1 min-h-0"><div className="p-5 space-y-5 overflow-y-auto flex-1">
-              {modalError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                  {modalError}
+            <form onSubmit={handleSaveContact} className="flex flex-col flex-1 min-h-0">
+              <div className="p-5 space-y-6 overflow-y-auto flex-1">
+                {modalError ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    {modalError}
+                  </div>
+                ) : null}
+                <p className="text-xs text-muted-foreground rounded-xl border border-border/60 bg-muted/30 px-4 py-3 leading-relaxed">
+                  Registre apenas informações úteis para o atendimento comercial. Evite dados sensíveis,
+                  íntimos ou desnecessários.
+                </p>
+                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                  <h5 className="text-sm font-bold text-foreground">Dados do contato</h5>
+                  <ProfileFormField label="Data do contato">
+                    <input
+                      type="datetime-local"
+                      required
+                      value={formContactDate}
+                      onChange={(e) => setFormContactDate(e.target.value)}
+                      className={modalInputClass}
+                    />
+                  </ProfileFormField>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <ProfileFormField label="Canal">
+                      <select
+                        value={formChannel}
+                        onChange={(e) => setFormChannel(e.target.value)}
+                        className={modalInputClass}
+                      >
+                        {CHANNEL_OPTIONS.map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    </ProfileFormField>
+                    <ProfileFormField label="Motivo">
+                      <select
+                        value={formReason}
+                        onChange={(e) => setFormReason(e.target.value)}
+                        className={modalInputClass}
+                      >
+                        {REASON_OPTIONS.map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    </ProfileFormField>
+                  </div>
+                  <ProfileFormField label="Status">
+                    <select
+                      value={formStatus}
+                      onChange={(e) => setFormStatus(e.target.value)}
+                      className={modalInputClass}
+                    >
+                      {STATUS_OPTIONS.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </ProfileFormField>
+                  <ProfileFormField label="Responsável">
+                    <input
+                      value={formAssignedTo}
+                      onChange={(e) => setFormAssignedTo(e.target.value)}
+                      className={modalInputClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Registrado por">
+                    <input
+                      value={formCreatedByName}
+                      onChange={(e) => setFormCreatedByName(e.target.value)}
+                      className={modalInputClass}
+                    />
+                  </ProfileFormField>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <ProfileFormField label="Telefone (opcional)">
+                      <input
+                        value={formCreatedByPhone}
+                        onChange={(e) => setFormCreatedByPhone(e.target.value)}
+                        className={modalInputClass}
+                      />
+                    </ProfileFormField>
+                    <ProfileFormField label="E-mail (opcional)">
+                      <input
+                        value={formCreatedByEmail}
+                        onChange={(e) => setFormCreatedByEmail(e.target.value)}
+                        className={modalInputClass}
+                      />
+                    </ProfileFormField>
+                  </div>
                 </div>
-              ) : null}
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Data do contato</label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={formContactDate}
-                  onChange={(e) => setFormContactDate(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold uppercase text-muted-foreground">Canal</label>
-                  <select
-                    value={formChannel}
-                    onChange={(e) => setFormChannel(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  >
-                    {CHANNEL_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
+                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                  <h5 className="text-sm font-bold text-foreground">Resumo da conversa</h5>
+                  <ProfileFormField label="Assunto">
+                    <input
+                      value={formSubject}
+                      onChange={(e) => setFormSubject(e.target.value)}
+                      className={modalInputClass}
+                      placeholder="Resumo curto"
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Descrição / observações">
+                    <textarea
+                      value={formDescription}
+                      onChange={(e) => setFormDescription(e.target.value)}
+                      rows={5}
+                      className={modalTextareaClass}
+                      placeholder="Detalhes do contato"
+                    />
+                  </ProfileFormField>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold uppercase text-muted-foreground">Motivo</label>
-                  <select
-                    value={formReason}
-                    onChange={(e) => setFormReason(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  >
-                    {REASON_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
+                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
+                  <h5 className="text-sm font-bold text-foreground">Resultado</h5>
+                  <ProfileFormField label="Resultado do contato">
+                    <input
+                      value={formOutcome}
+                      onChange={(e) => setFormOutcome(e.target.value)}
+                      className={modalInputClass}
+                    />
+                  </ProfileFormField>
                 </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Assunto</label>
-                <input
-                  value={formSubject}
-                  onChange={(e) => setFormSubject(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="Resumo curto"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Descrição / observações</label>
-                <textarea
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  rows={3}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="Detalhes do contato"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Resultado</label>
-                <input
-                  value={formOutcome}
-                  onChange={(e) => setFormOutcome(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Status</label>
-                <select
-                  value={formStatus}
-                  onChange={(e) => setFormStatus(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                >
-                  {STATUS_OPTIONS.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Responsável</label>
-                <input
-                  value={formAssignedTo}
-                  onChange={(e) => setFormAssignedTo(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Registrado por (nome)</label>
-                <input
-                  value={formCreatedByName}
-                  onChange={(e) => setFormCreatedByName(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold uppercase text-muted-foreground">Telefone (opcional)</label>
-                  <input
-                    value={formCreatedByPhone}
-                    onChange={(e) => setFormCreatedByPhone(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold uppercase text-muted-foreground">E-mail (opcional)</label>
-                  <input
-                    value={formCreatedByEmail}
-                    onChange={(e) => setFormCreatedByEmail(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  />
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-4">
+                  <h5 className="text-sm font-bold text-foreground">Próxima ação</h5>
+                  <ProfileFormField label="Data da próxima ação">
+                    <input
+                      type="datetime-local"
+                      value={formNextActionAt}
+                      onChange={(e) => setFormNextActionAt(e.target.value)}
+                      className={modalInputClass}
+                    />
+                  </ProfileFormField>
+                  <ProfileFormField label="Descrição da próxima ação">
+                    <input
+                      value={formNextActionDescription}
+                      onChange={(e) => setFormNextActionDescription(e.target.value)}
+                      className={modalInputClass}
+                    />
+                  </ProfileFormField>
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Próxima ação (data)</label>
-                <input
-                  type="datetime-local"
-                  value={formNextActionAt}
-                  onChange={(e) => setFormNextActionAt(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase text-muted-foreground">Próxima ação (descrição)</label>
-                <input
-                  value={formNextActionDescription}
-                  onChange={(e) => setFormNextActionDescription(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              </div>
-              <div className="flex justify-end gap-2 p-5 border-t border-border shrink-0">
+              <div className="flex justify-end gap-2 p-5 border-t border-border bg-card shrink-0">
                 <button
                   type="button"
                   disabled={modalSaving}
                   onClick={() => setModalOpen(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-50"
+                  className="rounded-xl border border-border px-4 py-2.5 text-sm font-semibold hover:bg-accent disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={modalSaving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
                 >
                   {modalSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Salvar
+                  Salvar contato
                 </button>
               </div>
             </form>
