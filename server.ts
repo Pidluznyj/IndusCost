@@ -8125,6 +8125,254 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  /**
+   * Perfil de relacionamento (CRM): preferências comerciais e relacionamento profissional.
+   * Não deve armazenar dados sensíveis desnecessários (religião, saúde, política, informações íntimas).
+   */
+  const CRM_PROFILE_MAX_BODY_CHARS = 32000;
+  const CRM_PROFILE_SHORT_TEXT_MAX = 500;
+  const CRM_PROFILE_LONG_TEXT_MAX = 2000;
+  const CRM_PROFILE_SENSITIVITY_VALUES = ["NORMAL", "ATTENTION", "SENSITIVE_AVOID"] as const;
+  const CRM_PROFILE_UPDATED_BY_FALLBACK = "Comercial Lazarios";
+
+  const CRM_PROFILE_STRING_FIELDS: { key: string; maxLen: number }[] = [
+    { key: "preferredChannel", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "bestContactTime", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "contactFrequency", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "communicationStyle", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "commercialProfile", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "buyingMotivation", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "commonObjections", maxLen: CRM_PROFILE_LONG_TEXT_MAX },
+    { key: "relationshipLevel", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "commercialTemperature", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "interests", maxLen: CRM_PROFILE_LONG_TEXT_MAX },
+    { key: "favoriteTeam", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "importantDates", maxLen: CRM_PROFILE_LONG_TEXT_MAX },
+    { key: "personalPreferences", maxLen: CRM_PROFILE_LONG_TEXT_MAX },
+    { key: "avoidTopics", maxLen: CRM_PROFILE_LONG_TEXT_MAX },
+    { key: "relationshipNotes", maxLen: CRM_PROFILE_LONG_TEXT_MAX },
+    { key: "informationSource", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+    { key: "updatedByName", maxLen: CRM_PROFILE_SHORT_TEXT_MAX },
+  ];
+
+  function normalizeCrmProfileNullableString(
+    value: unknown,
+    maxLen: number
+  ): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (typeof value !== "string") return undefined;
+    const t = value.trim();
+    if (!t) return null;
+    return t.length > maxLen ? t.slice(0, maxLen) : t;
+  }
+
+  function parseCrmProfileSensitivity(value: unknown): string {
+    if (typeof value !== "string") return "NORMAL";
+    const u = value.trim().toUpperCase();
+    return (CRM_PROFILE_SENSITIVITY_VALUES as readonly string[]).includes(u) ? u : "NORMAL";
+  }
+
+  function mapCrmProfileForApi(row: {
+    id: string;
+    customerId: string;
+    preferredChannel: string | null;
+    bestContactTime: string | null;
+    contactFrequency: string | null;
+    communicationStyle: string | null;
+    commercialProfile: string | null;
+    buyingMotivation: string | null;
+    commonObjections: string | null;
+    relationshipLevel: string | null;
+    commercialTemperature: string | null;
+    interests: string | null;
+    favoriteTeam: string | null;
+    importantDates: string | null;
+    personalPreferences: string | null;
+    avoidTopics: string | null;
+    relationshipNotes: string | null;
+    informationSource: string | null;
+    sensitivityLevel: string;
+    lastConfirmedAt: Date | null;
+    updatedByName: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: row.id,
+      customerId: row.customerId,
+      preferredChannel: row.preferredChannel,
+      bestContactTime: row.bestContactTime,
+      contactFrequency: row.contactFrequency,
+      communicationStyle: row.communicationStyle,
+      commercialProfile: row.commercialProfile,
+      buyingMotivation: row.buyingMotivation,
+      commonObjections: row.commonObjections,
+      relationshipLevel: row.relationshipLevel,
+      commercialTemperature: row.commercialTemperature,
+      interests: row.interests,
+      favoriteTeam: row.favoriteTeam,
+      importantDates: row.importantDates,
+      personalPreferences: row.personalPreferences,
+      avoidTopics: row.avoidTopics,
+      relationshipNotes: row.relationshipNotes,
+      informationSource: row.informationSource,
+      sensitivityLevel: row.sensitivityLevel,
+      lastConfirmedAt: row.lastConfirmedAt,
+      updatedByName: row.updatedByName,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  function buildCrmProfileCustomerSummary(customer: {
+    id: string;
+    companyName: string;
+    taxId: string;
+  }) {
+    return {
+      id: customer.id,
+      displayName: customer.companyName,
+      taxId: customer.taxId,
+    };
+  }
+
+  type CrmProfileWritableScalars = {
+    preferredChannel?: string | null;
+    bestContactTime?: string | null;
+    contactFrequency?: string | null;
+    communicationStyle?: string | null;
+    commercialProfile?: string | null;
+    buyingMotivation?: string | null;
+    commonObjections?: string | null;
+    relationshipLevel?: string | null;
+    commercialTemperature?: string | null;
+    interests?: string | null;
+    favoriteTeam?: string | null;
+    importantDates?: string | null;
+    personalPreferences?: string | null;
+    avoidTopics?: string | null;
+    relationshipNotes?: string | null;
+    informationSource?: string | null;
+    sensitivityLevel?: string;
+    lastConfirmedAt?: Date | null;
+    updatedByName?: string | null;
+  };
+
+  function sanitizeCrmProfileUpsertBody(
+    body: Record<string, unknown>
+  ): { data: CrmProfileWritableScalars; error?: string } {
+    const data: CrmProfileWritableScalars = {};
+
+    for (const { key, maxLen } of CRM_PROFILE_STRING_FIELDS) {
+      if (!(key in body)) continue;
+      const v = normalizeCrmProfileNullableString(body[key], maxLen);
+      if (v === undefined) {
+        return { data: {}, error: `Campo ${key} inválido.` };
+      }
+      (data as Record<string, string | null>)[key] = v;
+    }
+
+    if ("sensitivityLevel" in body) {
+      data.sensitivityLevel = parseCrmProfileSensitivity(body.sensitivityLevel);
+    }
+
+    if ("lastConfirmedAt" in body) {
+      if (body.lastConfirmedAt === null || body.lastConfirmedAt === "") {
+        data.lastConfirmedAt = null;
+      } else {
+        const d = parseOptionalIsoDate(body.lastConfirmedAt);
+        if (d === undefined) {
+          return { data: {}, error: "lastConfirmedAt inválido." };
+        }
+        data.lastConfirmedAt = d;
+      }
+    }
+
+    if ("updatedByName" in body) {
+      const name = normalizeCrmProfileNullableString(body.updatedByName, CRM_PROFILE_SHORT_TEXT_MAX);
+      if (name === undefined) {
+        return { data: {}, error: "updatedByName inválido." };
+      }
+      data.updatedByName = name ?? CRM_PROFILE_UPDATED_BY_FALLBACK;
+    }
+
+    return { data };
+  }
+
+  app.get("/api/crm/customers/:customerId/profile", async (req, res) => {
+    const { customerId } = req.params;
+    if (!isUuidParam(customerId)) {
+      return res.status(400).json({ error: "customerId inválido." });
+    }
+    try {
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { id: true, companyName: true, taxId: true },
+      });
+      if (!customer) return res.status(404).json({ error: "Cliente não encontrado." });
+
+      const profile = await prisma.crmCustomerProfile.findUnique({
+        where: { customerId },
+      });
+
+      res.json({
+        customer: buildCrmProfileCustomerSummary(customer),
+        profile: profile ? mapCrmProfileForApi(profile) : null,
+      });
+    } catch (error) {
+      console.error("GET /api/crm/customers/:customerId/profile", error);
+      res.status(500).json({ error: "Erro ao carregar perfil de relacionamento." });
+    }
+  });
+
+  app.put("/api/crm/customers/:customerId/profile", async (req, res) => {
+    const { customerId } = req.params;
+    if (!isUuidParam(customerId)) {
+      return res.status(400).json({ error: "customerId inválido." });
+    }
+    try {
+      const rawBody = req.body;
+      if (rawBody && typeof rawBody === "object") {
+        const approx = JSON.stringify(rawBody).length;
+        if (approx > CRM_PROFILE_MAX_BODY_CHARS) {
+          return res.status(400).json({ error: "Payload muito grande." });
+        }
+      }
+      const body = (rawBody && typeof rawBody === "object" ? rawBody : {}) as Record<string, unknown>;
+
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { id: true, companyName: true, taxId: true },
+      });
+      if (!customer) return res.status(404).json({ error: "Cliente não encontrado." });
+
+      const { data, error: sanitizeError } = sanitizeCrmProfileUpsertBody(body);
+      if (sanitizeError) {
+        return res.status(400).json({ error: sanitizeError });
+      }
+
+      const profile = await prisma.crmCustomerProfile.upsert({
+        where: { customerId },
+        create: {
+          customerId,
+          sensitivityLevel: data.sensitivityLevel ?? "NORMAL",
+          updatedByName: data.updatedByName ?? CRM_PROFILE_UPDATED_BY_FALLBACK,
+          ...data,
+        },
+        update: data,
+      });
+
+      res.json({
+        customer: buildCrmProfileCustomerSummary(customer),
+        profile: mapCrmProfileForApi(profile),
+      });
+    } catch (error) {
+      console.error("PUT /api/crm/customers/:customerId/profile", error);
+      res.status(500).json({ error: "Erro ao salvar perfil de relacionamento." });
+    }
+  });
+
   app.post("/api/customers", async (req, res) => {
     const customer = await prisma.customer.create({ data: req.body });
     res.json(customer);

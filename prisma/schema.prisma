@@ -276,6 +276,7 @@ model Customer {
   relationshipStatus String?
   accountOwner       String?
   CommercialActivity CommercialActivity[]
+  CrmCustomerProfile CrmCustomerProfile?
   proposals          Proposal[]
   salesOrders        SalesOrder[]
 }
@@ -661,6 +662,37 @@ model CommercialActivity {
   @@index([scheduledAt])
   @@index([nextActionAt])
   @@index([status])
+}
+
+/// Preferências comerciais e relacionamento profissional (não armazenar dados sensíveis desnecessários).
+model CrmCustomerProfile {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId           String    @unique @db.Uuid
+  preferredChannel     String?
+  bestContactTime      String?
+  contactFrequency     String?
+  communicationStyle   String?
+  commercialProfile    String?
+  buyingMotivation     String?
+  commonObjections     String?
+  relationshipLevel    String?
+  commercialTemperature String?
+  interests            String?
+  favoriteTeam         String?
+  importantDates       String?
+  personalPreferences  String?
+  avoidTopics          String?
+  relationshipNotes    String?
+  informationSource    String?
+  sensitivityLevel     String    @default("NORMAL")
+  lastConfirmedAt      DateTime? @db.Timestamp(6)
+  updatedByName        String?
+  createdAt            DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @db.Timestamp(6)
+  Customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([relationshipLevel])
+  @@index([commercialTemperature])
 }
 
 model CommercialAuditLog {
