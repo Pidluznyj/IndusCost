@@ -1,5 +1,6 @@
-// src/components/CrmModule.tsx — CRM Comercial: indicadores, busca, ficha, perfil, timeline e contatos.
+// src/components/CrmModule.tsx — CRM Comercial: cockpit comercial, carteira, perfil e timeline.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   Loader2,
   Search,
@@ -15,6 +16,17 @@ import {
   Clock,
   UserCircle,
   Pencil,
+  Users,
+  UserCheck,
+  UserX,
+  AlertTriangle,
+  CalendarDays,
+  Sparkles,
+  Target,
+  Lightbulb,
+  History,
+  Thermometer,
+  Radio,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -397,37 +409,177 @@ function sensitivityLabel(value: string | null | undefined): string {
   return "Normal";
 }
 
-function buildApproachGuide(profile: CrmCustomerProfile | null): string[] {
+type ApproachGuideBlocks = {
+  empty: boolean;
+  howToApproach: string | null;
+  highlight: string | null;
+  attention: string | null;
+};
+
+function buildApproachGuideBlocks(profile: CrmCustomerProfile | null): ApproachGuideBlocks {
   if (!profile) {
-    return ["Complete o perfil para orientar melhor os próximos contatos."];
+    return { empty: true, howToApproach: null, highlight: null, attention: null };
   }
-  const lines: string[] = [];
   const channel = strField(profile.preferredChannel);
   const style = strField(profile.communicationStyle);
+  let howToApproach: string | null = null;
   if (channel && style) {
-    lines.push(
-      `Abordagem sugerida: entrar por ${channel}, com comunicação ${style.toLowerCase()}, retomando o último contexto comercial.`
-    );
+    howToApproach = `Entrar por ${channel}, com comunicação ${style.toLowerCase()}, retomando o último contexto comercial.`;
   } else if (channel) {
-    lines.push(
-      `Abordagem sugerida: entrar por ${channel}, retomando o último contexto comercial.`
-    );
+    howToApproach = `Entrar por ${channel}, retomando o último contexto comercial.`;
   }
-  const motivation = strField(profile.buyingMotivation);
-  if (motivation) lines.push(`Destaque na conversa: ${motivation}.`);
-  const objections = strField(profile.commonObjections);
-  if (objections) lines.push(`Ponto de atenção: ${objections}.`);
-  if (lines.length === 0) {
-    lines.push("Complete o perfil para orientar melhor os próximos contatos.");
-  }
-  return lines;
+  const highlight = strField(profile.buyingMotivation) || null;
+  const attention = strField(profile.commonObjections) || null;
+  return {
+    empty: !howToApproach && !highlight && !attention,
+    howToApproach,
+    highlight,
+    attention,
+  };
+}
+
+function temperatureBadgeClass(temp: string | null | undefined): string {
+  const u = String(temp ?? "").trim().toUpperCase();
+  if (u === "FRIO") return "bg-slate-100 text-slate-700 border-slate-200";
+  if (u === "MORNO") return "bg-amber-100 text-amber-900 border-amber-200";
+  if (u === "QUENTE") return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  return "bg-muted/80 text-muted-foreground border-border";
+}
+
+function hasProfileFieldValue(v: unknown): boolean {
+  return strField(v).length > 0;
 }
 
 function ProfileDetailRow({ label, value }: { label: string; value: unknown }) {
+  if (!hasProfileFieldValue(value)) return null;
   return (
-    <div className="min-w-0">
-      <dt className="text-xs font-semibold uppercase text-muted-foreground">{label}</dt>
-      <dd className="text-sm break-words">{displayLine(value)}</dd>
+    <div className="min-w-0 py-1">
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="text-sm font-medium text-foreground break-words mt-0.5">{displayLine(value)}</dd>
+    </div>
+  );
+}
+
+function ProfileBlockSection({
+  title,
+  emptyHint,
+  children,
+}: {
+  title: string;
+  emptyHint: string;
+  children: React.ReactNode;
+}) {
+  const childArray = React.Children.toArray(children).filter(Boolean);
+  if (childArray.length === 0) {
+    return (
+      <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">{title}</h4>
+        <p className="text-sm text-muted-foreground">{emptyHint}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-border/70 bg-muted/10 p-4 sm:p-5 space-y-3">
+      <h4 className="text-xs font-bold uppercase tracking-wide text-foreground">{title}</h4>
+      <dl className="grid gap-1 sm:grid-cols-2">{children}</dl>
+    </div>
+  );
+}
+
+function StatChip({
+  label,
+  value,
+  icon: Icon,
+  accent,
+}: {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  accent?: string;
+}) {
+  return (
+    <div className={cn("rounded-xl border border-border/80 bg-background/80 p-4 shadow-sm", accent)}>
+      <div className="flex items-center gap-2 text-muted-foreground mb-2">
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="text-[11px] font-semibold uppercase tracking-wide">{label}</span>
+      </div>
+      <p className="text-sm font-bold text-foreground leading-snug">{value}</p>
+    </div>
+  );
+}
+
+function ApproachGuideCard({ guide, hasProfile }: { guide: ApproachGuideBlocks; hasProfile: boolean }) {
+  return (
+    <div className="rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/8 via-card to-card p-6 shadow-sm space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="rounded-xl bg-primary/15 p-2.5 text-primary shrink-0">
+          <Lightbulb className="h-5 w-5" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-foreground">Guia rápido para abordagem</h3>
+          <p className="text-sm text-muted-foreground">Orientações práticas para o próximo contato.</p>
+        </div>
+      </div>
+      {!hasProfile || guide.empty ? (
+        <p className="text-sm text-muted-foreground rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3">
+          Complete o perfil de relacionamento para orientar melhor os próximos contatos.
+        </p>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-border/80 bg-background/90 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-primary">
+              <Target className="h-4 w-4 shrink-0" />
+              <span className="text-[11px] font-bold uppercase tracking-wide">Como abordar</span>
+            </div>
+            <p className="text-sm font-medium text-foreground leading-relaxed">
+              {guide.howToApproach ?? "Defina canal e estilo no perfil."}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border/80 bg-background/90 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-emerald-700">
+              <Sparkles className="h-4 w-4 shrink-0" />
+              <span className="text-[11px] font-bold uppercase tracking-wide">O que destacar</span>
+            </div>
+            <p className="text-sm font-medium text-foreground leading-relaxed">
+              {guide.highlight ?? "Registre motivação de compra no perfil."}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border/80 bg-background/90 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-amber-800">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span className="text-[11px] font-bold uppercase tracking-wide">Ponto de atenção</span>
+            </div>
+            <p className="text-sm font-medium text-foreground leading-relaxed">
+              {guide.attention ?? "Registre objeções comuns no perfil."}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomerListBadges({ customer }: { customer: CrmCustomerListItem }) {
+  const hasContact = Boolean(customer.lastContactAt);
+  const hasFutureFollowUp =
+    customer.nextFollowUpAt != null &&
+    parseActivityDate(customer.nextFollowUpAt) > Date.now();
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      {!hasContact ? (
+        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">
+          Sem contato
+        </span>
+      ) : (
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-900">
+          Com histórico
+        </span>
+      )}
+      {hasFutureFollowUp ? (
+        <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase text-sky-900">
+          Follow-up futuro
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -642,10 +794,13 @@ export const CrmModule = () => {
     return { lastContact, nextFollowUp, nextFollowUpDetail, total: activities.length };
   }, [activities]);
 
-  const approachGuideLines = useMemo(
-    () => buildApproachGuide(selectedCustomerProfile),
+  const approachGuide = useMemo(
+    () => buildApproachGuideBlocks(selectedCustomerProfile),
     [selectedCustomerProfile]
   );
+
+  const heroTemperature = selectedCustomerProfile?.commercialTemperature ?? null;
+  const heroChannel = selectedCustomerProfile?.preferredChannel ?? null;
 
   const openProfileModal = () => {
     setProfileFormError(null);
@@ -815,16 +970,61 @@ export const CrmModule = () => {
     }
   };
 
-  const dashboardCards = [
-    { label: "Total de clientes", value: dashboard?.totalCustomers },
-    { label: "Com contato (30 dias)", value: dashboard?.customersWithContactLast30Days },
-    { label: "Sem contato (30 dias)", value: dashboard?.customersWithoutContactLast30Days },
-    { label: "Follow-ups atrasados", value: dashboard?.overdueFollowUps },
-    { label: "Próximos follow-ups (7 dias)", value: dashboard?.upcomingFollowUpsNext7Days },
+  const dashboardCards: {
+    label: string;
+    description: string;
+    value: number | undefined;
+    icon: LucideIcon;
+    cardClass: string;
+    iconClass: string;
+  }[] = [
+    {
+      label: "Total de clientes",
+      description: "Carteira cadastrada no sistema",
+      value: dashboard?.totalCustomers,
+      icon: Users,
+      cardClass: "border-slate-200/80 bg-gradient-to-br from-slate-50 to-card",
+      iconClass: "text-slate-600 bg-slate-100",
+    },
+    {
+      label: "Com contato 30 dias",
+      description: "Relacionamento ativo no mês",
+      value: dashboard?.customersWithContactLast30Days,
+      icon: UserCheck,
+      cardClass: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 to-card",
+      iconClass: "text-emerald-700 bg-emerald-100",
+    },
+    {
+      label: "Sem contato 30 dias",
+      description: "Precisam de reativação",
+      value: dashboard?.customersWithoutContactLast30Days,
+      icon: UserX,
+      cardClass: "border-amber-200/80 bg-gradient-to-br from-amber-50/80 to-card",
+      iconClass: "text-amber-800 bg-amber-100",
+    },
+    {
+      label: "Follow-ups atrasados",
+      description: "Ações pendentes vencidas",
+      value: dashboard?.overdueFollowUps,
+      icon: AlertTriangle,
+      cardClass: "border-red-200/80 bg-gradient-to-br from-red-50/60 to-card",
+      iconClass: "text-red-700 bg-red-100",
+    },
+    {
+      label: "Próximos follow-ups 7 dias",
+      description: "Agenda da semana",
+      value: dashboard?.upcomingFollowUpsNext7Days,
+      icon: CalendarDays,
+      cardClass: "border-sky-200/80 bg-gradient-to-br from-sky-50/80 to-card",
+      iconClass: "text-sky-800 bg-sky-100",
+    },
   ];
 
+  const heroTemperatureLabel = heroTemperature ? displayLine(heroTemperature) : "—";
+  const heroChannelLabel = heroChannel ? displayLine(heroChannel) : "—";
+
   return (
-    <div className="space-y-8" data-tour="crm-root">
+    <div className="mx-auto w-full max-w-[1500px] space-y-10 pb-4" data-tour="crm-root">
       {toast ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -832,11 +1032,13 @@ export const CrmModule = () => {
         </div>
       ) : null}
 
-      {/* Indicadores */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Indicadores
-        </h3>
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-lg font-bold text-foreground">Indicadores da carteira</h3>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Visão rápida do relacionamento e da agenda comercial.
+          </p>
+        </div>
         {dashboardLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -847,81 +1049,107 @@ export const CrmModule = () => {
             {dashboardError}
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {dashboardCards.map((card) => (
-              <div
-                key={card.label}
-                className="rounded-xl border border-border bg-card p-4 shadow-sm flex flex-col gap-1"
-              >
-                <span className="text-xs font-medium text-muted-foreground leading-tight">{card.label}</span>
-                <span className="text-2xl font-bold tabular-nums">
-                  {typeof card.value === "number" ? card.value : "—"}
-                </span>
-              </div>
-            ))}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            {dashboardCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <div
+                  key={card.label}
+                  className={cn(
+                    "rounded-2xl border p-5 shadow-sm flex flex-col gap-3 min-h-[132px]",
+                    card.cardClass
+                  )}
+                >
+                  <div className={cn("rounded-xl p-2.5 w-fit shrink-0", card.iconClass)}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-3xl font-bold tabular-nums leading-none text-foreground">
+                      {typeof card.value === "number" ? card.value : "—"}
+                    </p>
+                    <p className="text-sm font-semibold text-foreground mt-2 leading-snug">{card.label}</p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{card.description}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
-        {/* Lista */}
-        <div className="space-y-4 min-w-0">
-          <form onSubmit={handleSearch} className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Buscar cliente
-            </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Razão social, fantasia, CNPJ, e-mail, telefone, cidade ou UF…"
-                className="w-full pl-10 pr-3 py-2 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-              />
+      <div className="grid gap-8 lg:grid-cols-[minmax(360px,420px)_minmax(0,1fr)]">
+        <aside className="min-w-0">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5">
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Carteira de clientes</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Busque e filtre a carteira para abrir o cockpit do cliente.
+              </p>
             </div>
-            <button
-              type="submit"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
-            >
-              <Search className="h-4 w-4" />
-              Buscar
-            </button>
-            <p className="text-xs text-muted-foreground">Busca em clientes cadastrados no IndusCost.</p>
-          </form>
-
-          <div className="flex flex-wrap gap-2">
-            {CRM_FILTER_CHIPS.map((chip) => (
+            <form onSubmit={handleSearch} className="space-y-3">
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Buscar
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nome, fantasia, CNPJ, e-mail ou telefone..."
+                  className="w-full pl-11 pr-3 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
+              </div>
               <button
-                key={chip.value}
-                type="button"
-                onClick={() => applyListFilter(chip.value)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
-                  listFilter === chip.value
-                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                    : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                )}
+                type="submit"
+                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
               >
-                {chip.label}
+                <Search className="h-4 w-4" />
+                Buscar
               </button>
-            ))}
-          </div>
+            </form>
 
-          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
-            <div className="border-b border-border px-4 py-3 bg-accent/40">
-              <span className="text-sm font-semibold">Clientes</span>
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Filtros rápidos
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {CRM_FILTER_CHIPS.map((chip) => (
+                  <button
+                    key={chip.value}
+                    type="button"
+                    onClick={() => applyListFilter(chip.value)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                      listFilter === chip.value
+                        ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                        : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
             </div>
+
             {customersLoading ? (
-              <div className="p-8 flex justify-center text-muted-foreground">
-                <Loader2 className="h-6 w-6 animate-spin" />
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                Buscando clientes…
               </div>
             ) : customersError ? (
-              <div className="p-4 text-sm text-red-700">{customersError}</div>
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                {customersError}
+              </div>
             ) : customers.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground text-center">Nenhum cliente encontrado.</div>
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
+                <p className="text-sm font-semibold text-foreground">Nenhum cliente encontrado</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Ajuste a busca ou os filtros para localizar o cliente.
+                </p>
+              </div>
             ) : (
-              <ul className="max-h-[min(520px,55vh)] overflow-y-auto divide-y divide-border">
+              <ul className="space-y-2 max-h-[min(560px,58vh)] overflow-y-auto pr-1">
                 {customers.map((c) => {
                   const active = c.id === selectedId;
                   return (
@@ -930,31 +1158,28 @@ export const CrmModule = () => {
                         type="button"
                         onClick={() => setSelectedId(c.id)}
                         className={cn(
-                          "w-full text-left px-4 py-3 text-sm transition-colors hover:bg-accent/60",
-                          active && "bg-primary/10 border-l-4 border-l-primary"
+                          "w-full text-left rounded-xl border px-4 py-3.5 transition-all",
+                          active
+                            ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/20"
+                            : "border-border/80 bg-background hover:border-primary/30 hover:bg-accent/40"
                         )}
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="font-medium text-foreground line-clamp-2 min-w-0 flex-1">
-                            {getCustomerDisplayName(c)}
-                          </div>
-                          {!c.lastContactAt ? (
-                            <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
-                              Sem contato
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {getCustomerTaxId(c) !== "—" ? getCustomerTaxId(c) : "—"}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
-                          <div>{formatCityState(c.city, c.state)}</div>
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
-                            <span>Últ. contato: {formatDateShortPt(c.lastContactAt)}</span>
-                            <span>Próx. follow-up: {formatDateShortPt(c.nextFollowUpAt)}</span>
-                            <span>Total: {c.contactCount}</span>
-                          </div>
-                        </div>
+                        <p className="font-semibold text-sm text-foreground leading-snug line-clamp-2">
+                          {getCustomerDisplayName(c)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1 tabular-nums">
+                          {getCustomerTaxId(c) !== "—" ? getCustomerTaxId(c) : "Documento não informado"}
+                        </p>
+                        {formatCityState(c.city, c.state) !== "—" ? (
+                          <p className="text-xs text-muted-foreground mt-1">{formatCityState(c.city, c.state)}</p>
+                        ) : null}
+                        <p className="text-[11px] text-muted-foreground mt-2">
+                          Último contato:{" "}
+                          <span className="font-medium text-foreground">
+                            {formatDateShortPt(c.lastContactAt)}
+                          </span>
+                        </p>
+                        <CustomerListBadges customer={c} />
                       </button>
                     </li>
                   );
@@ -962,31 +1187,34 @@ export const CrmModule = () => {
               </ul>
             )}
             {!customersLoading && !customersError && listHasMore ? (
-              <div className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground text-center">
-                Há mais resultados. Refine a busca ou use filtros para achar o cliente.
-              </div>
+              <p className="text-[11px] text-muted-foreground text-center pt-1">
+                Há mais resultados. Refine a busca ou use filtros.
+              </p>
             ) : null}
           </div>
-        </div>
+        </aside>
 
-        {/* Ficha + timeline */}
-        <div className="space-y-4 min-w-0">
+        <main className="space-y-6 min-w-0">
           {!selectedCustomer ? (
-            <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center text-sm text-muted-foreground">
-              Selecione um cliente à esquerda para ver a ficha e a linha do tempo de contatos.
+            <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-12 text-center">
+              <UserCircle className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+              <p className="text-base font-semibold text-foreground">Selecione um cliente para visualizar o CRM</p>
+              <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+                Escolha um cliente na carteira à esquerda para ver dados, perfil de relacionamento e linha do tempo.
+              </p>
             </div>
           ) : (
             <>
-              <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="rounded-lg bg-primary/10 p-2 text-primary shrink-0">
-                      <Building2 className="h-5 w-5" />
+              <div className="rounded-2xl border border-border bg-card p-6 sm:p-8 shadow-sm space-y-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-4 min-w-0">
+                    <div className="rounded-xl bg-primary/10 p-3 text-primary shrink-0">
+                      <Building2 className="h-6 w-6" />
                     </div>
                     <div className="min-w-0 space-y-1">
-                      <h3 className="text-lg font-bold leading-tight break-words">
+                      <h2 className="text-2xl sm:text-3xl font-bold leading-tight break-words text-foreground">
                         {getCustomerDisplayName(selectedCustomer)}
-                      </h3>
+                      </h2>
                       {strField(selectedCustomer.tradeName) ? (
                         <p className="text-sm text-muted-foreground">
                           Fantasia: {displayLine(selectedCustomer.tradeName)}
@@ -994,96 +1222,114 @@ export const CrmModule = () => {
                       ) : null}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={openModal}
-                    className="inline-flex items-center justify-center gap-2 shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Novo contato
-                  </button>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={openModal}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Novo contato
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openProfileModal}
+                      disabled={profileLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      {selectedCustomerProfile ? "Editar perfil" : "Criar perfil"}
+                    </button>
+                  </div>
                 </div>
 
-                <dl className="grid gap-3 sm:grid-cols-2 text-sm">
+                <dl className="grid gap-4 sm:grid-cols-2 text-sm">
                   <div>
-                    <dt className="text-xs font-semibold uppercase text-muted-foreground">CNPJ / documento</dt>
-                    <dd>{getCustomerTaxId(selectedCustomer)}</dd>
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">CNPJ / CPF</dt>
+                    <dd className="font-semibold mt-1">{getCustomerTaxId(selectedCustomer)}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold uppercase text-muted-foreground">Telefone</dt>
-                    <dd className="flex items-center gap-1.5">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Telefone</dt>
+                    <dd className="font-semibold mt-1 flex items-center gap-1.5">
                       <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       {displayLine(selectedCustomer.phone)}
                     </dd>
                   </div>
                   <div className="sm:col-span-2">
-                    <dt className="text-xs font-semibold uppercase text-muted-foreground">E-mail</dt>
-                    <dd className="flex items-center gap-1.5 break-all">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">E-mail</dt>
+                    <dd className="font-semibold mt-1 flex items-center gap-1.5 break-all">
                       <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       {displayLine(selectedCustomer.email)}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold uppercase text-muted-foreground">Cidade / UF</dt>
-                    <dd className="flex items-center gap-1.5">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Cidade / UF</dt>
+                    <dd className="font-semibold mt-1 flex items-center gap-1.5">
                       <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       {formatCityState(selectedCustomer.city, selectedCustomer.state)}
                     </dd>
                   </div>
                   <div className="sm:col-span-2">
-                    <dt className="text-xs font-semibold uppercase text-muted-foreground">Endereço</dt>
-                    <dd className="break-words">{displayLine(selectedCustomer.address)}</dd>
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Endereço</dt>
+                    <dd className="font-semibold mt-1 break-words">{displayLine(selectedCustomer.address)}</dd>
                   </div>
                 </dl>
 
-                <div className="grid gap-2 sm:grid-cols-3 pt-2 border-t border-border text-sm">
-                  <div>
-                    <span className="text-xs text-muted-foreground block">Último contato</span>
-                    <span className="font-medium">{sheetStats.lastContact}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground block">Próximo follow-up</span>
-                    <span className="font-medium">{sheetStats.nextFollowUp}</span>
-                    {sheetStats.nextFollowUpDetail !== "—" ? (
-                      <span className="text-xs text-muted-foreground block mt-0.5 line-clamp-2">
-                        {sheetStats.nextFollowUpDetail}
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 pt-2 border-t border-border">
+                  <StatChip label="Último contato" value={sheetStats.lastContact} icon={History} />
+                  <StatChip label="Próximo follow-up" value={sheetStats.nextFollowUp} icon={CalendarClock} />
+                  <StatChip label="Total de contatos" value={String(sheetStats.total)} icon={MessageSquare} />
+                  <div className="rounded-xl border border-border/80 bg-background/80 p-4 shadow-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                      <Thermometer className="h-4 w-4 shrink-0" />
+                      <span className="text-[11px] font-semibold uppercase tracking-wide">Temperatura</span>
+                    </div>
+                    {heroTemperature ? (
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full border px-2.5 py-1 text-xs font-bold uppercase",
+                          temperatureBadgeClass(heroTemperature)
+                        )}
+                      >
+                        {heroTemperatureLabel}
                       </span>
-                    ) : null}
+                    ) : (
+                      <p className="text-sm font-bold text-foreground">—</p>
+                    )}
                   </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground block">Total de contatos</span>
-                    <span className="font-medium tabular-nums">{sheetStats.total}</span>
-                  </div>
+                  <StatChip label="Canal preferido" value={heroChannelLabel} icon={Radio} />
                 </div>
               </div>
 
-              <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <ApproachGuideCard guide={approachGuide} hasProfile={Boolean(selectedCustomerProfile)} />
+
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2 min-w-0">
                     <UserCircle className="h-5 w-5 text-primary shrink-0" />
-                    <h3 className="text-base font-bold">Perfil de relacionamento</h3>
+                    <h3 className="text-lg font-bold">Perfil de relacionamento</h3>
                   </div>
                   <button
                     type="button"
                     onClick={openProfileModal}
                     disabled={profileLoading}
-                    className="inline-flex items-center justify-center gap-2 shrink-0 rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+                    className="inline-flex items-center justify-center gap-2 shrink-0 rounded-xl border border-border bg-background px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
                   >
                     <Pencil className="h-4 w-4" />
                     {selectedCustomerProfile ? "Editar perfil" : "Criar perfil"}
                   </button>
                 </div>
-                <p className="text-xs text-muted-foreground rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground rounded-xl border border-border/60 bg-muted/30 px-4 py-3 leading-relaxed">
                   Registre apenas informações úteis para melhorar o atendimento comercial. Evite dados
                   sensíveis, íntimos ou desnecessários.
                 </p>
                 {profileLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
                     Carregando perfil…
                   </div>
                 ) : profileError ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                     {profileError}
                   </div>
                 ) : !selectedCustomerProfile ? (
@@ -1091,111 +1337,82 @@ export const CrmModule = () => {
                     Nenhum perfil de relacionamento registrado para este cliente.
                   </p>
                 ) : (
-                  <>
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-                        Guia rápido para abordagem
-                      </p>
-                      <ul className="text-sm text-foreground space-y-1 list-disc pl-4">
-                        {approachGuideLines.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="space-y-4 text-sm">
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Comunicação</h4>
-                        <dl className="grid gap-2 sm:grid-cols-2">
-                          <ProfileDetailRow label="Canal preferido" value={selectedCustomerProfile.preferredChannel} />
-                          <ProfileDetailRow label="Melhor horário" value={selectedCustomerProfile.bestContactTime} />
-                          <ProfileDetailRow label="Frequência de contato" value={selectedCustomerProfile.contactFrequency} />
-                          <ProfileDetailRow label="Estilo de comunicação" value={selectedCustomerProfile.communicationStyle} />
-                        </dl>
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Comercial</h4>
-                        <dl className="grid gap-2 sm:grid-cols-2">
-                          <ProfileDetailRow label="Perfil comercial" value={selectedCustomerProfile.commercialProfile} />
-                          <ProfileDetailRow label="Motivação de compra" value={selectedCustomerProfile.buyingMotivation} />
-                          <ProfileDetailRow label="Objeções comuns" value={selectedCustomerProfile.commonObjections} />
-                          <ProfileDetailRow label="Nível de relacionamento" value={selectedCustomerProfile.relationshipLevel} />
-                          <ProfileDetailRow label="Temperatura comercial" value={selectedCustomerProfile.commercialTemperature} />
-                        </dl>
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">
-                          Empatia / contexto permitido
-                        </h4>
-                        <dl className="grid gap-2 sm:grid-cols-2">
-                          <ProfileDetailRow label="Interesses" value={selectedCustomerProfile.interests} />
-                          <ProfileDetailRow label="Time / hobby" value={selectedCustomerProfile.favoriteTeam} />
-                          <ProfileDetailRow label="Datas importantes" value={selectedCustomerProfile.importantDates} />
-                          <ProfileDetailRow label="Preferências pessoais" value={selectedCustomerProfile.personalPreferences} />
-                          <ProfileDetailRow label="Assuntos a evitar" value={selectedCustomerProfile.avoidTopics} />
-                        </dl>
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">
-                          Nota de relacionamento
-                        </h4>
-                        <p className="text-sm whitespace-pre-wrap break-words">
-                          {displayLine(selectedCustomerProfile.relationshipNotes)}
-                        </p>
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Governança</h4>
-                        <dl className="grid gap-2 sm:grid-cols-2">
-                          <ProfileDetailRow label="Fonte da informação" value={selectedCustomerProfile.informationSource} />
-                          <ProfileDetailRow label="Sensibilidade" value={sensitivityLabel(selectedCustomerProfile.sensitivityLevel)} />
-                          <ProfileDetailRow label="Última confirmação" value={formatDateShortPt(selectedCustomerProfile.lastConfirmedAt)} />
-                          <ProfileDetailRow label="Atualizado por" value={selectedCustomerProfile.updatedByName} />
-                        </dl>
-                      </div>
-                    </div>
-                  </>
+                  <div className="space-y-4">
+                    <ProfileBlockSection title="Comunicação" emptyHint="Nenhuma preferência de comunicação registrada.">
+                      <ProfileDetailRow label="Canal preferido" value={selectedCustomerProfile.preferredChannel} />
+                      <ProfileDetailRow label="Melhor horário" value={selectedCustomerProfile.bestContactTime} />
+                      <ProfileDetailRow label="Frequência" value={selectedCustomerProfile.contactFrequency} />
+                      <ProfileDetailRow label="Estilo" value={selectedCustomerProfile.communicationStyle} />
+                    </ProfileBlockSection>
+                    <ProfileBlockSection title="Comercial" emptyHint="Nenhum dado comercial registrado no perfil.">
+                      <ProfileDetailRow label="Perfil comercial" value={selectedCustomerProfile.commercialProfile} />
+                      <ProfileDetailRow label="Motivação" value={selectedCustomerProfile.buyingMotivation} />
+                      <ProfileDetailRow label="Objeções" value={selectedCustomerProfile.commonObjections} />
+                      <ProfileDetailRow label="Relacionamento" value={selectedCustomerProfile.relationshipLevel} />
+                      <ProfileDetailRow label="Temperatura" value={selectedCustomerProfile.commercialTemperature} />
+                    </ProfileBlockSection>
+                    <ProfileBlockSection title="Empatia permitida" emptyHint="Nenhum contexto de empatia registrado.">
+                      <ProfileDetailRow label="Interesses" value={selectedCustomerProfile.interests} />
+                      <ProfileDetailRow label="Time / hobby" value={selectedCustomerProfile.favoriteTeam} />
+                      <ProfileDetailRow label="Preferências" value={selectedCustomerProfile.personalPreferences} />
+                      <ProfileDetailRow label="Assuntos a evitar" value={selectedCustomerProfile.avoidTopics} />
+                      <ProfileDetailRow label="Datas importantes" value={selectedCustomerProfile.importantDates} />
+                    </ProfileBlockSection>
+                    <ProfileBlockSection title="Notas" emptyHint="Nenhuma nota de relacionamento registrada.">
+                      <ProfileDetailRow label="Notas de relacionamento" value={selectedCustomerProfile.relationshipNotes} />
+                      <ProfileDetailRow label="Fonte" value={selectedCustomerProfile.informationSource} />
+                      <ProfileDetailRow label="Sensibilidade" value={sensitivityLabel(selectedCustomerProfile.sensitivityLevel)} />
+                      <ProfileDetailRow label="Atualizado por" value={selectedCustomerProfile.updatedByName} />
+                      <ProfileDetailRow label="Última confirmação" value={formatDateShortPt(selectedCustomerProfile.lastConfirmedAt)} />
+                    </ProfileBlockSection>
+                  </div>
                 )}
               </div>
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  Linha do tempo
-                </h3>
+
+              <section className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <History className="h-5 w-5 text-primary" />
+                  <h3 className="text-lg font-bold text-foreground">Linha do tempo comercial</h3>
+                </div>
                 {activitiesLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
-                    <Loader2 className="h-5 w-5 animate-spin" />
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center rounded-2xl border border-dashed border-border bg-muted/20">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
                     Carregando contatos…
                   </div>
                 ) : activitiesError ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{activitiesError}</div>
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">{activitiesError}</div>
                 ) : activities.length === 0 ? (
-                  <div className="rounded-xl border border-border bg-muted/20 p-6 text-sm text-muted-foreground text-center">
-                    Nenhum contato registrado para este cliente.
+                  <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-10 text-center">
+                    <MessageSquare className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                    <p className="text-sm font-semibold text-foreground">Nenhum contato registrado</p>
+                    <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+                      Comece registrando o primeiro contato comercial deste cliente.
+                    </p>
                   </div>
                 ) : (
-                  <ul className="space-y-3">
+                  <ul className="space-y-4">
                     {activities.map((a) => (
                       <li
                         key={a.id}
-                        className="rounded-xl border border-border bg-card p-4 shadow-sm flex flex-col gap-2"
+                        className="rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-sm flex flex-col gap-4"
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="flex flex-wrap items-center gap-2 min-w-0">
-                            <CalendarClock className="h-4 w-4 text-primary shrink-0" />
-                            <span className="font-semibold text-foreground">
+                            <span className="text-sm font-bold text-foreground tabular-nums">
                               {formatDateTimePt(a.contactDate ?? a.createdAt)}
                             </span>
                             <span
                               className={cn(
-                                "text-[10px] uppercase font-bold px-2 py-0.5 rounded border",
+                                "text-[10px] uppercase font-bold px-2.5 py-1 rounded-full border",
                                 channelBadgeClass(a.channel)
                               )}
                             >
                               {displayLine(a.channel)}
                             </span>
-                            <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground">
+                            <span className="text-[10px] uppercase font-semibold px-2.5 py-1 rounded-full border border-border bg-muted/50 text-muted-foreground">
                               {displayLine(a.reason)}
                             </span>
-                            <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded border border-border bg-background">
+                            <span className="text-[10px] uppercase font-semibold px-2.5 py-1 rounded-full border border-border bg-background">
                               {displayLine(a.status)}
                             </span>
                           </div>
@@ -1203,38 +1420,46 @@ export const CrmModule = () => {
                             <button
                               type="button"
                               onClick={() => void handleMarkDone(a)}
-                              className="text-xs font-semibold rounded-lg border border-border px-2 py-1 hover:bg-accent shrink-0"
+                              className="text-xs font-semibold rounded-xl border border-border px-3 py-1.5 hover:bg-accent shrink-0"
                             >
                               Marcar como concluído
                             </button>
                           ) : null}
                         </div>
                         {a.subject ? (
-                          <p className="text-sm font-medium text-foreground">{displayLine(a.subject)}</p>
+                          <p className="text-base font-semibold text-foreground">{displayLine(a.subject)}</p>
                         ) : null}
                         {a.description ? (
-                          <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                          <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
                             {displayLine(a.description)}
                           </p>
                         ) : null}
-                        <div className="grid gap-1 text-xs sm:grid-cols-2">
+                        <div className="grid gap-3 text-sm sm:grid-cols-2 pt-2 border-t border-border/80">
                           <p>
-                            <span className="text-muted-foreground">Resultado: </span>
-                            {displayLine(a.outcome)}
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
+                              Resultado
+                            </span>
+                            <span className="font-medium">{displayLine(a.outcome)}</span>
                           </p>
                           <p>
-                            <span className="text-muted-foreground">Responsável: </span>
-                            {displayLine(a.assignedTo)}
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block mb-0.5">
+                              Responsável
+                            </span>
+                            <span className="font-medium">{displayLine(a.assignedTo)}</span>
                           </p>
                           {(a.nextActionAt || a.nextActionDescription) && (
-                            <p className="sm:col-span-2 flex items-start gap-1.5">
-                              <Clock className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                            <p className="sm:col-span-2 flex items-start gap-2 rounded-xl bg-muted/30 border border-border/60 px-3 py-2">
+                              <Clock className="h-4 w-4 text-primary mt-0.5 shrink-0" />
                               <span>
-                                <span className="text-muted-foreground">Próxima ação: </span>
-                                {a.nextActionAt ? formatDateTimePt(a.nextActionAt) : "—"}
-                                {a.nextActionDescription
-                                  ? ` — ${displayLine(a.nextActionDescription)}`
-                                  : ""}
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground block">
+                                  Próxima ação
+                                </span>
+                                <span className="font-medium">
+                                  {a.nextActionAt ? formatDateTimePt(a.nextActionAt) : "—"}
+                                  {a.nextActionDescription
+                                    ? ` — ${displayLine(a.nextActionDescription)}`
+                                    : ""}
+                                </span>
                               </span>
                             </p>
                           )}
@@ -1243,10 +1468,10 @@ export const CrmModule = () => {
                     ))}
                   </ul>
                 )}
-              </div>
+              </section>
             </>
           )}
-        </div>
+        </main>
       </div>
 
       {/* Modal perfil de relacionamento */}
@@ -1255,7 +1480,7 @@ export const CrmModule = () => {
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl"
+            className="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl border border-border bg-card shadow-xl overflow-hidden"
           >
             <div className="flex items-center justify-between border-b border-border px-5 py-4 sticky top-0 bg-card z-10">
               <h4 className="text-lg font-bold">Perfil de relacionamento</h4>
@@ -1268,7 +1493,7 @@ export const CrmModule = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <form onSubmit={handleSaveProfile} className="p-5 space-y-6">
+            <form onSubmit={handleSaveProfile} className="flex flex-col min-h-0 flex-1"><div className="p-5 space-y-6 overflow-y-auto flex-1 max-h-[calc(92vh-8rem)]">
               {profileFormError ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
                   {profileFormError}
@@ -1440,7 +1665,7 @@ export const CrmModule = () => {
                     <textarea
                       value={profileForm.relationshipNotes}
                       onChange={(e) => updateProfileForm("relationshipNotes", e.target.value)}
-                      rows={3}
+                      rows={5}
                       className={textareaClass}
                     />
                   </ProfileFormField>
@@ -1487,8 +1712,8 @@ export const CrmModule = () => {
                   </ProfileFormField>
                 </div>
               </fieldset>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              </div>
+              <div className="flex justify-end gap-2 p-5 border-t border-border bg-card shrink-0">
                 <button
                   type="button"
                   disabled={profileSaving}
@@ -1517,7 +1742,7 @@ export const CrmModule = () => {
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl"
+            className="w-full max-w-lg max-h-[92vh] flex flex-col rounded-2xl border border-border bg-card shadow-xl overflow-hidden"
           >
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <h4 className="text-lg font-bold">Novo contato</h4>
@@ -1530,7 +1755,7 @@ export const CrmModule = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <form onSubmit={handleSaveContact} className="p-5 space-y-4">
+            <form onSubmit={handleSaveContact} className="flex flex-col flex-1 min-h-0"><div className="p-5 space-y-5 overflow-y-auto flex-1">
               {modalError ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
                   {modalError}
@@ -1668,7 +1893,8 @@ export const CrmModule = () => {
                   className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              </div>
+              <div className="flex justify-end gap-2 p-5 border-t border-border shrink-0">
                 <button
                   type="button"
                   disabled={modalSaving}
