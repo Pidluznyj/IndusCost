@@ -7993,7 +7993,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           CommercialActivity: {
             some: {
               nextActionAt: { not: null, lt: now },
-              OR: [{ status: null }, { NOT: { status: { in: doneLikeStatuses } } }],
+              status: { notIn: doneLikeStatuses },
             },
           },
         };
@@ -8002,7 +8002,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           CommercialActivity: {
             some: {
               nextActionAt: { not: null, gte: now, lt: in7 },
-              OR: [{ status: null }, { NOT: { status: { in: doneLikeStatuses } } }],
+              status: { notIn: doneLikeStatuses },
             },
           },
         };
