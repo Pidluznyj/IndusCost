@@ -24,9 +24,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { formatRoleLabel } from "@/src/lib/appAuthClient";
 
 export const Sidebar = () => {
+  const { authUser, logout } = useAuth();
   const [collapsed, setCollapsed] = React.useState(false);
+  const [pendingLogout, setPendingLogout] = React.useState(false);
 
   const menuItems = [
     { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -115,16 +119,30 @@ export const Sidebar = () => {
 
       {/* Footer */}
       <div className="p-4 border-t border-border space-y-2">
+        {authUser && !collapsed ? (
+          <div className="px-3 py-2 rounded-lg bg-muted/40 border border-border/60 mb-1">
+            <p className="text-xs font-semibold text-foreground truncate">{authUser.name}</p>
+            <p className="text-[10px] text-muted-foreground truncate">{formatRoleLabel(authUser.role)}</p>
+          </div>
+        ) : null}
         <button
           type="button"
+          disabled={pendingLogout}
           className={cn(
             "flex items-center w-full p-3 rounded-lg transition-all duration-200 group",
-            "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            "text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-60"
           )}
-          onClick={() => console.log("Logout")}
+          onClick={() => {
+            setPendingLogout(true);
+            void logout().finally(() => setPendingLogout(false));
+          }}
         >
           <LogOut className="h-5 w-5 shrink-0" />
-          {!collapsed && <span className="ml-3 font-medium text-sm truncate">Sair</span>}
+          {!collapsed && (
+            <span className="ml-3 font-medium text-sm truncate">
+              {pendingLogout ? "Saindo…" : "Sair"}
+            </span>
+          )}
         </button>
         <button
           type="button"

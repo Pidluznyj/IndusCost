@@ -1,0 +1,627 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  KeyRound,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Shield,
+  UserCheck,
+  UserX,
+  X,
+} from "lucide-react";
+import { cn } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
+import { useAuth } from "@/src/contexts/AuthContext";
+import {
+  APP_PASSWORD_MIN_LENGTH,
+  APP_USER_ROLE_OPTIONS,
+  type AppUserRole,
+  type AuthUser,
+  type PermissionCatalogEntry,
+  formatRoleLabel,
+  summarizePermissions,
+} from "@/src/lib/appAuthClient";
+
+type UserFormState = {
+  name: string;
+  email: string;
+  role: AppUserRole;
+  isActive: boolean;
+  externalSellerId: string;
+  sellerResponsibleName: string;
+  permissions: string[];
+  password: string;
+};
+
+const EMPTY_FORM: UserFormState = {
+  name: "",
+  email: "",
+  role: "VIEWER",
+  isActive: true,
+  externalSellerId: "",
+  sellerResponsibleName: "",
+  permissions: [],
+  password: "",
+};
+
+function formatDateTimePt(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
+}
+
+export const AdminUsersModule: React.FC = () => {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("users.manage");
+
+  const [users, setUsers] = useState<AuthUser[]>([]);
+  const [catalog, setCatalog] = useState<PermissionCatalogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<UserFormState>(EMPTY_FORM);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetUserId, setResetUserId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const catalogByGroup = useMemo(() => {
+    const map = new Map<string, PermissionCatalogEntry[]>();
+    for (const entry of catalog) {
+      const list = map.get(entry.group) ?? [];
+      list.push(entry);
+      map.set(entry.group, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR"));
+  }, [catalog]);
+
+  const loadData = useCallback(async () => {
+    if (!canManage) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [usersRes, catalogRes] = await Promise.all([
+        fetchJsonOk<{ users: AuthUser[] }>("/api/admin/users"),
+        fetchJsonOk<{ permissions: PermissionCatalogEntry[] }>("/api/admin/permissions/catalog"),
+      ]);
+      setUsers(Array.isArray(usersRes.users) ? usersRes.users : []);
+      setCatalog(Array.isArray(catalogRes.permissions) ? catalogRes.permissions : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível carregar usuários.");
+    } finally {
+      setLoading(false);
+    }
+  }, [canManage]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setEditorOpen(true);
+  };
+
+  const openEdit = (user: AuthUser) => {
+    setEditingId(user.id);
+    setForm({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      externalSellerId: user.externalSellerId != null ? String(user.externalSellerId) : "",
+      sellerResponsibleName: user.sellerResponsibleName ?? "",
+      permissions: [...user.permissions],
+      password: "",
+    });
+    setFormError(null);
+    setEditorOpen(true);
+  };
+
+  const togglePermission = (key: string) => {
+    setForm((prev) => ({
+      ...prev,
+      permissions: prev.permissions.includes(key)
+        ? prev.permissions.filter((p) => p !== key)
+        : [...prev.permissions, key],
+    }));
+  };
+
+  const validateForm = (isCreate: boolean): string | null => {
+    if (!form.name.trim()) return "Informe o nome.";
+    if (!form.email.trim() || !form.email.includes("@")) return "Informe um e-mail válido.";
+    if (isCreate) {
+      if (form.password.length < APP_PASSWORD_MIN_LENGTH) {
+        return `A senha provisória deve ter no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`;
+      }
+    }
+    if (form.externalSellerId.trim()) {
+      const n = Number.parseInt(form.externalSellerId.trim(), 10);
+      if (!Number.isFinite(n) || n < 0) return "ID do vendedor Nomus inválido.";
+    }
+    return null;
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const isCreate = !editingId;
+    const validation = validateForm(isCreate);
+    if (validation) {
+      setFormError(validation);
+      return;
+    }
+
+    setSaving(true);
+    setFormError(null);
+    try {
+      const externalSellerId = form.externalSellerId.trim()
+        ? Number.parseInt(form.externalSellerId.trim(), 10)
+        : null;
+
+      if (isCreate) {
+        await fetchJsonOk("/api/admin/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: form.name.trim(),
+            email: form.email.trim(),
+            password: form.password,
+            role: form.role,
+            permissions: form.permissions,
+            isActive: form.isActive,
+            externalSellerId,
+            sellerResponsibleName: form.sellerResponsibleName.trim() || null,
+          }),
+        });
+      } else {
+        await fetchJsonOk(`/api/admin/users/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: form.name.trim(),
+            email: form.email.trim(),
+            role: form.role,
+            permissions: form.permissions,
+            isActive: form.isActive,
+            externalSellerId,
+            sellerResponsibleName: form.sellerResponsibleName.trim() || null,
+          }),
+        });
+      }
+      setEditorOpen(false);
+      await loadData();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Falha ao salvar usuário.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleActive = async (user: AuthUser) => {
+    setSaving(true);
+    try {
+      await fetchJsonOk(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !user.isActive }),
+      });
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar status.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openResetPassword = (userId: string) => {
+    setResetUserId(userId);
+    setResetPassword("");
+    setResetConfirm("");
+    setResetError(null);
+    setResetOpen(true);
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetUserId) return;
+    if (resetPassword.length < APP_PASSWORD_MIN_LENGTH) {
+      setResetError(`A senha deve ter no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
+      return;
+    }
+    if (resetPassword !== resetConfirm) {
+      setResetError("As senhas não coincidem.");
+      return;
+    }
+    setSaving(true);
+    setResetError(null);
+    try {
+      await fetchJsonOk(`/api/admin/users/${resetUserId}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: resetPassword }),
+      });
+      setResetOpen(false);
+      await loadData();
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Falha ao redefinir senha.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!canManage) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+        Você não tem permissão para gerenciar usuários.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-lg font-bold flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            Usuários e Permissões
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+            Cadastre usuários, defina perfis e permissões extras por tela. Permissões efetivas = permissões do
+            perfil + permissões extras marcadas.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void loadData()}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold hover:bg-accent"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Novo usuário
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Carregando usuários…
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          <div className="overflow-x-auto max-h-[min(520px,60vh)] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm border-b border-border">
+                <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-3 font-semibold">Nome</th>
+                  <th className="px-4 py-3 font-semibold">E-mail</th>
+                  <th className="px-4 py-3 font-semibold">Perfil</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">Vendedor</th>
+                  <th className="px-4 py-3 font-semibold">Último login</th>
+                  <th className="px-4 py-3 font-semibold">Permissões efetivas</th>
+                  <th className="px-4 py-3 font-semibold text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id} className="border-b border-border/60 hover:bg-accent/20">
+                    <td className="px-4 py-3 font-medium">{user.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{user.email}</td>
+                    <td className="px-4 py-3">{formatRoleLabel(user.role)}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                          user.isActive
+                            ? "bg-green-100 text-green-800"
+                            : "bg-slate-100 text-slate-600"
+                        )}
+                      >
+                        {user.isActive ? "Ativo" : "Inativo"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {user.externalSellerId != null
+                        ? `ID ${user.externalSellerId}${user.sellerResponsibleName ? ` · ${user.sellerResponsibleName}` : ""}`
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {formatDateTimePt(user.lastLoginAt)}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px]">
+                      {summarizePermissions(user.effectivePermissions)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(user)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-accent"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openResetPassword(user.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-accent"
+                        >
+                          <KeyRound className="h-3 w-3" />
+                          Senha
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => void toggleActive(user)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                        >
+                          {user.isActive ? (
+                            <UserX className="h-3 w-3" />
+                          ) : (
+                            <UserCheck className="h-3 w-3" />
+                          )}
+                          {user.isActive ? "Inativar" : "Ativar"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {users.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-muted-foreground">Nenhum usuário cadastrado.</p>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {editorOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-card/95 backdrop-blur px-5 py-4">
+              <div>
+                <h4 className="text-lg font-bold">{editingId ? "Editar usuário" : "Novo usuário"}</h4>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {form.role === "SELLER"
+                    ? "Para vendedores, preencha o ID Nomus (externalSellerId) para futura regra de Minha Gestão."
+                    : form.role === "COMMERCIAL_MANAGER"
+                      ? "Gestores comerciais podem ver todos os vendedores no CRM."
+                      : form.role === "SUPER_ADMIN"
+                        ? "Super administrador possui todas as permissões automaticamente."
+                        : null}
+                </p>
+              </div>
+              <button type="button" onClick={() => setEditorOpen(false)} className="p-2 rounded-full hover:bg-accent">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSave} className="p-5 space-y-4">
+              {formError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  {formError}
+                </div>
+              ) : null}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-semibold text-muted-foreground">Nome</label>
+                  <input
+                    required
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-semibold text-muted-foreground">E-mail</label>
+                  <input
+                    required
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  />
+                </div>
+                {!editingId ? (
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-xs font-semibold text-muted-foreground">Senha provisória</label>
+                    <input
+                      required
+                      type="password"
+                      minLength={APP_PASSWORD_MIN_LENGTH}
+                      value={form.password}
+                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                      className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                    />
+                  </div>
+                ) : null}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground">Perfil (role)</label>
+                  <select
+                    value={form.role}
+                    onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as AppUserRole }))}
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  >
+                    {APP_USER_ROLE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-muted-foreground">
+                    {APP_USER_ROLE_OPTIONS.find((o) => o.value === form.role)?.hint}
+                  </p>
+                </div>
+                <div className="space-y-1 flex items-end">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={form.isActive}
+                      onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+                    />
+                    Usuário ativo
+                  </label>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground">ID vendedor Nomus</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.externalSellerId}
+                    onChange={(e) => setForm((f) => ({ ...f, externalSellerId: e.target.value }))}
+                    placeholder="ex.: 464"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground">Nome responsável Nomus</label>
+                  <input
+                    value={form.sellerResponsibleName}
+                    onChange={(e) => setForm((f) => ({ ...f, sellerResponsibleName: e.target.value }))}
+                    placeholder="ex.: GISLENE LIMA"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              {form.role !== "SUPER_ADMIN" ? (
+                <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Permissões extras
+                  </p>
+                  <p className="text-[11px] text-muted-foreground flex items-start gap-1">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    Permissões efetivas = permissões do perfil + permissões extras marcadas.
+                  </p>
+                  {catalogByGroup.map(([group, entries]) => (
+                    <div key={group}>
+                      <p className="text-xs font-bold text-foreground mb-2">{group}</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {entries.map((entry) => (
+                          <label
+                            key={entry.key}
+                            className="flex items-start gap-2 rounded-lg border border-border/60 bg-background px-2 py-2 text-xs cursor-pointer hover:bg-accent/30"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={form.permissions.includes(entry.key)}
+                              onChange={() => togglePermission(entry.key)}
+                            />
+                            <span>
+                              <span className="font-semibold block">{entry.label}</span>
+                              <span className="text-muted-foreground">{entry.description}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground rounded-lg border border-dashed border-border px-3 py-2">
+                  Super administrador possui todas as permissões do catálogo automaticamente.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditorOpen(false)}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-accent"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {resetOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card w-full max-w-md rounded-2xl border border-border shadow-2xl p-5 space-y-4">
+            <div className="flex items-start justify-between">
+              <h4 className="text-lg font-bold">Redefinir senha</h4>
+              <button type="button" onClick={() => setResetOpen(false)} className="p-2 rounded-full hover:bg-accent">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {resetError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {resetError}
+              </div>
+            ) : null}
+            <form onSubmit={handleResetPassword} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Nova senha</label>
+                <input
+                  required
+                  type="password"
+                  minLength={APP_PASSWORD_MIN_LENGTH}
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Confirmar senha</label>
+                <input
+                  required
+                  type="password"
+                  value={resetConfirm}
+                  onChange={(e) => setResetConfirm(e.target.value)}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Confirmar
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};

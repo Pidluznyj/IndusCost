@@ -31,6 +31,7 @@ import { ProductMaterialDemandDashboard } from "@/src/components/contextual/Prod
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
 import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/SalesOrdersIndicatorsDashboard";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
+import { RequireAuth } from "@/src/components/RequireAuth";
 import { fetchJsonOk } from "@/src/lib/http";
 import { AlertCircle, Factory, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
 
@@ -152,8 +153,8 @@ function BootstrapAdminSettingsRoute() {
             <div className="space-y-1">
               <p className="text-sm font-semibold">Acesso administrativo temporário</p>
               <p className="text-sm text-muted-foreground">
-                Este acesso é controlado por variáveis de ambiente e existe apenas como bootstrap. Login completo e
-                permissionamento serão implementados em etapa futura.
+                Este acesso é controlado por variáveis de ambiente e existe apenas como bootstrap de recuperação.
+                O login principal do IndusCost usa usuários cadastrados em Configurações → Usuários e Permissões.
               </p>
             </div>
           </div>
@@ -229,8 +230,8 @@ function BootstrapAdminSettingsRoute() {
           <div className="flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5" />
             <p>
-              Sessão administrativa temporária ativa para <strong>{status.username}</strong>. Este acesso bootstrap é
-              provisório e será substituído por autenticação completa com permissionamento.
+              Sessão administrativa temporária ativa para <strong>{status.username}</strong>. Use o login principal do
+              IndusCost no dia a dia; o bootstrap permanece para recuperação e criação do super administrador.
             </p>
           </div>
         </div>
@@ -253,6 +254,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/proposals/:id/print" element={<ProposalPrintView />} />
+      <Route element={<RequireAuth />}>
       <Route element={<Layout />}>
         <Route
           path="dashboard"
@@ -580,6 +582,7 @@ export default function App() {
           element={<BootstrapAdminSettingsRoute />}
         />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Route>
       </Route>
     </Routes>
   );

@@ -23,6 +23,8 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { SETTINGS_TOUR_STEPS } from "@/src/tours/settingsTourSteps";
 import { AppAlert } from "@/src/components/shared/AppAlert";
 import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
+import { AdminUsersModule } from "@/src/components/AdminUsersModule";
+import { useAuth } from "@/src/contexts/AuthContext";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -299,10 +301,10 @@ const HUB_SECTIONS: Array<{
   },
   {
     id: "security",
-    title: "Segurança e Acesso",
-    description: "Bootstrap admin, login e permissionamento em etapas futuras.",
-    status: "future",
-    note: "Em preparação",
+    title: "Usuários e Permissões",
+    description: "Cadastro de usuários, perfis e permissões por tela do IndusCost.",
+    status: "operational",
+    note: "Operacional hoje",
   },
   {
     id: "system",
@@ -314,6 +316,8 @@ const HUB_SECTIONS: Array<{
 ];
 
 export const SettingsModule = () => {
+  const { hasPermission } = useAuth();
+  const canManageUsers = hasPermission("users.manage");
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
@@ -1345,7 +1349,7 @@ export const SettingsModule = () => {
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" data-tour="settings-subtabs">
-        {HUB_SECTIONS.map((section) => (
+        {HUB_SECTIONS.filter((section) => section.id !== "security" || canManageUsers).map((section) => (
           <button
             key={section.id}
             type="button"
@@ -2732,9 +2736,13 @@ export const SettingsModule = () => {
             </div>
           )}
 
-          {(activeHubSection === "integrations" ||
-            activeHubSection === "security" ||
-            activeHubSection === "system") && (
+          {activeHubSection === "security" && (
+            <div className="rounded-2xl border border-border bg-card p-6">
+              <AdminUsersModule />
+            </div>
+          )}
+
+          {(activeHubSection === "integrations" || activeHubSection === "system") && (
             <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -2753,12 +2761,6 @@ export const SettingsModule = () => {
                   <p className="text-sm text-muted-foreground">
                     Integrações como Nomus e conectores externos serão habilitadas em etapa futura, com contrato técnico
                     e validação operacional antes de liberar edição nesta tela.
-                  </p>
-                )}
-                {activeHubSection === "security" && (
-                  <p className="text-sm text-muted-foreground">
-                    Bootstrap de administrador, login e permissionamento ainda não estão implementados neste projeto.
-                    Esta seção prepara o ponto de encaixe para as próximas etapas sem simular funcionalidades.
                   </p>
                 )}
                 {activeHubSection === "system" && (

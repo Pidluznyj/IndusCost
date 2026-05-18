@@ -2,6 +2,8 @@ import React from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { motion, AnimatePresence } from "motion/react";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { formatRoleLabel } from "@/src/lib/appAuthClient";
 
 type HeaderSyncLog = {
   status?: "SUCCESS" | "FAILED" | "UNKNOWN" | "SKIPPED";
@@ -10,6 +12,7 @@ type HeaderSyncLog = {
 };
 
 export const Layout = () => {
+  const { authUser } = useAuth();
   const [lastSyncAt, setLastSyncAt] = React.useState<string>("—");
   const [lastSyncStatus, setLastSyncStatus] = React.useState<"SUCCESS" | "FAILED" | "UNKNOWN" | "SKIPPED" | "—">("—");
 
@@ -104,8 +107,28 @@ export const Layout = () => {
                 Próxima prevista: <span className="font-medium text-foreground">{nextNomusRun}</span>
               </p>
             </div>
-            <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <span className="text-xs font-bold text-primary">PA</span>
+            {authUser ? (
+              <div className="hidden lg:block text-right max-w-[180px]">
+                <p className="text-xs font-semibold text-foreground truncate">{authUser.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">
+                  {formatRoleLabel(authUser.role)}
+                </p>
+              </div>
+            ) : null}
+            <div
+              className="h-8 min-w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center px-2"
+              title={authUser ? `${authUser.name} · ${formatRoleLabel(authUser.role)}` : undefined}
+            >
+              <span className="text-[10px] font-bold text-primary">
+                {authUser
+                  ? authUser.name
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((p) => p[0]?.toUpperCase() ?? "")
+                      .join("") || "?"
+                  : "—"}
+              </span>
             </div>
           </div>
         </header>
