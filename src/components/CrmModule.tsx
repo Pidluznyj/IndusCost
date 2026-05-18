@@ -64,6 +64,35 @@ export type {
 import { buildManagementKpiCards } from "@/src/components/crmManagementUi";
 import { CrmManagementDashboardSection } from "@/src/components/CrmManagementDashboardSection";
 import { CrmManagementLists } from "@/src/components/CrmManagementLists";
+import type {
+  SellerDashboardResponse,
+  SellerDashboardSummary,
+  SellerOption,
+  SellerDashboardBySeller,
+  SellerDashboardOrder,
+  SellerDashboardProposalWithoutLinkedOrder,
+} from "@/src/components/crmSellerDashboardTypes";
+
+export type {
+  SellerDashboardResponse,
+  SellerDashboardSummary,
+  SellerOption,
+  SellerDashboardBySeller,
+  SellerDashboardOrder,
+  SellerDashboardProposalWithoutLinkedOrder,
+};
+import {
+  SELLER_KEY_ALL,
+  buildSellerKpiCards,
+  buildSellerOptionKey,
+} from "@/src/components/crmSellerDashboardUi";
+import { CrmSellerDashboardSection } from "@/src/components/CrmSellerDashboardSection";
+import { CrmSellerDashboardLists } from "@/src/components/CrmSellerDashboardLists";
+
+type SellerDashboardLoadParams = {
+  externalSellerId?: number;
+  responsible?: string;
+};
 
 /** Cliente normalizado vindo de GET /api/crm/customers. */
 export type CrmCustomerListItem = {
@@ -1594,6 +1623,12 @@ export const CrmModule = () => {
   const [managementDashboardLoading, setManagementDashboardLoading] = useState(true);
   const [managementDashboardError, setManagementDashboardError] = useState<string | null>(null);
 
+  const [sellerDashboard, setSellerDashboard] = useState<SellerDashboardResponse | null>(null);
+  const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
+  const [sellerDashboardError, setSellerDashboardError] = useState<string | null>(null);
+  const [selectedSellerKey, setSelectedSellerKey] = useState(SELLER_KEY_ALL);
+  const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
+
   const loadManagementDashboard = useCallback(async () => {
     setManagementDashboardLoading(true);
     setManagementDashboardError(null);
@@ -1615,6 +1650,82 @@ export const CrmModule = () => {
       setManagementDashboardLoading(false);
     }
   }, []);
+
+  const loadSellerDashboard = useCallback(async (params?: SellerDashboardLoadParams) => {
+    setSellerDashboardLoading(true);
+    setSellerDashboardError(null);
+    try {
+      const searchParams = new URLSearchParams();
+      if (params?.externalSellerId !== null && params?.externalSellerId !== undefined) {
+        searchParams.set("externalSellerId", String(params.externalSellerId));
+      } else if (params?.responsible?.trim()) {
+        searchParams.set("responsible", params.responsible.trim());
+      }
+      const qs = searchParams.toString();
+      const data = await fetchJsonOk<SellerDashboardResponse>(
+        `/api/crm/seller-dashboard${qs ? `?${qs}` : ""}`
+      );
+      setSellerDashboard(data);
+      const isUnfiltered =
+        params?.externalSellerId === undefined && !params?.responsible?.trim();
+      if (isUnfiltered && Array.isArray(data.sellerOptions)) {
+        setSellerOptions(data.sellerOptions);
+      }
+    } catch (e) {
+      setSellerDashboard(null);
+      setSellerDashboardError(
+        clampMessage(
+          e instanceof Error
+            ? e.message
+            : "Não foi possível carregar a gestão por vendedor."
+        )
+      );
+    } finally {
+      setSellerDashboardLoading(false);
+    }
+  }, []);
+
+  const reloadSellerDashboard = useCallback(() => {
+    if (selectedSellerKey === SELLER_KEY_ALL) {
+      void loadSellerDashboard();
+      return;
+    }
+    const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === selectedSellerKey);
+    if (!opt) {
+      void loadSellerDashboard();
+      return;
+    }
+    if (opt.externalSellerId !== null && opt.externalSellerId !== undefined) {
+      void loadSellerDashboard({ externalSellerId: opt.externalSellerId });
+    } else if (opt.responsible?.trim()) {
+      void loadSellerDashboard({ responsible: opt.responsible.trim() });
+    } else {
+      void loadSellerDashboard();
+    }
+  }, [selectedSellerKey, sellerOptions, loadSellerDashboard]);
+
+  const handleSellerChange = useCallback(
+    (key: string) => {
+      setSelectedSellerKey(key);
+      if (key === SELLER_KEY_ALL) {
+        void loadSellerDashboard();
+        return;
+      }
+      const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === key);
+      if (!opt) {
+        void loadSellerDashboard();
+        return;
+      }
+      if (opt.externalSellerId !== null && opt.externalSellerId !== undefined) {
+        void loadSellerDashboard({ externalSellerId: opt.externalSellerId });
+      } else if (opt.responsible?.trim()) {
+        void loadSellerDashboard({ responsible: opt.responsible.trim() });
+      } else {
+        void loadSellerDashboard();
+      }
+    },
+    [sellerOptions, loadSellerDashboard]
+  );
 
   const loadDashboard = useCallback(async () => {
     setDashboardLoading(true);
@@ -1745,9 +1856,16 @@ export const CrmModule = () => {
   useEffect(() => {
     void loadDashboard();
     void loadManagementDashboard();
+    void loadSellerDashboard();
     void loadAgendaBuckets();
     void loadCrmCustomers("", "all", 0);
-  }, [loadDashboard, loadManagementDashboard, loadAgendaBuckets, loadCrmCustomers]);
+  }, [
+    loadDashboard,
+    loadManagementDashboard,
+    loadSellerDashboard,
+    loadAgendaBuckets,
+    loadCrmCustomers,
+  ]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -2047,6 +2165,12 @@ export const CrmModule = () => {
     [managementDashboard?.summary]
   );
 
+  const sellerKpiCards = useMemo(
+    () =>
+      buildSellerKpiCards(sellerDashboard?.summary, formatNumberPt, formatIntelCurrency),
+    [sellerDashboard?.summary]
+  );
+
   const dashboardCards: {
     label: string;
     description: string;
@@ -2131,6 +2255,30 @@ export const CrmModule = () => {
           />
         ) : null}
       </CrmManagementDashboardSection>
+
+      <CrmSellerDashboardSection
+        data={sellerDashboard}
+        loading={sellerDashboardLoading}
+        error={sellerDashboardError}
+        kpiCards={sellerKpiCards}
+        sellerOptions={sellerOptions}
+        selectedSellerKey={selectedSellerKey}
+        onSellerChange={handleSellerChange}
+        onReload={reloadSellerDashboard}
+        formatDateTimePt={formatDateTimePt}
+      >
+        {sellerDashboard ? (
+          <CrmSellerDashboardLists
+            data={sellerDashboard}
+            onSelectCustomer={selectCustomerById}
+            formatDateShortPt={formatDateShortPt}
+            formatDateTimePt={formatDateTimePt}
+            formatIntelCurrency={formatIntelCurrency}
+            formatCommercialStatusLabel={formatCommercialStatusLabel}
+            displayLine={displayLine}
+          />
+        ) : null}
+      </CrmSellerDashboardSection>
 
       <section className="space-y-4">
         <div>
