@@ -6,6 +6,7 @@ import { promises as fs } from "fs";
 import { fileURLToPath } from "url";
 import {
   Prisma,
+  AppUserRole,
   type ItemType,
   type MaintenanceCategory,
   type MaintenancePriority,
@@ -52,6 +53,24 @@ import {
   buildSnapshotSaveData,
 } from "./src/lib/newProductSimulationSnapshot.js";
 import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/customerIndicators.js";
+import {
+  ALL_PERMISSION_KEYS,
+  APP_SESSION_COOKIE_NAME,
+  APP_SESSION_TTL_MS,
+  PERMISSION_CATALOG,
+  createOpaqueSessionToken,
+  filterKnownPermissions,
+  hasPermission,
+  hashPassword,
+  hashSessionToken,
+  isValidEmail,
+  normalizeEmail,
+  toAppAuthContext,
+  toSafeAppUser,
+  validatePasswordMin,
+  verifyPassword,
+  type AppAuthContext,
+} from "./src/lib/appAuth.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -964,6 +983,455 @@ async function startServer() {
   app.post("/api/bootstrap-admin/logout", (_req, res) => {
     clearBootstrapSessionCookie(res);
     res.json({ success: true });
+  });
+
+  // --- API: App auth & RBAC (Fase 1K-B) ---
+  const APP_USER_ROLE_VALUES = Object.values(AppUserRole);
+
+  function parseAppUserRole(raw: unknown): AppUserRole | null {
+    if (typeof raw !== "string") return null;
+    const normalized = raw.trim().toUpperCase();
+    return APP_USER_ROLE_VALUES.includes(normalized as AppUserRole)
+      ? (normalized as AppUserRole)
+      : null;
+  }
+
+  async function readAppSession(req: express.Request): Promise<AppAuthContext | null> {
+    const cookies = parseCookiesFromHeader(req.headers.cookie);
+    const token = cookies[APP_SESSION_COOKIE_NAME];
+    if (!token) return null;
+    const tokenHash = hashSessionToken(token);
+    const now = new Date();
+    const session = await prisma.appSession.findFirst({
+      where: {
+        tokenHash,
+        revokedAt: null,
+        expiresAt: { gt: now },
+      },
+      include: { user: true },
+    });
+    if (!session?.user?.isActive) return null;
+    return toAppAuthContext(session.user, session.id);
+  }
+
+  function setAppSessionCookie(res: express.Response, token: string): void {
+    res.cookie(APP_SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: APP_SESSION_TTL_MS,
+      path: "/",
+    });
+  }
+
+  function clearAppSessionCookie(res: express.Response): void {
+    res.clearCookie(APP_SESSION_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+  }
+
+  async function revokeAppSessionById(sessionId: string): Promise<void> {
+    await prisma.appSession.updateMany({
+      where: { id: sessionId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  async function revokeAllUserSessions(userId: string): Promise<void> {
+    await prisma.appSession.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  const requireAppAuth: express.RequestHandler = async (req, res, next) => {
+    const auth = await readAppSession(req);
+    if (!auth) {
+      return res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Autenticação necessária.",
+      });
+    }
+    req.appAuth = auth;
+    return next();
+  };
+
+  function requirePermission(permission: string): express.RequestHandler {
+    return async (req, res, next) => {
+      const auth = req.appAuth ?? (await readAppSession(req));
+      if (!auth) {
+        return res.status(401).json({
+          error: "UNAUTHORIZED",
+          message: "Autenticação necessária.",
+        });
+      }
+      if (!hasPermission(auth, permission)) {
+        return res.status(403).json({
+          error: "FORBIDDEN",
+          message: "Permissão insuficiente para esta operação.",
+        });
+      }
+      req.appAuth = auth;
+      return next();
+    };
+  }
+
+  const requireUserAdminOrBootstrap: express.RequestHandler = async (req, res, next) => {
+    if (bootstrapAdminConfig.enabled && isBootstrapReady) {
+      const bootstrap = readBootstrapSession(req);
+      if (bootstrap && safeEqualString(bootstrap.username, bootstrapAdminConfig.username)) {
+        return next();
+      }
+    }
+    const auth = await readAppSession(req);
+    if (!auth) {
+      return res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Autenticação necessária.",
+      });
+    }
+    if (!hasPermission(auth, "users.manage")) {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Permissão insuficiente para administrar usuários.",
+      });
+    }
+    req.appAuth = auth;
+    return next();
+  };
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const emailRaw = typeof req.body?.email === "string" ? req.body.email : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const email = normalizeEmail(emailRaw);
+      if (!isValidEmail(email)) {
+        return res.status(400).json({ error: "INVALID_EMAIL", message: "E-mail inválido." });
+      }
+      if (!password) {
+        return res.status(400).json({ error: "INVALID_PASSWORD", message: "Informe a senha." });
+      }
+
+      const user = await prisma.appUser.findUnique({ where: { email } });
+      if (!user || !user.isActive) {
+        return res.status(401).json({
+          error: "INVALID_CREDENTIALS",
+          message: "E-mail ou senha inválidos.",
+        });
+      }
+
+      const valid = await verifyPassword(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({
+          error: "INVALID_CREDENTIALS",
+          message: "E-mail ou senha inválidos.",
+        });
+      }
+
+      const token = createOpaqueSessionToken();
+      const tokenHash = hashSessionToken(token);
+      const expiresAt = new Date(Date.now() + APP_SESSION_TTL_MS);
+
+      await prisma.$transaction([
+        prisma.appSession.create({
+          data: { userId: user.id, tokenHash, expiresAt },
+        }),
+        prisma.appUser.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        }),
+      ]);
+
+      const refreshed = await prisma.appUser.findUniqueOrThrow({ where: { id: user.id } });
+      setAppSessionCookie(res, token);
+      return res.json({ user: toSafeAppUser(refreshed) });
+    } catch (error) {
+      console.error("POST /api/auth/login", error);
+      return res.status(500).json({ error: "Erro ao autenticar usuário." });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      const auth = await readAppSession(req);
+      if (auth) {
+        await revokeAppSessionById(auth.sessionId);
+      }
+      clearAppSessionCookie(res);
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("POST /api/auth/logout", error);
+      clearAppSessionCookie(res);
+      return res.json({ success: true });
+    }
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const auth = await readAppSession(req);
+      if (!auth) {
+        return res.json({ authenticated: false, user: null });
+      }
+      const user = await prisma.appUser.findUnique({ where: { id: auth.id } });
+      if (!user || !user.isActive) {
+        clearAppSessionCookie(res);
+        return res.json({ authenticated: false, user: null });
+      }
+      return res.json({ authenticated: true, user: toSafeAppUser(user) });
+    } catch (error) {
+      console.error("GET /api/auth/me", error);
+      return res.status(500).json({ error: "Erro ao consultar sessão." });
+    }
+  });
+
+  app.get("/api/admin/permissions/catalog", requireUserAdminOrBootstrap, (_req, res) => {
+    res.json({ permissions: PERMISSION_CATALOG });
+  });
+
+  app.get("/api/admin/users", requireUserAdminOrBootstrap, async (_req, res) => {
+    try {
+      const users = await prisma.appUser.findMany({
+        orderBy: [{ name: "asc" }, { email: "asc" }],
+      });
+      return res.json({ users: users.map((u) => toSafeAppUser(u)) });
+    } catch (error) {
+      console.error("GET /api/admin/users", error);
+      return res.status(500).json({ error: "Erro ao listar usuários." });
+    }
+  });
+
+  app.post("/api/admin/users", requireUserAdminOrBootstrap, async (req, res) => {
+    try {
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const role = parseAppUserRole(req.body?.role) ?? AppUserRole.VIEWER;
+      const permissions = filterKnownPermissions(req.body?.permissions);
+      const isActive = req.body?.isActive !== false;
+      const externalSellerId =
+        req.body?.externalSellerId === null || req.body?.externalSellerId === undefined
+          ? null
+          : Number.parseInt(String(req.body.externalSellerId), 10);
+      const sellerResponsibleName =
+        typeof req.body?.sellerResponsibleName === "string"
+          ? req.body.sellerResponsibleName.trim() || null
+          : null;
+
+      if (!name) {
+        return res.status(400).json({ error: "INVALID_NAME", message: "Informe o nome." });
+      }
+      if (!isValidEmail(email)) {
+        return res.status(400).json({ error: "INVALID_EMAIL", message: "E-mail inválido." });
+      }
+      const passwordError = validatePasswordMin(password);
+      if (passwordError) {
+        return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
+      }
+      if (
+        externalSellerId !== null &&
+        (!Number.isFinite(externalSellerId) || externalSellerId < 0)
+      ) {
+        return res.status(400).json({
+          error: "INVALID_EXTERNAL_SELLER_ID",
+          message: "externalSellerId inválido.",
+        });
+      }
+
+      const passwordHash = await hashPassword(password);
+      const user = await prisma.appUser.create({
+        data: {
+          name,
+          email,
+          passwordHash,
+          role,
+          permissions,
+          isActive,
+          externalSellerId: externalSellerId ?? null,
+          sellerResponsibleName,
+        },
+      });
+      return res.status(201).json({ user: toSafeAppUser(user) });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return res.status(409).json({ error: "EMAIL_ALREADY_EXISTS", message: "E-mail já cadastrado." });
+      }
+      console.error("POST /api/admin/users", error);
+      return res.status(500).json({ error: "Erro ao criar usuário." });
+    }
+  });
+
+  app.patch("/api/admin/users/:id", requireUserAdminOrBootstrap, async (req, res) => {
+    try {
+      const id = String(req.params.id ?? "").trim();
+      if (!id) {
+        return res.status(400).json({ error: "INVALID_ID", message: "ID inválido." });
+      }
+
+      const existing = await prisma.appUser.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: "NOT_FOUND", message: "Usuário não encontrado." });
+      }
+
+      const data: Prisma.AppUserUpdateInput = {};
+
+      if (typeof req.body?.name === "string") {
+        const name = req.body.name.trim();
+        if (!name) {
+          return res.status(400).json({ error: "INVALID_NAME", message: "Nome inválido." });
+        }
+        data.name = name;
+      }
+      if (typeof req.body?.email === "string") {
+        const email = normalizeEmail(req.body.email);
+        if (!isValidEmail(email)) {
+          return res.status(400).json({ error: "INVALID_EMAIL", message: "E-mail inválido." });
+        }
+        data.email = email;
+      }
+      if (req.body?.role !== undefined) {
+        const role = parseAppUserRole(req.body.role);
+        if (!role) {
+          return res.status(400).json({ error: "INVALID_ROLE", message: "Perfil inválido." });
+        }
+        data.role = role;
+      }
+      if (req.body?.permissions !== undefined) {
+        data.permissions = filterKnownPermissions(req.body.permissions);
+      }
+      if (req.body?.isActive !== undefined) {
+        data.isActive = Boolean(req.body.isActive);
+      }
+      if (req.body?.externalSellerId !== undefined) {
+        if (req.body.externalSellerId === null) {
+          data.externalSellerId = null;
+        } else {
+          const externalSellerId = Number.parseInt(String(req.body.externalSellerId), 10);
+          if (!Number.isFinite(externalSellerId) || externalSellerId < 0) {
+            return res.status(400).json({
+              error: "INVALID_EXTERNAL_SELLER_ID",
+              message: "externalSellerId inválido.",
+            });
+          }
+          data.externalSellerId = externalSellerId;
+        }
+      }
+      if (req.body?.sellerResponsibleName !== undefined) {
+        data.sellerResponsibleName =
+          typeof req.body.sellerResponsibleName === "string"
+            ? req.body.sellerResponsibleName.trim() || null
+            : null;
+      }
+
+      if (Object.keys(data).length === 0) {
+        return res.status(400).json({ error: "NO_CHANGES", message: "Nenhum campo para atualizar." });
+      }
+
+      const user = await prisma.appUser.update({ where: { id }, data });
+      return res.json({ user: toSafeAppUser(user) });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return res.status(409).json({ error: "EMAIL_ALREADY_EXISTS", message: "E-mail já cadastrado." });
+      }
+      console.error("PATCH /api/admin/users/:id", error);
+      return res.status(500).json({ error: "Erro ao atualizar usuário." });
+    }
+  });
+
+  app.post("/api/admin/users/:id/reset-password", requireUserAdminOrBootstrap, async (req, res) => {
+    try {
+      const id = String(req.params.id ?? "").trim();
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const passwordError = validatePasswordMin(password);
+      if (passwordError) {
+        return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
+      }
+
+      const existing = await prisma.appUser.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: "NOT_FOUND", message: "Usuário não encontrado." });
+      }
+
+      const passwordHash = await hashPassword(password);
+      await prisma.$transaction([
+        prisma.appUser.update({ where: { id }, data: { passwordHash } }),
+        prisma.appSession.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        }),
+      ]);
+
+      const user = await prisma.appUser.findUniqueOrThrow({ where: { id } });
+      return res.json({ success: true, user: toSafeAppUser(user) });
+    } catch (error) {
+      console.error("POST /api/admin/users/:id/reset-password", error);
+      return res.status(500).json({ error: "Erro ao redefinir senha." });
+    }
+  });
+
+  app.post("/api/admin/users/bootstrap-super-admin", requireBootstrapAdmin, async (req, res) => {
+    try {
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+      if (!name) {
+        return res.status(400).json({ error: "INVALID_NAME", message: "Informe o nome." });
+      }
+      if (!isValidEmail(email)) {
+        return res.status(400).json({ error: "INVALID_EMAIL", message: "E-mail inválido." });
+      }
+      const passwordError = validatePasswordMin(password);
+      if (passwordError) {
+        return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
+      }
+
+      const passwordHash = await hashPassword(password);
+      const existing = await prisma.appUser.findUnique({ where: { email } });
+
+      let user;
+      let action: "created" | "updated";
+      if (existing) {
+        user = await prisma.appUser.update({
+          where: { id: existing.id },
+          data: {
+            name,
+            passwordHash,
+            role: AppUserRole.SUPER_ADMIN,
+            permissions: [...ALL_PERMISSION_KEYS],
+            isActive: true,
+          },
+        });
+        await revokeAllUserSessions(user.id);
+        action = "updated";
+      } else {
+        user = await prisma.appUser.create({
+          data: {
+            name,
+            email,
+            passwordHash,
+            role: AppUserRole.SUPER_ADMIN,
+            permissions: [...ALL_PERMISSION_KEYS],
+            isActive: true,
+          },
+        });
+        action = "created";
+      }
+
+      return res.json({
+        action,
+        message:
+          action === "created"
+            ? "Super administrador criado com sucesso."
+            : "Super administrador existente atualizado (senha e perfil).",
+        user: toSafeAppUser(user),
+      });
+    } catch (error) {
+      console.error("POST /api/admin/users/bootstrap-super-admin", error);
+      return res.status(500).json({ error: "Erro ao criar super administrador." });
+    }
   });
 
   // --- API: Test DB Connection ---
