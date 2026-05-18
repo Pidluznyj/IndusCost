@@ -8828,6 +8828,568 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
+  /** CRM Fase 1J-B — gestão comercial por vendedor (pedidos, faturamento Nomus, propostas). */
+  app.get("/api/crm/seller-dashboard", async (req, res) => {
+    const SELLER_DASH_LIST_LIMIT = 20;
+
+    const sellerDashToNumber = (value: unknown): number => toNumber(value, 0);
+
+    const sellerDashIso = (d: Date | null | undefined): string | null => {
+      if (!d) return null;
+      const t = d.getTime();
+      return Number.isFinite(t) ? d.toISOString() : null;
+    };
+
+    const parseExternalSellerIdQuery = (raw: unknown): number | null => {
+      if (raw === undefined || raw === null || raw === "") return null;
+      const n = Number.parseInt(String(raw).trim(), 10);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const parseResponsibleQuery = (raw: unknown): string | null => {
+      if (typeof raw !== "string") return null;
+      const t = raw.trim();
+      return t.length > 0 ? t : null;
+    };
+
+    const nomusNfesElementsSql = (alias: string) => Prisma.sql`
+      jsonb_array_elements(
+        CASE
+          WHEN jsonb_typeof(${Prisma.raw(`${alias}."nomusRawResponse"`)}->'nfes') = 'array'
+          THEN ${Prisma.raw(`${alias}."nomusRawResponse"`)}->'nfes'
+          ELSE '[]'::jsonb
+        END
+      ) AS nfe
+    `;
+
+    const orderIsInvoicedSql = (alias: string) => Prisma.sql`
+      EXISTS (
+        SELECT 1
+        FROM ${nomusNfesElementsSql(alias)}
+        WHERE NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') IS NOT NULL
+      )
+    `;
+
+    const buildSellerMatchSql = (alias: "so" | "p", externalSellerId: number | null, responsible: string | null) => {
+      const col = Prisma.raw(`${alias}."externalSellerId"`);
+      const respCol = Prisma.raw(`${alias}."responsible"`);
+      if (externalSellerId !== null && responsible !== null) {
+        return Prisma.sql`(
+          ${col} = ${externalSellerId}
+          OR (
+            ${col} IS NULL
+            AND ${respCol} IS NOT NULL
+            AND LOWER(TRIM(${respCol})) = LOWER(TRIM(${responsible}))
+          )
+        )`;
+      }
+      if (externalSellerId !== null) {
+        return Prisma.sql`${col} = ${externalSellerId}`;
+      }
+      if (responsible !== null) {
+        return Prisma.sql`LOWER(TRIM(${respCol})) = LOWER(TRIM(${responsible}))`;
+      }
+      return Prisma.sql`TRUE`;
+    };
+
+    const sellerKeyExprSql = (alias: "so" | "p") => Prisma.sql`
+      CASE
+        WHEN ${Prisma.raw(`${alias}."externalSellerId"`)} IS NOT NULL
+        THEN 'id:' || ${Prisma.raw(`${alias}."externalSellerId"`)}::text
+        WHEN NULLIF(TRIM(${Prisma.raw(`${alias}."responsible"`)}), '') IS NOT NULL
+        THEN 'r:' || LOWER(TRIM(${Prisma.raw(`${alias}."responsible"`)}))
+        ELSE NULL
+      END
+    `;
+
+    const customerNameSql = Prisma.sql`
+      COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName")
+    `;
+
+    try {
+      const now = new Date();
+      const nowMs = now.getTime();
+
+      const filterExternalSellerId = parseExternalSellerIdQuery(req.query.externalSellerId);
+      const filterResponsible = parseResponsibleQuery(req.query.responsible);
+
+      const soSellerMatch = buildSellerMatchSql("so", filterExternalSellerId, filterResponsible);
+      const pSellerMatch = buildSellerMatchSql("p", filterExternalSellerId, filterResponsible);
+
+      const openProposalStatusSql = Prisma.sql`p.status::text IN ('DRAFT', 'ANALYSIS', 'SENT')`;
+
+      const proposalHasLinkedOrderSql = Prisma.sql`
+        EXISTS (SELECT 1 FROM "SalesOrder" so_link WHERE so_link."proposalId" = p.id)
+      `;
+
+      const [
+        sellerOptionsRows,
+        summaryRow,
+        bySellerRows,
+        notInvoicedRows,
+        invoicedRows,
+        openProposalsNoOrderRows,
+        ordersNoProposalRows,
+      ] = await Promise.all([
+        prisma.$queryRaw<
+          {
+            external_seller_id: number | null;
+            responsible: string | null;
+            orders_count: number;
+            proposals_count: number;
+          }[]
+        >(
+          Prisma.sql`
+            WITH combined AS (
+              SELECT
+                'order'::text AS src,
+                ${sellerKeyExprSql("so")} AS seller_key,
+                so."externalSellerId" AS external_seller_id,
+                so."responsible" AS responsible
+              FROM "SalesOrder" so
+              WHERE ${soSellerMatch}
+              UNION ALL
+              SELECT
+                'proposal'::text AS src,
+                ${sellerKeyExprSql("p")} AS seller_key,
+                p."externalSellerId" AS external_seller_id,
+                p."responsible" AS responsible
+              FROM "Proposal" p
+              WHERE ${pSellerMatch}
+            )
+            SELECT
+              MAX(external_seller_id) AS external_seller_id,
+              MAX(responsible) FILTER (
+                WHERE responsible IS NOT NULL AND TRIM(responsible) <> ''
+              ) AS responsible,
+              COUNT(*) FILTER (WHERE src = 'order')::int AS orders_count,
+              COUNT(*) FILTER (WHERE src = 'proposal')::int AS proposals_count
+            FROM combined
+            WHERE seller_key IS NOT NULL
+            GROUP BY seller_key
+            ORDER BY orders_count DESC, proposals_count DESC, responsible ASC NULLS LAST
+          `
+        ),
+        prisma.$queryRaw<
+          {
+            orders_count: number;
+            orders_value: unknown;
+            invoiced_orders_count: number;
+            invoiced_orders_value: unknown;
+            not_invoiced_orders_count: number;
+            not_invoiced_orders_value: unknown;
+            proposals_count: number;
+            open_proposals_count: number;
+            open_proposals_value: unknown;
+            proposals_with_linked_order_count: number;
+            proposals_without_linked_order_count: number;
+            proposals_without_linked_order_value: unknown;
+            orders_with_linked_proposal_count: number;
+            orders_without_linked_proposal_count: number;
+          }[]
+        >(
+          Prisma.sql`
+            SELECT
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch}) AS orders_count,
+              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch}) AS orders_value,
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${orderIsInvoicedSql("so")}) AS invoiced_orders_count,
+              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${orderIsInvoicedSql("so")}) AS invoiced_orders_value,
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND NOT ${orderIsInvoicedSql("so")}) AS not_invoiced_orders_count,
+              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND NOT ${orderIsInvoicedSql("so")}) AS not_invoiced_orders_value,
+              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch}) AS proposals_count,
+              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND ${openProposalStatusSql}) AS open_proposals_count,
+              (SELECT COALESCE(SUM(p."totalNetValue"), 0) FROM "Proposal" p WHERE ${pSellerMatch} AND ${openProposalStatusSql}) AS open_proposals_value,
+              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND ${proposalHasLinkedOrderSql}) AS proposals_with_linked_order_count,
+              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND NOT ${proposalHasLinkedOrderSql}) AS proposals_without_linked_order_count,
+              (SELECT COALESCE(SUM(p."totalNetValue"), 0) FROM "Proposal" p WHERE ${pSellerMatch} AND NOT ${proposalHasLinkedOrderSql}) AS proposals_without_linked_order_value,
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND so."proposalId" IS NOT NULL) AS orders_with_linked_proposal_count,
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND so."proposalId" IS NULL) AS orders_without_linked_proposal_count
+          `
+        ),
+        prisma.$queryRaw<
+          {
+            external_seller_id: number | null;
+            responsible: string | null;
+            orders_count: number;
+            orders_value: unknown;
+            invoiced_orders_count: number;
+            invoiced_orders_value: unknown;
+            not_invoiced_orders_count: number;
+            not_invoiced_orders_value: unknown;
+            open_proposals_without_linked_order_count: number;
+            open_proposals_without_linked_order_value: unknown;
+          }[]
+        >(
+          Prisma.sql`
+            WITH orders_by_seller AS (
+              SELECT
+                ${sellerKeyExprSql("so")} AS seller_key,
+                MAX(so."externalSellerId") AS external_seller_id,
+                MAX(so."responsible") FILTER (
+                  WHERE so."responsible" IS NOT NULL AND TRIM(so."responsible") <> ''
+                ) AS responsible,
+                COUNT(*)::int AS orders_count,
+                COALESCE(SUM(so."totalNetValue"), 0) AS orders_value,
+                COUNT(*) FILTER (WHERE ${orderIsInvoicedSql("so")})::int AS invoiced_orders_count,
+                COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${orderIsInvoicedSql("so")}), 0) AS invoiced_orders_value,
+                COUNT(*) FILTER (WHERE NOT ${orderIsInvoicedSql("so")})::int AS not_invoiced_orders_count,
+                COALESCE(SUM(so."totalNetValue") FILTER (WHERE NOT ${orderIsInvoicedSql("so")}), 0) AS not_invoiced_orders_value
+              FROM "SalesOrder" so
+              WHERE ${soSellerMatch}
+              GROUP BY seller_key
+              HAVING ${sellerKeyExprSql("so")} IS NOT NULL
+            ),
+            proposals_open_no_order AS (
+              SELECT
+                ${sellerKeyExprSql("p")} AS seller_key,
+                MAX(p."externalSellerId") AS external_seller_id,
+                MAX(p."responsible") FILTER (
+                  WHERE p."responsible" IS NOT NULL AND TRIM(p."responsible") <> ''
+                ) AS responsible,
+                COUNT(*)::int AS open_proposals_without_linked_order_count,
+                COALESCE(SUM(p."totalNetValue"), 0) AS open_proposals_without_linked_order_value
+              FROM "Proposal" p
+              WHERE ${pSellerMatch}
+                AND ${openProposalStatusSql}
+                AND NOT ${proposalHasLinkedOrderSql}
+              GROUP BY seller_key
+              HAVING ${sellerKeyExprSql("p")} IS NOT NULL
+            ),
+            merged AS (
+              SELECT
+                o.external_seller_id,
+                COALESCE(o.responsible, pr.responsible) AS responsible,
+                o.orders_count,
+                o.orders_value,
+                o.invoiced_orders_count,
+                o.invoiced_orders_value,
+                o.not_invoiced_orders_count,
+                o.not_invoiced_orders_value,
+                COALESCE(pr.open_proposals_without_linked_order_count, 0) AS open_proposals_without_linked_order_count,
+                COALESCE(pr.open_proposals_without_linked_order_value, 0) AS open_proposals_without_linked_order_value
+              FROM orders_by_seller o
+              LEFT JOIN proposals_open_no_order pr ON pr.seller_key = o.seller_key
+              UNION ALL
+              SELECT
+                pr.external_seller_id,
+                pr.responsible,
+                0 AS orders_count,
+                0 AS orders_value,
+                0 AS invoiced_orders_count,
+                0 AS invoiced_orders_value,
+                0 AS not_invoiced_orders_count,
+                0 AS not_invoiced_orders_value,
+                pr.open_proposals_without_linked_order_count,
+                pr.open_proposals_without_linked_order_value
+              FROM proposals_open_no_order pr
+              WHERE NOT EXISTS (SELECT 1 FROM orders_by_seller o WHERE o.seller_key = pr.seller_key)
+            )
+            SELECT * FROM merged
+            ORDER BY orders_count DESC, open_proposals_without_linked_order_count DESC
+          `
+        ),
+        prisma.$queryRaw<
+          {
+            sales_order_id: string;
+            order_code: string;
+            external_sales_order_id: number | null;
+            customer_id: string;
+            customer_name: string;
+            responsible: string | null;
+            external_seller_id: number | null;
+            issue_date: Date;
+            expected_delivery_date: Date | null;
+            total_net_value: unknown;
+          }[]
+        >(
+          Prisma.sql`
+            SELECT
+              so.id AS sales_order_id,
+              so."orderCode" AS order_code,
+              so."externalSalesOrderId" AS external_sales_order_id,
+              so."customerId" AS customer_id,
+              ${customerNameSql} AS customer_name,
+              so."responsible" AS responsible,
+              so."externalSellerId" AS external_seller_id,
+              so."issueDate" AS issue_date,
+              so."expectedDeliveryDate" AS expected_delivery_date,
+              so."totalNetValue" AS total_net_value
+            FROM "SalesOrder" so
+            INNER JOIN "Customer" c ON c.id = so."customerId"
+            WHERE ${soSellerMatch}
+              AND NOT ${orderIsInvoicedSql("so")}
+            ORDER BY so."issueDate" DESC
+            LIMIT ${SELLER_DASH_LIST_LIMIT}
+          `
+        ),
+        prisma.$queryRaw<
+          {
+            sales_order_id: string;
+            order_code: string;
+            external_sales_order_id: number | null;
+            customer_id: string;
+            customer_name: string;
+            responsible: string | null;
+            external_seller_id: number | null;
+            issue_date: Date;
+            expected_delivery_date: Date | null;
+            total_net_value: unknown;
+            invoice_processed_at_text: string | null;
+            invoice_number: string | null;
+            invoice_series: string | null;
+            invoice_key: string | null;
+            invoice_status: string | null;
+          }[]
+        >(
+          Prisma.sql`
+            SELECT
+              so.id AS sales_order_id,
+              so."orderCode" AS order_code,
+              so."externalSalesOrderId" AS external_sales_order_id,
+              so."customerId" AS customer_id,
+              ${customerNameSql} AS customer_name,
+              so."responsible" AS responsible,
+              so."externalSellerId" AS external_seller_id,
+              so."issueDate" AS issue_date,
+              so."expectedDeliveryDate" AS expected_delivery_date,
+              so."totalNetValue" AS total_net_value,
+              inv.invoice_processed_at_text,
+              inv.invoice_number,
+              inv.invoice_series,
+              inv.invoice_key,
+              inv.invoice_status
+            FROM "SalesOrder" so
+            INNER JOIN "Customer" c ON c.id = so."customerId"
+            LEFT JOIN LATERAL (
+              SELECT
+                NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') AS invoice_processed_at_text,
+                NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'numero', '')), '') AS invoice_number,
+                NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'serie', '')), '') AS invoice_series,
+                NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'chave', '')), '') AS invoice_key,
+                NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'status', '')), '') AS invoice_status,
+                CASE
+                  WHEN NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+                  THEN to_date(TRIM(nfe->>'dataProcessamento'), 'DD/MM/YYYY')
+                  ELSE NULL
+                END AS invoice_sort_date
+              FROM ${nomusNfesElementsSql("so")}
+              WHERE NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') IS NOT NULL
+              ORDER BY invoice_sort_date DESC NULLS LAST, nfe->>'dataProcessamento' DESC
+              LIMIT 1
+            ) inv ON TRUE
+            WHERE ${soSellerMatch}
+              AND ${orderIsInvoicedSql("so")}
+            ORDER BY inv.invoice_sort_date DESC NULLS LAST, so."issueDate" DESC
+            LIMIT ${SELLER_DASH_LIST_LIMIT}
+          `
+        ),
+        prisma.$queryRaw<
+          {
+            proposal_id: string;
+            number: number;
+            external_proposal_id: number | null;
+            external_proposal_code: string | null;
+            customer_id: string;
+            customer_name: string;
+            responsible: string | null;
+            external_seller_id: number | null;
+            status: string;
+            total_net_value: unknown;
+            created_at: Date;
+            updated_at: Date;
+          }[]
+        >(
+          Prisma.sql`
+            SELECT
+              p.id AS proposal_id,
+              p.number AS number,
+              p."externalProposalId" AS external_proposal_id,
+              p."externalProposalCode" AS external_proposal_code,
+              p."customerId" AS customer_id,
+              ${customerNameSql} AS customer_name,
+              p."responsible" AS responsible,
+              p."externalSellerId" AS external_seller_id,
+              p.status::text AS status,
+              p."totalNetValue" AS total_net_value,
+              p."createdAt" AS created_at,
+              p."updatedAt" AS updated_at
+            FROM "Proposal" p
+            INNER JOIN "Customer" c ON c.id = p."customerId"
+            WHERE ${pSellerMatch}
+              AND ${openProposalStatusSql}
+              AND NOT ${proposalHasLinkedOrderSql}
+            ORDER BY p."updatedAt" DESC
+            LIMIT ${SELLER_DASH_LIST_LIMIT}
+          `
+        ),
+        prisma.$queryRaw<
+          {
+            sales_order_id: string;
+            order_code: string;
+            external_sales_order_id: number | null;
+            customer_id: string;
+            customer_name: string;
+            responsible: string | null;
+            external_seller_id: number | null;
+            issue_date: Date;
+            total_net_value: unknown;
+            is_invoiced: boolean;
+          }[]
+        >(
+          Prisma.sql`
+            SELECT
+              so.id AS sales_order_id,
+              so."orderCode" AS order_code,
+              so."externalSalesOrderId" AS external_sales_order_id,
+              so."customerId" AS customer_id,
+              ${customerNameSql} AS customer_name,
+              so."responsible" AS responsible,
+              so."externalSellerId" AS external_seller_id,
+              so."issueDate" AS issue_date,
+              so."totalNetValue" AS total_net_value,
+              ${orderIsInvoicedSql("so")} AS is_invoiced
+            FROM "SalesOrder" so
+            INNER JOIN "Customer" c ON c.id = so."customerId"
+            WHERE ${soSellerMatch}
+              AND so."proposalId" IS NULL
+            ORDER BY so."issueDate" DESC
+            LIMIT ${SELLER_DASH_LIST_LIMIT}
+          `
+        ),
+      ]);
+
+      const summary = summaryRow[0];
+
+      const mapDeliveryDays = (expected: Date | null) => {
+        if (!expected) {
+          return { daysUntilExpectedDelivery: null, daysOverdue: null };
+        }
+        const t = expected.getTime();
+        if (!Number.isFinite(t)) {
+          return { daysUntilExpectedDelivery: null, daysOverdue: null };
+        }
+        const diffDays = Math.floor((t - nowMs) / 86400000);
+        return {
+          daysUntilExpectedDelivery: diffDays,
+          daysOverdue: diffDays < 0 ? Math.abs(diffDays) : 0,
+        };
+      };
+
+      res.json({
+        generatedAt: now.toISOString(),
+        filters: {
+          externalSellerId: filterExternalSellerId,
+          responsible: filterResponsible,
+        },
+        sellerOptions: sellerOptionsRows.map((row) => ({
+          externalSellerId: row.external_seller_id,
+          responsible: row.responsible ?? null,
+          ordersCount: row.orders_count,
+          proposalsCount: row.proposals_count,
+        })),
+        summary: {
+          ordersCount: summary?.orders_count ?? 0,
+          ordersValue: sellerDashToNumber(summary?.orders_value),
+          invoicedOrdersCount: summary?.invoiced_orders_count ?? 0,
+          invoicedOrdersValue: sellerDashToNumber(summary?.invoiced_orders_value),
+          notInvoicedOrdersCount: summary?.not_invoiced_orders_count ?? 0,
+          notInvoicedOrdersValue: sellerDashToNumber(summary?.not_invoiced_orders_value),
+          proposalsCount: summary?.proposals_count ?? 0,
+          openProposalsCount: summary?.open_proposals_count ?? 0,
+          openProposalsValue: sellerDashToNumber(summary?.open_proposals_value),
+          proposalsWithLinkedOrderCount: summary?.proposals_with_linked_order_count ?? 0,
+          proposalsWithoutLinkedOrderCount: summary?.proposals_without_linked_order_count ?? 0,
+          proposalsWithoutLinkedOrderValue: sellerDashToNumber(
+            summary?.proposals_without_linked_order_value
+          ),
+          ordersWithLinkedProposalCount: summary?.orders_with_linked_proposal_count ?? 0,
+          ordersWithoutLinkedProposalCount: summary?.orders_without_linked_proposal_count ?? 0,
+        },
+        bySeller: bySellerRows.map((row) => ({
+          externalSellerId: row.external_seller_id,
+          responsible: row.responsible ?? null,
+          ordersCount: row.orders_count,
+          ordersValue: sellerDashToNumber(row.orders_value),
+          invoicedOrdersCount: row.invoiced_orders_count,
+          invoicedOrdersValue: sellerDashToNumber(row.invoiced_orders_value),
+          notInvoicedOrdersCount: row.not_invoiced_orders_count,
+          notInvoicedOrdersValue: sellerDashToNumber(row.not_invoiced_orders_value),
+          openProposalsWithoutLinkedOrderCount: row.open_proposals_without_linked_order_count,
+          openProposalsWithoutLinkedOrderValue: sellerDashToNumber(
+            row.open_proposals_without_linked_order_value
+          ),
+        })),
+        notInvoicedOrders: notInvoicedRows.map((row) => {
+          const delivery = mapDeliveryDays(row.expected_delivery_date);
+          return {
+            salesOrderId: row.sales_order_id,
+            orderCode: row.order_code,
+            externalSalesOrderId: row.external_sales_order_id,
+            customerId: row.customer_id,
+            customerName: row.customer_name,
+            responsible: row.responsible ?? null,
+            externalSellerId: row.external_seller_id,
+            issueDate: sellerDashIso(row.issue_date),
+            expectedDeliveryDate: sellerDashIso(row.expected_delivery_date),
+            totalNetValue: sellerDashToNumber(row.total_net_value),
+            daysUntilExpectedDelivery: delivery.daysUntilExpectedDelivery,
+            daysOverdue: delivery.daysOverdue,
+          };
+        }),
+        invoicedOrders: invoicedRows.map((row) => ({
+          salesOrderId: row.sales_order_id,
+          orderCode: row.order_code,
+          externalSalesOrderId: row.external_sales_order_id,
+          customerId: row.customer_id,
+          customerName: row.customer_name,
+          responsible: row.responsible ?? null,
+          externalSellerId: row.external_seller_id,
+          issueDate: sellerDashIso(row.issue_date),
+          expectedDeliveryDate: sellerDashIso(row.expected_delivery_date),
+          totalNetValue: sellerDashToNumber(row.total_net_value),
+          invoiceProcessedAtText: row.invoice_processed_at_text,
+          invoiceNumber: row.invoice_number,
+          invoiceSeries: row.invoice_series,
+          invoiceKey: row.invoice_key,
+          invoiceStatus: row.invoice_status,
+        })),
+        openProposalsWithoutLinkedOrder: openProposalsNoOrderRows.map((row) => ({
+          proposalId: row.proposal_id,
+          number: row.number,
+          externalProposalId: row.external_proposal_id,
+          externalProposalCode: row.external_proposal_code ?? null,
+          customerId: row.customer_id,
+          customerName: row.customer_name,
+          responsible: row.responsible ?? null,
+          externalSellerId: row.external_seller_id,
+          status: row.status,
+          totalNetValue: sellerDashToNumber(row.total_net_value),
+          createdAt: sellerDashIso(row.created_at),
+          updatedAt: sellerDashIso(row.updated_at),
+          daysOpen: Math.max(
+            0,
+            Math.floor((nowMs - row.updated_at.getTime()) / 86400000)
+          ),
+        })),
+        ordersWithoutLinkedProposal: ordersNoProposalRows.map((row) => ({
+          salesOrderId: row.sales_order_id,
+          orderCode: row.order_code,
+          externalSalesOrderId: row.external_sales_order_id,
+          customerId: row.customer_id,
+          customerName: row.customer_name,
+          responsible: row.responsible ?? null,
+          externalSellerId: row.external_seller_id,
+          issueDate: sellerDashIso(row.issue_date),
+          totalNetValue: sellerDashToNumber(row.total_net_value),
+          isInvoiced: Boolean(row.is_invoiced),
+        })),
+      });
+    } catch (error) {
+      console.error("GET /api/crm/seller-dashboard", error);
+      res.status(500).json({ error: "Erro ao montar dashboard por vendedor." });
+    }
+  });
+
   /** Busca paginada de clientes para o CRM + agregados de CommercialActivity (sem alterar /api/customers). */
   app.get("/api/crm/customers", async (req, res) => {
     try {
