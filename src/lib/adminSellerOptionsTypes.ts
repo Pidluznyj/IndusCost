@@ -11,6 +11,9 @@ export type AdminSellerOption = {
   proposalsValue: number;
   source: "sales_orders_and_proposals";
   confidence: AdminSellerOptionConfidence;
+  /** Linhas MEDIUM (sem ID) mescladas nesta opção HIGH com o mesmo nome normalizado. */
+  hasMergedNameFallback?: boolean;
+  mergedFallbackRowsCount?: number;
 };
 
 export function buildAdminSellerOptionKey(

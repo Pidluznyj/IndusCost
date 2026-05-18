@@ -44,8 +44,23 @@ function valueToSelectKey(value: SellerNomusPickerValue, sellers: AdminSellerOpt
   return `custom:${value.externalSellerId}:${value.sellerResponsibleName}`;
 }
 
+function formatCompactBrl(value: number): string | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 function formatCounts(option: AdminSellerOption): string {
-  return `${option.ordersCount} ped. · ${option.proposalsCount} prop.`;
+  const base = `${option.ordersCount} ped. · ${option.proposalsCount} prop.`;
+  const orderVal = formatCompactBrl(option.ordersValue);
+  const propVal = formatCompactBrl(option.proposalsValue);
+  if (!orderVal && !propVal) return base;
+  const valueParts = [orderVal, propVal].filter(Boolean);
+  return `${base} · ${valueParts.join(" / ")}`;
 }
 
 export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
@@ -152,7 +167,10 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
           >
             {selectedSeller.confidence === "HIGH" ? "Alta confiança" : "Média confiança"}
           </span>
-          <span className="text-[10px] text-muted-foreground">{formatCounts(selectedSeller)}</span>
+          <span className="text-[10px] text-muted-foreground">
+            {formatCounts(selectedSeller)}
+            {selectedSeller.hasMergedNameFallback ? " · inclui registros sem ID" : ""}
+          </span>
           <button
             type="button"
             onClick={() => onChange({ externalSellerId: "", sellerResponsibleName: "" })}
