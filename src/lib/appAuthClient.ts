@@ -43,22 +43,22 @@ export const APP_USER_ROLE_OPTIONS: { value: AppUserRole; label: string; hint: s
   {
     value: "ADMIN",
     label: "Administrador",
-    hint: "Perfil administrativo com permissões amplas (padrão do sistema).",
+    hint: "Classificação administrativa; libere telas marcando permissões abaixo.",
   },
   {
     value: "COMMERCIAL_MANAGER",
     label: "Gestor comercial",
-    hint: "Gestão geral e por vendedor de todos os responsáveis.",
+    hint: "Classificação comercial; libere telas marcando permissões abaixo.",
   },
   {
     value: "SELLER",
     label: "Vendedor",
-    hint: "Gestão por vendedor vinculada; informe externalSellerId do Nomus.",
+    hint: "Classificação de vendedor; informe externalSellerId do Nomus e marque permissões.",
   },
   {
     value: "VIEWER",
     label: "Visualizador",
-    hint: "Acesso mínimo (dashboard).",
+    hint: "Classificação de leitura; libere telas marcando permissões abaixo.",
   },
 ];
 

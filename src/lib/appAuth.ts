@@ -39,30 +39,6 @@ export const ALL_PERMISSION_KEYS = PERMISSION_CATALOG.map((p) => p.key);
 
 const PERMISSION_KEY_SET = new Set(ALL_PERMISSION_KEYS);
 
-export const ROLE_DEFAULT_PERMISSIONS: Record<AppUserRole, readonly string[]> = {
-  SUPER_ADMIN: ALL_PERMISSION_KEYS,
-  ADMIN: ALL_PERMISSION_KEYS,
-  COMMERCIAL_MANAGER: [
-    "dashboard.view",
-    "crm.general.view",
-    "crm.seller.view",
-    "crm.seller.all",
-    "customers.view",
-    "customers.edit",
-    "proposals.view",
-    "sales_orders.view",
-  ],
-  SELLER: [
-    "dashboard.view",
-    "crm.seller.view",
-    "crm.seller.own",
-    "customers.view",
-    "proposals.view",
-    "sales_orders.view",
-  ],
-  VIEWER: ["dashboard.view"],
-};
-
 export type SafeAppUser = {
   id: string;
   name: string;
@@ -116,9 +92,7 @@ export function getEffectivePermissions(user: {
   if (user.role === "SUPER_ADMIN") {
     return [...ALL_PERMISSION_KEYS];
   }
-  const roleDefaults = ROLE_DEFAULT_PERMISSIONS[user.role] ?? [];
-  const combined = new Set<string>([...roleDefaults, ...filterKnownPermissions(user.permissions)]);
-  return Array.from(combined).sort();
+  return filterKnownPermissions(user.permissions).sort();
 }
 
 export function hasPermission(

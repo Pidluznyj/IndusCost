@@ -279,8 +279,8 @@ export const AdminUsersModule: React.FC = () => {
             Usuários e Permissões
           </h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Cadastre usuários, defina perfis e permissões extras por tela. Permissões efetivas = permissões do
-            perfil + permissões extras marcadas.
+            Cadastre usuários, defina perfis e libere telas por permissão. Permissões efetivas = permissões
+            marcadas manualmente. SUPER_ADMIN sempre possui acesso total.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -515,11 +515,12 @@ export const AdminUsersModule: React.FC = () => {
               {form.role !== "SUPER_ADMIN" ? (
                 <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Permissões extras
+                    Permissões liberadas
                   </p>
                   <p className="text-[11px] text-muted-foreground flex items-start gap-1">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    Permissões efetivas = permissões do perfil + permissões extras marcadas.
+                    O usuário só terá acesso às telas marcadas aqui. O perfil serve para classificação e
+                    regras futuras, sem liberar menus automaticamente.
                   </p>
                   {catalogByGroup.map(([group, entries]) => (
                     <div key={group}>
