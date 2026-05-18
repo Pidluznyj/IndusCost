@@ -40,6 +40,30 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import type {
+  ManagementBreakdownItem,
+  ManagementDashboardResponse,
+  ManagementDashboardSummary,
+  ManagementFollowUp,
+  ManagementOpportunityCustomer,
+  ManagementProposalWithoutFollowUp,
+  ManagementRiskCustomer,
+  ManagementTopCustomer,
+} from "@/src/components/crmManagementTypes";
+
+export type {
+  ManagementBreakdownItem,
+  ManagementDashboardResponse,
+  ManagementDashboardSummary,
+  ManagementFollowUp,
+  ManagementOpportunityCustomer,
+  ManagementProposalWithoutFollowUp,
+  ManagementRiskCustomer,
+  ManagementTopCustomer,
+};
+import { buildManagementKpiCards } from "@/src/components/crmManagementUi";
+import { CrmManagementDashboardSection } from "@/src/components/CrmManagementDashboardSection";
+import { CrmManagementLists } from "@/src/components/CrmManagementLists";
 
 /** Cliente normalizado vindo de GET /api/crm/customers. */
 export type CrmCustomerListItem = {
@@ -460,6 +484,11 @@ function formatIntelCurrency(value: unknown): string {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(0);
   }
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+}
+
+function formatNumberPt(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return value.toLocaleString("pt-BR");
 }
 
 /** Texto específico do KPI “dias desde última compra” na inteligência (0 = “0 dias”). */
@@ -1560,6 +1589,33 @@ export const CrmModule = () => {
   const [commercialIntelLoading, setCommercialIntelLoading] = useState(false);
   const [commercialIntelError, setCommercialIntelError] = useState<string | null>(null);
 
+  const [managementDashboard, setManagementDashboard] =
+    useState<ManagementDashboardResponse | null>(null);
+  const [managementDashboardLoading, setManagementDashboardLoading] = useState(true);
+  const [managementDashboardError, setManagementDashboardError] = useState<string | null>(null);
+
+  const loadManagementDashboard = useCallback(async () => {
+    setManagementDashboardLoading(true);
+    setManagementDashboardError(null);
+    try {
+      const data = await fetchJsonOk<ManagementDashboardResponse>(
+        "/api/crm/management-dashboard"
+      );
+      setManagementDashboard(data);
+    } catch (e) {
+      setManagementDashboard(null);
+      setManagementDashboardError(
+        clampMessage(
+          e instanceof Error
+            ? e.message
+            : "Não foi possível carregar o dashboard gerencial comercial."
+        )
+      );
+    } finally {
+      setManagementDashboardLoading(false);
+    }
+  }, []);
+
   const loadDashboard = useCallback(async () => {
     setDashboardLoading(true);
     setDashboardError(null);
@@ -1688,9 +1744,10 @@ export const CrmModule = () => {
 
   useEffect(() => {
     void loadDashboard();
+    void loadManagementDashboard();
     void loadAgendaBuckets();
     void loadCrmCustomers("", "all", 0);
-  }, [loadDashboard, loadAgendaBuckets, loadCrmCustomers]);
+  }, [loadDashboard, loadManagementDashboard, loadAgendaBuckets, loadCrmCustomers]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1870,6 +1927,33 @@ export const CrmModule = () => {
     [crmCustomerFilter, searchApplied, loadCrmCustomers]
   );
 
+  const selectCustomerById = useCallback(
+    (customerId: string, meta?: { displayName?: string; taxId?: string }) => {
+      const existing = customers.find((c) => c.id === customerId);
+      if (existing) {
+        setSelectedId(customerId);
+        return;
+      }
+      const stub: CrmCustomerListItem = {
+        id: customerId,
+        displayName: meta?.displayName?.trim() || "Cliente",
+        tradeName: null,
+        taxId: meta?.taxId?.trim() || "—",
+        email: null,
+        phone: null,
+        city: null,
+        state: null,
+        address: null,
+        lastContactAt: null,
+        nextFollowUpAt: null,
+        contactCount: 0,
+      };
+      setCustomers((prev) => (prev.some((c) => c.id === customerId) ? prev : [stub, ...prev]));
+      setSelectedId(customerId);
+    },
+    [customers]
+  );
+
   const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedId) {
@@ -1921,6 +2005,7 @@ export const CrmModule = () => {
       window.setTimeout(() => setToast(null), 4000);
       await loadActivities(selectedId);
       await loadCommercialIntel(selectedId);
+      await loadManagementDashboard();
       await loadDashboard();
       await loadAgendaBuckets();
       await loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
@@ -1943,6 +2028,7 @@ export const CrmModule = () => {
       window.setTimeout(() => setToast(null), 3500);
       if (selectedId) await loadActivities(selectedId);
       if (selectedId) await loadCommercialIntel(selectedId);
+      await loadManagementDashboard();
       await loadDashboard();
       await loadAgendaBuckets();
       await loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
@@ -1950,6 +2036,16 @@ export const CrmModule = () => {
       alert(err instanceof Error ? err.message : "Não foi possível atualizar o contato.");
     }
   };
+
+  const managementKpiCards = useMemo(
+    () =>
+      buildManagementKpiCards(
+        managementDashboard?.summary,
+        formatNumberPt,
+        formatIntelCurrency
+      ),
+    [managementDashboard?.summary]
+  );
 
   const dashboardCards: {
     label: string;
@@ -2012,6 +2108,29 @@ export const CrmModule = () => {
           {toast}
         </div>
       ) : null}
+
+      <CrmManagementDashboardSection
+        data={managementDashboard}
+        loading={managementDashboardLoading}
+        error={managementDashboardError}
+        kpiCards={managementKpiCards}
+        onReload={() => void loadManagementDashboard()}
+        formatDateTimePt={formatDateTimePt}
+      >
+        {managementDashboard ? (
+          <CrmManagementLists
+            data={managementDashboard}
+            onSelectCustomer={selectCustomerById}
+            formatDateTimePt={formatDateTimePt}
+            formatDateShortPt={formatDateShortPt}
+            formatIntelCurrency={formatIntelCurrency}
+            formatNumberPt={formatNumberPt}
+            formatIntelDaysSinceLastPurchase={formatIntelDaysSinceLastPurchase}
+            formatCommercialStatusLabel={formatCommercialStatusLabel}
+            displayLine={displayLine}
+          />
+        ) : null}
+      </CrmManagementDashboardSection>
 
       <section className="space-y-4">
         <div>
