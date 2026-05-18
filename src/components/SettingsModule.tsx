@@ -25,6 +25,7 @@ import { AppAlert } from "@/src/components/shared/AppAlert";
 import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 import { AdminUsersModule } from "@/src/components/AdminUsersModule";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { canManageUsers } from "@/src/lib/modulePermissions";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -316,8 +317,9 @@ const HUB_SECTIONS: Array<{
 ];
 
 export const SettingsModule = () => {
-  const { hasPermission } = useAuth();
-  const canManageUsers = hasPermission("users.manage");
+  const auth = useAuth();
+  const canManageUsersPerm = canManageUsers(auth);
+  const canViewSettings = auth.hasPermission("settings.view");
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
@@ -342,6 +344,22 @@ export const SettingsModule = () => {
   });
   const [loading, setLoading] = useState(true);
   const [activeHubSection, setActiveHubSection] = useState<HubSection>("globals");
+
+  const visibleHubSections = React.useMemo(
+    () =>
+      HUB_SECTIONS.filter((section) => {
+        if (section.id === "security") return canManageUsersPerm;
+        return canViewSettings;
+      }),
+    [canManageUsersPerm, canViewSettings]
+  );
+
+  useEffect(() => {
+    if (!visibleHubSections.some((s) => s.id === activeHubSection)) {
+      const first = visibleHubSections[0]?.id;
+      if (first) setActiveHubSection(first);
+    }
+  }, [activeHubSection, visibleHubSections]);
   const [activeOperationalTab, setActiveOperationalTab] = useState<OperationalSubTab>("roles");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -1349,7 +1367,7 @@ export const SettingsModule = () => {
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" data-tour="settings-subtabs">
-        {HUB_SECTIONS.filter((section) => section.id !== "security" || canManageUsers).map((section) => (
+        {visibleHubSections.map((section) => (
           <button
             key={section.id}
             type="button"

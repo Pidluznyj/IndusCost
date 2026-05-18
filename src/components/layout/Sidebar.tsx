@@ -26,32 +26,47 @@ import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { formatRoleLabel } from "@/src/lib/appAuthClient";
+import {
+  canAccessModule,
+  MODULE_LABELS,
+  type AppModuleId,
+} from "@/src/lib/modulePermissions";
+
+const ALL_MENU_ITEMS: {
+  id: AppModuleId;
+  icon: typeof LayoutDashboard;
+  label: string;
+}[] = [
+  { id: "dashboard", icon: LayoutDashboard, label: MODULE_LABELS.dashboard },
+  { id: "employees", icon: Users, label: MODULE_LABELS.employees },
+  { id: "machines", icon: Cpu, label: MODULE_LABELS.machines },
+  { id: "materials", icon: Truck, label: MODULE_LABELS.materials },
+  { id: "purchases", icon: ShoppingCart, label: MODULE_LABELS.purchases },
+  { id: "maintenance", icon: Wrench, label: MODULE_LABELS.maintenance },
+  { id: "products", icon: Package, label: MODULE_LABELS.products },
+  { id: "opex", icon: PieChart, label: MODULE_LABELS.opex },
+  { id: "taxes", icon: Scale, label: MODULE_LABELS.taxes },
+  { id: "pricing", icon: Calculator, label: MODULE_LABELS.pricing },
+  { id: "proposals", icon: FileText, label: MODULE_LABELS.proposals },
+  { id: "sales-orders", icon: ClipboardList, label: MODULE_LABELS["sales-orders"] },
+  { id: "customers", icon: Users, label: MODULE_LABELS.customers },
+  { id: "crm-commercial", icon: Contact, label: MODULE_LABELS["crm-commercial"] },
+  { id: "simulations", icon: Layers, label: MODULE_LABELS.simulations },
+  { id: "reports", icon: FileText, label: MODULE_LABELS.reports },
+  { id: "guide", icon: BookOpen, label: MODULE_LABELS.guide },
+  { id: "settings", icon: Settings, label: MODULE_LABELS.settings },
+];
 
 export const Sidebar = () => {
-  const { authUser, logout } = useAuth();
+  const auth = useAuth();
+  const { authUser, logout } = auth;
   const [collapsed, setCollapsed] = React.useState(false);
   const [pendingLogout, setPendingLogout] = React.useState(false);
 
-  const menuItems = [
-    { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
-    { id: "employees", icon: Users, label: "Colaboradores" },
-    { id: "machines", icon: Cpu, label: "Máquinas" },
-    { id: "materials", icon: Truck, label: "Suprimentos" },
-    { id: "purchases", icon: ShoppingCart, label: "Compras" },
-    { id: "maintenance", icon: Wrench, label: "Manutenção Predial" },
-    { id: "products", icon: Package, label: "Produtos" },
-    { id: "opex", icon: PieChart, label: "Custos Indiretos" },
-    { id: "taxes", icon: Scale, label: "Tributos" },
-    { id: "pricing", icon: Calculator, label: "Formação de Preço" },
-    { id: "proposals", icon: FileText, label: "Propostas" },
-    { id: "sales-orders", icon: ClipboardList, label: "Pedidos de venda" },
-    { id: "customers", icon: Users, label: "Clientes" },
-    { id: "crm-commercial", icon: Contact, label: "CRM Comercial" },
-    { id: "simulations", icon: Layers, label: "Simulações" },
-    { id: "reports", icon: FileText, label: "Relatórios" },
-    { id: "guide", icon: BookOpen, label: "Guia do Sistema" },
-    { id: "settings", icon: Settings, label: "Configurações" },
-  ];
+  const menuItems = React.useMemo(
+    () => ALL_MENU_ITEMS.filter((item) => canAccessModule(item.id, auth)),
+    [auth]
+  );
 
   return (
     <motion.aside

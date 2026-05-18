@@ -92,8 +92,16 @@ import { CrmSellerDashboardSection } from "@/src/components/CrmSellerDashboardSe
 import { CrmSellerDashboardLists } from "@/src/components/CrmSellerDashboardLists";
 import {
   CrmCommercialManagementTabs,
+  getDefaultCrmManagementTab,
   type CrmManagementTabId,
 } from "@/src/components/CrmCommercialManagementTabs";
+import { useAuth } from "@/src/contexts/AuthContext";
+import {
+  canAccessCrmAny,
+  canAccessCrmGeneral,
+  canAccessCrmSeller,
+} from "@/src/lib/modulePermissions";
+import { AccessDenied } from "@/src/components/AccessDenied";
 
 type SellerDashboardLoadParams = {
   externalSellerId?: number;
@@ -1631,8 +1639,25 @@ export const CrmModule = () => {
   const [managementDashboardLoading, setManagementDashboardLoading] = useState(true);
   const [managementDashboardError, setManagementDashboardError] = useState<string | null>(null);
 
-  const [activeCrmManagementTab, setActiveCrmManagementTab] =
-    useState<CrmManagementTabId>("general");
+  const auth = useAuth();
+  const canCrmGeneral = canAccessCrmGeneral(auth);
+  const canCrmSeller = canAccessCrmSeller(auth);
+  const canCrmAny = canAccessCrmAny(auth);
+
+  const [activeCrmManagementTab, setActiveCrmManagementTab] = useState<CrmManagementTabId>(
+    () => getDefaultCrmManagementTab(auth) ?? "general"
+  );
+
+  useEffect(() => {
+    if (!canCrmAny) return;
+    if (activeCrmManagementTab === "general" && !canCrmGeneral) {
+      setActiveCrmManagementTab("seller");
+      return;
+    }
+    if (activeCrmManagementTab === "seller" && !canCrmSeller) {
+      setActiveCrmManagementTab("general");
+    }
+  }, [activeCrmManagementTab, canCrmAny, canCrmGeneral, canCrmSeller]);
   const [sellerDashboard, setSellerDashboard] = useState<SellerDashboardResponse | null>(null);
   const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
   const [sellerDashboardError, setSellerDashboardError] = useState<string | null>(null);
@@ -2284,12 +2309,16 @@ export const CrmModule = () => {
       ) : null}
 
       <section className="space-y-8" aria-label="Gestão comercial">
+        {!canCrmAny ? (
+          <AccessDenied moduleId="crm-commercial" />
+        ) : (
+          <>
         <CrmCommercialManagementTabs
           activeTab={activeCrmManagementTab}
           onTabChange={setActiveCrmManagementTab}
         />
 
-        {activeCrmManagementTab === "general" ? (
+        {activeCrmManagementTab === "general" && canCrmGeneral ? (
           <>
             <CrmManagementDashboardSection
               data={managementDashboard}
@@ -2404,7 +2433,7 @@ export const CrmModule = () => {
         )}
       </section>
           </>
-        ) : (
+        ) : activeCrmManagementTab === "seller" && canCrmSeller ? (
           <CrmSellerDashboardSection
             data={sellerDashboard}
             loading={sellerDashboardLoading}
@@ -2435,6 +2464,8 @@ export const CrmModule = () => {
               />
             ) : null}
           </CrmSellerDashboardSection>
+        ) : null}
+          </>
         )}
       </section>
 

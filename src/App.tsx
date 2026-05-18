@@ -32,6 +32,7 @@ import { CustomerIndicatorsDashboard } from "@/src/components/contextual/Custome
 import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/SalesOrdersIndicatorsDashboard";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
+import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { fetchJsonOk } from "@/src/lib/http";
 import { AlertCircle, Factory, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
 
@@ -581,7 +582,7 @@ export default function App() {
           path="settings"
           element={<BootstrapAdminSettingsRoute />}
         />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<DefaultModuleRedirect />} />
       </Route>
       </Route>
     </Routes>

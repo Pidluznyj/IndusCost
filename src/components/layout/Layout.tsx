@@ -1,9 +1,11 @@
 import React from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { formatRoleLabel } from "@/src/lib/appAuthClient";
+import { canAccessModule, resolveModuleIdFromPath } from "@/src/lib/modulePermissions";
+import { AccessDenied } from "@/src/components/AccessDenied";
 
 type HeaderSyncLog = {
   status?: "SUCCESS" | "FAILED" | "UNKNOWN" | "SKIPPED";
@@ -12,8 +14,14 @@ type HeaderSyncLog = {
 };
 
 export const Layout = () => {
-  const { authUser } = useAuth();
+  const auth = useAuth();
+  const { authUser } = auth;
+  const location = useLocation();
   const [lastSyncAt, setLastSyncAt] = React.useState<string>("—");
+
+  const currentModuleId = resolveModuleIdFromPath(location.pathname);
+  const moduleAccessAllowed =
+    currentModuleId === null || canAccessModule(currentModuleId, auth);
   const [lastSyncStatus, setLastSyncStatus] = React.useState<"SUCCESS" | "FAILED" | "UNKNOWN" | "SKIPPED" | "—">("—");
 
   React.useEffect(() => {
@@ -142,7 +150,11 @@ export const Layout = () => {
               transition={{ duration: 0.3, ease: "easeOut" }}
               className="max-w-7xl mx-auto w-full"
             >
-              <Outlet />
+              {moduleAccessAllowed ? (
+                <Outlet />
+              ) : (
+                <AccessDenied moduleId={currentModuleId ?? undefined} />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
