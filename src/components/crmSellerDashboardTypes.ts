@@ -3,6 +3,8 @@
 export type SellerDashboardFilters = {
   externalSellerId: number | null;
   responsible: string | null;
+  dateFrom: string | null;
+  dateTo: string | null;
 };
 
 export type SellerOption = {
