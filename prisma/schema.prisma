@@ -1075,3 +1075,66 @@ model AppSession {
   @@index([expiresAt])
   @@index([revokedAt])
 }
+
+/// Stage/rastreabilidade da BOM Nomus (componentesListaMateriais). Não substitui ProductBOM nesta fase.
+model NomusBomComponentStage {
+  id String @id @default(uuid())
+
+  externalLineId Int @unique
+
+  listaMateriaisId              Int?
+  listaMateriaisNome            String?
+  listaMateriaisDescricao       String?
+  listaMateriaisAtivo           Boolean?
+  listaMateriaisPadrao          Boolean?
+  listaMateriaisPadraoBlocoK    Boolean?
+  listaMateriaisQtdeBase        Decimal? @db.Decimal(20, 6)
+
+  parentExternalProductId Int?
+  parentCode              String
+  parentDescription       String?
+  parentProdutoFantasma   Boolean?
+  parentServicoIndustrializacaoTerceiros Boolean?
+
+  componentExternalProductId Int?
+  componentCode              String
+  componentDescription       String?
+  componentProdutoFantasma   Boolean?
+  componentServicoIndustrializacaoTerceiros Boolean?
+
+  qtdeNecessaria  Decimal? @db.Decimal(20, 6)
+  qtdePerdaNormal Decimal? @db.Decimal(20, 6)
+
+  naturezaConsumo Int?
+  posicao         Int?
+
+  alternativo  Boolean?
+  opcional     Boolean?
+  preferencial Boolean?
+  itemDeEmbarque Boolean?
+  recebeComponenteTerceirosIndustrializacao Boolean?
+  remeteComponenteIndustrializacaoTerceiros Boolean?
+
+  nomusCreatedAtRaw String?
+  nomusUpdatedAtRaw String?
+
+  rawPayload  Json
+  payloadHash String
+
+  fetchedAt DateTime
+  syncedAt  DateTime @default(now())
+  runId     String?
+
+  isActiveDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentCode])
+  @@index([componentCode])
+  @@index([listaMateriaisId])
+  @@index([parentExternalProductId])
+  @@index([componentExternalProductId])
+  @@index([isActiveDefault])
+  @@index([payloadHash])
+}

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 type SyncMode = "dry" | "apply";
-type SyncTarget = "products" | "customers" | "proposals" | "sales-orders";
+type SyncTarget = "customers" | "products" | "bom-components" | "proposals" | "sales-orders";
 
 type StepResult = {
   target: SyncTarget;
@@ -25,7 +25,7 @@ type StepExecution = {
   stderr: string;
 };
 
-const ALL_TARGETS: SyncTarget[] = ["customers", "products", "proposals", "sales-orders"];
+const ALL_TARGETS: SyncTarget[] = ["customers", "products", "bom-components", "proposals", "sales-orders"];
 const prisma = new PrismaClient();
 
 function parseArgs(): { mode: SyncMode; only: SyncTarget[] } {
@@ -65,6 +65,10 @@ function scriptFor(target: SyncTarget, mode: SyncMode): string | null {
 
   if (target === "products") {
     return mode === "apply" ? "sync:nomus:products:apply" : "sync:nomus:products:dry";
+  }
+
+  if (target === "bom-components") {
+    return mode === "apply" ? "sync:nomus:bom-components:apply" : "sync:nomus:bom-components:dry";
   }
 
   if (target === "proposals") {

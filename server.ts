@@ -100,15 +100,22 @@ type BootstrapAdminSessionPayload = {
 
 type NomusSyncMode = "apply" | "dry";
 type NomusSyncKind = "runner" | "sync";
-type NomusSyncTarget = "customers" | "products" | "proposals" | "sales-orders";
+type NomusSyncTarget = "customers" | "products" | "bom-components" | "proposals" | "sales-orders";
 type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
 
-const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = ["customers", "products", "proposals", "sales-orders"];
+const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
+  "customers",
+  "products",
+  "bom-components",
+  "proposals",
+  "sales-orders",
+];
 const NOMUS_HEALTH_STALE_MS: Record<NomusSyncTarget, number> = {
   "sales-orders": 2 * 60 * 60 * 1000,
-  customers: 24 * 60 * 60 * 1000,
-  products: 24 * 60 * 60 * 1000,
-  proposals: 24 * 60 * 60 * 1000,
+  customers: 26 * 60 * 60 * 1000,
+  products: 26 * 60 * 60 * 1000,
+  "bom-components": 30 * 60 * 60 * 1000,
+  proposals: 26 * 60 * 60 * 1000,
 };
 const NOMUS_PRODUCT_EXPECTED_BLOCK_KEYS = new Set([
   "RAW_MATERIAL_NOT_PRODUCT",
@@ -228,7 +235,10 @@ function decodeBootstrapSessionToken(
 }
 
 function parseNomusSyncFileName(fileName: string): { kind: NomusSyncKind; mode: NomusSyncMode; target: NomusSyncTarget } | null {
-  const m = /^(runner-)?(customers|products|proposals|sales-orders)_(apply|dry)_.+\.log$/i.exec(fileName);
+  const m =
+    /^(runner-)?(customers|products|bom-components|proposals|sales-orders)_(apply|dry)_.+\.log$/i.exec(
+      fileName
+    );
   if (!m) return null;
   const target = m[2].toLowerCase() as NomusSyncTarget;
   if (!NOMUS_SYNC_TARGETS.includes(target)) return null;
@@ -809,6 +819,7 @@ async function startServer() {
     const labels: Record<NomusSyncTarget, string> = {
       customers: "Clientes",
       products: "Produtos",
+      "bom-components": "Componentes da BOM",
       proposals: "Propostas",
       "sales-orders": "Pedidos de venda",
     };
