@@ -42,6 +42,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
 import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomTreeContextPanel";
+import { NomusBomComparisonPanel } from "@/src/components/product/NomusBomComparisonPanel";
 import type { BomCostDetailRowData } from "@/src/components/shared/BomCostDetailRow";
 import {
   OpenBookCompositionTab,
@@ -122,6 +123,12 @@ export const ProductModule = () => {
   const canEditProduct = auth.hasPermission("products.edit");
   const canDeleteProduct = auth.hasPermission("products.delete");
   const canExportEngineering = auth.hasPermission("products.export.engineering");
+  const canCompareNomusBom = auth.hasAnyPermission([
+    "products.tab.bom",
+    "products.tab.tree",
+    "products.tab.cost",
+    "products.edit",
+  ]);
 
   const visibleFormTabs = useMemo(() => {
     const allowed = new Set(getVisibleProductTabs(auth));
@@ -1440,6 +1447,13 @@ export const ProductModule = () => {
                               Adicionar Item
                             </button>
                           </div>
+
+                          {canCompareNomusBom ? (
+                            <NomusBomComparisonPanel
+                              productId={editingItem?.id}
+                              disabled={bomOptionsLoading}
+                            />
+                          ) : null}
 
                           <div className="space-y-3">
                             {bomOptionsLoading ? (

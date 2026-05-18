@@ -77,6 +77,7 @@ import {
   sendAuthForbidden,
 } from "./src/lib/appAuthMiddleware.js";
 import { fetchAdminSellerOptionsFromDb } from "./src/lib/adminSellerOptions.js";
+import { buildBomComparisonForProductId } from "./src/lib/nomusBomComparisonLoad.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -3063,6 +3064,30 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     });
     res.json(product);
   });
+
+  app.get(
+    "/api/products/:id/nomus-bom-comparison",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.tab.bom",
+      "products.tab.tree",
+      "products.tab.cost",
+      "products.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        const comparison = await buildBomComparisonForProductId(id);
+        if (!comparison) {
+          return res.status(404).json({ error: "Produto não encontrado." });
+        }
+        return res.json(comparison);
+      } catch (error) {
+        console.error("GET /api/products/:id/nomus-bom-comparison", error);
+        return res.status(500).json({ error: "Erro ao comparar BOM Nomus com IndusCost." });
+      }
+    }
+  );
 
   app.get("/api/products/:id/tree", requireAppAuth, requireAnyPermission(["products.tab.tree", "products.tab.bom", "products.edit"]), async (req, res) => {
     const { id } = req.params;
