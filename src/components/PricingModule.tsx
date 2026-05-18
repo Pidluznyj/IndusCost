@@ -22,6 +22,7 @@ import {
   type PricingMarginBand,
   type PricingSortKey,
 } from "@/src/lib/pricingListFilters";
+import { useAuth } from "@/src/contexts/AuthContext";
 
 type PriceTableLite = {
   id: string;
@@ -105,6 +106,10 @@ function extractIssuePreview(raw: unknown): CommercialGenIssuePreview {
 }
 
 export const PricingModule = () => {
+  const auth = useAuth();
+  const allowSimulate = auth.hasPermission("pricing.simulate");
+  const allowGenerateTables = auth.hasPermission("pricing.generate_tables");
+  const allowPublishTables = auth.hasPermission("pricing.publish_tables");
   const [tourOpen, setTourOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"UNIT" | "BATCH">("UNIT");
   const [selectedPricings, setSelectedPricings] = useState<string[]>([]);
@@ -809,6 +814,7 @@ export const PricingModule = () => {
         </div>
 
         {/* Gerar Tabelas Comerciais (card colapsável) */}
+        {allowGenerateTables ? (
         <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
           <button
             type="button"
@@ -1168,7 +1174,7 @@ export const PricingModule = () => {
                                       : "Informe a vigência desejada acima para publicar."}
                                   </div>
                                 )}
-                                {r.versionStatus !== "PUBLISHED" && r.versionId && (
+                                {allowPublishTables && r.versionStatus !== "PUBLISHED" && r.versionId && (
                                   <button
                                     type="button"
                                     onClick={() => void handlePublishDraftVersion(r)}
@@ -1220,6 +1226,7 @@ export const PricingModule = () => {
             </div>
           )}
         </div>
+        ) : null}
 
         {/* Toggle View Mode */}
         <div
@@ -1253,12 +1260,14 @@ export const PricingModule = () => {
         // --- VIEW: UNIT ---
         <div className="space-y-6" data-tour="pricing-unit-panel">
           <div className="flex justify-end gap-2">
-             <button
-              onClick={() => setIsSimulatorModalOpen(true)}
-              className="flex items-center gap-2 border border-border bg-card px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
-            >
-              <Calculator className="h-4 w-4" /> Simular preço
-            </button>
+             {allowSimulate ? (
+              <button
+                onClick={() => setIsSimulatorModalOpen(true)}
+                className="flex items-center gap-2 border border-border bg-card px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
+              >
+                <Calculator className="h-4 w-4" /> Simular preço
+              </button>
+             ) : null}
              <button 
               onClick={() => {
                 setFormData({ productId: "", taxRuleId: "", desiredMargin: 15, commission: 5, freightOut: 0, otherVariables: 0 });

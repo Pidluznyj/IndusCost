@@ -25,7 +25,7 @@ import { AppAlert } from "@/src/components/shared/AppAlert";
 import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 import { AdminUsersModule } from "@/src/components/AdminUsersModule";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { canManageUsers } from "@/src/lib/modulePermissions";
+import { canAccessSettingsSection, canManageUsers } from "@/src/lib/modulePermissions";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -347,11 +347,8 @@ export const SettingsModule = () => {
 
   const visibleHubSections = React.useMemo(
     () =>
-      HUB_SECTIONS.filter((section) => {
-        if (section.id === "security") return canManageUsersPerm;
-        return canViewSettings;
-      }),
-    [canManageUsersPerm, canViewSettings]
+      HUB_SECTIONS.filter((section) => canAccessSettingsSection(section.id, auth)),
+    [auth]
   );
 
   useEffect(() => {

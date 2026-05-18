@@ -32,6 +32,12 @@ export type PermissionCatalogEntry = {
   label: string;
   group: string;
   description: string;
+  module?: string;
+  type?: "menu" | "section" | "tab" | "action";
+  parentKey?: string;
+  risk?: "normal" | "sensitive" | "critical";
+  requires?: string[];
+  recommendedFor?: string[];
 };
 
 export const APP_USER_ROLE_OPTIONS: { value: AppUserRole; label: string; hint: string }[] = [

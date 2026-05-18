@@ -48,6 +48,8 @@ import {
   type OpenBookPayload,
 } from "@/src/components/product/OpenBookCompositionTab";
 import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { getVisibleProductTabs, type ProductTabId } from "@/src/lib/modulePermissions";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
 export type ProductWithCostSummary = Product & {
@@ -101,7 +103,31 @@ const Badge = ({
 /*                                Main Module                                 */
 /* -------------------------------------------------------------------------- */
 
+const PRODUCT_FORM_TABS: {
+  id: ProductTabId;
+  label: string;
+  icon: typeof Info;
+}[] = [
+  { id: "info", label: "Informações", icon: Info },
+  { id: "bom", label: "Estrutura (BOM)", icon: Layers },
+  { id: "routing", label: "Processo (Roteiro)", icon: Settings },
+  { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
+  { id: "cost", label: "Análise de Custo", icon: DollarSign },
+  { id: "composition", label: "Composição de Custos", icon: BookOpen },
+];
+
 export const ProductModule = () => {
+  const auth = useAuth();
+  const canCreateProduct = auth.hasPermission("products.create");
+  const canEditProduct = auth.hasPermission("products.edit");
+  const canDeleteProduct = auth.hasPermission("products.delete");
+  const canExportEngineering = auth.hasPermission("products.export.engineering");
+
+  const visibleFormTabs = useMemo(() => {
+    const allowed = new Set(getVisibleProductTabs(auth));
+    return PRODUCT_FORM_TABS.filter((t) => allowed.has(t.id));
+  }, [auth]);
+
   const [items, setItems] = useState<ProductWithCostSummary[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [bomItemOptions, setBomItemOptions] = useState<BomItemOptionRow[]>([]);
@@ -116,7 +142,15 @@ export const ProductModule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
-  const [activeFormTab, setActiveFormTab] = useState<"info" | "bom" | "routing" | "cost" | "tree" | "composition">("info");
+  const [activeFormTab, setActiveFormTab] = useState<ProductTabId>("info");
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    if (visibleFormTabs.length === 0) return;
+    if (!visibleFormTabs.some((t) => t.id === activeFormTab)) {
+      setActiveFormTab(visibleFormTabs[0]!.id);
+    }
+  }, [isModalOpen, visibleFormTabs, activeFormTab]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [treeData, setTreeData] = useState<any>(null);
   const [loadingTree, setLoadingTree] = useState(false);
@@ -853,7 +887,7 @@ export const ProductModule = () => {
             onClick={() => setTourOpen(true)}
             className="h-10 shrink-0 rounded-lg px-3 py-0 text-sm font-medium"
           />
-          {selectedIds.length > 0 && (
+          {selectedIds.length > 0 && canDeleteProduct ? (
             <motion.button
               type="button"
               initial={{ opacity: 0, x: 20 }}
@@ -864,7 +898,7 @@ export const ProductModule = () => {
               <Trash2 className="h-4 w-4 shrink-0" />
               Excluir ({selectedIds.length})
             </motion.button>
-          )}
+          ) : null}
           <button
             type="button"
             onClick={() => setIsImportOpen(true)}
@@ -873,23 +907,27 @@ export const ProductModule = () => {
             <Download className="h-4 w-4 shrink-0" />
             Importar
           </button>
-          <button
-            type="button"
-            onClick={handleExportEngineering}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-transparent bg-accent px-4 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90"
-            title={selectedIds.length ? "Exportar itens selecionados no layout de importação" : "Exportar itens filtrados no layout de importação"}
-          >
-            <BookOpen className="h-4 w-4 shrink-0" />
-            Exportar
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenModal()}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
-          >
-            <Plus className="h-4 w-4 shrink-0" />
-            Novo Item de Engenharia
-          </button>
+          {canExportEngineering ? (
+            <button
+              type="button"
+              onClick={handleExportEngineering}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-transparent bg-accent px-4 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90"
+              title={selectedIds.length ? "Exportar itens selecionados no layout de importação" : "Exportar itens filtrados no layout de importação"}
+            >
+              <BookOpen className="h-4 w-4 shrink-0" />
+              Exportar
+            </button>
+          ) : null}
+          {canCreateProduct ? (
+            <button
+              type="button"
+              onClick={() => handleOpenModal()}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              Novo Item de Engenharia
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -1172,14 +1210,7 @@ export const ProductModule = () => {
                   role="tablist"
                   aria-label="Navegação de engenharia"
                 >
-                  {[
-                    { id: "info", label: "Informações", icon: Info },
-                    { id: "bom", label: "Estrutura (BOM)", icon: Layers },
-                    { id: "routing", label: "Processo (Roteiro)", icon: Settings },
-                    { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
-                    { id: "cost", label: "Análise de Custo", icon: DollarSign },
-                    { id: "composition", label: "Composição de Custos", icon: BookOpen },
-                  ].map((tab) => {
+                  {visibleFormTabs.map((tab) => {
                     const isActive = activeFormTab === tab.id;
                     return (
                       <button
@@ -1207,8 +1238,13 @@ export const ProductModule = () => {
               
               <form onSubmit={handleSubmit} className="flex-1 overflow-hidden flex flex-col">
                 <div className="flex-1 overflow-y-auto p-6">
+                  {visibleFormTabs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-12">
+                      Você não possui permissão para nenhuma aba de engenharia deste produto.
+                    </p>
+                  ) : null}
                   {/* Tab: Info */}
-                  {activeFormTab === "info" && (
+                  {activeFormTab === "info" && visibleFormTabs.some((t) => t.id === "info") && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-6">

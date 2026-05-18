@@ -23,6 +23,7 @@ import {
   formatRoleLabel,
   summarizePermissions,
 } from "@/src/lib/appAuthClient";
+import { PermissionEditor } from "@/src/components/admin/PermissionEditor";
 
 type UserFormState = {
   name: string;
@@ -73,16 +74,6 @@ export const AdminUsersModule: React.FC = () => {
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
 
-  const catalogByGroup = useMemo(() => {
-    const map = new Map<string, PermissionCatalogEntry[]>();
-    for (const entry of catalog) {
-      const list = map.get(entry.group) ?? [];
-      list.push(entry);
-      map.set(entry.group, list);
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR"));
-  }, [catalog]);
-
   const loadData = useCallback(async () => {
     if (!canManage) {
       setLoading(false);
@@ -129,15 +120,6 @@ export const AdminUsersModule: React.FC = () => {
     });
     setFormError(null);
     setEditorOpen(true);
-  };
-
-  const togglePermission = (key: string) => {
-    setForm((prev) => ({
-      ...prev,
-      permissions: prev.permissions.includes(key)
-        ? prev.permissions.filter((p) => p !== key)
-        : [...prev.permissions, key],
-    }));
   };
 
   const validateForm = (isCreate: boolean): string | null => {
@@ -406,7 +388,7 @@ export const AdminUsersModule: React.FC = () => {
 
       {editorOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="bg-card w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border shadow-2xl">
+          <div className="bg-card w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border shadow-2xl">
             <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-card/95 backdrop-blur px-5 py-4">
               <div>
                 <h4 className="text-lg font-bold">{editingId ? "Editar usuário" : "Novo usuário"}</h4>
@@ -513,43 +495,13 @@ export const AdminUsersModule: React.FC = () => {
               </div>
 
               {form.role !== "SUPER_ADMIN" ? (
-                <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Permissões liberadas
-                  </p>
-                  <p className="text-[11px] text-muted-foreground flex items-start gap-1">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    O usuário só terá acesso às telas marcadas aqui. O perfil serve para classificação e
-                    regras futuras, sem liberar menus automaticamente.
-                  </p>
-                  {catalogByGroup.map(([group, entries]) => (
-                    <div key={group}>
-                      <p className="text-xs font-bold text-foreground mb-2">{group}</p>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {entries.map((entry) => (
-                          <label
-                            key={entry.key}
-                            className="flex items-start gap-2 rounded-lg border border-border/60 bg-background px-2 py-2 text-xs cursor-pointer hover:bg-accent/30"
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-0.5"
-                              checked={form.permissions.includes(entry.key)}
-                              onChange={() => togglePermission(entry.key)}
-                            />
-                            <span>
-                              <span className="font-semibold block">{entry.label}</span>
-                              <span className="text-muted-foreground">{entry.description}</span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <PermissionEditor
+                    selected={form.permissions}
+                    onChange={(permissions) => setForm((f) => ({ ...f, permissions }))}
+                  />
               ) : (
                 <p className="text-xs text-muted-foreground rounded-lg border border-dashed border-border px-3 py-2">
-                  Super administrador possui todas as permissões do catálogo automaticamente.
+                  SUPER_ADMIN possui acesso total automático. Não é necessário marcar permissões manualmente.
                 </p>
               )}
 

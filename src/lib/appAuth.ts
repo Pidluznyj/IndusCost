@@ -1,6 +1,11 @@
 import crypto from "crypto";
 import { promisify } from "util";
 import type { AppUser, AppUserRole } from "@prisma/client";
+import {
+  ALL_PERMISSION_KEYS,
+  PERMISSION_CATALOG,
+  type PermissionCatalogEntry,
+} from "@/src/lib/permissionCatalog";
 
 const scryptAsync = promisify(crypto.scrypt);
 
@@ -9,33 +14,8 @@ export const APP_SESSION_TTL_MS = 1000 * 60 * 60 * 12;
 export const APP_PASSWORD_MIN_LENGTH = 8;
 const SCRYPT_KEYLEN = 64;
 
-export type PermissionCatalogEntry = {
-  key: string;
-  label: string;
-  group: string;
-  description: string;
-};
-
-export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
-  { key: "dashboard.view", label: "Dashboard", group: "Geral", description: "Visualizar painel principal." },
-  { key: "crm.general.view", label: "CRM — Gestão Geral", group: "CRM", description: "Acessar gestão comercial geral." },
-  { key: "crm.seller.view", label: "CRM — Gestão por Vendedor", group: "CRM", description: "Acessar gestão por vendedor." },
-  { key: "crm.seller.all", label: "CRM — Todos os vendedores", group: "CRM", description: "Ver dados de todos os vendedores." },
-  { key: "crm.seller.own", label: "CRM — Próprio vendedor", group: "CRM", description: "Ver apenas dados do vendedor vinculado." },
-  { key: "customers.view", label: "Clientes — visualizar", group: "Cadastros", description: "Consultar clientes." },
-  { key: "customers.edit", label: "Clientes — editar", group: "Cadastros", description: "Editar cadastro de clientes." },
-  { key: "proposals.view", label: "Propostas — visualizar", group: "Comercial", description: "Consultar propostas." },
-  { key: "proposals.edit", label: "Propostas — editar", group: "Comercial", description: "Criar e editar propostas." },
-  { key: "sales_orders.view", label: "Pedidos — visualizar", group: "Comercial", description: "Consultar pedidos de venda." },
-  { key: "products.view", label: "Produtos — visualizar", group: "Cadastros", description: "Consultar produtos." },
-  { key: "costs.view", label: "Custos — visualizar", group: "Custeio", description: "Consultar custos e análises." },
-  { key: "pricing.view", label: "Precificação — visualizar", group: "Comercial", description: "Consultar precificação." },
-  { key: "purchases.view", label: "Compras — visualizar", group: "Compras", description: "Consultar compras." },
-  { key: "settings.view", label: "Configurações", group: "Sistema", description: "Acessar configurações do sistema." },
-  { key: "users.manage", label: "Usuários — gerenciar", group: "Sistema", description: "Cadastrar e administrar usuários." },
-];
-
-export const ALL_PERMISSION_KEYS = PERMISSION_CATALOG.map((p) => p.key);
+export type { PermissionCatalogEntry };
+export { PERMISSION_CATALOG, ALL_PERMISSION_KEYS };
 
 const PERMISSION_KEY_SET = new Set(ALL_PERMISSION_KEYS);
 

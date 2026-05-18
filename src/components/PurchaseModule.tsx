@@ -31,6 +31,7 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PURCHASE_TOUR_STEPS } from "@/src/tours/purchaseTourSteps";
 import { motion } from "motion/react";
 import { filterPurchaseRequests } from "@/src/lib/operationalListFilters";
+import { useAuth } from "@/src/contexts/AuthContext";
 
 const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   RASCUNHO: "Rascunho",
@@ -171,6 +172,10 @@ function itemFromApi(row: PurchaseRequestRow["items"][0]): PurchaseItemDraft {
 }
 
 export const PurchaseModule = () => {
+  const auth = useAuth();
+  const allowCreate = auth.hasPermission("purchases.create");
+  const allowEdit = auth.hasPermission("purchases.edit");
+  const allowDelete = auth.hasPermission("purchases.delete");
   const navigate = useNavigate();
   const [view, setView] = useState<"list" | "form">("list");
   const [formMode, setFormMode] = useState<"create" | "edit" | "view">("create");
@@ -537,15 +542,17 @@ export const PurchaseModule = () => {
           </div>
           <div className="flex items-center gap-2">
             <TourHelpButton onClick={() => setTourOpen(true)} />
-            <button
-              type="button"
-              data-tour="purchases-new-request"
-              onClick={openCreate}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" />
-              Nova solicitação
-            </button>
+            {allowCreate ? (
+              <button
+                type="button"
+                data-tour="purchases-new-request"
+                onClick={openCreate}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+              >
+                <Plus className="h-4 w-4" />
+                Nova solicitação
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -687,14 +694,16 @@ export const PurchaseModule = () => {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button
-                            type="button"
-                            title="Editar"
-                            className="p-2 rounded-md hover:bg-accent text-muted-foreground"
-                            onClick={() => openEdit(r.id, "edit")}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
+                          {allowEdit ? (
+                            <button
+                              type="button"
+                              title="Editar"
+                              className="p-2 rounded-md hover:bg-accent text-muted-foreground"
+                              onClick={() => openEdit(r.id, "edit")}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -935,7 +944,7 @@ export const PurchaseModule = () => {
             >
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-sm font-semibold">Item {idx + 1}</span>
-                {!readOnly && items.length > 1 && (
+                {!readOnly && allowDelete && items.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeItem(it.tempId)}

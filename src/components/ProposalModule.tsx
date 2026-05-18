@@ -47,6 +47,14 @@ import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
 import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
 import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
+import { useAuth } from "@/src/contexts/AuthContext";
+import {
+  canCreateProposal,
+  canDeleteProposal,
+  canEditProposal,
+  canPrintProposal,
+  canViewProposalIndicators,
+} from "@/src/lib/modulePermissions";
 const PAGE_SIZE = 20;
 
 /** Mesma aba de impressão para cliente que o ícone de impressora da listagem (`/proposals/:id/print`). */
@@ -417,6 +425,13 @@ function NumericInputCell({
 }
 
 export const ProposalModule = () => {
+  const auth = useAuth();
+  const allowCreate = canCreateProposal(auth);
+  const allowEdit = canEditProposal(auth);
+  const allowDelete = canDeleteProposal(auth);
+  const allowPrint = canPrintProposal(auth);
+  const allowIndicators = canViewProposalIndicators(auth);
+
   const navigate = useNavigate();
   const [view, setView] = useState<"list" | "form">("list");
   const [tourOpen, setTourOpen] = useState(false);
@@ -1709,18 +1724,20 @@ export const ProposalModule = () => {
                     >
                       Itens
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormTab("indicators")}
-                      className={cn(
-                        "px-3 py-1.5 rounded-md text-xs font-bold transition-colors",
-                        formTab === "indicators"
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      )}
-                    >
-                      Indicadores
-                    </button>
+                    {allowIndicators ? (
+                      <button
+                        type="button"
+                        onClick={() => setFormTab("indicators")}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs font-bold transition-colors",
+                          formTab === "indicators"
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                        )}
+                      >
+                        Indicadores
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 {formTab === "items" ? (
@@ -2364,13 +2381,15 @@ export const ProposalModule = () => {
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
-          <button
-            onClick={handleCreateNew}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Nova Proposta
-          </button>
+          {allowCreate ? (
+            <button
+              onClick={handleCreateNew}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Nova Proposta
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -2479,27 +2498,33 @@ export const ProposalModule = () => {
                         >
                           <LayoutDashboard className="h-4 w-4" />
                         </button>
-                        <button 
-                          onClick={() => handleEdit(p.id)}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
-                          title="Editar"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button 
-                          onClick={() => openProposalClientPrintTab(p.id)}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-blue-500 transition-all"
-                          title="Imprimir proposta"
-                        >
-                          <Printer className="h-4 w-4" />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(p.id)}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-red-500 transition-all"
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {allowEdit ? (
+                          <button
+                            onClick={() => handleEdit(p.id)}
+                            className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                            title="Editar"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                        ) : null}
+                        {allowPrint ? (
+                          <button
+                            onClick={() => openProposalClientPrintTab(p.id)}
+                            className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-blue-500 transition-all"
+                            title="Imprimir proposta"
+                          >
+                            <Printer className="h-4 w-4" />
+                          </button>
+                        ) : null}
+                        {allowDelete ? (
+                          <button
+                            onClick={() => handleDelete(p.id)}
+                            className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-red-500 transition-all"
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
