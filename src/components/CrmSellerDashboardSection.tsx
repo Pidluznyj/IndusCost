@@ -15,6 +15,9 @@ export type CrmSellerDashboardSectionProps = {
   loading: boolean;
   error: string | null;
   kpiCards: SellerKpiCard[];
+  showSellerFilter: boolean;
+  ownScopeOnly: boolean;
+  sellerNotLinked: boolean;
   sellerOptions: SellerOption[];
   selectedSellerKey: string;
   onSellerChange: (key: string) => void;
@@ -35,6 +38,9 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
   loading,
   error,
   kpiCards,
+  showSellerFilter,
+  ownScopeOnly,
+  sellerNotLinked,
   sellerOptions,
   selectedSellerKey,
   onSellerChange,
@@ -50,6 +56,28 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
   children,
 }) => {
   const isCustomPeriod = periodPreset === "custom";
+  const headingTitle = ownScopeOnly ? "Minha Gestão Comercial" : "Gestão por Vendedor";
+
+  if (sellerNotLinked) {
+    return (
+      <section className="space-y-6" aria-labelledby="crm-seller-heading">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-primary/10 p-2.5 text-primary shrink-0">
+            <Briefcase className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 id="crm-seller-heading" className="text-lg font-bold text-foreground">
+              {headingTitle}
+            </h3>
+            <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
+              Seu usuário ainda não está vinculado a um vendedor Nomus. Solicite ajuste ao
+              administrador.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-6" aria-labelledby="crm-seller-heading">
@@ -61,11 +89,18 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
             </div>
             <div>
               <h3 id="crm-seller-heading" className="text-lg font-bold text-foreground">
-                Gestão por Vendedor
+                {headingTitle}
               </h3>
               <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-                Pedidos, faturamento Nomus (NFe) e propostas sem pedido vinculado por responsável.
+                {ownScopeOnly
+                  ? "Seus pedidos, faturamento Nomus (NFe) e propostas sem pedido vinculado."
+                  : "Pedidos, faturamento Nomus (NFe) e propostas sem pedido vinculado por responsável."}
               </p>
+              {ownScopeOnly ? (
+                <p className="text-[11px] text-muted-foreground mt-2 max-w-2xl italic">
+                  Você está visualizando apenas os dados vinculados ao seu usuário.
+                </p>
+              ) : null}
               {data?.generatedAt ? (
                 <p className="text-[11px] text-muted-foreground mt-1.5">
                   Atualizado em {formatDateTimePt(data.generatedAt)}
@@ -86,7 +121,13 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div
+            className={cn(
+              "grid gap-4 sm:grid-cols-2",
+              showSellerFilter ? "xl:grid-cols-4" : "xl:grid-cols-2"
+            )}
+          >
+            {showSellerFilter ? (
             <div className="sm:col-span-2 xl:col-span-2">
               <label
                 htmlFor="crm-seller-filter"
@@ -113,6 +154,7 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
                 })}
               </select>
             </div>
+            ) : null}
 
             <div className="sm:col-span-2 xl:col-span-2">
               <label

@@ -83,6 +83,13 @@ export function hasPermission(
   return effective.includes(permission);
 }
 
+export function hasAnyPermission(
+  user: { role: AppUserRole; permissions: string[]; effectivePermissions?: string[] },
+  permissions: string[]
+): boolean {
+  return permissions.some((p) => hasPermission(user, p));
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16);
   const derived = (await scryptAsync(password, salt, SCRYPT_KEYLEN)) as Buffer;

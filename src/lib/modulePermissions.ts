@@ -114,6 +114,23 @@ export function canAccessCrmSeller(check: PermissionChecker): boolean {
   return check.hasAnyPermission(["crm.seller.view", "crm.seller.own", "crm.seller.all"]);
 }
 
+/** Pode filtrar qualquer vendedor na gestão comercial (gestor). */
+export function canFilterAllCrmSellers(check: PermissionChecker): boolean {
+  return check.hasPermission("crm.seller.all");
+}
+
+/** Apenas dados do vendedor vinculado ao usuário (sem troca de filtro). */
+export function isCrmOwnSellerOnly(check: PermissionChecker): boolean {
+  return check.hasPermission("crm.seller.own") && !check.hasPermission("crm.seller.all");
+}
+
+export function isCrmSellerLinked(user: {
+  externalSellerId: number | null;
+  sellerResponsibleName: string | null;
+}): boolean {
+  return user.externalSellerId != null || Boolean(user.sellerResponsibleName?.trim());
+}
+
 export function canAccessCrmAny(check: PermissionChecker): boolean {
   return check.hasAnyPermission([...CRM_MENU_PERMISSIONS]);
 }

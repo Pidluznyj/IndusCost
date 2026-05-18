@@ -100,6 +100,9 @@ import {
   canAccessCrmAny,
   canAccessCrmGeneral,
   canAccessCrmSeller,
+  canFilterAllCrmSellers,
+  isCrmOwnSellerOnly,
+  isCrmSellerLinked,
 } from "@/src/lib/modulePermissions";
 import { AccessDenied } from "@/src/components/AccessDenied";
 
@@ -1643,6 +1646,10 @@ export const CrmModule = () => {
   const canCrmGeneral = canAccessCrmGeneral(auth);
   const canCrmSeller = canAccessCrmSeller(auth);
   const canCrmAny = canAccessCrmAny(auth);
+  const canFilterAllSellers = canFilterAllCrmSellers(auth);
+  const isOwnSellerOnly = isCrmOwnSellerOnly(auth);
+  const sellerNotLinked =
+    isOwnSellerOnly && auth.authUser != null && !isCrmSellerLinked(auth.authUser);
 
   const [activeCrmManagementTab, setActiveCrmManagementTab] = useState<CrmManagementTabId>(
     () => getDefaultCrmManagementTab(auth) ?? "general"
@@ -1690,14 +1697,22 @@ export const CrmModule = () => {
   }, []);
 
   const loadSellerDashboard = useCallback(async (params?: SellerDashboardLoadParams) => {
+    if (sellerNotLinked) {
+      setSellerDashboard(null);
+      setSellerDashboardLoading(false);
+      setSellerDashboardError(null);
+      return;
+    }
     setSellerDashboardLoading(true);
     setSellerDashboardError(null);
     try {
       const searchParams = new URLSearchParams();
-      if (params?.externalSellerId !== null && params?.externalSellerId !== undefined) {
-        searchParams.set("externalSellerId", String(params.externalSellerId));
-      } else if (params?.responsible?.trim()) {
-        searchParams.set("responsible", params.responsible.trim());
+      if (!isOwnSellerOnly) {
+        if (params?.externalSellerId !== null && params?.externalSellerId !== undefined) {
+          searchParams.set("externalSellerId", String(params.externalSellerId));
+        } else if (params?.responsible?.trim()) {
+          searchParams.set("responsible", params.responsible.trim());
+        }
       }
       if (params?.dateFrom?.trim()) {
         searchParams.set("dateFrom", params.dateFrom.trim());
@@ -1715,8 +1730,10 @@ export const CrmModule = () => {
         !params?.responsible?.trim() &&
         !params?.dateFrom?.trim() &&
         !params?.dateTo?.trim();
-      if (isUnfiltered && Array.isArray(data.sellerOptions)) {
+      if (canFilterAllSellers && isUnfiltered && Array.isArray(data.sellerOptions)) {
         setSellerOptions(data.sellerOptions);
+      } else if (isOwnSellerOnly) {
+        setSellerOptions([]);
       }
     } catch (e) {
       setSellerDashboard(null);
@@ -1730,7 +1747,7 @@ export const CrmModule = () => {
     } finally {
       setSellerDashboardLoading(false);
     }
-  }, []);
+  }, [canFilterAllSellers, isOwnSellerOnly, sellerNotLinked]);
 
   const buildSellerDashboardParams = useCallback(
     (overrides?: {
@@ -1746,7 +1763,7 @@ export const CrmModule = () => {
 
       const params: SellerDashboardLoadParams = {};
 
-      if (sellerKey !== SELLER_KEY_ALL) {
+      if (!isOwnSellerOnly && sellerKey !== SELLER_KEY_ALL) {
         const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === sellerKey);
         if (opt?.externalSellerId !== null && opt?.externalSellerId !== undefined) {
           params.externalSellerId = opt.externalSellerId;
@@ -1762,7 +1779,14 @@ export const CrmModule = () => {
 
       return params;
     },
-    [selectedSellerKey, sellerOptions, sellerPeriodPreset, sellerDateFrom, sellerDateTo]
+    [
+      isOwnSellerOnly,
+      selectedSellerKey,
+      sellerOptions,
+      sellerPeriodPreset,
+      sellerDateFrom,
+      sellerDateTo,
+    ]
   );
 
   const reloadSellerDashboard = useCallback(() => {
@@ -1931,15 +1955,19 @@ export const CrmModule = () => {
   useEffect(() => {
     void loadDashboard();
     void loadManagementDashboard();
-    void loadSellerDashboard();
+    if (canCrmSeller && !sellerNotLinked) {
+      void loadSellerDashboard();
+    }
     void loadAgendaBuckets();
     void loadCrmCustomers("", "all", 0);
   }, [
+    canCrmSeller,
     loadDashboard,
     loadManagementDashboard,
     loadSellerDashboard,
     loadAgendaBuckets,
     loadCrmCustomers,
+    sellerNotLinked,
   ]);
 
   useEffect(() => {
@@ -2439,6 +2467,9 @@ export const CrmModule = () => {
             loading={sellerDashboardLoading}
             error={sellerDashboardError}
             kpiCards={sellerKpiCards}
+            showSellerFilter={canFilterAllSellers}
+            ownScopeOnly={isOwnSellerOnly}
+            sellerNotLinked={sellerNotLinked}
             sellerOptions={sellerOptions}
             selectedSellerKey={selectedSellerKey}
             onSellerChange={handleSellerChange}

@@ -1,7 +1,11 @@
 import React from "react";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { canAccessCrmGeneral, canAccessCrmSeller } from "@/src/lib/modulePermissions";
+import {
+  canAccessCrmGeneral,
+  canAccessCrmSeller,
+  isCrmOwnSellerOnly,
+} from "@/src/lib/modulePermissions";
 
 export type CrmManagementTabId = "general" | "seller";
 
@@ -10,9 +14,13 @@ export type CrmCommercialManagementTabsProps = {
   onTabChange: (tab: CrmManagementTabId) => void;
 };
 
-const ALL_TABS: { id: CrmManagementTabId; label: string }[] = [
+const ALL_TABS: { id: CrmManagementTabId; label: string; ownLabel?: string }[] = [
   { id: "general", label: "Gestão Geral" },
-  { id: "seller", label: "Gestão por Vendedor" },
+  {
+    id: "seller",
+    label: "Gestão por Vendedor",
+    ownLabel: "Minha Gestão Comercial",
+  },
 ];
 
 export const CrmCommercialManagementTabs: React.FC<CrmCommercialManagementTabsProps> = ({
@@ -20,6 +28,7 @@ export const CrmCommercialManagementTabs: React.FC<CrmCommercialManagementTabsPr
   onTabChange,
 }) => {
   const auth = useAuth();
+  const ownSellerTab = isCrmOwnSellerOnly(auth);
   const tabs = ALL_TABS.filter((tab) => {
     if (tab.id === "general") return canAccessCrmGeneral(auth);
     return canAccessCrmSeller(auth);
@@ -49,7 +58,7 @@ export const CrmCommercialManagementTabs: React.FC<CrmCommercialManagementTabsPr
                 : "bg-muted/50 text-muted-foreground hover:bg-accent hover:text-foreground"
             )}
           >
-            {tab.label}
+            {tab.id === "seller" && ownSellerTab && tab.ownLabel ? tab.ownLabel : tab.label}
           </button>
         );
       })}

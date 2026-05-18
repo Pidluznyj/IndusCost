@@ -71,6 +71,11 @@ import {
   verifyPassword,
   type AppAuthContext,
 } from "./src/lib/appAuth.js";
+import {
+  createAuthGuards,
+  resolveSellerDashboardScope,
+  sendAuthForbidden,
+} from "./src/lib/appAuthMiddleware.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -1047,35 +1052,23 @@ async function startServer() {
     });
   }
 
-  const requireAppAuth: express.RequestHandler = async (req, res, next) => {
-    const auth = await readAppSession(req);
-    if (!auth) {
-      return res.status(401).json({
-        error: "UNAUTHORIZED",
-        message: "Autenticação necessária.",
-      });
-    }
-    req.appAuth = auth;
-    return next();
-  };
+  const {
+    requireAppAuth,
+    requirePermission,
+    requireAnyPermission,
+    getCurrentAppUser,
+  } = createAuthGuards(readAppSession);
 
-  function requirePermission(permission: string): express.RequestHandler {
+  /** Bootstrap admin OU permissões de app (settings / RBAC). */
+  function requireBootstrapOrAnyPermission(permissions: string[]): express.RequestHandler {
     return async (req, res, next) => {
-      const auth = req.appAuth ?? (await readAppSession(req));
-      if (!auth) {
-        return res.status(401).json({
-          error: "UNAUTHORIZED",
-          message: "Autenticação necessária.",
-        });
+      if (bootstrapAdminConfig.enabled && isBootstrapReady) {
+        const bootstrap = readBootstrapSession(req);
+        if (bootstrap && safeEqualString(bootstrap.username, bootstrapAdminConfig.username)) {
+          return next();
+        }
       }
-      if (!hasPermission(auth, permission)) {
-        return res.status(403).json({
-          error: "FORBIDDEN",
-          message: "Permissão insuficiente para esta operação.",
-        });
-      }
-      req.appAuth = auth;
-      return next();
+      return requireAnyPermission(permissions)(req, res, next);
     };
   }
 
@@ -1094,10 +1087,7 @@ async function startServer() {
       });
     }
     if (!hasPermission(auth, "users.manage")) {
-      return res.status(403).json({
-        error: "FORBIDDEN",
-        message: "Permissão insuficiente para administrar usuários.",
-      });
+      return sendAuthForbidden(res, ["users.manage"]);
     }
     req.appAuth = auth;
     return next();
@@ -1457,7 +1447,7 @@ async function startServer() {
   });
 
   // --- API: Dashboard Gerencial ---
-  app.get("/api/dashboard", async (req, res, next) => {
+  app.get("/api/dashboard", requireAppAuth, requirePermission("dashboard.view"), async (req, res, next) => {
     console.log("Fetching dashboard data...");
     try {
       const [employees, machines, products, pricings, indirectCosts] = await Promise.all([
@@ -1565,14 +1555,14 @@ async function startServer() {
   });
 
   // --- API: Roles (Cargos) ---
-  app.get("/api/roles", async (req, res) => {
+  app.get("/api/roles", requireAppAuth, requireBootstrapOrAnyPermission(["settings.operational.view", "settings.view"]), async (req, res) => {
     const roles = await prisma.role.findMany({
       orderBy: { name: "asc" },
     });
     res.json(roles);
   });
 
-  app.post("/api/roles", requireBootstrapAdmin, async (req, res) => {
+  app.post("/api/roles", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
     const { name, baseSalary, monthlyHours } = req.body;
     const role = await prisma.role.create({
       data: { name, baseSalary, monthlyHours },
@@ -1580,7 +1570,7 @@ async function startServer() {
     res.json(role);
   });
 
-  app.put("/api/roles/:id", requireBootstrapAdmin, async (req, res) => {
+  app.put("/api/roles/:id", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
     const { id } = req.params;
     const { name, baseSalary, monthlyHours } = req.body;
     const role = await prisma.role.update({
@@ -1590,14 +1580,14 @@ async function startServer() {
     res.json(role);
   });
 
-  app.delete("/api/roles/:id", requireBootstrapAdmin, async (req, res) => {
+  app.delete("/api/roles/:id", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
     const { id } = req.params;
     await prisma.role.delete({ where: { id } });
     res.json({ success: true });
   });
 
   // --- API: Machines (Máquinas e Centros de Trabalho) ---
-  app.get("/api/machines", async (req, res) => {
+  app.get("/api/machines", requireAppAuth, requirePermission("machines.view"), async (req, res) => {
     const machines = await prisma.machine.findMany({
       include: { MachineCostComponent: true },
       orderBy: { code: "asc" },
@@ -1605,7 +1595,7 @@ async function startServer() {
     res.json(machines);
   });
 
-  app.post("/api/machines", async (req, res) => {
+  app.post("/api/machines", requireAppAuth, requirePermission("machines.edit"), async (req, res) => {
     const { code, name, acquisitionValue, residualValue, usefulLifeMonths, components } = req.body;
     const machine = await prisma.machine.create({
       data: {
@@ -1626,7 +1616,7 @@ async function startServer() {
     res.json(machine);
   });
 
-  app.put("/api/machines/:id", async (req, res) => {
+  app.put("/api/machines/:id", requireAppAuth, requirePermission("machines.edit"), async (req, res) => {
     const { id } = req.params;
     const { code, name, acquisitionValue, residualValue, usefulLifeMonths, components } = req.body;
 
@@ -1653,7 +1643,7 @@ async function startServer() {
     res.json(machine);
   });
 
-  app.delete("/api/machines/:id", async (req, res) => {
+  app.delete("/api/machines/:id", requireAppAuth, requirePermission("machines.edit"), async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -1674,14 +1664,14 @@ async function startServer() {
   });
 
   // --- API: Payroll Components ---
-  app.get("/api/payroll-components", async (req, res) => {
+  app.get("/api/payroll-components", requireAppAuth, requireBootstrapOrAnyPermission(["settings.operational.view", "settings.view"]), async (req, res) => {
     const components = await prisma.payrollComponent.findMany({
       orderBy: { name: "asc" },
     });
     res.json(components);
   });
 
-  app.post("/api/payroll-components", requireBootstrapAdmin, async (req, res) => {
+  app.post("/api/payroll-components", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
     const { name, type, calculationType, value } = req.body;
     const component = await prisma.payrollComponent.create({
       data: { name, type, calculationType, value },
@@ -1689,7 +1679,7 @@ async function startServer() {
     res.json(component);
   });
 
-  app.put("/api/payroll-components/:id", requireBootstrapAdmin, async (req, res) => {
+  app.put("/api/payroll-components/:id", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
     const { id } = req.params;
     const { name, type, calculationType, value } = req.body;
     const component = await prisma.payrollComponent.update({
@@ -1699,7 +1689,7 @@ async function startServer() {
     res.json(component);
   });
 
-  app.delete("/api/payroll-components/:id", requireBootstrapAdmin, async (req, res) => {
+  app.delete("/api/payroll-components/:id", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
     const { id } = req.params;
     await prisma.payrollComponent.delete({ where: { id } });
     res.json({ success: true });
@@ -1707,7 +1697,7 @@ async function startServer() {
 
   
 // --- API: Employees (Funcionários) ---
-app.get("/api/employees", async (req, res) => {
+app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), async (req, res) => {
   const employees = await prisma.employee.findMany({
     include: {
       Role: true,
@@ -1792,7 +1782,7 @@ function sanitizeUuidArray(value: unknown): string[] {
     .filter((item) => item.length > 0 && isUuid(item));
 }
 
-app.post("/api/employees", async (req, res) => {
+app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
   try {
     const {
       name,
@@ -1856,7 +1846,7 @@ app.post("/api/employees", async (req, res) => {
   }
 });
 
-app.put("/api/employees/:id", async (req, res) => {
+app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -1930,14 +1920,14 @@ app.put("/api/employees/:id", async (req, res) => {
   }
 });
 
-app.delete("/api/employees/:id", async (req, res) => {
+app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
   const { id } = req.params;
   await prisma.employee.delete({ where: { id } });
   res.json({ success: true });
 });
 
   // --- API: Materials (Matérias-Primas e Insumos) ---
-  app.get("/api/materials/import/template", (req, res) => {
+  app.get("/api/materials/import/template", requireAppAuth, requirePermission("materials.view"), (req, res) => {
     try {
       const buffer = ServerImporter.generateTemplate(MaterialImportConfig);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -1949,7 +1939,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/materials/import/preview", upload.single("file"), async (req, res) => {
+  app.post("/api/materials/import/preview", requireAppAuth, requirePermission("materials.edit"), upload.single("file"), upload.single("file"), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const result = await ServerImporter.parseExcel(req.file.buffer, MaterialImportConfig);
@@ -1966,7 +1956,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/materials/import/confirm", async (req, res) => {
+  app.post("/api/materials/import/confirm", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
     const { data: bodyData, importId } = req.body;
     let data = bodyData;
 
@@ -2024,7 +2014,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/materials", async (req, res) => {
+  app.get("/api/materials", requireAppAuth, requirePermission("materials.view"), async (req, res) => {
     const materials = await prisma.material.findMany({
       include: { MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 5 } },
       orderBy: { code: "asc" },
@@ -2051,7 +2041,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(materialsWithCalculations);
   });
 
-  app.post("/api/materials", async (req, res) => {
+  app.post("/api/materials", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
     const { 
       code, description, unit, category, supplier, 
       currentCost, averageCost, standardCost, freight, 
@@ -2082,7 +2072,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(material);
   });
 
-  app.put("/api/materials/:id", async (req, res) => {
+  app.put("/api/materials/:id", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
     const { id } = req.params;
     const { currentCost, freight, ...data } = req.body;
 
@@ -2109,7 +2099,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(material);
   });
 
-  app.patch("/api/materials/:id/status", async (req, res) => {
+  app.patch("/api/materials/:id/status", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
@@ -2147,14 +2137,14 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.delete("/api/materials/:id", async (req, res) => {
+  app.delete("/api/materials/:id", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
     const { id } = req.params;
     await prisma.material.delete({ where: { id } });
     res.json({ success: true });
   });
 
   // --- Compras: centros de custo e solicitações (Bloco 1) ---
-  app.get("/api/cost-centers", async (_req, res) => {
+  app.get("/api/cost-centers", requireAppAuth, requirePermission("purchases.view"), async (_req, res) => {
     try {
       const rows = await prisma.costCenter.findMany({
         orderBy: [{ isActive: "desc" }, { code: "asc" }],
@@ -2166,7 +2156,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/cost-centers", async (req, res) => {
+  app.post("/api/cost-centers", requireAppAuth, requirePermission("purchases.edit"), async (req, res) => {
     try {
       const { code, name, description, notes, isActive } = req.body;
       if (!code || !name) {
@@ -2191,7 +2181,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.patch("/api/cost-centers/:id", async (req, res) => {
+  app.patch("/api/cost-centers/:id", requireAppAuth, requirePermission("purchases.edit"), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -2221,7 +2211,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     },
   };
 
-  app.get("/api/purchase-requests", async (_req, res) => {
+  app.get("/api/purchase-requests", requireAppAuth, requirePermission("purchases.view"), async (_req, res) => {
     try {
       const rows = await prisma.purchaseRequest.findMany({
         include: {
@@ -2237,7 +2227,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/purchase-requests/:id", async (req, res) => {
+  app.get("/api/purchase-requests/:id", requireAppAuth, requirePermission("purchases.view"), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -2327,7 +2317,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     };
   }
 
-  app.post("/api/purchase-requests", async (req, res) => {
+  app.post("/api/purchase-requests", requireAppAuth, requirePermission("purchases.create"), async (req, res) => {
     try {
       const err = validatePurchaseRequestPayload(req.body);
       if (err) return res.status(400).json({ error: err });
@@ -2409,7 +2399,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.put("/api/purchase-requests/:id", async (req, res) => {
+  app.put("/api/purchase-requests/:id", requireAppAuth, requirePermission("purchases.edit"), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -2585,7 +2575,7 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   // --- API: Products (Engenharia / BOM / Routing) ---
   // --- API: Products Import ---
-  app.get("/api/products/import/template", (req, res) => {
+  app.get("/api/products/import/template", requireAppAuth, requirePermission("products.view"), (req, res) => {
     try {
       const buffer = ServerImporter.generateTemplateMulti(EngineeringImportConfigs);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -2597,7 +2587,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/products/import/preview", upload.single("file"), async (req, res) => {
+  app.post("/api/products/import/preview", requireAppAuth, requirePermission("products.edit"), upload.single("file"), upload.single("file"), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const results = await ServerImporter.parseExcelMulti(req.file.buffer, EngineeringImportConfigs);
@@ -2615,7 +2605,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/products/import/confirm", async (req, res) => {
+  app.post("/api/products/import/confirm", requireAppAuth, requirePermission("products.edit"), async (req, res) => {
     const { cadastro: bodyCadastro, estrutura: bodyEstrutura, importId } = req.body;
     let cadastro = bodyCadastro;
     let estrutura = bodyEstrutura;
@@ -2901,7 +2891,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/products", async (req, res) => {
+  app.get("/api/products", requireAppAuth, requirePermission("products.view"), async (req, res) => {
     try {
       const typeQ = typeof req.query.type === "string" ? req.query.type.trim() : "";
       /** Product.type no Prisma é apenas PRODUCT | COMPONENT (matéria-prima é modelo Material). */
@@ -2982,7 +2972,7 @@ app.delete("/api/employees/:id", async (req, res) => {
    * Opções para montagem da BOM: matérias-primas + produtos/componentes ativos.
    * `excludeProductId` evita auto-referência direta na lista (produto não pode ser filho de si mesmo).
    */
-  app.get("/api/products/bom-item-options", async (req, res) => {
+  app.get("/api/products/bom-item-options", requireAppAuth, requireAnyPermission(["products.view", "products.tab.bom", "products.edit"]), async (req, res) => {
     try {
       const excludeId = typeof req.query.excludeProductId === "string" ? req.query.excludeProductId.trim() : "";
       const activeMaterialWhere: Prisma.MaterialWhereInput = {
@@ -3035,7 +3025,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/products/:id", async (req, res) => {
+  app.get("/api/products/:id", requireAppAuth, requirePermission("products.view"), async (req, res) => {
     const { id } = req.params;
     const product = await prisma.product.findUnique({
       where: { id },
@@ -3052,14 +3042,14 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(product);
   });
 
-  app.get("/api/products/:id/tree", async (req, res) => {
+  app.get("/api/products/:id/tree", requireAppAuth, requireAnyPermission(["products.tab.tree", "products.tab.bom", "products.edit"]), async (req, res) => {
     const { id } = req.params;
     const tree = await getFullBOMTree(id);
     if (!tree) return res.status(404).json({ error: "Produto não encontrado" });
     res.json(tree);
   });
 
-  app.post("/api/products", async (req, res) => {
+  app.post("/api/products", requireAppAuth, requirePermission("products.create"), async (req, res) => {
     const { sku, name, description, type, version, defaultLotSize, bom, routing, cycleTimeSeconds, cavities, setupTimeMin, efficiencyExpected } = req.body;
 
     const normalizedSku = sku?.toString().trim().toUpperCase();
@@ -3175,7 +3165,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.put("/api/products/:id", async (req, res) => {
+  app.put("/api/products/:id", requireAppAuth, requirePermission("products.edit"), async (req, res) => {
     const { id } = req.params;
     const { sku, name, description, type, version, defaultLotSize, bom, routing, cycleTimeSeconds, cavities, setupTimeMin, efficiencyExpected } = req.body;
     const normalizedSku = sku?.toString().trim().toUpperCase();
@@ -3318,7 +3308,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.delete("/api/products/:id", async (req, res) => {
+  app.delete("/api/products/:id", requireAppAuth, requirePermission("products.delete"), async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -3371,7 +3361,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/products/bulk-delete", async (req, res) => {
+  app.post("/api/products/bulk-delete", requireAppAuth, requirePermission("products.delete"), async (req, res) => {
     const { ids } = req.body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -3446,14 +3436,14 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   // --- API: Indirect Costs (OPEX) ---
-  app.get("/api/indirect-costs", async (req, res) => {
+  app.get("/api/indirect-costs", requireAppAuth, requirePermission("opex.view"), async (req, res) => {
     const costs = await prisma.indirectCost.findMany({
       orderBy: { category: "asc" },
     });
     res.json(costs);
   });
 
-  app.post("/api/indirect-costs", requireBootstrapForGlobalParamMutation, async (req, res) => {
+  app.post("/api/indirect-costs", requireAppAuth, requirePermission("opex.edit"), requireBootstrapForGlobalParamMutation, async (req, res) => {
     const { description, category, monthlyValue, costCenter, allocationCriteria } = req.body;
     const cost = await prisma.indirectCost.create({
       data: { description, category, monthlyValue, costCenter, allocationCriteria }
@@ -3461,7 +3451,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(cost);
   });
 
-  app.put("/api/indirect-costs/:id", requireBootstrapForGlobalParamMutation, async (req, res) => {
+  app.put("/api/indirect-costs/:id", requireAppAuth, requirePermission("opex.edit"), requireBootstrapForGlobalParamMutation, async (req, res) => {
     const { id } = req.params;
     const { description, category, monthlyValue, costCenter, allocationCriteria, status } = req.body;
     const cost = await prisma.indirectCost.update({
@@ -3471,7 +3461,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(cost);
   });
 
-  app.delete("/api/indirect-costs/:id", requireBootstrapForGlobalParamMutation, async (req, res) => {
+  app.delete("/api/indirect-costs/:id", requireAppAuth, requirePermission("opex.edit"), requireBootstrapForGlobalParamMutation, async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -3489,7 +3479,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   // --- API: Tabelas de preço comerciais (somente leitura; Fase 1) ---
-  app.get("/api/price-tables", async (_req, res) => {
+  app.get("/api/price-tables", requireAppAuth, requireAnyPermission(["settings.price_tables.view", "pricing.view", "settings.view"]), async (_req, res) => {
     try {
       const tables = await prisma.priceTable.findMany({
         orderBy: { code: "asc" },
@@ -3543,7 +3533,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/price-tables/:priceTableId/versions/generate-draft", async (req, res) => {
+  app.post("/api/price-tables/:priceTableId/versions/generate-draft", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "settings.price_tables.manage"]), async (req, res) => {
     const { priceTableId } = req.params;
     const body = (req.body ?? {}) as {
       taxRuleId?: unknown;
@@ -3877,7 +3867,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/price-table-versions/:id/items", async (req, res) => {
+  app.get("/api/price-table-versions/:id/items", requireAppAuth, requireAnyPermission(["settings.price_tables.view", "pricing.view"]), async (req, res) => {
     const { id } = req.params;
     const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limitRaw = Number.parseInt(String(req.query.limit ?? "50"), 10) || 50;
@@ -3927,7 +3917,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/price-tables/:priceTableId/products/:productId/published-price", async (req, res) => {
+  app.get("/api/price-tables/:priceTableId/products/:productId/published-price", requireAppAuth, requireAnyPermission(["pricing.view", "proposals.view", "settings.price_tables.view"]), async (req, res) => {
     const { priceTableId, productId } = req.params;
     const now = new Date();
     try {
@@ -4119,7 +4109,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/price-table-versions/:id/publish", async (req, res) => {
+  app.post("/api/price-table-versions/:id/publish", requireAppAuth, requireAnyPermission(["pricing.publish_tables", "settings.price_tables.manage"]), async (req, res) => {
     const { id } = req.params;
     const body = (req.body ?? {}) as {
       effectiveFrom?: unknown;
@@ -4240,7 +4230,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   // --- API: Tax Rules (Módulo Tributário) ---
-  app.get("/api/tax-rules", async (req, res) => {
+  app.get("/api/tax-rules", requireAppAuth, requireAnyPermission(["taxes.view", "pricing.view"]), async (req, res) => {
     const rules = await prisma.taxRule.findMany({
       include: { TaxComponent: true },
       orderBy: { name: "asc" },
@@ -4248,7 +4238,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(rules);
   });
 
-  app.post("/api/tax-rules", async (req, res) => {
+  app.post("/api/tax-rules", requireAppAuth, requirePermission("taxes.edit"), async (req, res) => {
     const { name, description, operation, components } = req.body;
     const rule = await prisma.taxRule.create({
       data: {
@@ -4269,7 +4259,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(rule);
   });
 
-  app.put("/api/tax-rules/:id", async (req, res) => {
+  app.put("/api/tax-rules/:id", requireAppAuth, requirePermission("taxes.edit"), async (req, res) => {
     const { id } = req.params;
     const { name, description, operation, components, status } = req.body;
 
@@ -4297,14 +4287,14 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(rule);
   });
 
-  app.delete("/api/tax-rules/:id", async (req, res) => {
+  app.delete("/api/tax-rules/:id", requireAppAuth, requirePermission("taxes.edit"), async (req, res) => {
     const { id } = req.params;
     await prisma.taxRule.delete({ where: { id } });
     res.json({ success: true });
   });
 
   // --- API: Product Pricing (Formação de Preço) ---
-  app.get("/api/pricing", async (req, res) => {
+  app.get("/api/pricing", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
     try {
       const cache = await initAnalysisCache();
       const pricings = await prisma.productPricing.findMany({
@@ -4342,7 +4332,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/pricing", async (req, res) => {
+  app.post("/api/pricing", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
     const { productId, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
     const pricing = await prisma.productPricing.upsert({
       where: { productId_taxRuleId: { productId, taxRuleId } },
@@ -4352,7 +4342,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(pricing);
   });
 
-  app.post("/api/pricing/bulk-delete", async (req, res) => {
+  app.post("/api/pricing/bulk-delete", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
        return res.status(400).json({ error: "Nenhum ID fornecido para exclusão." });
@@ -4381,7 +4371,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     });
   });
 
-  app.delete("/api/pricing/:id", async (req, res) => {
+  app.delete("/api/pricing/:id", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -4399,7 +4389,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/pricing/:productId/:taxRuleId/calculate", async (req, res) => {
+  app.get("/api/pricing/:productId/:taxRuleId/calculate", requireAppAuth, requirePermission("pricing.simulate"), async (req, res) => {
     const { productId, taxRuleId } = req.params;
 
     try {
@@ -4564,7 +4554,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/pricing/simulate-unit", async (req, res) => {
+  app.post("/api/pricing/simulate-unit", requireAppAuth, requirePermission("pricing.simulate"), async (req, res) => {
     const { productId, taxRuleId, desiredMarginPerc } = req.body ?? {};
     const desiredMarginNumber = Number(desiredMarginPerc);
 
@@ -4723,7 +4713,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/pricing/simulate-batch", async (req, res) => {
+  app.post("/api/pricing/simulate-batch", requireAppAuth, requirePermission("pricing.simulate"), async (req, res) => {
     const { productIds, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
     
     if (!Array.isArray(productIds) || productIds.length === 0) return res.status(400).json({ error: "Nenhum produto selecionado" });
@@ -4790,7 +4780,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/pricing/apply-batch", async (req, res) => {
+  app.post("/api/pricing/apply-batch", requireAppAuth, requirePermission("pricing.simulate"), async (req, res) => {
     const { validResults, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
     
     if (!Array.isArray(validResults) || validResults.length === 0) return res.status(400).json({ error: "Nenhum resultado válido fornecido" });
@@ -4814,26 +4804,26 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   // --- API: Simulations (What-if Analysis) ---
-  app.get("/api/simulations", async (req, res) => {
+  app.get("/api/simulations", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
     const simulations = await prisma.simulation.findMany({
       orderBy: { createdAt: "desc" },
     });
     res.json(simulations);
   });
 
-  app.post("/api/simulations", async (req, res) => {
+  app.post("/api/simulations", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
     const data = req.body;
     const simulation = await prisma.simulation.create({ data });
     res.json(simulation);
   });
 
-  app.delete("/api/simulations/:id", async (req, res) => {
+  app.delete("/api/simulations/:id", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
     const { id } = req.params;
     await prisma.simulation.delete({ where: { id } });
     res.json({ success: true });
   });
 
-  app.get("/api/simulations/:id/compare", async (req, res) => {
+  app.get("/api/simulations/:id/compare", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
     const { id } = req.params;
     try {
       const sim = await prisma.simulation.findUnique({ where: { id } });
@@ -4940,7 +4930,7 @@ app.delete("/api/employees/:id", async (req, res) => {
 });
 
   // --- API: New Product Simulations (Sandbox Snapshot Persistence) ---
-  app.get("/api/new-product-simulations", async (req, res) => {
+  app.get("/api/new-product-simulations", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
     const status = String(req.query.status ?? "").toUpperCase();
     const where =
       status === "SAVED" || status === "DRAFT"
@@ -4963,14 +4953,14 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(rows);
   });
 
-  app.get("/api/new-product-simulations/:id", async (req, res) => {
+  app.get("/api/new-product-simulations/:id", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
     const { id } = req.params;
     const row = await prisma.newProductSimulation.findUnique({ where: { id } });
     if (!row) return res.status(404).json({ error: "Simulação de novo produto não encontrada." });
     res.json(row);
   });
 
-  app.post("/api/new-product-simulations/save", async (req, res) => {
+  app.post("/api/new-product-simulations/save", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
     const { simulationName, snapshot, createdBy, origin } = req.body ?? {};
     if (!simulationName || typeof simulationName !== "string") {
       return res.status(400).json({ error: "Nome da simulação é obrigatório." });
@@ -4992,7 +4982,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(created);
   });
 
-  app.post("/api/new-product-simulations/:id/clone", async (req, res) => {
+  app.post("/api/new-product-simulations/:id/clone", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
     const { id } = req.params;
     const source = await prisma.newProductSimulation.findUnique({
       where: { id },
@@ -5006,7 +4996,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(created);
   });
 
-  app.delete("/api/new-product-simulations/:id", async (req, res) => {
+  app.delete("/api/new-product-simulations/:id", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
     const { id } = req.params;
     try {
       await prisma.newProductSimulation.delete({ where: { id } });
@@ -5171,7 +5161,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     };
   }
 
-  app.get("/api/branding-settings", async (_req, res) => {
+  app.get("/api/branding-settings", requireAppAuth, requireBootstrapOrAnyPermission(["settings.branding.view", "settings.view"]), async (_req, res) => {
     try {
       const row = await prisma.brandingSettings.findFirst({
         orderBy: { createdAt: "asc" },
@@ -5183,7 +5173,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.put("/api/branding-settings", requireBootstrapAdmin, async (req, res) => {
+  app.put("/api/branding-settings", requireBootstrapOrAnyPermission(["settings.branding.edit", "users.manage"]), async (req, res) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const companyNameRaw = typeof body.companyName === "string" ? body.companyName.trim() : BRANDING_DEFAULT_COMPANY;
@@ -5261,7 +5251,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   // --- API: Global Settings Preview ---
-  app.get("/api/settings/globals", requireBootstrapAdmin, async (req, res) => {
+  app.get("/api/settings/globals", requireBootstrapOrAnyPermission(["settings.global_params.view", "settings.view"]), async (req, res) => {
     try {
       const cache = await initAnalysisCache();
       const indirects = await prisma.indirectCost.findMany({ where: { category: "GLOBAL_PARAM" } });
@@ -5296,7 +5286,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/integrations/nomus/health", requireBootstrapAdmin, async (_req, res) => {
+  app.get("/api/integrations/nomus/health", requireBootstrapOrAnyPermission(["settings.nomus.view", "settings.view"]), async (_req, res) => {
     try {
       const payload = await buildNomusIntegrationHealthPayload();
       return res.json(payload);
@@ -5306,7 +5296,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/settings/nomus-sync/logs", requireBootstrapAdmin, async (req, res) => {
+  app.get("/api/settings/nomus-sync/logs", requireBootstrapOrAnyPermission(["settings.nomus.view", "settings.view"]), async (req, res) => {
     try {
       const rawLimit = Number(req.query.limit);
       const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.trunc(rawLimit))) : 50;
@@ -5360,7 +5350,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/settings/nomus-sync/logs/:fileName", requireBootstrapAdmin, async (req, res) => {
+  app.get("/api/settings/nomus-sync/logs/:fileName", requireBootstrapOrAnyPermission(["settings.nomus.view", "settings.view"]), async (req, res) => {
     try {
       const row = await readNomusSyncLogSafe(String(req.params.fileName || ""));
       if (!row) {
@@ -5418,7 +5408,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     ].join("\n");
   }
 
-  app.get("/api/settings/production-hour-cost-simulations", requireBootstrapAdmin, async (req, res) => {
+  app.get("/api/settings/production-hour-cost-simulations", requireBootstrapOrAnyPermission(["settings.global_params.view", "settings.view"]), async (req, res) => {
     try {
       const rows = await prisma.productionHourCostSimulation.findMany({
         orderBy: [{ createdAt: "desc" }],
@@ -5430,7 +5420,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/settings/production-hour-cost-simulations/:id", requireBootstrapAdmin, async (req, res) => {
+  app.get("/api/settings/production-hour-cost-simulations/:id", requireBootstrapOrAnyPermission(["settings.global_params.view", "settings.view"]), async (req, res) => {
     try {
       const row = await prisma.productionHourCostSimulation.findUnique({
         where: { id: String(req.params.id) },
@@ -5445,7 +5435,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/settings/production-hour-cost-simulations", requireBootstrapAdmin, async (req, res) => {
+  app.post("/api/settings/production-hour-cost-simulations", requireBootstrapOrAnyPermission(["settings.global_params.edit", "users.manage"]), async (req, res) => {
     try {
       const body = req.body ?? {};
       const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -5513,7 +5503,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.delete("/api/settings/production-hour-cost-simulations/:id", requireBootstrapAdmin, async (req, res) => {
+  app.delete("/api/settings/production-hour-cost-simulations/:id", requireBootstrapOrAnyPermission(["settings.global_params.edit", "users.manage"]), async (req, res) => {
     try {
       const id = String(req.params.id);
       const existing = await prisma.productionHourCostSimulation.findUnique({ where: { id } });
@@ -6279,7 +6269,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   }
 
   // --- API: Product Cost Analysis (Motor de Cálculo CIU com CIF) ---
-  app.get("/api/products/:id/cost-analysis", async (req, res) => {
+  app.get("/api/products/:id/cost-analysis", requireAppAuth, requireAnyPermission(["products.tab.cost", "products.tab.composition", "proposals.indicators.view", "pricing.view", "pricing.simulate"]), async (req, res) => {
     try {
       const { id } = req.params;
       const cache = await initAnalysisCache();
@@ -6356,7 +6346,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.patch("/api/employees/:id/status", async (req, res) => {
+  app.patch("/api/employees/:id/status", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     const employee = await prisma.employee.update({
@@ -6366,7 +6356,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(employee);
   });
 
-  app.get("/api/products/:id/pricing-snapshot", async (req, res) => {
+  app.get("/api/products/:id/pricing-snapshot", requireAppAuth, requireAnyPermission(["pricing.view", "pricing.simulate", "products.tab.cost"]), async (req, res) => {
     const { id } = req.params;
     const { taxRuleId } = req.query;
 
@@ -6961,7 +6951,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     };
   };
 
-  app.get("/api/products/material-demand/summary", async (req, res) => {
+  app.get("/api/products/material-demand/summary", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
@@ -6978,7 +6968,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/products/material-demand/rows", async (req, res) => {
+  app.get("/api/products/material-demand/rows", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const page = parsePositiveInt((req.query as Record<string, unknown>).page, 1);
@@ -7023,7 +7013,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/products/material-demand/materials/:materialId/details", async (req, res) => {
+  app.get("/api/products/material-demand/materials/:materialId/details", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
     try {
       const materialIdParam = typeof req.params.materialId === "string" ? req.params.materialId.trim() : "";
       if (!materialIdParam) {
@@ -7065,7 +7055,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/products/material-demand/facets", async (req, res) => {
+  app.get("/api/products/material-demand/facets", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
@@ -7084,7 +7074,7 @@ app.delete("/api/employees/:id", async (req, res) => {
    * Inteligência de matéria-prima (demanda estimada) derivada de propostas.
    * Base: itens de proposta + openBook do motor por produto (não é consumo real de chão de fábrica).
    */
-  app.get("/api/products/material-demand/analysis", async (req, res) => {
+  app.get("/api/products/material-demand/analysis", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const data = await buildMaterialDemandDataset(filters, { includeRowDetails: true });
@@ -7103,7 +7093,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   /** Agregações para a aba Relatórios (sem BI externo). Respeita filtros de query. */
-  app.get("/api/reports/data", async (req, res) => {
+  app.get("/api/reports/data", requireAppAuth, requirePermission("reports.view"), async (req, res) => {
     const q = req.query;
     const dateFrom = typeof q.dateFrom === "string" && q.dateFrom ? q.dateFrom : null;
     const dateTo = typeof q.dateTo === "string" && q.dateTo ? q.dateTo : null;
@@ -7609,7 +7599,7 @@ app.delete("/api/employees/:id", async (req, res) => {
 
   // --- API: Customers (Clientes) ---
   // --- API: Customers (Clientes) ---
-  app.get("/api/customers/import/template", (req, res) => {
+  app.get("/api/customers/import/template", requireAppAuth, requirePermission("customers.view"), (req, res) => {
     try {
       const buffer = ServerImporter.generateTemplate(CustomerImportConfig);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -7621,7 +7611,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/customers/import/preview", upload.single("file"), async (req, res) => {
+  app.post("/api/customers/import/preview", requireAppAuth, requirePermission("customers.edit"), upload.single("file"), upload.single("file"), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const result = await ServerImporter.parseExcel(req.file.buffer, CustomerImportConfig);
@@ -7638,7 +7628,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/customers/import/confirm", async (req, res) => {
+  app.post("/api/customers/import/confirm", requireAppAuth, requirePermission("customers.edit"), async (req, res) => {
     const { data: bodyData, importId } = req.body;
     let data = bodyData;
 
@@ -7698,7 +7688,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/customers", async (req, res) => {
+  app.get("/api/customers", requireAppAuth, requirePermission("customers.view"), async (req, res) => {
     const customers = await prisma.customer.findMany({
       orderBy: { companyName: "asc" },
     });
@@ -7706,7 +7696,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   /** Indicadores agregados do cadastro (somente leitura). */
-  app.get("/api/customers/indicators", async (_req, res) => {
+  app.get("/api/customers/indicators", requireAppAuth, requirePermission("customers.view"), async (_req, res) => {
     try {
       const rows = await prisma.customer.findMany({
         select: {
@@ -7740,7 +7730,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   /** Lista clientes de um agrupamento de UF (mesma regra de normalização do indicador). Somente leitura. */
-  app.get("/api/customers/indicators/drilldown", async (req, res) => {
+  app.get("/api/customers/indicators/drilldown", requireAppAuth, requirePermission("customers.view"), async (req, res) => {
     const raw = typeof req.query.bucket === "string" ? req.query.bucket.trim() : "";
     if (!raw) {
       return res.status(400).json({ error: "Parâmetro bucket é obrigatório (ex.: SP, —, OUTROS)." });
@@ -7772,7 +7762,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   /** Visão comercial 360°: cliente + propostas com itens e produto (sem pedido faturado separado no schema). */
-  app.get("/api/customers/:id/commercial-360", async (req, res) => {
+  app.get("/api/customers/:id/commercial-360", requireAppAuth, requireAnyPermission(["customers.commercial360.view", "customers.view"]), async (req, res) => {
     const { id } = req.params;
     try {
       const customer = await prisma.customer.findUnique({ where: { id } });
@@ -7918,7 +7908,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     };
   }
 
-  app.get("/api/customers/:customerId/commercial-activities", async (req, res) => {
+  app.get("/api/customers/:customerId/commercial-activities", requireAppAuth, requireAnyPermission(["crm.customer_cockpit.view", "customers.commercial360.view", "customers.view"]), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -7963,7 +7953,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/customers/:customerId/commercial-activities", async (req, res) => {
+  app.post("/api/customers/:customerId/commercial-activities", requireAppAuth, requirePermission("crm.activities.create"), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -8101,7 +8091,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.patch("/api/commercial-activities/:id", async (req, res) => {
+  app.patch("/api/commercial-activities/:id", requireAppAuth, requirePermission("crm.activities.edit"), async (req, res) => {
     const { id } = req.params;
     if (!isUuidParam(id)) {
       return res.status(400).json({ error: "id inválido." });
@@ -8280,7 +8270,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/crm/dashboard/basic", async (_req, res) => {
+  app.get("/api/crm/dashboard/basic", requireAppAuth, requireAnyPermission(["crm.view", "crm.customer_cockpit.view", "customers.view"]), async (_req, res) => {
     try {
       const now = new Date();
       const since30 = new Date(now);
@@ -8359,7 +8349,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   /** CRM Fase 1I-B — dashboard gerencial comercial (carteira agregada; sem alterar endpoints existentes). */
-  app.get("/api/crm/management-dashboard", async (_req, res) => {
+  app.get("/api/crm/management-dashboard", requireAppAuth, requirePermission("crm.general.view"), async (_req, res) => {
     const CRM_MGMT_LIST_LIMIT = 10;
 
     const crmMgmtToNumber = (value: unknown): number => toNumber(value, 0);
@@ -9297,7 +9287,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   /** CRM Fase 1J-B/1J-D — gestão comercial por vendedor (pedidos, faturamento Nomus, propostas). */
-  app.get("/api/crm/seller-dashboard", async (req, res) => {
+  app.get("/api/crm/seller-dashboard", requireAppAuth, requireAnyPermission(["crm.seller.view", "crm.seller.own", "crm.seller.all"]), async (req, res) => {
     const SELLER_DASH_LIST_LIMIT = 20;
     const SELLER_DASH_DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -9398,11 +9388,31 @@ app.delete("/api/employees/:id", async (req, res) => {
     `;
 
     try {
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) {
+        return res.status(401).json({
+          error: "UNAUTHORIZED",
+          message: "Autenticação necessária.",
+        });
+      }
+
+      const sellerScope = resolveSellerDashboardScope(
+        authUser,
+        req.query.externalSellerId,
+        req.query.responsible,
+        parseExternalSellerIdQuery,
+        parseResponsibleQuery
+      );
+      if (sellerScope.ok === false) {
+        return res.status(sellerScope.status).json(sellerScope.body);
+      }
+
+      const sellerScopeMode = sellerScope.scopeMode;
+      const filterExternalSellerId = sellerScope.externalSellerId;
+      const filterResponsible = sellerScope.responsible;
+
       const now = new Date();
       const nowMs = now.getTime();
-
-      const filterExternalSellerId = parseExternalSellerIdQuery(req.query.externalSellerId);
-      const filterResponsible = parseResponsibleQuery(req.query.responsible);
 
       const filterDateFrom = parseSellerDashYmdDate(req.query.dateFrom);
       if (filterDateFrom === "INVALID") {
@@ -9840,6 +9850,24 @@ app.delete("/api/employees/:id", async (req, res) => {
 
       const summary = summaryRow[0];
 
+      const sellerRowInScope = (row: {
+        external_seller_id: number | null;
+        responsible: string | null;
+      }) => {
+        if (sellerScopeMode !== "own") return true;
+        if (filterExternalSellerId !== null) {
+          return row.external_seller_id === filterExternalSellerId;
+        }
+        if (filterResponsible) {
+          const rowName = (row.responsible ?? "").trim().toLowerCase();
+          return rowName === filterResponsible.trim().toLowerCase();
+        }
+        return false;
+      };
+
+      const scopedSellerOptionsRows = sellerOptionsRows.filter(sellerRowInScope);
+      const scopedBySellerRows = bySellerRows.filter(sellerRowInScope);
+
       const mapDeliveryDays = (expected: Date | null) => {
         if (!expected) {
           return { daysUntilExpectedDelivery: null, daysOverdue: null };
@@ -9863,7 +9891,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           dateFrom: filterDateFrom,
           dateTo: filterDateTo,
         },
-        sellerOptions: sellerOptionsRows.map((row) => ({
+        sellerOptions: scopedSellerOptionsRows.map((row) => ({
           externalSellerId: row.external_seller_id,
           responsible: row.responsible ?? null,
           ordersCount: row.orders_count,
@@ -9887,7 +9915,7 @@ app.delete("/api/employees/:id", async (req, res) => {
           ordersWithLinkedProposalCount: summary?.orders_with_linked_proposal_count ?? 0,
           ordersWithoutLinkedProposalCount: summary?.orders_without_linked_proposal_count ?? 0,
         },
-        bySeller: bySellerRows.map((row) => ({
+        bySeller: scopedBySellerRows.map((row) => ({
           externalSellerId: row.external_seller_id,
           responsible: row.responsible ?? null,
           ordersCount: row.orders_count,
@@ -9973,7 +10001,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   /** Busca paginada de clientes para o CRM + agregados de CommercialActivity (sem alterar /api/customers). */
-  app.get("/api/crm/customers", async (req, res) => {
+  app.get("/api/crm/customers", requireAppAuth, requireAnyPermission(["crm.view", "crm.customer_cockpit.view", "customers.view"]), async (req, res) => {
     try {
       const searchRaw = typeof req.query.search === "string" ? req.query.search.trim() : "";
       const limitRaw = typeof req.query.limit === "string" ? req.query.limit.trim() : "";
@@ -10382,7 +10410,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     return { data };
   }
 
-  app.get("/api/crm/customers/:customerId/profile", async (req, res) => {
+  app.get("/api/crm/customers/:customerId/profile", requireAppAuth, requireAnyPermission(["crm.customer_cockpit.view", "crm.view", "customers.view"]), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -10409,7 +10437,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   });
 
   /** CRM Fase 1H-B — inteligência comercial só leitura (propostas + pedidos válidos). */
-  app.get("/api/crm/customers/:customerId/commercial-intelligence", async (req, res) => {
+  app.get("/api/crm/customers/:customerId/commercial-intelligence", requireAppAuth, requireAnyPermission(["crm.customer_cockpit.view", "customers.commercial360.view", "customers.view"]), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -10725,7 +10753,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.put("/api/crm/customers/:customerId/profile", async (req, res) => {
+  app.put("/api/crm/customers/:customerId/profile", requireAppAuth, requirePermission("crm.profile.edit"), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -10772,12 +10800,12 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/customers", async (req, res) => {
+  app.post("/api/customers", requireAppAuth, requirePermission("customers.create"), async (req, res) => {
     const customer = await prisma.customer.create({ data: req.body });
     res.json(customer);
   });
 
-  app.put("/api/customers/:id", async (req, res) => {
+  app.put("/api/customers/:id", requireAppAuth, requirePermission("customers.edit"), async (req, res) => {
     const { id } = req.params;
     const customer = await prisma.customer.update({
       where: { id },
@@ -10786,7 +10814,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(customer);
   });
 
-  app.delete("/api/customers/:id", async (req, res) => {
+  app.delete("/api/customers/:id", requireAppAuth, requirePermission("customers.edit"), async (req, res) => {
     const { id } = req.params;
     await prisma.customer.delete({ where: { id } });
     res.json({ success: true });
@@ -10949,7 +10977,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     return new Prisma.Decimal(parsed);
   }
 
-  app.get("/api/proposals", async (req, res) => {
+  app.get("/api/proposals", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
     const pageRaw = req.query.page;
     const pageSizeRaw = req.query.pageSize;
     const search = String(req.query.search ?? "").trim();
@@ -11045,7 +11073,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     });
   });
 
-  app.get("/api/proposals/responsibles", async (req, res) => {
+  app.get("/api/proposals/responsibles", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
     const rows = await prisma.proposal.findMany({
       where: { responsible: { not: null } },
       select: { responsible: true },
@@ -11058,7 +11086,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(responsibles);
   });
 
-  app.post("/api/proposals/:id/generate-sales-order", async (req, res) => {
+  app.post("/api/proposals/:id/generate-sales-order", requireAppAuth, requirePermission("proposals.edit"), async (req, res) => {
     const { id } = req.params;
 
     const existing = await prisma.salesOrder.findUnique({
@@ -11207,7 +11235,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/proposals/:id", async (req, res) => {
+  app.get("/api/proposals/:id", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
     const { id } = req.params;
     const proposal = await prisma.proposal.findUnique({
       where: { id },
@@ -11219,7 +11247,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(proposal);
   });
 
-  app.post("/api/proposals", async (req, res) => {
+  app.post("/api/proposals", requireAppAuth, requirePermission("proposals.create"), async (req, res) => {
     const { items, ...proposalData } = req.body;
     if (!Array.isArray(items)) {
       return res.status(400).json({ error: "Payload inválido: items deve ser um array." });
@@ -11253,7 +11281,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.put("/api/proposals/:id", async (req, res) => {
+  app.put("/api/proposals/:id", requireAppAuth, requirePermission("proposals.edit"), async (req, res) => {
     const { id } = req.params;
     const { items, ...proposalData } = req.body;
     if (!Array.isArray(items)) {
@@ -11293,7 +11321,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.patch("/api/proposals/:id/status", async (req, res) => {
+  app.patch("/api/proposals/:id/status", requireAppAuth, requirePermission("proposals.edit"), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     if (!isValidProposalStatus(status)) {
@@ -11308,7 +11336,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     res.json(proposal);
   });
 
-  app.delete("/api/proposals/:id", async (req, res) => {
+  app.delete("/api/proposals/:id", requireAppAuth, requirePermission("proposals.delete"), async (req, res) => {
     const { id } = req.params;
     await prisma.proposal.delete({ where: { id } });
     res.json({ success: true });
@@ -11326,7 +11354,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   //   itensPedido: [{ item, idProduto, quantidade, valorUnitario, dataEntrega? }] }
   // Preencher nomusRawResponse / sentToNomusAt após resposta; não implementar nesta etapa.
 
-  app.get("/api/sales-orders", async (req, res) => {
+  app.get("/api/sales-orders", requireAppAuth, requirePermission("sales_orders.view"), async (req, res) => {
     try {
       const status = String(req.query.status ?? "").trim();
       const customerId = String(req.query.customerId ?? "").trim();
@@ -11379,7 +11407,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/sales-orders/:id", async (req, res) => {
+  app.get("/api/sales-orders/:id", requireAppAuth, requireAnyPermission(["sales_orders.detail.view", "sales_orders.view"]), async (req, res) => {
     try {
       const { id } = req.params;
       const row = await prisma.salesOrder.findUnique({
@@ -11467,7 +11495,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  app.get("/api/maintenance-requests", async (req, res) => {
+  app.get("/api/maintenance-requests", requireAppAuth, requirePermission("maintenance.view"), async (req, res) => {
     try {
       const search = String(req.query.search ?? "").trim();
       const statusQ = String(req.query.status ?? "").trim();
@@ -11542,7 +11570,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.post("/api/maintenance-requests", async (req, res) => {
+  app.post("/api/maintenance-requests", requireAppAuth, requirePermission("maintenance.manage"), async (req, res) => {
     try {
       const body = req.body ?? {};
       const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -11618,7 +11646,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/maintenance-requests/:id/history", async (req, res) => {
+  app.get("/api/maintenance-requests/:id/history", requireAppAuth, requirePermission("maintenance.view"), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -11635,7 +11663,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.get("/api/maintenance-requests/:id", async (req, res) => {
+  app.get("/api/maintenance-requests/:id", requireAppAuth, requirePermission("maintenance.view"), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -11651,7 +11679,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.patch("/api/maintenance-requests/:id", async (req, res) => {
+  app.patch("/api/maintenance-requests/:id", requireAppAuth, requirePermission("maintenance.manage"), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -11744,7 +11772,7 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  app.patch("/api/maintenance-requests/:id/status", async (req, res) => {
+  app.patch("/api/maintenance-requests/:id/status", requireAppAuth, requirePermission("maintenance.manage"), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
