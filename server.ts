@@ -8828,9 +8828,10 @@ app.delete("/api/employees/:id", async (req, res) => {
     }
   });
 
-  /** CRM Fase 1J-B — gestão comercial por vendedor (pedidos, faturamento Nomus, propostas). */
+  /** CRM Fase 1J-B/1J-D — gestão comercial por vendedor (pedidos, faturamento Nomus, propostas). */
   app.get("/api/crm/seller-dashboard", async (req, res) => {
     const SELLER_DASH_LIST_LIMIT = 20;
+    const SELLER_DASH_DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
     const sellerDashToNumber = (value: unknown): number => toNumber(value, 0);
 
@@ -8850,6 +8851,28 @@ app.delete("/api/employees/:id", async (req, res) => {
       if (typeof raw !== "string") return null;
       const t = raw.trim();
       return t.length > 0 ? t : null;
+    };
+
+    type SellerDashYmdParse = string | null | "INVALID";
+
+    const parseSellerDashYmdDate = (raw: unknown): SellerDashYmdParse => {
+      if (raw === undefined || raw === null || raw === "") return null;
+      const s = String(raw).trim();
+      if (!SELLER_DASH_DATE_YMD_RE.test(s)) return "INVALID";
+      const [ys, ms, ds] = s.split("-");
+      const y = Number(ys);
+      const m = Number(ms);
+      const d = Number(ds);
+      if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return "INVALID";
+      const probe = new Date(Date.UTC(y, m - 1, d));
+      if (
+        probe.getUTCFullYear() !== y ||
+        probe.getUTCMonth() !== m - 1 ||
+        probe.getUTCDate() !== d
+      ) {
+        return "INVALID";
+      }
+      return s;
     };
 
     const nomusNfesElementsSql = (alias: string) => Prisma.sql`
@@ -8912,6 +8935,91 @@ app.delete("/api/employees/:id", async (req, res) => {
 
       const filterExternalSellerId = parseExternalSellerIdQuery(req.query.externalSellerId);
       const filterResponsible = parseResponsibleQuery(req.query.responsible);
+
+      const filterDateFrom = parseSellerDashYmdDate(req.query.dateFrom);
+      if (filterDateFrom === "INVALID") {
+        return res.status(400).json({
+          error: "dateFrom inválido. Use o formato YYYY-MM-DD (ex.: 2026-05-01).",
+        });
+      }
+      const filterDateTo = parseSellerDashYmdDate(req.query.dateTo);
+      if (filterDateTo === "INVALID") {
+        return res.status(400).json({
+          error: "dateTo inválido. Use o formato YYYY-MM-DD (ex.: 2026-05-31).",
+        });
+      }
+      if (filterDateFrom && filterDateTo && filterDateFrom > filterDateTo) {
+        return res.status(400).json({
+          error: "dateFrom não pode ser maior que dateTo.",
+        });
+      }
+
+      const hasPeriodFilter = filterDateFrom !== null || filterDateTo !== null;
+      const periodDateFromStart = filterDateFrom
+        ? new Date(`${filterDateFrom}T00:00:00`)
+        : null;
+      const periodDateToEnd = filterDateTo ? new Date(`${filterDateTo}T23:59:59.999`) : null;
+
+      const nfeProcessamentoDateSql = Prisma.sql`
+        CASE
+          WHEN NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+          THEN to_date(TRIM(nfe->>'dataProcessamento'), 'DD/MM/YYYY')
+          ELSE NULL
+        END
+      `;
+
+      const nfeProcessamentoInPeriodSql = () => {
+        if (!hasPeriodFilter) {
+          return Prisma.sql`NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') IS NOT NULL`;
+        }
+        const parts: Prisma.Sql[] = [Prisma.sql`(${nfeProcessamentoDateSql}) IS NOT NULL`];
+        if (filterDateFrom) {
+          parts.push(Prisma.sql`(${nfeProcessamentoDateSql}) >= ${filterDateFrom}::date`);
+        }
+        if (filterDateTo) {
+          parts.push(Prisma.sql`(${nfeProcessamentoDateSql}) <= ${filterDateTo}::date`);
+        }
+        return Prisma.join(parts, " AND ");
+      };
+
+      const orderHasInvoicedNfeInPeriodSql = (alias: "so") => Prisma.sql`
+        EXISTS (
+          SELECT 1
+          FROM ${nomusNfesElementsSql(alias)}
+          WHERE ${nfeProcessamentoInPeriodSql()}
+        )
+      `;
+
+      const soInvoicedMetricSql = (alias: "so") =>
+        hasPeriodFilter ? orderHasInvoicedNfeInPeriodSql(alias) : orderIsInvoicedSql(alias);
+
+      const soIssueDateInPeriodSql = (alias: "so") => {
+        const col = Prisma.raw(`${alias}."issueDate"`);
+        if (!hasPeriodFilter) return Prisma.sql`TRUE`;
+        if (periodDateFromStart && periodDateToEnd) {
+          return Prisma.sql`${col} >= ${periodDateFromStart} AND ${col} <= ${periodDateToEnd}`;
+        }
+        if (periodDateFromStart) return Prisma.sql`${col} >= ${periodDateFromStart}`;
+        if (periodDateToEnd) return Prisma.sql`${col} <= ${periodDateToEnd}`;
+        return Prisma.sql`TRUE`;
+      };
+
+      const pProposalDateExprSql = (alias: "p") =>
+        Prisma.sql`COALESCE(${Prisma.raw(`${alias}."externalOpenedAt"`)}, ${Prisma.raw(`${alias}."createdAt"`)})`;
+
+      const pProposalDateInPeriodSql = (alias: "p") => {
+        const col = pProposalDateExprSql(alias);
+        if (!hasPeriodFilter) return Prisma.sql`TRUE`;
+        if (periodDateFromStart && periodDateToEnd) {
+          return Prisma.sql`${col} >= ${periodDateFromStart} AND ${col} <= ${periodDateToEnd}`;
+        }
+        if (periodDateFromStart) return Prisma.sql`${col} >= ${periodDateFromStart}`;
+        if (periodDateToEnd) return Prisma.sql`${col} <= ${periodDateToEnd}`;
+        return Prisma.sql`TRUE`;
+      };
+
+      const soOrdersScopeSql = (alias: "so") =>
+        hasPeriodFilter ? soIssueDateInPeriodSql(alias) : Prisma.sql`TRUE`;
 
       const soSellerMatch = buildSellerMatchSql("so", filterExternalSellerId, filterResponsible);
       const pSellerMatch = buildSellerMatchSql("p", filterExternalSellerId, filterResponsible);
@@ -8990,20 +9098,20 @@ app.delete("/api/employees/:id", async (req, res) => {
         >(
           Prisma.sql`
             SELECT
-              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch}) AS orders_count,
-              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch}) AS orders_value,
-              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${orderIsInvoicedSql("so")}) AS invoiced_orders_count,
-              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${orderIsInvoicedSql("so")}) AS invoiced_orders_value,
-              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND NOT ${orderIsInvoicedSql("so")}) AS not_invoiced_orders_count,
-              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND NOT ${orderIsInvoicedSql("so")}) AS not_invoiced_orders_value,
-              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch}) AS proposals_count,
-              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND ${openProposalStatusSql}) AS open_proposals_count,
-              (SELECT COALESCE(SUM(p."totalNetValue"), 0) FROM "Proposal" p WHERE ${pSellerMatch} AND ${openProposalStatusSql}) AS open_proposals_value,
-              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND ${proposalHasLinkedOrderSql}) AS proposals_with_linked_order_count,
-              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND NOT ${proposalHasLinkedOrderSql}) AS proposals_without_linked_order_count,
-              (SELECT COALESCE(SUM(p."totalNetValue"), 0) FROM "Proposal" p WHERE ${pSellerMatch} AND NOT ${proposalHasLinkedOrderSql}) AS proposals_without_linked_order_value,
-              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND so."proposalId" IS NOT NULL) AS orders_with_linked_proposal_count,
-              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND so."proposalId" IS NULL) AS orders_without_linked_proposal_count
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOrdersScopeSql("so")}) AS orders_count,
+              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOrdersScopeSql("so")}) AS orders_value,
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soInvoicedMetricSql("so")}) AS invoiced_orders_count,
+              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soInvoicedMetricSql("so")}) AS invoiced_orders_value,
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOrdersScopeSql("so")} AND NOT ${orderIsInvoicedSql("so")}) AS not_invoiced_orders_count,
+              (SELECT COALESCE(SUM(so."totalNetValue"), 0) FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOrdersScopeSql("so")} AND NOT ${orderIsInvoicedSql("so")}) AS not_invoiced_orders_value,
+              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND ${pProposalDateInPeriodSql("p")}) AS proposals_count,
+              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND ${pProposalDateInPeriodSql("p")} AND ${openProposalStatusSql}) AS open_proposals_count,
+              (SELECT COALESCE(SUM(p."totalNetValue"), 0) FROM "Proposal" p WHERE ${pSellerMatch} AND ${pProposalDateInPeriodSql("p")} AND ${openProposalStatusSql}) AS open_proposals_value,
+              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND ${pProposalDateInPeriodSql("p")} AND ${proposalHasLinkedOrderSql}) AS proposals_with_linked_order_count,
+              (SELECT COUNT(*)::int FROM "Proposal" p WHERE ${pSellerMatch} AND ${pProposalDateInPeriodSql("p")} AND NOT ${proposalHasLinkedOrderSql}) AS proposals_without_linked_order_count,
+              (SELECT COALESCE(SUM(p."totalNetValue"), 0) FROM "Proposal" p WHERE ${pSellerMatch} AND ${pProposalDateInPeriodSql("p")} AND NOT ${proposalHasLinkedOrderSql}) AS proposals_without_linked_order_value,
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOrdersScopeSql("so")} AND so."proposalId" IS NOT NULL) AS orders_with_linked_proposal_count,
+              (SELECT COUNT(*)::int FROM "SalesOrder" so WHERE ${soSellerMatch} AND ${soOrdersScopeSql("so")} AND so."proposalId" IS NULL) AS orders_without_linked_proposal_count
           `
         ),
         prisma.$queryRaw<
@@ -9028,12 +9136,12 @@ app.delete("/api/employees/:id", async (req, res) => {
                 MAX(so."responsible") FILTER (
                   WHERE so."responsible" IS NOT NULL AND TRIM(so."responsible") <> ''
                 ) AS responsible,
-                COUNT(*)::int AS orders_count,
-                COALESCE(SUM(so."totalNetValue"), 0) AS orders_value,
-                COUNT(*) FILTER (WHERE ${orderIsInvoicedSql("so")})::int AS invoiced_orders_count,
-                COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${orderIsInvoicedSql("so")}), 0) AS invoiced_orders_value,
-                COUNT(*) FILTER (WHERE NOT ${orderIsInvoicedSql("so")})::int AS not_invoiced_orders_count,
-                COALESCE(SUM(so."totalNetValue") FILTER (WHERE NOT ${orderIsInvoicedSql("so")}), 0) AS not_invoiced_orders_value
+                COUNT(*) FILTER (WHERE ${soOrdersScopeSql("so")})::int AS orders_count,
+                COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soOrdersScopeSql("so")}), 0) AS orders_value,
+                COUNT(*) FILTER (WHERE ${soInvoicedMetricSql("so")})::int AS invoiced_orders_count,
+                COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soInvoicedMetricSql("so")}), 0) AS invoiced_orders_value,
+                COUNT(*) FILTER (WHERE ${soOrdersScopeSql("so")} AND NOT ${orderIsInvoicedSql("so")})::int AS not_invoiced_orders_count,
+                COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soOrdersScopeSql("so")} AND NOT ${orderIsInvoicedSql("so")}), 0) AS not_invoiced_orders_value
               FROM "SalesOrder" so
               WHERE ${soSellerMatch}
               GROUP BY seller_key
@@ -9052,6 +9160,7 @@ app.delete("/api/employees/:id", async (req, res) => {
               WHERE ${pSellerMatch}
                 AND ${openProposalStatusSql}
                 AND NOT ${proposalHasLinkedOrderSql}
+                AND ${pProposalDateInPeriodSql("p")}
               GROUP BY seller_key
               HAVING ${sellerKeyExprSql("p")} IS NOT NULL
             ),
@@ -9117,6 +9226,7 @@ app.delete("/api/employees/:id", async (req, res) => {
             FROM "SalesOrder" so
             INNER JOIN "Customer" c ON c.id = so."customerId"
             WHERE ${soSellerMatch}
+              AND ${soIssueDateInPeriodSql("so")}
               AND NOT ${orderIsInvoicedSql("so")}
             ORDER BY so."issueDate" DESC
             LIMIT ${SELLER_DASH_LIST_LIMIT}
@@ -9173,12 +9283,12 @@ app.delete("/api/employees/:id", async (req, res) => {
                   ELSE NULL
                 END AS invoice_sort_date
               FROM ${nomusNfesElementsSql("so")}
-              WHERE NULLIF(TRIM(BOTH FROM COALESCE(nfe->>'dataProcessamento', '')), '') IS NOT NULL
+              WHERE ${nfeProcessamentoInPeriodSql()}
               ORDER BY invoice_sort_date DESC NULLS LAST, nfe->>'dataProcessamento' DESC
               LIMIT 1
             ) inv ON TRUE
             WHERE ${soSellerMatch}
-              AND ${orderIsInvoicedSql("so")}
+              AND ${soInvoicedMetricSql("so")}
             ORDER BY inv.invoice_sort_date DESC NULLS LAST, so."issueDate" DESC
             LIMIT ${SELLER_DASH_LIST_LIMIT}
           `
@@ -9218,6 +9328,7 @@ app.delete("/api/employees/:id", async (req, res) => {
             WHERE ${pSellerMatch}
               AND ${openProposalStatusSql}
               AND NOT ${proposalHasLinkedOrderSql}
+              AND ${pProposalDateInPeriodSql("p")}
             ORDER BY p."updatedAt" DESC
             LIMIT ${SELLER_DASH_LIST_LIMIT}
           `
@@ -9251,6 +9362,7 @@ app.delete("/api/employees/:id", async (req, res) => {
             FROM "SalesOrder" so
             INNER JOIN "Customer" c ON c.id = so."customerId"
             WHERE ${soSellerMatch}
+              AND ${soIssueDateInPeriodSql("so")}
               AND so."proposalId" IS NULL
             ORDER BY so."issueDate" DESC
             LIMIT ${SELLER_DASH_LIST_LIMIT}
@@ -9280,6 +9392,8 @@ app.delete("/api/employees/:id", async (req, res) => {
         filters: {
           externalSellerId: filterExternalSellerId,
           responsible: filterResponsible,
+          dateFrom: filterDateFrom,
+          dateTo: filterDateTo,
         },
         sellerOptions: sellerOptionsRows.map((row) => ({
           externalSellerId: row.external_seller_id,
