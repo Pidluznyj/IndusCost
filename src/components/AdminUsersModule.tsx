@@ -24,6 +24,8 @@ import {
   summarizePermissions,
 } from "@/src/lib/appAuthClient";
 import { PermissionEditor } from "@/src/components/admin/PermissionEditor";
+import { SellerNomusPicker } from "@/src/components/admin/SellerNomusPicker";
+import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
 
 type UserFormState = {
   name: string;
@@ -53,12 +55,33 @@ function formatDateTimePt(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
 }
 
+function formatLinkedSeller(user: AuthUser): string {
+  if (user.externalSellerId != null) {
+    const name = user.sellerResponsibleName?.trim();
+    return name ? `${name} · ID ${user.externalSellerId}` : `ID ${user.externalSellerId}`;
+  }
+  if (user.sellerResponsibleName?.trim()) {
+    return `${user.sellerResponsibleName.trim()} · sem ID`;
+  }
+  return "—";
+}
+
+function hasSellerLink(form: UserFormState): boolean {
+  return Boolean(form.externalSellerId.trim() || form.sellerResponsibleName.trim());
+}
+
+function formHasCrmSellerOwn(form: UserFormState): boolean {
+  return form.permissions.includes("crm.seller.own");
+}
+
 export const AdminUsersModule: React.FC = () => {
   const { hasPermission } = useAuth();
   const canManage = hasPermission("users.manage");
 
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [catalog, setCatalog] = useState<PermissionCatalogEntry[]>([]);
+  const [sellerOptions, setSellerOptions] = useState<AdminSellerOption[]>([]);
+  const [sellerOptionsLoading, setSellerOptionsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -82,16 +105,20 @@ export const AdminUsersModule: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [usersRes, catalogRes] = await Promise.all([
+      setSellerOptionsLoading(true);
+      const [usersRes, catalogRes, sellersRes] = await Promise.all([
         fetchJsonOk<{ users: AuthUser[] }>("/api/admin/users"),
         fetchJsonOk<{ permissions: PermissionCatalogEntry[] }>("/api/admin/permissions/catalog"),
+        fetchJsonOk<{ sellers: AdminSellerOption[] }>("/api/admin/seller-options"),
       ]);
       setUsers(Array.isArray(usersRes.users) ? usersRes.users : []);
       setCatalog(Array.isArray(catalogRes.permissions) ? catalogRes.permissions : []);
+      setSellerOptions(Array.isArray(sellersRes.sellers) ? sellersRes.sellers : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar usuários.");
     } finally {
       setLoading(false);
+      setSellerOptionsLoading(false);
     }
   }, [canManage]);
 
@@ -134,8 +161,22 @@ export const AdminUsersModule: React.FC = () => {
       const n = Number.parseInt(form.externalSellerId.trim(), 10);
       if (!Number.isFinite(n) || n < 0) return "ID do vendedor Nomus inválido.";
     }
+    if (formHasCrmSellerOwn(form) && !hasSellerLink(form)) {
+      return "Usuário com Minha Gestão (crm.seller.own) precisa estar vinculado a um vendedor.";
+    }
     return null;
   };
+
+  const sellerLinkWarning = useMemo(() => {
+    if (hasSellerLink(form)) return null;
+    if (formHasCrmSellerOwn(form)) {
+      return "Usuário com Minha Gestão precisa estar vinculado a um vendedor.";
+    }
+    if (form.role === "SELLER") {
+      return "Perfil vendedor sem vínculo: Minha Gestão Comercial ficará vazia até vincular um vendedor real.";
+    }
+    return null;
+  }, [form]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -331,10 +372,8 @@ export const AdminUsersModule: React.FC = () => {
                         {user.isActive ? "Ativo" : "Inativo"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {user.externalSellerId != null
-                        ? `ID ${user.externalSellerId}${user.sellerResponsibleName ? ` · ${user.sellerResponsibleName}` : ""}`
-                        : "—"}
+                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px]">
+                      {formatLinkedSeller(user)}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                       {formatDateTimePt(user.lastLoginAt)}
@@ -394,12 +433,12 @@ export const AdminUsersModule: React.FC = () => {
                 <h4 className="text-lg font-bold">{editingId ? "Editar usuário" : "Novo usuário"}</h4>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {form.role === "SELLER"
-                    ? "Para vendedores, preencha o ID Nomus (externalSellerId) para futura regra de Minha Gestão."
+                    ? "Vincule o vendedor real observado em pedidos e propostas para Minha Gestão Comercial."
                     : form.role === "COMMERCIAL_MANAGER"
-                      ? "Gestores comerciais podem ver todos os vendedores no CRM."
+                      ? "Gestores comerciais podem ver todos os vendedores no CRM (crm.seller.all)."
                       : form.role === "SUPER_ADMIN"
                         ? "Super administrador possui todas as permissões automaticamente."
-                        : null}
+                        : "Selecione o vendedor comercial quando o usuário tiver Minha Gestão (crm.seller.own)."}
                 </p>
               </div>
               <button type="button" onClick={() => setEditorOpen(false)} className="p-2 rounded-full hover:bg-accent">
@@ -472,25 +511,30 @@ export const AdminUsersModule: React.FC = () => {
                     Usuário ativo
                   </label>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">ID vendedor Nomus</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.externalSellerId}
-                    onChange={(e) => setForm((f) => ({ ...f, externalSellerId: e.target.value }))}
-                    placeholder="ex.: 464"
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                <div className="space-y-1 sm:col-span-2">
+                  <SellerNomusPicker
+                    sellers={sellerOptions}
+                    loading={sellerOptionsLoading}
+                    value={{
+                      externalSellerId: form.externalSellerId,
+                      sellerResponsibleName: form.sellerResponsibleName,
+                    }}
+                    onChange={({ externalSellerId, sellerResponsibleName }) =>
+                      setForm((f) => ({ ...f, externalSellerId, sellerResponsibleName }))
+                    }
                   />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Nome responsável Nomus</label>
-                  <input
-                    value={form.sellerResponsibleName}
-                    onChange={(e) => setForm((f) => ({ ...f, sellerResponsibleName: e.target.value }))}
-                    placeholder="ex.: GISLENE LIMA"
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
+                  {sellerLinkWarning ? (
+                    <div
+                      className={cn(
+                        "rounded-lg border px-3 py-2 text-xs mt-2",
+                        formHasCrmSellerOwn(form)
+                          ? "border-red-200 bg-red-50 text-red-900"
+                          : "border-amber-200 bg-amber-50 text-amber-900"
+                      )}
+                    >
+                      {sellerLinkWarning}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

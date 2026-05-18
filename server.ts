@@ -76,6 +76,7 @@ import {
   resolveSellerDashboardScope,
   sendAuthForbidden,
 } from "./src/lib/appAuthMiddleware.js";
+import { fetchAdminSellerOptionsFromDb } from "./src/lib/adminSellerOptions.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -1179,6 +1180,16 @@ async function startServer() {
 
   app.get("/api/admin/permissions/catalog", requireUserAdminOrBootstrap, (_req, res) => {
     res.json({ permissions: PERMISSION_CATALOG });
+  });
+
+  app.get("/api/admin/seller-options", requireUserAdminOrBootstrap, async (_req, res) => {
+    try {
+      const sellers = await fetchAdminSellerOptionsFromDb();
+      return res.json({ sellers });
+    } catch (error) {
+      console.error("GET /api/admin/seller-options", error);
+      return res.status(500).json({ error: "Erro ao listar vendedores comerciais." });
+    }
   });
 
   app.get("/api/admin/users", requireUserAdminOrBootstrap, async (_req, res) => {
