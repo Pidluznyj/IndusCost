@@ -28,6 +28,21 @@ export type IndusBomLine = {
   bomLineId: string;
 };
 
+export type NomusBomSourceLine = {
+  externalLineId: number;
+  quantity: number | null;
+  posicao?: number | null;
+  opcional?: boolean | null;
+  alternativo?: boolean | null;
+  preferencial?: boolean | null;
+};
+
+export type IndusBomSourceLine = {
+  bomLineId: string;
+  quantity: number | null;
+  componentKind?: "PRODUCT" | "MATERIAL" | "UNKNOWN";
+};
+
 export type BomComparisonStatus =
   | "MATCH"
   | "QUANTITY_DIFF"
@@ -78,8 +93,14 @@ export type BomComparisonResult = {
     indusQuantity?: number | null;
     quantityDiff?: number | null;
     quantityDiffAbs?: number | null;
-    nomus?: NomusEffectiveBomLine | null;
-    indus?: IndusBomLine | null;
+    nomusLineCount: number;
+    indusLineCount: number;
+    hasDuplicateNomusLines: boolean;
+    hasDuplicateIndusLines: boolean;
+    nomusSourceLineIds: number[];
+    indusBomLineIds: string[];
+    nomusLines: NomusBomSourceLine[];
+    indusLines: IndusBomSourceLine[];
   }>;
 };
 
@@ -248,6 +269,57 @@ function quantitiesMatch(nomusQty: number | null, indusQty: number | null): bool
   return Math.abs(nomusQty - indusQty) <= QUANTITY_TOLERANCE;
 }
 
+function sumQuantities(lines: Array<{ quantity: number | null }>): number | null {
+  if (lines.length === 0) return null;
+  let hasAny = false;
+  let sum = 0;
+  for (const line of lines) {
+    if (line.quantity != null) {
+      hasAny = true;
+      sum += line.quantity;
+    }
+  }
+  return hasAny ? sum : null;
+}
+
+function groupByComponentCode<T extends { componentCode: string }>(lines: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const line of lines) {
+    const key = normalizeComponentCode(line.componentCode);
+    const group = map.get(key) ?? [];
+    group.push(line);
+    map.set(key, group);
+  }
+  return map;
+}
+
+function toNomusSourceLines(lines: NomusEffectiveBomLine[]): NomusBomSourceLine[] {
+  return lines.map((line) => ({
+    externalLineId: line.externalLineId,
+    quantity: line.quantity,
+    posicao: line.posicao,
+    opcional: line.opcional,
+    alternativo: line.alternativo,
+    preferencial: line.preferencial,
+  }));
+}
+
+function toIndusSourceLines(lines: IndusBomLine[]): IndusBomSourceLine[] {
+  return lines.map((line) => ({
+    bomLineId: line.bomLineId,
+    quantity: line.quantity,
+    componentKind: line.componentKind,
+  }));
+}
+
+function minSortPosition(nomusLines: NomusEffectiveBomLine[]): number {
+  let min = Number.MAX_SAFE_INTEGER;
+  for (const line of nomusLines) {
+    if (line.posicao != null && line.posicao < min) min = line.posicao;
+  }
+  return min;
+}
+
 export function compareBom(
   parentCode: string,
   nomusLines: NomusEffectiveBomLine[],
@@ -262,18 +334,12 @@ export function compareBom(
   const listSelection = options?.listSelection ?? chooseEffectiveNomusList(nomusLines);
   const effectiveNomus = listSelection.selectedLines;
 
-  const nomusByCode = new Map<string, NomusEffectiveBomLine>();
-  for (const line of effectiveNomus) {
-    nomusByCode.set(normalizeComponentCode(line.componentCode), line);
-  }
-
-  const indusByCode = new Map<string, IndusBomLine>();
-  for (const line of indusLines) {
-    indusByCode.set(normalizeComponentCode(line.componentCode), line);
-  }
+  const nomusByCode = groupByComponentCode(effectiveNomus);
+  const indusByCode = groupByComponentCode(indusLines);
 
   const allCodes = new Set([...nomusByCode.keys(), ...indusByCode.keys()]);
-  const comparisonLines: BomComparisonResult["lines"] = [];
+  type ComparisonLineDraft = BomComparisonResult["lines"][number] & { sortPosition: number };
+  const comparisonDrafts: ComparisonLineDraft[] = [];
 
   let matches = 0;
   let quantityDiffs = 0;
@@ -281,14 +347,22 @@ export function compareBom(
   let onlyInIndusCost = 0;
 
   for (const codeKey of [...allCodes].sort()) {
-    const nomus = nomusByCode.get(codeKey) ?? null;
-    const indus = indusByCode.get(codeKey) ?? null;
-    const displayCode = nomus?.componentCode ?? indus?.componentCode ?? codeKey;
-    const nomusQuantity = nomus?.quantity ?? null;
-    const indusQuantity = indus?.quantity ?? null;
+    const nomusGroup = nomusByCode.get(codeKey) ?? [];
+    const indusGroup = indusByCode.get(codeKey) ?? [];
+    const displayCode = nomusGroup[0]?.componentCode ?? indusGroup[0]?.componentCode ?? codeKey;
+
+    const nomusSourceLines = toNomusSourceLines(nomusGroup);
+    const indusSourceLines = toIndusSourceLines(indusGroup);
+    const nomusLineCount = nomusGroup.length;
+    const indusLineCount = indusGroup.length;
+    const hasDuplicateNomusLines = nomusLineCount > 1;
+    const hasDuplicateIndusLines = indusLineCount > 1;
+
+    const nomusQuantity = sumQuantities(nomusGroup);
+    const indusQuantity = sumQuantities(indusGroup);
 
     let status: BomComparisonStatus;
-    if (nomus && indus) {
+    if (nomusLineCount > 0 && indusLineCount > 0) {
       if (quantitiesMatch(nomusQuantity, indusQuantity)) {
         status = "MATCH";
         matches += 1;
@@ -296,7 +370,7 @@ export function compareBom(
         status = "QUANTITY_DIFF";
         quantityDiffs += 1;
       }
-    } else if (nomus) {
+    } else if (nomusLineCount > 0) {
       status = "ONLY_IN_NOMUS";
       onlyInNomus += 1;
     } else {
@@ -307,25 +381,35 @@ export function compareBom(
     const quantityDiff =
       nomusQuantity != null && indusQuantity != null ? indusQuantity - nomusQuantity : null;
 
-    comparisonLines.push({
+    comparisonDrafts.push({
       componentCode: displayCode,
-      componentDescription: nomus?.componentDescription ?? indus?.componentDescription ?? null,
+      componentDescription:
+        nomusGroup[0]?.componentDescription ?? indusGroup[0]?.componentDescription ?? null,
       status,
       nomusQuantity,
       indusQuantity,
       quantityDiff,
       quantityDiffAbs: quantityDiff != null ? Math.abs(quantityDiff) : null,
-      nomus,
-      indus,
+      nomusLineCount,
+      indusLineCount,
+      hasDuplicateNomusLines,
+      hasDuplicateIndusLines,
+      nomusSourceLineIds: nomusSourceLines.map((l) => l.externalLineId),
+      indusBomLineIds: indusSourceLines.map((l) => l.bomLineId),
+      nomusLines: nomusSourceLines,
+      indusLines: indusSourceLines,
+      sortPosition: minSortPosition(nomusGroup),
     });
   }
 
-  comparisonLines.sort((a, b) => {
-    const posA = a.nomus?.posicao ?? Number.MAX_SAFE_INTEGER;
-    const posB = b.nomus?.posicao ?? Number.MAX_SAFE_INTEGER;
-    if (posA !== posB) return posA - posB;
+  comparisonDrafts.sort((a, b) => {
+    if (a.sortPosition !== b.sortPosition) return a.sortPosition - b.sortPosition;
     return a.componentCode.localeCompare(b.componentCode, "pt-BR");
   });
+
+  const comparisonLines: BomComparisonResult["lines"] = comparisonDrafts.map(
+    ({ sortPosition: _sortPosition, ...line }) => line
+  );
 
   const missingProduct = options?.missingProductInIndusCost === true;
   const ambiguousNomusList = listSelection.ambiguous;

@@ -170,8 +170,24 @@ export const NomusBomComparisonPanel: React.FC<NomusBomComparisonPanelProps> = (
                   </tr>
                 ) : (
                   data.lines.map((line) => (
-                    <tr key={`${line.componentCode}-${line.status}`} className="border-t border-border/60">
-                      <td className="px-3 py-2 font-medium">{line.componentCode}</td>
+                    <tr
+                      key={`${line.componentCode}-${line.nomusSourceLineIds.join("-")}-${line.indusBomLineIds.join("-")}`}
+                      className="border-t border-border/60"
+                    >
+                      <td className="px-3 py-2 font-medium">
+                        <div>{line.componentCode}</div>
+                        {line.hasDuplicateNomusLines || line.hasDuplicateIndusLines ? (
+                          <p className="text-[10px] font-normal text-muted-foreground mt-0.5">
+                            {line.hasDuplicateNomusLines
+                              ? `${line.nomusLineCount} linhas Nomus`
+                              : null}
+                            {line.hasDuplicateNomusLines && line.hasDuplicateIndusLines ? " · " : null}
+                            {line.hasDuplicateIndusLines
+                              ? `${line.indusLineCount} linhas IndusCost`
+                              : null}
+                          </p>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {line.nomusQuantity ?? "—"}
                       </td>
