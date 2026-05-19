@@ -214,3 +214,59 @@ export async function countDistinctParentCodesInStage(search?: string): Promise<
   });
   return grouped.length;
 }
+
+export type ResolvedNomusComponentRow = {
+  componentCode: string;
+  productId?: string | null;
+  materialId?: string | null;
+  resolvedKind: "PRODUCT" | "MATERIAL" | "BOTH" | "NONE";
+};
+
+export async function resolveNomusComponentCodes(
+  componentCodes: string[]
+): Promise<ResolvedNomusComponentRow[]> {
+  const uniqueCodes = [...new Set(componentCodes.map((c) => c.trim()).filter(Boolean))];
+  if (uniqueCodes.length === 0) return [];
+
+  const normalizedSet = new Set(uniqueCodes.map((c) => normalizeSku(c)));
+  const lookupValues = [...new Set([...uniqueCodes, ...normalizedSet])];
+
+  const [products, materials] = await Promise.all([
+    prisma.product.findMany({
+      where: { sku: { in: lookupValues } },
+      select: { id: true, sku: true },
+    }),
+    prisma.material.findMany({
+      where: { code: { in: lookupValues } },
+      select: { id: true, code: true },
+    }),
+  ]);
+
+  const productBySku = new Map<string, { id: string; sku: string }>();
+  for (const product of products) {
+    productBySku.set(normalizeSku(product.sku), product);
+  }
+
+  const materialByCode = new Map<string, { id: string; code: string }>();
+  for (const material of materials) {
+    materialByCode.set(normalizeSku(material.code), material);
+  }
+
+  return uniqueCodes.map((componentCode) => {
+    const key = normalizeSku(componentCode);
+    const product = productBySku.get(key);
+    const material = materialByCode.get(key);
+
+    let resolvedKind: ResolvedNomusComponentRow["resolvedKind"] = "NONE";
+    if (product && material) resolvedKind = "BOTH";
+    else if (product) resolvedKind = "PRODUCT";
+    else if (material) resolvedKind = "MATERIAL";
+
+    return {
+      componentCode,
+      productId: product?.id ?? null,
+      materialId: material?.id ?? null,
+      resolvedKind,
+    };
+  });
+}
