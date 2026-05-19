@@ -26,102 +26,28 @@ import {
   applyReviewDecisionsToEffectiveBom,
   listReviewDecisionsForParentCode,
 } from "@/src/lib/nomusBomReviewDecision";
-import type { LocalReviewCatalogItem } from "@/src/lib/nomusBomReviewDecision";
-import type { NomusBomReviewDecisionType } from "@prisma/client";
+import type {
+  EffectivePricingBomLine,
+  EffectivePricingBomResult,
+  EffectivePricingBomSource,
+  EffectivePricingBomStatus,
+  EffectivePricingBomSummary,
+  EffectivePricingBomTreeNode,
+  LocalReviewCatalogItem,
+} from "@/src/lib/nomusEffectivePricingBomTypes";
 
-export type EffectivePricingBomSource =
-  | "NOMUS_REQUIRED"
-  | "NOMUS_OPTIONAL_SELECTED"
-  | "NOMUS_OPTIONAL_NOT_SELECTED"
-  | "NOMUS_OPTIONAL_SELECTED_NONE"
-  | "NOMUS_ALTERNATIVE_SELECTED"
-  | "NOMUS_ALTERNATIVE_NOT_SELECTED"
-  | "LOCAL_ONLY_INDUS_REVIEW"
-  | "LOCAL_ONLY_INCLUDED_BY_REVIEW"
-  | "LOCAL_ONLY_EXCLUDED_BY_REVIEW"
-  | "LOCAL_ONLY_DUPLICATED_BY_NOMUS"
-  | "LOCAL_ONLY_ENGINEERING_REVIEW"
-  | "OPERATIONAL_ROUTING_COST"
-  | "OPERATIONAL_IGNORED";
-
-export type EffectivePricingBomDecision = "INCLUDE" | "EXCLUDE" | "REVIEW" | "BLOCKED";
-
-export type EffectivePricingBomStatus =
-  | "READY_FOR_PRICING_PREVIEW"
-  | "READY_WITH_LOCAL_REVIEW"
-  | "PENDING_LOCAL_REVIEW"
-  | "PENDING_OPTIONAL_SELECTION"
-  | "STALE_OPTIONAL_SELECTION"
-  | "BLOCKED_UNRESOLVED_COMPONENTS"
-  | "NO_NOMUS_BOM";
-
-export type EffectivePricingBomLine = {
-  componentCode: string;
-  componentDescription?: string | null;
-  quantity: number | null;
-  source: EffectivePricingBomSource;
-  decision: EffectivePricingBomDecision;
-  includedForPricing: boolean;
-  reason: string;
-  flags: NomusAggregatedLineFlags;
-  nomusSourceLineIds: number[];
-  groupId?: string;
-  groupName?: string;
-  selectedChoiceId?: string;
-  resolution?: string;
-  productBomLineId?: string;
-  reviewDecisionId?: string;
-  reviewDecisionType?: NomusBomReviewDecisionType;
-  relatedNomusComponentCode?: string;
-};
-
-export type EffectivePricingBomTreeNode = {
-  level: number;
-  parentCode: string;
-  componentCode: string;
-  description: string | null;
-  directQuantity: number | null;
-  accumulatedQuantity: number | null;
-  includedForPricing: boolean;
-  decision: EffectivePricingBomDecision;
-  source: EffectivePricingBomSource;
-  children: EffectivePricingBomTreeNode[];
-  resolution?: "PRODUCT" | "MATERIAL" | "BOTH" | "UNRESOLVED_COMPONENT";
-};
-
-export type EffectivePricingBomSummary = {
-  includedLinesCount: number;
-  excludedLinesCount: number;
-  reviewLinesCount: number;
-  blockedLinesCount: number;
-  requiredIncludedCount: number;
-  optionalSelectedCount: number;
-  optionalExcludedCount: number;
-  unresolvedComponentsCount: number;
-  recursiveNodesCount: number;
-  localReviewPendingCount: number;
-  localReviewResolvedCount: number;
-  localIncludedByReviewCount: number;
-  localExcludedByReviewCount: number;
-  operationalRoutingReviewCount: number;
-};
-
-export type EffectivePricingBomResult = {
-  generatedAt: string;
-  parentCode: string;
-  parentDescription?: string | null;
-  indusProductId?: string | null;
-  selectedList: NomusListSummary | null;
-  optionalPricingStatus: PricingOptionalStatus;
-  status: EffectivePricingBomStatus;
-  summary: EffectivePricingBomSummary;
-  directLines: EffectivePricingBomLine[];
-  excludedLines: EffectivePricingBomLine[];
-  reviewLines: EffectivePricingBomLine[];
-  localReviewCatalog: LocalReviewCatalogItem[];
-  recursiveTree?: EffectivePricingBomTreeNode[];
-  warnings: string[];
-};
+export type {
+  EffectivePricingBomDecision,
+  EffectivePricingBomLine,
+  EffectivePricingBomResult,
+  EffectivePricingBomSource,
+  EffectivePricingBomStatus,
+  EffectivePricingBomSummary,
+  EffectivePricingBomTreeNode,
+  LocalReviewCatalogItem,
+  NomusBomReviewDecisionType,
+  ReviewDecisionView,
+} from "@/src/lib/nomusEffectivePricingBomTypes";
 
 const DEFAULT_MAX_DEPTH = 10;
 

@@ -7,14 +7,14 @@ import type {
   EffectivePricingBomResult,
   EffectivePricingBomStatus,
   EffectivePricingBomTreeNode,
-} from "@/src/lib/nomusEffectivePricingBom";
-import type { PricingOptionalStatus } from "@/src/lib/nomusOptionalPricingSelection";
-import type { LocalReviewCatalogItem } from "@/src/lib/nomusBomReviewDecision";
+  LocalReviewCatalogItem,
+  NomusBomReviewDecisionType,
+  PricingOptionalStatus,
+} from "@/src/lib/nomusEffectivePricingBomTypes";
 import {
   REVIEW_DECISION_BADGE,
-  REVIEW_DECISION_LABELS,
-} from "@/src/lib/nomusBomReviewDecision";
-import type { NomusBomReviewDecisionType } from "@prisma/client";
+  REVIEW_DECISION_OPTIONS,
+} from "@/src/lib/nomusEffectivePricingBomTypes";
 
 const STATUS_LABEL: Record<EffectivePricingBomStatus, string> = {
   READY_FOR_PRICING_PREVIEW: "Pronta para preview",
@@ -58,15 +58,6 @@ const SOURCE_LABEL: Record<string, string> = {
   OPERATIONAL_ROUTING_COST: "Roteiro/processo",
   OPERATIONAL_IGNORED: "Operacional ignorado",
 };
-
-const DECISION_OPTIONS: NomusBomReviewDecisionType[] = [
-  "PENDING",
-  "INCLUDE_AS_LOCAL_EXCEPTION",
-  "EXCLUDE_FROM_PRICING",
-  "DUPLICATED_BY_NOMUS_COMPONENT",
-  "OPERATIONAL_ROUTING_COST",
-  "NEEDS_ENGINEERING_REVIEW",
-];
 
 function formatQty(v: number | null | undefined): string {
   if (v == null) return "—";
@@ -323,9 +314,9 @@ function LocalReviewSection({
                     }
                     className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs"
                   >
-                    {DECISION_OPTIONS.map((d) => (
-                      <option key={d} value={d}>
-                        {REVIEW_DECISION_LABELS[d]}
+                    {REVIEW_DECISION_OPTIONS.map((d) => (
+                      <option key={d.value} value={d.value}>
+                        {d.label}
                       </option>
                     ))}
                   </select>
@@ -458,6 +449,7 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
   const excluded = result?.excludedLines ?? [];
   const review = result?.reviewLines ?? [];
   const catalog = result?.localReviewCatalog ?? [];
+  const summary = result?.summary;
 
   return (
     <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-4 space-y-4">
@@ -541,14 +533,14 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
 
           <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 text-xs">
             {[
-              { label: "Incluídos", value: result.summary.includedLinesCount },
-              { label: "Opc. selecionados", value: result.summary.optionalSelectedCount },
-              { label: "Locais incluídos", value: result.summary.localIncludedByReviewCount },
-              { label: "Revisão pendente", value: result.summary.localReviewPendingCount },
-              { label: "Revisão resolvida", value: result.summary.localReviewResolvedCount },
-              { label: "Excluídos", value: result.summary.excludedLinesCount },
-              { label: "Roteiro/processo", value: result.summary.operationalRoutingReviewCount },
-              { label: "Bloqueios", value: result.summary.blockedLinesCount },
+              { label: "Incluídos", value: summary?.includedLinesCount ?? 0 },
+              { label: "Opc. selecionados", value: summary?.optionalSelectedCount ?? 0 },
+              { label: "Locais incluídos", value: summary?.localIncludedByReviewCount ?? 0 },
+              { label: "Revisão pendente", value: summary?.localReviewPendingCount ?? 0 },
+              { label: "Revisão resolvida", value: summary?.localReviewResolvedCount ?? 0 },
+              { label: "Excluídos", value: summary?.excludedLinesCount ?? 0 },
+              { label: "Roteiro/processo", value: summary?.operationalRoutingReviewCount ?? 0 },
+              { label: "Bloqueios", value: summary?.blockedLinesCount ?? 0 },
             ].map((c) => (
               <div key={c.label} className="rounded-lg border border-border bg-background px-3 py-2">
                 <p className="text-[10px] uppercase text-muted-foreground font-semibold">{c.label}</p>
@@ -589,8 +581,8 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
             <div className="space-y-2 rounded-lg border border-border p-3">
               <p className="text-xs font-bold">Árvore recursiva</p>
               <p className="text-[10px] text-muted-foreground">
-                Nós: {result.summary.recursiveNodesCount} · Não resolvidos:{" "}
-                {result.summary.unresolvedComponentsCount}
+                Nós: {summary?.recursiveNodesCount ?? 0} · Não resolvidos:{" "}
+                {summary?.unresolvedComponentsCount ?? 0}
               </p>
               <div className="max-h-64 overflow-y-auto border border-border/60 rounded p-2 bg-muted/20">
                 <p className="text-xs font-bold mb-1">{result.parentCode}</p>

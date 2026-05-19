@@ -1,58 +1,26 @@
-import type { NomusBomReviewDecisionType } from "@prisma/client";
+import type { NomusBomReviewDecisionType as PrismaReviewDecisionType } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma";
 import { normalizeComponentCode, normalizeSku, toNumberSafe } from "@/src/lib/nomusBomComparison";
 import type {
   EffectivePricingBomLine,
   EffectivePricingBomResult,
-} from "@/src/lib/nomusEffectivePricingBom";
+  LocalReviewCatalogItem,
+  NomusBomReviewDecisionType,
+  ReviewDecisionView,
+} from "@/src/lib/nomusEffectivePricingBomTypes";
 
-export type { NomusBomReviewDecisionType };
+export type {
+  LocalReviewCatalogItem,
+  NomusBomReviewDecisionType,
+  ReviewDecisionView,
+} from "@/src/lib/nomusEffectivePricingBomTypes";
 
-export type ReviewDecisionView = {
-  id: string;
-  parentCode: string;
-  parentProductId: string | null;
-  productBomLineId: string | null;
-  componentCode: string;
-  componentDescription: string | null;
-  quantitySnapshot: number | null;
-  decision: NomusBomReviewDecisionType;
-  includeForPricing: boolean;
-  relatedNomusComponentCode: string | null;
-  reason: string | null;
-  notes: string | null;
-  decidedBy: string | null;
-  decidedAt: string | null;
-};
-
-export type LocalReviewCatalogItem = {
-  componentCode: string;
-  componentDescription: string | null;
-  quantity: number | null;
-  productBomLineId: string;
-  savedDecision: ReviewDecisionView | null;
-  placement: "pending_review" | "included" | "excluded" | "engineering_review";
-};
+export {
+  REVIEW_DECISION_BADGE,
+  REVIEW_DECISION_LABELS,
+} from "@/src/lib/nomusEffectivePricingBomTypes";
 
 const DECISION_REQUIRES_RELATED: NomusBomReviewDecisionType = "DUPLICATED_BY_NOMUS_COMPONENT";
-
-export const REVIEW_DECISION_LABELS: Record<NomusBomReviewDecisionType, string> = {
-  PENDING: "Pendente",
-  INCLUDE_AS_LOCAL_EXCEPTION: "Incluir como exceção local na precificação",
-  EXCLUDE_FROM_PRICING: "Não considerar na precificação",
-  DUPLICATED_BY_NOMUS_COMPONENT: "Duplicado/absorvido por componente Nomus",
-  OPERATIONAL_ROUTING_COST: "Tratar como custo de roteiro/processo",
-  NEEDS_ENGINEERING_REVIEW: "Precisa revisão de engenharia",
-};
-
-export const REVIEW_DECISION_BADGE: Record<NomusBomReviewDecisionType, string> = {
-  PENDING: "Pendente",
-  INCLUDE_AS_LOCAL_EXCEPTION: "Incluído localmente",
-  EXCLUDE_FROM_PRICING: "Excluído",
-  DUPLICATED_BY_NOMUS_COMPONENT: "Resolvido",
-  OPERATIONAL_ROUTING_COST: "Processo/roteiro",
-  NEEDS_ENGINEERING_REVIEW: "Engenharia",
-};
 
 function rowToView(row: {
   id: string;
@@ -213,7 +181,7 @@ export async function saveReviewDecision(
     componentCode,
     componentDescription: input.componentDescription?.trim() || null,
     quantitySnapshot: input.quantitySnapshot ?? null,
-    decision: input.decision,
+    decision: input.decision as PrismaReviewDecisionType,
     includeForPricing,
     relatedNomusComponentCode: input.relatedNomusComponentCode?.trim() || null,
     reason: input.reason?.trim() || null,
