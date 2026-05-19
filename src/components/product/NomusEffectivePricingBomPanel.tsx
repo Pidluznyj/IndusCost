@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Layers, Loader2, RefreshCw, ChevronRight, ArrowRight } from "lucide-react";
 import { NomusLocalReviewSection } from "@/src/components/product/NomusLocalReviewSection";
+import { NomusMaintenanceErrorCard } from "@/src/components/product/NomusMaintenanceErrorCard";
 import { cn } from "@/src/lib/utils";
+import {
+  EFFECTIVE_BOM_STATUS_LABEL,
+  OPTIONAL_PRICING_STATUS_LABEL,
+  formatNomusStatusLabel,
+  nomusStatusBadgeClass,
+} from "@/src/lib/nomusMaintenanceStatusLabels";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
@@ -9,37 +16,8 @@ import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceW
 import type {
   EffectivePricingBomLine,
   EffectivePricingBomResult,
-  EffectivePricingBomStatus,
   EffectivePricingBomTreeNode,
-  PricingOptionalStatus,
 } from "@/src/lib/nomusEffectivePricingBomTypes";
-
-const STATUS_LABEL: Record<EffectivePricingBomStatus, string> = {
-  READY_FOR_PRICING_PREVIEW: "Pronta para preview",
-  READY_WITH_LOCAL_REVIEW: "Pronta com revisão local",
-  PENDING_LOCAL_REVIEW: "Revisão local pendente",
-  PENDING_OPTIONAL_SELECTION: "Opcionais pendentes",
-  STALE_OPTIONAL_SELECTION: "Seleção desatualizada",
-  BLOCKED_UNRESOLVED_COMPONENTS: "Componentes não resolvidos",
-  NO_NOMUS_BOM: "Sem BOM Nomus",
-};
-
-const STATUS_CLASS: Record<EffectivePricingBomStatus, string> = {
-  READY_FOR_PRICING_PREVIEW: "bg-green-100 text-green-800",
-  READY_WITH_LOCAL_REVIEW: "bg-teal-100 text-teal-900",
-  PENDING_LOCAL_REVIEW: "bg-violet-100 text-violet-900",
-  PENDING_OPTIONAL_SELECTION: "bg-amber-100 text-amber-900",
-  STALE_OPTIONAL_SELECTION: "bg-orange-100 text-orange-900",
-  BLOCKED_UNRESOLVED_COMPONENTS: "bg-red-100 text-red-900",
-  NO_NOMUS_BOM: "bg-muted text-muted-foreground",
-};
-
-const OPTIONAL_STATUS_LABEL: Record<PricingOptionalStatus, string> = {
-  PENDING: "Pendente",
-  RESOLVED: "Resolvido",
-  NO_OPTIONALS: "Sem opcionais",
-  STALE: "Desatualizado",
-};
 
 const SOURCE_LABEL: Record<string, string> = {
   NOMUS_REQUIRED: "Obrigatório Nomus",
@@ -173,6 +151,7 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
   const [recursive, setRecursive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoLoadFailed, setAutoLoadFailed] = useState(false);
   const [result, setResult] = useState<EffectivePricingBomResult | null>(null);
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
   const { reportWorkspaceSelection } = useNomusMaintenanceWorkspaceSync({
@@ -230,10 +209,16 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
     const code = selectedParentCode?.trim();
     if (!code) return;
     setError(null);
+    setAutoLoadFailed(false);
     setLoading(true);
     void fetchEffectiveBom(code)
+      .then((data) => {
+        setResult(data);
+        setAutoLoadFailed(false);
+      })
       .catch((e) => {
         setResult(null);
+        setAutoLoadFailed(true);
         setError(e instanceof Error ? e.message : "Erro ao gerar BOM efetiva.");
       })
       .finally(() => setLoading(false));
@@ -295,19 +280,34 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       ) : null}
 
+      {autoLoadFailed && !loading && !result ? (
+        <NomusMaintenanceErrorCard onRetry={() => void load()} />
+      ) : null}
+
+      {loading && !result ? (
+        <p className="text-xs text-muted-foreground flex items-center gap-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Carregando BOM efetiva…
+        </p>
+      ) : null}
+
       {result ? (
         <>
           <div className="flex flex-wrap gap-2 items-center">
             <span
               className={cn(
                 "inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold",
-                STATUS_CLASS[result.status]
+                nomusStatusBadgeClass(result.status)
               )}
             >
-              {STATUS_LABEL[result.status]}
+              {formatNomusStatusLabel(result.status, EFFECTIVE_BOM_STATUS_LABEL)}
             </span>
             <span className="text-[10px] text-muted-foreground">
-              Opcionais: {OPTIONAL_STATUS_LABEL[result.optionalPricingStatus]}
+              Opcionais:{" "}
+              {formatNomusStatusLabel(
+                result.optionalPricingStatus,
+                OPTIONAL_PRICING_STATUS_LABEL
+              )}
             </span>
             {result.selectedList?.listaMateriaisNome ? (
               <span className="text-[10px] text-muted-foreground">
@@ -325,9 +325,9 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
             ) : null}
           </div>
 
-          {result.warnings.length > 0 ? (
+          {(result.warnings ?? []).length > 0 ? (
             <ul className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 list-disc list-inside">
-              {result.warnings.map((w, i) => (
+              {(result.warnings ?? []).map((w, i) => (
                 <li key={i}>{w}</li>
               ))}
             </ul>
@@ -399,7 +399,7 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
             emptyMessage="Nenhum outro item pendente de revisão."
           />
 
-          {result.recursiveTree && result.recursiveTree.length > 0 ? (
+          {(result.recursiveTree ?? []).length > 0 ? (
             <div className="space-y-2 rounded-lg border border-border p-3">
               <p className="text-xs font-bold">Árvore recursiva</p>
               <p className="text-[10px] text-muted-foreground">
@@ -408,7 +408,7 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
               </p>
               <div className="max-h-64 overflow-y-auto border border-border/60 rounded p-2 bg-muted/20">
                 <p className="text-xs font-bold mb-1">{result.parentCode}</p>
-                {result.recursiveTree.map((node) => (
+                {(result.recursiveTree ?? []).map((node) => (
                   <div key={`${node.componentCode}-${node.level}`}>
                     <TreeBranch node={node} depth={1} />
                   </div>

@@ -130,7 +130,8 @@ export const NomusLocalReviewSection: React.FC<NomusLocalReviewSectionProps> = (
     }
   };
 
-  if (catalog.length === 0) {
+  const items = catalog ?? [];
+  if (items.length === 0) {
     return (
       <p className="text-[11px] text-muted-foreground">
         Nenhum item exclusivo do IndusCost (ProductBOM) para revisar neste produto.
@@ -157,7 +158,7 @@ export const NomusLocalReviewSection: React.FC<NomusLocalReviewSectionProps> = (
       ) : null}
 
       <div className="space-y-3">
-        {catalog.map((item) => {
+        {items.map((item) => {
           const draft = getDraft(item);
           const savedType = item.savedDecision?.decision ?? "PENDING";
           const badgeLabel =

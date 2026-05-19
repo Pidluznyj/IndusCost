@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { FileSearch, ExternalLink, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
 import { NomusBomDiffModal } from "@/src/components/product/NomusBomDiffModal";
+import { NomusMaintenanceErrorCard } from "@/src/components/product/NomusMaintenanceErrorCard";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
@@ -23,6 +24,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoLoadFailed, setAutoLoadFailed] = useState(false);
   const [report, setReport] = useState<NomusBomApplyPlansReport | null>(null);
   const [search, setSearch] = useState("");
   const [onlyCandidates, setOnlyCandidates] = useState(false);
@@ -62,7 +64,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
         `/api/nomus/bom-comparison/apply-plan?${params.toString()}`
       );
 
-      if (result.plans.length === 0) {
+      if ((result.plans ?? []).length === 0) {
         setReport(null);
         throw new Error(notFoundMessage);
       }
@@ -118,15 +120,22 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
     const code = selectedParentCode?.trim();
     if (!code) return;
     setError(null);
+    setAutoLoadFailed(false);
     setLoading(true);
     void fetchPlan(code)
+      .then((data) => {
+        setReport(data);
+        setAutoLoadFailed(false);
+      })
       .catch((e) => {
         setReport(null);
+        setAutoLoadFailed(true);
         setError(e instanceof Error ? e.message : "Não foi possível gerar o plano.");
       })
       .finally(() => setLoading(false));
   }, [fetchPlan, selectedParentCode]);
 
+  const plans = report?.plans ?? [];
   const summary = report?.summary;
 
   return (
@@ -206,6 +215,17 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       ) : null}
 
+      {autoLoadFailed && !loading && !report ? (
+        <NomusMaintenanceErrorCard onRetry={() => void loadPlan(selectedParentCode ?? search)} />
+      ) : null}
+
+      {loading && !report ? (
+        <p className="text-xs text-muted-foreground flex items-center gap-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Gerando plano de aplicação (simulação)…
+        </p>
+      ) : null}
+
       {report && summary ? (
         <div className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 text-xs">
@@ -231,12 +251,12 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
             ))}
           </div>
 
-          {report.plans.some((p) => p.optionalPricingStatus === "RESOLVED") ? (
+          {plans.some((p) => p.optionalPricingStatus === "RESOLVED") ? (
             <p className="text-[11px] text-green-900 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
               Há produtos com seleção de opcionais resolvida. Consulte a aba BOM efetiva para ver o que
               entrará na precificação.
             </p>
-          ) : report.plans.some(
+          ) : plans.some(
               (p) => p.optionalPricingStatus === "PENDING" || p.optionalPricingStatus === "STALE"
             ) ? (
             <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -259,23 +279,23 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {report.plans.length === 0 ? (
+                {plans.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
                       Nenhum plano com os filtros atuais.
                     </td>
                   </tr>
                 ) : (
-                  report.plans.map((plan) => {
-                    const actionCount = plan.actions.length;
+                  plans.map((plan) => {
+                    const actionCount = (plan.actions ?? []).length;
                     const cls = plan.classification;
                     return (
                       <tr key={plan.parentCode} className="border-t border-border/60">
                         <td className="px-3 py-2 font-medium">{plan.parentCode}</td>
                         <td className="px-3 py-2 text-muted-foreground max-w-[120px] truncate">
-                          {cls.actionClass.replace(/_/g, " ")}
+                          {cls?.actionClass?.replace(/_/g, " ") ?? "—"}
                         </td>
-                        <td className="px-3 py-2">{cls.riskLevel}</td>
+                        <td className="px-3 py-2">{cls?.riskLevel ?? "—"}</td>
                         <td className="px-3 py-2 text-center">
                           {plan.canApplyWithApproval ? "Sim" : "Não"}
                         </td>

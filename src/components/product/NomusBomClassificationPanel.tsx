@@ -220,14 +220,14 @@ export const NomusBomClassificationPanel: React.FC<NomusBomClassificationPanelPr
                 </tr>
               </thead>
               <tbody>
-                {report.rows.length === 0 ? (
+                {(report?.rows ?? []).length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
                       Nenhum produto com os filtros atuais.
                     </td>
                   </tr>
                 ) : (
-                  report.rows.map((row) => {
+                  (report?.rows ?? []).map((row) => {
                     const cls = row.classification;
                     return (
                       <tr key={row.parentCode} className="border-t border-border/60">

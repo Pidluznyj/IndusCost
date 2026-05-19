@@ -4,6 +4,11 @@ import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { NomusOptionalPricingSelectionPanel } from "@/src/components/product/NomusOptionalPricingSelectionPanel";
 import { NomusLocalReviewSection } from "@/src/components/product/NomusLocalReviewSection";
+import { NomusMaintenanceErrorCard } from "@/src/components/product/NomusMaintenanceErrorCard";
+import {
+  OPTIONAL_PRICING_STATUS_LABEL,
+  formatNomusStatusLabel,
+} from "@/src/lib/nomusMaintenanceStatusLabels";
 import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingBomTypes";
 
@@ -19,17 +24,20 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
   disabled = false,
 }) => {
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [bom, setBom] = useState<EffectivePricingBomResult | null>(null);
 
   const loadBom = useCallback(async (code: string) => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await fetchJsonOk<EffectivePricingBomResult>(
         `/api/nomus/effective-pricing-bom?${new URLSearchParams({ parentCode: code }).toString()}`
       );
       setBom(data);
-    } catch {
+    } catch (e) {
       setBom(null);
+      setLoadError(e instanceof Error ? e.message : null);
     } finally {
       setLoading(false);
     }
@@ -56,11 +64,14 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
   const optionalStatus = bom?.optionalPricingStatus;
   const optionalResolved =
     optionalStatus === "RESOLVED" || optionalStatus === "NO_OPTIONALS";
-  const localPending = bom?.summary.localReviewPendingCount ?? 0;
+  const localPending = bom?.summary?.localReviewPendingCount ?? 0;
   const catalog = bom?.localReviewCatalog ?? [];
 
   return (
     <div className="space-y-4">
+      {loadError && !loading ? (
+        <NomusMaintenanceErrorCard onRetry={() => void loadBom(selectedParentCode)} />
+      ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h4 className="text-sm font-bold">Pendências do produto</h4>
@@ -103,7 +114,7 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
                   : "bg-amber-100 text-amber-900"
               )}
             >
-              {optionalStatus ?? "Pendente"}
+              {formatNomusStatusLabel(optionalStatus, OPTIONAL_PRICING_STATUS_LABEL)}
             </span>
           )}
         </div>
@@ -140,10 +151,10 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
           ) : null}
         </div>
 
-        {bom ? (
+        {bom || catalog.length > 0 ? (
           <NomusLocalReviewSection
-            parentCode={bom.parentCode}
-            parentProductId={bom.indusProductId}
+            parentCode={bom?.parentCode ?? selectedParentCode}
+            parentProductId={bom?.indusProductId}
             catalog={catalog}
             disabled={disabled || loading}
             compactHeader

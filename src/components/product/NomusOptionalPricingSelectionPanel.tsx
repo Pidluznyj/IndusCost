@@ -386,13 +386,14 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
     }
   };
 
+  const listRows = list?.rows ?? [];
   const summary = list
     ? {
         products: list.total,
-        pending: list.rows.filter((r) => r.pricingOptionalStatus === "PENDING").length,
-        resolved: list.rows.filter((r) => r.pricingOptionalStatus === "RESOLVED").length,
-        unassigned: list.rows.reduce((s, r) => s + r.unassignedOptionalItemsCount, 0),
-        stale: list.rows.filter((r) => r.pricingOptionalStatus === "STALE").length,
+        pending: listRows.filter((r) => r.pricingOptionalStatus === "PENDING").length,
+        resolved: listRows.filter((r) => r.pricingOptionalStatus === "RESOLVED").length,
+        unassigned: listRows.reduce((s, r) => s + r.unassignedOptionalItemsCount, 0),
+        stale: listRows.filter((r) => r.pricingOptionalStatus === "STALE").length,
       }
     : null;
 
@@ -499,14 +500,14 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
               </tr>
             </thead>
             <tbody>
-              {list.rows.length === 0 ? (
+              {listRows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
                     Nenhum produto encontrado para a busca informada. Tente o SKU completo.
                   </td>
                 </tr>
               ) : (
-                list.rows.map((row) => (
+                listRows.map((row) => (
                   <tr key={row.parentCode} className="border-t border-border/60">
                     <td className="px-3 py-2 font-medium">{row.parentCode}</td>
                     <td className="px-3 py-2 text-muted-foreground max-w-[200px] truncate">
@@ -576,9 +577,9 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
             </div>
           ) : (
             <>
-              {filterDetailWarnings(detail.warnings).length > 0 ? (
+              {filterDetailWarnings(detail.warnings ?? []).length > 0 ? (
                 <ul className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 list-disc list-inside">
-                  {filterDetailWarnings(detail.warnings).map((w, i) => (
+                  {filterDetailWarnings(detail.warnings ?? []).map((w, i) => (
                     <li key={i}>{w}</li>
                   ))}
                 </ul>
@@ -693,13 +694,13 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
                 </div>
               ) : null}
 
-              {detail.groups.length > 0 ? (
+              {(detail.groups ?? []).length > 0 ? (
                 <p className="text-xs font-bold text-foreground pt-1 border-t border-border/60">
                   Grupos criados — Passo 2: seleção para precificação
                 </p>
               ) : null}
 
-              {detail.groups.map((group) => {
+              {(detail.groups ?? []).map((group) => {
                 const draft = groupSelectionDraft[group.id] ?? {
                   choiceIds: new Set<string>(),
                   selectedNone: false,

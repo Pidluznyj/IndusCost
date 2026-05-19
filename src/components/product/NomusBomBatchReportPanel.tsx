@@ -209,14 +209,14 @@ export const NomusBomBatchReportPanel: React.FC<NomusBomBatchReportPanelProps> =
                 </tr>
               </thead>
               <tbody>
-                {report.rows.length === 0 ? (
+                {(report?.rows ?? []).length === 0 ? (
                   <tr>
                     <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
                       Nenhum produto encontrado com os filtros atuais.
                     </td>
                   </tr>
                 ) : (
-                  report.rows.map((row) => (
+                  (report?.rows ?? []).map((row) => (
                     <tr key={row.parentCode} className="border-t border-border/60">
                       <td className="px-3 py-2">
                         <div className="font-medium">{row.parentCode}</div>

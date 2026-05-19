@@ -4,27 +4,18 @@ import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
+import { NomusMaintenanceErrorCard } from "@/src/components/product/NomusMaintenanceErrorCard";
+import {
+  COST_IMPACT_STATUS_LABEL,
+  formatNomusStatusLabel,
+  nomusStatusBadgeClass,
+} from "@/src/lib/nomusMaintenanceStatusLabels";
 import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type {
   CostImpactComparisonLine,
   CostImpactLine,
-  CostImpactStatus,
   NomusEffectiveBomCostImpactResult,
 } from "@/src/lib/nomusEffectiveBomCostImpactTypes";
-
-const STATUS_LABEL: Record<CostImpactStatus, string> = {
-  READY: "Pronto",
-  BLOCKED_EFFECTIVE_BOM_NOT_READY: "BOM efetiva não pronta",
-  NO_INDUS_PRODUCT: "Sem produto IndusCost",
-  CURRENT_COST_UNAVAILABLE: "Custo atual indisponível",
-};
-
-const STATUS_CLASS: Record<CostImpactStatus, string> = {
-  READY: "bg-green-100 text-green-800",
-  BLOCKED_EFFECTIVE_BOM_NOT_READY: "bg-amber-100 text-amber-900",
-  NO_INDUS_PRODUCT: "bg-muted text-muted-foreground",
-  CURRENT_COST_UNAVAILABLE: "bg-orange-100 text-orange-900",
-};
 
 const COMPARISON_STATUS_LABEL: Record<string, string> = {
   SAME_COMPONENT_SAME_QTY: "Igual",
@@ -187,6 +178,7 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
   const [lotSize, setLotSize] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoLoadFailed, setAutoLoadFailed] = useState(false);
   const [result, setResult] = useState<NomusEffectiveBomCostImpactResult | null>(null);
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
@@ -247,10 +239,16 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
     const code = selectedParentCode?.trim();
     if (!code) return;
     setError(null);
+    setAutoLoadFailed(false);
     setLoading(true);
     void fetchCostImpact(code)
+      .then((data) => {
+        setResult(data);
+        setAutoLoadFailed(false);
+      })
       .catch((e) => {
         setResult(null);
+        setAutoLoadFailed(true);
         setError(e instanceof Error ? e.message : "Erro ao calcular impacto de custo.");
       })
       .finally(() => setLoading(false));
@@ -333,18 +331,31 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       ) : null}
 
+      {autoLoadFailed && !loading && !result ? (
+        <NomusMaintenanceErrorCard onRetry={() => void load()} />
+      ) : null}
+
+      {loading && !result ? (
+        <p className="text-xs text-muted-foreground flex items-center gap-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Calculando impacto de custo…
+        </p>
+      ) : null}
+
       {result ? (
         <>
           <div className="flex flex-wrap gap-2 items-center">
             <span
               className={cn(
                 "inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold",
-                STATUS_CLASS[result.status]
+                nomusStatusBadgeClass(result.status)
               )}
             >
-              {STATUS_LABEL[result.status]}
+              {formatNomusStatusLabel(result.status, COST_IMPACT_STATUS_LABEL)}
             </span>
-            <span className="text-[10px] text-muted-foreground">BOM: {result.effectiveBomStatus}</span>
+            <span className="text-[10px] text-muted-foreground">
+              BOM: {formatNomusStatusLabel(result.effectiveBomStatus)}
+            </span>
           </div>
 
           {hasPendingImpact ? (
@@ -366,9 +377,9 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
             </div>
           ) : null}
 
-          {result.warnings.length > 0 ? (
+          {(result.warnings ?? []).length > 0 ? (
             <ul className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 list-disc list-inside">
-              {result.warnings.map((w, i) => (
+              {(result.warnings ?? []).map((w, i) => (
                 <li key={i}>{w}</li>
               ))}
             </ul>
