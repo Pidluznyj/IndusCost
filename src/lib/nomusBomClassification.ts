@@ -14,6 +14,8 @@ export type NomusBomActionClass =
   | "REVIEW_INDUS_OPERATIONAL_ITEM"
   | "REVIEW_PREPARED_COMPONENT"
   | "REVIEW_KIT_OR_PACK"
+  | "REVIEW_OPTIONAL_PRICING_SELECTION"
+  | "BLOCKED_OPTIONAL_SELECTION_REQUIRED"
   | "BLOCKED_MISSING_PARENT_PRODUCT"
   | "BLOCKED_MISSING_NOMUS_COMPONENT"
   | "BLOCKED_AMBIGUOUS_NOMUS_LIST"
@@ -36,6 +38,8 @@ export type NomusBomRecommendedAction =
   | "MOVE_OPERATIONAL_ITEM_TO_ROUTING_OR_IGNORE"
   | "REVIEW_PREPARED_COMPONENT_POLICY"
   | "REVIEW_KIT_OR_PACK_POLICY"
+  | "SELECT_OPTIONAL_COMPONENT_FOR_PRICING"
+  | "REVIEW_OPTIONAL_COMPONENT_POLICY"
   | "MANUAL_ENGINEERING_REVIEW_REQUIRED"
   | "BLOCKED_DO_NOT_APPLY";
 
@@ -85,6 +89,8 @@ export type NomusBomClassification = {
     operationalIndusItemsCount: number;
     preparedComponentsCount: number;
     kitOrPackIndicatorsCount: number;
+    optionalNomusComponentsCount: number;
+    alternativeNomusComponentsCount: number;
   };
 
   suggestedNextStepText: string;
@@ -101,6 +107,8 @@ const REVIEW_ACTION_CLASSES: NomusBomActionClass[] = [
   "REVIEW_INDUS_OPERATIONAL_ITEM",
   "REVIEW_PREPARED_COMPONENT",
   "REVIEW_KIT_OR_PACK",
+  "REVIEW_OPTIONAL_PRICING_SELECTION",
+  "BLOCKED_OPTIONAL_SELECTION_REQUIRED",
 ];
 
 const CANDIDATE_ACTION_CLASSES: NomusBomActionClass[] = [
@@ -191,6 +199,28 @@ function collectClassificationIssues(
   }
 
   for (const line of result.lines) {
+    if (line.nomusLineCount > 0 && line.hasOptionalNomusLines) {
+      metrics.optionalNomusComponentsCount += 1;
+      issues.push({
+        code: "NOMUS_OPTIONAL_COMPONENT",
+        message:
+          "Produto possui item opcional no Nomus; a precificação exige seleção explícita.",
+        severity: "HIGH",
+        componentCode: line.componentCode,
+        evidence: { nomusQuantity: line.nomusQuantity, status: line.status },
+      });
+    }
+    if (line.nomusLineCount > 0 && line.hasAlternativeNomusLines) {
+      metrics.alternativeNomusComponentsCount += 1;
+      issues.push({
+        code: "NOMUS_ALTERNATIVE_COMPONENT",
+        message: "Item alternativo no Nomus — requer política/seleção antes de precificação.",
+        severity: "MEDIUM",
+        componentCode: line.componentCode,
+        evidence: { nomusQuantity: line.nomusQuantity, status: line.status },
+      });
+    }
+
     if (detectPreparedComponent(line.componentCode, line.componentDescription)) {
       metrics.preparedComponentsCount += 1;
       issues.push({
@@ -260,6 +290,25 @@ function hasKitOrPackPolicyPending(result: BomComparisonResult, metrics: NomusBo
   return metrics.kitOrPackIndicatorsCount > 0 || detectKitOrPack(result.parentCode, result.parentDescription);
 }
 
+function hasMandatoryNomusLines(result: BomComparisonResult): boolean {
+  return result.lines.some(
+    (line) =>
+      line.nomusLineCount > 0 && !line.hasOptionalNomusLines && !line.hasAlternativeNomusLines
+  );
+}
+
+function onlyOptionalOrAlternativeOnlyInNomus(result: BomComparisonResult): boolean {
+  const onlyNomus = result.lines.filter((line) => line.status === "ONLY_IN_NOMUS");
+  if (onlyNomus.length === 0) return false;
+  return onlyNomus.every(
+    (line) => line.hasOptionalNomusLines || line.hasAlternativeNomusLines
+  );
+}
+
+function productHasOptionalNomusLines(result: BomComparisonResult): boolean {
+  return result.lines.some((line) => line.nomusLineCount > 0 && line.hasOptionalNomusLines);
+}
+
 function isCreateBomCandidate(
   result: BomComparisonResult,
   resolved: ResolvedNomusComponent[],
@@ -272,6 +321,7 @@ function isCreateBomCandidate(
   if (!allNomusComponentsResolved(nomusComponentCodesFromComparison(result), resolved)) return false;
   if (hasKitOrPackPolicyPending(result, metrics)) return false;
   if (hasPreparedPolicyPending(result, metrics)) return false;
+  if (!hasMandatoryNomusLines(result)) return false;
   return true;
 }
 
@@ -314,6 +364,10 @@ export function buildSuggestedNextStepText(classification: NomusBomClassificatio
       return "Defina política para preparados 150.xx antes de qualquer aplicação automática.";
     case "REVIEW_KIT_OR_PACK_POLICY":
       return "Defina política para kits/pacotes/EAN antes de aplicar BOM de engenharia.";
+    case "SELECT_OPTIONAL_COMPONENT_FOR_PRICING":
+      return "Escolha explicitamente qual componente opcional/alternativo do Nomus entra na precificação.";
+    case "REVIEW_OPTIONAL_COMPONENT_POLICY":
+      return "Revise a política de componentes opcionais/alternativos do Nomus antes de aplicar ou precificar.";
     case "MANUAL_ENGINEERING_REVIEW_REQUIRED":
       return "Revisão manual de engenharia necessária antes de qualquer alteração.";
     case "BLOCKED_DO_NOT_APPLY":
@@ -343,6 +397,8 @@ export function classifyBomComparison(
     operationalIndusItemsCount: 0,
     preparedComponentsCount: 0,
     kitOrPackIndicatorsCount: 0,
+    optionalNomusComponentsCount: 0,
+    alternativeNomusComponentsCount: 0,
   };
 
   const issues = collectClassificationIssues(result, resolved, metrics);
@@ -463,6 +519,17 @@ export function classifyBomComparison(
     recommendedAction = "MOVE_OPERATIONAL_ITEM_TO_ROUTING_OR_IGNORE";
     riskLevel = "HIGH";
     reasons.push("Itens operacionais/montagem só no IndusCost — não remover automaticamente.");
+  } else if (
+    onlyOptionalOrAlternativeOnlyInNomus(result) &&
+    summary.onlyInIndusCost === 0 &&
+    summary.quantityDiffs === 0
+  ) {
+    actionClass = "REVIEW_OPTIONAL_PRICING_SELECTION";
+    recommendedAction = "SELECT_OPTIONAL_COMPONENT_FOR_PRICING";
+    riskLevel = "HIGH";
+    reasons.push(
+      "Divergência restrita a itens opcionais/alternativos só no Nomus — seleção explícita para precificação."
+    );
   } else if (summary.onlyInNomus > 0 || summary.onlyInIndusCost > 0) {
     actionClass = "REVIEW_STRUCTURE_DIFF";
     recommendedAction =
@@ -500,6 +567,26 @@ export function classifyBomComparison(
     recommendedAction = "MOVE_OPERATIONAL_ITEM_TO_ROUTING_OR_IGNORE";
   }
 
+  if (productHasOptionalNomusLines(result)) {
+    if (!reasons.some((r) => r.includes("opcional"))) {
+      reasons.push("Itens opcionais no Nomus exigem seleção explícita para precificação.");
+    }
+    if (
+      actionClass === "REVIEW_STRUCTURE_DIFF" &&
+      onlyOptionalOrAlternativeOnlyInNomus(result) &&
+      summary.quantityDiffs === 0
+    ) {
+      actionClass = "REVIEW_OPTIONAL_PRICING_SELECTION";
+      recommendedAction = "SELECT_OPTIONAL_COMPONENT_FOR_PRICING";
+    }
+    if (actionClass === "NO_ACTION_OK") {
+      actionClass = "REVIEW_OPTIONAL_PRICING_SELECTION";
+      recommendedAction = "REVIEW_OPTIONAL_COMPONENT_POLICY";
+      riskLevel = "MEDIUM";
+      reasons.push("BOM alinhada, porém há opcionais Nomus que não entram automaticamente na precificação.");
+    }
+  }
+
   const classification: NomusBomClassification = {
     parentCode: result.parentCode,
     parentDescription: result.parentDescription,
@@ -530,6 +617,8 @@ export function classificationSeverityBonus(classification: NomusBomClassificati
   if (classification.metrics.preparedComponentsCount > 0) bonus += 15;
   if (classification.metrics.kitOrPackIndicatorsCount > 0) bonus += 15;
   if (classification.metrics.operationalIndusItemsCount > 0) bonus += 10;
+  if (classification.metrics.optionalNomusComponentsCount > 0) bonus += 12;
+  if (classification.metrics.alternativeNomusComponentsCount > 0) bonus += 8;
   return bonus;
 }
 

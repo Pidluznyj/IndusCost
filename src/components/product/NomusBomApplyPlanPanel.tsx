@@ -135,7 +135,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
 
       {report && summary ? (
         <div className="space-y-4">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 text-xs">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 text-xs">
             {[
               { label: "Importar produto", value: summary.importProductActions },
               { label: "Criar BOM", value: summary.createBomActions },
@@ -144,6 +144,12 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
               { label: "Manter Indus", value: summary.keepIndusLineActions },
               { label: "Operacional ign.", value: summary.ignoreOperationalItemActions },
               { label: "Bloqueadas", value: summary.blockedActions },
+              {
+                label: "Opcionais pendentes",
+                value:
+                  (summary.optionalSelectionRequiredActions ?? 0) +
+                  (summary.optionalItemNotAutoAppliedActions ?? 0),
+              },
             ].map((card) => (
               <div key={card.label} className="rounded-lg border border-border bg-background px-3 py-2">
                 <p className="text-[10px] uppercase text-muted-foreground font-semibold">{card.label}</p>
@@ -187,8 +193,15 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
                           {plan.canApplyWithApproval ? "Sim" : "Não"}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{actionCount}</td>
-                        <td className="px-3 py-2 text-muted-foreground max-w-[180px] line-clamp-2">
-                          {plan.warnings[0] ?? "—"}
+                        <td className="px-3 py-2 text-muted-foreground max-w-[180px]">
+                          <div className="flex flex-col gap-1">
+                            {plan.summary.optionalSelectionRequiredActions > 0 ? (
+                              <span className="inline-flex w-fit rounded-full bg-fuchsia-100 px-2 py-0.5 text-[10px] font-bold text-fuchsia-950">
+                                {plan.summary.optionalSelectionRequiredActions} opcional(is) pendente(s)
+                              </span>
+                            ) : null}
+                            <span className="line-clamp-2">{plan.warnings[0] ?? "—"}</span>
+                          </div>
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex flex-col gap-1 items-start">

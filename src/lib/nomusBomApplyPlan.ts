@@ -1,5 +1,5 @@
-import type { BomComparisonResult } from "@/src/lib/nomusBomComparison";
-import { normalizeComponentCode } from "@/src/lib/nomusBomComparison";
+import type { BomComparisonResult, NomusAggregatedLineFlags } from "@/src/lib/nomusBomComparison";
+import { normalizeComponentCode, requiresExplicitPricingSelection } from "@/src/lib/nomusBomComparison";
 import type { NomusBomClassification, NomusBomRiskLevel, ResolvedNomusComponent } from "@/src/lib/nomusBomClassification";
 import {
   detectOperationalItem,
@@ -18,7 +18,9 @@ export type NomusBomPlanActionType =
   | "IGNORE_OPERATIONAL_ITEM"
   | "KEEP_LOCAL_PRODUCT"
   | "BLOCKED"
-  | "NO_ACTION";
+  | "NO_ACTION"
+  | "OPTIONAL_SELECTION_REQUIRED"
+  | "OPTIONAL_ITEM_NOT_AUTO_APPLIED";
 
 export type NomusBomPlanAction = {
   type: NomusBomPlanActionType;
@@ -68,6 +70,9 @@ export type NomusBomApplyPlan = {
     ignoreOperationalItemActions: number;
     blockedActions: number;
     noActionCount: number;
+    optionalSelectionRequiredActions: number;
+    optionalItemNotAutoAppliedActions: number;
+    optionalNomusItemsCount: number;
   };
 
   warnings: string[];
@@ -86,7 +91,62 @@ function isComponentResolved(map: Map<string, ResolvedNomusComponent>, component
   return item != null && item.resolvedKind !== "NONE";
 }
 
-function summarizeActions(actions: NomusBomPlanAction[]): NomusBomApplyPlan["summary"] {
+const OPTIONAL_PRICING_REASON =
+  "Item opcional no Nomus. Não será considerado automaticamente na precificação. É necessário escolher explicitamente se este item entra no custo/preço.";
+const ALTERNATIVE_PRICING_REASON =
+  "Item alternativo no Nomus. Requer política/seleção antes de precificação.";
+
+function lineNomusFlags(line: BomComparisonResult["lines"][number]): NomusAggregatedLineFlags {
+  return {
+    hasOptionalNomusLines: line.hasOptionalNomusLines,
+    hasAlternativeNomusLines: line.hasAlternativeNomusLines,
+    hasPreferredNomusLines: line.hasPreferredNomusLines,
+    hasShipmentItemNomusLines: line.hasShipmentItemNomusLines,
+  };
+}
+
+function lineRequiresPricingSelection(line: BomComparisonResult["lines"][number]): boolean {
+  return line.nomusLineCount > 0 && requiresExplicitPricingSelection(lineNomusFlags(line));
+}
+
+function pushPricingSelectionAction(
+  actions: NomusBomPlanAction[],
+  line: BomComparisonResult["lines"][number],
+  parentCode: string,
+  parentDescription?: string | null,
+  mode: "SELECTION_REQUIRED" | "NOT_AUTO_APPLIED" = "SELECTION_REQUIRED"
+): void {
+  const flags = lineNomusFlags(line);
+  const isOptional = flags.hasOptionalNomusLines;
+  const type =
+    mode === "NOT_AUTO_APPLIED" ? "OPTIONAL_ITEM_NOT_AUTO_APPLIED" : "OPTIONAL_SELECTION_REQUIRED";
+
+  let reason = isOptional ? OPTIONAL_PRICING_REASON : ALTERNATIVE_PRICING_REASON;
+  if (flags.hasPreferredNomusLines && (isOptional || flags.hasAlternativeNomusLines)) {
+    reason +=
+      " Marcado como preferencial no Nomus, mas não autoriza aplicação automática enquanto for opcional/alternativo.";
+  }
+
+  actions.push({
+    type,
+    parentCode,
+    parentDescription,
+    componentCode: line.componentCode,
+    componentDescription: line.componentDescription,
+    currentQuantity: line.indusQuantity,
+    plannedQuantity: line.nomusQuantity,
+    diff: line.quantityDiff ?? line.nomusQuantity,
+    reason,
+    riskLevel: isOptional ? "HIGH" : "MEDIUM",
+    requiresApproval: true,
+    blockedReason: "OPTIONAL_SELECTION_REQUIRED",
+  });
+}
+
+function summarizeActions(
+  actions: NomusBomPlanAction[],
+  comparison?: BomComparisonResult
+): NomusBomApplyPlan["summary"] {
   const summary = {
     importProductActions: 0,
     createBomActions: 0,
@@ -97,6 +157,9 @@ function summarizeActions(actions: NomusBomPlanAction[]): NomusBomApplyPlan["sum
     ignoreOperationalItemActions: 0,
     blockedActions: 0,
     noActionCount: 0,
+    optionalSelectionRequiredActions: 0,
+    optionalItemNotAutoAppliedActions: 0,
+    optionalNomusItemsCount: 0,
   };
 
   for (const action of actions) {
@@ -128,9 +191,21 @@ function summarizeActions(actions: NomusBomPlanAction[]): NomusBomApplyPlan["sum
       case "NO_ACTION":
         summary.noActionCount += 1;
         break;
+      case "OPTIONAL_SELECTION_REQUIRED":
+        summary.optionalSelectionRequiredActions += 1;
+        break;
+      case "OPTIONAL_ITEM_NOT_AUTO_APPLIED":
+        summary.optionalItemNotAutoAppliedActions += 1;
+        break;
       default:
         break;
     }
+  }
+
+  if (comparison) {
+    summary.optionalNomusItemsCount = comparison.lines.filter(
+      (l) => l.nomusLineCount > 0 && l.hasOptionalNomusLines
+    ).length;
   }
 
   return summary;
@@ -220,10 +295,14 @@ export function buildNomusBomApplyPlanForComparison(
     if (classification.actionClass === "BLOCKED_MISSING_NOMUS_COMPONENT") {
       for (const line of result.lines) {
         if (line.status === "ONLY_IN_NOMUS" && !isComponentResolved(resolvedByCode, line.componentCode)) {
-          pushBlockedBom(
-            `Componente ${line.componentCode} não resolve para Product/Material no IndusCost.`,
-            line.componentCode
-          );
+          if (lineRequiresPricingSelection(line)) {
+            pushPricingSelectionAction(actions, line, parentCode, parentDescription);
+          } else {
+            pushBlockedBom(
+              `Componente ${line.componentCode} não resolve para Product/Material no IndusCost.`,
+              line.componentCode
+            );
+          }
         }
       }
     } else {
@@ -248,6 +327,10 @@ export function buildNomusBomApplyPlanForComparison(
     });
     for (const line of result.lines) {
       if (line.nomusLineCount === 0) continue;
+      if (lineRequiresPricingSelection(line)) {
+        pushPricingSelectionAction(actions, line, parentCode, parentDescription);
+        continue;
+      }
       if (!isComponentResolved(resolvedByCode, line.componentCode)) {
         pushBlockedBom(
           `Componente ${line.componentCode} não cadastrado — bloqueia criação da linha.`,
@@ -272,8 +355,26 @@ export function buildNomusBomApplyPlanForComparison(
     return finalizePlan(result, classification, actions, warnings, limitations);
   }
 
+  const optionalNomusLines = result.lines.filter(
+    (l) => l.nomusLineCount > 0 && l.hasOptionalNomusLines
+  );
+  if (optionalNomusLines.length > 0) {
+    warnings.push(
+      `Produto possui ${optionalNomusLines.length} componente(s) opcional(is) no Nomus — seleção explícita necessária para precificação.`
+    );
+  }
+
   for (const line of result.lines) {
     const code = line.componentCode;
+
+    if (lineRequiresPricingSelection(line)) {
+      if (line.status === "MATCH") {
+        pushPricingSelectionAction(actions, line, parentCode, parentDescription, "NOT_AUTO_APPLIED");
+      } else {
+        pushPricingSelectionAction(actions, line, parentCode, parentDescription);
+      }
+      continue;
+    }
 
     if (line.status === "MATCH") {
       actions.push({
@@ -410,7 +511,7 @@ function finalizePlan(
         }
       : null,
     actions,
-    summary: summarizeActions(actions),
+    summary: summarizeActions(actions, result),
     warnings,
     limitations,
     comparison: result,
@@ -427,6 +528,10 @@ export function aggregateApplyPlansSummary(plans: NomusBomApplyPlan[]) {
     ignoreOperationalItemActions: 0,
     blockedActions: 0,
     noActionCount: 0,
+    optionalSelectionRequiredActions: 0,
+    optionalItemNotAutoAppliedActions: 0,
+    optionalNomusItemsCount: 0,
+    productsWithOptionalNomusItems: 0,
     plansWithApproval: 0,
     blockedPlans: 0,
   };
@@ -440,6 +545,10 @@ export function aggregateApplyPlansSummary(plans: NomusBomApplyPlan[]) {
     totals.ignoreOperationalItemActions += plan.summary.ignoreOperationalItemActions;
     totals.blockedActions += plan.summary.blockedActions;
     totals.noActionCount += plan.summary.noActionCount;
+    totals.optionalSelectionRequiredActions += plan.summary.optionalSelectionRequiredActions;
+    totals.optionalItemNotAutoAppliedActions += plan.summary.optionalItemNotAutoAppliedActions;
+    totals.optionalNomusItemsCount += plan.summary.optionalNomusItemsCount;
+    if (plan.summary.optionalNomusItemsCount > 0) totals.productsWithOptionalNomusItems += 1;
     if (plan.canApplyWithApproval) totals.plansWithApproval += 1;
     if (plan.isBlocked) totals.blockedPlans += 1;
   }

@@ -24,6 +24,7 @@ export function stageRowToNomusLine(row: {
   opcional: boolean | null;
   alternativo: boolean | null;
   preferencial: boolean | null;
+  itemDeEmbarque: boolean | null;
   posicao: number | null;
 }): NomusEffectiveBomLine {
   return {
@@ -41,6 +42,7 @@ export function stageRowToNomusLine(row: {
     opcional: row.opcional,
     alternativo: row.alternativo,
     preferencial: row.preferencial,
+    itemDeEmbarque: row.itemDeEmbarque,
     posicao: row.posicao,
   };
 }
@@ -71,6 +73,7 @@ export async function loadNomusStageLinesForParent(parentCode: string): Promise<
       opcional: row.opcional,
       alternativo: row.alternativo,
       preferencial: row.preferencial,
+      itemDeEmbarque: row.itemDeEmbarque,
       posicao: row.posicao,
     })
   );

@@ -10,6 +10,9 @@ import {
   comparisonStatusLabel,
   formatQtyDisplay,
   hasImportProductOnly,
+  nomusLineFlagBadgeClass,
+  nomusLineFlagLabel,
+  pendingOptionalSummaryCount,
   planActionBadgeClass,
   type NomusBomDiffRow,
 } from "@/src/lib/nomusBomDiffView";
@@ -184,18 +187,26 @@ export const NomusBomDiffModal: React.FC<NomusBomDiffModalProps> = ({
                     </div>
                   ) : null}
 
-                  <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 text-xs">
+                  <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 text-xs">
                     {[
-                      { label: "Iguais", value: plan.comparison.summary.matches },
-                      { label: "Atualizar qtd.", value: plan.summary.updateQuantityActions },
-                      { label: "Adicionar", value: plan.summary.addBomLineActions },
-                      { label: "Manter Indus", value: plan.summary.keepIndusLineActions },
-                      { label: "Operacional", value: plan.summary.ignoreOperationalItemActions },
-                      { label: "Bloqueadas", value: plan.summary.blockedActions },
+                      { label: "Iguais", value: plan.comparison.summary.matches, highlight: false },
+                      { label: "Atualizar qtd.", value: plan.summary.updateQuantityActions, highlight: false },
+                      { label: "Adicionar", value: plan.summary.addBomLineActions, highlight: false },
+                      {
+                        label: "Opcionais pendentes",
+                        value: pendingOptionalSummaryCount(plan),
+                        highlight: pendingOptionalSummaryCount(plan) > 0,
+                      },
+                      { label: "Manter Indus", value: plan.summary.keepIndusLineActions, highlight: false },
+                      { label: "Operacional", value: plan.summary.ignoreOperationalItemActions, highlight: false },
+                      { label: "Bloqueadas", value: plan.summary.blockedActions, highlight: false },
                     ].map((card) => (
                       <div
                         key={card.label}
-                        className="rounded-lg border border-border bg-background px-3 py-2"
+                        className={cn(
+                          "rounded-lg border border-border bg-background px-3 py-2",
+                          card.highlight && "border-fuchsia-300 bg-fuchsia-50/50"
+                        )}
                       >
                         <p className="text-[10px] uppercase text-muted-foreground font-semibold">
                           {card.label}
@@ -256,6 +267,48 @@ export const NomusBomDiffModal: React.FC<NomusBomDiffModalProps> = ({
                               </td>
                               <td className="px-2 py-2 font-medium whitespace-nowrap">
                                 {row.componentCode}
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {row.hasOptionalNomusLines ? (
+                                    <span
+                                      className={cn(
+                                        "inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                                        nomusLineFlagBadgeClass("optional")
+                                      )}
+                                    >
+                                      {nomusLineFlagLabel("optional")}
+                                    </span>
+                                  ) : null}
+                                  {row.hasAlternativeNomusLines ? (
+                                    <span
+                                      className={cn(
+                                        "inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                                        nomusLineFlagBadgeClass("alternative")
+                                      )}
+                                    >
+                                      {nomusLineFlagLabel("alternative")}
+                                    </span>
+                                  ) : null}
+                                  {row.hasPreferredNomusLines ? (
+                                    <span
+                                      className={cn(
+                                        "inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                                        nomusLineFlagBadgeClass("preferred")
+                                      )}
+                                    >
+                                      {nomusLineFlagLabel("preferred")}
+                                    </span>
+                                  ) : null}
+                                  {row.hasShipmentItemNomusLines ? (
+                                    <span
+                                      className={cn(
+                                        "inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                                        nomusLineFlagBadgeClass("shipment")
+                                      )}
+                                    >
+                                      {nomusLineFlagLabel("shipment")}
+                                    </span>
+                                  ) : null}
+                                </div>
                                 {row.hasDuplicateNomusLines || row.hasDuplicateIndusLines ? (
                                   <p className="text-[9px] font-normal text-muted-foreground mt-0.5">
                                     {[

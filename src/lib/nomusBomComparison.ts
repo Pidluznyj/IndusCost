@@ -15,6 +15,7 @@ export type NomusEffectiveBomLine = {
   opcional?: boolean | null;
   alternativo?: boolean | null;
   preferencial?: boolean | null;
+  itemDeEmbarque?: boolean | null;
   posicao?: number | null;
 };
 
@@ -35,7 +36,33 @@ export type NomusBomSourceLine = {
   opcional?: boolean | null;
   alternativo?: boolean | null;
   preferencial?: boolean | null;
+  itemDeEmbarque?: boolean | null;
 };
+
+export type NomusAggregatedLineFlags = {
+  hasOptionalNomusLines: boolean;
+  hasAlternativeNomusLines: boolean;
+  hasPreferredNomusLines: boolean;
+  hasShipmentItemNomusLines: boolean;
+};
+
+export function aggregateNomusLineFlags(
+  lines: Array<
+    Pick<NomusBomSourceLine, "opcional" | "alternativo" | "preferencial" | "itemDeEmbarque">
+  >
+): NomusAggregatedLineFlags {
+  return {
+    hasOptionalNomusLines: lines.some((l) => l.opcional === true),
+    hasAlternativeNomusLines: lines.some((l) => l.alternativo === true),
+    hasPreferredNomusLines: lines.some((l) => l.preferencial === true),
+    hasShipmentItemNomusLines: lines.some((l) => l.itemDeEmbarque === true),
+  };
+}
+
+/** Opcionais/alternativos Nomus exigem escolha explícita antes de precificação/aplicação automática. */
+export function requiresExplicitPricingSelection(flags: NomusAggregatedLineFlags): boolean {
+  return flags.hasOptionalNomusLines || flags.hasAlternativeNomusLines;
+}
 
 export type IndusBomSourceLine = {
   bomLineId: string;
@@ -102,6 +129,10 @@ export type BomComparisonResult = {
     indusBomLineIds: string[];
     nomusLines: NomusBomSourceLine[];
     indusLines: IndusBomSourceLine[];
+    hasOptionalNomusLines: boolean;
+    hasAlternativeNomusLines: boolean;
+    hasPreferredNomusLines: boolean;
+    hasShipmentItemNomusLines: boolean;
   }>;
 };
 
@@ -302,6 +333,7 @@ function toNomusSourceLines(lines: NomusEffectiveBomLine[]): NomusBomSourceLine[
     opcional: line.opcional,
     alternativo: line.alternativo,
     preferencial: line.preferencial,
+    itemDeEmbarque: line.itemDeEmbarque,
   }));
 }
 
@@ -383,6 +415,8 @@ export function compareBom(
     const quantityDiff =
       nomusQuantity != null && indusQuantity != null ? indusQuantity - nomusQuantity : null;
 
+    const nomusFlags = aggregateNomusLineFlags(nomusSourceLines);
+
     comparisonDrafts.push({
       componentCode: displayCode,
       componentDescription:
@@ -400,6 +434,7 @@ export function compareBom(
       indusBomLineIds: indusSourceLines.map((l) => l.bomLineId),
       nomusLines: nomusSourceLines,
       indusLines: indusSourceLines,
+      ...nomusFlags,
       sortPosition: minSortPosition(nomusGroup),
     });
   }

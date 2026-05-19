@@ -14,11 +14,17 @@ export type NomusBomDiffRow = {
   observation: string;
   hasDuplicateNomusLines: boolean;
   hasDuplicateIndusLines: boolean;
+  hasOptionalNomusLines: boolean;
+  hasAlternativeNomusLines: boolean;
+  hasPreferredNomusLines: boolean;
+  hasShipmentItemNomusLines: boolean;
 };
 
 const ACTION_PRIORITY: Record<NomusBomPlanActionType, number> = {
   BLOCKED: 10,
   IMPORT_PRODUCT: 9,
+  OPTIONAL_SELECTION_REQUIRED: 9,
+  OPTIONAL_ITEM_NOT_AUTO_APPLIED: 9,
   REMOVE_BOM_LINE: 8,
   IGNORE_OPERATIONAL_ITEM: 7,
   KEEP_INDUS_LINE: 6,
@@ -45,6 +51,10 @@ export function planActionTypeLabel(type: NomusBomPlanActionType | null): string
       return "Importar produto primeiro";
     case "CREATE_BOM":
       return "Criar BOM (futuro)";
+    case "OPTIONAL_SELECTION_REQUIRED":
+      return "Seleção opcional necessária";
+    case "OPTIONAL_ITEM_NOT_AUTO_APPLIED":
+      return "Opcional — não auto na precificação";
     case "BLOCKED":
       return "Bloqueado";
     case "KEEP_LOCAL_PRODUCT":
@@ -66,6 +76,9 @@ export function planActionBadgeClass(type: NomusBomPlanActionType | null): strin
     case "CREATE_BOM":
     case "IMPORT_PRODUCT":
       return "bg-blue-100 text-blue-900";
+    case "OPTIONAL_SELECTION_REQUIRED":
+    case "OPTIONAL_ITEM_NOT_AUTO_APPLIED":
+      return "bg-fuchsia-100 text-fuchsia-950";
     case "KEEP_INDUS_LINE":
       return "bg-slate-100 text-slate-800";
     case "IGNORE_OPERATIONAL_ITEM":
@@ -76,6 +89,36 @@ export function planActionBadgeClass(type: NomusBomPlanActionType | null): strin
       return "bg-slate-100 text-slate-700";
     default:
       return "bg-muted text-muted-foreground";
+  }
+}
+
+export function nomusLineFlagBadgeClass(flag: "optional" | "alternative" | "preferred" | "shipment"): string {
+  switch (flag) {
+    case "optional":
+      return "bg-fuchsia-100 text-fuchsia-900";
+    case "alternative":
+      return "bg-indigo-100 text-indigo-900";
+    case "preferred":
+      return "bg-teal-100 text-teal-900";
+    case "shipment":
+      return "bg-cyan-100 text-cyan-900";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+}
+
+export function nomusLineFlagLabel(flag: "optional" | "alternative" | "preferred" | "shipment"): string {
+  switch (flag) {
+    case "optional":
+      return "Opcional";
+    case "alternative":
+      return "Alternativo";
+    case "preferred":
+      return "Preferencial";
+    case "shipment":
+      return "Item de embarque";
+    default:
+      return "";
   }
 }
 
@@ -122,13 +165,32 @@ export function formatQtyDisplay(value: number | null | undefined): string {
   return formatQty(value);
 }
 
+function buildObservation(
+  primary: NomusBomPlanAction | null,
+  line: NomusBomApplyPlan["comparison"]["lines"][number]
+): string {
+  const parts: string[] = [];
+  if (primary?.reason) parts.push(primary.reason);
+  else if (primary?.blockedReason) parts.push(primary.blockedReason);
+
+  if (line.hasOptionalNomusLines) {
+    parts.push(
+      "Este item é opcional no Nomus e não entra automaticamente na precificação."
+    );
+  } else if (line.hasAlternativeNomusLines) {
+    parts.push("Item alternativo no Nomus — requer seleção/política antes da precificação.");
+  }
+
+  return parts.filter(Boolean).join(" ");
+}
+
 export function buildNomusBomDiffRows(plan: NomusBomApplyPlan): NomusBomDiffRow[] {
   const { comparison, actions } = plan;
   const rows: NomusBomDiffRow[] = [];
 
   for (const line of comparison.lines) {
     const primary = pickPrimaryActionForComponent(actions, line.componentCode);
-    const planType = primary?.type ?? inferPlanTypeFromComparison(line.status);
+    const planType = primary?.type ?? inferPlanTypeFromComparison(line);
     rows.push({
       componentCode: line.componentCode,
       componentDescription: line.componentDescription,
@@ -138,9 +200,13 @@ export function buildNomusBomDiffRows(plan: NomusBomApplyPlan): NomusBomDiffRow[
       quantityDiff: line.quantityDiff ?? null,
       planActionType: planType,
       planDecisionLabel: planActionTypeLabel(planType),
-      observation: primary?.reason ?? primary?.blockedReason ?? "",
+      observation: buildObservation(primary, line),
       hasDuplicateNomusLines: line.hasDuplicateNomusLines,
       hasDuplicateIndusLines: line.hasDuplicateIndusLines,
+      hasOptionalNomusLines: line.hasOptionalNomusLines,
+      hasAlternativeNomusLines: line.hasAlternativeNomusLines,
+      hasPreferredNomusLines: line.hasPreferredNomusLines,
+      hasShipmentItemNomusLines: line.hasShipmentItemNomusLines,
     });
   }
 
@@ -154,8 +220,13 @@ export function buildNomusBomDiffRows(plan: NomusBomApplyPlan): NomusBomDiffRow[
   return rows;
 }
 
-function inferPlanTypeFromComparison(status: BomComparisonStatus): NomusBomPlanActionType | null {
-  switch (status) {
+function inferPlanTypeFromComparison(
+  line: NomusBomApplyPlan["comparison"]["lines"][number]
+): NomusBomPlanActionType | null {
+  if (line.nomusLineCount > 0 && (line.hasOptionalNomusLines || line.hasAlternativeNomusLines)) {
+    return line.status === "MATCH" ? "OPTIONAL_ITEM_NOT_AUTO_APPLIED" : "OPTIONAL_SELECTION_REQUIRED";
+  }
+  switch (line.status) {
     case "MATCH":
       return "NO_ACTION";
     case "QUANTITY_DIFF":
@@ -171,4 +242,10 @@ function inferPlanTypeFromComparison(status: BomComparisonStatus): NomusBomPlanA
 
 export function hasImportProductOnly(plan: NomusBomApplyPlan): boolean {
   return plan.classification.isProductImportCandidate;
+}
+
+export function pendingOptionalSummaryCount(plan: NomusBomApplyPlan): number {
+  return (
+    plan.summary.optionalSelectionRequiredActions + plan.summary.optionalItemNotAutoAppliedActions
+  );
 }

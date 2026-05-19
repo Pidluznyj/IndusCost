@@ -145,6 +145,8 @@ export function applyPlansReportToCsv(report: NomusBomApplyPlansReport): string 
     "keepIndusLineActions",
     "ignoreOperationalItemActions",
     "blockedActions",
+    "optionalSelectionRequiredActions",
+    "optionalNomusItemsCount",
     "warningsText",
     "limitationsText",
   ];
@@ -177,12 +179,59 @@ export function applyPlansReportToCsv(report: NomusBomApplyPlansReport): string 
         plan.summary.keepIndusLineActions,
         plan.summary.ignoreOperationalItemActions,
         plan.summary.blockedActions,
+        plan.summary.optionalSelectionRequiredActions,
+        plan.summary.optionalNomusItemsCount,
         plan.warnings.join(" | "),
         plan.limitations.join(" | "),
       ]
         .map(escapeCsv)
         .join(",")
     );
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+export function applyPlanActionsToCsv(report: NomusBomApplyPlansReport): string {
+  const headers = [
+    "parentCode",
+    "actionType",
+    "componentCode",
+    "componentDescription",
+    "plannedQuantity",
+    "reason",
+    "riskLevel",
+    "blockedReason",
+    "requiresApproval",
+  ];
+
+  const escapeCsv = (value: unknown) => {
+    const text = value == null ? "" : String(value);
+    if (text.includes('"') || text.includes(",") || text.includes("\n")) {
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+  };
+
+  const lines = [headers.join(",")];
+  for (const plan of report.plans) {
+    for (const action of plan.actions) {
+      lines.push(
+        [
+          plan.parentCode,
+          action.type,
+          action.componentCode ?? "",
+          action.componentDescription ?? "",
+          action.plannedQuantity ?? "",
+          action.reason,
+          action.riskLevel,
+          action.blockedReason ?? "",
+          action.requiresApproval,
+        ]
+          .map(escapeCsv)
+          .join(",")
+      );
+    }
   }
 
   return `${lines.join("\n")}\n`;

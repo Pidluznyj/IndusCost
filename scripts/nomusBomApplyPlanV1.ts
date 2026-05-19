@@ -106,7 +106,7 @@ async function main(): Promise<void> {
   const report = await buildNomusBomApplyPlansReport(filters);
 
   console.warn(
-    `[nomus-bom-plan] concluído plans=${report.plans.length} importActions=${report.summary.importProductActions}`
+    `[nomus-bom-plan] concluído plans=${report.plans.length} importActions=${report.summary.importProductActions} optionalPending=${report.summary.optionalSelectionRequiredActions} optionalItems=${report.summary.optionalNomusItemsCount} productsWithOptional=${report.summary.productsWithOptionalNomusItems}`
   );
 
   if (args.format === "csv") {
