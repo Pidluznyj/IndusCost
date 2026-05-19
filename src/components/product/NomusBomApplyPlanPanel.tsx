@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
-import { FileSearch, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { FileSearch, ExternalLink, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
+import { NomusBomDiffModal } from "@/src/components/product/NomusBomDiffModal";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import type { NomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
@@ -21,6 +22,15 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
   const [onlyBlocked, setOnlyBlocked] = useState(false);
   const [onlyImportProducts, setOnlyImportProducts] = useState(false);
   const [onlyUpdateQuantities, setOnlyUpdateQuantities] = useState(false);
+  const [diffModalOpen, setDiffModalOpen] = useState(false);
+  const [diffModalSku, setDiffModalSku] = useState<string | null>(null);
+  const [diffModalProductId, setDiffModalProductId] = useState<string | null>(null);
+
+  const openDiffModal = (parentCode: string, indusProductId?: string | null) => {
+    setDiffModalSku(parentCode);
+    setDiffModalProductId(indusProductId ?? null);
+    setDiffModalOpen(true);
+  };
 
   const loadPlan = useCallback(async () => {
     setLoading(true);
@@ -152,7 +162,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
                   <th className="text-center px-3 py-2 font-semibold">Aprovação?</th>
                   <th className="text-right px-3 py-2 font-semibold">Ações</th>
                   <th className="text-left px-3 py-2 font-semibold">Avisos</th>
-                  <th className="text-left px-3 py-2 font-semibold">Abrir</th>
+                  <th className="text-left px-3 py-2 font-semibold">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,18 +191,26 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
                           {plan.warnings[0] ?? "—"}
                         </td>
                         <td className="px-3 py-2">
-                          {plan.indusProductId && onOpenProduct ? (
+                          <div className="flex flex-col gap-1 items-start">
                             <button
                               type="button"
-                              onClick={() => onOpenProduct(plan.indusProductId!)}
+                              onClick={() => openDiffModal(plan.parentCode, plan.indusProductId)}
                               className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"
                             >
-                              <ExternalLink className="h-3 w-3" />
-                              Abrir
+                              <GitCompareArrows className="h-3 w-3" />
+                              Ver análise
                             </button>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
+                            {plan.indusProductId && onOpenProduct ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenProduct(plan.indusProductId!)}
+                                className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:underline"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Abrir cadastro
+                              </button>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -203,6 +221,13 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
           </div>
         </div>
       ) : null}
+
+      <NomusBomDiffModal
+        open={diffModalOpen}
+        onClose={() => setDiffModalOpen(false)}
+        sku={diffModalSku}
+        productId={diffModalProductId}
+      />
     </div>
   );
 };

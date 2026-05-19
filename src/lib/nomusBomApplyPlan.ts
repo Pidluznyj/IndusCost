@@ -72,6 +72,9 @@ export type NomusBomApplyPlan = {
 
   warnings: string[];
   limitations: string[];
+
+  /** Comparação completa Nomus x IndusCost (somente leitura, para UI de diff). */
+  comparison: BomComparisonResult;
 };
 
 function resolvedMap(resolved: ResolvedNomusComponent[]): Map<string, ResolvedNomusComponent> {
@@ -410,6 +413,7 @@ function finalizePlan(
     summary: summarizeActions(actions),
     warnings,
     limitations,
+    comparison: result,
   };
 }
 
