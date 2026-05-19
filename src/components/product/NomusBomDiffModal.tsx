@@ -179,7 +179,24 @@ export const NomusBomDiffModal: React.FC<NomusBomDiffModalProps> = ({
                     <span className="text-muted-foreground">
                       {cls.recommendedAction.replace(/_/g, " ")}
                     </span>
-                  </div>
+                                      {plan.optionalPricingStatus && plan.optionalPricingStatus !== "NO_OPTIONALS" ? (
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full px-2.5 py-0.5 font-bold",
+                          plan.optionalPricingStatus === "RESOLVED"
+                            ? "bg-green-100 text-green-800"
+                            : plan.optionalPricingStatus === "STALE"
+                              ? "bg-orange-100 text-orange-900"
+                              : "bg-fuchsia-100 text-fuchsia-950"
+                        )}
+                      >
+                        {plan.optionalPricingStatus === "RESOLVED"
+                          ? "Opcionais resolvidos"
+                          : plan.optionalPricingStatus === "STALE"
+                            ? "Opcionais desatualizados"
+                            : "Opcionais pendentes"}
+                      </span>
+                    ) : null}</div>
 
                   {hasImportProductOnly(plan) ? (
                     <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">

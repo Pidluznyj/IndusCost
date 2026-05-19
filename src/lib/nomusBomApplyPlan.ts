@@ -1,5 +1,6 @@
 import type { BomComparisonResult, NomusAggregatedLineFlags } from "@/src/lib/nomusBomComparison";
 import { normalizeComponentCode, requiresExplicitPricingSelection } from "@/src/lib/nomusBomComparison";
+import type { PricingOptionalStatus } from "@/src/lib/nomusOptionalPricingSelection";
 import type { NomusBomClassification, NomusBomRiskLevel, ResolvedNomusComponent } from "@/src/lib/nomusBomClassification";
 import {
   detectOperationalItem,
@@ -80,6 +81,9 @@ export type NomusBomApplyPlan = {
 
   /** Comparação completa Nomus x IndusCost (somente leitura, para UI de diff). */
   comparison: BomComparisonResult;
+
+  /** Status da seleção persistida de opcionais para precificação (fase OPTIONAL-B). */
+  optionalPricingStatus?: PricingOptionalStatus;
 };
 
 function resolvedMap(resolved: ResolvedNomusComponent[]): Map<string, ResolvedNomusComponent> {

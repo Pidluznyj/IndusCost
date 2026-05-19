@@ -1138,3 +1138,52 @@ model NomusBomComponentStage {
   @@index([isActiveDefault])
   @@index([payloadHash])
 }
+
+enum NomusOptionalPricingSelectionMode {
+  EXACTLY_ONE
+  OPTIONAL_ONE
+  MULTIPLE
+}
+
+/// Grupos de itens opcionais/alternativos Nomus para seleção explícita na precificação (não altera ProductBOM).
+model NomusOptionalPricingGroup {
+  id                 String                            @id @default(uuid())
+  parentCode         String
+  parentProductId    String?                           @db.Uuid
+  listaMateriaisId   Int?
+  listaMateriaisNome String?
+  groupName          String
+  selectionMode      NomusOptionalPricingSelectionMode @default(EXACTLY_ONE)
+  isActive           Boolean                           @default(true)
+  notes              String?
+  selectedNone       Boolean                           @default(false)
+  createdAt          DateTime                          @default(now())
+  updatedAt          DateTime                          @updatedAt
+  choices            NomusOptionalPricingChoice[]
+
+  @@index([parentCode])
+  @@index([parentProductId])
+  @@index([listaMateriaisId])
+  @@index([isActive])
+}
+
+model NomusOptionalPricingChoice {
+  id                   String   @id @default(uuid())
+  groupId              String
+  parentCode           String
+  componentCode        String
+  componentDescription String?
+  plannedQuantity      Decimal? @db.Decimal(20, 6)
+  nomusSourceLineIds   Json?
+  isSelectedForPricing Boolean  @default(false)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  group                NomusOptionalPricingGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, componentCode])
+  @@index([groupId])
+  @@index([parentCode])
+  @@index([componentCode])
+  @@index([isSelectedForPricing])
+}

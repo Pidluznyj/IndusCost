@@ -13,6 +13,7 @@ import {
   type NomusBomApplyPlan,
 } from "@/src/lib/nomusBomApplyPlan";
 import { clampBatchLimit } from "@/src/lib/nomusBomBatchReport";
+import { enrichNomusBomApplyPlanWithOptionalSelection } from "@/src/lib/nomusOptionalPricingSelection";
 
 export type NomusBomApplyPlanReportFilters = {
   /** Busca parcial (contains) — somente filtragem; não usar para diff/plano de um produto. */
@@ -137,7 +138,8 @@ export async function buildNomusBomApplyPlansReport(
       resolvedNomusComponents: resolvedForParent,
     });
 
-    const plan = buildNomusBomApplyPlanForComparison(comparison, classification, resolvedForParent);
+    const rawPlan = buildNomusBomApplyPlanForComparison(comparison, classification, resolvedForParent);
+    const plan = await enrichNomusBomApplyPlanWithOptionalSelection(rawPlan);
     if (!matchesPlanFilters(plan, filters)) continue;
     plans.push(plan);
   }

@@ -85,6 +85,16 @@ import {
 } from "./src/lib/nomusBomBatchReport.js";
 import type { NomusBomActionClass } from "./src/lib/nomusBomClassification.js";
 import { buildNomusBomApplyPlansReport } from "./src/lib/nomusBomApplyPlanLoad.js";
+import {
+  createOptionalPricingGroup,
+  deactivateOptionalPricingGroup,
+  getOptionalPricingSelectionDetail,
+  listProductsWithOptionalNomusItems,
+  setOptionalPricingSelection,
+  updateOptionalPricingGroup,
+  type PricingOptionalStatus,
+} from "./src/lib/nomusOptionalPricingSelection.js";
+import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -3266,6 +3276,177 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         return res.status(500).json({
           error: "Erro ao gerar plano dry-run de aplicação da BOM Nomus.",
         });
+      }
+    }
+  );
+
+  const NOMUS_OPTIONAL_PRICING_PERMS = [
+    "products.view",
+    "products.tab.bom",
+    "products.tab.cost",
+    "products.edit",
+  ] as const;
+
+  app.get(
+    "/api/nomus/bom-optionals/pricing-selection",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const search = req.query.search != null ? String(req.query.search).trim() : undefined;
+        const statusRaw =
+          req.query.status != null ? String(req.query.status).trim().toUpperCase() : undefined;
+        const status =
+          statusRaw === "PENDING" ||
+          statusRaw === "RESOLVED" ||
+          statusRaw === "NO_OPTIONALS" ||
+          statusRaw === "STALE"
+            ? (statusRaw as PricingOptionalStatus)
+            : undefined;
+        const limit = clampBatchLimit(
+          req.query.limit != null ? Number.parseInt(String(req.query.limit), 10) : 100
+        );
+        const offset = Math.max(
+          0,
+          req.query.offset != null ? Number.parseInt(String(req.query.offset), 10) : 0
+        );
+        const result = await listProductsWithOptionalNomusItems({ search, status, limit, offset });
+        return res.json(result);
+      } catch (error) {
+        console.error("GET /api/nomus/bom-optionals/pricing-selection", error);
+        return res.status(500).json({ error: "Erro ao listar opcionais de precificação." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/bom-optionals/pricing-selection/detail",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const parentCode = req.query.parentCode != null ? String(req.query.parentCode).trim() : "";
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        const detail = await getOptionalPricingSelectionDetail(parentCode);
+        return res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao carregar detalhe.";
+        const status = message.includes("não encontrado") ? 404 : 500;
+        console.error("GET /api/nomus/bom-optionals/pricing-selection/detail", error);
+        return res.status(status).json({ error: message });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/bom-optionals/pricing-selection/groups",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const parentCode = String(body.parentCode ?? "").trim();
+        const groupName = String(body.groupName ?? "").trim();
+        const selectionMode = String(body.selectionMode ?? "EXACTLY_ONE").trim() as NomusOptionalPricingSelectionMode;
+        const componentCodes = Array.isArray(body.componentCodes)
+          ? body.componentCodes.map((c: unknown) => String(c).trim()).filter(Boolean)
+          : [];
+        if (!parentCode || !groupName) {
+          return res.status(400).json({ error: "parentCode e groupName são obrigatórios." });
+        }
+        if (
+          selectionMode !== "EXACTLY_ONE" &&
+          selectionMode !== "OPTIONAL_ONE" &&
+          selectionMode !== "MULTIPLE"
+        ) {
+          return res.status(400).json({ error: "selectionMode inválido." });
+        }
+        const detail = await createOptionalPricingGroup({
+          parentCode,
+          groupName,
+          selectionMode,
+          componentCodes,
+          notes: body.notes != null ? String(body.notes) : null,
+        });
+        return res.status(201).json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao criar grupo.";
+        console.error("POST /api/nomus/bom-optionals/pricing-selection/groups", error);
+        return res.status(400).json({ error: message });
+      }
+    }
+  );
+
+  app.patch(
+    "/api/nomus/bom-optionals/pricing-selection/groups/:groupId",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const { groupId } = req.params;
+        const body = req.body ?? {};
+        const selectionMode =
+          body.selectionMode != null
+            ? (String(body.selectionMode).trim() as NomusOptionalPricingSelectionMode)
+            : undefined;
+        const detail = await updateOptionalPricingGroup(groupId, {
+          groupName: body.groupName != null ? String(body.groupName).trim() : undefined,
+          selectionMode,
+          notes: body.notes !== undefined ? (body.notes != null ? String(body.notes) : null) : undefined,
+          isActive: body.isActive !== undefined ? Boolean(body.isActive) : undefined,
+        });
+        return res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao atualizar grupo.";
+        console.error("PATCH /api/nomus/bom-optionals/pricing-selection/groups/:groupId", error);
+        return res.status(400).json({ error: message });
+      }
+    }
+  );
+
+  app.patch(
+    "/api/nomus/bom-optionals/pricing-selection/groups/:groupId/selection",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const { groupId } = req.params;
+        const body = req.body ?? {};
+        const detail = await setOptionalPricingSelection(groupId, {
+          selectedChoiceId:
+            body.selectedChoiceId != null ? String(body.selectedChoiceId) : undefined,
+          selectedChoiceIds: Array.isArray(body.selectedChoiceIds)
+            ? body.selectedChoiceIds.map((id: unknown) => String(id))
+            : undefined,
+          selectedNone: body.selectedNone === true,
+        });
+        return res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao salvar seleção.";
+        console.error(
+          "PATCH /api/nomus/bom-optionals/pricing-selection/groups/:groupId/selection",
+          error
+        );
+        return res.status(400).json({ error: message });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/nomus/bom-optionals/pricing-selection/groups/:groupId",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const { groupId } = req.params;
+        const detail = await deactivateOptionalPricingGroup(groupId);
+        return res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao desativar grupo.";
+        console.error("DELETE /api/nomus/bom-optionals/pricing-selection/groups/:groupId", error);
+        return res.status(400).json({ error: message });
       }
     }
   );

@@ -21,6 +21,7 @@
     "sync:nomus:bom-report": "tsx scripts/nomusBomBatchReportV1.ts",
     "sync:nomus:bom-classify": "tsx scripts/nomusBomClassifyV1.ts",
     "sync:nomus:bom-plan": "tsx scripts/nomusBomApplyPlanV1.ts",
+    "sync:nomus:optional-pricing-status": "tsx scripts/nomusOptionalPricingStatusV1.ts",
     "sync:nomus:sales-orders:dry": "tsx scripts/nomusSalesOrdersSyncV1.ts",
     "test:nomus-sync": "tsx --test scripts/nomusNumberParser.test.ts",
     "test": "tsx --test src/lib/costRollup.test.ts src/lib/costAnalysisPartial.test.ts src/lib/openBookMaterialExplosion.test.ts src/lib/pricingOpenBook.test.ts src/lib/pricingUnitCalculationBreakdown.test.ts src/lib/simulationFormula.test.ts src/lib/newProductSandbox.test.ts src/lib/newProductSandbox.effectiveCost.test.ts src/lib/newProductSimulationSnapshot.test.ts src/lib/purchaseIndicatorsStats.test.ts src/lib/proposalIndicatorsStats.test.ts src/lib/pricingFormationIndicatorsStats.test.ts src/lib/productEngineeringIndicatorsStats.test.ts src/lib/simulationIndicatorsStats.test.ts src/lib/operationalListFilters.test.ts src/lib/productEngineeringExport.test.ts src/lib/customerIndicators.test.ts src/components/shared/BomCostDetailRow.test.tsx src/components/NewProductSimulationReport.test.tsx src/components/contextual/ModuleIndicatorsButton.test.tsx",

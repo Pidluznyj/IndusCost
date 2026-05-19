@@ -3,13 +3,15 @@ import { cn } from "@/src/lib/utils";
 import { NomusBomBatchReportPanel } from "@/src/components/product/NomusBomBatchReportPanel";
 import { NomusBomClassificationPanel } from "@/src/components/product/NomusBomClassificationPanel";
 import { NomusBomApplyPlanPanel } from "@/src/components/product/NomusBomApplyPlanPanel";
+import { NomusOptionalPricingSelectionPanel } from "@/src/components/product/NomusOptionalPricingSelectionPanel";
 
-export type NomusMaintenanceTab = "divergences" | "classification" | "apply-plan";
+export type NomusMaintenanceTab = "divergences" | "classification" | "apply-plan" | "optional-pricing";
 
 const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = [
   { id: "divergences", label: "Divergências" },
   { id: "classification", label: "Classificação" },
   { id: "apply-plan", label: "Plano dry-run" },
+  { id: "optional-pricing", label: "Opcionais de Precificação" },
 ];
 
 type ProductNomusMaintenanceSectionProps = {
@@ -65,6 +67,9 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
         ) : null}
         {activeNomusMaintenanceTab === "apply-plan" ? (
           <NomusBomApplyPlanPanel onOpenProduct={onOpenProduct} />
+        ) : null}
+        {activeNomusMaintenanceTab === "optional-pricing" ? (
+          <NomusOptionalPricingSelectionPanel />
         ) : null}
       </div>
     </div>
