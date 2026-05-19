@@ -43,9 +43,7 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
 import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomTreeContextPanel";
 import { NomusBomComparisonPanel } from "@/src/components/product/NomusBomComparisonPanel";
-import { NomusBomBatchReportPanel } from "@/src/components/product/NomusBomBatchReportPanel";
-import { NomusBomClassificationPanel } from "@/src/components/product/NomusBomClassificationPanel";
-import { NomusBomApplyPlanPanel } from "@/src/components/product/NomusBomApplyPlanPanel";
+import { ProductNomusMaintenanceSection } from "@/src/components/product/ProductNomusMaintenanceSection";
 import type { BomCostDetailRowData } from "@/src/components/shared/BomCostDetailRow";
 import {
   OpenBookCompositionTab,
@@ -120,6 +118,13 @@ const PRODUCT_FORM_TABS: {
   { id: "composition", label: "Composição de Custos", icon: BookOpen },
 ];
 
+type ProductsMainTab = "products" | "nomus-maintenance";
+
+const PRODUCTS_MAIN_TABS: { id: ProductsMainTab; label: string }[] = [
+  { id: "products", label: "Produtos e Componentes" },
+  { id: "nomus-maintenance", label: "Manutenção Nomus" },
+];
+
 export const ProductModule = () => {
   const auth = useAuth();
   const canCreateProduct = auth.hasPermission("products.create");
@@ -139,6 +144,9 @@ export const ProductModule = () => {
     "products.tab.cost",
     "products.edit",
   ]);
+  const showNomusMaintenanceTab = canViewNomusBomReport;
+
+  const [activeProductsMainTab, setActiveProductsMainTab] = useState<ProductsMainTab>("products");
 
   const visibleFormTabs = useMemo(() => {
     const allowed = new Set(getVisibleProductTabs(auth));
@@ -839,8 +847,39 @@ export const ProductModule = () => {
     };
   }, [backendCostAnalysis]);
 
+  const showTraditionalProductsView =
+    activeProductsMainTab === "products" || !showNomusMaintenanceTab;
+
   return (
     <div className="space-y-6" data-tour="products-root">
+      {showNomusMaintenanceTab ? (
+        <div
+          className="flex flex-wrap gap-2 border-b border-border pb-3"
+          role="tablist"
+          aria-label="Áreas do módulo de produtos"
+        >
+          {PRODUCTS_MAIN_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeProductsMainTab === tab.id}
+              onClick={() => setActiveProductsMainTab(tab.id)}
+              className={cn(
+                "h-10 shrink-0 rounded-lg border px-4 text-sm font-semibold transition-colors",
+                activeProductsMainTab === tab.id
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {showTraditionalProductsView ? (
+        <>
       {/* Header: filtros (esq.) + ações (dir.) — altura h-10 alinhada */}
       <div
         className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-6"
@@ -965,25 +1004,6 @@ export const ProductModule = () => {
           ) : null}
         </div>
       </div>
-
-      {canViewNomusBomReport ? (
-        <>
-          <NomusBomBatchReportPanel onOpenProduct={(productId) => void handleOpenProductById(productId)} />
-          <NomusBomClassificationPanel onOpenProduct={(productId) => void handleOpenProductById(productId)} />
-          <NomusBomApplyPlanPanel onOpenProduct={(productId) => void handleOpenProductById(productId)} />
-        </>
-      ) : null}
-
-      {/* Import Dialog */}
-      <DataImportDialog 
-        isOpen={isImportOpen}
-        onClose={() => setIsImportOpen(false)}
-        onSuccess={fetchData}
-        config={ProductImportConfig}
-        templateUrl="/api/products/import/template"
-        previewUrl="/api/products/import/preview"
-        confirmUrl="/api/products/import/confirm"
-      />
 
       {/* Table */}
       <div
@@ -1181,6 +1201,22 @@ export const ProductModule = () => {
         onClose={() => setTourOpen(false)}
         steps={PRODUCT_TOUR_STEPS}
         tourName="Tour de Produtos"
+      />
+        </>
+      ) : (
+        <ProductNomusMaintenanceSection
+          onOpenProduct={(productId) => void handleOpenProductById(productId)}
+        />
+      )}
+
+      <DataImportDialog
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onSuccess={fetchData}
+        config={ProductImportConfig}
+        templateUrl="/api/products/import/template"
+        previewUrl="/api/products/import/preview"
+        confirmUrl="/api/products/import/confirm"
       />
 
       {/* Modal: Product Form */}
