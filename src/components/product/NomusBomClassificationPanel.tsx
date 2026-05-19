@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import { ClipboardList, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type { NomusBomClassificationReport } from "@/src/lib/nomusBomBatchReport";
 import type { NomusBomRiskLevel } from "@/src/lib/nomusBomClassification";
 
@@ -41,13 +42,12 @@ export const NomusBomClassificationPanel: React.FC<NomusBomClassificationPanelPr
   const [onlyBlocked, setOnlyBlocked] = useState(false);
   const [onlyReview, setOnlyReview] = useState(false);
   const [onlyCandidates, setOnlyCandidates] = useState(false);
+  const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
-  const loadClassification = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const fetchClassification = useCallback(
+    async (resolvedSearch: string) => {
       const params = new URLSearchParams({ limit: "100", offset: "0" });
-      if (search.trim()) params.set("search", search.trim());
+      if (resolvedSearch.trim()) params.set("search", resolvedSearch.trim());
       if (risk) params.set("risk", risk);
       if (onlyBlocked) params.set("onlyBlocked", "true");
       if (onlyReview) params.set("onlyReview", "true");
@@ -57,13 +57,35 @@ export const NomusBomClassificationPanel: React.FC<NomusBomClassificationPanelPr
         `/api/nomus/bom-comparison/classification?${params.toString()}`
       );
       setReport(result);
+    },
+    [onlyBlocked, onlyCandidates, onlyReview, risk]
+  );
+
+  const loadClassification = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const term = search.trim();
+      if (!term) {
+        await fetchClassification("");
+        return;
+      }
+
+      const outcome = await resolveThen(term, async (code) => {
+        setSearch(code);
+        await fetchClassification(code);
+      });
+      if (!outcome.ok && outcome.reason === "none") {
+        setReport(null);
+        setError(notFoundMessage);
+      }
     } catch (e) {
       setReport(null);
       setError(e instanceof Error ? e.message : "Não foi possível classificar divergências.");
     } finally {
       setLoading(false);
     }
-  }, [onlyBlocked, onlyCandidates, onlyReview, risk, search]);
+  }, [fetchClassification, notFoundMessage, resolveThen, search]);
 
   const cs = report?.classificationSummary;
 
@@ -243,6 +265,8 @@ export const NomusBomClassificationPanel: React.FC<NomusBomClassificationPanelPr
           </div>
         </div>
       ) : null}
+
+      {pickerModal}
     </div>
   );
 };

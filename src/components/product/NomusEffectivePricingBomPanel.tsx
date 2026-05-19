@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import { Layers, Loader2, RefreshCw, ChevronRight, Save } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type {
   EffectivePricingBomLine,
   EffectivePricingBomResult,
@@ -423,6 +424,19 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EffectivePricingBomResult | null>(null);
+  const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
+
+  const fetchEffectiveBom = useCallback(
+    async (resolvedParentCode: string) => {
+      const params = new URLSearchParams({ parentCode: resolvedParentCode });
+      if (recursive) params.set("recursive", "true");
+      const data = await fetchJsonOk<EffectivePricingBomResult>(
+        `/api/nomus/effective-pricing-bom?${params.toString()}`
+      );
+      setResult(data);
+    },
+    [recursive]
+  );
 
   const load = useCallback(async () => {
     const code = parentCode.trim();
@@ -433,19 +447,26 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ parentCode: code });
-      if (recursive) params.set("recursive", "true");
-      const data = await fetchJsonOk<EffectivePricingBomResult>(
-        `/api/nomus/effective-pricing-bom?${params.toString()}`
-      );
-      setResult(data);
+      const outcome = await resolveThen(code, async (resolved) => {
+        setLoading(true);
+        setParentCode(resolved);
+        try {
+          await fetchEffectiveBom(resolved);
+        } finally {
+          setLoading(false);
+        }
+      });
+      if (!outcome.ok && outcome.reason === "none") {
+        setResult(null);
+        setError(notFoundMessage);
+      }
     } catch (e) {
       setResult(null);
       setError(e instanceof Error ? e.message : "Erro ao gerar BOM efetiva.");
     } finally {
       setLoading(false);
     }
-  }, [parentCode, recursive]);
+  }, [fetchEffectiveBom, notFoundMessage, parentCode, resolveThen]);
 
   const included = result?.directLines ?? [];
   const excluded = result?.excludedLines ?? [];
@@ -607,6 +628,8 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
           ) : null}
         </>
       ) : null}
+
+      {pickerModal}
     </div>
   );
 };

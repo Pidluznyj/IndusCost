@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import { BarChart3, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type { NomusBomBatchReport, NomusBomBatchReportRow } from "@/src/lib/nomusBomBatchReport";
 
 type NomusBomBatchReportPanelProps = {
@@ -34,16 +35,15 @@ export const NomusBomBatchReportPanel: React.FC<NomusBomBatchReportPanelProps> =
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [onlyDivergent, setOnlyDivergent] = useState(false);
+  const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
-  const loadReport = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const fetchReport = useCallback(
+    async (resolvedSearch: string) => {
       const params = new URLSearchParams({
         limit: "100",
         offset: "0",
       });
-      if (search.trim()) params.set("search", search.trim());
+      if (resolvedSearch.trim()) params.set("search", resolvedSearch.trim());
       if (onlyDivergent) {
         params.set("onlyDivergent", "true");
       } else if (status !== "ALL") {
@@ -54,13 +54,35 @@ export const NomusBomBatchReportPanel: React.FC<NomusBomBatchReportPanelProps> =
         `/api/nomus/bom-comparison/report?${params.toString()}`
       );
       setReport(result);
+    },
+    [onlyDivergent, status]
+  );
+
+  const loadReport = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const term = search.trim();
+      if (!term) {
+        await fetchReport("");
+        return;
+      }
+
+      const outcome = await resolveThen(term, async (code) => {
+        setSearch(code);
+        await fetchReport(code);
+      });
+      if (!outcome.ok && outcome.reason === "none") {
+        setReport(null);
+        setError(notFoundMessage);
+      }
     } catch (e) {
       setReport(null);
       setError(e instanceof Error ? e.message : "Não foi possível gerar o relatório.");
     } finally {
       setLoading(false);
     }
-  }, [onlyDivergent, search, status]);
+  }, [fetchReport, notFoundMessage, resolveThen, search]);
 
   const summary = report?.summary;
 
@@ -244,6 +266,8 @@ export const NomusBomBatchReportPanel: React.FC<NomusBomBatchReportPanelProps> =
           </div>
         </div>
       ) : null}
+
+      {pickerModal}
     </div>
   );
 };

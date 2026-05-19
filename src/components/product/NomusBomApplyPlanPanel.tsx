@@ -1,9 +1,8 @@
 import React, { useCallback, useState } from "react";
 import { FileSearch, ExternalLink, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
 import { NomusBomDiffModal } from "@/src/components/product/NomusBomDiffModal";
-import { NomusBomPartialSkuPickerModal } from "@/src/components/product/NomusBomPartialSkuPickerModal";
 import { fetchJsonOk } from "@/src/lib/http";
-import { normalizeSku } from "@/src/lib/nomusBomComparison";
+import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type { NomusBomApplyPlan } from "@/src/lib/nomusBomApplyPlan";
 import type { NomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
 
@@ -27,32 +26,20 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [diffModalParentCode, setDiffModalParentCode] = useState<string | null>(null);
   const [diffModalProductId, setDiffModalProductId] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [lastSearchTerm, setLastSearchTerm] = useState("");
+  const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
   const openDiffModalForPlan = (plan: NomusBomApplyPlan) => {
     setDiffModalParentCode(plan.parentCode);
     setDiffModalProductId(plan.indusProductId ?? null);
     setDiffModalOpen(true);
-    setPickerOpen(false);
   };
 
-  const isExactSearchMatch = (term: string, plans: NomusBomApplyPlan[]): boolean => {
-    const wanted = normalizeSku(term);
-    return plans.some((p) => normalizeSku(p.parentCode) === wanted);
-  };
-
-  const shouldOfferPicker = (term: string, plans: NomusBomApplyPlan[]): boolean => {
-    if (!term || plans.length <= 1) return false;
-    return !isExactSearchMatch(term, plans);
-  };
-
-  const loadPlan = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const fetchPlan = useCallback(
+    async (resolvedParentCode: string) => {
       const params = new URLSearchParams({ limit: "100", offset: "0" });
-      if (search.trim()) params.set("sku", search.trim());
+      if (resolvedParentCode.trim()) {
+        params.set("parentCode", resolvedParentCode.trim());
+      }
       if (onlyCandidates) params.set("onlyCandidates", "true");
       if (onlyBlocked) params.set("onlyBlocked", "true");
       if (onlyImportProducts) params.set("onlyImportProducts", "true");
@@ -61,26 +48,57 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
       const result = await fetchJsonOk<NomusBomApplyPlansReport>(
         `/api/nomus/bom-comparison/apply-plan?${params.toString()}`
       );
-      const term = search.trim();
-      setLastSearchTerm(term);
 
       if (result.plans.length === 0) {
         setReport(null);
-        setPickerOpen(false);
-        setError("Nenhum produto encontrado para a busca informada. Tente o SKU completo.");
-        return;
+        throw new Error(notFoundMessage);
       }
 
       setReport(result);
-      setPickerOpen(shouldOfferPicker(term, result.plans));
+    },
+    [
+      notFoundMessage,
+      onlyBlocked,
+      onlyCandidates,
+      onlyImportProducts,
+      onlyUpdateQuantities,
+    ]
+  );
+
+  const loadPlan = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const term = search.trim();
+      if (!term) {
+        await fetchPlan("");
+        return;
+      }
+
+      const outcome = await resolveThen(
+        term,
+        async (code) => {
+          setLoading(true);
+          setSearch(code);
+          try {
+            await fetchPlan(code);
+          } finally {
+            setLoading(false);
+          }
+        },
+        { selectLabel: "Abrir" }
+      );
+      if (!outcome.ok && outcome.reason === "none") {
+        setReport(null);
+        setError(notFoundMessage);
+      }
     } catch (e) {
       setReport(null);
-      setPickerOpen(false);
       setError(e instanceof Error ? e.message : "Não foi possível gerar o plano dry-run.");
     } finally {
       setLoading(false);
     }
-  }, [onlyBlocked, onlyCandidates, onlyImportProducts, onlyUpdateQuantities, search]);
+  }, [fetchPlan, notFoundMessage, resolveThen, search]);
 
   const summary = report?.summary;
 
@@ -114,7 +132,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Ex.: 610.73BA"
+            placeholder="Ex.: 610.73 ou 610.73BA"
             className="mt-1 h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
@@ -162,21 +180,6 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
 
       {report && summary ? (
         <div className="space-y-4">
-          {shouldOfferPicker(lastSearchTerm, report.plans) ? (
-            <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 sm:flex-row sm:items-center sm:justify-between">
-              <p>
-                Encontramos mais de um produto para{" "}
-                <span className="font-semibold">{lastSearchTerm}</span>. Selecione qual deseja analisar.
-              </p>
-              <button
-                type="button"
-                onClick={() => setPickerOpen(true)}
-                className="inline-flex shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-background px-3 py-1.5 text-[11px] font-semibold hover:bg-amber-100/80"
-              >
-                Escolher produto
-              </button>
-            </div>
-          ) : null}
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 text-xs">
             {[
               { label: "Importar produto", value: summary.importProductActions },
@@ -291,13 +294,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
         </div>
       ) : null}
 
-      <NomusBomPartialSkuPickerModal
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        searchTerm={lastSearchTerm}
-        plans={report?.plans ?? []}
-        onViewAnalysis={openDiffModalForPlan}
-      />
+      {pickerModal}
 
       <NomusBomDiffModal
         open={diffModalOpen}

@@ -2,6 +2,7 @@
 import { TrendingUp, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type {
   CostImpactComparisonLine,
   CostImpactLine,
@@ -159,10 +160,25 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<NomusEffectiveBomCostImpactResult | null>(null);
+  const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
   useEffect(() => {
     if (initialParentCode) setParentCode(initialParentCode);
   }, [initialParentCode]);
+
+  const fetchCostImpact = useCallback(
+    async (resolvedParentCode: string) => {
+      const params = new URLSearchParams({ parentCode: resolvedParentCode });
+      if (recursive) params.set("recursive", "true");
+      const lot = lotSize.trim();
+      if (lot) params.set("lotSize", lot);
+      const data = await fetchJsonOk<NomusEffectiveBomCostImpactResult>(
+        `/api/nomus/effective-pricing-bom/cost-impact?${params.toString()}`
+      );
+      setResult(data);
+    },
+    [lotSize, recursive]
+  );
 
   const load = useCallback(async () => {
     const code = parentCode.trim();
@@ -173,21 +189,26 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ parentCode: code });
-      if (recursive) params.set("recursive", "true");
-      const lot = lotSize.trim();
-      if (lot) params.set("lotSize", lot);
-      const data = await fetchJsonOk<NomusEffectiveBomCostImpactResult>(
-        `/api/nomus/effective-pricing-bom/cost-impact?${params.toString()}`
-      );
-      setResult(data);
+      const outcome = await resolveThen(code, async (resolved) => {
+        setLoading(true);
+        setParentCode(resolved);
+        try {
+          await fetchCostImpact(resolved);
+        } finally {
+          setLoading(false);
+        }
+      });
+      if (!outcome.ok && outcome.reason === "none") {
+        setResult(null);
+        setError(notFoundMessage);
+      }
     } catch (e) {
       setResult(null);
       setError(e instanceof Error ? e.message : "Erro ao calcular impacto de custo.");
     } finally {
       setLoading(false);
     }
-  }, [parentCode, recursive, lotSize]);
+  }, [fetchCostImpact, notFoundMessage, parentCode, resolveThen]);
 
   const lines = result?.lines ?? [];
   const includedLines = result?.includedLines ?? [];
@@ -325,8 +346,9 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
           ) : null}
         </>
       ) : null}
+
+      {pickerModal}
     </div>
   );
 };
-
 

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type { PricingOptionalStatus } from "@/src/lib/nomusOptionalPricingSelection";
 
 type ListResponse = {
@@ -165,25 +166,51 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
   const [groupSelectionDraft, setGroupSelectionDraft] = useState<
     Record<string, { choiceIds: Set<string>; selectedNone: boolean }>
   >({});
+  const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
-  const loadList = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const fetchList = useCallback(
+    async (resolvedSearch: string) => {
       const params = new URLSearchParams({ limit: "200", offset: "0" });
-      if (search.trim()) params.set("search", search.trim());
+      if (resolvedSearch.trim()) params.set("search", resolvedSearch.trim());
       if (statusFilter) params.set("status", statusFilter);
       const result = await fetchJsonOk<ListResponse>(
         `/api/nomus/bom-optionals/pricing-selection?${params.toString()}`
       );
       setList(result);
+    },
+    [statusFilter]
+  );
+
+  const loadList = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const term = search.trim();
+      if (!term) {
+        await fetchList("");
+        return;
+      }
+
+      const outcome = await resolveThen(term, async (code) => {
+        setLoading(true);
+        setSearch(code);
+        try {
+          await fetchList(code);
+        } finally {
+          setLoading(false);
+        }
+      });
+      if (!outcome.ok && outcome.reason === "none") {
+        setList(null);
+        setError(notFoundMessage);
+      }
     } catch (e) {
       setList(null);
       setError(e instanceof Error ? e.message : "Erro ao carregar lista.");
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [fetchList, notFoundMessage, resolveThen, search]);
 
   const loadDetail = useCallback(async (parentCode: string) => {
     setDetailLoading(true);
@@ -746,6 +773,8 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
           )}
         </div>
       ) : null}
+
+      {pickerModal}
     </div>
   );
 };

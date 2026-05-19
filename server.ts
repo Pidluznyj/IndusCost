@@ -85,6 +85,7 @@ import {
 } from "./src/lib/nomusBomBatchReport.js";
 import type { NomusBomActionClass } from "./src/lib/nomusBomClassification.js";
 import { buildNomusBomApplyPlansReport } from "./src/lib/nomusBomApplyPlanLoad.js";
+import { listNomusParentCodeOptions } from "./src/lib/nomusParentCodeOptions.js";
 import {
   createOptionalPricingGroup,
   deactivateOptionalPricingGroup,
@@ -3227,6 +3228,29 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         return res.status(500).json({
           error: "Erro ao classificar divergências Nomus x IndusCost.",
         });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/parent-code-options",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.tab.bom",
+      "products.tab.cost",
+      "products.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const search = req.query.search != null ? String(req.query.search) : "";
+        const limit =
+          req.query.limit != null ? Number.parseInt(String(req.query.limit), 10) : undefined;
+        const result = await listNomusParentCodeOptions(search, limit);
+        return res.json(result);
+      } catch (error) {
+        console.error("GET /api/nomus/parent-code-options", error);
+        return res.status(500).json({ error: "Erro ao listar opções de parentCode Nomus." });
       }
     }
   );
