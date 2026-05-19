@@ -161,6 +161,7 @@ export async function buildBomComparisonForParentCode(parentCode: string): Promi
   return compareBom(sku, nomusAllLines, indusLines, {
     parentDescription: product.description ?? product.name,
     indusProductId: product.id,
+    indusProductName: product.name,
     listSelection,
     missingProductInIndusCost: false,
   });
@@ -175,12 +176,41 @@ export async function buildBomComparisonForProductId(productId: string): Promise
   return buildBomComparisonForParentCode(product.sku);
 }
 
-export async function listDistinctParentCodesFromStage(limit: number): Promise<string[]> {
+export type ListDistinctParentCodesOptions = {
+  limit: number;
+  offset?: number;
+  search?: string;
+};
+
+function parentCodeSearchWhere(search?: string) {
+  const trimmed = search?.trim();
+  if (!trimmed) return undefined;
+  return {
+    parentCode: { contains: trimmed, mode: "insensitive" as const },
+  };
+}
+
+export async function listDistinctParentCodesFromStage(
+  limitOrOptions: number | ListDistinctParentCodesOptions
+): Promise<string[]> {
+  const options: ListDistinctParentCodesOptions =
+    typeof limitOrOptions === "number" ? { limit: limitOrOptions, offset: 0 } : limitOrOptions;
+
   const rows = await prisma.nomusBomComponentStage.findMany({
     distinct: ["parentCode"],
     select: { parentCode: true },
+    where: parentCodeSearchWhere(options.search),
     orderBy: { parentCode: "asc" },
-    take: limit,
+    skip: Math.max(0, options.offset ?? 0),
+    take: options.limit,
   });
   return rows.map((r) => r.parentCode);
+}
+
+export async function countDistinctParentCodesInStage(search?: string): Promise<number> {
+  const grouped = await prisma.nomusBomComponentStage.groupBy({
+    by: ["parentCode"],
+    where: parentCodeSearchWhere(search),
+  });
+  return grouped.length;
 }

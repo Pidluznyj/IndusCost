@@ -72,6 +72,7 @@ export type BomComparisonResult = {
   parentCode: string;
   parentDescription?: string | null;
   indusProductId?: string | null;
+  indusProductName?: string | null;
   selectedNomusList?: NomusListSummary | null;
   ignoredNomusLists: NomusListSummary[];
   summary: {
@@ -327,6 +328,7 @@ export function compareBom(
   options?: {
     parentDescription?: string | null;
     indusProductId?: string | null;
+    indusProductName?: string | null;
     listSelection?: ChooseEffectiveNomusListResult;
     missingProductInIndusCost?: boolean;
   }
@@ -426,6 +428,7 @@ export function compareBom(
     parentCode,
     parentDescription: options?.parentDescription ?? null,
     indusProductId: options?.indusProductId ?? null,
+    indusProductName: options?.indusProductName ?? null,
     selectedNomusList: listSelection.selectedList,
     ignoredNomusLists: listSelection.ignoredLists,
     summary: {

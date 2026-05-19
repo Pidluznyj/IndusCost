@@ -43,6 +43,7 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
 import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomTreeContextPanel";
 import { NomusBomComparisonPanel } from "@/src/components/product/NomusBomComparisonPanel";
+import { NomusBomBatchReportPanel } from "@/src/components/product/NomusBomBatchReportPanel";
 import type { BomCostDetailRowData } from "@/src/components/shared/BomCostDetailRow";
 import {
   OpenBookCompositionTab,
@@ -124,6 +125,13 @@ export const ProductModule = () => {
   const canDeleteProduct = auth.hasPermission("products.delete");
   const canExportEngineering = auth.hasPermission("products.export.engineering");
   const canCompareNomusBom = auth.hasAnyPermission([
+    "products.tab.bom",
+    "products.tab.tree",
+    "products.tab.cost",
+    "products.edit",
+  ]);
+  const canViewNomusBomReport = auth.hasAnyPermission([
+    "products.view",
     "products.tab.bom",
     "products.tab.tree",
     "products.tab.cost",
@@ -363,6 +371,24 @@ export const ProductModule = () => {
     setActiveFormTab("info");
     setIsModalOpen(true);
   };
+
+  const handleOpenProductById = useCallback(
+    async (productId: string) => {
+      const existing = items.find((item) => item.id === productId);
+      if (existing) {
+        handleOpenModal(existing);
+        return;
+      }
+      try {
+        const product = await fetchJsonOk<Product>(`/api/products/${productId}`);
+        handleOpenModal(product);
+      } catch (err) {
+        console.error("Erro ao abrir produto do relatório Nomus:", err);
+        alert(err instanceof Error ? err.message : "Não foi possível abrir o produto.");
+      }
+    },
+    [items]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -937,6 +963,10 @@ export const ProductModule = () => {
           ) : null}
         </div>
       </div>
+
+      {canViewNomusBomReport ? (
+        <NomusBomBatchReportPanel onOpenProduct={(productId) => void handleOpenProductById(productId)} />
+      ) : null}
 
       {/* Import Dialog */}
       <DataImportDialog 

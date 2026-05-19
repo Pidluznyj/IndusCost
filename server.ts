@@ -78,6 +78,7 @@ import {
 } from "./src/lib/appAuthMiddleware.js";
 import { fetchAdminSellerOptionsFromDb } from "./src/lib/adminSellerOptions.js";
 import { buildBomComparisonForProductId } from "./src/lib/nomusBomComparisonLoad.js";
+import { buildNomusBomBatchReport, clampBatchLimit } from "./src/lib/nomusBomBatchReport.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -3085,6 +3086,62 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       } catch (error) {
         console.error("GET /api/products/:id/nomus-bom-comparison", error);
         return res.status(500).json({ error: "Erro ao comparar BOM Nomus com IndusCost." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/bom-comparison/report",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.tab.bom",
+      "products.tab.tree",
+      "products.tab.cost",
+      "products.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const parseBool = (value: unknown): boolean | undefined => {
+          if (value == null || value === "") return undefined;
+          const normalized = String(value).trim().toLowerCase();
+          if (normalized === "true" || normalized === "1") return true;
+          if (normalized === "false" || normalized === "0") return false;
+          return undefined;
+        };
+
+        const statusRaw = String(req.query.status ?? "ALL").trim().toUpperCase();
+        const status =
+          statusRaw === "OK" || statusRaw === "DIVERGENT" || statusRaw === "BLOCKED"
+            ? statusRaw
+            : "ALL";
+
+        const onlyDivergent = parseBool(req.query.onlyDivergent) === true;
+        const limit = clampBatchLimit(
+          req.query.limit != null ? Number.parseInt(String(req.query.limit), 10) : 100
+        );
+        const offset = Math.max(
+          0,
+          req.query.offset != null ? Number.parseInt(String(req.query.offset), 10) : 0
+        );
+
+        const report = await buildNomusBomBatchReport({
+          status: onlyDivergent && status === "ALL" ? "DIVERGENT" : status,
+          onlyMissingProductInIndus:
+            parseBool(req.query.onlyMissingProduct) === true ? true : undefined,
+          onlyNoIndusBom: parseBool(req.query.onlyNoIndusBom) === true ? true : undefined,
+          onlyQuantityDiffs: parseBool(req.query.onlyQuantityDiffs) === true ? true : undefined,
+          onlyOnlyInNomus: parseBool(req.query.onlyOnlyInNomus) === true ? true : undefined,
+          onlyOnlyInIndusCost: parseBool(req.query.onlyOnlyInIndusCost) === true ? true : undefined,
+          search: req.query.search != null ? String(req.query.search) : undefined,
+          limit,
+          offset,
+        });
+
+        return res.json(report);
+      } catch (error) {
+        console.error("GET /api/nomus/bom-comparison/report", error);
+        return res.status(500).json({ error: "Erro ao gerar relatório de divergências Nomus x IndusCost." });
       }
     }
   );
