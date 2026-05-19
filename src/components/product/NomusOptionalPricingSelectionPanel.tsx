@@ -85,6 +85,54 @@ const MODE_LABEL = {
   MULTIPLE: "Múltiplos",
 } as const;
 
+const MODE_HELP: Record<keyof typeof MODE_LABEL, string> = {
+  EXACTLY_ONE:
+    "Use quando uma opção obrigatoriamente substitui a outra. Ex.: Anel fino OU Anel grosso.",
+  OPTIONAL_ONE: "Use quando o item pode entrar ou não no preço. Ex.: Porca/acessório opcional.",
+  MULTIPLE: "Use quando mais de um item opcional pode entrar ao mesmo tempo.",
+};
+
+const GROUP_STATUS_HINT: Record<string, string> = {
+  PENDING:
+    "Este grupo ainda não tem uma seleção salva. Escolha uma opção e clique em 'Salvar seleção'.",
+  RESOLVED: "Este grupo já possui seleção válida para precificação.",
+  STALE:
+    "Este grupo está desatualizado em relação à BOM atual do Nomus. Revise as opções.",
+};
+
+const HOW_TO_ACT_STEPS = [
+  "Agrupe apenas itens que representam escolhas entre si, como Anel Fino OU Anel Grosso.",
+  "Se apenas um item opcional pode ou não entrar no preço, crie um grupo separado com modo 'Opcional: zero ou um'.",
+  "Depois de criar o grupo, selecione qual item entra na precificação e clique em 'Salvar seleção'.",
+  "Itens opcionais sem grupo ou grupos sem seleção deixam o produto como pendente.",
+] as const;
+
+function formatUnassignedHint(count: number): string {
+  if (count === 1) {
+    return "Existe 1 item opcional ainda sem grupo. Crie um grupo para ele ou revise se ele deve entrar na precificação.";
+  }
+  return `Existem ${count} itens opcionais ainda sem grupo. Crie um grupo para eles ou revise se devem entrar na precificação.`;
+}
+
+function getCreateGroupBlockReason(
+  mode: "EXACTLY_ONE" | "OPTIONAL_ONE" | "MULTIPLE",
+  selectedCount: number,
+  groupName: string
+): string | null {
+  if (!groupName.trim()) return "Informe o nome do grupo.";
+  if (selectedCount === 0) {
+    return "Selecione ao menos um item para formar o grupo (marque as caixas abaixo).";
+  }
+  if (mode === "EXACTLY_ONE" && selectedCount < 2) {
+    return "Para 'Exatamente um', selecione pelo menos duas opções alternativas. Para um único item opcional, use 'Opcional: zero ou um'.";
+  }
+  return null;
+}
+
+function filterDetailWarnings(warnings: string[]): string[] {
+  return warnings.filter((w) => !/não pertence\(m\) a nenhum grupo ativo/i.test(w));
+}
+
 function formatQty(v: number | null | undefined): string {
   if (v == null) return "—";
   return v.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
@@ -182,10 +230,21 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
     });
   };
 
+  const createGroupBlockReason = getCreateGroupBlockReason(
+    newGroupMode,
+    selectedForNewGroup.size,
+    newGroupName
+  );
+
   const createGroup = async () => {
     if (!detail) return;
-    if (!newGroupName.trim() || selectedForNewGroup.size === 0) {
-      setError("Informe nome do grupo e selecione ao menos um item opcional.");
+    const blockReason = getCreateGroupBlockReason(
+      newGroupMode,
+      selectedForNewGroup.size,
+      newGroupName
+    );
+    if (blockReason) {
+      setError(blockReason);
       return;
     }
     setError(null);
@@ -442,13 +501,22 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
             </div>
           ) : (
             <>
-              {detail.warnings.length > 0 ? (
+              {filterDetailWarnings(detail.warnings).length > 0 ? (
                 <ul className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 list-disc list-inside">
-                  {detail.warnings.map((w, i) => (
+                  {filterDetailWarnings(detail.warnings).map((w, i) => (
                     <li key={i}>{w}</li>
                   ))}
                 </ul>
               ) : null}
+
+              <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2.5 text-[11px] text-blue-950 space-y-1.5">
+                <p className="font-bold text-xs">Como atuar</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  {HOW_TO_ACT_STEPS.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ol>
+              </div>
 
               <button
                 type="button"
@@ -470,7 +538,18 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
 
               {detail.unassignedOptionalItems.length > 0 ? (
                 <div className="space-y-2 rounded-lg border border-fuchsia-200 bg-fuchsia-50/40 p-3">
-                  <p className="text-xs font-bold text-fuchsia-950">Opcionais sem grupo</p>
+                  <div>
+                    <p className="text-xs font-bold text-fuchsia-950">
+                      Opcionais disponíveis para agrupar
+                    </p>
+                    <p className="text-[11px] text-fuchsia-900/90 mt-1">
+                      Passo 1 — Marque os itens que são alternativas entre si (ou um único item, se
+                      for o caso) e crie o grupo. Isso ainda não define o que entra no preço.
+                    </p>
+                    <p className="text-[11px] text-fuchsia-800 mt-1.5">
+                      {formatUnassignedHint(detail.unassignedOptionalItems.length)}
+                    </p>
+                  </div>
                   <div className="space-y-1">
                     {detail.unassignedOptionalItems.map((item) => (
                       <label
@@ -503,29 +582,46 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
                         className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs"
                       />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-semibold uppercase text-muted-foreground">Modo</label>
+                    <div className="min-w-[200px] flex-1">
+                      <label className="text-[10px] font-semibold uppercase text-muted-foreground">
+                        Modo
+                      </label>
                       <select
                         value={newGroupMode}
                         onChange={(e) =>
                           setNewGroupMode(e.target.value as typeof newGroupMode)
                         }
-                        className="mt-1 h-8 rounded border border-border bg-background px-2 text-xs"
+                        className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs"
                       >
                         <option value="EXACTLY_ONE">Exatamente um</option>
                         <option value="OPTIONAL_ONE">Opcional: zero ou um</option>
                         <option value="MULTIPLE">Múltiplos</option>
                       </select>
+                      <p className="text-[10px] text-muted-foreground mt-1 leading-snug">
+                        {MODE_HELP[newGroupMode]}
+                      </p>
                     </div>
                     <button
                       type="button"
+                      disabled={createGroupBlockReason != null}
                       onClick={() => void createGroup()}
-                      className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold"
+                      className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed self-end"
                     >
                       Criar grupo com selecionados
                     </button>
                   </div>
+                  {createGroupBlockReason ? (
+                    <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                      {createGroupBlockReason}
+                    </p>
+                  ) : null}
                 </div>
+              ) : null}
+
+              {detail.groups.length > 0 ? (
+                <p className="text-xs font-bold text-foreground pt-1 border-t border-border/60">
+                  Grupos criados — Passo 2: seleção para precificação
+                </p>
               ) : null}
 
               {detail.groups.map((group) => {
@@ -544,8 +640,17 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
                         <p className="text-sm font-bold">{group.groupName}</p>
                         <p className="text-[10px] text-muted-foreground">
                           {MODE_LABEL[group.selectionMode]} · Status: {group.status}
-                          {group.status === "STALE" ? " (desatualizado)" : ""}
                         </p>
+                        {GROUP_STATUS_HINT[group.status] ? (
+                          <p className="text-[11px] text-muted-foreground mt-1 max-w-xl">
+                            {GROUP_STATUS_HINT[group.status]}
+                          </p>
+                        ) : null}
+                        {group.selectionMode === "EXACTLY_ONE" ? (
+                          <p className="text-[11px] text-foreground/80 mt-1">
+                            Escolha apenas uma opção abaixo para precificação.
+                          </p>
+                        ) : null}
                       </div>
                       <button
                         type="button"
