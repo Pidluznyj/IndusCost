@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { FileSearch, ExternalLink, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
 import { NomusBomDiffModal } from "@/src/components/product/NomusBomDiffModal";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -114,6 +114,19 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
     }
   }, [fetchPlan, notFoundMessage, resolveThen, search]);
 
+  useEffect(() => {
+    const code = selectedParentCode?.trim();
+    if (!code) return;
+    setError(null);
+    setLoading(true);
+    void fetchPlan(code)
+      .catch((e) => {
+        setReport(null);
+        setError(e instanceof Error ? e.message : "Não foi possível gerar o plano.");
+      })
+      .finally(() => setLoading(false));
+  }, [fetchPlan, selectedParentCode]);
+
   const summary = report?.summary;
 
   return (
@@ -122,10 +135,11 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
         <div>
           <h4 className="text-sm font-bold flex items-center gap-2">
             <FileSearch className="h-4 w-4 text-primary" />
-            Plano Dry-run de Aplicação da BOM Nomus
+            Plano de aplicação
           </h4>
           <p className="text-[11px] text-muted-foreground mt-1 max-w-2xl">
-            Dry-run somente leitura. Nenhuma alteração é aplicada ao IndusCost.
+            Somente simulação. Nenhuma alteração será aplicada ao IndusCost (ProductBOM, custo ou
+            preço oficial).
           </p>
         </div>
         <button

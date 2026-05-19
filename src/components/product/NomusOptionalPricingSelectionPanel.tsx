@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Loader2,
   RefreshCw,
@@ -144,6 +144,10 @@ function formatQty(v: number | null | undefined): string {
 type NomusOptionalPricingSelectionPanelProps = NomusMaintenanceWorkspaceProps & {
   onOpenProduct?: (productId: string) => void;
   disabled?: boolean;
+  /** Oculta lista/busca e abre o detalhe do produto do workspace. */
+  productFocusMode?: boolean;
+  /** Remove borda/título externos (uso dentro de Pendências). */
+  embedded?: boolean;
 };
 
 export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSelectionPanelProps> = ({
@@ -152,6 +156,8 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
   selectedParentDescription,
   selectedIndusProductId,
   onWorkspaceParentChange,
+  productFocusMode = false,
+  embedded = false,
 }) => {
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -258,6 +264,13 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
     reportWorkspaceSelection(parentCode);
     void loadDetail(parentCode);
   };
+
+  useEffect(() => {
+    if (productFocusMode && selectedParentCode?.trim()) {
+      setSearch(selectedParentCode);
+      void loadDetail(selectedParentCode.trim());
+    }
+  }, [loadDetail, productFocusMode, selectedParentCode]);
 
   const closeDetail = () => {
     setDetail(null);
@@ -383,8 +396,17 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
       }
     : null;
 
+  const showListChrome = !productFocusMode && !embedded;
+
   return (
-    <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-4 space-y-4">
+    <div
+      className={cn(
+        "space-y-4",
+        !embedded && "rounded-xl border border-dashed border-primary/30 bg-card/50 p-4"
+      )}
+    >
+      {showListChrome ? (
+        <>
       <div>
         <h4 className="text-sm font-bold flex items-center gap-2">
           <Settings2 className="h-4 w-4 text-primary" />
@@ -433,12 +455,20 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
           Carregar
         </button>
       </div>
+        </>
+      ) : null}
 
       {error ? (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       ) : null}
 
-      {summary && list ? (
+      {productFocusMode && detailLoading && !detail ? (
+        <div className="flex justify-center py-6">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      ) : null}
+
+      {showListChrome && summary && list ? (
         <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 text-xs">
           {[
             { label: "Com opcionais", value: summary.products },
@@ -455,7 +485,7 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
         </div>
       ) : null}
 
-      {list && !detail ? (
+      {showListChrome && list && !detail ? (
         <div className="overflow-x-auto rounded-xl border border-border">
           <table className="w-full text-xs">
             <thead className="bg-muted/50 text-[10px] uppercase text-muted-foreground">
@@ -533,9 +563,11 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
                 {STATUS_LABEL[detail.status]}
               </span>
             </div>
-            <button type="button" onClick={closeDetail} className="p-2 rounded-lg hover:bg-accent">
-              <X className="h-4 w-4" />
-            </button>
+            {!productFocusMode ? (
+              <button type="button" onClick={closeDetail} className="p-2 rounded-lg hover:bg-accent">
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
 
           {detailLoading ? (
@@ -790,7 +822,7 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
         </div>
       ) : null}
 
-      {pickerModal}
+      {!productFocusMode ? pickerModal : null}
     </div>
   );
 };

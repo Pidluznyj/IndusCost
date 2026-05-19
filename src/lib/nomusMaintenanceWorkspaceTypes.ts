@@ -2,12 +2,11 @@ import type { NomusParentCodeOption } from "@/src/lib/nomusParentCodeOptionsType
 
 export type NomusMaintenanceTab =
   | "overview"
-  | "divergences"
-  | "classification"
-  | "apply-plan"
-  | "optional-pricing"
+  | "pending"
   | "effective-pricing-bom"
-  | "cost-impact";
+  | "cost-impact"
+  | "apply-plan"
+  | "diagnostic";
 
 export type NomusWorkspaceParentSelection = {
   parentCode: string;

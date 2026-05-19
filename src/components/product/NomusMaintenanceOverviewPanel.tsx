@@ -2,13 +2,13 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
+  ClipboardList,
   Layers,
-  ListChecks,
   Loader2,
   RefreshCw,
-  SlidersHorizontal,
   TrendingUp,
   FileSearch,
+  Stethoscope,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -48,31 +48,63 @@ function statusClass(status: string): string {
   return "bg-muted text-muted-foreground";
 }
 
-function deriveNextAction(snapshot: OverviewSnapshot): string {
+function formatMoney(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function formatPct(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
+function deriveOverallStatus(snapshot: OverviewSnapshot): { label: string; tone: string } {
   const bom = snapshot.effectiveBom;
-  if (!bom) return "Selecione um produto e atualize a visão geral.";
+  if (!bom) return { label: "Sem dados", tone: "bg-muted text-muted-foreground" };
   if (bom.status === "NO_NOMUS_BOM") {
-    return "Produto sem BOM Nomus no stage — revisar cadastro/sync.";
+    return { label: "Sem BOM Nomus", tone: "bg-red-100 text-red-900" };
   }
-  if (bom.optionalPricingStatus === "PENDING" || bom.optionalPricingStatus === "STALE") {
-    return "Configurar opcionais de precificação antes da BOM efetiva.";
-  }
-  if ((bom.summary.localReviewPendingCount ?? 0) > 0) {
-    return "Resolver revisão de itens locais (ProductBOM) na BOM efetiva.";
+  if (
+    bom.optionalPricingStatus === "PENDING" ||
+    bom.optionalPricingStatus === "STALE" ||
+    (bom.summary.localReviewPendingCount ?? 0) > 0
+  ) {
+    return { label: "Pendências abertas", tone: "bg-amber-100 text-amber-900" };
   }
   if (bom.status === "BLOCKED_UNRESOLVED_COMPONENTS") {
-    return "Resolver componentes não mapeados no IndusCost.";
+    return { label: "Bloqueado", tone: "bg-red-100 text-red-900" };
+  }
+  if (snapshot.costImpact?.status === "READY") {
+    return { label: "Pronto para revisão", tone: "bg-green-100 text-green-800" };
+  }
+  return { label: "Em análise", tone: "bg-blue-100 text-blue-900" };
+}
+
+function deriveNextAction(snapshot: OverviewSnapshot): { text: string; tab: NomusMaintenanceTab } {
+  const bom = snapshot.effectiveBom;
+  if (!bom) return { text: "Selecione um produto e atualize a visão geral.", tab: "overview" };
+  if (bom.status === "NO_NOMUS_BOM") {
+    return { text: "Produto sem BOM Nomus no stage — revisar no diagnóstico técnico.", tab: "diagnostic" };
+  }
+  if (bom.optionalPricingStatus === "PENDING" || bom.optionalPricingStatus === "STALE") {
+    return { text: "Resolver opcionais de precificação na aba Pendências.", tab: "pending" };
+  }
+  if ((bom.summary.localReviewPendingCount ?? 0) > 0) {
+    return { text: "Resolver itens locais para revisão na aba Pendências.", tab: "pending" };
+  }
+  if (bom.status === "BLOCKED_UNRESOLVED_COMPONENTS") {
+    return { text: "Investigar componentes não mapeados no diagnóstico técnico.", tab: "diagnostic" };
   }
   if (snapshot.costImpact?.status === "BLOCKED_EFFECTIVE_BOM_NOT_READY") {
-    return "Concluir pendências da BOM efetiva para calcular impacto de custo.";
+    return { text: "Concluir pendências antes de confiar no impacto de custo.", tab: "pending" };
   }
   if (snapshot.costImpact?.status === "READY" && snapshot.costImpact.delta) {
     const d = snapshot.costImpact.delta.totalCost;
     if (Math.abs(d) > 0.01) {
-      return "Revisar impacto de custo da BOM efetiva vs custo atual.";
+      return { text: "Revisar impacto de custo e o plano de aplicação (simulação).", tab: "cost-impact" };
     }
   }
-  return "Produto pronto para revisão do plano dry-run (sem aplicar alterações).";
+  return { text: "Revisar plano de aplicação (somente simulação).", tab: "apply-plan" };
 }
 
 export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPanelProps> = ({
@@ -140,6 +172,8 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
   const bom = snapshot?.effectiveBom;
   const cost = snapshot?.costImpact;
   const plan = snapshot?.applyPlan?.plans[0];
+  const overall = snapshot ? deriveOverallStatus(snapshot) : null;
+  const nextAction = snapshot ? deriveNextAction(snapshot) : null;
   const warnings = [
     ...(bom?.warnings ?? []),
     ...(cost?.warnings ?? []),
@@ -182,9 +216,9 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
         </p>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-3 space-y-1">
-          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Produto</p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-3 space-y-1 sm:col-span-2">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Produto selecionado</p>
           <p className="text-sm font-bold">{selectedParentCode}</p>
           {selectedParentDescription ? (
             <p className="text-xs text-muted-foreground line-clamp-2">{selectedParentDescription}</p>
@@ -192,6 +226,17 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
           <p className="text-[10px] text-muted-foreground">
             IndusCost: {selectedIndusProductId ? selectedIndusProductId.slice(0, 8) + "…" : "—"}
           </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-3 space-y-1">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Status geral</p>
+          {overall ? (
+            <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold", overall.tone)}>
+              {overall.label}
+            </span>
+          ) : (
+            <span className="text-xs">—</span>
+          )}
         </div>
 
         <div className="rounded-xl border border-border bg-card p-3 space-y-1">
@@ -248,14 +293,48 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
           ) : null}
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-3 space-y-1 sm:col-span-2 lg:col-span-1">
-          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Próxima ação</p>
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-1 sm:col-span-2 lg:col-span-4">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Custos (preview)</p>
+          <div className="grid gap-2 sm:grid-cols-4 text-xs mt-1">
+            <div>
+              <p className="text-[10px] text-muted-foreground">Custo atual</p>
+              <p className="font-bold tabular-nums">{formatMoney(cost?.currentCost?.totalCost)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground">Custo BOM efetiva</p>
+              <p className="font-bold tabular-nums">{formatMoney(cost?.effectiveNomusCost?.totalCost)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground">Diferença R$</p>
+              <p className="font-bold tabular-nums">{formatMoney(cost?.delta?.totalCost)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground">Diferença %</p>
+              <p className="font-bold tabular-nums">{formatPct(cost?.delta?.totalCostPct)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-3 space-y-2 sm:col-span-2 lg:col-span-4">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Próxima ação recomendada</p>
           <p className="text-xs leading-relaxed">
-            {snapshot ? deriveNextAction(snapshot) : loading ? "Carregando…" : "—"}
+            {nextAction?.text ?? (loading ? "Carregando…" : "—")}
           </p>
+          {nextAction ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onNavigateTab(nextAction.tab)}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline disabled:opacity-50"
+            >
+              Ir para ação
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          ) : null}
           {plan ? (
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Plano: {plan.classification.actionClass.replace(/_/g, " ")} · {plan.classification.riskLevel}
+            <p className="text-[10px] text-muted-foreground">
+              Plano (simulação): {plan.classification.actionClass.replace(/_/g, " ")} ·{" "}
+              {plan.classification.riskLevel}
             </p>
           ) : null}
         </div>
@@ -278,11 +357,11 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
       <div className="flex flex-wrap gap-2">
         {(
           [
-            { tab: "optional-pricing" as const, label: "Configurar opcionais", icon: SlidersHorizontal },
-            { tab: "effective-pricing-bom" as const, label: "Ver BOM efetiva", icon: Layers },
-            { tab: "cost-impact" as const, label: "Ver impacto de custo", icon: TrendingUp },
-            { tab: "apply-plan" as const, label: "Ver plano dry-run", icon: FileSearch },
-            { tab: "divergences" as const, label: "Divergências", icon: ListChecks },
+            { tab: "pending" as const, label: "Resolver pendências", icon: ClipboardList },
+            { tab: "effective-pricing-bom" as const, label: "BOM efetiva", icon: Layers },
+            { tab: "cost-impact" as const, label: "Impacto de custo", icon: TrendingUp },
+            { tab: "apply-plan" as const, label: "Plano de aplicação", icon: FileSearch },
+            { tab: "diagnostic" as const, label: "Diagnóstico técnico", icon: Stethoscope },
           ] as const
         ).map(({ tab, label, icon: Icon }) => (
           <button

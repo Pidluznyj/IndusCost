@@ -1,5 +1,5 @@
-﻿import React, { useCallback, useState } from "react";
-import { TrendingUp, Loader2, RefreshCw } from "lucide-react";
+﻿import React, { useCallback, useEffect, useState } from "react";
+import { TrendingUp, Loader2, RefreshCw, ArrowRight, AlertTriangle } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
@@ -150,10 +150,12 @@ function DetailLinesTable({ title, lines }: { title: string; lines: CostImpactLi
 
 type NomusEffectiveBomCostImpactPanelProps = NomusMaintenanceWorkspaceProps & {
   disabled?: boolean;
+  onGoToPending?: () => void;
 };
 
 export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImpactPanelProps> = ({
   disabled = false,
+  onGoToPending,
   selectedParentCode,
   selectedParentDescription,
   selectedIndusProductId,
@@ -220,7 +222,29 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
     }
   }, [fetchCostImpact, notFoundMessage, parentCode, resolveThen]);
 
+  useEffect(() => {
+    const code = selectedParentCode?.trim();
+    if (!code) return;
+    setError(null);
+    setLoading(true);
+    void fetchCostImpact(code)
+      .catch((e) => {
+        setResult(null);
+        setError(e instanceof Error ? e.message : "Erro ao calcular impacto de custo.");
+      })
+      .finally(() => setLoading(false));
+  }, [fetchCostImpact, selectedParentCode]);
+
   const lines = result?.lines ?? [];
+  const topMovers = [...lines]
+    .filter((l) => l.deltaCost != null && Math.abs(l.deltaCost) > 0.01)
+    .sort((a, b) => Math.abs(b.deltaCost ?? 0) - Math.abs(a.deltaCost ?? 0))
+    .slice(0, 8);
+  const localIncluded = lines.filter((l) => l.status === "LOCAL_INCLUDED_BY_REVIEW");
+  const hasPendingImpact =
+    result?.optionalPricingStatus === "PENDING" ||
+    result?.optionalPricingStatus === "STALE" ||
+    result?.status === "BLOCKED_EFFECTIVE_BOM_NOT_READY";
   const includedLines = result?.includedLines ?? [];
   const excludedLines = result?.excludedLines ?? [];
   const unresolvedLines = result?.unresolvedLines ?? [];
@@ -302,6 +326,25 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
             <span className="text-[10px] text-muted-foreground">BOM: {result.effectiveBomStatus}</span>
           </div>
 
+          {hasPendingImpact ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-amber-950 flex items-center gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                Há pendências que podem afetar o impacto.
+              </p>
+              {onGoToPending ? (
+                <button
+                  type="button"
+                  onClick={onGoToPending}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                >
+                  Resolver pendências
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
           {result.warnings.length > 0 ? (
             <ul className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 list-disc list-inside">
               {result.warnings.map((w, i) => (
@@ -310,23 +353,48 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
             </ul>
           ) : null}
 
-          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 text-xs">
+          {localIncluded.length > 0 ? (
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
+              <p className="text-[11px] font-bold text-teal-950">Componentes locais incluídos</p>
+              <ul className="mt-1 text-[11px] text-teal-900 space-y-0.5">
+                {localIncluded.map((l) => (
+                  <li key={l.componentCode}>
+                    {l.componentCode}
+                    {l.description ? ` — ${l.description}` : ""}
+                    <span className="text-teal-700"> · componente local incluído</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 text-xs">
             {[
-              { label: "Custo atual", value: formatMoney(currentCost?.totalCost) },
-              { label: "Custo BOM efetiva", value: formatMoney(effectiveCost?.totalCost) },
-              { label: "Diferença R$", value: formatMoney(delta?.totalCost) },
-              { label: "Diferença %", value: formatPct(delta?.totalCostPct) },
-              {
-                label: "Sem custo resolvido",
-                value: String(result.summary.unresolvedCostLinesCount ?? 0),
-              },
+              { label: "Custo atual", value: formatMoney(currentCost?.totalCost), highlight: false },
+              { label: "Custo pela BOM efetiva", value: formatMoney(effectiveCost?.totalCost), highlight: false },
+              { label: "Diferença R$", value: formatMoney(delta?.totalCost), highlight: true },
+              { label: "Diferença %", value: formatPct(delta?.totalCostPct), highlight: true },
             ].map((c) => (
-              <div key={c.label} className="rounded-lg border border-border bg-background px-3 py-2">
+              <div
+                key={c.label}
+                className={cn(
+                  "rounded-lg border px-3 py-2",
+                  c.highlight ? "border-primary/40 bg-primary/5" : "border-border bg-background"
+                )}
+              >
                 <p className="text-[10px] uppercase text-muted-foreground font-semibold">{c.label}</p>
                 <p className="font-bold mt-1 tabular-nums">{c.value}</p>
               </div>
             ))}
           </div>
+
+          {topMovers.length > 0 ? (
+            <ComparisonTable
+              title="Principais componentes que mudaram"
+              lines={topMovers}
+              emptyMessage=""
+            />
+          ) : null}
 
           {currentCost && effectiveCost ? (
             <div className="grid gap-2 sm:grid-cols-2 text-[11px]">

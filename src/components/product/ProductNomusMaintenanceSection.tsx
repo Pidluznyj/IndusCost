@@ -1,13 +1,12 @@
 import React, { useCallback, useState } from "react";
 import { Check, Loader2, Package, RotateCcw, Search, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { NomusBomBatchReportPanel } from "@/src/components/product/NomusBomBatchReportPanel";
-import { NomusBomClassificationPanel } from "@/src/components/product/NomusBomClassificationPanel";
 import { NomusBomApplyPlanPanel } from "@/src/components/product/NomusBomApplyPlanPanel";
-import { NomusOptionalPricingSelectionPanel } from "@/src/components/product/NomusOptionalPricingSelectionPanel";
 import { NomusEffectivePricingBomPanel } from "@/src/components/product/NomusEffectivePricingBomPanel";
 import { NomusEffectiveBomCostImpactPanel } from "@/src/components/product/NomusEffectiveBomCostImpactPanel";
 import { NomusMaintenanceOverviewPanel } from "@/src/components/product/NomusMaintenanceOverviewPanel";
+import { NomusMaintenancePendingPanel } from "@/src/components/product/NomusMaintenancePendingPanel";
+import { NomusMaintenanceDiagnosticPanel } from "@/src/components/product/NomusMaintenanceDiagnosticPanel";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type { NomusParentCodeOption } from "@/src/lib/nomusParentCodeOptionsTypes";
 import type {
@@ -19,12 +18,11 @@ export type { NomusMaintenanceTab } from "@/src/lib/nomusMaintenanceWorkspaceTyp
 
 const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = [
   { id: "overview", label: "Visão Geral" },
-  { id: "divergences", label: "Divergências" },
-  { id: "classification", label: "Classificação" },
-  { id: "optional-pricing", label: "Opcionais de Precificação" },
+  { id: "pending", label: "Pendências" },
   { id: "effective-pricing-bom", label: "BOM efetiva" },
   { id: "cost-impact", label: "Impacto de custo" },
-  { id: "apply-plan", label: "Plano dry-run" },
+  { id: "apply-plan", label: "Plano de aplicação" },
+  { id: "diagnostic", label: "Diagnóstico técnico" },
 ];
 
 type ProductNomusMaintenanceSectionProps = {
@@ -123,6 +121,8 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
     selectedIndusProductId,
     onWorkspaceParentChange: handleWorkspaceParentChange,
   };
+
+  const goToPending = () => setActiveNomusMaintenanceTab("pending");
 
   return (
     <div className="space-y-4" data-tour="products-nomus-maintenance">
@@ -239,15 +239,6 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
         )}
       </div>
 
-      {/*
-        Fase futura — filas operacionais em lote:
-        - opcionais pendentes / STALE
-        - revisão local pendente
-        - maior impacto de custo (preview Nomus vs IndusCost)
-        - candidatos a aplicação (dry-run)
-        - Nomus sem produto IndusCost
-      */}
-
       <div
         className="flex flex-wrap gap-2 border-b border-border pb-2"
         role="tablist"
@@ -279,21 +270,14 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
             onNavigateTab={setActiveNomusMaintenanceTab}
           />
         ) : null}
-        {activeNomusMaintenanceTab === "divergences" ? (
-          <NomusBomBatchReportPanel onOpenProduct={onOpenProduct} {...workspaceProps} />
-        ) : null}
-        {activeNomusMaintenanceTab === "classification" ? (
-          <NomusBomClassificationPanel onOpenProduct={onOpenProduct} {...workspaceProps} />
-        ) : null}
-        {activeNomusMaintenanceTab === "apply-plan" ? (
-          <NomusBomApplyPlanPanel onOpenProduct={onOpenProduct} {...workspaceProps} />
-        ) : null}
-        {activeNomusMaintenanceTab === "optional-pricing" ? (
-          <NomusOptionalPricingSelectionPanel {...workspaceProps} />
+        {activeNomusMaintenanceTab === "pending" ? (
+          <NomusMaintenancePendingPanel {...workspaceProps} />
         ) : null}
         {activeNomusMaintenanceTab === "effective-pricing-bom" ? (
           <NomusEffectivePricingBomPanel
             {...workspaceProps}
+            hideLocalReviewSection
+            onGoToPending={goToPending}
             onViewCostImpact={(code) => {
               handleWorkspaceParentChange({
                 parentCode: code,
@@ -306,7 +290,13 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
           />
         ) : null}
         {activeNomusMaintenanceTab === "cost-impact" ? (
-          <NomusEffectiveBomCostImpactPanel {...workspaceProps} />
+          <NomusEffectiveBomCostImpactPanel {...workspaceProps} onGoToPending={goToPending} />
+        ) : null}
+        {activeNomusMaintenanceTab === "apply-plan" ? (
+          <NomusBomApplyPlanPanel onOpenProduct={onOpenProduct} {...workspaceProps} />
+        ) : null}
+        {activeNomusMaintenanceTab === "diagnostic" ? (
+          <NomusMaintenanceDiagnosticPanel onOpenProduct={onOpenProduct} {...workspaceProps} />
         ) : null}
       </div>
 
