@@ -5,6 +5,10 @@ export type NomusBomActionClass =
   | "AUTO_APPLY_CANDIDATE"
   | "AUTO_UPDATE_QUANTITIES_CANDIDATE"
   | "CREATE_BOM_CANDIDATE"
+  | "CREATE_PRODUCT_FROM_NOMUS_CANDIDATE"
+  | "IMPORT_PRODUCT_THEN_CREATE_BOM_CANDIDATE"
+  | "LOCAL_ONLY_KEEP"
+  | "LOCAL_ONLY_REVIEW"
   | "REVIEW_STRUCTURE_DIFF"
   | "REVIEW_QUANTITY_DIFF"
   | "REVIEW_INDUS_OPERATIONAL_ITEM"
@@ -25,6 +29,10 @@ export type NomusBomRecommendedAction =
   | "CAN_REPLACE_BOM_AFTER_BACKUP_AND_APPROVAL"
   | "CREATE_OR_MAP_PARENT_PRODUCT_FIRST"
   | "CREATE_OR_MAP_COMPONENTS_FIRST"
+  | "IMPORT_PRODUCT_FROM_NOMUS_FIRST"
+  | "IMPORT_PRODUCT_AND_THEN_PLAN_BOM"
+  | "KEEP_LOCAL_PRODUCT_DO_NOT_DELETE"
+  | "REVIEW_LOCAL_PRODUCT_WITHOUT_NOMUS_REFERENCE"
   | "MOVE_OPERATIONAL_ITEM_TO_ROUTING_OR_IGNORE"
   | "REVIEW_PREPARED_COMPONENT_POLICY"
   | "REVIEW_KIT_OR_PACK_POLICY"
@@ -58,7 +66,10 @@ export type NomusBomClassification = {
 
   canApplyAutomaticallyNow: boolean;
   canApplyWithApproval: boolean;
+  /** Bloqueia aplicação de BOM nesta fase (não bloqueia plano de importação de produto). */
   isBlocked: boolean;
+  isProductImportCandidate: boolean;
+  isBlockedForBomApplication: boolean;
 
   reasons: string[];
   issues: NomusBomClassificationIssue[];
@@ -96,7 +107,12 @@ const CANDIDATE_ACTION_CLASSES: NomusBomActionClass[] = [
   "AUTO_APPLY_CANDIDATE",
   "AUTO_UPDATE_QUANTITIES_CANDIDATE",
   "CREATE_BOM_CANDIDATE",
+  "CREATE_PRODUCT_FROM_NOMUS_CANDIDATE",
+  "IMPORT_PRODUCT_THEN_CREATE_BOM_CANDIDATE",
 ];
+
+/** Limitação documentada: Product não possui nomusId/sourceSystem; catálogo Nomus inferido via NomusBomComponentStage.parentCode. */
+export const NOMUS_PRODUCT_EXISTENCE_SOURCE = "NomusBomComponentStage.parentCode" as const;
 
 export function detectOperationalItem(componentCode: string, description?: string | null): boolean {
   const code = normalizeComponentCode(componentCode);
@@ -276,6 +292,14 @@ export function buildSuggestedNextStepText(classification: NomusBomClassificatio
       return "BOM alinhada entre Nomus e IndusCost. Nenhuma ação necessária.";
     case "CREATE_OR_MAP_PARENT_PRODUCT_FIRST":
       return "Cadastre ou vincule o produto pai no IndusCost antes de aplicar a BOM Nomus.";
+    case "IMPORT_PRODUCT_FROM_NOMUS_FIRST":
+      return "Importe o produto do Nomus no IndusCost antes de planejar ou aplicar a BOM.";
+    case "IMPORT_PRODUCT_AND_THEN_PLAN_BOM":
+      return "Importe o produto Nomus e, após cadastro, revise o plano de criação da BOM.";
+    case "KEEP_LOCAL_PRODUCT_DO_NOT_DELETE":
+      return "Produto existe apenas no IndusCost — manter conforme regra oficial; não excluir automaticamente.";
+    case "REVIEW_LOCAL_PRODUCT_WITHOUT_NOMUS_REFERENCE":
+      return "Produto IndusCost sem referência Nomus no stage de BOM — revisar manualmente.";
     case "CREATE_OR_MAP_COMPONENTS_FIRST":
       return "Cadastre ou mapeie os componentes Nomus ausentes (Product/Material) antes de aplicar.";
     case "CAN_CREATE_BOM_FROM_NOMUS_AFTER_REVIEW":
@@ -328,6 +352,8 @@ export function classifyBomComparison(
   let recommendedAction: NomusBomRecommendedAction;
   let riskLevel: NomusBomRiskLevel;
   let isBlocked = false;
+  let isBlockedForBomApplication = false;
+  let isProductImportCandidate = false;
   let canApplyWithApproval = false;
 
   const isOk =
@@ -346,24 +372,58 @@ export function classifyBomComparison(
     recommendedAction = "MANUAL_ENGINEERING_REVIEW_REQUIRED";
     riskLevel = "BLOCKED";
     isBlocked = true;
+    isBlockedForBomApplication = true;
     reasons.push("Lista Nomus ambígua — não aplicar até escolher lista efetiva.");
+  } else if (noNomusBom && !summary.missingProductInIndusCost) {
+    actionClass = "LOCAL_ONLY_REVIEW";
+    recommendedAction = "REVIEW_LOCAL_PRODUCT_WITHOUT_NOMUS_REFERENCE";
+    riskLevel = "MEDIUM";
+    isBlocked = true;
+    isBlockedForBomApplication = true;
+    reasons.push(
+      "Produto existe no IndusCost sem BOM Nomus no stage — manter; revisar referência Nomus."
+    );
   } else if (noNomusBom) {
     actionClass = "BLOCKED_NO_NOMUS_BOM";
     recommendedAction = "BLOCKED_DO_NOT_APPLY";
     riskLevel = "BLOCKED";
     isBlocked = true;
+    isBlockedForBomApplication = true;
     reasons.push("Sem BOM no stage Nomus para este produto pai.");
   } else if (summary.missingProductInIndusCost) {
-    actionClass = "BLOCKED_MISSING_PARENT_PRODUCT";
-    recommendedAction = "CREATE_OR_MAP_PARENT_PRODUCT_FIRST";
-    riskLevel = "BLOCKED";
+    const hasResolvableBom =
+      summary.nomusLines > 0 && metrics.missingNomusComponentsCount === 0;
+    const isPrepared = hasPreparedPolicyPending(result, metrics);
+    const isKit = hasKitOrPackPolicyPending(result, metrics);
+
+    if (hasResolvableBom && !isPrepared && !isKit) {
+      actionClass = "IMPORT_PRODUCT_THEN_CREATE_BOM_CANDIDATE";
+      recommendedAction = "IMPORT_PRODUCT_AND_THEN_PLAN_BOM";
+    } else {
+      actionClass = "CREATE_PRODUCT_FROM_NOMUS_CANDIDATE";
+      recommendedAction = "IMPORT_PRODUCT_FROM_NOMUS_FIRST";
+    }
+
+    isProductImportCandidate = true;
     isBlocked = true;
-    reasons.push("Produto pai não existe no IndusCost.");
+    isBlockedForBomApplication = true;
+    riskLevel = isPrepared || isKit ? "BLOCKED" : "MEDIUM";
+    canApplyWithApproval = false;
+    reasons.push(
+      "Produto existe no Nomus e ainda não existe no IndusCost; deve ser importado antes de aplicar BOM."
+    );
+    if (isPrepared) {
+      reasons.push("Preparado 150.xx — política de mistura pendente antes da BOM.");
+    }
+    if (isKit) {
+      reasons.push("Kit/pacote/EAN — política comercial/engenharia pendente antes da BOM.");
+    }
   } else if (metrics.missingNomusComponentsCount > 0) {
     actionClass = "BLOCKED_MISSING_NOMUS_COMPONENT";
     recommendedAction = "CREATE_OR_MAP_COMPONENTS_FIRST";
     riskLevel = "BLOCKED";
     isBlocked = true;
+    isBlockedForBomApplication = true;
     reasons.push(
       `${metrics.missingNomusComponentsCount} componente(s) Nomus sem cadastro Product/Material no IndusCost.`
     );
@@ -418,7 +478,11 @@ export function classifyBomComparison(
     reasons.push("Divergência não classificada em candidato automático — revisar manualmente.");
   }
 
-  if (hasPreparedPolicyPending(result, metrics) && actionClass !== "BLOCKED_MISSING_PARENT_PRODUCT") {
+  if (
+    hasPreparedPolicyPending(result, metrics) &&
+    !isProductImportCandidate &&
+    actionClass !== "LOCAL_ONLY_REVIEW"
+  ) {
     if (!reasons.some((r) => r.includes("150"))) {
       reasons.push("Família preparados 150.xx — política pendente.");
     }
@@ -447,6 +511,8 @@ export function classifyBomComparison(
     canApplyAutomaticallyNow: false,
     canApplyWithApproval,
     isBlocked,
+    isProductImportCandidate,
+    isBlockedForBomApplication: isBlockedForBomApplication || isBlocked,
     reasons,
     issues,
     metrics,

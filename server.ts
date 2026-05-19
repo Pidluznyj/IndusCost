@@ -84,6 +84,7 @@ import {
   clampBatchLimit,
 } from "./src/lib/nomusBomBatchReport.js";
 import type { NomusBomActionClass } from "./src/lib/nomusBomClassification.js";
+import { buildNomusBomApplyPlansReport } from "./src/lib/nomusBomApplyPlanLoad.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const importCache = new Map<string, any>();
@@ -3204,6 +3205,63 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         console.error("GET /api/nomus/bom-comparison/classification", error);
         return res.status(500).json({
           error: "Erro ao classificar divergências Nomus x IndusCost.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/bom-comparison/apply-plan",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.tab.bom",
+      "products.tab.tree",
+      "products.tab.cost",
+      "products.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const parseBool = (value: unknown): boolean | undefined => {
+          if (value == null || value === "") return undefined;
+          const normalized = String(value).trim().toLowerCase();
+          if (normalized === "true" || normalized === "1") return true;
+          if (normalized === "false" || normalized === "0") return false;
+          return undefined;
+        };
+
+        const limit = clampBatchLimit(
+          req.query.limit != null ? Number.parseInt(String(req.query.limit), 10) : 100
+        );
+        const offset = Math.max(
+          0,
+          req.query.offset != null ? Number.parseInt(String(req.query.offset), 10) : 0
+        );
+
+        const riskRaw = req.query.risk != null ? String(req.query.risk).trim().toUpperCase() : undefined;
+        const risk =
+          riskRaw === "LOW" || riskRaw === "MEDIUM" || riskRaw === "HIGH" || riskRaw === "BLOCKED"
+            ? riskRaw
+            : undefined;
+
+        const sku = req.query.sku != null ? String(req.query.sku).trim() : undefined;
+
+        const report = await buildNomusBomApplyPlansReport({
+          sku: sku || undefined,
+          limit,
+          offset,
+          risk,
+          onlyCandidates: parseBool(req.query.onlyCandidates) === true ? true : undefined,
+          onlyBlocked: parseBool(req.query.onlyBlocked) === true ? true : undefined,
+          onlyImportProducts: parseBool(req.query.onlyImportProducts) === true ? true : undefined,
+          onlyUpdateQuantities: parseBool(req.query.onlyUpdateQuantities) === true ? true : undefined,
+        });
+
+        return res.json(report);
+      } catch (error) {
+        console.error("GET /api/nomus/bom-comparison/apply-plan", error);
+        return res.status(500).json({
+          error: "Erro ao gerar plano dry-run de aplicação da BOM Nomus.",
         });
       }
     }

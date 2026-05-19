@@ -102,6 +102,8 @@ export type NomusBomClassificationSummary = {
   autoApplyCandidates: number;
   createBomCandidates: number;
   updateQuantitiesCandidates: number;
+  importProductCandidates: number;
+  localOnlyReview: number;
   reviewStructureDiff: number;
   reviewQuantityDiff: number;
   reviewOperationalItems: number;
@@ -264,6 +266,8 @@ function aggregateClassificationSummary(
     autoApplyCandidates: 0,
     createBomCandidates: 0,
     updateQuantitiesCandidates: 0,
+    importProductCandidates: 0,
+    localOnlyReview: 0,
     reviewStructureDiff: 0,
     reviewQuantityDiff: 0,
     reviewOperationalItems: 0,
@@ -291,6 +295,14 @@ function aggregateClassificationSummary(
         break;
       case "AUTO_UPDATE_QUANTITIES_CANDIDATE":
         summary.updateQuantitiesCandidates += 1;
+        break;
+      case "CREATE_PRODUCT_FROM_NOMUS_CANDIDATE":
+      case "IMPORT_PRODUCT_THEN_CREATE_BOM_CANDIDATE":
+        summary.importProductCandidates += 1;
+        break;
+      case "LOCAL_ONLY_REVIEW":
+      case "LOCAL_ONLY_KEEP":
+        summary.localOnlyReview += 1;
         break;
       case "REVIEW_STRUCTURE_DIFF":
         summary.reviewStructureDiff += 1;

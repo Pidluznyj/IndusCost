@@ -45,6 +45,7 @@ import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomT
 import { NomusBomComparisonPanel } from "@/src/components/product/NomusBomComparisonPanel";
 import { NomusBomBatchReportPanel } from "@/src/components/product/NomusBomBatchReportPanel";
 import { NomusBomClassificationPanel } from "@/src/components/product/NomusBomClassificationPanel";
+import { NomusBomApplyPlanPanel } from "@/src/components/product/NomusBomApplyPlanPanel";
 import type { BomCostDetailRowData } from "@/src/components/shared/BomCostDetailRow";
 import {
   OpenBookCompositionTab,
@@ -969,6 +970,7 @@ export const ProductModule = () => {
         <>
           <NomusBomBatchReportPanel onOpenProduct={(productId) => void handleOpenProductById(productId)} />
           <NomusBomClassificationPanel onOpenProduct={(productId) => void handleOpenProductById(productId)} />
+          <NomusBomApplyPlanPanel onOpenProduct={(productId) => void handleOpenProductById(productId)} />
         </>
       ) : null}
 
