@@ -3,10 +3,12 @@ import { FileSearch, ExternalLink, GitCompareArrows, Loader2, RefreshCw } from "
 import { NomusBomDiffModal } from "@/src/components/product/NomusBomDiffModal";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
+import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
+import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type { NomusBomApplyPlan } from "@/src/lib/nomusBomApplyPlan";
 import type { NomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
 
-type NomusBomApplyPlanPanelProps = {
+type NomusBomApplyPlanPanelProps = NomusMaintenanceWorkspaceProps & {
   onOpenProduct?: (productId: string) => void;
   disabled?: boolean;
 };
@@ -14,6 +16,10 @@ type NomusBomApplyPlanPanelProps = {
 export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
   onOpenProduct,
   disabled = false,
+  selectedParentCode,
+  selectedParentDescription,
+  selectedIndusProductId,
+  onWorkspaceParentChange,
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +33,13 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
   const [diffModalParentCode, setDiffModalParentCode] = useState<string | null>(null);
   const [diffModalProductId, setDiffModalProductId] = useState<string | null>(null);
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
+  const { reportWorkspaceSelection } = useNomusMaintenanceWorkspaceSync({
+    selectedParentCode,
+    selectedParentDescription,
+    selectedIndusProductId,
+    onWorkspaceParentChange,
+    setLocalCode: setSearch,
+  });
 
   const openDiffModalForPlan = (plan: NomusBomApplyPlan) => {
     setDiffModalParentCode(plan.parentCode);
@@ -77,9 +90,10 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
 
       const outcome = await resolveThen(
         term,
-        async (code) => {
+        async (code, option) => {
           setLoading(true);
           setSearch(code);
+          reportWorkspaceSelection(code, option);
           try {
             await fetchPlan(code);
           } finally {

@@ -3,6 +3,8 @@ import { Layers, Loader2, RefreshCw, ChevronRight, Save } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
+import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
+import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type {
   EffectivePricingBomLine,
   EffectivePricingBomResult,
@@ -417,7 +419,7 @@ function TreeBranch({ node, depth = 0 }: { node: EffectivePricingBomTreeNode; de
   );
 }
 
-type NomusEffectivePricingBomPanelProps = {
+type NomusEffectivePricingBomPanelProps = NomusMaintenanceWorkspaceProps & {
   disabled?: boolean;
   onViewCostImpact?: (parentCode: string) => void;
 };
@@ -425,6 +427,10 @@ type NomusEffectivePricingBomPanelProps = {
 export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPanelProps> = ({
   disabled = false,
   onViewCostImpact,
+  selectedParentCode,
+  selectedParentDescription,
+  selectedIndusProductId,
+  onWorkspaceParentChange,
 }) => {
   const [parentCode, setParentCode] = useState("");
   const [recursive, setRecursive] = useState(false);
@@ -432,6 +438,13 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EffectivePricingBomResult | null>(null);
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
+  const { reportWorkspaceSelection } = useNomusMaintenanceWorkspaceSync({
+    selectedParentCode,
+    selectedParentDescription,
+    selectedIndusProductId,
+    onWorkspaceParentChange,
+    setLocalCode: setParentCode,
+  });
 
   const fetchEffectiveBom = useCallback(
     async (resolvedParentCode: string) => {
@@ -454,9 +467,10 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
     setLoading(true);
     setError(null);
     try {
-      const outcome = await resolveThen(code, async (resolved) => {
+      const outcome = await resolveThen(code, async (resolved, option) => {
         setLoading(true);
         setParentCode(resolved);
+        reportWorkspaceSelection(resolved, option);
         try {
           await fetchEffectiveBom(resolved);
         } finally {

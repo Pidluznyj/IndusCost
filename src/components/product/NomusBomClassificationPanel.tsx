@@ -3,10 +3,12 @@ import { ClipboardList, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
+import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
+import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type { NomusBomClassificationReport } from "@/src/lib/nomusBomBatchReport";
 import type { NomusBomRiskLevel } from "@/src/lib/nomusBomClassification";
 
-type NomusBomClassificationPanelProps = {
+type NomusBomClassificationPanelProps = NomusMaintenanceWorkspaceProps & {
   onOpenProduct?: (productId: string) => void;
   disabled?: boolean;
 };
@@ -33,6 +35,10 @@ function actionClassLabel(actionClass: string): string {
 export const NomusBomClassificationPanel: React.FC<NomusBomClassificationPanelProps> = ({
   onOpenProduct,
   disabled = false,
+  selectedParentCode,
+  selectedParentDescription,
+  selectedIndusProductId,
+  onWorkspaceParentChange,
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +49,13 @@ export const NomusBomClassificationPanel: React.FC<NomusBomClassificationPanelPr
   const [onlyReview, setOnlyReview] = useState(false);
   const [onlyCandidates, setOnlyCandidates] = useState(false);
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
+  const { reportWorkspaceSelection } = useNomusMaintenanceWorkspaceSync({
+    selectedParentCode,
+    selectedParentDescription,
+    selectedIndusProductId,
+    onWorkspaceParentChange,
+    setLocalCode: setSearch,
+  });
 
   const fetchClassification = useCallback(
     async (resolvedSearch: string) => {
@@ -71,8 +84,9 @@ export const NomusBomClassificationPanel: React.FC<NomusBomClassificationPanelPr
         return;
       }
 
-      const outcome = await resolveThen(term, async (code) => {
+      const outcome = await resolveThen(term, async (code, option) => {
         setSearch(code);
+        reportWorkspaceSelection(code, option);
         await fetchClassification(code);
       });
       if (!outcome.ok && outcome.reason === "none") {

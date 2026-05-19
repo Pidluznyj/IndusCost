@@ -3,9 +3,11 @@ import { BarChart3, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
+import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
+import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type { NomusBomBatchReport, NomusBomBatchReportRow } from "@/src/lib/nomusBomBatchReport";
 
-type NomusBomBatchReportPanelProps = {
+type NomusBomBatchReportPanelProps = NomusMaintenanceWorkspaceProps & {
   onOpenProduct?: (productId: string) => void;
   disabled?: boolean;
 };
@@ -28,6 +30,10 @@ function statusBadgeClass(status: NomusBomBatchReportRow["status"]): string {
 export const NomusBomBatchReportPanel: React.FC<NomusBomBatchReportPanelProps> = ({
   onOpenProduct,
   disabled = false,
+  selectedParentCode,
+  selectedParentDescription,
+  selectedIndusProductId,
+  onWorkspaceParentChange,
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +42,13 @@ export const NomusBomBatchReportPanel: React.FC<NomusBomBatchReportPanelProps> =
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [onlyDivergent, setOnlyDivergent] = useState(false);
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
+  const { reportWorkspaceSelection } = useNomusMaintenanceWorkspaceSync({
+    selectedParentCode,
+    selectedParentDescription,
+    selectedIndusProductId,
+    onWorkspaceParentChange,
+    setLocalCode: setSearch,
+  });
 
   const fetchReport = useCallback(
     async (resolvedSearch: string) => {
@@ -68,8 +81,9 @@ export const NomusBomBatchReportPanel: React.FC<NomusBomBatchReportPanelProps> =
         return;
       }
 
-      const outcome = await resolveThen(term, async (code) => {
+      const outcome = await resolveThen(term, async (code, option) => {
         setSearch(code);
+        reportWorkspaceSelection(code, option);
         await fetchReport(code);
       });
       if (!outcome.ok && outcome.reason === "none") {

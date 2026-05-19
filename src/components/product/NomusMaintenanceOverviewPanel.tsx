@@ -1,0 +1,312 @@
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Layers,
+  ListChecks,
+  Loader2,
+  RefreshCw,
+  SlidersHorizontal,
+  TrendingUp,
+  FileSearch,
+} from "lucide-react";
+import { cn } from "@/src/lib/utils";
+import { fetchJsonOk } from "@/src/lib/http";
+import type {
+  NomusMaintenanceTab,
+  NomusMaintenanceWorkspaceProps,
+} from "@/src/lib/nomusMaintenanceWorkspaceTypes";
+import type { NomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
+import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingBomTypes";
+import type { NomusEffectiveBomCostImpactResult } from "@/src/lib/nomusEffectiveBomCostImpactTypes";
+
+type OptionalListRow = {
+  parentCode: string;
+  pricingOptionalStatus: string;
+};
+
+type OptionalListResponse = {
+  rows: OptionalListRow[];
+};
+
+type OverviewSnapshot = {
+  effectiveBom: EffectivePricingBomResult | null;
+  costImpact: NomusEffectiveBomCostImpactResult | null;
+  applyPlan: NomusBomApplyPlansReport | null;
+  optionalRow: OptionalListRow | null;
+};
+
+type NomusMaintenanceOverviewPanelProps = NomusMaintenanceWorkspaceProps & {
+  onNavigateTab: (tab: NomusMaintenanceTab) => void;
+  disabled?: boolean;
+};
+
+function statusClass(status: string): string {
+  if (status.includes("READY") || status === "RESOLVED") return "bg-green-100 text-green-800";
+  if (status.includes("PENDING") || status.includes("STALE")) return "bg-amber-100 text-amber-900";
+  if (status.includes("BLOCKED") || status === "NO_NOMUS_BOM") return "bg-red-100 text-red-900";
+  return "bg-muted text-muted-foreground";
+}
+
+function deriveNextAction(snapshot: OverviewSnapshot): string {
+  const bom = snapshot.effectiveBom;
+  if (!bom) return "Selecione um produto e atualize a visão geral.";
+  if (bom.status === "NO_NOMUS_BOM") {
+    return "Produto sem BOM Nomus no stage — revisar cadastro/sync.";
+  }
+  if (bom.optionalPricingStatus === "PENDING" || bom.optionalPricingStatus === "STALE") {
+    return "Configurar opcionais de precificação antes da BOM efetiva.";
+  }
+  if ((bom.summary.localReviewPendingCount ?? 0) > 0) {
+    return "Resolver revisão de itens locais (ProductBOM) na BOM efetiva.";
+  }
+  if (bom.status === "BLOCKED_UNRESOLVED_COMPONENTS") {
+    return "Resolver componentes não mapeados no IndusCost.";
+  }
+  if (snapshot.costImpact?.status === "BLOCKED_EFFECTIVE_BOM_NOT_READY") {
+    return "Concluir pendências da BOM efetiva para calcular impacto de custo.";
+  }
+  if (snapshot.costImpact?.status === "READY" && snapshot.costImpact.delta) {
+    const d = snapshot.costImpact.delta.totalCost;
+    if (Math.abs(d) > 0.01) {
+      return "Revisar impacto de custo da BOM efetiva vs custo atual.";
+    }
+  }
+  return "Produto pronto para revisão do plano dry-run (sem aplicar alterações).";
+}
+
+export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPanelProps> = ({
+  selectedParentCode = "",
+  selectedParentDescription,
+  selectedIndusProductId,
+  onNavigateTab,
+  disabled = false,
+}) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<OverviewSnapshot | null>(null);
+
+  const loadOverview = useCallback(async (parentCode: string) => {
+    const code = parentCode.trim();
+    if (!code) {
+      setSnapshot(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ parentCode: code });
+      const listParams = new URLSearchParams({ search: code, limit: "5", offset: "0" });
+      const planParams = new URLSearchParams({ parentCode: code, limit: "1", offset: "0" });
+
+      const [effectiveBom, costImpact, applyPlan, optionalList] = await Promise.all([
+        fetchJsonOk<EffectivePricingBomResult>(
+          `/api/nomus/effective-pricing-bom?${params.toString()}`
+        ).catch(() => null),
+        fetchJsonOk<NomusEffectiveBomCostImpactResult>(
+          `/api/nomus/effective-pricing-bom/cost-impact?${params.toString()}`
+        ).catch(() => null),
+        fetchJsonOk<NomusBomApplyPlansReport>(
+          `/api/nomus/bom-comparison/apply-plan?${planParams.toString()}`
+        ).catch(() => null),
+        fetchJsonOk<OptionalListResponse>(
+          `/api/nomus/bom-optionals/pricing-selection?${listParams.toString()}`
+        ).catch(() => null),
+      ]);
+
+      const optionalRow =
+        optionalList?.rows.find((r) => r.parentCode.toLowerCase() === code.toLowerCase()) ??
+        optionalList?.rows[0] ??
+        null;
+
+      setSnapshot({ effectiveBom, costImpact, applyPlan, optionalRow });
+    } catch (e) {
+      setSnapshot(null);
+      setError(e instanceof Error ? e.message : "Erro ao carregar visão geral.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedParentCode.trim()) {
+      void loadOverview(selectedParentCode);
+    } else {
+      setSnapshot(null);
+      setError(null);
+    }
+  }, [loadOverview, selectedParentCode]);
+
+  const bom = snapshot?.effectiveBom;
+  const cost = snapshot?.costImpact;
+  const plan = snapshot?.applyPlan?.plans[0];
+  const warnings = [
+    ...(bom?.warnings ?? []),
+    ...(cost?.warnings ?? []),
+  ].slice(0, 6);
+
+  if (!selectedParentCode.trim()) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-muted/20 p-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          Selecione um produto no cabeçalho para ver a visão geral da manutenção Nomus.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h4 className="text-sm font-bold">Visão geral do produto</h4>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Resumo consolidado para <span className="font-semibold">{selectedParentCode}</span>
+            {selectedParentDescription ? ` — ${selectedParentDescription}` : ""}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={disabled || loading}
+          onClick={() => void loadOverview(selectedParentCode)}
+          className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Atualizar
+        </button>
+      </div>
+
+      {error ? (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-xl border border-border bg-card p-3 space-y-1">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Produto</p>
+          <p className="text-sm font-bold">{selectedParentCode}</p>
+          {selectedParentDescription ? (
+            <p className="text-xs text-muted-foreground line-clamp-2">{selectedParentDescription}</p>
+          ) : null}
+          <p className="text-[10px] text-muted-foreground">
+            IndusCost: {selectedIndusProductId ? selectedIndusProductId.slice(0, 8) + "…" : "—"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-3 space-y-1">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Opcionais</p>
+          <span
+            className={cn(
+              "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+              statusClass(snapshot?.optionalRow?.pricingOptionalStatus ?? bom?.optionalPricingStatus ?? "—")
+            )}
+          >
+            {snapshot?.optionalRow?.pricingOptionalStatus ?? bom?.optionalPricingStatus ?? "—"}
+          </span>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-3 space-y-1">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Revisão local</p>
+          <p className="text-xs">
+            Pendentes: <span className="font-bold">{bom?.summary.localReviewPendingCount ?? "—"}</span>
+          </p>
+          <p className="text-xs">
+            Resolvidos: <span className="font-bold">{bom?.summary.localReviewResolvedCount ?? "—"}</span>
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-3 space-y-1">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">BOM efetiva</p>
+          <span
+            className={cn(
+              "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+              statusClass(bom?.status ?? "—")
+            )}
+          >
+            {bom?.status ?? "—"}
+          </span>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Incluídas: {bom?.summary.includedLinesCount ?? "—"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-3 space-y-1">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Impacto de custo</p>
+          <span
+            className={cn(
+              "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+              statusClass(cost?.status ?? "—")
+            )}
+          >
+            {cost?.status ?? "—"}
+          </span>
+          {cost?.delta ? (
+            <p className="text-[10px] text-muted-foreground mt-1 tabular-nums">
+              Δ total: {cost.delta.totalCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-3 space-y-1 sm:col-span-2 lg:col-span-1">
+          <p className="text-[10px] uppercase font-semibold text-muted-foreground">Próxima ação</p>
+          <p className="text-xs leading-relaxed">
+            {snapshot ? deriveNextAction(snapshot) : loading ? "Carregando…" : "—"}
+          </p>
+          {plan ? (
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Plano: {plan.classification.actionClass.replace(/_/g, " ")} · {plan.classification.riskLevel}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {warnings.length > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Principais avisos
+          </p>
+          <ul className="mt-2 space-y-1 text-[11px] text-amber-900 list-disc list-inside">
+            {warnings.map((w, i) => (
+              <li key={`${i}-${w.slice(0, 40)}`}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            { tab: "optional-pricing" as const, label: "Configurar opcionais", icon: SlidersHorizontal },
+            { tab: "effective-pricing-bom" as const, label: "Ver BOM efetiva", icon: Layers },
+            { tab: "cost-impact" as const, label: "Ver impacto de custo", icon: TrendingUp },
+            { tab: "apply-plan" as const, label: "Ver plano dry-run", icon: FileSearch },
+            { tab: "divergences" as const, label: "Divergências", icon: ListChecks },
+          ] as const
+        ).map(({ tab, label, icon: Icon }) => (
+          <button
+            key={tab}
+            type="button"
+            disabled={disabled}
+            onClick={() => onNavigateTab(tab)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+            <ArrowRight className="h-3 w-3 opacity-60" />
+          </button>
+        ))}
+      </div>
+
+      {/*
+        Fase futura (lote / fila operacional):
+        - fila de produtos com opcionais pendentes
+        - fila de produtos com revisão local pendente
+        - produtos com maior impacto de custo Nomus vs IndusCost
+        - produtos prontos para aplicação (dry-run aprovado)
+        - produtos no Nomus sem cadastro IndusCost
+      */}
+    </div>
+  );
+};

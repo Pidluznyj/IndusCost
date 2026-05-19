@@ -21,12 +21,14 @@ export function useNomusParentCodeResolver() {
   const [pickerTitle, setPickerTitle] = useState<string | undefined>();
   const [pickerDescription, setPickerDescription] = useState<string | undefined>();
   const [pickerSelectLabel, setPickerSelectLabel] = useState<string | undefined>();
-  const pendingRef = useRef<((parentCode: string) => void | Promise<void>) | null>(null);
+  const pendingRef = useRef<
+    ((parentCode: string, option?: NomusParentCodeOption) => void | Promise<void>) | null
+  >(null);
 
   const resolveThen = useCallback(
     async (
       search: string,
-      onResolved: (parentCode: string) => void | Promise<void>,
+      onResolved: (parentCode: string, option?: NomusParentCodeOption) => void | Promise<void>,
       options?: ResolveThenOptions
     ): Promise<{ ok: true; parentCode: string } | { ok: false; reason: "picker" | "none" }> => {
       const term = search.trim();
@@ -43,7 +45,7 @@ export function useNomusParentCodeResolver() {
         return { ok: false, reason: "none" };
       }
       if (result.kind === "single") {
-        await onResolved(result.parentCode);
+        await onResolved(result.parentCode, result.option);
         return { ok: true, parentCode: result.parentCode };
       }
       if (result.kind !== "multiple") {
@@ -66,7 +68,7 @@ export function useNomusParentCodeResolver() {
     setPickerOpen(false);
     const fn = pendingRef.current;
     pendingRef.current = null;
-    if (fn) await fn(option.parentCode);
+    if (fn) await fn(option.parentCode, option);
   }, []);
 
   const closePicker = useCallback(() => {

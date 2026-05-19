@@ -12,6 +12,8 @@ import {
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
+import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
+import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type { PricingOptionalStatus } from "@/src/lib/nomusOptionalPricingSelection";
 
 type ListResponse = {
@@ -139,13 +141,17 @@ function formatQty(v: number | null | undefined): string {
   return v.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
 }
 
-type NomusOptionalPricingSelectionPanelProps = {
+type NomusOptionalPricingSelectionPanelProps = NomusMaintenanceWorkspaceProps & {
   onOpenProduct?: (productId: string) => void;
   disabled?: boolean;
 };
 
 export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSelectionPanelProps> = ({
   disabled = false,
+  selectedParentCode,
+  selectedParentDescription,
+  selectedIndusProductId,
+  onWorkspaceParentChange,
 }) => {
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -167,6 +173,13 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
     Record<string, { choiceIds: Set<string>; selectedNone: boolean }>
   >({});
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
+  const { reportWorkspaceSelection } = useNomusMaintenanceWorkspaceSync({
+    selectedParentCode,
+    selectedParentDescription,
+    selectedIndusProductId,
+    onWorkspaceParentChange,
+    setLocalCode: setSearch,
+  });
 
   const fetchList = useCallback(
     async (resolvedSearch: string) => {
@@ -191,9 +204,10 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
         return;
       }
 
-      const outcome = await resolveThen(term, async (code) => {
+      const outcome = await resolveThen(term, async (code, option) => {
         setLoading(true);
         setSearch(code);
+        reportWorkspaceSelection(code, option);
         try {
           await fetchList(code);
         } finally {
@@ -240,6 +254,8 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
   }, []);
 
   const openConfigure = (parentCode: string) => {
+    setSearch(parentCode);
+    reportWorkspaceSelection(parentCode);
     void loadDetail(parentCode);
   };
 

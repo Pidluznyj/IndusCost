@@ -1,8 +1,10 @@
-﻿import React, { useCallback, useEffect, useState } from "react";
+﻿import React, { useCallback, useState } from "react";
 import { TrendingUp, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
+import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
+import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type {
   CostImpactComparisonLine,
   CostImpactLine,
@@ -146,16 +148,18 @@ function DetailLinesTable({ title, lines }: { title: string; lines: CostImpactLi
   );
 }
 
-type NomusEffectiveBomCostImpactPanelProps = {
+type NomusEffectiveBomCostImpactPanelProps = NomusMaintenanceWorkspaceProps & {
   disabled?: boolean;
-  initialParentCode?: string;
 };
 
 export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImpactPanelProps> = ({
   disabled = false,
-  initialParentCode = "",
+  selectedParentCode,
+  selectedParentDescription,
+  selectedIndusProductId,
+  onWorkspaceParentChange,
 }) => {
-  const [parentCode, setParentCode] = useState(initialParentCode);
+  const [parentCode, setParentCode] = useState(selectedParentCode ?? "");
   const [recursive, setRecursive] = useState(false);
   const [lotSize, setLotSize] = useState("");
   const [loading, setLoading] = useState(false);
@@ -163,9 +167,13 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
   const [result, setResult] = useState<NomusEffectiveBomCostImpactResult | null>(null);
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
-  useEffect(() => {
-    if (initialParentCode) setParentCode(initialParentCode);
-  }, [initialParentCode]);
+  const { reportWorkspaceSelection } = useNomusMaintenanceWorkspaceSync({
+    selectedParentCode,
+    selectedParentDescription,
+    selectedIndusProductId,
+    onWorkspaceParentChange,
+    setLocalCode: setParentCode,
+  });
 
   const fetchCostImpact = useCallback(
     async (resolvedParentCode: string) => {
@@ -190,9 +198,10 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
     setLoading(true);
     setError(null);
     try {
-      const outcome = await resolveThen(code, async (resolved) => {
+      const outcome = await resolveThen(code, async (resolved, option) => {
         setLoading(true);
         setParentCode(resolved);
+        reportWorkspaceSelection(resolved, option);
         try {
           await fetchCostImpact(resolved);
         } finally {
