@@ -21,4 +21,6 @@ export type NomusMaintenanceWorkspaceProps = {
   selectedParentDescription?: string | null;
   selectedIndusProductId?: string | null;
   onWorkspaceParentChange?: (selection: NomusWorkspaceParentSelection | null) => void;
+  /** Incrementado pelo botão "Atualizar BOM e custo" para recarregar análises em tela. */
+  refreshToken?: number;
 };

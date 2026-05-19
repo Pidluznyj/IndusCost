@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from "react";
-import { Check, Loader2, Package, RotateCcw, Search, X } from "lucide-react";
+import React, { useCallback, useRef, useState } from "react";
+import { Check, Loader2, Package, RefreshCw, RotateCcw, Search, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { NomusBomApplyPlanPanel } from "@/src/components/product/NomusBomApplyPlanPanel";
 import { NomusEffectivePricingBomPanel } from "@/src/components/product/NomusEffectivePricingBomPanel";
@@ -45,6 +45,9 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [selectingProduct, setSelectingProduct] = useState(false);
   const [changeProductMode, setChangeProductMode] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
@@ -115,24 +118,56 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
   const hasSelection = Boolean(selectedParentCode.trim());
   const showWorkspacePicker = changeProductMode || !hasSelection;
 
+  const handleRefreshAnalyses = useCallback(() => {
+    if (!hasSelection) return;
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    setIsRefreshing(true);
+    setRefreshToken((n) => n + 1);
+    refreshTimerRef.current = setTimeout(() => setIsRefreshing(false), 1500);
+  }, [hasSelection]);
+
   const workspaceProps = {
     selectedParentCode: hasSelection ? selectedParentCode : undefined,
     selectedParentDescription,
     selectedIndusProductId,
     onWorkspaceParentChange: handleWorkspaceParentChange,
+    refreshToken,
   };
 
   const goToPending = () => setActiveNomusMaintenanceTab("pending");
 
   return (
-    <div className="space-y-4" data-tour="products-nomus-maintenance">
-      <div className="rounded-xl border border-border bg-card/40 px-4 py-3 space-y-3">
-        <div>
-          <h3 className="text-sm font-bold text-foreground">Manutenção Nomus</h3>
-          <p className="text-xs text-muted-foreground mt-1 max-w-3xl">
-            Selecione o produto uma vez para analisar todas as subtabs. Ações somente leitura/dry-run
-            — nenhuma alteração é aplicada ao IndusCost.
-          </p>
+    <div className="space-y-4 pb-8" data-tour="products-nomus-maintenance">
+      <div className="sticky top-0 z-20 -mx-1 px-1 pt-1 pb-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 space-y-2">
+      <div className="rounded-xl border border-border bg-card/40 px-4 py-3 space-y-3 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-foreground">Manutenção Nomus</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
+              Selecione o produto uma vez para analisar todas as subtabs. Ações somente leitura/dry-run
+              — nenhuma alteração é aplicada ao IndusCost.
+            </p>
+          </div>
+          {hasSelection && !changeProductMode ? (
+            <div className="flex flex-col items-stretch sm:items-end gap-1 shrink-0">
+              <button
+                type="button"
+                disabled={isRefreshing}
+                onClick={handleRefreshAnalyses}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
+                {isRefreshing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Atualizar BOM e custo
+              </button>
+              <p className="text-xs text-muted-foreground text-right max-w-xs">
+                Atualiza as análises em tela. Não altera ProductBOM, custo oficial ou preço.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 space-y-3">
@@ -233,11 +268,18 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
             </div>
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground italic">
-            Selecione um produto para analisar a manutenção Nomus.
+          <p className="text-sm text-muted-foreground italic">
+            Selecione um produto no topo para iniciar a manutenção Nomus.
           </p>
         )}
       </div>
+
+      {isRefreshing ? (
+        <p className="text-sm text-primary font-medium flex items-center gap-2 px-1">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Atualizando análise…
+        </p>
+      ) : null}
 
       <div
         className="flex flex-wrap gap-2 border-b border-border pb-2"
@@ -261,6 +303,7 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
             {tab.label}
           </button>
         ))}
+      </div>
       </div>
 
       <div role="tabpanel">

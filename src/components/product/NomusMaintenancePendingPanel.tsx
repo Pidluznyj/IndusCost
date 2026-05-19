@@ -9,6 +9,8 @@ import {
   OPTIONAL_PRICING_STATUS_LABEL,
   formatNomusStatusLabel,
 } from "@/src/lib/nomusMaintenanceStatusLabels";
+import { NomusMaintenanceProductBanner } from "@/src/components/product/NomusMaintenanceProductBanner";
+import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
 import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingBomTypes";
 
@@ -21,6 +23,7 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
   selectedParentDescription,
   selectedIndusProductId,
   onWorkspaceParentChange,
+  refreshToken = 0,
   disabled = false,
 }) => {
   const [loading, setLoading] = useState(false);
@@ -49,14 +52,13 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
     } else {
       setBom(null);
     }
-  }, [loadBom, selectedParentCode]);
+  }, [loadBom, refreshToken, selectedParentCode]);
 
   if (!selectedParentCode.trim()) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-muted/20 p-6 text-center">
-        <p className="text-sm text-muted-foreground">
-          Selecione um produto no cabeçalho para ver e resolver pendências.
-        </p>
+      <div className="space-y-4">
+        <NomusMaintenanceStepHeader tab="pending" />
+        <NomusMaintenanceProductBanner />
       </div>
     );
   }
@@ -69,27 +71,21 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
 
   return (
     <div className="space-y-4">
+      <NomusMaintenanceStepHeader tab="pending" />
+      <NomusMaintenanceProductBanner
+        parentCode={selectedParentCode}
+        description={selectedParentDescription}
+        compact
+      />
       {loadError && !loading ? (
         <NomusMaintenanceErrorCard onRetry={() => void loadBom(selectedParentCode)} />
       ) : null}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h4 className="text-sm font-bold">Pendências do produto</h4>
-          <p className="text-[11px] text-muted-foreground mt-1">
-            Decisões humanas necessárias para <span className="font-semibold">{selectedParentCode}</span>
-            {selectedParentDescription ? ` — ${selectedParentDescription}` : ""}
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={disabled || loading}
-          onClick={() => void loadBom(selectedParentCode)}
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Atualizar
-        </button>
-      </div>
+      {loading ? (
+        <p className="text-sm text-muted-foreground flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Carregando pendências…
+        </p>
+      ) : null}
 
       <section className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">

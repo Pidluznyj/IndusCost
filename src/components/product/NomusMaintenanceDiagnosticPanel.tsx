@@ -1,10 +1,9 @@
-import React, { useState } from "react";
-import { cn } from "@/src/lib/utils";
+import React from "react";
 import { NomusBomBatchReportPanel } from "@/src/components/product/NomusBomBatchReportPanel";
 import { NomusBomClassificationPanel } from "@/src/components/product/NomusBomClassificationPanel";
+import { NomusMaintenanceProductDiagnosticView } from "@/src/components/product/NomusMaintenanceProductDiagnosticView";
+import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
 import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
-
-type DiagnosticView = "comparison" | "classification";
 
 type NomusMaintenanceDiagnosticPanelProps = NomusMaintenanceWorkspaceProps & {
   onOpenProduct?: (productId: string) => void;
@@ -14,48 +13,33 @@ type NomusMaintenanceDiagnosticPanelProps = NomusMaintenanceWorkspaceProps & {
 export const NomusMaintenanceDiagnosticPanel: React.FC<NomusMaintenanceDiagnosticPanelProps> = ({
   onOpenProduct,
   disabled = false,
+  selectedParentCode,
   ...workspaceProps
 }) => {
-  const [view, setView] = useState<DiagnosticView>("comparison");
+  const hasProduct = Boolean(selectedParentCode?.trim());
+
+  if (hasProduct) {
+    return (
+      <div className="space-y-4">
+        <NomusMaintenanceStepHeader tab="diagnostic" />
+        <NomusMaintenanceProductDiagnosticView
+          selectedParentCode={selectedParentCode}
+          disabled={disabled}
+          {...workspaceProps}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <div>
-        <h4 className="text-sm font-bold">Diagnóstico técnico</h4>
-        <p className="text-[11px] text-muted-foreground mt-1 max-w-3xl">
-          Ferramentas de auditoria e comparação detalhada Nomus x IndusCost. Use quando precisar
-          investigar divergências linha a linha.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {(
-          [
-            { id: "comparison" as const, label: "Comparação Nomus x IndusCost" },
-            { id: "classification" as const, label: "Classificação técnica" },
-          ] as const
-        ).map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setView(tab.id)}
-            className={cn(
-              "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
-              view === tab.id
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card text-muted-foreground hover:bg-accent"
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {view === "comparison" ? (
-        <NomusBomBatchReportPanel onOpenProduct={onOpenProduct} disabled={disabled} {...workspaceProps} />
-      ) : (
-        <NomusBomClassificationPanel onOpenProduct={onOpenProduct} disabled={disabled} {...workspaceProps} />
-      )}
+      <NomusMaintenanceStepHeader tab="diagnostic" />
+      <p className="text-sm text-muted-foreground">
+        Listagem técnica de todos os produtos no stage Nomus. Selecione um produto no topo para ver o
+        diagnóstico aberto daquele SKU.
+      </p>
+      <NomusBomBatchReportPanel onOpenProduct={onOpenProduct} disabled={disabled} {...workspaceProps} />
+      <NomusBomClassificationPanel onOpenProduct={onOpenProduct} disabled={disabled} {...workspaceProps} />
     </div>
   );
 };

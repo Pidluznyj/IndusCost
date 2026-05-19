@@ -5,6 +5,8 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
 import { NomusMaintenanceErrorCard } from "@/src/components/product/NomusMaintenanceErrorCard";
+import { NomusMaintenanceProductBanner } from "@/src/components/product/NomusMaintenanceProductBanner";
+import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
 import {
   COST_IMPACT_STATUS_LABEL,
   formatNomusStatusLabel,
@@ -172,7 +174,9 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
   selectedParentDescription,
   selectedIndusProductId,
   onWorkspaceParentChange,
+  refreshToken = 0,
 }) => {
+  const workspaceFocused = Boolean(selectedParentCode?.trim());
   const [parentCode, setParentCode] = useState(selectedParentCode ?? "");
   const [recursive, setRecursive] = useState(false);
   const [lotSize, setLotSize] = useState("");
@@ -252,7 +256,7 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
         setError(e instanceof Error ? e.message : "Erro ao calcular impacto de custo.");
       })
       .finally(() => setLoading(false));
-  }, [fetchCostImpact, selectedParentCode]);
+  }, [fetchCostImpact, refreshToken, selectedParentCode]);
 
   const lines = result?.lines ?? [];
   const topMovers = [...lines]
@@ -271,43 +275,36 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
   const effectiveCost = result?.effectiveNomusCost;
   const delta = result?.delta;
 
-  return (
-    <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-4 space-y-4">
-      <div>
-        <h4 className="text-sm font-bold flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-primary" />
-          Impacto de custo da BOM efetiva Nomus
-        </h4>
-        <p className="text-[11px] text-muted-foreground mt-1 max-w-3xl">
-          Compara o custo atual do IndusCost com um preview usando a BOM efetiva Nomus. Esta análise
-          é somente leitura e não altera ProductBOM, custo ou preço.
-        </p>
+  if (!workspaceFocused) {
+    return (
+      <div className="space-y-4">
+        <NomusMaintenanceStepHeader tab="cost-impact" />
+        <NomusMaintenanceProductBanner />
       </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-5 space-y-4">
+      <NomusMaintenanceStepHeader tab="cost-impact" />
+      <NomusMaintenanceProductBanner
+        parentCode={selectedParentCode}
+        description={selectedParentDescription}
+        compact
+      />
 
       <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-[160px] flex-1">
-          <label className="text-[10px] font-semibold uppercase text-muted-foreground">
-            SKU / parentCode
-          </label>
-          <input
-            type="text"
-            value={parentCode}
-            onChange={(e) => setParentCode(e.target.value)}
-            placeholder="Ex.: 610.73BA"
-            className="mt-1 h-9 w-full rounded-lg border border-border bg-background px-3 text-xs"
-          />
-        </div>
-        <div className="w-24">
-          <label className="text-[10px] font-semibold uppercase text-muted-foreground">Lote</label>
+        <div className="w-28">
+          <label className="text-xs font-semibold uppercase text-muted-foreground">Lote (opc.)</label>
           <input
             type="text"
             value={lotSize}
             onChange={(e) => setLotSize(e.target.value)}
             placeholder="Opc."
-            className="mt-1 h-9 w-full rounded-lg border border-border bg-background px-3 text-xs"
+            className="mt-1 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
           />
         </div>
-        <label className="flex items-center gap-2 text-xs h-9 px-2 rounded-lg border border-border bg-background cursor-pointer">
+        <label className="flex items-center gap-2 text-sm h-9 px-3 rounded-lg border border-border bg-background cursor-pointer">
           <input
             type="checkbox"
             checked={recursive}
@@ -316,15 +313,6 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
           />
           Usar árvore recursiva
         </label>
-        <button
-          type="button"
-          disabled={disabled || loading}
-          onClick={() => void load()}
-          className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Calcular impacto
-        </button>
       </div>
 
       {error ? (

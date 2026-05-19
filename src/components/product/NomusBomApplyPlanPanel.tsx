@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { FileSearch, ExternalLink, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
+import { ExternalLink, GitCompareArrows, Loader2 } from "lucide-react";
 import { NomusBomDiffModal } from "@/src/components/product/NomusBomDiffModal";
 import { NomusMaintenanceErrorCard } from "@/src/components/product/NomusMaintenanceErrorCard";
+import { NomusMaintenanceProductBanner } from "@/src/components/product/NomusMaintenanceProductBanner";
+import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
+import {
+  buildNomusBomDiffRows,
+  formatQtyDisplay,
+  planActionBadgeClass,
+} from "@/src/lib/nomusBomDiffView";
+import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
@@ -21,7 +29,9 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
   selectedParentDescription,
   selectedIndusProductId,
   onWorkspaceParentChange,
+  refreshToken = 0,
 }) => {
+  const workspaceFocused = Boolean(selectedParentCode?.trim());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoLoadFailed, setAutoLoadFailed] = useState(false);
@@ -133,83 +143,30 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
         setError(e instanceof Error ? e.message : "Não foi possível gerar o plano.");
       })
       .finally(() => setLoading(false));
-  }, [fetchPlan, selectedParentCode]);
+  }, [fetchPlan, refreshToken, selectedParentCode]);
 
   const plans = report?.plans ?? [];
   const summary = report?.summary;
+  const primaryPlan = workspaceFocused ? plans[0] ?? null : null;
+  const primaryDiffRows = primaryPlan ? buildNomusBomDiffRows(primaryPlan).slice(0, 15) : [];
+
+  if (!workspaceFocused) {
+    return (
+      <div className="space-y-4">
+        <NomusMaintenanceStepHeader tab="apply-plan" />
+        <NomusMaintenanceProductBanner />
+      </div>
+    );
+  }
 
   return (
-    <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-4 space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h4 className="text-sm font-bold flex items-center gap-2">
-            <FileSearch className="h-4 w-4 text-primary" />
-            Plano de aplicação
-          </h4>
-          <p className="text-[11px] text-muted-foreground mt-1 max-w-2xl">
-            Somente simulação. Nenhuma alteração será aplicada ao IndusCost (ProductBOM, custo ou
-            preço oficial).
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void loadPlan()}
-          disabled={disabled || loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold hover:bg-accent disabled:opacity-50 shrink-0"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Gerar plano
-        </button>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-[160px] flex-1">
-          <label className="text-[10px] font-semibold uppercase text-muted-foreground">Busca SKU</label>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Ex.: 610.73 ou 610.73BA"
-            className="mt-1 h-9 w-full rounded-lg border border-border bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-        <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs cursor-pointer">
-          <input
-            type="checkbox"
-            checked={onlyCandidates}
-            onChange={(e) => setOnlyCandidates(e.target.checked)}
-            className="rounded border-border"
-          />
-          Somente candidatos
-        </label>
-        <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs cursor-pointer">
-          <input
-            type="checkbox"
-            checked={onlyBlocked}
-            onChange={(e) => setOnlyBlocked(e.target.checked)}
-            className="rounded border-border"
-          />
-          Somente bloqueados
-        </label>
-        <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs cursor-pointer">
-          <input
-            type="checkbox"
-            checked={onlyImportProducts}
-            onChange={(e) => setOnlyImportProducts(e.target.checked)}
-            className="rounded border-border"
-          />
-          Só importação
-        </label>
-        <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs cursor-pointer">
-          <input
-            type="checkbox"
-            checked={onlyUpdateQuantities}
-            onChange={(e) => setOnlyUpdateQuantities(e.target.checked)}
-            className="rounded border-border"
-          />
-          Só atualizar qtd.
-        </label>
-      </div>
+    <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-5 space-y-4">
+      <NomusMaintenanceStepHeader tab="apply-plan" />
+      <NomusMaintenanceProductBanner
+        parentCode={selectedParentCode}
+        description={selectedParentDescription}
+        compact
+      />
 
       {error ? (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
@@ -265,7 +222,57 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
             </p>
           ) : null}
 
-          <div className="overflow-x-auto rounded-xl border border-border">
+          {primaryPlan ? (
+            <div className="rounded-lg border border-border bg-background px-4 py-3 text-sm space-y-2">
+              <p>
+                <span className="font-semibold">Classificação: </span>
+                {primaryPlan.classification.actionClass?.replace(/_/g, " ") ?? "—"}
+                {" · "}
+                <span className="font-semibold">Risco: </span>
+                {primaryPlan.classification.riskLevel ?? "—"}
+              </p>
+              <p className="text-muted-foreground">{primaryPlan.classification.suggestedNextStepText}</p>
+              {primaryDiffRows.length > 0 ? (
+                <div className="overflow-x-auto rounded-lg border border-border/80 mt-2">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="text-left px-2 py-2">Componente</th>
+                        <th className="text-left px-2 py-2">Ação simulada</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {primaryDiffRows.slice(0, 8).map((row) => (
+                        <tr key={row.componentCode} className="border-t border-border/50">
+                          <td className="px-2 py-2 font-medium">{row.componentCode}</td>
+                          <td className="px-2 py-2">
+                            <span
+                              className={cn(
+                                "inline-flex rounded-full px-2 py-0.5 text-xs font-bold",
+                                planActionBadgeClass(row.planActionType)
+                              )}
+                            >
+                              {row.planDecisionLabel}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => openDiffModalForPlan(primaryPlan)}
+                className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+              >
+                <GitCompareArrows className="h-4 w-4" />
+                Ver análise completa (opcional)
+              </button>
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto rounded-xl border border-border hidden">
             <table className="w-full text-xs">
               <thead className="bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground">
                 <tr>

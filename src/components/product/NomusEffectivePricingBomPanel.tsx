@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Layers, Loader2, RefreshCw, ChevronRight, ArrowRight } from "lucide-react";
 import { NomusLocalReviewSection } from "@/src/components/product/NomusLocalReviewSection";
 import { NomusMaintenanceErrorCard } from "@/src/components/product/NomusMaintenanceErrorCard";
+import { NomusMaintenanceProductBanner } from "@/src/components/product/NomusMaintenanceProductBanner";
+import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
 import { cn } from "@/src/lib/utils";
 import {
   EFFECTIVE_BOM_STATUS_LABEL,
@@ -146,7 +148,9 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
   selectedParentDescription,
   selectedIndusProductId,
   onWorkspaceParentChange,
+  refreshToken = 0,
 }) => {
+  const workspaceFocused = Boolean(selectedParentCode?.trim());
   const [parentCode, setParentCode] = useState("");
   const [recursive, setRecursive] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -222,7 +226,7 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
         setError(e instanceof Error ? e.message : "Erro ao gerar BOM efetiva.");
       })
       .finally(() => setLoading(false));
-  }, [fetchEffectiveBom, selectedParentCode]);
+  }, [fetchEffectiveBom, refreshToken, selectedParentCode]);
 
   const included = result?.directLines ?? [];
   const excluded = result?.excludedLines ?? [];
@@ -230,51 +234,33 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
   const catalog = result?.localReviewCatalog ?? [];
   const summary = result?.summary;
 
-  return (
-    <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-4 space-y-4">
-      <div>
-        <h4 className="text-sm font-bold flex items-center gap-2">
-          <Layers className="h-4 w-4 text-primary" />
-          BOM efetiva para precificação
-        </h4>
-        <p className="text-[11px] text-muted-foreground mt-1 max-w-3xl">
-          Mostra quais itens entram ou saem da precificação considerando Nomus, opcionais e
-          decisões locais. Somente leitura — não altera ProductBOM, custo ou preço.
-        </p>
+  if (!workspaceFocused) {
+    return (
+      <div className="space-y-4">
+        <NomusMaintenanceStepHeader tab="effective-pricing-bom" />
+        <NomusMaintenanceProductBanner />
       </div>
+    );
+  }
 
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-[160px] flex-1">
-          <label className="text-[10px] font-semibold uppercase text-muted-foreground">
-            SKU / parentCode
-          </label>
-          <input
-            type="text"
-            value={parentCode}
-            onChange={(e) => setParentCode(e.target.value)}
-            placeholder="Ex.: 610.73BA"
-            className="mt-1 h-9 w-full rounded-lg border border-border bg-background px-3 text-xs"
-          />
-        </div>
-        <label className="flex items-center gap-2 text-xs h-9 px-2 rounded-lg border border-border bg-background cursor-pointer">
-          <input
-            type="checkbox"
-            checked={recursive}
-            onChange={(e) => setRecursive(e.target.checked)}
-            className="rounded"
-          />
-          Mostrar árvore recursiva
-        </label>
-        <button
-          type="button"
-          disabled={disabled || loading}
-          onClick={() => void load()}
-          className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Gerar BOM efetiva
-        </button>
-      </div>
+  return (
+    <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-5 space-y-4">
+      <NomusMaintenanceStepHeader tab="effective-pricing-bom" />
+      <NomusMaintenanceProductBanner
+        parentCode={selectedParentCode}
+        description={selectedParentDescription}
+        compact
+      />
+
+      <label className="flex items-center gap-2 text-sm h-9 px-3 rounded-lg border border-border bg-background cursor-pointer w-fit">
+        <input
+          type="checkbox"
+          checked={recursive}
+          onChange={(e) => setRecursive(e.target.checked)}
+          className="rounded"
+        />
+        Mostrar árvore recursiva
+      </label>
 
       {error ? (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
