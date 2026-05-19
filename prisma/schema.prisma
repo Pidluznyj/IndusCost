@@ -1187,3 +1187,40 @@ model NomusOptionalPricingChoice {
   @@index([componentCode])
   @@index([isSelectedForPricing])
 }
+
+enum NomusBomReviewDecisionType {
+  PENDING
+  INCLUDE_AS_LOCAL_EXCEPTION
+  EXCLUDE_FROM_PRICING
+  DUPLICATED_BY_NOMUS_COMPONENT
+  OPERATIONAL_ROUTING_COST
+  NEEDS_ENGINEERING_REVIEW
+}
+
+/// Decisão do usuário sobre itens locais (ProductBOM) na BOM efetiva de precificação — não altera ProductBOM.
+model NomusBomReviewDecision {
+  id                      String                     @id @default(uuid())
+  parentCode              String
+  parentProductId         String?                    @db.Uuid
+  productBomLineId        String?
+  componentCode           String
+  componentDescription    String?
+  quantitySnapshot        Decimal?                   @db.Decimal(20, 6)
+  decision                NomusBomReviewDecisionType @default(PENDING)
+  includeForPricing       Boolean                    @default(false)
+  relatedNomusComponentCode String?
+  reason                  String?
+  notes                   String?
+  decidedBy               String?
+  decidedAt               DateTime?
+  isActive                Boolean                    @default(true)
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
+
+  @@index([parentCode])
+  @@index([parentProductId])
+  @@index([productBomLineId])
+  @@index([componentCode])
+  @@index([decision])
+  @@index([isActive])
+}

@@ -95,6 +95,12 @@ import {
   type PricingOptionalStatus,
 } from "./src/lib/nomusOptionalPricingSelection.js";
 import { buildEffectivePricingBomForParentCode } from "./src/lib/nomusEffectivePricingBom.js";
+import {
+  clearReviewDecision,
+  listReviewDecisionsForParentCode,
+  saveReviewDecision,
+} from "./src/lib/nomusBomReviewDecision.js";
+import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -3478,6 +3484,124 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       } catch (error) {
         console.error("GET /api/nomus/effective-pricing-bom", error);
         return res.status(500).json({ error: "Erro ao gerar BOM efetiva de precificação." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/effective-pricing-bom/review-decisions",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const parentCode = req.query.parentCode != null ? String(req.query.parentCode).trim() : "";
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        const result = await listReviewDecisionsForParentCode(parentCode);
+        return res.json(result);
+      } catch (error) {
+        console.error("GET /api/nomus/effective-pricing-bom/review-decisions", error);
+        return res.status(500).json({ error: "Erro ao listar decisões de revisão." });
+      }
+    }
+  );
+
+  app.patch(
+    "/api/nomus/effective-pricing-bom/review-decisions",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const parentCode = String(body.parentCode ?? "").trim();
+        const componentCode = String(body.componentCode ?? "").trim();
+        const decision = String(body.decision ?? "PENDING").trim() as NomusBomReviewDecisionType;
+        if (!parentCode || !componentCode) {
+          return res.status(400).json({ error: "parentCode e componentCode são obrigatórios." });
+        }
+        const validDecisions: NomusBomReviewDecisionType[] = [
+          "PENDING",
+          "INCLUDE_AS_LOCAL_EXCEPTION",
+          "EXCLUDE_FROM_PRICING",
+          "DUPLICATED_BY_NOMUS_COMPONENT",
+          "OPERATIONAL_ROUTING_COST",
+          "NEEDS_ENGINEERING_REVIEW",
+        ];
+        if (!validDecisions.includes(decision)) {
+          return res.status(400).json({ error: "decision inválida." });
+        }
+        const quantityRaw = body.quantitySnapshot;
+        const quantitySnapshot =
+          quantityRaw != null && quantityRaw !== ""
+            ? Number(quantityRaw)
+            : null;
+        const saved = await saveReviewDecision(
+          {
+            parentCode,
+            parentProductId:
+              body.parentProductId != null ? String(body.parentProductId) : null,
+            productBomLineId:
+              body.productBomLineId != null ? String(body.productBomLineId) : null,
+            componentCode,
+            componentDescription:
+              body.componentDescription != null ? String(body.componentDescription) : null,
+            quantitySnapshot:
+              quantitySnapshot != null && Number.isFinite(quantitySnapshot)
+                ? quantitySnapshot
+                : null,
+            decision,
+            includeForPricing:
+              body.includeForPricing != null ? Boolean(body.includeForPricing) : undefined,
+            relatedNomusComponentCode:
+              body.relatedNomusComponentCode != null
+                ? String(body.relatedNomusComponentCode)
+                : null,
+            reason: body.reason != null ? String(body.reason) : null,
+            notes: body.notes != null ? String(body.notes) : null,
+          },
+          req.appAuth?.id ?? req.appAuth?.email ?? null
+        );
+        return res.json(saved);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao salvar decisão.";
+        console.error("PATCH /api/nomus/effective-pricing-bom/review-decisions", error);
+        return res.status(400).json({ error: message });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/nomus/effective-pricing-bom/review-decisions",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const parentCode =
+          req.query.parentCode != null
+            ? String(req.query.parentCode).trim()
+            : String(req.body?.parentCode ?? "").trim();
+        const productBomLineId =
+          req.query.productBomLineId != null
+            ? String(req.query.productBomLineId).trim()
+            : req.body?.productBomLineId != null
+              ? String(req.body.productBomLineId).trim()
+              : undefined;
+        const componentCode =
+          req.query.componentCode != null
+            ? String(req.query.componentCode).trim()
+            : req.body?.componentCode != null
+              ? String(req.body.componentCode).trim()
+              : undefined;
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        await clearReviewDecision({ parentCode, productBomLineId, componentCode });
+        return res.json({ ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao remover decisão.";
+        console.error("DELETE /api/nomus/effective-pricing-bom/review-decisions", error);
+        return res.status(400).json({ error: message });
       }
     }
   );

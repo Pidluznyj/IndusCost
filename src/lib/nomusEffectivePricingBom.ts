@@ -22,6 +22,12 @@ import {
   type OptionalPricingGroupView,
   type PricingOptionalStatus,
 } from "@/src/lib/nomusOptionalPricingSelection";
+import {
+  applyReviewDecisionsToEffectiveBom,
+  listReviewDecisionsForParentCode,
+} from "@/src/lib/nomusBomReviewDecision";
+import type { LocalReviewCatalogItem } from "@/src/lib/nomusBomReviewDecision";
+import type { NomusBomReviewDecisionType } from "@prisma/client";
 
 export type EffectivePricingBomSource =
   | "NOMUS_REQUIRED"
@@ -31,12 +37,19 @@ export type EffectivePricingBomSource =
   | "NOMUS_ALTERNATIVE_SELECTED"
   | "NOMUS_ALTERNATIVE_NOT_SELECTED"
   | "LOCAL_ONLY_INDUS_REVIEW"
+  | "LOCAL_ONLY_INCLUDED_BY_REVIEW"
+  | "LOCAL_ONLY_EXCLUDED_BY_REVIEW"
+  | "LOCAL_ONLY_DUPLICATED_BY_NOMUS"
+  | "LOCAL_ONLY_ENGINEERING_REVIEW"
+  | "OPERATIONAL_ROUTING_COST"
   | "OPERATIONAL_IGNORED";
 
 export type EffectivePricingBomDecision = "INCLUDE" | "EXCLUDE" | "REVIEW" | "BLOCKED";
 
 export type EffectivePricingBomStatus =
   | "READY_FOR_PRICING_PREVIEW"
+  | "READY_WITH_LOCAL_REVIEW"
+  | "PENDING_LOCAL_REVIEW"
   | "PENDING_OPTIONAL_SELECTION"
   | "STALE_OPTIONAL_SELECTION"
   | "BLOCKED_UNRESOLVED_COMPONENTS"
@@ -56,6 +69,10 @@ export type EffectivePricingBomLine = {
   groupName?: string;
   selectedChoiceId?: string;
   resolution?: string;
+  productBomLineId?: string;
+  reviewDecisionId?: string;
+  reviewDecisionType?: NomusBomReviewDecisionType;
+  relatedNomusComponentCode?: string;
 };
 
 export type EffectivePricingBomTreeNode = {
@@ -82,6 +99,11 @@ export type EffectivePricingBomSummary = {
   optionalExcludedCount: number;
   unresolvedComponentsCount: number;
   recursiveNodesCount: number;
+  localReviewPendingCount: number;
+  localReviewResolvedCount: number;
+  localIncludedByReviewCount: number;
+  localExcludedByReviewCount: number;
+  operationalRoutingReviewCount: number;
 };
 
 export type EffectivePricingBomResult = {
@@ -96,6 +118,7 @@ export type EffectivePricingBomResult = {
   directLines: EffectivePricingBomLine[];
   excludedLines: EffectivePricingBomLine[];
   reviewLines: EffectivePricingBomLine[];
+  localReviewCatalog: LocalReviewCatalogItem[];
   recursiveTree?: EffectivePricingBomTreeNode[];
   warnings: string[];
 };
@@ -330,6 +353,7 @@ function buildLocalOnlyReviewLine(
       hasShipmentItemNomusLines: false,
     },
     nomusSourceLineIds: [],
+    productBomLineId: bomLineId,
     resolution: `indus_bom:${bomLineId}`,
   };
 }
@@ -366,6 +390,11 @@ function computeSummary(
     optionalExcludedCount: optionalExcluded.length,
     unresolvedComponentsCount,
     recursiveNodesCount,
+    localReviewPendingCount: 0,
+    localReviewResolvedCount: 0,
+    localIncludedByReviewCount: 0,
+    localExcludedByReviewCount: 0,
+    operationalRoutingReviewCount: 0,
   };
 }
 
@@ -510,6 +539,7 @@ export async function buildEffectivePricingBomForParentCode(
       directLines: [],
       excludedLines: [],
       reviewLines: [],
+      localReviewCatalog: [],
       warnings: ["Produto não encontrado no stage Nomus (NomusBomComponentStage)."],
     };
   }
@@ -526,6 +556,7 @@ export async function buildEffectivePricingBomForParentCode(
       directLines: [],
       excludedLines: [],
       reviewLines: [],
+      localReviewCatalog: [],
       warnings: ["Não foi possível montar contexto Nomus efetivo."],
     };
   }
@@ -590,11 +621,12 @@ export async function buildEffectivePricingBomForParentCode(
   }
 
   const comparison = await buildBomComparisonForParentCode(ctx.parentCode);
+  const rawLocalReviewLines: EffectivePricingBomLine[] = [];
   for (const cmpLine of comparison.lines) {
     if (cmpLine.status !== "ONLY_IN_INDUSCOST") continue;
     const indusQty = cmpLine.indusQuantity ?? null;
     const bomLineId = cmpLine.indusBomLineIds[0] ?? "unknown";
-    reviewLines.push(
+    rawLocalReviewLines.push(
       buildLocalOnlyReviewLine(
         cmpLine.componentCode,
         cmpLine.componentDescription,
@@ -627,6 +659,7 @@ export async function buildEffectivePricingBomForParentCode(
         directLines,
         excludedLines,
         reviewLines,
+        localReviewCatalog: [],
         warnings,
       });
     }
@@ -663,7 +696,7 @@ export async function buildEffectivePricingBomForParentCode(
     );
   }
 
-  const result: EffectivePricingBomResult = {
+  let result: EffectivePricingBomResult = {
     generatedAt: new Date().toISOString(),
     parentCode: ctx.parentCode,
     parentDescription: ctx.parentDescription,
@@ -675,9 +708,13 @@ export async function buildEffectivePricingBomForParentCode(
     directLines,
     excludedLines,
     reviewLines,
+    localReviewCatalog: [],
     recursiveTree,
     warnings,
   };
+
+  const { decisions } = await listReviewDecisionsForParentCode(ctx.parentCode);
+  result = applyReviewDecisionsToEffectiveBom(result, decisions, rawLocalReviewLines);
 
   return result;
 }

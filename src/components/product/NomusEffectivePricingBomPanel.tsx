@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { Layers, Loader2, RefreshCw, ChevronRight } from "lucide-react";
+import { Layers, Loader2, RefreshCw, ChevronRight, Save } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import type {
@@ -9,9 +9,17 @@ import type {
   EffectivePricingBomTreeNode,
 } from "@/src/lib/nomusEffectivePricingBom";
 import type { PricingOptionalStatus } from "@/src/lib/nomusOptionalPricingSelection";
+import type { LocalReviewCatalogItem } from "@/src/lib/nomusBomReviewDecision";
+import {
+  REVIEW_DECISION_BADGE,
+  REVIEW_DECISION_LABELS,
+} from "@/src/lib/nomusBomReviewDecision";
+import type { NomusBomReviewDecisionType } from "@prisma/client";
 
 const STATUS_LABEL: Record<EffectivePricingBomStatus, string> = {
   READY_FOR_PRICING_PREVIEW: "Pronta para preview",
+  READY_WITH_LOCAL_REVIEW: "Pronta com revisão local",
+  PENDING_LOCAL_REVIEW: "Revisão local pendente",
   PENDING_OPTIONAL_SELECTION: "Opcionais pendentes",
   STALE_OPTIONAL_SELECTION: "Seleção desatualizada",
   BLOCKED_UNRESOLVED_COMPONENTS: "Componentes não resolvidos",
@@ -20,6 +28,8 @@ const STATUS_LABEL: Record<EffectivePricingBomStatus, string> = {
 
 const STATUS_CLASS: Record<EffectivePricingBomStatus, string> = {
   READY_FOR_PRICING_PREVIEW: "bg-green-100 text-green-800",
+  READY_WITH_LOCAL_REVIEW: "bg-teal-100 text-teal-900",
+  PENDING_LOCAL_REVIEW: "bg-violet-100 text-violet-900",
   PENDING_OPTIONAL_SELECTION: "bg-amber-100 text-amber-900",
   STALE_OPTIONAL_SELECTION: "bg-orange-100 text-orange-900",
   BLOCKED_UNRESOLVED_COMPONENTS: "bg-red-100 text-red-900",
@@ -41,12 +51,52 @@ const SOURCE_LABEL: Record<string, string> = {
   NOMUS_ALTERNATIVE_SELECTED: "Alternativa selecionada",
   NOMUS_ALTERNATIVE_NOT_SELECTED: "Alternativa não selecionada",
   LOCAL_ONLY_INDUS_REVIEW: "Somente IndusCost",
+  LOCAL_ONLY_INCLUDED_BY_REVIEW: "Exceção local incluída",
+  LOCAL_ONLY_EXCLUDED_BY_REVIEW: "Local excluído",
+  LOCAL_ONLY_DUPLICATED_BY_NOMUS: "Duplicado Nomus",
+  LOCAL_ONLY_ENGINEERING_REVIEW: "Engenharia",
+  OPERATIONAL_ROUTING_COST: "Roteiro/processo",
   OPERATIONAL_IGNORED: "Operacional ignorado",
 };
+
+const DECISION_OPTIONS: NomusBomReviewDecisionType[] = [
+  "PENDING",
+  "INCLUDE_AS_LOCAL_EXCEPTION",
+  "EXCLUDE_FROM_PRICING",
+  "DUPLICATED_BY_NOMUS_COMPONENT",
+  "OPERATIONAL_ROUTING_COST",
+  "NEEDS_ENGINEERING_REVIEW",
+];
 
 function formatQty(v: number | null | undefined): string {
   if (v == null) return "—";
   return v.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
+}
+
+function placementBadgeClass(placement: LocalReviewCatalogItem["placement"]): string {
+  switch (placement) {
+    case "included":
+      return "bg-green-100 text-green-800";
+    case "excluded":
+      return "bg-muted text-muted-foreground";
+    case "engineering_review":
+      return "bg-blue-100 text-blue-900";
+    default:
+      return "bg-amber-100 text-amber-900";
+  }
+}
+
+function placementLabel(placement: LocalReviewCatalogItem["placement"]): string {
+  switch (placement) {
+    case "included":
+      return "Na BOM efetiva";
+    case "excluded":
+      return "Excluído";
+    case "engineering_review":
+      return "Engenharia";
+    default:
+      return "Pendente";
+  }
 }
 
 function LinesTable({
@@ -79,7 +129,10 @@ function LinesTable({
             </thead>
             <tbody>
               {lines.map((line) => (
-                <tr key={`${line.componentCode}-${line.source}-${line.reason}`} className="border-t border-border/60">
+                <tr
+                  key={`${line.componentCode}-${line.source}-${line.productBomLineId ?? line.reason}`}
+                  className="border-t border-border/60"
+                >
                   <td className="px-2 py-1.5 font-medium">{line.componentCode}</td>
                   <td className="px-2 py-1.5 text-muted-foreground max-w-[180px] truncate">
                     {line.componentDescription ?? "—"}
@@ -87,7 +140,9 @@ function LinesTable({
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatQty(line.quantity)}</td>
                   <td className="px-2 py-1.5">{SOURCE_LABEL[line.source] ?? line.source}</td>
                   <td className="px-2 py-1.5">{line.decision}</td>
-                  <td className="px-2 py-1.5 text-muted-foreground">{line.groupName ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-muted-foreground">
+                    {line.groupName ?? line.relatedNomusComponentCode ?? "—"}
+                  </td>
                   <td className="px-2 py-1.5 text-muted-foreground max-w-[220px]">{line.reason}</td>
                 </tr>
               ))}
@@ -95,6 +150,235 @@ function LinesTable({
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+type ReviewDraft = {
+  decision: NomusBomReviewDecisionType;
+  relatedNomusComponentCode: string;
+  notes: string;
+};
+
+function LocalReviewSection({
+  parentCode,
+  parentProductId,
+  catalog,
+  disabled,
+  onSaved,
+}: {
+  parentCode: string;
+  parentProductId?: string | null;
+  catalog: LocalReviewCatalogItem[];
+  disabled?: boolean;
+  onSaved: () => void;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const getDraft = (item: LocalReviewCatalogItem): ReviewDraft => {
+    const key = item.productBomLineId;
+    if (drafts[key]) return drafts[key];
+    const saved = item.savedDecision;
+    return {
+      decision: saved?.decision ?? "PENDING",
+      relatedNomusComponentCode: saved?.relatedNomusComponentCode ?? "",
+      notes: saved?.notes ?? "",
+    };
+  };
+
+  const setDraftField = (
+    productBomLineId: string,
+    patch: Partial<ReviewDraft>
+  ) => {
+    setDrafts((prev) => {
+      const item = catalog.find((c) => c.productBomLineId === productBomLineId);
+      const current = prev[productBomLineId] ?? (item ? getDraft(item) : {
+        decision: "PENDING" as const,
+        relatedNomusComponentCode: "",
+        notes: "",
+      });
+      return { ...prev, [productBomLineId]: { ...current, ...patch } };
+    });
+  };
+
+  const saveItem = async (item: LocalReviewCatalogItem) => {
+    const draft = getDraft(item);
+    setSavingId(item.productBomLineId);
+    setError(null);
+    try {
+      await fetchJsonOk("/api/nomus/effective-pricing-bom/review-decisions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentCode,
+          parentProductId: parentProductId ?? null,
+          productBomLineId: item.productBomLineId,
+          componentCode: item.componentCode,
+          componentDescription: item.componentDescription,
+          quantitySnapshot: item.quantity,
+          decision: draft.decision,
+          relatedNomusComponentCode:
+            draft.decision === "DUPLICATED_BY_NOMUS_COMPONENT"
+              ? draft.relatedNomusComponentCode.trim() || null
+              : null,
+          notes: draft.notes.trim() || null,
+        }),
+      });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar decisão.");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  if (catalog.length === 0) {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        Nenhum item exclusivo do IndusCost (ProductBOM) para revisar neste produto.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-xs font-bold">Itens locais para revisão</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          Linhas presentes no ProductBOM e não na BOM Nomus efetiva. A decisão altera apenas o
+          preview da BOM efetiva — não muda ProductBOM, custo ou preço.
+        </p>
+      </div>
+
+      {error ? (
+        <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="space-y-3">
+        {catalog.map((item) => {
+          const draft = getDraft(item);
+          const savedType = item.savedDecision?.decision ?? "PENDING";
+          const badgeLabel =
+            savedType === "PENDING"
+              ? "Pendente"
+              : REVIEW_DECISION_BADGE[savedType] ?? "Resolvido";
+
+          return (
+            <div
+              key={item.productBomLineId}
+              className="rounded-lg border border-border bg-background p-3 space-y-2"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-bold">
+                    {item.componentCode}
+                    {item.componentDescription ? (
+                      <span className="font-normal text-muted-foreground">
+                        {" "}
+                        — {item.componentDescription}
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Qtd IndusCost: {formatQty(item.quantity)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+                      placementBadgeClass(item.placement)
+                    )}
+                  >
+                    {placementLabel(item.placement)}
+                  </span>
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+                      savedType === "PENDING"
+                        ? "bg-amber-100 text-amber-900"
+                        : "bg-slate-100 text-slate-800"
+                    )}
+                  >
+                    {badgeLabel}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-semibold uppercase text-muted-foreground">
+                    Decisão
+                  </label>
+                  <select
+                    value={draft.decision}
+                    onChange={(e) =>
+                      setDraftField(item.productBomLineId, {
+                        decision: e.target.value as NomusBomReviewDecisionType,
+                      })
+                    }
+                    className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs"
+                  >
+                    {DECISION_OPTIONS.map((d) => (
+                      <option key={d} value={d}>
+                        {REVIEW_DECISION_LABELS[d]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {draft.decision === "DUPLICATED_BY_NOMUS_COMPONENT" ? (
+                  <div>
+                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">
+                      Componente Nomus relacionado
+                    </label>
+                    <input
+                      value={draft.relatedNomusComponentCode}
+                      onChange={(e) =>
+                        setDraftField(item.productBomLineId, {
+                          relatedNomusComponentCode: e.target.value,
+                        })
+                      }
+                      placeholder="Ex.: 309.81BB"
+                      className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs"
+                    />
+                  </div>
+                ) : null}
+                <div className={draft.decision === "DUPLICATED_BY_NOMUS_COMPONENT" ? "" : "sm:col-span-2"}>
+                  <label className="text-[10px] font-semibold uppercase text-muted-foreground">
+                    Observação
+                  </label>
+                  <input
+                    value={draft.notes}
+                    onChange={(e) =>
+                      setDraftField(item.productBomLineId, { notes: e.target.value })
+                    }
+                    placeholder="Motivo ou contexto da decisão"
+                    className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={disabled || savingId === item.productBomLineId}
+                onClick={() => void saveItem(item)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
+              >
+                {savingId === item.productBomLineId ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                Salvar decisão
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -173,6 +457,7 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
   const included = result?.directLines ?? [];
   const excluded = result?.excludedLines ?? [];
   const review = result?.reviewLines ?? [];
+  const catalog = result?.localReviewCatalog ?? [];
 
   return (
     <div className="rounded-xl border border-dashed border-primary/30 bg-card/50 p-4 space-y-4">
@@ -183,7 +468,8 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
         </h4>
         <p className="text-[11px] text-muted-foreground mt-1 max-w-3xl">
           Visualize quais itens da BOM Nomus entram na precificação considerando as escolhas de
-          opcionais. Esta tela é somente leitura e não altera ProductBOM, custo ou preço.
+          opcionais e decisões sobre itens locais do IndusCost. Esta tela não altera ProductBOM,
+          custo ou preço.
         </p>
       </div>
 
@@ -253,13 +539,15 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
             </ul>
           ) : null}
 
-          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 text-xs">
+          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 text-xs">
             {[
               { label: "Incluídos", value: result.summary.includedLinesCount },
               { label: "Opc. selecionados", value: result.summary.optionalSelectedCount },
-              { label: "Opc. excluídos", value: result.summary.optionalExcludedCount },
+              { label: "Locais incluídos", value: result.summary.localIncludedByReviewCount },
+              { label: "Revisão pendente", value: result.summary.localReviewPendingCount },
+              { label: "Revisão resolvida", value: result.summary.localReviewResolvedCount },
               { label: "Excluídos", value: result.summary.excludedLinesCount },
-              { label: "Revisão", value: result.summary.reviewLinesCount },
+              { label: "Roteiro/processo", value: result.summary.operationalRoutingReviewCount },
               { label: "Bloqueios", value: result.summary.blockedLinesCount },
             ].map((c) => (
               <div key={c.label} className="rounded-lg border border-border bg-background px-3 py-2">
@@ -268,6 +556,16 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
               </div>
             ))}
           </div>
+
+          {result.parentCode ? (
+            <LocalReviewSection
+              parentCode={result.parentCode}
+              parentProductId={result.indusProductId}
+              catalog={catalog}
+              disabled={disabled || loading}
+              onSaved={() => void load()}
+            />
+          ) : null}
 
           <LinesTable
             title="Itens incluídos para precificação"
@@ -282,9 +580,9 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
           />
 
           <LinesTable
-            title="Itens para revisão"
+            title="Outros itens em revisão"
             lines={review}
-            emptyMessage="Nenhum item pendente de revisão."
+            emptyMessage="Nenhum outro item pendente de revisão."
           />
 
           {result.recursiveTree && result.recursiveTree.length > 0 ? (
