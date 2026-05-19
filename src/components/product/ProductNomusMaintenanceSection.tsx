@@ -5,13 +5,15 @@ import { NomusBomClassificationPanel } from "@/src/components/product/NomusBomCl
 import { NomusBomApplyPlanPanel } from "@/src/components/product/NomusBomApplyPlanPanel";
 import { NomusOptionalPricingSelectionPanel } from "@/src/components/product/NomusOptionalPricingSelectionPanel";
 import { NomusEffectivePricingBomPanel } from "@/src/components/product/NomusEffectivePricingBomPanel";
+import { NomusEffectiveBomCostImpactPanel } from "@/src/components/product/NomusEffectiveBomCostImpactPanel";
 
 export type NomusMaintenanceTab =
   | "divergences"
   | "classification"
   | "apply-plan"
   | "optional-pricing"
-  | "effective-pricing-bom";
+  | "effective-pricing-bom"
+  | "cost-impact";
 
 const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = [
   { id: "divergences", label: "Divergências" },
@@ -19,6 +21,7 @@ const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = 
   { id: "apply-plan", label: "Plano dry-run" },
   { id: "optional-pricing", label: "Opcionais de Precificação" },
   { id: "effective-pricing-bom", label: "BOM efetiva" },
+  { id: "cost-impact", label: "Impacto de custo" },
 ];
 
 type ProductNomusMaintenanceSectionProps = {
@@ -30,6 +33,7 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
 }) => {
   const [activeNomusMaintenanceTab, setActiveNomusMaintenanceTab] =
     useState<NomusMaintenanceTab>("divergences");
+  const [sharedParentCode, setSharedParentCode] = useState("");
 
   return (
     <div className="space-y-4" data-tour="products-nomus-maintenance">
@@ -79,7 +83,15 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
           <NomusOptionalPricingSelectionPanel />
         ) : null}
         {activeNomusMaintenanceTab === "effective-pricing-bom" ? (
-          <NomusEffectivePricingBomPanel />
+          <NomusEffectivePricingBomPanel
+            onViewCostImpact={(code) => {
+              setSharedParentCode(code);
+              setActiveNomusMaintenanceTab("cost-impact");
+            }}
+          />
+        ) : null}
+        {activeNomusMaintenanceTab === "cost-impact" ? (
+          <NomusEffectiveBomCostImpactPanel initialParentCode={sharedParentCode} />
         ) : null}
       </div>
     </div>

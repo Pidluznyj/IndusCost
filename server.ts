@@ -96,6 +96,10 @@ import {
 } from "./src/lib/nomusOptionalPricingSelection.js";
 import { buildEffectivePricingBomForParentCode } from "./src/lib/nomusEffectivePricingBom.js";
 import {
+  buildNomusEffectiveBomCostImpact,
+  type CurrentCostSnapshot,
+} from "./src/lib/nomusEffectiveBomCostImpact.js";
+import {
   clearReviewDecision,
   listReviewDecisionsForParentCode,
   saveReviewDecision,
@@ -3484,6 +3488,66 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       } catch (error) {
         console.error("GET /api/nomus/effective-pricing-bom", error);
         return res.status(500).json({ error: "Erro ao gerar BOM efetiva de precificação." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/effective-pricing-bom/cost-impact",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const parentCode = req.query.parentCode != null ? String(req.query.parentCode).trim() : "";
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        const recursive =
+          req.query.recursive === "true" || req.query.recursive === "1";
+        const maxDepthRaw =
+          req.query.maxDepth != null ? Number.parseInt(String(req.query.maxDepth), 10) : 10;
+        const maxDepth = Number.isFinite(maxDepthRaw)
+          ? Math.min(Math.max(maxDepthRaw, 1), 20)
+          : 10;
+        const lotSizeRaw =
+          req.query.lotSize != null ? Number.parseFloat(String(req.query.lotSize)) : undefined;
+        const lotSize =
+          lotSizeRaw != null && Number.isFinite(lotSizeRaw) ? lotSizeRaw : undefined;
+
+        let currentSnapshot: CurrentCostSnapshot | null = null;
+        const sku = parentCode.trim();
+        const product = await prisma.product.findFirst({
+          where: { OR: [{ sku }, { sku: sku.toUpperCase() }] },
+          select: { id: true },
+        });
+        if (product) {
+          const cache = await initAnalysisCache();
+          const analysis = await getProductCostAnalysis(product.id, cache, true);
+          if (analysis && !isCostAnalysisFailure(analysis)) {
+            currentSnapshot = {
+              productId: analysis.productId,
+              sku: analysis.sku,
+              totalMaterialCost: Number(analysis.totalMaterialCost),
+              totalHH_Unit: Number(analysis.totalHH_Unit),
+              totalHM_Unit: Number(analysis.totalHM_Unit),
+              totalIndustrialCost: Number(analysis.totalIndustrialCost),
+              costAnalysisPartial: Boolean(analysis.costAnalysisPartial),
+              materials: Array.isArray((analysis as { materials?: unknown }).materials)
+                ? ((analysis as { materials: CurrentCostSnapshot["materials"] }).materials ?? [])
+                : undefined,
+            };
+          }
+        }
+
+        const result = await buildNomusEffectiveBomCostImpact(
+          parentCode,
+          { recursive, maxDepth, lotSize },
+          currentSnapshot
+        );
+        return res.json(result);
+      } catch (error) {
+        console.error("GET /api/nomus/effective-pricing-bom/cost-impact", error);
+        return res.status(500).json({ error: "Erro ao calcular impacto de custo da BOM efetiva." });
       }
     }
   );

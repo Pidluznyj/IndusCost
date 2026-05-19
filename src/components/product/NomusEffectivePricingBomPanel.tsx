@@ -411,10 +411,12 @@ function TreeBranch({ node, depth = 0 }: { node: EffectivePricingBomTreeNode; de
 
 type NomusEffectivePricingBomPanelProps = {
   disabled?: boolean;
+  onViewCostImpact?: (parentCode: string) => void;
 };
 
 export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPanelProps> = ({
   disabled = false,
+  onViewCostImpact,
 }) => {
   const [parentCode, setParentCode] = useState("");
   const [recursive, setRecursive] = useState(false);
@@ -520,6 +522,15 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
               <span className="text-[10px] text-muted-foreground">
                 Lista: {result.selectedList.listaMateriaisNome}
               </span>
+            ) : null}
+            {onViewCostImpact && result.parentCode ? (
+              <button
+                type="button"
+                onClick={() => onViewCostImpact(result.parentCode)}
+                className="text-[10px] font-semibold text-primary hover:underline"
+              >
+                Ver impacto de custo
+              </button>
             ) : null}
           </div>
 
