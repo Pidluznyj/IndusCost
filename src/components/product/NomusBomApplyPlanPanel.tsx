@@ -200,6 +200,20 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
             ))}
           </div>
 
+          {report.plans.some((p) => p.optionalPricingStatus === "RESOLVED") ? (
+            <p className="text-[11px] text-green-900 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              Há produtos com seleção de opcionais resolvida. Consulte a aba BOM efetiva para ver o que
+              entrará na precificação.
+            </p>
+          ) : report.plans.some(
+              (p) => p.optionalPricingStatus === "PENDING" || p.optionalPricingStatus === "STALE"
+            ) ? (
+            <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Há opcionais pendentes ou desatualizados. A BOM efetiva de precificação ainda não está pronta
+              para todos os produtos listados.
+            </p>
+          ) : null}
+
           <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-xs">
               <thead className="bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground">

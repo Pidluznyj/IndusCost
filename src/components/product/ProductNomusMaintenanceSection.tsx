@@ -4,14 +4,21 @@ import { NomusBomBatchReportPanel } from "@/src/components/product/NomusBomBatch
 import { NomusBomClassificationPanel } from "@/src/components/product/NomusBomClassificationPanel";
 import { NomusBomApplyPlanPanel } from "@/src/components/product/NomusBomApplyPlanPanel";
 import { NomusOptionalPricingSelectionPanel } from "@/src/components/product/NomusOptionalPricingSelectionPanel";
+import { NomusEffectivePricingBomPanel } from "@/src/components/product/NomusEffectivePricingBomPanel";
 
-export type NomusMaintenanceTab = "divergences" | "classification" | "apply-plan" | "optional-pricing";
+export type NomusMaintenanceTab =
+  | "divergences"
+  | "classification"
+  | "apply-plan"
+  | "optional-pricing"
+  | "effective-pricing-bom";
 
 const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = [
   { id: "divergences", label: "Divergências" },
   { id: "classification", label: "Classificação" },
   { id: "apply-plan", label: "Plano dry-run" },
   { id: "optional-pricing", label: "Opcionais de Precificação" },
+  { id: "effective-pricing-bom", label: "BOM efetiva" },
 ];
 
 type ProductNomusMaintenanceSectionProps = {
@@ -70,6 +77,9 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
         ) : null}
         {activeNomusMaintenanceTab === "optional-pricing" ? (
           <NomusOptionalPricingSelectionPanel />
+        ) : null}
+        {activeNomusMaintenanceTab === "effective-pricing-bom" ? (
+          <NomusEffectivePricingBomPanel />
         ) : null}
       </div>
     </div>

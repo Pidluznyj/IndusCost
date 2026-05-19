@@ -196,7 +196,22 @@ export const NomusBomDiffModal: React.FC<NomusBomDiffModalProps> = ({
                             ? "Opcionais desatualizados"
                             : "Opcionais pendentes"}
                       </span>
-                    ) : null}</div>
+                    ) : null}
+                  </div>
+
+                  {plan.optionalPricingStatus === "RESOLVED" ? (
+                    <p className="text-[11px] text-green-900 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                      Seleção de opcionais resolvida. Consulte a aba BOM efetiva para ver o que
+                      entrará na precificação.
+                    </p>
+                  ) : plan.optionalPricingStatus === "PENDING" ||
+                    plan.optionalPricingStatus === "STALE" ? (
+                    <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      {plan.optionalPricingStatus === "STALE"
+                        ? "Há opcionais desatualizados. A BOM efetiva de precificação ainda não está pronta."
+                        : "Há opcionais pendentes. A BOM efetiva de precificação ainda não está pronta."}
+                    </p>
+                  ) : null}
 
                   {hasImportProductOnly(plan) ? (
                     <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">

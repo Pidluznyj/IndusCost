@@ -94,6 +94,7 @@ import {
   updateOptionalPricingGroup,
   type PricingOptionalStatus,
 } from "./src/lib/nomusOptionalPricingSelection.js";
+import { buildEffectivePricingBomForParentCode } from "./src/lib/nomusEffectivePricingBom.js";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -3447,6 +3448,36 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const message = error instanceof Error ? error.message : "Erro ao desativar grupo.";
         console.error("DELETE /api/nomus/bom-optionals/pricing-selection/groups/:groupId", error);
         return res.status(400).json({ error: message });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/effective-pricing-bom",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const parentCode = req.query.parentCode != null ? String(req.query.parentCode).trim() : "";
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        const recursive =
+          req.query.recursive === "true" || req.query.recursive === "1";
+        const maxDepthRaw =
+          req.query.maxDepth != null ? Number.parseInt(String(req.query.maxDepth), 10) : 10;
+        const maxDepth = Number.isFinite(maxDepthRaw)
+          ? Math.min(Math.max(maxDepthRaw, 1), 20)
+          : 10;
+
+        const result = await buildEffectivePricingBomForParentCode(parentCode, {
+          recursive,
+          maxDepth,
+        });
+        return res.json(result);
+      } catch (error) {
+        console.error("GET /api/nomus/effective-pricing-bom", error);
+        return res.status(500).json({ error: "Erro ao gerar BOM efetiva de precificação." });
       }
     }
   );
