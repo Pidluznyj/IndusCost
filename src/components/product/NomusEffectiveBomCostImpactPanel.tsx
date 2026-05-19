@@ -37,6 +37,12 @@ const COMPARISON_STATUS_LABEL: Record<string, string> = {
   UNRESOLVED_COST: "Custo não resolvido",
 };
 
+function isLocalIncludedComparisonLine(line: CostImpactComparisonLine): boolean {
+  return (
+    line.status === "LOCAL_INCLUDED_BY_REVIEW" || line.status === "INCLUDED_BY_REVIEW"
+  );
+}
+
 function formatMoney(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -85,11 +91,19 @@ function ComparisonTable({
               {lines.map((line) => (
                 <tr
                   key={`${line.componentCode}-${line.status}`}
-                  className="border-t border-border/60"
+                  className={cn(
+                    "border-t border-border/60",
+                    line.status === "LOCAL_INCLUDED_BY_REVIEW" && "bg-teal-50/60"
+                  )}
                 >
                   <td className="px-2 py-1.5 font-medium">{line.componentCode}</td>
-                  <td className="px-2 py-1.5 text-muted-foreground max-w-[140px] truncate">
-                    {line.description ?? "—"}
+                  <td className="px-2 py-1.5 text-muted-foreground max-w-[160px]">
+                    <span className="block truncate">{line.description ?? "—"}</span>
+                    {isLocalIncludedComparisonLine(line) ? (
+                      <span className="block text-[9px] text-teal-800 mt-0.5 leading-tight">
+                        {COMPARISON_STATUS_LABEL[line.status] ?? line.status}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatQty(line.currentQuantity)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatQty(line.effectiveQuantity)}</td>
@@ -105,7 +119,14 @@ function ComparisonTable({
                     {formatMoney(line.deltaCost)}
                   </td>
                   <td className="px-2 py-1.5">
-                    <span className="text-[10px]">{COMPARISON_STATUS_LABEL[line.status] ?? line.status}</span>
+                    <span className="text-[10px] font-medium">
+                      {COMPARISON_STATUS_LABEL[line.status] ?? line.status}
+                    </span>
+                    {line.explanation && isLocalIncludedComparisonLine(line) ? (
+                      <span className="block text-[9px] text-muted-foreground mt-0.5 max-w-[200px] leading-tight">
+                        {line.explanation}
+                      </span>
+                    ) : null}
                   </td>
                 </tr>
               ))}

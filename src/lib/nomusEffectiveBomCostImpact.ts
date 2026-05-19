@@ -12,6 +12,7 @@ import { resolveNomusComponentCodes } from "@/src/lib/nomusBomComparisonLoad";
 import { parseProductBomLineIdFromLine } from "@/src/lib/nomusBomReviewDecision";
 import { buildEffectivePricingBomForParentCode } from "@/src/lib/nomusEffectivePricingBom";
 import type { EffectivePricingBomLine } from "@/src/lib/nomusEffectivePricingBomTypes";
+import { scaleChildContribution, type ChildUnitAnalysis } from "@/src/lib/costRollup";
 import type {
   CostBreakdown,
   CostImpactComparisonLine,
@@ -42,7 +43,8 @@ export type CurrentCostSnapshot = {
   }>;
 };
 
-function lookupLineCostFromCostAnalysis(
+/** No snapshot do cost-analysis, `unitCost` em materials = custo total da linha (não unitário). */
+function lookupLineTotalFromCostAnalysis(
   componentCode: string,
   bomLineId: string | null,
   currentAnalysis: CurrentCostSnapshot | null
@@ -63,7 +65,139 @@ function lookupLineCostFromCostAnalysis(
     );
   if (row?.unitCost == null) return null;
   const cost = Number(row.unitCost);
-  return Number.isFinite(cost) ? cost : null;
+  return Number.isFinite(cost) && cost >= 0 ? cost : null;
+}
+
+type CostAnalysisMaterialRow = NonNullable<CurrentCostSnapshot["materials"]>[number];
+
+function lookupMaterialRowFromCostAnalysis(
+  componentCode: string,
+  bomLineId: string | null,
+  currentAnalysis: CurrentCostSnapshot | null
+): CostAnalysisMaterialRow | null {
+  if (!currentAnalysis?.materials?.length) return null;
+  const codeKey = normalizeComponentCode(componentCode);
+  return (
+    (bomLineId
+      ? currentAnalysis.materials.find(
+          (m) => m.bomLineId === bomLineId && !m.excludedFromCost
+        )
+      : undefined) ??
+    currentAnalysis.materials.find(
+      (m) =>
+        !m.excludedFromCost &&
+        m.sku != null &&
+        normalizeComponentCode(m.sku) === codeKey
+    ) ??
+    null
+  );
+}
+
+type ResolvedLocalIncludedCost = {
+  currentQuantity: number | null;
+  currentLineTotal: number | null;
+  effectiveLineTotal: number | null;
+  effectiveQuantity: number;
+  deltaCost: number | null;
+  warnings: string[];
+};
+
+async function resolveLocalIncludedReviewLineCost(
+  line: EffectivePricingBomLine,
+  options: {
+    productId: string;
+    currentAnalysis: CurrentCostSnapshot | null;
+    currentByCode: Map<string, CurrentBomLine>;
+  }
+): Promise<ResolvedLocalIncludedCost> {
+  const code = line.componentCode;
+  const codeKey = normalizeComponentCode(code);
+  const bomLineId = parseProductBomLineIdFromLine(line);
+  const effectiveQuantity = line.quantity ?? 0;
+  const warnings: string[] = [];
+
+  const cur = options.currentByCode.get(codeKey);
+  let currentQuantity: number | null = cur?.quantity ?? null;
+  let currentLineTotal: number | null = cur?.lineCost ?? null;
+
+  const analysisRow = lookupMaterialRowFromCostAnalysis(
+    code,
+    bomLineId && bomLineId !== "unknown" ? bomLineId : null,
+    options.currentAnalysis
+  );
+  if (analysisRow?.requiredQty != null && Number.isFinite(Number(analysisRow.requiredQty))) {
+    currentQuantity = currentQuantity ?? Number(analysisRow.requiredQty);
+  }
+  if (currentLineTotal == null) {
+    currentLineTotal = lookupLineTotalFromCostAnalysis(
+      code,
+      bomLineId && bomLineId !== "unknown" ? bomLineId : null,
+      options.currentAnalysis
+    );
+  }
+
+  if (currentLineTotal == null && bomLineId && bomLineId !== "unknown") {
+    currentLineTotal = await loadCurrentBomLineCost(
+      bomLineId,
+      options.productId,
+      options.currentAnalysis
+    );
+    if (currentQuantity == null) {
+      const bomRow = await prisma.productBOM.findFirst({
+        where: { id: bomLineId, productId: options.productId },
+        select: { quantity: true, lossPercentage: true },
+      });
+      if (bomRow) {
+        const qty = Number(bomRow.quantity);
+        const loss = Number(bomRow.lossPercentage ?? 0) / 100;
+        currentQuantity = loss >= 1 ? qty : qty / (1 - loss);
+      }
+    }
+  }
+
+  if (currentLineTotal == null) {
+    currentLineTotal = lookupLineTotalFromCostAnalysis(code, null, options.currentAnalysis);
+  }
+
+  if (currentLineTotal == null) {
+    warnings.push(
+      `Linha local incluída por revisão sem custo resolvido no cost-analysis atual: ${code}.`
+    );
+    return {
+      currentQuantity,
+      currentLineTotal: null,
+      effectiveLineTotal: null,
+      effectiveQuantity,
+      deltaCost: null,
+      warnings,
+    };
+  }
+
+  let effectiveLineTotal: number;
+  if (
+    currentQuantity != null &&
+    currentQuantity > 0 &&
+    Number.isFinite(effectiveQuantity) &&
+    Math.abs(currentQuantity - effectiveQuantity) >= 0.000001
+  ) {
+    effectiveLineTotal = (currentLineTotal / currentQuantity) * effectiveQuantity;
+  } else {
+    effectiveLineTotal = currentLineTotal;
+    if (currentQuantity == null && effectiveQuantity > 0) {
+      currentQuantity = effectiveQuantity;
+    }
+  }
+
+  const deltaCost = effectiveLineTotal - currentLineTotal;
+
+  return {
+    currentQuantity,
+    currentLineTotal,
+    effectiveLineTotal,
+    effectiveQuantity,
+    deltaCost,
+    warnings,
+  };
 }
 
 const SCOPE_NOTE =
@@ -125,12 +259,60 @@ type CurrentBomLine = {
   bomLineId: string;
 };
 
+async function approximateChildUnitAnalysis(
+  childProductId: string,
+  visiting: Set<string>
+): Promise<ChildUnitAnalysis | null> {
+  if (visiting.has(childProductId)) return null;
+  visiting.add(childProductId);
+
+  const product = await prisma.product.findUnique({
+    where: { id: childProductId },
+    include: {
+      ProductBOM: { include: { Material: true } },
+    },
+  });
+  if (!product) {
+    visiting.delete(childProductId);
+    return null;
+  }
+
+  let totalMaterialCost = 0;
+  for (const item of product.ProductBOM) {
+    if (item.Material) {
+      const { lineTotal } = computeMaterialLineTotal(
+        item.Material,
+        Number(item.quantity),
+        Number(item.lossPercentage ?? 0)
+      );
+      totalMaterialCost += lineTotal;
+    } else if (item.childProductId) {
+      const childUnit = await approximateChildUnitAnalysis(item.childProductId, visiting);
+      if (!childUnit) continue;
+      const loss = Number(item.lossPercentage ?? 0) / 100;
+      const reqQty =
+        loss >= 1 ? Number(item.quantity) : Number(item.quantity) / (1 - loss);
+      const scaled = scaleChildContribution(childUnit, reqQty);
+      totalMaterialCost += scaled.structuralLine;
+    }
+  }
+
+  visiting.delete(childProductId);
+  return {
+    totalMaterialCost,
+    totalHH_Unit: 0,
+    totalHM_Unit: 0,
+    totalCIF_Unit: 0,
+    totalIndustrialCost: totalMaterialCost,
+  };
+}
+
 async function loadCurrentBomLineCost(
   bomLineId: string,
   productId: string,
   currentAnalysis: CurrentCostSnapshot | null
 ): Promise<number | null> {
-  const fromAnalysis = lookupLineCostFromCostAnalysis("", bomLineId, currentAnalysis);
+  const fromAnalysis = lookupLineTotalFromCostAnalysis("", bomLineId, currentAnalysis);
   if (fromAnalysis != null) return fromAnalysis;
 
   const row = await prisma.productBOM.findFirst({
@@ -144,16 +326,24 @@ async function loadCurrentBomLineCost(
 
   const qty = Number(row.quantity);
   const loss = Number(row.lossPercentage ?? 0);
+  const requiredQty = loss >= 1 ? qty : qty / (1 - loss / 100);
+
   if (row.Material) {
     const { lineTotal } = computeMaterialLineTotal(row.Material, qty, loss);
     return Number.isFinite(lineTotal) ? lineTotal : null;
   }
   if (row.childProductId && row.ChildProduct) {
     const sku = row.ChildProduct.sku;
-    return (
-      lookupLineCostFromCostAnalysis(sku, bomLineId, currentAnalysis) ??
-      lookupLineCostFromCostAnalysis(sku, null, currentAnalysis)
-    );
+    const fromSku =
+      lookupLineTotalFromCostAnalysis(sku, bomLineId, currentAnalysis) ??
+      lookupLineTotalFromCostAnalysis(sku, null, currentAnalysis);
+    if (fromSku != null) return fromSku;
+
+    const childUnit = await approximateChildUnitAnalysis(row.childProductId, new Set());
+    if (childUnit) {
+      const scaled = scaleChildContribution(childUnit, requiredQty);
+      return Number.isFinite(scaled.structuralLine) ? scaled.structuralLine : null;
+    }
   }
   return null;
 }
@@ -190,7 +380,7 @@ async function loadCurrentBomLines(
     } else if (row.childProductId && row.ChildProduct) {
       const requiredQty = loss >= 1 ? qty : qty / (1 - loss / 100);
       const lineCost =
-        lookupLineCostFromCostAnalysis(row.ChildProduct.sku, row.id, currentAnalysis) ??
+        lookupLineTotalFromCostAnalysis(row.ChildProduct.sku, row.id, currentAnalysis) ??
         (await loadCurrentBomLineCost(row.id, productId, currentAnalysis));
       lines.push({
         componentCode: row.ChildProduct.sku,
@@ -279,33 +469,41 @@ async function costLineFromEffective(
 
   if (line.source === "LOCAL_ONLY_INCLUDED_BY_REVIEW") {
     const bomLineId = parseProductBomLineIdFromLine(line);
-    const codeKey = normalizeComponentCode(code);
-    const cur = options.currentByCode.get(codeKey);
-    const lineCost =
-      (bomLineId && bomLineId !== "unknown"
-        ? await loadCurrentBomLineCost(bomLineId, options.productId, options.currentAnalysis)
-        : null) ??
-      cur?.lineCost ??
-      lookupLineCostFromCostAnalysis(code, bomLineId, options.currentAnalysis);
+    const resolved = await resolveLocalIncludedReviewLineCost(line, {
+      productId: options.productId,
+      currentAnalysis: options.currentAnalysis,
+      currentByCode: options.currentByCode,
+    });
+    warnings.push(...resolved.warnings);
 
-    if (lineCost != null) {
-      const unitCost = qty > 0 ? lineCost / qty : lineCost;
+    if (resolved.effectiveLineTotal != null) {
+      const unitCost =
+        resolved.effectiveQuantity > 0
+          ? resolved.effectiveLineTotal / resolved.effectiveQuantity
+          : resolved.effectiveLineTotal;
       return {
         ...base,
         resolvedAs: "LOCAL_PRODUCT_BOM",
-        resolvedId: bomLineId && bomLineId !== "unknown" ? bomLineId : cur?.bomLineId ?? null,
+        resolvedId:
+          bomLineId && bomLineId !== "unknown"
+            ? bomLineId
+            : options.currentByCode.get(normalizeComponentCode(code))?.bomLineId ?? null,
         unitCost,
-        totalCost: lineCost,
-        effectiveLineCost: lineCost,
-        warnings: [
-          "Componente local incluído por revisão — custo efetivo igual ao custo atual da linha no IndusCost.",
-        ],
+        totalCost: resolved.effectiveLineTotal,
+        currentQuantity: resolved.currentQuantity,
+        effectiveQuantity: resolved.effectiveQuantity,
+        currentLineCost: resolved.currentLineTotal,
+        effectiveLineCost: resolved.effectiveLineTotal,
+        deltaCost: resolved.deltaCost,
+        warnings:
+          resolved.warnings.length > 0
+            ? resolved.warnings
+            : [
+                "Componente local mantido por decisão de revisão e custeado pelo custo atual do IndusCost.",
+              ],
       };
     }
-    warnings.push(
-      "Componente local incluído por revisão, mas o custo da linha não foi encontrado na análise atual."
-    );
-    return { ...base, warnings };
+    return { ...base, warnings, resolvedAs: "UNRESOLVED" };
   }
 
   const resolved = await resolveNomusComponentCodes([code]);
@@ -398,7 +596,7 @@ function comparisonStatus(
     return {
       status: localIncluded ? "LOCAL_INCLUDED_BY_REVIEW" : "INCLUDED_BY_REVIEW",
       explanation: localIncluded
-        ? "Componente local (ex.: montagem 800.xx) incluído na BOM efetiva com custo do IndusCost."
+        ? "Componente local mantido por decisão de revisão e custeado pelo custo atual do IndusCost."
         : "Incluído na BOM efetiva por decisão de revisão local.",
     };
   }
@@ -432,7 +630,7 @@ function comparisonStatus(
       return {
         status: "LOCAL_INCLUDED_BY_REVIEW",
         explanation:
-          "Componente local incluído na BOM efetiva; custo efetivo igual ao custo atual da linha no IndusCost.",
+          "Componente local mantido por decisão de revisão e custeado pelo custo atual do IndusCost.",
       };
     }
     return {
@@ -462,14 +660,28 @@ function mergeComparisonLines(
     let currentCost = cur?.lineCost ?? null;
     if (currentCost == null && currentAnalysis?.materials) {
       currentCost =
-        lookupLineCostFromCostAnalysis(
+        lookupLineTotalFromCostAnalysis(
           displayCode,
           cur?.bomLineId ?? null,
           currentAnalysis
         ) ?? currentCost;
     }
 
-    const effectiveCost = eff?.cost.effectiveLineCost ?? eff?.cost.totalCost ?? null;
+    let effectiveCost = eff?.cost.effectiveLineCost ?? eff?.cost.totalCost ?? null;
+    if (
+      eff?.line.source === "LOCAL_ONLY_INCLUDED_BY_REVIEW" &&
+      effectiveCost == null &&
+      eff.cost.effectiveLineCost != null
+    ) {
+      effectiveCost = eff.cost.effectiveLineCost;
+    }
+    if (
+      eff?.line.source === "LOCAL_ONLY_INCLUDED_BY_REVIEW" &&
+      currentCost == null &&
+      eff.cost.currentLineCost != null
+    ) {
+      currentCost = eff.cost.currentLineCost;
+    }
     const { status, explanation } = comparisonStatus(
       cur?.quantity ?? null,
       eff?.line.quantity ?? null,
@@ -694,10 +906,30 @@ export async function buildNomusEffectiveBomCostImpact(
       (l) => normalizeComponentCode(l.componentCode) === normalizeComponentCode(cl.componentCode)
     );
     if (inc) {
-      inc.currentQuantity = cl.currentQuantity;
-      inc.currentLineCost = cl.currentCost;
-      inc.effectiveLineCost = cl.effectiveCost;
-      inc.deltaCost = cl.deltaCost;
+      inc.currentQuantity = cl.currentQuantity ?? inc.currentQuantity;
+      inc.currentLineCost = cl.currentCost ?? inc.currentLineCost;
+      inc.effectiveLineCost = cl.effectiveCost ?? inc.effectiveLineCost;
+      inc.deltaCost = cl.deltaCost ?? inc.deltaCost;
+    }
+    if (
+      cl.status === "LOCAL_INCLUDED_BY_REVIEW" &&
+      cl.effectiveCost != null &&
+      Math.abs(cl.effectiveCost) < 0.000001 &&
+      cl.currentCost != null &&
+      cl.currentCost > 0
+    ) {
+      cl.effectiveCost = cl.currentCost;
+      cl.deltaCost = 0;
+      cl.explanation =
+        "Componente local mantido por decisão de revisão e custeado pelo custo atual do IndusCost.";
+    }
+  }
+
+  for (const inc of includedLines) {
+    if (inc.source !== "LOCAL_ONLY_INCLUDED_BY_REVIEW") continue;
+    const unresolvedMsg = `Linha local incluída por revisão sem custo resolvido no cost-analysis atual: ${inc.componentCode}.`;
+    if (inc.totalCost == null || inc.effectiveLineCost == null) {
+      if (!warnings.includes(unresolvedMsg)) warnings.push(unresolvedMsg);
     }
   }
 
