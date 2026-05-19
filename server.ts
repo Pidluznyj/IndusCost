@@ -105,6 +105,10 @@ import {
   listReviewDecisionsForParentCode,
   saveReviewDecision,
 } from "./src/lib/nomusBomReviewDecision.js";
+import {
+  applyEffectiveBomToProductBom,
+  buildControlledApplyPreview,
+} from "./src/lib/nomusBomControlledApply.js";
 import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
@@ -3656,6 +3660,67 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const message = error instanceof Error ? error.message : "Erro ao salvar decisão.";
         console.error("PATCH /api/nomus/effective-pricing-bom/review-decisions", error);
         return res.status(400).json({ error: message });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/effective-pricing-bom/apply-preview",
+    requireAppAuth,
+    requireAnyPermission([...NOMUS_OPTIONAL_PRICING_PERMS]),
+    async (req, res) => {
+      try {
+        const parentCode = req.query.parentCode != null ? String(req.query.parentCode).trim() : "";
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        const result = await buildControlledApplyPreview(parentCode);
+        return res.json(result);
+      } catch (error) {
+        console.error("GET /api/nomus/effective-pricing-bom/apply-preview", error);
+        return res.status(500).json({ error: "Erro ao gerar preview de aplicação controlada." });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/effective-pricing-bom/apply",
+    requireAppAuth,
+    requirePermission("products.edit"),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const parentCode = String(body.parentCode ?? "").trim();
+        const planHash = String(body.planHash ?? "").trim();
+        const confirmationText = String(body.confirmationText ?? "").trim();
+        const approvedBy =
+          body.approvedBy != null && String(body.approvedBy).trim()
+            ? String(body.approvedBy).trim()
+            : undefined;
+
+        if (!parentCode || !planHash || !confirmationText) {
+          return res.status(400).json({
+            error: "parentCode, planHash e confirmationText são obrigatórios.",
+          });
+        }
+
+        const result = await applyEffectiveBomToProductBom({
+          parentCode,
+          planHash,
+          confirmationText,
+          approvedBy,
+        });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Erro ao aplicar BOM efetiva.";
+        console.error("POST /api/nomus/effective-pricing-bom/apply", error);
+        const status = message.includes("Plano desatualizado") || message.includes("Confirmação")
+          ? 409
+          : message.includes("bloqueada") || message.includes("gates")
+            ? 422
+            : 400;
+        return res.status(status).json({ error: message });
       }
     }
   );

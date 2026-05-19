@@ -14,6 +14,7 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import { useNomusMaintenanceWorkspaceSync } from "@/src/hooks/useNomusMaintenanceWorkspaceSync";
 import type { NomusMaintenanceWorkspaceProps } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
+import { NomusBomControlledApplySection } from "@/src/components/product/NomusBomControlledApplySection";
 import type { NomusBomApplyPlan } from "@/src/lib/nomusBomApplyPlan";
 import type { NomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
 
@@ -268,6 +269,14 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
                 Ver anÃ¡lise completa (opcional)
               </button>
             </div>
+          ) : null}
+
+          {selectedParentCode ? (
+            <NomusBomControlledApplySection
+              parentCode={selectedParentCode}
+              refreshToken={refreshToken}
+              disabled={disabled}
+            />
           ) : null}
 
         </div>

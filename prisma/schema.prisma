@@ -1224,3 +1224,61 @@ model NomusBomReviewDecision {
   @@index([decision])
   @@index([isActive])
 }
+
+enum NomusBomApplyRunStatus {
+  PREVIEWED
+  APPLIED
+  FAILED
+}
+
+enum NomusBomApplyRunLineStatus {
+  PLANNED
+  APPLIED
+  SKIPPED
+  FAILED
+}
+
+/// Auditoria de aplicação controlada da BOM efetiva Nomus na ProductBOM (fase APPLY-A).
+model NomusBomApplyRun {
+  id               String                 @id @default(uuid())
+  parentCode       String
+  productId        String                 @db.Uuid
+  status           NomusBomApplyRunStatus @default(PREVIEWED)
+  planHash         String
+  effectiveBomHash String
+  approvedBy       String?
+  confirmationText String?
+  beforeBomJson    Json?
+  afterBomJson     Json?
+  summaryJson      Json?
+  warningsJson     Json?
+  errorMessage     String?
+  createdAt        DateTime               @default(now())
+  appliedAt        DateTime?
+  lines            NomusBomApplyRunLine[]
+
+  @@index([parentCode])
+  @@index([productId])
+  @@index([status])
+  @@index([planHash])
+  @@index([createdAt])
+}
+
+model NomusBomApplyRunLine {
+  id                   String                   @id @default(uuid())
+  runId                String
+  actionType           String
+  componentCode        String
+  componentDescription String?
+  productBomLineId     String?
+  beforeJson           Json?
+  afterJson            Json?
+  status               NomusBomApplyRunLineStatus @default(PLANNED)
+  reason               String?
+  createdAt            DateTime                 @default(now())
+  run                  NomusBomApplyRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([componentCode])
+  @@index([actionType])
+}
