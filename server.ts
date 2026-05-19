@@ -3245,9 +3245,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             : undefined;
 
         const sku = req.query.sku != null ? String(req.query.sku).trim() : undefined;
+        const parentCode =
+          req.query.parentCode != null ? String(req.query.parentCode).trim() : undefined;
 
         const report = await buildNomusBomApplyPlansReport({
-          sku: sku || undefined,
+          sku: parentCode ? undefined : sku || undefined,
+          parentCode: parentCode || undefined,
           limit,
           offset,
           risk,

@@ -1,5 +1,5 @@
 import type { BomComparisonResult } from "@/src/lib/nomusBomComparison";
-import { normalizeComponentCode } from "@/src/lib/nomusBomComparison";
+import { normalizeComponentCode, normalizeSku } from "@/src/lib/nomusBomComparison";
 import {
   buildBomComparisonForParentCode,
   countDistinctParentCodesInStage,
@@ -15,7 +15,10 @@ import {
 import { clampBatchLimit } from "@/src/lib/nomusBomBatchReport";
 
 export type NomusBomApplyPlanReportFilters = {
+  /** Busca parcial (contains) — somente filtragem; não usar para diff/plano de um produto. */
   sku?: string;
+  /** Código completo do pai Nomus — comparação/plano exatos de um único produto. */
+  parentCode?: string;
   limit?: number;
   offset?: number;
   onlyCandidates?: boolean;
@@ -68,15 +71,36 @@ export async function buildNomusBomApplyPlansReport(
 ): Promise<NomusBomApplyPlansReport> {
   const limit = clampBatchLimit(filters.limit);
   const offset = Math.max(0, filters.offset ?? 0);
-  const search = filters.sku?.trim() || undefined;
+  const exactParentCode = filters.parentCode?.trim() || undefined;
+  const search = !exactParentCode ? filters.sku?.trim() || undefined : undefined;
 
-  const totalParentsInNomusStage = search
-    ? await countDistinctParentCodesInStage(search)
-    : await countDistinctParentCodesInStage();
+  let parentCodes: string[];
+  let exactMatchCount = 0;
+  if (exactParentCode) {
+    const wanted = normalizeSku(exactParentCode);
+    const candidates = await listDistinctParentCodesFromStage({
+      limit: 10,
+      offset: 0,
+      search: exactParentCode,
+    });
+    const exactMatches = candidates.filter((code) => normalizeSku(code) === wanted);
+    exactMatchCount = exactMatches.length;
+    parentCodes = exactMatches.length > 0 ? [exactMatches[0]] : [exactParentCode];
+  } else {
+    parentCodes = await listDistinctParentCodesFromStage({
+      limit,
+      offset,
+      search,
+    });
+  }
 
-  const parentCodes = search
-    ? [search]
-    : await listDistinctParentCodesFromStage({ limit, offset, search: undefined });
+  const totalParentsInNomusStage = exactParentCode
+    ? exactMatchCount > 0
+      ? 1
+      : 0
+    : search
+      ? await countDistinctParentCodesInStage(search)
+      : await countDistinctParentCodesInStage();
 
   const comparisons: BomComparisonResult[] = [];
   for (const parentCode of parentCodes) {

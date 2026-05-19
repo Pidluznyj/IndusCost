@@ -5,6 +5,7 @@ import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import type { NomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
 import type { NomusBomApplyPlan } from "@/src/lib/nomusBomApplyPlan";
+import { normalizeSku } from "@/src/lib/nomusBomComparison";
 import {
   buildNomusBomDiffRows,
   comparisonStatusLabel,
@@ -20,7 +21,8 @@ import {
 export type NomusBomDiffModalProps = {
   open: boolean;
   onClose: () => void;
-  sku: string | null;
+  /** Código completo do produto pai (parentCode Nomus). Nunca termo parcial de busca. */
+  parentCode: string | null;
   productId?: string | null;
 };
 
@@ -42,7 +44,7 @@ function comparisonBadgeClass(status: string | null): string {
 export const NomusBomDiffModal: React.FC<NomusBomDiffModalProps> = ({
   open,
   onClose,
-  sku,
+  parentCode,
   productId: _productId,
 }) => {
   const [loading, setLoading] = useState(false);
@@ -50,21 +52,23 @@ export const NomusBomDiffModal: React.FC<NomusBomDiffModalProps> = ({
   const [plan, setPlan] = useState<NomusBomApplyPlan | null>(null);
 
   const loadData = useCallback(async () => {
-    if (!sku?.trim()) return;
+    const code = parentCode?.trim();
+    if (!code) return;
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ sku: sku.trim(), limit: "1", offset: "0" });
+      const params = new URLSearchParams({ parentCode: code, limit: "1", offset: "0" });
       const report = await fetchJsonOk<NomusBomApplyPlansReport>(
         `/api/nomus/bom-comparison/apply-plan?${params.toString()}`
       );
+      const wanted = normalizeSku(code);
       const match =
-        report.plans.find((p) => p.parentCode.toUpperCase() === sku.trim().toUpperCase()) ??
-        report.plans[0] ??
-        null;
+        report.plans.find((p) => normalizeSku(p.parentCode) === wanted) ?? null;
       if (!match) {
         setPlan(null);
-        setError("Nenhum plano encontrado para este SKU no stage Nomus.");
+        setError(
+          `Nenhum plano encontrado para o produto ${code} no stage Nomus. Verifique o SKU completo.`
+        );
         return;
       }
       setPlan(match);
@@ -74,15 +78,15 @@ export const NomusBomDiffModal: React.FC<NomusBomDiffModalProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [sku]);
+  }, [parentCode]);
 
   useEffect(() => {
-    if (open && sku) void loadData();
+    if (open && parentCode?.trim()) void loadData();
     if (!open) {
       setPlan(null);
       setError(null);
     }
-  }, [open, sku, loadData]);
+  }, [open, parentCode, loadData]);
 
   const diffRows: NomusBomDiffRow[] = plan ? buildNomusBomDiffRows(plan) : [];
   const cls = plan?.classification;
@@ -122,7 +126,7 @@ export const NomusBomDiffModal: React.FC<NomusBomDiffModalProps> = ({
                       : ""}
                   </p>
                 ) : (
-                  <p className="text-xs text-muted-foreground mt-1">{sku}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{parentCode}</p>
                 )}
                 <p className="text-[10px] text-muted-foreground mt-2">
                   Somente leitura. Nenhuma alteração é aplicada ao IndusCost.
