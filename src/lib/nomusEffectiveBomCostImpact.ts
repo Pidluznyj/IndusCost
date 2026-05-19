@@ -9,6 +9,7 @@
 import { prisma } from "@/src/lib/prisma";
 import { normalizeComponentCode, normalizeSku } from "@/src/lib/nomusBomComparison";
 import { resolveNomusComponentCodes } from "@/src/lib/nomusBomComparisonLoad";
+import { parseProductBomLineIdFromLine } from "@/src/lib/nomusBomReviewDecision";
 import { buildEffectivePricingBomForParentCode } from "@/src/lib/nomusEffectivePricingBom";
 import type { EffectivePricingBomLine } from "@/src/lib/nomusEffectivePricingBomTypes";
 import type {
@@ -34,11 +35,36 @@ export type CurrentCostSnapshot = {
   materials?: Array<{
     description?: string;
     sku?: string;
+    bomLineId?: string;
     requiredQty?: number;
     unitCost?: number;
     excludedFromCost?: boolean;
   }>;
 };
+
+function lookupLineCostFromCostAnalysis(
+  componentCode: string,
+  bomLineId: string | null,
+  currentAnalysis: CurrentCostSnapshot | null
+): number | null {
+  if (!currentAnalysis?.materials?.length) return null;
+  const codeKey = normalizeComponentCode(componentCode);
+  const row =
+    (bomLineId
+      ? currentAnalysis.materials.find(
+          (m) => m.bomLineId === bomLineId && !m.excludedFromCost
+        )
+      : undefined) ??
+    currentAnalysis.materials.find(
+      (m) =>
+        !m.excludedFromCost &&
+        m.sku != null &&
+        normalizeComponentCode(m.sku) === codeKey
+    );
+  if (row?.unitCost == null) return null;
+  const cost = Number(row.unitCost);
+  return Number.isFinite(cost) ? cost : null;
+}
 
 const SCOPE_NOTE =
   "Impacto calculado sobre materiais/componentes da BOM; transformação (HH/HM) segue o custo atual do produto no IndusCost.";
@@ -99,7 +125,43 @@ type CurrentBomLine = {
   bomLineId: string;
 };
 
-async function loadCurrentBomLines(productId: string): Promise<CurrentBomLine[]> {
+async function loadCurrentBomLineCost(
+  bomLineId: string,
+  productId: string,
+  currentAnalysis: CurrentCostSnapshot | null
+): Promise<number | null> {
+  const fromAnalysis = lookupLineCostFromCostAnalysis("", bomLineId, currentAnalysis);
+  if (fromAnalysis != null) return fromAnalysis;
+
+  const row = await prisma.productBOM.findFirst({
+    where: { id: bomLineId, productId },
+    include: {
+      Material: true,
+      ChildProduct: { select: { id: true, sku: true, name: true } },
+    },
+  });
+  if (!row) return null;
+
+  const qty = Number(row.quantity);
+  const loss = Number(row.lossPercentage ?? 0);
+  if (row.Material) {
+    const { lineTotal } = computeMaterialLineTotal(row.Material, qty, loss);
+    return Number.isFinite(lineTotal) ? lineTotal : null;
+  }
+  if (row.childProductId && row.ChildProduct) {
+    const sku = row.ChildProduct.sku;
+    return (
+      lookupLineCostFromCostAnalysis(sku, bomLineId, currentAnalysis) ??
+      lookupLineCostFromCostAnalysis(sku, null, currentAnalysis)
+    );
+  }
+  return null;
+}
+
+async function loadCurrentBomLines(
+  productId: string,
+  currentAnalysis: CurrentCostSnapshot | null
+): Promise<CurrentBomLine[]> {
   const rows = await prisma.productBOM.findMany({
     where: { productId },
     include: {
@@ -126,11 +188,15 @@ async function loadCurrentBomLines(productId: string): Promise<CurrentBomLine[]>
         bomLineId: row.id,
       });
     } else if (row.childProductId && row.ChildProduct) {
+      const requiredQty = loss >= 1 ? qty : qty / (1 - loss / 100);
+      const lineCost =
+        lookupLineCostFromCostAnalysis(row.ChildProduct.sku, row.id, currentAnalysis) ??
+        (await loadCurrentBomLineCost(row.id, productId, currentAnalysis));
       lines.push({
         componentCode: row.ChildProduct.sku,
         description: row.ChildProduct.name,
-        quantity: loss >= 1 ? qty : qty / (1 - loss / 100),
-        lineCost: null,
+        quantity: requiredQty,
+        lineCost,
         resolvedAs: "PRODUCT",
         resolvedId: row.ChildProduct.id,
         bomLineId: row.id,
@@ -180,6 +246,9 @@ async function costLineFromEffective(
     depth: number;
     visited: Set<string>;
     parentCode: string;
+    productId: string;
+    currentAnalysis: CurrentCostSnapshot | null;
+    currentByCode: Map<string, CurrentBomLine>;
   }
 ): Promise<CostImpactLine> {
   const code = line.componentCode;
@@ -206,6 +275,37 @@ async function costLineFromEffective(
 
   if (!line.includedForPricing) {
     return base;
+  }
+
+  if (line.source === "LOCAL_ONLY_INCLUDED_BY_REVIEW") {
+    const bomLineId = parseProductBomLineIdFromLine(line);
+    const codeKey = normalizeComponentCode(code);
+    const cur = options.currentByCode.get(codeKey);
+    const lineCost =
+      (bomLineId && bomLineId !== "unknown"
+        ? await loadCurrentBomLineCost(bomLineId, options.productId, options.currentAnalysis)
+        : null) ??
+      cur?.lineCost ??
+      lookupLineCostFromCostAnalysis(code, bomLineId, options.currentAnalysis);
+
+    if (lineCost != null) {
+      const unitCost = qty > 0 ? lineCost / qty : lineCost;
+      return {
+        ...base,
+        resolvedAs: "LOCAL_PRODUCT_BOM",
+        resolvedId: bomLineId && bomLineId !== "unknown" ? bomLineId : cur?.bomLineId ?? null,
+        unitCost,
+        totalCost: lineCost,
+        effectiveLineCost: lineCost,
+        warnings: [
+          "Componente local incluído por revisão — custo efetivo igual ao custo atual da linha no IndusCost.",
+        ],
+      };
+    }
+    warnings.push(
+      "Componente local incluído por revisão, mas o custo da linha não foi encontrado na análise atual."
+    );
+    return { ...base, warnings };
   }
 
   const resolved = await resolveNomusComponentCodes([code]);
@@ -294,12 +394,12 @@ function comparisonStatus(
   effectiveSource?: string
 ): { status: CostLineComparisonStatus; explanation: string } {
   if (!hasCurrent && hasEffective) {
-    const review = effectiveSource?.startsWith("LOCAL_ONLY_INCLUDED");
+    const localIncluded = effectiveSource === "LOCAL_ONLY_INCLUDED_BY_REVIEW";
     return {
-      status: review ? "INCLUDED_BY_REVIEW" : "ONLY_EFFECTIVE_NOMUS",
-      explanation: review
-        ? "Incluído na BOM efetiva por decisão de revisão local."
-        : "Presente na BOM efetiva Nomus, ausente na ProductBOM atual.",
+      status: localIncluded ? "LOCAL_INCLUDED_BY_REVIEW" : "INCLUDED_BY_REVIEW",
+      explanation: localIncluded
+        ? "Componente local (ex.: montagem 800.xx) incluído na BOM efetiva com custo do IndusCost."
+        : "Incluído na BOM efetiva por decisão de revisão local.",
     };
   }
   if (hasCurrent && !hasEffective) {
@@ -323,6 +423,18 @@ function comparisonStatus(
   const qCur = currentQty ?? 0;
   const qEff = effectiveQty ?? 0;
   if (Math.abs(qCur - qEff) < 0.000001) {
+    if (
+      effectiveSource === "LOCAL_ONLY_INCLUDED_BY_REVIEW" &&
+      currentCost != null &&
+      effectiveCost != null &&
+      Math.abs(currentCost - effectiveCost) < 0.000001
+    ) {
+      return {
+        status: "LOCAL_INCLUDED_BY_REVIEW",
+        explanation:
+          "Componente local incluído na BOM efetiva; custo efetivo igual ao custo atual da linha no IndusCost.",
+      };
+    }
     return {
       status: "SAME_COMPONENT_SAME_QTY",
       explanation: "Mesmo componente e mesma quantidade efetiva.",
@@ -348,11 +460,13 @@ function mergeComparisonLines(
     const displayCode = cur?.componentCode ?? eff?.line.componentCode ?? codeKey;
 
     let currentCost = cur?.lineCost ?? null;
-    if (currentCost == null && cur?.resolvedAs === "PRODUCT" && currentAnalysis?.materials) {
-      const row = currentAnalysis.materials.find(
-        (m) => normalizeComponentCode(m.sku ?? "") === codeKey && !m.excludedFromCost
-      );
-      if (row?.unitCost != null) currentCost = Number(row.unitCost);
+    if (currentCost == null && currentAnalysis?.materials) {
+      currentCost =
+        lookupLineCostFromCostAnalysis(
+          displayCode,
+          cur?.bomLineId ?? null,
+          currentAnalysis
+        ) ?? currentCost;
     }
 
     const effectiveCost = eff?.cost.effectiveLineCost ?? eff?.cost.totalCost ?? null;
@@ -514,19 +628,29 @@ export async function buildNomusEffectiveBomCostImpact(
     };
   }
 
-  const visited = new Set<string>();
+  const currentBomLines = await loadCurrentBomLines(product.id, currentCostSnapshot ?? null);
+  const currentByCode = new Map<string, CurrentBomLine>();
+  for (const row of currentBomLines) {
+    currentByCode.set(normalizeComponentCode(row.componentCode), row);
+  }
+
+  const costLineOptions = {
+    recursive,
+    maxDepth,
+    depth: 0,
+    visited: new Set<string>(),
+    parentCode: effectiveBom.parentCode,
+    productId: product.id,
+    currentAnalysis: currentCostSnapshot ?? null,
+    currentByCode,
+  };
+
   const includedLines: CostImpactLine[] = [];
   const excludedLines: CostImpactLine[] = [];
   const unresolvedLines: CostImpactLine[] = [];
 
   for (const line of effectiveBom.directLines) {
-    const costLine = await costLineFromEffective(line, {
-      recursive,
-      maxDepth,
-      depth: 0,
-      visited,
-      parentCode: effectiveBom.parentCode,
-    });
+    const costLine = await costLineFromEffective(line, costLineOptions);
     if (line.includedForPricing) includedLines.push(costLine);
     else excludedLines.push(costLine);
     if (costLine.resolvedAs === "UNRESOLVED" || costLine.totalCost == null) {
@@ -535,15 +659,7 @@ export async function buildNomusEffectiveBomCostImpact(
   }
 
   for (const line of [...effectiveBom.excludedLines, ...effectiveBom.reviewLines]) {
-    excludedLines.push(
-      await costLineFromEffective(line, {
-        recursive,
-        maxDepth,
-        depth: 0,
-        visited,
-        parentCode: effectiveBom.parentCode,
-      })
-    );
+    excludedLines.push(await costLineFromEffective(line, costLineOptions));
   }
 
   let effectiveMaterial = includedLines.reduce((s, l) => s + (l.totalCost ?? 0), 0);
@@ -554,12 +670,6 @@ export async function buildNomusEffectiveBomCostImpact(
   };
 
   warnings.push(SCOPE_NOTE);
-
-  const currentBomLines = await loadCurrentBomLines(product.id);
-  const currentByCode = new Map<string, CurrentBomLine>();
-  for (const row of currentBomLines) {
-    currentByCode.set(normalizeComponentCode(row.componentCode), row);
-  }
 
   const effectiveByCode = new Map<string, { line: EffectivePricingBomLine; cost: CostImpactLine }>();
   for (const cost of includedLines) {
@@ -598,7 +708,10 @@ export async function buildNomusEffectiveBomCostImpact(
     unresolvedCostLinesCount: unresolvedLines.length,
     onlyCurrentCount: comparisonLines.filter((l) => l.status === "ONLY_CURRENT_INDUS").length,
     onlyEffectiveCount: comparisonLines.filter(
-      (l) => l.status === "ONLY_EFFECTIVE_NOMUS" || l.status === "INCLUDED_BY_REVIEW"
+      (l) =>
+        l.status === "ONLY_EFFECTIVE_NOMUS" ||
+        l.status === "INCLUDED_BY_REVIEW" ||
+        l.status === "LOCAL_INCLUDED_BY_REVIEW"
     ).length,
     qtyDiffCount: comparisonLines.filter((l) => l.status === "SAME_COMPONENT_QTY_DIFF").length,
     transformationUsesCurrent: true,

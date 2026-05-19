@@ -271,7 +271,8 @@ function buildLocalOnlyReviewLine(
     source: "LOCAL_ONLY_INDUS_REVIEW",
     decision: "REVIEW",
     includedForPricing: false,
-    reason: "Linha presente apenas no IndusCost (ProductBOM). Mantida para revisão; não entra na BOM efetiva Nomus.",
+    reason:
+      "Linha presente apenas no IndusCost (ProductBOM). Montagens 800.xx entram como componente local quando incluídas; não são roteiro Nomus nesta fase.",
     flags: {
       hasOptionalNomusLines: false,
       hasAlternativeNomusLines: false,

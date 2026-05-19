@@ -8,6 +8,7 @@ import type {
   NomusBomReviewDecisionType,
   ReviewDecisionView,
 } from "@/src/lib/nomusEffectivePricingBomTypes";
+import { isLocalAssemblyComponentCode } from "@/src/lib/nomusEffectivePricingBomTypes";
 
 export type {
   LocalReviewCatalogItem,
@@ -62,6 +63,52 @@ export function parseProductBomLineIdFromLine(line: EffectivePricingBomLine): st
     return line.resolution.slice("indus_bom:".length);
   }
   return null;
+}
+
+/** Regra provisória: montagem 800.xx no ProductBOM entra como componente local incluído. */
+export function inferDefaultLocalReviewDecision(
+  componentCode: string
+): NomusBomReviewDecisionType | null {
+  if (isLocalAssemblyComponentCode(componentCode)) {
+    return "INCLUDE_AS_LOCAL_EXCEPTION";
+  }
+  return null;
+}
+
+function syntheticReviewDecision(
+  parentCode: string,
+  base: EffectivePricingBomLine,
+  bomLineId: string,
+  decision: NomusBomReviewDecisionType
+): ReviewDecisionView {
+  return {
+    id: "",
+    parentCode,
+    parentProductId: null,
+    productBomLineId: bomLineId,
+    componentCode: base.componentCode,
+    componentDescription: base.componentDescription ?? null,
+    quantitySnapshot: base.quantity,
+    decision,
+    includeForPricing: decision === "INCLUDE_AS_LOCAL_EXCEPTION",
+    relatedNomusComponentCode: null,
+    reason: "Regra padrão: montagem 800.xx como componente local na precificação.",
+    notes: null,
+    decidedBy: null,
+    decidedAt: null,
+  };
+}
+
+function effectiveReviewDecision(
+  saved: ReviewDecisionView | undefined,
+  parentCode: string,
+  base: EffectivePricingBomLine,
+  bomLineId: string
+): ReviewDecisionView | null {
+  if (saved) return saved;
+  const inferred = inferDefaultLocalReviewDecision(base.componentCode);
+  if (!inferred) return null;
+  return syntheticReviewDecision(parentCode, base, bomLineId, inferred);
 }
 
 function matchDecision(
@@ -254,7 +301,7 @@ function applyDecisionToLine(
           source: "LOCAL_ONLY_INCLUDED_BY_REVIEW",
           decision: "INCLUDE",
           includedForPricing: true,
-          reason: `Incluído na BOM efetiva como exceção local (decisão do usuário).${notesSuffix}`,
+          reason: `Incluído na BOM efetiva como componente local (exceção na precificação).${notesSuffix}`,
           reviewDecisionId: saved?.id,
           reviewDecisionType: decision,
           relatedNomusComponentCode: saved?.relatedNomusComponentCode ?? undefined,
@@ -354,7 +401,8 @@ export function applyReviewDecisionsToEffectiveBom(
   for (const base of rawLocalLines) {
     const bomLineId = parseProductBomLineIdFromLine(base) ?? "unknown";
     const saved = matchDecision(decisions, result.parentCode, base.componentCode, bomLineId);
-    const { line, bucket } = applyDecisionToLine(base, saved ?? null);
+    const effective = effectiveReviewDecision(saved, result.parentCode, base, bomLineId);
+    const { line, bucket } = applyDecisionToLine(base, effective);
 
     let placement: LocalReviewCatalogItem["placement"];
     if (bucket === "direct") placement = "included";
@@ -367,7 +415,7 @@ export function applyReviewDecisionsToEffectiveBom(
       componentDescription: base.componentDescription ?? null,
       quantity: base.quantity,
       productBomLineId: bomLineId,
-      savedDecision: saved ?? null,
+      savedDecision: effective,
       placement,
     });
 

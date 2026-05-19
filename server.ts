@@ -3548,6 +3548,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           const cache = await initAnalysisCache();
           const analysis = await getProductCostAnalysis(product.id, cache, true);
           if (analysis && !isCostAnalysisFailure(analysis)) {
+            const detailsMaterials = (
+              analysis as { details?: { materials?: CurrentCostSnapshot["materials"] } }
+            ).details?.materials;
             currentSnapshot = {
               productId: analysis.productId,
               sku: analysis.sku,
@@ -3556,9 +3559,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               totalHM_Unit: Number(analysis.totalHM_Unit),
               totalIndustrialCost: Number(analysis.totalIndustrialCost),
               costAnalysisPartial: Boolean(analysis.costAnalysisPartial),
-              materials: Array.isArray((analysis as { materials?: unknown }).materials)
-                ? ((analysis as { materials: CurrentCostSnapshot["materials"] }).materials ?? [])
-                : undefined,
+              materials: Array.isArray(detailsMaterials) ? detailsMaterials : undefined,
             };
           }
         }
@@ -6701,6 +6702,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           const matEffectiveCost = landedCost / (1 - matStandardLoss);
           materialsRows.push({
             description: mat.description,
+            sku: mat.code,
+            bomLineId: item.id,
             basePrice: Number(mat.currentCost),
             requiredQty,
             unitCost: matEffectiveCost * requiredQty,
@@ -6725,6 +6728,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             Number(childResult.totalHM_Unit ?? 0);
           materialsRows.push({
             description: String(childResult.name ?? "—"),
+            sku: String(childResult.sku ?? ""),
+            bomLineId: item.id,
             basePrice: childUnitNoCif,
             requiredQty,
             unitCost: childUnitNoCif * requiredQty,

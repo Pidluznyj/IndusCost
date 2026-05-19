@@ -15,6 +15,7 @@ import type {
 import {
   REVIEW_DECISION_BADGE,
   REVIEW_DECISION_OPTIONS,
+  isLocalAssemblyComponentCode,
 } from "@/src/lib/nomusEffectivePricingBomTypes";
 
 const STATUS_LABEL: Record<EffectivePricingBomStatus, string> = {
@@ -52,7 +53,7 @@ const SOURCE_LABEL: Record<string, string> = {
   NOMUS_ALTERNATIVE_SELECTED: "Alternativa selecionada",
   NOMUS_ALTERNATIVE_NOT_SELECTED: "Alternativa não selecionada",
   LOCAL_ONLY_INDUS_REVIEW: "Somente IndusCost",
-  LOCAL_ONLY_INCLUDED_BY_REVIEW: "Exceção local incluída",
+  LOCAL_ONLY_INCLUDED_BY_REVIEW: "Componente local incluído",
   LOCAL_ONLY_EXCLUDED_BY_REVIEW: "Local excluído",
   LOCAL_ONLY_DUPLICATED_BY_NOMUS: "Duplicado Nomus",
   LOCAL_ONLY_ENGINEERING_REVIEW: "Engenharia",
@@ -173,8 +174,13 @@ function LocalReviewSection({
     const key = item.productBomLineId;
     if (drafts[key]) return drafts[key];
     const saved = item.savedDecision;
+    const defaultDecision: NomusBomReviewDecisionType = isLocalAssemblyComponentCode(
+      item.componentCode
+    )
+      ? "INCLUDE_AS_LOCAL_EXCEPTION"
+      : "PENDING";
     return {
-      decision: saved?.decision ?? "PENDING",
+      decision: saved?.decision ?? defaultDecision,
       relatedNomusComponentCode: saved?.relatedNomusComponentCode ?? "",
       notes: saved?.notes ?? "",
     };
@@ -239,8 +245,9 @@ function LocalReviewSection({
       <div>
         <p className="text-xs font-bold">Itens locais para revisão</p>
         <p className="text-[11px] text-muted-foreground mt-0.5">
-          Linhas presentes no ProductBOM e não na BOM Nomus efetiva. A decisão altera apenas o
-          preview da BOM efetiva — não muda ProductBOM, custo ou preço.
+          Linhas presentes no ProductBOM e não na BOM Nomus efetiva. Montagens 800.xx usam por
+          padrão &quot;Incluir como exceção local&quot; (componente local, não roteiro). A decisão
+          altera apenas o preview — não muda ProductBOM, custo ou preço.
         </p>
       </div>
 

@@ -30,6 +30,7 @@ const COMPARISON_STATUS_LABEL: Record<string, string> = {
   ONLY_CURRENT_INDUS: "Só IndusCost",
   ONLY_EFFECTIVE_NOMUS: "Só Nomus efetivo",
   INCLUDED_BY_REVIEW: "Incluído por revisão",
+  LOCAL_INCLUDED_BY_REVIEW: "Componente local incluído",
   EXCLUDED_BY_NOMUS_EFFECTIVE: "Excluído Nomus",
   UNRESOLVED_COST: "Custo não resolvido",
 };

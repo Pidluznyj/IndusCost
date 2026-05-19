@@ -1,6 +1,13 @@
 /** Tipos e constantes compartilhados — sem Prisma (seguro para o frontend). */
 
+import { normalizeComponentCode } from "@/src/lib/nomusBomComparison";
+
 export type PricingOptionalStatus = "PENDING" | "RESOLVED" | "NO_OPTIONALS" | "STALE";
+
+/** Montagem local IndusCost (ex.: 800.01) — componente de ProductBOM, não roteiro Nomus nesta fase. */
+export function isLocalAssemblyComponentCode(componentCode: string): boolean {
+  return normalizeComponentCode(componentCode).startsWith("800.");
+}
 
 export type NomusBomReviewDecisionType =
   | "PENDING"
@@ -158,7 +165,7 @@ export const REVIEW_DECISION_OPTIONS = [
   },
   {
     value: "OPERATIONAL_ROUTING_COST" as const,
-    label: "Tratar como custo de roteiro/processo",
+    label: "Tratar como custo de roteiro/processo (opcional; não é o padrão para 800.xx)",
   },
   {
     value: "NEEDS_ENGINEERING_REVIEW" as const,
@@ -171,7 +178,7 @@ export const REVIEW_DECISION_LABELS: Record<NomusBomReviewDecisionType, string> 
   INCLUDE_AS_LOCAL_EXCEPTION: "Incluir como exceção local na precificação",
   EXCLUDE_FROM_PRICING: "Não considerar na precificação",
   DUPLICATED_BY_NOMUS_COMPONENT: "Duplicado/absorvido por componente Nomus",
-  OPERATIONAL_ROUTING_COST: "Tratar como custo de roteiro/processo",
+  OPERATIONAL_ROUTING_COST: "Tratar como custo de roteiro/processo (não padrão para montagem 800.xx)",
   NEEDS_ENGINEERING_REVIEW: "Precisa revisão de engenharia",
 };
 
