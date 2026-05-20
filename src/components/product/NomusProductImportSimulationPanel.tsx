@@ -23,6 +23,7 @@ const ACTION_LABEL: Record<string, string> = {
   CREATE_PRODUCT_FROM_NOMUS: "Criar produto (Nomus)",
   USE_EXISTING_PRODUCT: "Usar Product existente",
   USE_EXISTING_MATERIAL: "Usar Material existente",
+  USE_EXISTING_MATERIAL_BY_RULE: "Material (regra PREFER_MATERIAL)",
   CREATE_COMPONENT_PRODUCT_FROM_NOMUS: "Criar componente (Nomus)",
   CREATE_PLACEHOLDER_COMPONENT_WITHOUT_COST: "Criar placeholder sem custo",
   BLOCKED_UNRESOLVED: "Bloqueado",
@@ -281,16 +282,64 @@ export const NomusProductImportSimulationPanel: React.FC<
             </div>
           ) : null}
 
-          {preview.ambiguousItems.length > 0 ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-950">
-              <p className="font-bold">Componentes ambíguos (Product + Material)</p>
-              <ul className="mt-1 list-disc list-inside">
-                {preview.ambiguousItems.map((a) => (
-                  <li key={a.componentCode}>
-                    {a.componentCode} — {a.suggestedResolution}
-                  </li>
+          {preview.ambiguousItems.some((a) => a.resolvedByRule) ? (
+            <div className="space-y-2">
+              {preview.ambiguousItems
+                .filter((a) => a.resolvedByRule)
+                .map((a) => (
+                  <div
+                    key={a.componentCode}
+                    className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-950"
+                  >
+                    <span className="inline-flex items-center rounded-full bg-blue-200/80 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                      Resolvido como Material
+                    </span>
+                    <p className="mt-2">
+                      <span className="font-bold">{a.componentCode}</span> existe como Produto e Material;
+                      será usado como Material na BOM.
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      productId: {a.productId} · materialId: {a.materialId}
+                    </p>
+                  </div>
                 ))}
+            </div>
+          ) : null}
+
+          {preview.ambiguousItems.some((a) => !a.resolvedByRule) ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-950">
+              <p className="font-bold">Componentes ambíguos (Product + Material) — importação bloqueada</p>
+              <ul className="mt-2 space-y-2 list-none">
+                {preview.ambiguousItems
+                  .filter((a) => !a.resolvedByRule)
+                  .map((a) => (
+                    <li key={a.componentCode} className="border-t border-red-200/60 pt-2 first:border-0 first:pt-0">
+                      <p className="font-bold">{a.componentCode}</p>
+                      <p className="text-red-900/90">{a.reason}</p>
+                      <p className="text-muted-foreground mt-0.5">
+                        productId: {a.productId} · materialId: {a.materialId}
+                      </p>
+                      <p className="mt-0.5">
+                        Resolução sugerida: <span className="font-semibold">{a.suggestedResolution}</span>
+                      </p>
+                    </li>
+                  ))}
               </ul>
+            </div>
+          ) : null}
+
+          {preview.componentActions.some((c) => c.resolvedByRule) ? (
+            <div className="space-y-1">
+              {preview.componentActions
+                .filter((c) => c.resolvedByRule)
+                .map((c) => (
+                  <p key={c.componentCode} className="text-[11px] text-blue-900">
+                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold mr-1">
+                      Resolvido como Material
+                    </span>
+                    {c.componentCode} — {ACTION_LABEL[c.proposedAction] ?? c.proposedAction}
+                  </p>
+                ))}
             </div>
           ) : null}
 

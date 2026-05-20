@@ -7,6 +7,7 @@ export type NomusProductImportActionType =
   | "BLOCKED_UNRESOLVED"
   | "OPTIONAL_SELECTION_REQUIRED"
   | "AMBIGUOUS_PRODUCT_AND_MATERIAL"
+  | "USE_EXISTING_MATERIAL_BY_RULE"
   | "BLOCKED";
 
 export type NomusProductImportBomActionType =
@@ -47,6 +48,8 @@ export type NomusProductImportComponentAction = {
   materialId: string | null;
   reason: string;
   includedInPricingBom: boolean;
+  resolutionMode?: "PREFER_MATERIAL" | "PREFER_PRODUCT";
+  resolvedByRule?: boolean;
 };
 
 export type NomusProductImportBomLinePlan = {
@@ -86,6 +89,8 @@ export type NomusProductImportAmbiguousItem = {
   materialId: string;
   reason: string;
   suggestedResolution: "PREFER_PRODUCT" | "PREFER_MATERIAL" | "REQUIRE_MANUAL_CHOICE";
+  resolutionMode?: "PREFER_MATERIAL" | "PREFER_PRODUCT";
+  resolvedByRule?: boolean;
 };
 
 export type NomusProductImportSimulationPreview = {

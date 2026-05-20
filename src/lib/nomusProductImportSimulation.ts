@@ -21,6 +21,17 @@ import type {
 
 const DEFAULT_MAX_DEPTH = 10;
 
+/** SKUs com resolução automática Product+Material → Material (regra de engenharia validada). */
+const AUTO_RESOLVE_PREFER_MATERIAL_SKUS = new Set([normalizeSku("420.01A-")]);
+
+function canAutoResolveAmbiguityAsMaterial(params: {
+  componentCode: string;
+  suggestedResolution: NomusProductImportAmbiguousItem["suggestedResolution"];
+}): boolean {
+  if (params.suggestedResolution !== "PREFER_MATERIAL") return false;
+  return AUTO_RESOLVE_PREFER_MATERIAL_SKUS.has(normalizeSku(params.componentCode));
+}
+
 export type BuildNomusProductImportPreviewInput = {
   parentCode: string;
   recursive?: boolean;
@@ -107,16 +118,34 @@ function proposeComponentAction(params: {
   if (resolvedKind === "BOTH" && productId && materialId) {
     const suggestedResolution: NomusProductImportAmbiguousItem["suggestedResolution"] =
       hasNomusSubBom ? "PREFER_PRODUCT" : "PREFER_MATERIAL";
+    const ambiguousBase: NomusProductImportAmbiguousItem = {
+      componentCode: params.componentCode,
+      productId,
+      materialId,
+      reason: "Mesmo código em Product.sku e Material.code.",
+      suggestedResolution,
+    };
+    if (
+      canAutoResolveAmbiguityAsMaterial({
+        componentCode: params.componentCode,
+        suggestedResolution,
+      })
+    ) {
+      return {
+        action: "USE_EXISTING_MATERIAL_BY_RULE",
+        reason:
+          "Componente resolvido automaticamente como Material conforme regra de engenharia (PREFER_MATERIAL).",
+        ambiguous: {
+          ...ambiguousBase,
+          resolutionMode: "PREFER_MATERIAL",
+          resolvedByRule: true,
+        },
+      };
+    }
     return {
       action: "AMBIGUOUS_PRODUCT_AND_MATERIAL",
       reason: "Mesmo código em Product.sku e Material.code — resolução manual ou regra Nomus apply.",
-      ambiguous: {
-        componentCode: params.componentCode,
-        productId,
-        materialId,
-        reason: "Mesmo código em Product.sku e Material.code.",
-        suggestedResolution,
-      },
+      ambiguous: ambiguousBase,
     };
   }
 
@@ -184,6 +213,9 @@ async function collectComponentActionsRecursive(params: {
 
     if (proposal.ambiguous) ambiguous.push(proposal.ambiguous);
 
+    const resolutionMode = proposal.ambiguous?.resolutionMode;
+    const resolvedByRule = proposal.ambiguous?.resolvedByRule;
+
     if (proposal.action === "OPTIONAL_SELECTION_REQUIRED") {
       optionalPending.push({
         componentCode: line.componentCode,
@@ -209,6 +241,8 @@ async function collectComponentActionsRecursive(params: {
       materialId: res?.materialId ?? null,
       reason: proposal.reason,
       includedInPricingBom: line.includedForPricing,
+      resolutionMode,
+      resolvedByRule,
     });
 
     if (
@@ -243,7 +277,12 @@ async function assessMissingCosts(
   const materialIds = [
     ...new Set(
       componentActions
-        .filter((a) => a.proposedAction === "USE_EXISTING_MATERIAL" && a.materialId)
+        .filter(
+          (a) =>
+            (a.proposedAction === "USE_EXISTING_MATERIAL" ||
+              a.proposedAction === "USE_EXISTING_MATERIAL_BY_RULE") &&
+            a.materialId
+        )
         .map((a) => a.materialId!)
     ),
   ];
@@ -385,9 +424,10 @@ function buildBomActions(
       continue;
     }
 
+    const ambiguousMeta = ambiguousByCode.get(codeKey);
     if (
       action.proposedAction === "AMBIGUOUS_PRODUCT_AND_MATERIAL" ||
-      ambiguousByCode.has(codeKey)
+      (ambiguousMeta && !ambiguousMeta.resolvedByRule)
     ) {
       plans.push({
         bomActionType: "BLOCKED_AMBIGUOUS_COMPONENT",
@@ -431,6 +471,11 @@ function buildBomActions(
     switch (action.proposedAction) {
       case "USE_EXISTING_MATERIAL":
         materialId = action.materialId;
+        break;
+      case "USE_EXISTING_MATERIAL_BY_RULE":
+        materialId = action.materialId;
+        childProductId = null;
+        reason = "Resolvido como Material por regra PREFER_MATERIAL.";
         break;
       case "USE_EXISTING_PRODUCT":
         childProductId = action.productId;
@@ -690,6 +735,12 @@ export async function buildNomusProductImportSimulationPreview(
     blockingReasons.push("Há componentes ambíguos (Product e Material) bloqueando linhas da BOM.");
   }
 
+  for (const action of componentActions.filter((a) => a.resolvedByRule)) {
+    warnings.push(
+      `Componente ${action.componentCode} resolvido automaticamente como Material conforme regra de engenharia.`
+    );
+  }
+
   const cycleKey = `${parentCode}>${parentCode}`;
   const visitedCycle = new Set<string>();
   function detectCycle(code: string, stack: string[]): boolean {
@@ -844,6 +895,12 @@ export async function executeNomusProductImportSimulation(input: {
     );
   }
 
+  if (preview.bomActions.some((b) => b.bomActionType === "BLOCKED_AMBIGUOUS_COMPONENT")) {
+    throw new Error(
+      "Importação bloqueada: há componentes ambíguos (Product e Material) sem resolução."
+    );
+  }
+
   const trimmed = input.parentCode.trim();
   const warnings = [...preview.warnings];
   const importedProducts: CreatedProductRef[] = [];
@@ -947,7 +1004,8 @@ export async function executeNomusProductImportSimulation(input: {
     for (const action of preview.componentActions) {
       if (
         action.proposedAction === "USE_EXISTING_PRODUCT" ||
-        action.proposedAction === "USE_EXISTING_MATERIAL"
+        action.proposedAction === "USE_EXISTING_MATERIAL" ||
+        action.proposedAction === "USE_EXISTING_MATERIAL_BY_RULE"
       ) {
         await prisma.nomusProductImportRunLine.create({
           data: {
@@ -1065,6 +1123,8 @@ export async function executeNomusProductImportSimulation(input: {
           materialId: res?.materialId ?? null,
           reason: proposal.reason,
           includedInPricingBom: line.includedForPricing,
+          resolutionMode: proposal.ambiguous?.resolutionMode,
+          resolvedByRule: proposal.ambiguous?.resolvedByRule,
         });
       }
       const childPlans = buildBomActions(

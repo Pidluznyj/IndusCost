@@ -9,6 +9,9 @@ import { PrismaClient, Prisma } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+const jsonReplacer = (_key: string, value: unknown) =>
+  typeof value === "bigint" ? value.toString() : value;
+
 function parseParentCode(): string {
   for (const arg of process.argv.slice(2)) {
     const m = arg.match(/^--parentCode=(.+)$/);
@@ -33,7 +36,7 @@ async function main(): Promise<void> {
     `
   );
   console.log("\n=== Product ===");
-  console.log(JSON.stringify(products, null, 2));
+  console.log(JSON.stringify(products, jsonReplacer, 2));
 
   const materials = await prisma.$queryRaw<
     { id: string; code: string; description: string }[]
@@ -45,7 +48,7 @@ async function main(): Promise<void> {
     `
   );
   console.log("\n=== Material ===");
-  console.log(JSON.stringify(materials, null, 2));
+  console.log(JSON.stringify(materials, jsonReplacer, 2));
 
   const stageGrouped = await prisma.$queryRaw<
     {
@@ -80,7 +83,7 @@ async function main(): Promise<void> {
     `
   );
   console.log("\n=== NomusBomComponentStage (agrupado) ===");
-  console.log(JSON.stringify(stageGrouped, null, 2));
+  console.log(JSON.stringify(stageGrouped, jsonReplacer, 2));
 
   const bomResolution = await prisma.$queryRaw<
     {
@@ -110,7 +113,7 @@ async function main(): Promise<void> {
     `
   );
   console.log("\n=== Resolução componentes BOM 611.48AA ===");
-  console.log(JSON.stringify(bomResolution, null, 2));
+  console.log(JSON.stringify(bomResolution, jsonReplacer, 2));
 
   const subBom311 = await prisma.$queryRaw<
     {
@@ -133,7 +136,7 @@ async function main(): Promise<void> {
     `
   );
   console.log(`\n=== Subestrutura Nomus ${childCode} ===`);
-  console.log(JSON.stringify(subBom311, null, 2));
+  console.log(JSON.stringify(subBom311, jsonReplacer, 2));
 }
 
 main()
