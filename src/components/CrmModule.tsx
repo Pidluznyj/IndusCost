@@ -85,10 +85,12 @@ import {
   SELLER_KEY_ALL,
   buildSellerKpiCards,
   buildSellerOptionKey,
+  formatSellerOptionLabel,
   resolveSellerPeriodRange,
   type SellerPeriodPreset,
 } from "@/src/components/crmSellerDashboardUi";
 import { CrmSellerDashboardSection } from "@/src/components/CrmSellerDashboardSection";
+import type { CrmSellerSubTabId } from "@/src/components/CrmSellerSubTabs";
 import { CrmSellerDashboardLists } from "@/src/components/CrmSellerDashboardLists";
 import {
   CrmCommercialManagementTabs,
@@ -1673,6 +1675,7 @@ export const CrmModule = () => {
   const [sellerPeriodPreset, setSellerPeriodPreset] = useState<SellerPeriodPreset>("all");
   const [sellerDateFrom, setSellerDateFrom] = useState("");
   const [sellerDateTo, setSellerDateTo] = useState("");
+  const [activeSellerSubTab, setActiveSellerSubTab] = useState<CrmSellerSubTabId>("dashboard");
 
   const loadManagementDashboard = useCallback(async () => {
     setManagementDashboardLoading(true);
@@ -2153,26 +2156,29 @@ export const CrmModule = () => {
       const existing = customers.find((c) => c.id === customerId);
       if (existing) {
         setSelectedId(customerId);
-        return;
+      } else {
+        const stub: CrmCustomerListItem = {
+          id: customerId,
+          displayName: meta?.displayName?.trim() || "Cliente",
+          tradeName: null,
+          taxId: meta?.taxId?.trim() || "—",
+          email: null,
+          phone: null,
+          city: null,
+          state: null,
+          address: null,
+          lastContactAt: null,
+          nextFollowUpAt: null,
+          contactCount: 0,
+        };
+        setCustomers((prev) => (prev.some((c) => c.id === customerId) ? prev : [stub, ...prev]));
+        setSelectedId(customerId);
       }
-      const stub: CrmCustomerListItem = {
-        id: customerId,
-        displayName: meta?.displayName?.trim() || "Cliente",
-        tradeName: null,
-        taxId: meta?.taxId?.trim() || "—",
-        email: null,
-        phone: null,
-        city: null,
-        state: null,
-        address: null,
-        lastContactAt: null,
-        nextFollowUpAt: null,
-        contactCount: 0,
-      };
-      setCustomers((prev) => (prev.some((c) => c.id === customerId) ? prev : [stub, ...prev]));
-      setSelectedId(customerId);
+      if (activeCrmManagementTab === "seller") {
+        setActiveSellerSubTab("portfolio");
+      }
     },
-    [customers]
+    [customers, activeCrmManagementTab]
   );
 
   const handleSaveContact = async (e: React.FormEvent) => {
@@ -2273,6 +2279,26 @@ export const CrmModule = () => {
       buildSellerKpiCards(sellerDashboard?.summary, formatNumberPt, formatIntelCurrency),
     [sellerDashboard?.summary]
   );
+
+  const sellerDisplayName = useMemo(() => {
+    if (isOwnSellerOnly || selectedSellerKey === SELLER_KEY_ALL) return null;
+    const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === selectedSellerKey);
+    if (opt) return formatSellerOptionLabel(opt);
+    if (sellerDashboard?.filters?.responsible?.trim()) {
+      return sellerDashboard.filters.responsible.trim();
+    }
+    if (
+      sellerDashboard?.filters?.externalSellerId !== null &&
+      sellerDashboard?.filters?.externalSellerId !== undefined
+    ) {
+      return `Vendedor ID ${sellerDashboard.filters.externalSellerId}`;
+    }
+    return null;
+  }, [isOwnSellerOnly, selectedSellerKey, sellerOptions, sellerDashboard?.filters]);
+
+  const showCustomerPortfolioGrid =
+    activeCrmManagementTab === "general" ||
+    (activeCrmManagementTab === "seller" && canCrmSeller && activeSellerSubTab === "portfolio");
 
   const dashboardCards: {
     label: string;
@@ -2482,8 +2508,11 @@ export const CrmModule = () => {
             onApplyCustomPeriod={handleApplySellerCustomPeriod}
             onReload={reloadSellerDashboard}
             formatDateTimePt={formatDateTimePt}
+            activeSubTab={activeSellerSubTab}
+            onSubTabChange={setActiveSellerSubTab}
+            sellerDisplayName={sellerDisplayName}
           >
-            {sellerDashboard ? (
+            {sellerDashboard && activeSellerSubTab === "dashboard" ? (
               <CrmSellerDashboardLists
                 data={sellerDashboard}
                 onSelectCustomer={selectCustomerById}
@@ -2500,13 +2529,16 @@ export const CrmModule = () => {
         )}
       </section>
 
+      {showCustomerPortfolioGrid ? (
       <div className="grid gap-8 lg:grid-cols-[minmax(360px,420px)_minmax(0,1fr)]">
         <aside className="min-w-0">
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5">
             <div>
               <h3 className="text-lg font-bold text-foreground">Carteira de clientes</h3>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Busque e filtre a carteira para abrir o cockpit do cliente.
+                {activeCrmManagementTab === "seller"
+                  ? "Busque e filtre os clientes do vendedor para abrir o cockpit comercial."
+                  : "Busque e filtre a carteira para abrir o cockpit do cliente."}
               </p>
             </div>
             <form onSubmit={handleSearch} className="space-y-3">
@@ -2897,6 +2929,7 @@ export const CrmModule = () => {
           )}
         </main>
       </div>
+      ) : null}
 
       {/* Modal perfil de relacionamento */}
       {profileModalOpen ? (

@@ -9,6 +9,7 @@ import {
   buildSellerOptionKey,
   formatSellerOptionLabel,
 } from "@/src/components/crmSellerDashboardUi";
+import { CrmSellerSubTabs, type CrmSellerSubTabId } from "@/src/components/CrmSellerSubTabs";
 
 export type CrmSellerDashboardSectionProps = {
   data: SellerDashboardResponse | null;
@@ -30,6 +31,9 @@ export type CrmSellerDashboardSectionProps = {
   onApplyCustomPeriod: () => void;
   onReload: () => void;
   formatDateTimePt: (iso: string | null | undefined) => string;
+  activeSubTab: CrmSellerSubTabId;
+  onSubTabChange: (tab: CrmSellerSubTabId) => void;
+  sellerDisplayName?: string | null;
   children: React.ReactNode;
 };
 
@@ -53,10 +57,19 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
   onApplyCustomPeriod,
   onReload,
   formatDateTimePt,
+  activeSubTab,
+  onSubTabChange,
+  sellerDisplayName,
   children,
 }) => {
   const isCustomPeriod = periodPreset === "custom";
   const headingTitle = ownScopeOnly ? "Minha Gestão Comercial" : "Gestão por Vendedor";
+  const isDashboardTab = activeSubTab === "dashboard";
+  const dashboardSubtitle = sellerDisplayName
+    ? `Dashboard de: ${sellerDisplayName}`
+    : ownScopeOnly
+      ? "Meu dashboard"
+      : "Meu dashboard";
 
   if (sellerNotLinked) {
     return (
@@ -92,10 +105,13 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
                 {headingTitle}
               </h3>
               <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-                {ownScopeOnly
-                  ? "Seus pedidos, faturamento Nomus (NFe) e propostas sem pedido vinculado."
-                  : "Pedidos, faturamento Nomus (NFe) e propostas sem pedido vinculado por responsável."}
+                {isDashboardTab
+                  ? "Resumo do desempenho comercial, atividades e oportunidades do vendedor."
+                  : "Gerencie os clientes vinculados ao vendedor, acompanhe relacionamento, próximos contatos e oportunidades."}
               </p>
+              {isDashboardTab ? (
+                <p className="text-sm font-medium text-foreground mt-1">{dashboardSubtitle}</p>
+              ) : null}
               {ownScopeOnly ? (
                 <p className="text-[11px] text-muted-foreground mt-2 max-w-2xl italic">
                   Você está visualizando apenas os dados vinculados ao seu usuário.
@@ -120,6 +136,14 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
           ) : null}
         </div>
 
+        <CrmSellerSubTabs
+          activeTab={activeSubTab}
+          onTabChange={onSubTabChange}
+          ownScopeOnly={ownScopeOnly}
+        />
+
+        {isDashboardTab ? (
+          <>
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
           <div
             className={cn(
@@ -253,13 +277,20 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
           ) : null}
         </div>
 
-        <p className="text-[11px] text-muted-foreground leading-relaxed rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 max-w-3xl">
-          Pedidos são filtrados pela data de emissão. Faturamento é filtrado pela data de
-          processamento da NFe. Propostas são filtradas pela data de abertura.
-        </p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 max-w-3xl">
+              Pedidos são filtrados pela data de emissão. Faturamento é filtrado pela data de
+              processamento da NFe. Propostas são filtradas pela data de abertura.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground max-w-2xl">
+            Use a busca e os filtros abaixo para localizar clientes. O cockpit comercial abre ao
+            selecionar um cliente na lista.
+          </p>
+        )}
       </div>
 
-      {loading ? (
+      {!isDashboardTab ? null : loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8">
           <Loader2 className="h-4 w-4 animate-spin" />
           Carregando gestão por vendedor…
