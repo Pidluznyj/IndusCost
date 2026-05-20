@@ -1,5 +1,5 @@
 import React from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -58,6 +58,7 @@ const ALL_MENU_ITEMS: {
 ];
 
 export const Sidebar = () => {
+  const navigate = useNavigate();
   const auth = useAuth();
   const { authUser, logout } = auth;
   const [collapsed, setCollapsed] = React.useState(false);
@@ -149,7 +150,9 @@ export const Sidebar = () => {
           )}
           onClick={() => {
             setPendingLogout(true);
-            void logout().finally(() => setPendingLogout(false));
+            void logout()
+              .then(() => navigate("/", { replace: true }))
+              .finally(() => setPendingLogout(false));
           }}
         >
           <LogOut className="h-5 w-5 shrink-0" />

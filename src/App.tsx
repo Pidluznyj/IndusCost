@@ -19,7 +19,8 @@ import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { SystemGuideModule } from "./components/SystemGuideModule";
-import { LandingPage } from "./components/LandingPage";
+import { PublicLandingRoute } from "./components/PublicLandingRoute";
+import { PublicLoginRoute } from "./components/PublicLoginRoute";
 import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
 import { ModuleIndicatorsButton } from "@/src/components/contextual/ModuleIndicatorsButton";
 import { PurchaseIndicatorsDashboard } from "@/src/components/contextual/PurchaseIndicatorsDashboard";
@@ -253,7 +254,8 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
+      <Route path="/" element={<PublicLandingRoute />} />
+      <Route path="/login" element={<PublicLoginRoute />} />
       <Route path="/proposals/:id/print" element={<ProposalPrintView />} />
       <Route element={<RequireAuth />}>
       <Route element={<Layout />}>

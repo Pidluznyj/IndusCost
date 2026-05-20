@@ -1,11 +1,11 @@
 import React from "react";
-import { Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { AuthLoginPage } from "@/src/components/AuthLoginPage";
 
 export const RequireAuth: React.FC = () => {
-  const { authLoading, authenticated, authError, loadMe } = useAuth();
+  const { authLoading, authenticated, authError } = useAuth();
+  const location = useLocation();
 
   if (authLoading) {
     return (
@@ -17,10 +17,16 @@ export const RequireAuth: React.FC = () => {
   }
 
   if (!authenticated) {
-    if (authError) {
-      return <AuthLoginPage networkError={authError} onRetry={() => void loadMe()} />;
-    }
-    return <AuthLoginPage />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{
+          from: location,
+          authError: authError ?? undefined,
+        }}
+      />
+    );
   }
 
   return <Outlet />;

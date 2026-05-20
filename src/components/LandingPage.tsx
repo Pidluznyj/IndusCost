@@ -91,7 +91,7 @@ export function LandingPage() {
               Guia do sistema
             </Link>
             <Link
-              to="/dashboard"
+              to="/login"
               className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/30 transition hover:opacity-95"
             >
               Entrar
@@ -251,7 +251,7 @@ export function LandingPage() {
                 </div>
               </div>
               <Link
-                to="/dashboard"
+                to="/login"
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-95"
               >
                 Começar agora
