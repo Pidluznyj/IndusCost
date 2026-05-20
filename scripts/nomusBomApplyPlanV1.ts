@@ -13,6 +13,7 @@ const prisma = new PrismaClient();
 
 type CliArgs = {
   sku?: string;
+  parentCode?: string;
   limit: number;
   offset: number;
   onlyCandidates: boolean;
@@ -40,6 +41,11 @@ function parseArgs(): CliArgs {
     const skuMatch = arg.match(/^--sku=(.+)$/);
     if (skuMatch) {
       args.sku = skuMatch[1].trim();
+      continue;
+    }
+    const parentMatch = arg.match(/^--parentCode=(.+)$/);
+    if (parentMatch) {
+      args.parentCode = parentMatch[1].trim();
       continue;
     }
     const limitMatch = arg.match(/^--limit=(\d+)$/);
@@ -83,7 +89,8 @@ function parseArgs(): CliArgs {
 
 function toFilters(args: CliArgs): NomusBomApplyPlanReportFilters {
   return {
-    sku: args.sku,
+    parentCode: args.parentCode,
+    sku: args.parentCode ? undefined : args.sku,
     limit: args.limit,
     offset: args.offset,
     risk: args.risk,

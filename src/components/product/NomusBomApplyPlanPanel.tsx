@@ -296,7 +296,6 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
               parentCode={selectedParentCode}
               refreshToken={refreshToken}
               disabled={disabled}
-              previewOnly
             />
           ) : null}
 
