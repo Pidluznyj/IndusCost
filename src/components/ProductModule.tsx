@@ -418,21 +418,25 @@ export const ProductModule = () => {
   };
 
   const handleOpenProductById = useCallback(
-    async (productId: string) => {
+    async (productId: string, options?: { tab?: ProductTabId }) => {
+      const openWithTab = (product: Product) => {
+        handleOpenModal(product);
+        if (options?.tab) setActiveFormTab(options.tab);
+      };
       const existing = items.find((item) => item.id === productId);
       if (existing) {
-        handleOpenModal(existing);
+        openWithTab(existing);
         return;
       }
       try {
         const product = await fetchJsonOk<Product>(`/api/products/${productId}`);
-        handleOpenModal(product);
+        openWithTab(product);
       } catch (err) {
         console.error("Erro ao abrir produto do relatório Nomus:", err);
         alert(err instanceof Error ? err.message : "Não foi possível abrir o produto.");
       }
     },
-    [items]
+    [items, handleOpenModal]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {

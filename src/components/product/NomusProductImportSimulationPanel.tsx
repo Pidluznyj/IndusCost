@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
+  DollarSign,
   Download,
   ExternalLink,
   Loader2,
   PackagePlus,
   Search,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -24,12 +27,20 @@ const ACTION_LABEL: Record<string, string> = {
   CREATE_PLACEHOLDER_COMPONENT_WITHOUT_COST: "Criar placeholder sem custo",
   BLOCKED_UNRESOLVED: "Bloqueado",
   OPTIONAL_SELECTION_REQUIRED: "Opcional pendente",
+  AMBIGUOUS_PRODUCT_AND_MATERIAL: "Ambíguo (Product + Material)",
   BLOCKED: "Bloqueado",
+};
+
+const BOM_ACTION_LABEL: Record<string, string> = {
+  CREATE_PRODUCT_BOM_LINE: "Criar linha BOM",
+  SKIP_OPTIONAL_NOT_SELECTED: "Opcional não selecionado",
+  BLOCKED_AMBIGUOUS_COMPONENT: "Bloqueado (ambiguidade)",
+  BLOCKED_MISSING_COMPONENT: "Bloqueado (componente ausente)",
 };
 
 type NomusProductImportSimulationPanelProps = NomusMaintenanceWorkspaceProps & {
   disabled?: boolean;
-  onOpenProduct?: (productId: string) => void;
+  onOpenProduct?: (productId: string, options?: { tab?: "cost" | "info" | "bom" }) => void;
   onImportSuccess?: () => void;
 };
 
@@ -45,6 +56,7 @@ export const NomusProductImportSimulationPanel: React.FC<
   onWorkspaceParentChange,
   refreshToken = 0,
 }) => {
+  const navigate = useNavigate();
   const workspaceFocused = Boolean(selectedParentCode?.trim());
   const [parentCode, setParentCode] = useState(selectedParentCode ?? "");
   const [recursive, setRecursive] = useState(true);
@@ -269,29 +281,57 @@ export const NomusProductImportSimulationPanel: React.FC<
             </div>
           ) : null}
 
+          {preview.ambiguousItems.length > 0 ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-950">
+              <p className="font-bold">Componentes ambíguos (Product + Material)</p>
+              <ul className="mt-1 list-disc list-inside">
+                {preview.ambiguousItems.map((a) => (
+                  <li key={a.componentCode}>
+                    {a.componentCode} — {a.suggestedResolution}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           {preview.bomActions.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-xs font-bold">ProductBOM planejada ({preview.bomActions.length} linhas)</p>
-              <div className="overflow-x-auto rounded-lg border border-border max-h-40">
+              <p className="text-xs font-bold">Plano de BOM ({preview.bomActions.length} entradas)</p>
+              <div className="overflow-x-auto rounded-lg border border-border max-h-48">
                 <table className="w-full text-xs">
                   <thead className="bg-muted/50 text-[10px] uppercase">
                     <tr>
+                      <th className="text-left px-2 py-1">Ação</th>
                       <th className="text-left px-2 py-1">Componente</th>
                       <th className="text-right px-2 py-1">Qtd</th>
-                      <th className="text-left px-2 py-1">Origem</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {preview.bomActions.map((b) => (
-                      <tr key={b.componentCode} className="border-t border-border/60">
+                    {preview.bomActions.map((b, i) => (
+                      <tr key={`${b.componentCode}-${b.bomActionType}-${i}`} className="border-t border-border/60">
+                        <td className="px-2 py-1 text-muted-foreground">
+                          {BOM_ACTION_LABEL[b.bomActionType] ?? b.bomActionType}
+                        </td>
                         <td className="px-2 py-1 font-medium">{b.componentCode}</td>
-                        <td className="px-2 py-1 text-right tabular-nums">{b.quantity}</td>
-                        <td className="px-2 py-1 text-muted-foreground">{b.source}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{b.quantity ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            </div>
+          ) : null}
+
+          {preview.missingRoutingItems.length > 0 ? (
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-[11px]">
+              <p className="font-bold">Pendências de roteiro/montagem</p>
+              <ul className="mt-1 list-disc list-inside text-muted-foreground">
+                {preview.missingRoutingItems.map((m) => (
+                  <li key={`${m.kind}-${m.componentCode}`}>
+                    {m.componentCode} — {m.reason}
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
 
@@ -375,14 +415,32 @@ export const NomusProductImportSimulationPanel: React.FC<
                 </p>
               ) : null}
               {importResult.productId && onOpenProduct ? (
-                <button
-                  type="button"
-                  onClick={() => onOpenProduct(importResult.productId!)}
-                  className="inline-flex items-center gap-1 text-primary font-semibold hover:underline"
-                >
-                  Abrir cadastro do produto
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </button>
+                <div className="flex flex-wrap gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onOpenProduct(importResult.productId!)}
+                    className="inline-flex items-center gap-1 text-primary font-semibold hover:underline"
+                  >
+                    Abrir cadastro
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenProduct(importResult.productId!, { tab: "cost" })}
+                    className="inline-flex items-center gap-1 text-primary font-semibold hover:underline"
+                  >
+                    <DollarSign className="h-3.5 w-3.5" />
+                    Ver análise de custo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/pricing")}
+                    className="inline-flex items-center gap-1 text-primary font-semibold hover:underline"
+                  >
+                    <TrendingUp className="h-3.5 w-3.5" />
+                    Ir para precificação
+                  </button>
+                </div>
               ) : null}
             </div>
           ) : null}

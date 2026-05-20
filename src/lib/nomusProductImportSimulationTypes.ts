@@ -6,7 +6,14 @@ export type NomusProductImportActionType =
   | "CREATE_PLACEHOLDER_COMPONENT_WITHOUT_COST"
   | "BLOCKED_UNRESOLVED"
   | "OPTIONAL_SELECTION_REQUIRED"
+  | "AMBIGUOUS_PRODUCT_AND_MATERIAL"
   | "BLOCKED";
+
+export type NomusProductImportBomActionType =
+  | "CREATE_PRODUCT_BOM_LINE"
+  | "SKIP_OPTIONAL_NOT_SELECTED"
+  | "BLOCKED_AMBIGUOUS_COMPONENT"
+  | "BLOCKED_MISSING_COMPONENT";
 
 export type NomusProductImportProductAction = {
   parentCode: string;
@@ -43,20 +50,27 @@ export type NomusProductImportComponentAction = {
 };
 
 export type NomusProductImportBomLinePlan = {
+  bomActionType: NomusProductImportBomActionType;
   componentCode: string;
   componentDescription: string | null;
-  quantity: number;
+  quantity: number | null;
   lossPercentage: number;
   materialId: string | null;
   childProductId: string | null;
-  source: string;
+  source: string | null;
   willCreate: boolean;
   reason: string;
 };
 
 export type NomusProductImportMissingCostItem = {
   componentCode: string;
-  kind: "MATERIAL" | "PRODUCT" | "PLACEHOLDER";
+  kind: "MATERIAL" | "PRODUCT" | "PLACEHOLDER" | "PARENT";
+  reason: string;
+};
+
+export type NomusProductImportMissingRoutingItem = {
+  componentCode: string;
+  kind: "PARENT" | "COMPONENT";
   reason: string;
 };
 
@@ -83,14 +97,18 @@ export type NomusProductImportSimulationPreview = {
   existsInNomus: boolean;
   canImport: boolean;
   canSimulateCost: boolean;
+  costSimulationStatus: "COMPLETE" | "INCOMPLETE_COST" | "BLOCKED";
   blockingReasons: string[];
   warnings: string[];
   planHash: string;
   confirmationRequiredText: string;
+  /** Ação do produto principal (alias legível). */
   productAction: NomusProductImportProductAction;
+  productActions: NomusProductImportProductAction[];
   componentActions: NomusProductImportComponentAction[];
   bomActions: NomusProductImportBomLinePlan[];
   missingCostItems: NomusProductImportMissingCostItem[];
+  missingRoutingItems: NomusProductImportMissingRoutingItem[];
   optionalPendingItems: NomusProductImportOptionalPending[];
   ambiguousItems: NomusProductImportAmbiguousItem[];
   engineeringPending: string[];
@@ -108,7 +126,9 @@ export type NomusProductImportSimulationResult = {
   createdBomLines: number;
   warnings: string[];
   canSimulateCost: boolean;
+  costSimulationStatus: "COMPLETE" | "INCOMPLETE_COST" | "BLOCKED";
   missingCostItems: NomusProductImportMissingCostItem[];
+  missingRoutingItems: NomusProductImportMissingRoutingItem[];
   runId: string | null;
   costAnalysisPartial?: boolean;
   costAnalysisError?: string | null;

@@ -10,11 +10,13 @@ import type {
   NomusProductImportBomLinePlan,
   NomusProductImportComponentAction,
   NomusProductImportMissingCostItem,
+  NomusProductImportMissingRoutingItem,
   NomusProductImportOptionalPending,
   NomusProductImportProductAction,
   NomusProductImportSimulationPreview,
   NomusProductImportSimulationResult,
   NomusProductImportActionType,
+  NomusProductImportBomActionType,
 } from "@/src/lib/nomusProductImportSimulationTypes";
 
 const DEFAULT_MAX_DEPTH = 10;
@@ -103,17 +105,11 @@ function proposeComponentAction(params: {
   }
 
   if (resolvedKind === "BOTH" && productId && materialId) {
-    const suggestedResolution = hasNomusSubBom ? "PREFER_PRODUCT" : "PREFER_MATERIAL";
-    const action: NomusProductImportActionType =
-      suggestedResolution === "PREFER_PRODUCT"
-        ? "USE_EXISTING_PRODUCT"
-        : "USE_EXISTING_MATERIAL";
+    const suggestedResolution: NomusProductImportAmbiguousItem["suggestedResolution"] =
+      hasNomusSubBom ? "PREFER_PRODUCT" : "PREFER_MATERIAL";
     return {
-      action,
-      reason:
-        suggestedResolution === "PREFER_PRODUCT"
-          ? "Código existe como Product e Material; BOM efetiva prioriza Product (subestrutura Nomus)."
-          : "Código existe como Product e Material; folha prioriza Material.",
+      action: "AMBIGUOUS_PRODUCT_AND_MATERIAL",
+      reason: "Mesmo código em Product.sku e Material.code — resolução manual ou regra Nomus apply.",
       ambiguous: {
         componentCode: params.componentCode,
         productId,
@@ -332,31 +328,105 @@ async function assessMissingCosts(
   return missing;
 }
 
-function buildBomLinePlans(
+function buildBomActions(
   effectiveLines: EffectivePricingBomLine[],
-  componentActions: NomusProductImportComponentAction[]
+  componentActions: NomusProductImportComponentAction[],
+  ambiguousItems: NomusProductImportAmbiguousItem[]
 ): NomusProductImportBomLinePlan[] {
   const actionByCode = new Map(
     componentActions.map((a) => [normalizeComponentCode(a.componentCode), a])
   );
+  const ambiguousByCode = new Map(
+    ambiguousItems.map((a) => [normalizeComponentCode(a.componentCode), a])
+  );
   const plans: NomusProductImportBomLinePlan[] = [];
 
-  for (const line of effectiveLines.filter((l) => l.includedForPricing)) {
-    const action = actionByCode.get(normalizeComponentCode(line.componentCode));
+  for (const line of effectiveLines) {
+    const codeKey = normalizeComponentCode(line.componentCode);
+    const action = actionByCode.get(codeKey);
+
+    if (!line.includedForPricing) {
+      if (
+        action?.proposedAction === "OPTIONAL_SELECTION_REQUIRED" ||
+        line.decision === "BLOCKED" ||
+        line.source?.includes("OPTIONAL")
+      ) {
+        plans.push({
+          bomActionType: "SKIP_OPTIONAL_NOT_SELECTED",
+          componentCode: line.componentCode,
+          componentDescription: line.componentDescription,
+          quantity: line.quantity,
+          lossPercentage: 0,
+          materialId: null,
+          childProductId: null,
+          source: line.source,
+          willCreate: false,
+          reason: "Opcional/alternativo sem seleção — não entra na ProductBOM.",
+        });
+      }
+      continue;
+    }
+
     if (!action) continue;
+
+    if (action.proposedAction === "OPTIONAL_SELECTION_REQUIRED") {
+      plans.push({
+        bomActionType: "SKIP_OPTIONAL_NOT_SELECTED",
+        componentCode: line.componentCode,
+        componentDescription: line.componentDescription,
+        quantity: line.quantity,
+        lossPercentage: 0,
+        materialId: null,
+        childProductId: null,
+        source: line.source,
+        willCreate: false,
+        reason: action.reason,
+      });
+      continue;
+    }
+
+    if (
+      action.proposedAction === "AMBIGUOUS_PRODUCT_AND_MATERIAL" ||
+      ambiguousByCode.has(codeKey)
+    ) {
+      plans.push({
+        bomActionType: "BLOCKED_AMBIGUOUS_COMPONENT",
+        componentCode: line.componentCode,
+        componentDescription: line.componentDescription,
+        quantity: line.quantity,
+        lossPercentage: 0,
+        materialId: action.materialId,
+        childProductId: action.productId,
+        source: line.source,
+        willCreate: false,
+        reason: "Product e Material com o mesmo código — bloqueado até resolução.",
+      });
+      continue;
+    }
+
+    if (
+      action.proposedAction === "BLOCKED" ||
+      action.proposedAction === "BLOCKED_UNRESOLVED"
+    ) {
+      plans.push({
+        bomActionType: "BLOCKED_MISSING_COMPONENT",
+        componentCode: line.componentCode,
+        componentDescription: line.componentDescription,
+        quantity: line.quantity,
+        lossPercentage: 0,
+        materialId: null,
+        childProductId: null,
+        source: line.source,
+        willCreate: false,
+        reason: action.reason,
+      });
+      continue;
+    }
 
     let materialId: string | null = null;
     let childProductId: string | null = null;
     let willCreate = false;
     let reason = action.reason;
-
-    if (
-      action.proposedAction === "OPTIONAL_SELECTION_REQUIRED" ||
-      action.proposedAction === "BLOCKED" ||
-      action.proposedAction === "BLOCKED_UNRESOLVED"
-    ) {
-      continue;
-    }
 
     switch (action.proposedAction) {
       case "USE_EXISTING_MATERIAL":
@@ -372,11 +442,24 @@ function buildBomLinePlans(
         reason = "Será vinculado após criação do Product.";
         break;
       default:
+        plans.push({
+          bomActionType: "BLOCKED_MISSING_COMPONENT",
+          componentCode: line.componentCode,
+          componentDescription: line.componentDescription,
+          quantity: line.quantity,
+          lossPercentage: 0,
+          materialId: null,
+          childProductId: null,
+          source: line.source,
+          willCreate: false,
+          reason: action.reason,
+        });
         continue;
     }
 
     const qty = line.quantity ?? 0;
     plans.push({
+      bomActionType: "CREATE_PRODUCT_BOM_LINE",
       componentCode: line.componentCode,
       componentDescription: line.componentDescription,
       quantity: qty > 0 ? qty : 1,
@@ -390,6 +473,72 @@ function buildBomLinePlans(
   }
 
   return plans;
+}
+
+async function assessMissingRouting(
+  parentCode: string,
+  parentExists: boolean,
+  parentProductId: string | null,
+  componentActions: NomusProductImportComponentAction[]
+): Promise<NomusProductImportMissingRoutingItem[]> {
+  const missing: NomusProductImportMissingRoutingItem[] = [];
+
+  if (parentExists && parentProductId) {
+    const parent = await prisma.product.findUnique({
+      where: { id: parentProductId },
+      select: {
+        sku: true,
+        type: true,
+        ProductRouting: { select: { id: true }, take: 1 },
+      },
+    });
+    if (parent?.type === "PRODUCT" && parent.ProductRouting.length === 0) {
+      missing.push({
+        componentCode: parent.sku,
+        kind: "PARENT",
+        reason: "Produto principal sem roteiro/montagem cadastrada (ex.: 800.01 não importado automaticamente).",
+      });
+    }
+  } else if (!parentExists) {
+    missing.push({
+      componentCode: parentCode,
+      kind: "PARENT",
+      reason: "Produto principal será criado sem roteiro — definir processo após importação.",
+    });
+  }
+
+  const componentIds = [
+    ...new Set(
+      componentActions
+        .filter((a) => a.productId && a.proposedAction === "USE_EXISTING_PRODUCT")
+        .map((a) => a.productId!)
+    ),
+  ];
+  if (componentIds.length > 0) {
+    const products = await prisma.product.findMany({
+      where: { id: { in: componentIds }, type: "COMPONENT" },
+      select: {
+        id: true,
+        sku: true,
+        cycleTimeSeconds: true,
+        cavities: true,
+        ProductRouting: { select: { id: true }, take: 1 },
+      },
+    });
+    for (const p of products) {
+      const hasStandard =
+        p.cycleTimeSeconds != null && Number(p.cycleTimeSeconds) > 0 && p.cavities != null && p.cavities >= 1;
+      if (p.ProductRouting.length === 0 && !hasStandard) {
+        missing.push({
+          componentCode: p.sku,
+          kind: "COMPONENT",
+          reason: "Componente sem processo padrão ou roteiro.",
+        });
+      }
+    }
+  }
+
+  return missing;
 }
 
 export async function buildNomusProductImportSimulationPreview(
@@ -492,7 +641,11 @@ export async function buildNomusProductImportSimulationPreview(
     optionalPending: optionalPendingItems,
   });
 
-  const bomActions = buildBomLinePlans(effectiveBom.directLines, componentActions);
+  const bomActions = buildBomActions(
+    [...effectiveBom.directLines, ...effectiveBom.excludedLines, ...effectiveBom.reviewLines],
+    componentActions,
+    ambiguousItems
+  );
 
   if (optionalPendingItems.length > 0) {
     blockingReasons.push(
@@ -520,6 +673,22 @@ export async function buildNomusProductImportSimulationPreview(
   }
 
   const missingCostItems = await assessMissingCosts(componentActions);
+  const missingRoutingItems = await assessMissingRouting(
+    parentCode,
+    existsInIndusCost,
+    indusProductId,
+    componentActions
+  );
+
+  const createBomLineCount = bomActions.filter(
+    (b) => b.bomActionType === "CREATE_PRODUCT_BOM_LINE"
+  ).length;
+  const blockedAmbiguous = bomActions.some(
+    (b) => b.bomActionType === "BLOCKED_AMBIGUOUS_COMPONENT"
+  );
+  if (blockedAmbiguous) {
+    blockingReasons.push("Há componentes ambíguos (Product e Material) bloqueando linhas da BOM.");
+  }
 
   const cycleKey = `${parentCode}>${parentCode}`;
   const visitedCycle = new Set<string>();
@@ -545,17 +714,27 @@ export async function buildNomusProductImportSimulationPreview(
     productProposedAction !== "BLOCKED" &&
     blockingReasons.filter((r) => r.includes("já possui BOM")).length === 0 &&
     optionalPendingItems.length === 0 &&
+    !blockedAmbiguous &&
     !blockingReasons.some((r) => r.includes("Ciclo"));
 
   const canSimulateCost =
-    canImport &&
-    missingCostItems.length === 0 &&
-    bomActions.length > 0 &&
-    productProposedAction !== "BLOCKED";
+    canImport && missingCostItems.length === 0 && createBomLineCount > 0;
+
+  const costSimulationStatus: NomusProductImportSimulationPreview["costSimulationStatus"] =
+    !canImport
+      ? "BLOCKED"
+      : canSimulateCost
+        ? "COMPLETE"
+        : "INCOMPLETE_COST";
 
   if (missingCostItems.length > 0) {
     warnings.push(
-      `Simulação de custo incompleta: faltam custos para ${missingCostItems.length} item(ns).`
+      `Produto importado, mas simulação de custo incompleta: faltam custos para ${missingCostItems.length} item(ns).`
+    );
+  }
+  if (missingRoutingItems.length > 0) {
+    warnings.push(
+      `${missingRoutingItems.length} pendência(s) de roteiro/montagem — custo de conversão pode ficar incompleto.`
     );
   }
 
@@ -570,12 +749,15 @@ export async function buildNomusProductImportSimulationPreview(
       qty: a.quantity,
       parent: a.parentCodeContext,
     })),
-    bomActions: bomActions.map((b) => ({
-      code: b.componentCode,
-      materialId: b.materialId,
-      childProductId: b.childProductId,
-      qty: b.quantity,
-    })),
+    bomActions: bomActions
+      .filter((b) => b.bomActionType === "CREATE_PRODUCT_BOM_LINE")
+      .map((b) => ({
+        type: b.bomActionType,
+        code: b.componentCode,
+        materialId: b.materialId,
+        childProductId: b.childProductId,
+        qty: b.quantity,
+      })),
   });
 
   return {
@@ -587,14 +769,17 @@ export async function buildNomusProductImportSimulationPreview(
     existsInNomus,
     canImport,
     canSimulateCost,
+    costSimulationStatus,
     blockingReasons: [...new Set(blockingReasons)],
     warnings: [...effectiveBom.warnings, ...warnings],
     planHash,
     confirmationRequiredText: confirmationTextForProductImport(parentCode),
     productAction,
+    productActions: [productAction],
     componentActions,
     bomActions,
     missingCostItems,
+    missingRoutingItems,
     optionalPendingItems,
     ambiguousItems,
     engineeringPending,
@@ -784,9 +969,13 @@ export async function executeNomusProductImportSimulation(input: {
       where: { productId: mainProductId },
     });
 
+    const bomLinesToCreate = preview.bomActions.filter(
+      (b) => b.bomActionType === "CREATE_PRODUCT_BOM_LINE"
+    );
+
     let createdBomLines = 0;
     if (existingBomCount === 0) {
-      for (const line of preview.bomActions) {
+      for (const line of bomLinesToCreate) {
         let materialId = line.materialId;
         let childProductId = line.childProductId;
 
@@ -799,14 +988,15 @@ export async function executeNomusProductImportSimulation(input: {
           continue;
         }
 
+        const qty = line.quantity ?? 1;
         await prisma.productBOM.create({
           data: {
             productId: mainProductId,
             materialId,
             childProductId,
-            quantity: line.quantity,
+            quantity: qty,
             lossPercentage: line.lossPercentage,
-            notes: `Importado do Nomus (${line.source})`,
+            notes: `Importado do Nomus (${line.source ?? "NOMUS"})`,
           },
         });
         createdBomLines += 1;
@@ -877,7 +1067,11 @@ export async function executeNomusProductImportSimulation(input: {
           includedInPricingBom: line.includedForPricing,
         });
       }
-      const childPlans = buildBomLinePlans(childEffective.directLines, childComponentActions);
+      const childPlans = buildBomActions(
+        childEffective.directLines,
+        childComponentActions,
+        []
+      ).filter((b) => b.bomActionType === "CREATE_PRODUCT_BOM_LINE");
       for (const line of childPlans) {
         let materialId = line.materialId;
         let childProductIdRef = line.childProductId;
@@ -890,9 +1084,9 @@ export async function executeNomusProductImportSimulation(input: {
             productId: childProductId,
             materialId,
             childProductId: childProductIdRef,
-            quantity: line.quantity,
+            quantity: line.quantity ?? 1,
             lossPercentage: line.lossPercentage,
-            notes: `Importado do Nomus (${line.source}) — subestrutura`,
+            notes: `Importado do Nomus (${line.source ?? "NOMUS"}) — subestrutura`,
           },
         });
         childBomLinesCreated += 1;
@@ -903,11 +1097,10 @@ export async function executeNomusProductImportSimulation(input: {
     }
 
     const missingCostItems = await assessMissingCosts(preview.componentActions);
-    const canSimulateCost = missingCostItems.length === 0 && createdBomLines > 0;
-
-    let costAnalysisPartial: boolean | undefined;
-    let costAnalysisError: string | null = null;
-    let totalIndustrialCost: number | null = null;
+    const missingRoutingItems = preview.missingRoutingItems;
+    const canSimulateCost =
+      missingCostItems.length === 0 && createdBomLines > 0 && preview.canSimulateCost;
+    const costSimulationStatus = canSimulateCost ? "COMPLETE" : "INCOMPLETE_COST";
 
     await prisma.nomusProductImportRun.update({
       where: { id: run.id },
@@ -919,11 +1112,16 @@ export async function executeNomusProductImportSimulation(input: {
           productId: mainProductId,
           importedProducts,
           createdBomLines,
+          childBomLinesCreated,
         },
         summaryJson: {
           importedProducts: importedProducts.length,
           createdBomLines,
+          childBomLinesCreated,
           canSimulateCost,
+          costSimulationStatus,
+          missingCostItems,
+          missingRoutingItems,
         },
         warningsJson: warnings,
       },
@@ -937,11 +1135,10 @@ export async function executeNomusProductImportSimulation(input: {
       createdBomLines,
       warnings,
       canSimulateCost,
+      costSimulationStatus,
       missingCostItems,
+      missingRoutingItems,
       runId: run.id,
-      costAnalysisPartial,
-      costAnalysisError,
-      totalIndustrialCost,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
