@@ -1,10 +1,17 @@
 /** Tipos da aplicação controlada Nomus → ProductBOM (sem Prisma — seguro para frontend). */
 
+export type ControlledApplyResolutionMode =
+  | "SAME_CHILD_PRODUCT"
+  | "SAME_MATERIAL"
+  | "PREFER_PRODUCT_FROM_EFFECTIVE"
+  | "PREFER_MATERIAL_FROM_EFFECTIVE";
+
 export type ControlledApplyActionType =
   | "CREATE_PRODUCT_BOM_LINE"
   | "UPDATE_PRODUCT_BOM_QUANTITY"
   | "KEEP_PRODUCT_BOM_LINE"
   | "REMOVE_PRODUCT_BOM_LINE"
+  | "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"
   | "SKIP_UNRESOLVED"
   | "BLOCKED";
 
@@ -20,6 +27,13 @@ export type ControlledApplyAction = {
   currentQuantity?: number | null;
   effectiveQuantity?: number | null;
   productBomLineId?: string | null;
+  /** Soma das quantidades nas linhas IndusCost duplicadas antes da consolidação. */
+  currentQuantityTotal?: number | null;
+  /** IDs de todas as linhas ProductBOM duplicadas para este componente. */
+  duplicateBomLineIds?: string[];
+  keepBomLineId?: string | null;
+  removeBomLineIds?: string[];
+  resolutionMode?: ControlledApplyResolutionMode | null;
   reason: string;
   riskLevel: ControlledApplyRiskLevel;
   reviewDecisionType?: string | null;
@@ -42,7 +56,8 @@ export type ControlledApplyBlockingCode =
   | "UNRESOLVED_INCLUDED_COMPONENT"
   | "BLOCKED_ACTION"
   | "COST_UNRESOLVED"
-  | "DRY_PLAN_BLOCKED";
+  | "DRY_PLAN_BLOCKED"
+  | "AMBIGUOUS_DUPLICATE_PRODUCT_BOM_LINE";
 
 export type ControlledApplyBlockingDetail = {
   code: ControlledApplyBlockingCode;

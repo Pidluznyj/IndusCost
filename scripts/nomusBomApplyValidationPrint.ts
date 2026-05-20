@@ -18,6 +18,8 @@ type CliArgs = {
 const COMPONENT_309 = "309.61AA";
 const COMPONENT_309_62 = "309.62AA";
 const COMPONENT_800 = "800.01";
+const COMPONENT_420 = "420.01A-";
+const PARENT_610_75 = "610.75BA";
 const EXPECTED_SOURCE_IDS = [3228, 7696];
 
 function parseArgs(): CliArgs {
@@ -164,6 +166,29 @@ function validatePlan(planPath: string, parentCode: string): void {
   console.log(JSON.stringify(action, null, 2));
 
   console.log("\n[OK] Agregação duplicada validada no plano.");
+
+  if (normalizeSku(parentCode) === normalizeSku(PARENT_610_75)) {
+    const line420 = plan.comparison?.lines?.find((l) => l.componentCode === COMPONENT_420);
+    console.log(`\ncomparison ${COMPONENT_420} (610.75BA):`);
+    console.log(JSON.stringify(line420, null, 2));
+    if (line420) {
+      console.log("  nomusQuantity:", line420.nomusQuantity);
+      console.log("  indusQuantity:", line420.indusQuantity);
+      console.log("  indusLineCount:", line420.indusLineCount);
+      console.log("  indusBomLineIds:", line420.indusBomLineIds);
+      console.log("  hasDuplicateIndusLines:", line420.hasDuplicateIndusLines);
+      if (Number(line420.nomusQuantity) !== 1) {
+        fail(`${COMPONENT_420} nomusQuantity esperada 1, obtida ${line420.nomusQuantity}`);
+      }
+      ok(`${COMPONENT_420} nomusQuantity = 1`);
+      if (Number(line420.indusLineCount) < 2) {
+        fail(`${COMPONENT_420} indusLineCount esperado >= 2 para duplicidade, obtido ${line420.indusLineCount}`);
+      }
+      ok(`${COMPONENT_420} indusLineCount >= 2 (duplicidade IndusCost)`);
+    } else {
+      fail(`Linha ${COMPONENT_420} não encontrada na comparação de ${PARENT_610_75}`);
+    }
+  }
 }
 
 function validatePreview(previewPath: string, parentCode: string): void {
@@ -257,6 +282,45 @@ function validatePreview(previewPath: string, parentCode: string): void {
 
   const blocking = data.blockingReasons ?? [];
   const details = data.blockingDetails ?? [];
+
+  if (normalizeSku(parentCode) === normalizeSku(PARENT_610_75)) {
+    const line420 = findAction(data.actions, COMPONENT_420);
+    console.log(`\n=== ${COMPONENT_420} (610.75BA) ===`);
+    console.log(JSON.stringify(line420, null, 2));
+
+    const dryOnlyBlock =
+      details.length === 1 &&
+      details[0].code === "DRY_PLAN_BLOCKED" &&
+      !details[0].componentCode;
+    if (dryOnlyBlock) {
+      fail("Bloqueio apenas DRY_PLAN_BLOCKED genérico — exige componente/motivo específico.");
+    }
+
+    const block420 = details.filter(
+      (d) =>
+        d.componentCode === COMPONENT_420 ||
+        (d.code === "DRY_PLAN_BLOCKED" && String(d.reason).includes(COMPONENT_420))
+    );
+    if (block420.length > 0) {
+      console.log("blockingDetails 420.01A-:", block420);
+    }
+
+    if (line420?.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES") {
+      ok(`${COMPONENT_420} CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES`);
+      const total = actionQuantity({ currentQuantityTotal: line420.currentQuantityTotal });
+      const eff = actionQuantity(line420);
+      console.log("  currentQuantityTotal:", total);
+      console.log("  effectiveQuantity:", eff);
+      console.log("  duplicateBomLineIds:", line420.duplicateBomLineIds);
+      console.log("  keepBomLineId:", line420.keepBomLineId);
+      console.log("  removeBomLineIds:", line420.removeBomLineIds);
+      if (eff === 1) ok(`${COMPONENT_420} alvo efetivo = 1`);
+    } else if (line420?.actionType === "BLOCKED") {
+      ok(`${COMPONENT_420} bloqueado com motivo explícito (ambiguidade)`);
+    } else if (!line420 && data.canApply === false) {
+      fail(`${COMPONENT_420} sem ação nem bloqueio específico no preview`);
+    }
+  }
 
   if (blocking.length > 0 || data.canApply === false) {
     console.error("\n*** NÃO APLICAR ***");

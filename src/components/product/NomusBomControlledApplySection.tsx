@@ -20,6 +20,7 @@ type NomusBomControlledApplySectionProps = {
 const ACTION_LABEL: Record<ControlledApplyAction["actionType"], string> = {
   CREATE_PRODUCT_BOM_LINE: "Criar linha",
   UPDATE_PRODUCT_BOM_QUANTITY: "Atualizar qtd.",
+  CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES: "Consolidar duplicidade",
   KEEP_PRODUCT_BOM_LINE: "Manter",
   REMOVE_PRODUCT_BOM_LINE: "Remover",
   SKIP_UNRESOLVED: "Não resolvido",
@@ -37,6 +38,7 @@ const BLOCKING_BADGE: Record<ControlledApplyBlockingCode, string> = {
   BLOCKED_ACTION: "bg-red-200 text-red-950",
   COST_UNRESOLVED: "bg-orange-200 text-orange-950",
   DRY_PLAN_BLOCKED: "bg-red-200 text-red-950",
+  AMBIGUOUS_DUPLICATE_PRODUCT_BOM_LINE: "bg-orange-200 text-orange-950",
 };
 
 function actionBadgeClass(actionType: ControlledApplyAction["actionType"]): string {
@@ -44,6 +46,7 @@ function actionBadgeClass(actionType: ControlledApplyAction["actionType"]): stri
     case "CREATE_PRODUCT_BOM_LINE":
       return "bg-blue-100 text-blue-900";
     case "UPDATE_PRODUCT_BOM_QUANTITY":
+    case "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES":
       return "bg-amber-100 text-amber-900";
     case "REMOVE_PRODUCT_BOM_LINE":
       return "bg-red-100 text-red-900";
@@ -132,9 +135,22 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
 
   const mutatingActions =
     preview?.actions.filter((a) =>
-      ["CREATE_PRODUCT_BOM_LINE", "UPDATE_PRODUCT_BOM_QUANTITY", "REMOVE_PRODUCT_BOM_LINE"].includes(
-        a.actionType
-      )
+      [
+        "CREATE_PRODUCT_BOM_LINE",
+        "UPDATE_PRODUCT_BOM_QUANTITY",
+        "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES",
+        "REMOVE_PRODUCT_BOM_LINE",
+      ].includes(a.actionType)
+    ) ?? [];
+
+  const duplicateActions =
+    preview?.actions.filter(
+      (a) => a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"
+    ) ?? [];
+
+  const blockedDuplicateActions =
+    preview?.actions.filter(
+      (a) => a.actionType === "BLOCKED" && a.reason.includes("Produto e Material")
     ) ?? [];
 
   return (
@@ -234,6 +250,70 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
             </div>
           ) : null}
 
+          {duplicateActions.length > 0 ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50/80 px-3 py-2.5 text-sm space-y-2">
+              <p className="font-semibold text-amber-950">Duplicidade IndusCost detectada</p>
+              {duplicateActions.map((action) => (
+                <div
+                  key={`dup-${action.componentCode}`}
+                  className="rounded-md border border-amber-200 bg-background px-2.5 py-2 space-y-1"
+                >
+                  <p className="font-medium tabular-nums">
+                    {action.componentCode}
+                    {action.componentDescription ? ` — ${action.componentDescription}` : ""}
+                  </p>
+                  <p>
+                    Atual no IndusCost:{" "}
+                    <span className="font-semibold tabular-nums">
+                      {action.currentQuantityTotal ?? action.currentQuantity ?? "—"}
+                    </span>
+                    {(action.duplicateBomLineIds?.length ?? 0) > 1
+                      ? ` em ${action.duplicateBomLineIds?.length} linhas`
+                      : ""}
+                  </p>
+                  <p>
+                    Alvo BOM efetiva (Nomus):{" "}
+                    <span className="font-semibold tabular-nums">{action.effectiveQuantity ?? "—"}</span>
+                  </p>
+                  <p>
+                    Ação: {ACTION_LABEL[action.actionType]}
+                    {action.currentQuantityTotal != null && action.effectiveQuantity != null
+                      ? ` — ajustar para ${action.effectiveQuantity}`
+                      : ""}
+                  </p>
+                  {(action.duplicateBomLineIds?.length ?? 0) > 0 ? (
+                    <p className="text-xs text-muted-foreground break-all">
+                      Linhas envolvidas: manter {action.keepBomLineId ?? "—"}
+                      {(action.removeBomLineIds?.length ?? 0) > 0
+                        ? ` · remover ${action.removeBomLineIds?.join(", ")}`
+                        : ""}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {blockedDuplicateActions.length > 0 ? (
+            <div className="rounded-lg border border-orange-300 bg-orange-50/80 px-3 py-2.5 text-sm space-y-2">
+              <p className="font-semibold text-orange-950">Duplicidade ambígua</p>
+              {blockedDuplicateActions.map((action) => (
+                <div key={`ambig-${action.componentCode}`} className="space-y-1">
+                  <p className="font-medium tabular-nums">
+                    {action.componentCode}
+                    {action.componentDescription ? ` — ${action.componentDescription}` : ""}
+                  </p>
+                  <p className="text-muted-foreground">{action.reason}</p>
+                  {(action.duplicateBomLineIds?.length ?? 0) > 0 ? (
+                    <p className="text-xs break-all">
+                      Linhas: {action.duplicateBomLineIds?.join(", ")}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {preview.canApply && mutatingActions.length > 0 ? (
             <div className="rounded-lg border border-green-200 bg-green-50/60 px-3 py-2.5 text-sm space-y-1">
               <p className="font-semibold text-green-950">Ação planejada na ProductBOM</p>
@@ -243,9 +323,17 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
                     <span className="font-medium tabular-nums">{action.componentCode}</span>
                     {action.componentDescription ? ` — ${action.componentDescription}` : ""}:{" "}
                     {ACTION_LABEL[action.actionType]}
-                    {action.currentQuantity != null || action.effectiveQuantity != null
-                      ? ` (${action.currentQuantity ?? "—"} → ${action.effectiveQuantity ?? "—"})`
-                      : ""}
+                    {action.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES" ? (
+                      <>
+                        {" "}
+                        (total Indus {action.currentQuantityTotal ?? "—"} → alvo{" "}
+                        {action.effectiveQuantity ?? "—"})
+                      </>
+                    ) : action.currentQuantity != null || action.effectiveQuantity != null ? (
+                      ` (${action.currentQuantity ?? "—"} → ${action.effectiveQuantity ?? "—"})`
+                    ) : (
+                      ""
+                    )}
                   </li>
                 ))}
               </ul>
@@ -306,7 +394,9 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
                       <td className="px-2 py-2 font-medium">{action.componentCode}</td>
                       <td className="px-2 py-2">{action.componentKind}</td>
                       <td className="px-2 py-2 text-right tabular-nums">
-                        {action.currentQuantity ?? "—"}
+                        {action.currentQuantityTotal != null
+                          ? `${action.currentQuantityTotal} (${action.duplicateBomLineIds?.length ?? 1} lin.)`
+                          : action.currentQuantity ?? "—"}
                       </td>
                       <td className="px-2 py-2 text-right tabular-nums">
                         {action.effectiveQuantity ?? "—"}

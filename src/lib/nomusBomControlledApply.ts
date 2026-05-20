@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { normalizeComponentCode, normalizeSku, toNumberSafe } from "@/src/lib/nomusBomComparison";
+import type { BomComparisonResult } from "@/src/lib/nomusBomComparison";
+import { buildBomComparisonForParentCode } from "@/src/lib/nomusBomComparisonLoad";
 import { buildNomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
+import type { NomusBomApplyPlan } from "@/src/lib/nomusBomApplyPlan";
 import {
   loadIndusBomLinesForProduct,
   resolveNomusComponentCodes,
@@ -18,6 +21,7 @@ import type {
   ControlledApplyBomSummary,
   ControlledApplyComponentKind,
   ControlledApplyPreview,
+  ControlledApplyResolutionMode,
   ControlledApplyResult,
   ControlledApplyRiskLevel,
 } from "@/src/lib/nomusBomControlledApplyTypes";
@@ -54,6 +58,8 @@ const BLOCKING_SUMMARY: Record<ControlledApplyBlockingCode, string> = {
   BLOCKED_ACTION: "O plano contém ações bloqueadas.",
   COST_UNRESOLVED: "Há custo não resolvido em linhas incluídas na BOM efetiva.",
   DRY_PLAN_BLOCKED: "O plano dry-run de aplicação contém ações bloqueadas.",
+  AMBIGUOUS_DUPLICATE_PRODUCT_BOM_LINE:
+    "Há múltiplas linhas IndusCost para o mesmo componente sem regra automática segura.",
 };
 
 function isLocalIncludedLine(line: EffectivePricingBomLine): boolean {
@@ -149,6 +155,8 @@ function riskForAction(
   switch (actionType) {
     case "REMOVE_PRODUCT_BOM_LINE":
       return "HIGH";
+    case "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES":
+      return "HIGH";
     case "UPDATE_PRODUCT_BOM_QUANTITY":
       return "MEDIUM";
     case "CREATE_PRODUCT_BOM_LINE":
@@ -159,6 +167,230 @@ function riskForAction(
     default:
       return "LOW";
   }
+}
+
+function rowsForComponentCode(componentCode: string, currentRows: CurrentBomRow[]): CurrentBomRow[] {
+  const codeKey = normalizeComponentCode(componentCode);
+  return currentRows.filter((r) => normalizeComponentCode(r.componentCode) === codeKey);
+}
+
+function sumRowQuantities(rows: CurrentBomRow[]): number {
+  return rows.reduce((acc, r) => acc + (r.quantity ?? 0), 0);
+}
+
+function pickCanonicalRow(rows: CurrentBomRow[]): CurrentBomRow {
+  return [...rows].sort((a, b) => a.id.localeCompare(b.id))[0];
+}
+
+type DuplicateIndusResolution =
+  | {
+      kind: "consolidate";
+      keep: CurrentBomRow;
+      remove: CurrentBomRow[];
+      mode: ControlledApplyResolutionMode;
+      totalQty: number;
+    }
+  | { kind: "ambiguous"; materialRows: CurrentBomRow[]; productRows: CurrentBomRow[] }
+  | { kind: "single"; row: CurrentBomRow }
+  | { kind: "none" };
+
+function resolveDuplicateIndusRows(
+  target: DesiredTarget,
+  currentRows: CurrentBomRow[]
+): DuplicateIndusResolution {
+  const codeRows = rowsForComponentCode(target.componentCode, currentRows);
+  const materialRows = codeRows.filter((r) => r.materialId);
+  const productRows = codeRows.filter((r) => r.childProductId);
+
+  if (codeRows.length === 0) {
+    return { kind: "none" };
+  }
+
+  if (materialRows.length > 0 && productRows.length > 0) {
+    if (target.materialId) {
+      const keepPool = materialRows.filter((r) => r.materialId === target.materialId);
+      if (keepPool.length === 0) {
+        return { kind: "ambiguous", materialRows, productRows };
+      }
+      const keep = pickCanonicalRow(keepPool);
+      const remove = codeRows.filter((r) => r.id !== keep.id);
+      return {
+        kind: "consolidate",
+        keep,
+        remove,
+        mode: "PREFER_MATERIAL_FROM_EFFECTIVE",
+        totalQty: sumRowQuantities(codeRows),
+      };
+    }
+    if (target.childProductId) {
+      const keepPool = productRows.filter((r) => r.childProductId === target.childProductId);
+      if (keepPool.length === 0) {
+        return { kind: "ambiguous", materialRows, productRows };
+      }
+      const keep = pickCanonicalRow(keepPool);
+      const remove = codeRows.filter((r) => r.id !== keep.id);
+      return {
+        kind: "consolidate",
+        keep,
+        remove,
+        mode: "PREFER_PRODUCT_FROM_EFFECTIVE",
+        totalQty: sumRowQuantities(codeRows),
+      };
+    }
+    return { kind: "ambiguous", materialRows, productRows };
+  }
+
+  if (target.productBomLineId) {
+    const local = codeRows.find((r) => r.id === target.productBomLineId);
+    if (local && codeRows.length > 1) {
+      const keep = local;
+      const remove = codeRows.filter((r) => r.id !== keep.id);
+      return {
+        kind: "consolidate",
+        keep,
+        remove,
+        mode: "SAME_CHILD_PRODUCT",
+        totalQty: sumRowQuantities(codeRows),
+      };
+    }
+    if (local) return { kind: "single", row: local };
+  }
+
+  if (productRows.length > 1) {
+    const childIds = new Set(productRows.map((r) => r.childProductId).filter(Boolean));
+    if (childIds.size !== 1) {
+      return { kind: "ambiguous", materialRows, productRows };
+    }
+    const keep = pickCanonicalRow(productRows);
+    const remove = productRows.filter((r) => r.id !== keep.id);
+    return {
+      kind: "consolidate",
+      keep,
+      remove,
+      mode: "SAME_CHILD_PRODUCT",
+      totalQty: sumRowQuantities(productRows),
+    };
+  }
+
+  if (materialRows.length > 1) {
+    const matIds = new Set(materialRows.map((r) => r.materialId).filter(Boolean));
+    if (matIds.size !== 1) {
+      return { kind: "ambiguous", materialRows, productRows };
+    }
+    const keep = pickCanonicalRow(materialRows);
+    const remove = materialRows.filter((r) => r.id !== keep.id);
+    return {
+      kind: "consolidate",
+      keep,
+      remove,
+      mode: "SAME_MATERIAL",
+      totalQty: sumRowQuantities(materialRows),
+    };
+  }
+
+  const row =
+    codeRows.find((r) => {
+      if (target.materialId) return r.materialId === target.materialId;
+      if (target.childProductId) return r.childProductId === target.childProductId;
+      return true;
+    }) ?? codeRows[0];
+
+  return { kind: "single", row };
+}
+
+function controlledApplyHandlesComponent(actions: ControlledApplyAction[], componentCode: string): boolean {
+  const key = normalizeComponentCode(componentCode);
+  return actions.some((a) => {
+    if (normalizeComponentCode(a.componentCode) !== key) return false;
+    return (
+      a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES" ||
+      a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" ||
+      a.actionType === "CREATE_PRODUCT_BOM_LINE" ||
+      a.actionType === "REMOVE_PRODUCT_BOM_LINE"
+    );
+  });
+}
+
+function shouldBlockFromDryPlan(input: {
+  dryPlan: NomusBomApplyPlan | undefined;
+  actions: ControlledApplyAction[];
+  comparisonLines: BomComparisonResult["lines"];
+}): ControlledApplyBlockingDetail[] {
+  const details: ControlledApplyBlockingDetail[] = [];
+  const plan = input.dryPlan;
+  if (!plan) return details;
+
+  const planBlocked =
+    Boolean(plan.isBlocked) || (plan.summary?.blockedActions ?? 0) > 0;
+  if (!planBlocked) return details;
+
+  const blockedDry = plan.actions.filter((a) => a.type === "BLOCKED");
+
+  for (const dryAction of blockedDry) {
+    const code = dryAction.componentCode?.trim();
+    if (code && controlledApplyHandlesComponent(input.actions, code)) {
+      continue;
+    }
+    if (code) {
+      pushBlockingDetail(details, {
+        code: "DRY_PLAN_BLOCKED",
+        componentCode: code,
+        componentDescription: dryAction.componentDescription ?? null,
+        reason:
+          dryAction.blockedReason ??
+          dryAction.reason ??
+          `Plano dry-run bloqueou ${code}.`,
+        suggestedFix:
+          "Revise a comparação Nomus x IndusCost e resolva duplicidade/quantidade deste componente.",
+      });
+      continue;
+    }
+  }
+
+  const globalBlocked = blockedDry.filter((a) => !a.componentCode?.trim());
+  if (globalBlocked.length === 0) return details;
+
+  const qtyDiffLines = input.comparisonLines.filter((l) => l.status === "QUANTITY_DIFF");
+  const unhandledQtyDiff = qtyDiffLines.filter(
+    (l) => !controlledApplyHandlesComponent(input.actions, l.componentCode)
+  );
+
+  const hasUnhandledBlockedAction = input.actions.some((a) => a.actionType === "BLOCKED");
+  const hasUnhandledAmbiguous = input.actions.some(
+    (a) =>
+      a.actionType === "BLOCKED" &&
+      a.reason.includes("Produto e Material") &&
+      !controlledApplyHandlesComponent(input.actions, a.componentCode)
+  );
+
+  if (unhandledQtyDiff.length === 0 && !hasUnhandledBlockedAction && !hasUnhandledAmbiguous) {
+    return details;
+  }
+
+  for (const line of unhandledQtyDiff) {
+    pushBlockingDetail(details, {
+      code: "DRY_PLAN_BLOCKED",
+      componentCode: line.componentCode,
+      componentDescription: line.componentDescription,
+      reason: `Diferença de quantidade (${line.indusQuantity} IndusCost vs ${line.nomusQuantity} Nomus) sem plano controlado de consolidação.`,
+      suggestedFix:
+        line.hasDuplicateIndusLines
+          ? "Corrija duplicidade na ProductBOM ou use a ação de consolidação sugerida na aplicação controlada."
+          : "Revise quantidade na comparação antes de aplicar.",
+    });
+  }
+
+  if (details.length === 0 && globalBlocked.length > 0) {
+    const first = globalBlocked[0];
+    pushBlockingDetail(details, {
+      code: "DRY_PLAN_BLOCKED",
+      reason: first.blockedReason ?? first.reason ?? BLOCKING_SUMMARY.DRY_PLAN_BLOCKED,
+      suggestedFix:
+        "Aba Plano dry-run: resolva classificação REVIEW_QUANTITY_DIFF ou outros bloqueios estruturais.",
+    });
+  }
+
+  return details;
 }
 
 async function loadCurrentProductBomRows(productId: string, productSku: string): Promise<CurrentBomRow[]> {
@@ -395,24 +627,35 @@ function buildActions(
   const matchedCurrentIds = new Set<string>();
 
   for (const target of targets) {
-    const key = bomTargetKey(target);
-    if (!key) continue;
+    const resolution = resolveDuplicateIndusRows(target, currentRows);
 
-    let current: CurrentBomRow | undefined;
-    if (target.productBomLineId) {
-      current = currentRows.find((r) => r.id === target.productBomLineId);
-    } else {
-      current = currentRows.find((r) => {
-        const rowKey = bomTargetKey({
-          materialId: r.materialId,
-          childProductId: r.childProductId,
-          productBomLineId: null,
-        });
-        return rowKey === key;
+    if (resolution.kind === "ambiguous") {
+      actions.push({
+        actionType: "BLOCKED",
+        componentCode: target.componentCode,
+        componentDescription: target.componentDescription,
+        componentKind: target.componentKind,
+        currentQuantity: sumRowQuantities([
+          ...resolution.materialRows,
+          ...resolution.productRows,
+        ]),
+        effectiveQuantity: target.quantity,
+        duplicateBomLineIds: [
+          ...resolution.materialRows.map((r) => r.id),
+          ...resolution.productRows.map((r) => r.id),
+        ],
+        reason:
+          `Componente ${target.componentCode} aparece como Produto e Material na ProductBOM. Defina qual cadastro deve permanecer antes de aplicar.`,
+        riskLevel: "BLOCKED",
+        reviewDecisionType: target.effectiveLine.reviewDecisionType ?? null,
       });
+      for (const row of [...resolution.materialRows, ...resolution.productRows]) {
+        matchedCurrentIds.add(row.id);
+      }
+      continue;
     }
 
-    if (!current) {
+    if (resolution.kind === "none") {
       actions.push({
         actionType: "CREATE_PRODUCT_BOM_LINE",
         componentCode: target.componentCode,
@@ -428,7 +671,44 @@ function buildActions(
       continue;
     }
 
+    if (resolution.kind === "consolidate") {
+      for (const row of [resolution.keep, ...resolution.remove]) {
+        matchedCurrentIds.add(row.id);
+      }
+      const removeIds = resolution.remove.map((r) => r.id);
+      const reason =
+        resolution.remove.length > 0
+          ? `Consolidar ${resolution.remove.length + 1} linha(s) IndusCost duplicada(s): soma atual ${resolution.totalQty}, alvo BOM efetiva ${target.quantity}.`
+          : "Atualizar quantidade para refletir a BOM efetiva.";
+
+      actions.push({
+        actionType: "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES",
+        componentCode: target.componentCode,
+        componentDescription:
+          target.componentDescription ?? resolution.keep.componentDescription,
+        componentKind: target.componentKind,
+        currentQuantity: resolution.keep.quantity,
+        currentQuantityTotal: resolution.totalQty,
+        effectiveQuantity: target.quantity,
+        productBomLineId: resolution.keep.id,
+        duplicateBomLineIds: [resolution.keep.id, ...removeIds],
+        keepBomLineId: resolution.keep.id,
+        removeBomLineIds: removeIds,
+        resolutionMode: resolution.mode,
+        reason,
+        riskLevel: riskForAction("CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"),
+        reviewDecisionType: target.effectiveLine.reviewDecisionType ?? null,
+      });
+      continue;
+    }
+
+    const current = resolution.row;
     matchedCurrentIds.add(current.id);
+    const codeRows = rowsForComponentCode(target.componentCode, currentRows);
+    for (const extra of codeRows) {
+      if (extra.id !== current.id) matchedCurrentIds.add(extra.id);
+    }
+
     const currentQty = current.quantity ?? 0;
     if (Math.abs(currentQty - target.quantity) < 1e-9) {
       actions.push({
@@ -496,7 +776,21 @@ function buildActions(
     });
   }
 
-  actions.sort((a, b) => a.componentCode.localeCompare(b.componentCode, "pt-BR"));
+  const actionOrder: Record<ControlledApplyAction["actionType"], number> = {
+    CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES: 0,
+    CREATE_PRODUCT_BOM_LINE: 1,
+    UPDATE_PRODUCT_BOM_QUANTITY: 2,
+    REMOVE_PRODUCT_BOM_LINE: 3,
+    KEEP_PRODUCT_BOM_LINE: 4,
+    BLOCKED: 5,
+    SKIP_UNRESOLVED: 6,
+  };
+
+  actions.sort((a, b) => {
+    const orderDiff = actionOrder[a.actionType] - actionOrder[b.actionType];
+    if (orderDiff !== 0) return orderDiff;
+    return a.componentCode.localeCompare(b.componentCode, "pt-BR");
+  });
   return actions;
 }
 
@@ -521,6 +815,8 @@ function buildPlanHash(input: {
       actionType: a.actionType,
       componentCode: normalizeComponentCode(a.componentCode),
       productBomLineId: a.productBomLineId ?? null,
+      keepBomLineId: a.keepBomLineId ?? null,
+      removeBomLineIds: a.removeBomLineIds ?? [],
       effectiveQuantity: a.effectiveQuantity,
     })),
   };
@@ -549,7 +845,8 @@ function collectApplyGates(input: {
   productId: string | null;
   effectiveBom: EffectivePricingBomResult;
   actions: ControlledApplyAction[];
-  dryPlanBlocked: boolean;
+  dryPlan: NomusBomApplyPlan | undefined;
+  comparisonLines: BomComparisonResult["lines"];
   costImpact: Awaited<ReturnType<typeof buildNomusEffectiveBomCostImpact>> | null;
 }): { blockingReasons: string[]; blockingDetails: ControlledApplyBlockingDetail[]; warnings: string[] } {
   const details: ControlledApplyBlockingDetail[] = [];
@@ -675,13 +972,30 @@ function collectApplyGates(input: {
       });
     }
     if (action.actionType === "BLOCKED") {
+      const isAmbiguous = action.reason.includes("Produto e Material");
       pushBlockingDetail(details, {
-        code: "BLOCKED_ACTION",
+        code: isAmbiguous ? "AMBIGUOUS_DUPLICATE_PRODUCT_BOM_LINE" : "BLOCKED_ACTION",
         componentCode: action.componentCode,
         componentDescription: action.componentDescription,
         reason: action.reason,
-        suggestedFix: "Revise a BOM efetiva e o plano dry-run antes de aplicar.",
+        suggestedFix: isAmbiguous
+          ? "Corrija duplicidade no cadastro da BOM ou defina regra Product/Material antes de aplicar."
+          : "Revise a BOM efetiva e o plano dry-run antes de aplicar.",
       });
+    }
+  }
+
+  for (const line of input.comparisonLines) {
+    if (!line.hasDuplicateIndusLines || line.status !== "QUANTITY_DIFF") continue;
+    const hasConsolidate = input.actions.some(
+      (a) =>
+        a.componentCode === line.componentCode &&
+        a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"
+    );
+    if (!hasConsolidate && !input.actions.some((a) => a.componentCode === line.componentCode && a.actionType === "BLOCKED")) {
+      warnings.push(
+        `${line.componentCode}: IndusCost tem ${line.indusLineCount} linha(s) (total ${line.indusQuantity}) vs Nomus ${line.nomusQuantity} — verifique aplicação controlada.`
+      );
     }
   }
 
@@ -701,12 +1015,12 @@ function collectApplyGates(input: {
     });
   }
 
-  if (input.dryPlanBlocked) {
-    pushBlockingDetail(details, {
-      code: "DRY_PLAN_BLOCKED",
-      reason: BLOCKING_SUMMARY.DRY_PLAN_BLOCKED,
-      suggestedFix: "Aba Diagnóstico técnico / plano dry-run: resolva ações bloqueadas do plano.",
-    });
+  for (const dryDetail of shouldBlockFromDryPlan({
+    dryPlan: input.dryPlan,
+    actions: input.actions,
+    comparisonLines: input.comparisonLines,
+  })) {
+    pushBlockingDetail(details, dryDetail);
   }
 
   return {
@@ -738,8 +1052,8 @@ export async function buildControlledApplyPreview(
     offset: 0,
   });
   const dryPlan = dryReport.plans[0];
-  const dryPlanBlocked =
-    Boolean(dryPlan?.isBlocked) || (dryPlan?.summary?.blockedActions ?? 0) > 0;
+
+  const comparison = await buildBomComparisonForParentCode(trimmed);
 
   const costImpact = product
     ? await buildNomusEffectiveBomCostImpact(
@@ -784,7 +1098,8 @@ export async function buildControlledApplyPreview(
     productId,
     effectiveBom,
     actions,
-    dryPlanBlocked,
+    dryPlan,
+    comparisonLines: comparison.lines,
     costImpact,
   });
 
@@ -792,9 +1107,23 @@ export async function buildControlledApplyPreview(
 
   const afterRowsPreview = [...currentRows];
   for (const action of actions) {
+    if (action.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES" && action.keepBomLineId) {
+      for (const removeId of action.removeBomLineIds ?? []) {
+        const idx = afterRowsPreview.findIndex((r) => r.id === removeId);
+        if (idx >= 0) afterRowsPreview.splice(idx, 1);
+      }
+      const keep = afterRowsPreview.find((r) => r.id === action.keepBomLineId);
+      if (keep && action.effectiveQuantity != null) {
+        keep.quantity = action.effectiveQuantity;
+      }
+    }
     if (action.actionType === "REMOVE_PRODUCT_BOM_LINE" && action.productBomLineId) {
       const idx = afterRowsPreview.findIndex((r) => r.id === action.productBomLineId);
       if (idx >= 0) afterRowsPreview.splice(idx, 1);
+    }
+    if (action.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" && action.productBomLineId) {
+      const row = afterRowsPreview.find((r) => r.id === action.productBomLineId);
+      if (row && action.effectiveQuantity != null) row.quantity = action.effectiveQuantity;
     }
   }
 
@@ -940,6 +1269,54 @@ export async function applyEffectiveBomToProductBom(input: {
         continue;
       }
 
+      if (
+        action.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES" &&
+        action.keepBomLineId
+      ) {
+        const before = currentById.get(action.keepBomLineId);
+        const updated = await tx.productBOM.update({
+          where: { id: action.keepBomLineId },
+          data: { quantity: action.effectiveQuantity ?? 0 },
+        });
+        await tx.nomusBomApplyRunLine.create({
+          data: {
+            runId: run.id,
+            actionType: action.actionType,
+            componentCode: action.componentCode,
+            componentDescription: action.componentDescription,
+            productBomLineId: action.keepBomLineId,
+            beforeJson: before ? serializeBomRow(before) : undefined,
+            afterJson: {
+              id: updated.id,
+              quantity: toNumberSafe(updated.quantity),
+              consolidatedFrom: action.removeBomLineIds ?? [],
+            },
+            status: "APPLIED",
+            reason: action.reason,
+          },
+        });
+        appliedActions.push(action);
+
+        for (const removeId of action.removeBomLineIds ?? []) {
+          const beforeRemove = currentById.get(removeId);
+          await tx.productBOM.delete({ where: { id: removeId } });
+          await tx.nomusBomApplyRunLine.create({
+            data: {
+              runId: run.id,
+              actionType: "REMOVE_PRODUCT_BOM_LINE",
+              componentCode: action.componentCode,
+              componentDescription: action.componentDescription,
+              productBomLineId: removeId,
+              beforeJson: beforeRemove ? serializeBomRow(beforeRemove) : undefined,
+              afterJson: Prisma.JsonNull,
+              status: "APPLIED",
+              reason: `Removida linha duplicada durante consolidação de ${action.componentCode}.`,
+            },
+          });
+        }
+        continue;
+      }
+
       if (action.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" && action.productBomLineId) {
         const before = currentById.get(action.productBomLineId);
         const updated = await tx.productBOM.update({
@@ -1025,7 +1402,12 @@ export async function applyEffectiveBomToProductBom(input: {
 
     const summary = {
       created: appliedActions.filter((a) => a.actionType === "CREATE_PRODUCT_BOM_LINE").length,
-      updated: appliedActions.filter((a) => a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY").length,
+      updated:
+        appliedActions.filter(
+          (a) =>
+            a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" ||
+            a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"
+        ).length,
       kept: appliedActions.filter((a) => a.actionType === "KEEP_PRODUCT_BOM_LINE").length,
       removed: appliedActions.filter((a) => a.actionType === "REMOVE_PRODUCT_BOM_LINE").length,
       skipped: appliedActions.filter((a) => a.actionType === "SKIP_UNRESOLVED").length,
