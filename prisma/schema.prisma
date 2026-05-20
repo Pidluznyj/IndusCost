@@ -1282,3 +1282,49 @@ model NomusBomApplyRunLine {
   @@index([componentCode])
   @@index([actionType])
 }
+
+enum NomusProductImportRunStatus {
+  PREVIEWED
+  IMPORTED
+  FAILED
+}
+
+/// Auditoria de importação de produto novo do Nomus para simulação (fase IMPORT-SIMULATION-A).
+model NomusProductImportRun {
+  id               String                      @id @default(uuid())
+  parentCode       String
+  productId        String?                     @db.Uuid
+  status           NomusProductImportRunStatus @default(PREVIEWED)
+  planHash         String
+  confirmationText String?
+  approvedBy       String?
+  summaryJson      Json?
+  warningsJson     Json?
+  beforeJson       Json?
+  afterJson        Json?
+  createdAt        DateTime                    @default(now())
+  importedAt       DateTime?
+  lines            NomusProductImportRunLine[]
+
+  @@index([parentCode])
+  @@index([productId])
+  @@index([status])
+  @@index([planHash])
+  @@index([createdAt])
+}
+
+model NomusProductImportRunLine {
+  id                   String                @id @default(uuid())
+  runId                String
+  actionType           String
+  componentCode        String
+  componentDescription String?
+  status               String                @default("PLANNED")
+  reason               String?
+  createdAt            DateTime              @default(now())
+  run                  NomusProductImportRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([componentCode])
+  @@index([actionType])
+}

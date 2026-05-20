@@ -41,6 +41,15 @@ export const NOMUS_MAINTENANCE_STEP_COPY: Record<NomusMaintenanceTab, NomusMaint
     observe: "Ações simuladas, bloqueios, opcionais e classificação de risco.",
     nextStep: "Use o diagnóstico técnico para auditar divergências linha a linha.",
   },
+  "product-import": {
+    title: "Importar produto do Nomus",
+    description:
+      "Fluxo para produto oficial Nomus ainda ausente no IndusCost. Cria cadastro e ProductBOM inicial para simulação — separado da aplicação de BOM em produto existente.",
+    observe:
+      "Produto principal, componentes a criar/usar, BOM planejada, opcionais pendentes e itens sem custo.",
+    nextStep:
+      "Após importar com confirmação explícita, abra o cadastro e a Análise de Custo (pode ficar incompleta).",
+  },
   diagnostic: {
     title: "Diagnóstico técnico",
     description: "Mostra a comparação detalhada entre Nomus e IndusCost para auditoria.",

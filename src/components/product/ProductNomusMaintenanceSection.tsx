@@ -7,6 +7,7 @@ import { NomusEffectiveBomCostImpactPanel } from "@/src/components/product/Nomus
 import { NomusMaintenanceOverviewPanel } from "@/src/components/product/NomusMaintenanceOverviewPanel";
 import { NomusMaintenancePendingPanel } from "@/src/components/product/NomusMaintenancePendingPanel";
 import { NomusMaintenanceDiagnosticPanel } from "@/src/components/product/NomusMaintenanceDiagnosticPanel";
+import { NomusProductImportSimulationPanel } from "@/src/components/product/NomusProductImportSimulationPanel";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type { NomusParentCodeOption } from "@/src/lib/nomusParentCodeOptionsTypes";
 import type {
@@ -22,6 +23,7 @@ const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = 
   { id: "effective-pricing-bom", label: "BOM efetiva" },
   { id: "cost-impact", label: "Impacto de custo" },
   { id: "apply-plan", label: "Plano de aplicação" },
+  { id: "product-import", label: "Importar produto" },
   { id: "diagnostic", label: "Diagnóstico técnico" },
 ];
 
@@ -357,6 +359,16 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
           <NomusBomApplyPlanPanel
             onOpenProduct={onOpenProduct}
             onControlledApplySuccess={handleControlledApplySuccess}
+            {...workspaceProps}
+          />
+        ) : null}
+        {activeNomusMaintenanceTab === "product-import" ? (
+          <NomusProductImportSimulationPanel
+            onOpenProduct={onOpenProduct}
+            onImportSuccess={() => {
+              handleControlledApplySuccess();
+              onEngineeringListRefresh?.();
+            }}
             {...workspaceProps}
           />
         ) : null}

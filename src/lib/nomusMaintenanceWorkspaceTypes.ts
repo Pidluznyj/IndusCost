@@ -6,6 +6,7 @@ export type NomusMaintenanceTab =
   | "effective-pricing-bom"
   | "cost-impact"
   | "apply-plan"
+  | "product-import"
   | "diagnostic";
 
 export type NomusWorkspaceParentSelection = {

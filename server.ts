@@ -109,6 +109,10 @@ import {
   applyEffectiveBomToProductBom,
   buildControlledApplyPreview,
 } from "./src/lib/nomusBomControlledApply.js";
+import {
+  buildNomusProductImportSimulationPreview,
+  executeNomusProductImportSimulation,
+} from "./src/lib/nomusProductImportSimulation.js";
 import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
@@ -3758,6 +3762,82 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const message = error instanceof Error ? error.message : "Erro ao remover decisão.";
         console.error("DELETE /api/nomus/effective-pricing-bom/review-decisions", error);
         return res.status(400).json({ error: message });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/product-import-simulation/preview",
+    requireAppAuth,
+    requirePermission("products.view"),
+    async (req, res) => {
+      try {
+        const parentCode = String(req.query.parentCode ?? "").trim();
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        const recursive = req.query.recursive === "true" || req.query.recursive === "1";
+        const maxDepthRaw = Number(req.query.maxDepth);
+        const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : undefined;
+        const preview = await buildNomusProductImportSimulationPreview({
+          parentCode,
+          recursive,
+          maxDepth,
+        });
+        return res.json(preview);
+      } catch (error) {
+        console.error("GET /api/nomus/product-import-simulation/preview", error);
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : "Erro ao gerar preview de importação.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/product-import-simulation/import",
+    requireAppAuth,
+    requirePermission("products.edit"),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const parentCode = String(body.parentCode ?? "").trim();
+        const planHash = String(body.planHash ?? "").trim();
+        const confirmationText = String(body.confirmationText ?? "").trim();
+        const approvedBy =
+          body.approvedBy != null && String(body.approvedBy).trim()
+            ? String(body.approvedBy).trim()
+            : undefined;
+        const recursive = body.recursive === true || body.recursive === "true";
+        const maxDepthRaw = Number(body.maxDepth);
+        const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : undefined;
+
+        if (!parentCode || !planHash || !confirmationText) {
+          return res.status(400).json({
+            error: "parentCode, planHash e confirmationText são obrigatórios.",
+          });
+        }
+
+        const result = await executeNomusProductImportSimulation({
+          parentCode,
+          planHash,
+          confirmationText,
+          approvedBy,
+          recursive,
+          maxDepth,
+        });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Erro ao importar produto do Nomus.";
+        console.error("POST /api/nomus/product-import-simulation/import", error);
+        const status =
+          message.includes("Plano desatualizado") || message.includes("Confirmação")
+            ? 409
+            : message.includes("bloqueada") || message.includes("gates")
+              ? 422
+              : 400;
+        return res.status(status).json({ error: message });
       }
     }
   );
