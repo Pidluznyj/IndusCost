@@ -25,7 +25,7 @@
     "sync:nomus:effective-pricing-bom": "tsx scripts/nomusEffectivePricingBomPreviewV1.ts",
     "sync:nomus:effective-bom-cost-impact": "tsx scripts/nomusEffectiveBomCostImpactV1.ts",
     "sync:nomus:bom-apply-preview": "tsx scripts/nomusBomApplyPreviewV1.ts",
-    "sync:nomus:bom-apply-validation-print": "tsx scripts/nomusBomApplyValidationPilotPrintV1.ts",
+    "sync:nomus:bom-apply-validation-print": "tsx scripts/nomusBomApplyValidationPrint.ts",
     "sync:nomus:sales-orders:dry": "tsx scripts/nomusSalesOrdersSyncV1.ts",
     "test:nomus-sync": "tsx --test scripts/nomusNumberParser.test.ts",
     "test:nomus:maintenance-smoke": "tsx scripts/nomusMaintenanceSmokeTestV1.ts",

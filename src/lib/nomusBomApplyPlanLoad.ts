@@ -14,6 +14,7 @@ import {
 } from "@/src/lib/nomusBomApplyPlan";
 import { clampBatchLimit } from "@/src/lib/nomusBomBatchReport";
 import { enrichNomusBomApplyPlanWithOptionalSelection } from "@/src/lib/nomusOptionalPricingSelection";
+import { prisma } from "@/src/lib/prisma";
 
 export type NomusBomApplyPlanReportFilters = {
   /** Busca parcial (contains) — somente filtragem; não usar para diff/plano de um produto. */
@@ -79,14 +80,20 @@ export async function buildNomusBomApplyPlansReport(
   let exactMatchCount = 0;
   if (exactParentCode) {
     const wanted = normalizeSku(exactParentCode);
-    const candidates = await listDistinctParentCodesFromStage({
-      limit: 10,
-      offset: 0,
-      search: exactParentCode,
+    const trimmed = exactParentCode.trim();
+    const stageRow = await prisma.nomusBomComponentStage.findFirst({
+      where: {
+        parentCode: { equals: trimmed, mode: "insensitive" },
+      },
+      select: { parentCode: true },
     });
-    const exactMatches = candidates.filter((code) => normalizeSku(code) === wanted);
-    exactMatchCount = exactMatches.length;
-    parentCodes = exactMatches.length > 0 ? [exactMatches[0]] : [exactParentCode];
+    if (stageRow && normalizeSku(stageRow.parentCode) === wanted) {
+      parentCodes = [stageRow.parentCode];
+      exactMatchCount = 1;
+    } else {
+      parentCodes = [];
+      exactMatchCount = 0;
+    }
   } else {
     parentCodes = await listDistinctParentCodesFromStage({
       limit,

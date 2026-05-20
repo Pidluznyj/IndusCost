@@ -2,11 +2,14 @@ import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { PrismaClient } from "@prisma/client";
+import { normalizeSku } from "../src/lib/nomusBomComparison.ts";
 import {
   applyPlansReportToCsv,
   buildNomusBomApplyPlansReport,
+  type NomusBomApplyPlansReport,
   type NomusBomApplyPlanReportFilters,
 } from "../src/lib/nomusBomApplyPlanLoad.ts";
+import { aggregateApplyPlansSummary } from "../src/lib/nomusBomApplyPlan.ts";
 import type { NomusBomActionClass, NomusBomRiskLevel } from "../src/lib/nomusBomClassification.ts";
 
 const prisma = new PrismaClient();
@@ -88,9 +91,22 @@ function parseArgs(): CliArgs {
 }
 
 function toFilters(args: CliArgs): NomusBomApplyPlanReportFilters {
+  if (args.parentCode) {
+    return {
+      parentCode: args.parentCode,
+      limit: 1,
+      offset: 0,
+      risk: args.risk,
+      actionClass: args.actionClass,
+      onlyCandidates: args.onlyCandidates || undefined,
+      onlyBlocked: args.onlyBlocked || undefined,
+      onlyImportProducts: args.onlyImportProducts || undefined,
+      onlyUpdateQuantities: args.onlyUpdateQuantities || undefined,
+    };
+  }
+
   return {
-    parentCode: args.parentCode,
-    sku: args.parentCode ? undefined : args.sku,
+    sku: args.sku,
     limit: args.limit,
     offset: args.offset,
     risk: args.risk,
@@ -102,18 +118,55 @@ function toFilters(args: CliArgs): NomusBomApplyPlanReportFilters {
   };
 }
 
+function assertSingleParentPlan(report: NomusBomApplyPlansReport, parentCode: string): NomusBomApplyPlansReport {
+  const wanted = normalizeSku(parentCode);
+  const matching = report.plans.filter((p) => normalizeSku(p.parentCode) === wanted);
+
+  if (matching.length === 0) {
+    throw new Error(
+      `Nenhum plano gerado para parentCode exato "${parentCode}". Verifique se o produto existe no stage Nomus.`
+    );
+  }
+  if (matching.length > 1) {
+    throw new Error(
+      `Mais de um plano retornado para parentCode "${parentCode}" (${matching.length}). Abortando validação.`
+    );
+  }
+
+  return {
+    ...report,
+    comparedCount: 1,
+    totalParentsInNomusStage: 1,
+    plans: matching,
+    summary: aggregateApplyPlansSummary(matching),
+  };
+}
+
 async function main(): Promise<void> {
   const args = parseArgs();
   const filters = toFilters(args);
 
+  if (args.parentCode && args.sku) {
+    console.warn("[nomus-bom-plan] --parentCode tem prioridade; --sku ignorado.");
+  }
+
   console.warn(
-    `[nomus-bom-plan] dry-run sku=${filters.sku ?? "(batch)"} limit=${filters.limit}`
+    `[nomus-bom-plan] dry-run parentCode=${filters.parentCode ?? "(none)"} sku=${filters.sku ?? "(none)"} limit=${filters.limit}`
   );
 
-  const report = await buildNomusBomApplyPlansReport(filters);
+  let report = await buildNomusBomApplyPlansReport(filters);
+
+  if (args.parentCode) {
+    if (report.totalParentsInNomusStage === 0) {
+      throw new Error(
+        `parentCode "${args.parentCode}" não encontrado no NomusBomComponentStage (match exato).`
+      );
+    }
+    report = assertSingleParentPlan(report, args.parentCode);
+  }
 
   console.warn(
-    `[nomus-bom-plan] concluído plans=${report.plans.length} importActions=${report.summary.importProductActions} optionalPending=${report.summary.optionalSelectionRequiredActions} optionalItems=${report.summary.optionalNomusItemsCount} productsWithOptional=${report.summary.productsWithOptionalNomusItems}`
+    `[nomus-bom-plan] concluído plans=${report.plans.length} parentCodes=${report.plans.map((p) => p.parentCode).join(",") || "(none)"}`
   );
 
   if (args.format === "csv") {
