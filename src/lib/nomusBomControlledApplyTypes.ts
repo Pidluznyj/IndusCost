@@ -32,6 +32,28 @@ export type ControlledApplyBomSummary = {
   childProductLines: number;
 };
 
+export type ControlledApplyBlockingCode =
+  | "NO_PRODUCT"
+  | "NO_NOMUS_BOM"
+  | "EFFECTIVE_BOM_BLOCKED"
+  | "OPTIONAL_PENDING"
+  | "LOCAL_REVIEW_PENDING"
+  | "NEEDS_ENGINEERING_REVIEW"
+  | "UNRESOLVED_INCLUDED_COMPONENT"
+  | "BLOCKED_ACTION"
+  | "COST_UNRESOLVED"
+  | "DRY_PLAN_BLOCKED";
+
+export type ControlledApplyBlockingDetail = {
+  code: ControlledApplyBlockingCode;
+  componentCode?: string | null;
+  componentDescription?: string | null;
+  source?: string | null;
+  decisionType?: string | null;
+  reason: string;
+  suggestedFix: string;
+};
+
 export type ControlledApplyCostImpactSummary = {
   status: string;
   currentTotalCost?: number | null;
@@ -47,6 +69,7 @@ export type ControlledApplyPreview = {
   productId: string | null;
   canApply: boolean;
   blockingReasons: string[];
+  blockingDetails: ControlledApplyBlockingDetail[];
   warnings: string[];
   planHash: string;
   effectiveBomHash: string;

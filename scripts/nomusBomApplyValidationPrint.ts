@@ -16,6 +16,7 @@ type CliArgs = {
 };
 
 const COMPONENT_309 = "309.61AA";
+const COMPONENT_309_62 = "309.62AA";
 const COMPONENT_800 = "800.01";
 const EXPECTED_SOURCE_IDS = [3228, 7696];
 
@@ -78,6 +79,13 @@ function actionQuantity(action: Record<string, unknown>): number | null {
   if (raw == null) return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
+}
+
+function findAction(
+  actions: Array<Record<string, unknown>> | undefined,
+  code: string
+): Record<string, unknown> | undefined {
+  return actions?.find((a) => a.componentCode === code);
 }
 
 function validatePlan(planPath: string, parentCode: string): void {
@@ -174,6 +182,7 @@ function validatePreview(previewPath: string, parentCode: string): void {
     confirmationRequiredText?: string;
     planHash?: string;
     blockingReasons?: string[];
+    blockingDetails?: Array<Record<string, unknown>>;
     warnings?: string[];
     beforeSummary?: unknown;
     afterSummary?: unknown;
@@ -186,6 +195,7 @@ function validatePreview(previewPath: string, parentCode: string): void {
   console.log("confirmationRequiredText:", data.confirmationRequiredText);
   console.log("planHash:", data.planHash);
   console.log("blockingReasons:", data.blockingReasons);
+  console.log("blockingDetails:", JSON.stringify(data.blockingDetails ?? [], null, 2));
   console.log("warnings:", data.warnings);
   console.log("beforeSummary:", data.beforeSummary);
   console.log("afterSummary:", data.afterSummary);
@@ -194,22 +204,86 @@ function validatePreview(previewPath: string, parentCode: string): void {
     fail(`preview.parentCode deve ser ${parentCode}, obtido ${data.parentCode}`);
   }
 
-  const blocking = data.blockingReasons ?? [];
-  if (blocking.length > 0) {
-    console.error("\n*** NÃO APLICAR ***");
-    for (const reason of blocking) {
-      console.error(`  - ${reason}`);
+  const line800 = findAction(data.actions, COMPONENT_800);
+  console.log(`\naction ${COMPONENT_800}:`, JSON.stringify(line800, null, 2));
+  const remove800 = line800?.actionType === "REMOVE_PRODUCT_BOM_LINE";
+  if (remove800) {
+    fail(`${COMPONENT_800} aparece em REMOVE_PRODUCT_BOM_LINE — remoção indevida.`);
+  }
+  ok(`${COMPONENT_800} não está em REMOVE indevido`);
+
+  const line309 = findAction(data.actions, COMPONENT_309);
+  console.log(`\naction ${COMPONENT_309}:`, JSON.stringify(line309, null, 2));
+  if (line309?.actionType === "SKIP_UNRESOLVED" || line309?.actionType === "CREATE_PRODUCT_BOM_LINE") {
+    fail(`${COMPONENT_309} não deve gerar ação aplicável (opcional não selecionado).`);
+  }
+  ok(`${COMPONENT_309} sem ação de aplicação indevida`);
+
+  const line30962 = findAction(data.actions, COMPONENT_309_62);
+  console.log(`\naction ${COMPONENT_309_62}:`, JSON.stringify(line30962, null, 2));
+  if (line30962) {
+    const qtyFrom = actionQuantity({ currentQuantity: line30962.currentQuantity });
+    const qtyTo = actionQuantity(line30962);
+    if (
+      line30962.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" &&
+      qtyFrom === 1 &&
+      qtyTo === 2
+    ) {
+      ok(`${COMPONENT_309_62} UPDATE 1 → 2`);
     }
-    fail("blockingReasons presentes — não aplicar.");
   }
 
-  if (data.canApply === false) {
-    console.error("\n*** NÃO APLICAR *** canApply=false");
-    fail("canApply=false — não aplicar.");
+  const engineering = (data.blockingDetails ?? []).filter(
+    (d) => d.code === "NEEDS_ENGINEERING_REVIEW"
+  );
+  if (engineering.length > 0) {
+    console.log("\nNEEDS_ENGINEERING_REVIEW ativo(s):");
+    for (const row of engineering) {
+      console.log(" ", row);
+    }
+  } else {
+    ok("sem bloqueio NEEDS_ENGINEERING_REVIEW");
+  }
+
+  const unresolved = (data.blockingDetails ?? []).filter(
+    (d) => d.code === "UNRESOLVED_INCLUDED_COMPONENT"
+  );
+  if (unresolved.length > 0) {
+    console.log("\nUNRESOLVED_INCLUDED_COMPONENT:");
+    for (const row of unresolved) {
+      console.log(" ", row);
+    }
+  }
+
+  const blocking = data.blockingReasons ?? [];
+  const details = data.blockingDetails ?? [];
+
+  if (blocking.length > 0 || data.canApply === false) {
+    console.error("\n*** NÃO APLICAR ***");
+    for (const reason of blocking) {
+      console.error(`  [reason] ${reason}`);
+    }
+    for (const detail of details) {
+      console.error(
+        `  [${String(detail.code)}] ${String(detail.componentCode ?? "(sem componente)")}: ${String(detail.reason)}`
+      );
+      console.error(`    → ${String(detail.suggestedFix ?? "")}`);
+    }
+    if (details.length === 0 && blocking.length > 0) {
+      fail("blockingReasons sem blockingDetails — motivo não rastreável.");
+    }
+    fail("canApply=false ou blocking presente — não aplicar.");
   }
 
   console.log("\nAções principais:");
   for (const a of data.actions ?? []) {
+    if (
+      !["CREATE_PRODUCT_BOM_LINE", "UPDATE_PRODUCT_BOM_QUANTITY", "REMOVE_PRODUCT_BOM_LINE"].includes(
+        String(a.actionType)
+      )
+    ) {
+      continue;
+    }
     console.log({
       actionType: a.actionType,
       componentCode: a.componentCode,
@@ -221,27 +295,8 @@ function validatePreview(previewPath: string, parentCode: string): void {
     });
   }
 
-  const line309 = (data.actions ?? []).find((a) => a.componentCode === COMPONENT_309);
-  if (line309) {
-    const qty = actionQuantity(line309);
-    if (qty != null && qty !== 3) {
-      fail(`${COMPONENT_309} quantity em action deve ser 3, obtido ${qty}`);
-    }
-    if (qty === 3) {
-      ok(`${COMPONENT_309} effectiveQuantity = 3 na action`);
-    }
-  }
-
-  const remove800 = (data.actions ?? []).find(
-    (a) => a.componentCode === COMPONENT_800 && a.actionType === "REMOVE_PRODUCT_BOM_LINE"
-  );
-  if (remove800) {
-    fail(`${COMPONENT_800} aparece em REMOVE_PRODUCT_BOM_LINE — remoção indevida.`);
-  }
-  ok(`${COMPONENT_800} não está em REMOVE indevido`);
-
   if (data.canApply === true) {
-    ok("canApply=true (sem blockingReasons)");
+    ok("canApply=true (sem bloqueios)");
   }
 }
 

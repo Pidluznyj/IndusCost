@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import type { ControlledApplyAction, ControlledApplyPreview } from "@/src/lib/nomusBomControlledApplyTypes";
+import type {
+  ControlledApplyAction,
+  ControlledApplyBlockingCode,
+  ControlledApplyPreview,
+} from "@/src/lib/nomusBomControlledApplyTypes";
 
 type NomusBomControlledApplySectionProps = {
   parentCode: string;
@@ -20,6 +24,19 @@ const ACTION_LABEL: Record<ControlledApplyAction["actionType"], string> = {
   REMOVE_PRODUCT_BOM_LINE: "Remover",
   SKIP_UNRESOLVED: "Não resolvido",
   BLOCKED: "Bloqueado",
+};
+
+const BLOCKING_BADGE: Record<ControlledApplyBlockingCode, string> = {
+  NO_PRODUCT: "bg-red-200 text-red-950",
+  NO_NOMUS_BOM: "bg-red-200 text-red-950",
+  EFFECTIVE_BOM_BLOCKED: "bg-red-200 text-red-950",
+  OPTIONAL_PENDING: "bg-amber-200 text-amber-950",
+  LOCAL_REVIEW_PENDING: "bg-amber-200 text-amber-950",
+  NEEDS_ENGINEERING_REVIEW: "bg-amber-200 text-amber-950",
+  UNRESOLVED_INCLUDED_COMPONENT: "bg-red-200 text-red-950",
+  BLOCKED_ACTION: "bg-red-200 text-red-950",
+  COST_UNRESOLVED: "bg-orange-200 text-orange-950",
+  DRY_PLAN_BLOCKED: "bg-red-200 text-red-950",
 };
 
 function actionBadgeClass(actionType: ControlledApplyAction["actionType"]): string {
@@ -169,7 +186,7 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
                 Status: {preview.canApply ? "Pronto para aplicar" : "Bloqueado"}
               </p>
               {!preview.canApply && preview.blockingReasons.length > 0 ? (
-                <ul className="mt-2 list-disc list-inside space-y-1">
+                <ul className="mt-2 list-disc list-inside space-y-1 text-xs">
                   {preview.blockingReasons.map((reason) => (
                     <li key={reason}>{reason}</li>
                   ))}
@@ -177,6 +194,63 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
               ) : null}
             </div>
           </div>
+
+          {!preview.canApply && (preview.blockingDetails?.length ?? 0) > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-red-950">Bloqueios (corrija antes de aplicar)</p>
+              <ul className="space-y-2">
+                {preview.blockingDetails.map((detail, idx) => (
+                  <li
+                    key={`${detail.code}-${detail.componentCode ?? "global"}-${idx}`}
+                    className="rounded-lg border border-red-200 bg-background px-3 py-2.5 text-sm space-y-1.5"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                          BLOCKING_BADGE[detail.code]
+                        )}
+                      >
+                        {detail.code.replace(/_/g, " ")}
+                      </span>
+                      {detail.componentCode ? (
+                        <span className="font-semibold tabular-nums">{detail.componentCode}</span>
+                      ) : null}
+                    </div>
+                    {detail.componentDescription ? (
+                      <p className="text-muted-foreground">{detail.componentDescription}</p>
+                    ) : null}
+                    <p>
+                      <span className="font-medium">Motivo: </span>
+                      {detail.reason}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Como resolver: </span>
+                      {detail.suggestedFix}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {preview.canApply && mutatingActions.length > 0 ? (
+            <div className="rounded-lg border border-green-200 bg-green-50/60 px-3 py-2.5 text-sm space-y-1">
+              <p className="font-semibold text-green-950">Ação planejada na ProductBOM</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {mutatingActions.map((action) => (
+                  <li key={`planned-${action.componentCode}-${action.actionType}`}>
+                    <span className="font-medium tabular-nums">{action.componentCode}</span>
+                    {action.componentDescription ? ` — ${action.componentDescription}` : ""}:{" "}
+                    {ACTION_LABEL[action.actionType]}
+                    {action.currentQuantity != null || action.effectiveQuantity != null
+                      ? ` (${action.currentQuantity ?? "—"} → ${action.effectiveQuantity ?? "—"})`
+                      : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
             <div className="rounded-lg border border-border bg-background px-3 py-2">

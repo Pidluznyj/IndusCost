@@ -13,12 +13,15 @@ import { listReviewDecisionsForParentCode } from "@/src/lib/nomusBomReviewDecisi
 import { prisma } from "@/src/lib/prisma";
 import type {
   ControlledApplyAction,
+  ControlledApplyBlockingCode,
+  ControlledApplyBlockingDetail,
   ControlledApplyBomSummary,
   ControlledApplyComponentKind,
   ControlledApplyPreview,
   ControlledApplyResult,
   ControlledApplyRiskLevel,
 } from "@/src/lib/nomusBomControlledApplyTypes";
+import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingBomTypes";
 
 const BLOCKED_EFFECTIVE_STATUSES = new Set([
   "NO_NOMUS_BOM",
@@ -34,6 +37,58 @@ const REMOVAL_SOURCES = new Set([
   "NOMUS_OPTIONAL_NOT_SELECTED",
   "NOMUS_ALTERNATIVE_NOT_SELECTED",
 ]);
+
+const LOCAL_INCLUDED_SOURCES = new Set([
+  "LOCAL_ONLY_INCLUDED_BY_REVIEW",
+]);
+
+const BLOCKING_SUMMARY: Record<ControlledApplyBlockingCode, string> = {
+  NO_PRODUCT: "Produto não cadastrado no IndusCost para este código pai.",
+  NO_NOMUS_BOM: "Não há BOM Nomus em stage para este produto.",
+  EFFECTIVE_BOM_BLOCKED: "BOM efetiva bloqueada ou incompleta.",
+  OPTIONAL_PENDING: "Opcionais de precificação ainda não estão resolvidos.",
+  LOCAL_REVIEW_PENDING: "Existem itens locais (somente IndusCost) pendentes de decisão.",
+  NEEDS_ENGINEERING_REVIEW: "Há itens locais aguardando revisão de engenharia.",
+  UNRESOLVED_INCLUDED_COMPONENT:
+    "Há componentes incluídos na BOM efetiva sem resolução aplicável (Material/Produto/linha local).",
+  BLOCKED_ACTION: "O plano contém ações bloqueadas.",
+  COST_UNRESOLVED: "Há custo não resolvido em linhas incluídas na BOM efetiva.",
+  DRY_PLAN_BLOCKED: "O plano dry-run de aplicação contém ações bloqueadas.",
+};
+
+function isLocalIncludedLine(line: EffectivePricingBomLine): boolean {
+  if (!line.includedForPricing) return false;
+  if (line.productBomLineId && line.productBomLineId !== "unknown") return true;
+  return LOCAL_INCLUDED_SOURCES.has(line.source);
+}
+
+function resolveLocalProductBomLineId(
+  line: EffectivePricingBomLine,
+  currentRows: CurrentBomRow[]
+): string | null {
+  if (line.productBomLineId && line.productBomLineId !== "unknown") {
+    const byId = currentRows.find((r) => r.id === line.productBomLineId);
+    if (byId) return byId.id;
+  }
+  const byCode = currentRows.find(
+    (r) => normalizeComponentCode(r.componentCode) === normalizeComponentCode(line.componentCode)
+  );
+  return byCode?.id ?? null;
+}
+
+function pushBlockingDetail(
+  details: ControlledApplyBlockingDetail[],
+  detail: ControlledApplyBlockingDetail
+): void {
+  const key = `${detail.code}|${detail.componentCode ?? ""}|${detail.reason}`;
+  if (details.some((d) => `${d.code}|${d.componentCode ?? ""}|${d.reason}` === key)) return;
+  details.push(detail);
+}
+
+function summarizeBlocking(details: ControlledApplyBlockingDetail[]): string[] {
+  const codes = new Set(details.map((d) => d.code));
+  return [...codes].map((code) => BLOCKING_SUMMARY[code]);
+}
 
 type CurrentBomRow = {
   id: string;
@@ -195,13 +250,12 @@ async function hasBomCycle(parentId: string, childProductId: string): Promise<bo
 }
 
 async function buildDesiredTargets(
-  effectiveLines: EffectivePricingBomLine[]
+  effectiveLines: EffectivePricingBomLine[],
+  currentRows: CurrentBomRow[]
 ): Promise<{ targets: DesiredTarget[]; unresolved: EffectivePricingBomLine[] }> {
   const included = effectiveLines.filter((l) => l.includedForPricing);
-  const codes = included
-    .filter((l) => !l.productBomLineId)
-    .map((l) => l.componentCode);
-  const resolved = await resolveNomusComponentCodes(codes);
+  const nomusCodes = included.filter((l) => !isLocalIncludedLine(l)).map((l) => l.componentCode);
+  const resolved = await resolveNomusComponentCodes(nomusCodes);
   const resolvedByCode = new Map(
     resolved.map((r) => [normalizeComponentCode(r.componentCode), r])
   );
@@ -216,14 +270,19 @@ async function buildDesiredTargets(
       continue;
     }
 
-    if (line.productBomLineId) {
+    if (isLocalIncludedLine(line)) {
+      const bomLineId = resolveLocalProductBomLineId(line, currentRows);
+      if (!bomLineId) {
+        unresolved.push(line);
+        continue;
+      }
       targets.push({
         componentCode: line.componentCode,
         componentDescription: line.componentDescription ?? null,
         componentKind: "Local",
         materialId: null,
         childProductId: null,
-        productBomLineId: line.productBomLineId,
+        productBomLineId: bomLineId,
         quantity: qty,
         effectiveLine: line,
       });
@@ -235,17 +294,34 @@ async function buildDesiredTargets(
       unresolved.push(line);
       continue;
     }
+
+    let materialId: string | null = null;
+    let childProductId: string | null = null;
+    let resolvedKind: "PRODUCT" | "MATERIAL" | "BOTH" | "NONE" = res.resolvedKind;
+
     if (res.resolvedKind === "BOTH") {
-      unresolved.push(line);
-      continue;
+      if (res.materialId) {
+        materialId = res.materialId;
+        resolvedKind = "MATERIAL";
+      } else if (res.productId) {
+        childProductId = res.productId;
+        resolvedKind = "PRODUCT";
+      } else {
+        unresolved.push(line);
+        continue;
+      }
+    } else if (res.resolvedKind === "MATERIAL") {
+      materialId = res.materialId ?? null;
+    } else if (res.resolvedKind === "PRODUCT") {
+      childProductId = res.productId ?? null;
     }
 
     targets.push({
       componentCode: line.componentCode,
       componentDescription: line.componentDescription ?? null,
-      componentKind: componentKindFromResolution(res.resolvedKind, false),
-      materialId: res.materialId ?? null,
-      childProductId: res.productId ?? null,
+      componentKind: componentKindFromResolution(resolvedKind, false),
+      materialId,
+      childProductId,
       productBomLineId: null,
       quantity: qty,
       effectiveLine: line,
@@ -294,14 +370,17 @@ function buildActions(
   const actions: ControlledApplyAction[] = [];
 
   for (const line of unresolved) {
+    const isLocal = isLocalIncludedLine(line);
     actions.push({
       actionType: "SKIP_UNRESOLVED",
       componentCode: line.componentCode,
       componentDescription: line.componentDescription,
-      componentKind: "Desconhecido",
+      componentKind: isLocal ? "Local" : "Desconhecido",
       currentQuantity: null,
       effectiveQuantity: line.quantity,
-      reason: "Componente incluído na BOM efetiva sem Material ou Produto resolvido no IndusCost.",
+      reason: isLocal
+        ? "Componente local incluído na BOM efetiva, mas sem linha correspondente na ProductBOM atual."
+        : "Componente Nomus incluído na BOM efetiva sem Material ou Produto cadastrado no IndusCost.",
       riskLevel: "BLOCKED",
       reviewDecisionType: line.reviewDecisionType ?? null,
     });
@@ -466,63 +545,175 @@ function buildEffectiveBomHash(
   return stableHash({ parentCode: normalizeSku(parentCode), lines: payload });
 }
 
-async function collectGates(input: {
-  parentCode: string;
+function collectApplyGates(input: {
   productId: string | null;
-  effectiveBom: Awaited<ReturnType<typeof buildEffectivePricingBomForParentCode>>;
+  effectiveBom: EffectivePricingBomResult;
   actions: ControlledApplyAction[];
   dryPlanBlocked: boolean;
-  costUnresolvedCount: number;
-}): Promise<{ blockingReasons: string[]; warnings: string[] }> {
-  const blocking: string[] = [];
+  costImpact: Awaited<ReturnType<typeof buildNomusEffectiveBomCostImpact>> | null;
+}): { blockingReasons: string[]; blockingDetails: ControlledApplyBlockingDetail[]; warnings: string[] } {
+  const details: ControlledApplyBlockingDetail[] = [];
   const warnings: string[] = [...(input.effectiveBom.warnings ?? [])];
 
   if (!input.productId) {
-    blocking.push("Produto não cadastrado no IndusCost para este código pai.");
+    pushBlockingDetail(details, {
+      code: "NO_PRODUCT",
+      reason: BLOCKING_SUMMARY.NO_PRODUCT,
+      suggestedFix: "Cadastre o produto no IndusCost com o mesmo SKU/parentCode.",
+    });
   }
 
   if (input.effectiveBom.status === "NO_NOMUS_BOM") {
-    blocking.push("Não há BOM Nomus em stage para este produto.");
+    pushBlockingDetail(details, {
+      code: "NO_NOMUS_BOM",
+      reason: BLOCKING_SUMMARY.NO_NOMUS_BOM,
+      suggestedFix: "Execute o sync da BOM Nomus para este parentCode.",
+    });
   }
 
   if (BLOCKED_EFFECTIVE_STATUSES.has(input.effectiveBom.status)) {
-    blocking.push(`BOM efetiva bloqueada ou incompleta (status: ${input.effectiveBom.status}).`);
+    pushBlockingDetail(details, {
+      code: "EFFECTIVE_BOM_BLOCKED",
+      reason: `${BLOCKING_SUMMARY.EFFECTIVE_BOM_BLOCKED} (status: ${input.effectiveBom.status})`,
+      suggestedFix: "Resolva opcionais e revisões locais na aba Pendências antes de aplicar.",
+    });
   }
 
   const opt = input.effectiveBom.optionalPricingStatus;
   if (opt !== "RESOLVED" && opt !== "NO_OPTIONALS") {
-    blocking.push("Opcionais de precificação ainda não estão resolvidos.");
+    pushBlockingDetail(details, {
+      code: "OPTIONAL_PENDING",
+      reason: BLOCKING_SUMMARY.OPTIONAL_PENDING,
+      suggestedFix: "Aba Pendências → Opcionais de precificação: selecione os grupos deste produto.",
+    });
   }
 
-  if ((input.effectiveBom.summary?.localReviewPendingCount ?? 0) > 0) {
-    blocking.push("Existem itens locais (somente IndusCost) pendentes de decisão.");
-  }
-
-  const { decisions } = await listReviewDecisionsForParentCode(input.parentCode);
-  const activeEngineering = decisions.filter((d) => d.decision === "NEEDS_ENGINEERING_REVIEW");
-  if (activeEngineering.length > 0) {
-    blocking.push("Há itens marcados como NEEDS_ENGINEERING_REVIEW.");
-  }
-
-  if (input.actions.some((a) => a.actionType === "SKIP_UNRESOLVED")) {
-    blocking.push(
-      "Há componentes incluídos na BOM efetiva sem Material ou Produto resolvido no IndusCost."
+  if (input.effectiveBom.status === "PENDING_LOCAL_REVIEW") {
+    const pendingLocals = (input.effectiveBom.localReviewCatalog ?? []).filter(
+      (c) => !c.savedDecision || c.savedDecision.decision === "PENDING"
     );
+    for (const item of pendingLocals) {
+      pushBlockingDetail(details, {
+        code: "LOCAL_REVIEW_PENDING",
+        componentCode: item.componentCode,
+        componentDescription: item.componentDescription,
+        source: "LOCAL_ONLY_INDUS_REVIEW",
+        decisionType: "PENDING",
+        reason: `Item local ${item.componentCode} sem decisão de revisão.`,
+        suggestedFix: "Pendências → Itens locais: defina a decisão (incluir, excluir, duplicado, etc.).",
+      });
+    }
+    if (pendingLocals.length === 0) {
+      pushBlockingDetail(details, {
+        code: "LOCAL_REVIEW_PENDING",
+        reason: BLOCKING_SUMMARY.LOCAL_REVIEW_PENDING,
+        suggestedFix: "Pendências → Itens locais: revise itens ONLY_IN_INDUSCOST pendentes.",
+      });
+    }
   }
 
-  if (input.actions.some((a) => a.actionType === "BLOCKED")) {
-    blocking.push("O plano contém ações bloqueadas.");
+  const includedCodes = new Set(
+    input.effectiveBom.directLines
+      .filter((l) => l.includedForPricing)
+      .map((l) => normalizeComponentCode(l.componentCode))
+  );
+
+  for (const line of input.effectiveBom.directLines) {
+    if (!line.includedForPricing) continue;
+    if (
+      line.reviewDecisionType !== "NEEDS_ENGINEERING_REVIEW" &&
+      line.source !== "LOCAL_ONLY_ENGINEERING_REVIEW"
+    ) {
+      continue;
+    }
+    pushBlockingDetail(details, {
+      code: "NEEDS_ENGINEERING_REVIEW",
+      componentCode: line.componentCode,
+      componentDescription: line.componentDescription,
+      source: line.source,
+      decisionType: line.reviewDecisionType ?? "NEEDS_ENGINEERING_REVIEW",
+      reason: line.reason,
+      suggestedFix:
+        "Pendências → Itens locais: altere NEEDS_ENGINEERING_REVIEW para decisão aplicável.",
+    });
   }
 
-  if (input.costUnresolvedCount > 0) {
-    blocking.push("Há custo não resolvido relevante no impacto da BOM efetiva.");
+  for (const item of input.effectiveBom.localReviewCatalog ?? []) {
+    if (item.placement !== "engineering_review") continue;
+    if (!includedCodes.has(normalizeComponentCode(item.componentCode))) {
+      warnings.push(
+        `${item.componentCode}: aguarda revisão de engenharia (fora da BOM efetiva incluída — não bloqueia aplicação).`
+      );
+      continue;
+    }
+    const decision = item.savedDecision?.decision ?? "NEEDS_ENGINEERING_REVIEW";
+    pushBlockingDetail(details, {
+      code: "NEEDS_ENGINEERING_REVIEW",
+      componentCode: item.componentCode,
+      componentDescription: item.componentDescription,
+      source: "LOCAL_ONLY_ENGINEERING_REVIEW",
+      decisionType: decision,
+      reason: `${item.componentCode} incluído na BOM efetiva e aguarda revisão de engenharia (${decision}).`,
+      suggestedFix:
+        "Pendências → Itens locais: altere a decisão ou resolva duplicidade/absorção antes de aplicar.",
+    });
+  }
+
+  for (const action of input.actions) {
+    if (action.actionType === "SKIP_UNRESOLVED") {
+      pushBlockingDetail(details, {
+        code: "UNRESOLVED_INCLUDED_COMPONENT",
+        componentCode: action.componentCode,
+        componentDescription: action.componentDescription,
+        source: action.componentKind === "Local" ? "LOCAL_ONLY_INCLUDED_BY_REVIEW" : "NOMUS_INCLUDED",
+        decisionType: action.reviewDecisionType ?? undefined,
+        reason: action.reason,
+        suggestedFix:
+          action.componentKind === "Local"
+            ? "Confirme que a linha existe na ProductBOM ou ajuste a decisão local em Pendências."
+            : "Cadastre Material ou Produto com o mesmo código do componente Nomus.",
+      });
+    }
+    if (action.actionType === "BLOCKED") {
+      pushBlockingDetail(details, {
+        code: "BLOCKED_ACTION",
+        componentCode: action.componentCode,
+        componentDescription: action.componentDescription,
+        reason: action.reason,
+        suggestedFix: "Revise a BOM efetiva e o plano dry-run antes de aplicar.",
+      });
+    }
+  }
+
+  const unresolvedCostLines =
+    input.costImpact?.includedLines?.filter(
+      (l) => l.resolvedAs === "UNRESOLVED" || l.totalCost == null
+    ) ?? [];
+
+  for (const line of unresolvedCostLines) {
+    pushBlockingDetail(details, {
+      code: "COST_UNRESOLVED",
+      componentCode: line.componentCode,
+      componentDescription: line.description,
+      source: line.source,
+      reason: `Custo não resolvido para ${line.componentCode} na BOM efetiva incluída.`,
+      suggestedFix: "Aba Impacto de custo: cadastre custo do material/produto ou revise a linha.",
+    });
   }
 
   if (input.dryPlanBlocked) {
-    blocking.push("O plano dry-run de aplicação contém ações bloqueadas.");
+    pushBlockingDetail(details, {
+      code: "DRY_PLAN_BLOCKED",
+      reason: BLOCKING_SUMMARY.DRY_PLAN_BLOCKED,
+      suggestedFix: "Aba Diagnóstico técnico / plano dry-run: resolva ações bloqueadas do plano.",
+    });
   }
 
-  return { blockingReasons: blocking, warnings };
+  return {
+    blockingReasons: summarizeBlocking(details),
+    blockingDetails: details,
+    warnings,
+  };
 }
 
 export async function buildControlledApplyPreview(
@@ -558,11 +749,6 @@ export async function buildControlledApplyPreview(
       )
     : null;
 
-  const costUnresolvedCount =
-    costImpact?.includedLines?.filter(
-      (l) => l.resolvedAs === "UNRESOLVED" || l.totalCost == null
-    ).length ?? 0;
-
   const productId = product?.id ?? effectiveBom.indusProductId ?? null;
   const currentRows = productId
     ? await loadCurrentProductBomRows(productId, product?.sku ?? sku)
@@ -575,7 +761,10 @@ export async function buildControlledApplyPreview(
   ];
   const effectiveBomHash = buildEffectiveBomHash(trimmed, allEffectiveLines);
 
-  const { targets, unresolved } = await buildDesiredTargets(effectiveBom.directLines);
+  const { targets, unresolved } = await buildDesiredTargets(
+    effectiveBom.directLines,
+    currentRows
+  );
   const removalKeys = buildRemovalKeys(effectiveBom, currentRows);
   const actions = buildActions(currentRows, targets, unresolved, removalKeys);
 
@@ -591,16 +780,15 @@ export async function buildControlledApplyPreview(
     })),
   });
 
-  const { blockingReasons, warnings } = await collectGates({
-    parentCode: trimmed,
+  const { blockingReasons, blockingDetails, warnings } = collectApplyGates({
     productId,
     effectiveBom,
     actions,
     dryPlanBlocked,
-    costUnresolvedCount,
+    costImpact,
   });
 
-  const canApply = blockingReasons.length === 0;
+  const canApply = blockingDetails.length === 0;
 
   const afterRowsPreview = [...currentRows];
   for (const action of actions) {
@@ -616,6 +804,7 @@ export async function buildControlledApplyPreview(
     productId,
     canApply,
     blockingReasons,
+    blockingDetails,
     warnings,
     planHash,
     effectiveBomHash,
@@ -630,7 +819,10 @@ export async function buildControlledApplyPreview(
           effectiveTotalCost: costImpact.effectiveNomusCost?.totalCost ?? null,
           deltaTotalCost: costImpact.delta?.totalCost ?? null,
           deltaTotalCostPct: costImpact.delta?.totalCostPct ?? null,
-          unresolvedCostLines: costUnresolvedCount,
+          unresolvedCostLines:
+            costImpact.includedLines?.filter(
+              (l) => l.resolvedAs === "UNRESOLVED" || l.totalCost == null
+            ).length ?? 0,
         }
       : null,
     effectiveBomStatus: effectiveBom.status,
@@ -671,7 +863,8 @@ export async function applyEffectiveBomToProductBom(input: {
   const beforeBomJson = beforeRows.map(serializeBomRow);
 
   const { targets, unresolved } = await buildDesiredTargets(
-    (await buildEffectivePricingBomForParentCode(trimmed, { recursive: false })).directLines
+    (await buildEffectivePricingBomForParentCode(trimmed, { recursive: false })).directLines,
+    beforeRows
   );
   if (unresolved.length > 0) {
     throw new Error("Plano desatualizado. Atualize BOM e custo antes de aplicar.");
