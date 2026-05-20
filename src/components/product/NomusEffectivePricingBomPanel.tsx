@@ -167,13 +167,12 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
   });
 
   const fetchEffectiveBom = useCallback(
-    async (resolvedParentCode: string) => {
+    async (resolvedParentCode: string): Promise<EffectivePricingBomResult> => {
       const params = new URLSearchParams({ parentCode: resolvedParentCode });
       if (recursive) params.set("recursive", "true");
-      const data = await fetchJsonOk<EffectivePricingBomResult>(
+      return fetchJsonOk<EffectivePricingBomResult>(
         `/api/nomus/effective-pricing-bom?${params.toString()}`
       );
-      setResult(data);
     },
     [recursive]
   );
@@ -192,7 +191,8 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
         setParentCode(resolved);
         reportWorkspaceSelection(resolved, option);
         try {
-          await fetchEffectiveBom(resolved);
+          const data = await fetchEffectiveBom(resolved);
+          setResult(data);
         } finally {
           setLoading(false);
         }
@@ -239,6 +239,9 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
       <div className="space-y-4">
         <NomusMaintenanceStepHeader tab="effective-pricing-bom" />
         <NomusMaintenanceProductBanner />
+        <p className="text-sm text-muted-foreground">
+          Selecione um produto no topo para visualizar a BOM efetiva.
+        </p>
       </div>
     );
   }
@@ -252,22 +255,66 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
         compact
       />
 
-      <label className="flex items-center gap-2 text-sm h-9 px-3 rounded-lg border border-border bg-background cursor-pointer w-fit">
-        <input
-          type="checkbox"
-          checked={recursive}
-          onChange={(e) => setRecursive(e.target.checked)}
-          className="rounded"
-        />
-        Mostrar árvore recursiva
-      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-sm h-9 px-3 rounded-lg border border-border bg-background cursor-pointer w-fit">
+          <input
+            type="checkbox"
+            checked={recursive}
+            onChange={(e) => setRecursive(e.target.checked)}
+            className="rounded"
+          />
+          Mostrar árvore recursiva
+        </label>
+        <button
+          type="button"
+          disabled={disabled || loading || !selectedParentCode}
+          onClick={() => {
+            const code = selectedParentCode?.trim();
+            if (!code) return;
+            setLoading(true);
+            setError(null);
+            void fetchEffectiveBom(code)
+              .then((data) => {
+                setResult(data);
+                setAutoLoadFailed(false);
+              })
+              .catch((e) => {
+                setResult(null);
+                setAutoLoadFailed(true);
+                setError(e instanceof Error ? e.message : "Erro ao gerar BOM efetiva.");
+              })
+              .finally(() => setLoading(false));
+          }}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          Recarregar BOM efetiva
+        </button>
+      </div>
 
       {error ? (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       ) : null}
 
       {autoLoadFailed && !loading && !result ? (
-        <NomusMaintenanceErrorCard onRetry={() => void load()} />
+        <NomusMaintenanceErrorCard
+          onRetry={() => {
+            const code = selectedParentCode?.trim();
+            if (!code) return;
+            setLoading(true);
+            void fetchEffectiveBom(code)
+              .then((data) => {
+                setResult(data);
+                setAutoLoadFailed(false);
+                setError(null);
+              })
+              .catch((e) => {
+                setAutoLoadFailed(true);
+                setError(e instanceof Error ? e.message : "Erro ao gerar BOM efetiva.");
+              })
+              .finally(() => setLoading(false));
+          }}
+        />
       ) : null}
 
       {loading && !result ? (
@@ -403,6 +450,11 @@ export const NomusEffectivePricingBomPanel: React.FC<NomusEffectivePricingBomPan
             </div>
           ) : null}
         </>
+      ) : !loading && !error && !autoLoadFailed ? (
+        <p className="text-sm text-muted-foreground">
+          Nenhum dado da BOM efetiva. Use &quot;Recarregar BOM efetiva&quot; ou &quot;Atualizar BOM e
+          custo&quot; no topo.
+        </p>
       ) : null}
 
       {pickerModal}

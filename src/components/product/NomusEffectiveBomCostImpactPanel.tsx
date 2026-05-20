@@ -184,6 +184,7 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
   const [error, setError] = useState<string | null>(null);
   const [autoLoadFailed, setAutoLoadFailed] = useState(false);
   const [result, setResult] = useState<NomusEffectiveBomCostImpactResult | null>(null);
+  const [paramsDirty, setParamsDirty] = useState(false);
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
 
   const { reportWorkspaceSelection } = useNomusMaintenanceWorkspaceSync({
@@ -195,15 +196,14 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
   });
 
   const fetchCostImpact = useCallback(
-    async (resolvedParentCode: string) => {
+    async (resolvedParentCode: string): Promise<NomusEffectiveBomCostImpactResult> => {
       const params = new URLSearchParams({ parentCode: resolvedParentCode });
       if (recursive) params.set("recursive", "true");
       const lot = lotSize.trim();
       if (lot) params.set("lotSize", lot);
-      const data = await fetchJsonOk<NomusEffectiveBomCostImpactResult>(
+      return fetchJsonOk<NomusEffectiveBomCostImpactResult>(
         `/api/nomus/effective-pricing-bom/cost-impact?${params.toString()}`
       );
-      setResult(data);
     },
     [lotSize, recursive]
   );
@@ -222,7 +222,8 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
         setParentCode(resolved);
         reportWorkspaceSelection(resolved, option);
         try {
-          await fetchCostImpact(resolved);
+          const data = await fetchCostImpact(resolved);
+          setResult(data);
         } finally {
           setLoading(false);
         }
@@ -249,6 +250,7 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
       .then((data) => {
         setResult(data);
         setAutoLoadFailed(false);
+        setParamsDirty(false);
       })
       .catch((e) => {
         setResult(null);
@@ -280,6 +282,9 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
       <div className="space-y-4">
         <NomusMaintenanceStepHeader tab="cost-impact" />
         <NomusMaintenanceProductBanner />
+        <p className="text-sm text-muted-foreground">
+          Selecione um produto no topo para calcular o impacto de custo.
+        </p>
       </div>
     );
   }
@@ -299,7 +304,10 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
           <input
             type="text"
             value={lotSize}
-            onChange={(e) => setLotSize(e.target.value)}
+            onChange={(e) => {
+              setLotSize(e.target.value);
+              setParamsDirty(true);
+            }}
             placeholder="Opc."
             className="mt-1 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
           />
@@ -308,19 +316,77 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
           <input
             type="checkbox"
             checked={recursive}
-            onChange={(e) => setRecursive(e.target.checked)}
+            onChange={(e) => {
+              setRecursive(e.target.checked);
+              setParamsDirty(true);
+            }}
             className="rounded"
           />
           Usar árvore recursiva
         </label>
+        <button
+          type="button"
+          disabled={disabled || loading || !selectedParentCode}
+          onClick={() => {
+            const code = selectedParentCode?.trim();
+            if (!code) return;
+            setLoading(true);
+            setError(null);
+            void fetchCostImpact(code)
+              .then((data) => {
+                setResult(data);
+                setAutoLoadFailed(false);
+                setParamsDirty(false);
+              })
+              .catch((e) => {
+                setResult(null);
+                setAutoLoadFailed(true);
+                setError(e instanceof Error ? e.message : "Erro ao calcular impacto de custo.");
+              })
+              .finally(() => setLoading(false));
+          }}
+          className={cn(
+            "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50",
+            paramsDirty
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border bg-background hover:bg-accent"
+          )}
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          Recalcular impacto
+        </button>
       </div>
+      {paramsDirty && result ? (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Lote ou árvore recursiva alterados. Clique em &quot;Recalcular impacto&quot; para atualizar os
+          valores.
+        </p>
+      ) : null}
 
       {error ? (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       ) : null}
 
       {autoLoadFailed && !loading && !result ? (
-        <NomusMaintenanceErrorCard onRetry={() => void load()} />
+        <NomusMaintenanceErrorCard
+          onRetry={() => {
+            const code = selectedParentCode?.trim();
+            if (!code) return;
+            setLoading(true);
+            void fetchCostImpact(code)
+              .then((data) => {
+                setResult(data);
+                setAutoLoadFailed(false);
+                setError(null);
+                setParamsDirty(false);
+              })
+              .catch((e) => {
+                setAutoLoadFailed(true);
+                setError(e instanceof Error ? e.message : "Erro ao calcular impacto de custo.");
+              })
+              .finally(() => setLoading(false));
+          }}
+        />
       ) : null}
 
       {loading && !result ? (
@@ -443,6 +509,11 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
             <DetailLinesTable title="Alertas — custo não resolvido" lines={unresolvedLines} />
           ) : null}
         </>
+      ) : !loading && !error && !autoLoadFailed ? (
+        <p className="text-sm text-muted-foreground">
+          Nenhum impacto calculado. Use &quot;Recalcular impacto&quot; ou &quot;Atualizar BOM e custo&quot; no
+          topo.
+        </p>
       ) : null}
 
       {pickerModal}

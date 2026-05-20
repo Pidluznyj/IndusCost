@@ -137,8 +137,7 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
   const goToPending = () => setActiveNomusMaintenanceTab("pending");
 
   return (
-    <div className="space-y-4 pb-8" data-tour="products-nomus-maintenance">
-      <div className="sticky top-0 z-20 -mx-1 px-1 pt-1 pb-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 space-y-2">
+    <div className="space-y-4 pb-10" data-tour="products-nomus-maintenance">
       <div className="rounded-xl border border-border bg-card/40 px-4 py-3 space-y-3 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -164,7 +163,8 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
                 Atualizar BOM e custo
               </button>
               <p className="text-xs text-muted-foreground text-right max-w-xs">
-                Atualiza as análises em tela. Não altera ProductBOM, custo oficial ou preço.
+                Recarrega Visão Geral, Pendências, BOM efetiva, Impacto, Plano e Diagnóstico da aba
+                atual. Não altera ProductBOM, custo oficial ou preço.
               </p>
             </div>
           ) : null}
@@ -304,9 +304,8 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
           </button>
         ))}
       </div>
-      </div>
 
-      <div role="tabpanel">
+      <div role="tabpanel" className="min-h-[12rem] pt-1">
         {activeNomusMaintenanceTab === "overview" ? (
           <NomusMaintenanceOverviewPanel
             {...workspaceProps}

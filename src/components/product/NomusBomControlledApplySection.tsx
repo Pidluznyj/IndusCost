@@ -8,6 +8,8 @@ type NomusBomControlledApplySectionProps = {
   parentCode: string;
   refreshToken?: number;
   disabled?: boolean;
+  /** Quando true, exibe apenas preview — sem POST apply (fase UX antes de liberar aplicação real). */
+  previewOnly?: boolean;
   onApplied?: () => void;
 };
 
@@ -40,6 +42,7 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
   parentCode,
   refreshToken = 0,
   disabled = false,
+  previewOnly = false,
   onApplied,
 }) => {
   const [loading, setLoading] = useState(false);
@@ -122,10 +125,13 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
       <div className="flex items-start gap-2">
         <ShieldAlert className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
         <div>
-          <h4 className="text-base font-semibold">Aplicação controlada</h4>
+          <h4 className="text-base font-semibold">
+            {previewOnly ? "Preview de aplicação (somente leitura)" : "Aplicação controlada"}
+          </h4>
           <p className="text-sm text-muted-foreground mt-1">
-            Aplica a BOM efetiva Nomus na ProductBOM deste produto, somente após validação e confirmação
-            explícita.
+            {previewOnly
+              ? "Simula o que seria alterado na ProductBOM. A aplicação real permanece desabilitada nesta fase de engenharia."
+              : "Aplica a BOM efetiva Nomus na ProductBOM deste produto, somente após validação e confirmação explícita."}
           </p>
         </div>
       </div>
@@ -257,75 +263,84 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
             </p>
           )}
 
-          <p className="text-sm font-medium text-amber-950 bg-amber-100/80 border border-amber-300 rounded-lg px-3 py-2">
-            Esta ação altera a ProductBOM deste produto. Não altera preços, propostas ou pedidos. Um
-            snapshot será salvo antes da aplicação.
-          </p>
-
-          {preview.canApply ? (
-            <div className="space-y-3">
-              <label className="block text-sm space-y-1">
-                <span className="font-medium">
-                  Digite exatamente:{" "}
-                  <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                    {preview.confirmationRequiredText}
-                  </code>
-                </span>
-                <input
-                  type="text"
-                  value={confirmationText}
-                  onChange={(e) => setConfirmationText(e.target.value)}
-                  disabled={disabled || applying}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder={preview.confirmationRequiredText}
-                  autoComplete="off"
-                />
-              </label>
-              <label className="block text-sm space-y-1">
-                <span className="font-medium text-muted-foreground">Aprovado por (opcional)</span>
-                <input
-                  type="text"
-                  value={approvedBy}
-                  onChange={(e) => setApprovedBy(e.target.value)}
-                  disabled={disabled || applying}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder="Nome do responsável"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => void handleApply()}
-                disabled={disabled || applying || !confirmationOk}
-                className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold disabled:opacity-50"
-              >
-                {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Aplicar BOM efetiva neste produto
-              </button>
-            </div>
+          {previewOnly ? (
+            <p className="text-sm font-medium text-blue-950 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              Modo preview: nenhuma alteração será gravada na ProductBOM. Use as abas de análise e
+              pendências antes de liberar aplicação real.
+            </p>
           ) : (
-            <button
-              type="button"
-              disabled
-              className="inline-flex items-center gap-2 rounded-md bg-muted text-muted-foreground px-4 py-2 text-sm font-semibold opacity-60 cursor-not-allowed"
-            >
-              Aplicar BOM efetiva neste produto
-            </button>
+            <>
+              <p className="text-sm font-medium text-amber-950 bg-amber-100/80 border border-amber-300 rounded-lg px-3 py-2">
+                Esta ação altera a ProductBOM deste produto. Não altera preços, propostas ou pedidos. Um
+                snapshot será salvo antes da aplicação.
+              </p>
+
+              {preview.canApply ? (
+                <div className="space-y-3">
+                  <label className="block text-sm space-y-1">
+                    <span className="font-medium">
+                      Digite exatamente:{" "}
+                      <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                        {preview.confirmationRequiredText}
+                      </code>
+                    </span>
+                    <input
+                      type="text"
+                      value={confirmationText}
+                      onChange={(e) => setConfirmationText(e.target.value)}
+                      disabled={disabled || applying}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      placeholder={preview.confirmationRequiredText}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="block text-sm space-y-1">
+                    <span className="font-medium text-muted-foreground">Aprovado por (opcional)</span>
+                    <input
+                      type="text"
+                      value={approvedBy}
+                      onChange={(e) => setApprovedBy(e.target.value)}
+                      disabled={disabled || applying}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      placeholder="Nome do responsável"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void handleApply()}
+                    disabled={disabled || applying || !confirmationOk}
+                    className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                  >
+                    {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Aplicar BOM efetiva neste produto
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center gap-2 rounded-md bg-muted text-muted-foreground px-4 py-2 text-sm font-semibold opacity-60 cursor-not-allowed"
+                >
+                  Aplicar BOM efetiva neste produto
+                </button>
+              )}
+
+              {applyError ? (
+                <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {applyError}
+                </p>
+              ) : null}
+
+              {applySuccess ? (
+                <p className="text-sm text-green-900 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  {applySuccess}
+                  <span className="block mt-1 text-muted-foreground">
+                    Sugestão: recalcule o impacto de custo na aba correspondente.
+                  </span>
+                </p>
+              ) : null}
+            </>
           )}
-
-          {applyError ? (
-            <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {applyError}
-            </p>
-          ) : null}
-
-          {applySuccess ? (
-            <p className="text-sm text-green-900 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-              {applySuccess}
-              <span className="block mt-1 text-muted-foreground">
-                Sugestão: recalcule o impacto de custo na aba correspondente.
-              </span>
-            </p>
-          ) : null}
         </div>
       ) : null}
     </div>

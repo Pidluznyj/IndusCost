@@ -61,7 +61,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
   };
 
   const fetchPlan = useCallback(
-    async (resolvedParentCode: string) => {
+    async (resolvedParentCode: string): Promise<NomusBomApplyPlansReport> => {
       const params = new URLSearchParams({ limit: "100", offset: "0" });
       if (resolvedParentCode.trim()) {
         params.set("parentCode", resolvedParentCode.trim());
@@ -76,11 +76,10 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
       );
 
       if ((result.plans ?? []).length === 0) {
-        setReport(null);
         throw new Error(notFoundMessage);
       }
 
-      setReport(result);
+      return result;
     },
     [
       notFoundMessage,
@@ -108,7 +107,8 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
           setSearch(code);
           reportWorkspaceSelection(code, option);
           try {
-            await fetchPlan(code);
+            const data = await fetchPlan(code);
+            setReport(data);
           } finally {
             setLoading(false);
           }
@@ -156,6 +156,9 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
       <div className="space-y-4">
         <NomusMaintenanceStepHeader tab="apply-plan" />
         <NomusMaintenanceProductBanner />
+        <p className="text-sm text-muted-foreground">
+          Selecione um produto no topo para ver o plano de aplicação (simulação).
+        </p>
       </div>
     );
   }
@@ -174,7 +177,24 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
       ) : null}
 
       {autoLoadFailed && !loading && !report ? (
-        <NomusMaintenanceErrorCard onRetry={() => void loadPlan(selectedParentCode ?? search)} />
+        <NomusMaintenanceErrorCard
+          onRetry={() => {
+            const code = selectedParentCode?.trim();
+            if (!code) return;
+            setLoading(true);
+            void fetchPlan(code)
+              .then((data) => {
+                setReport(data);
+                setAutoLoadFailed(false);
+                setError(null);
+              })
+              .catch((e) => {
+                setAutoLoadFailed(true);
+                setError(e instanceof Error ? e.message : "Não foi possível gerar o plano.");
+              })
+              .finally(() => setLoading(false));
+          }}
+        />
       ) : null}
 
       {loading && !report ? (
@@ -276,10 +296,15 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
               parentCode={selectedParentCode}
               refreshToken={refreshToken}
               disabled={disabled}
+              previewOnly
             />
           ) : null}
 
         </div>
+      ) : !loading && !error && !autoLoadFailed ? (
+        <p className="text-sm text-muted-foreground">
+          Plano de aplicação não carregado. Use &quot;Atualizar BOM e custo&quot; no topo.
+        </p>
       ) : null}
 
       {pickerModal}
