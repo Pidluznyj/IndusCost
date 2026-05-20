@@ -3012,6 +3012,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             costSummary: {
               totalIndustrialCost: Number(ok.totalIndustrialCost),
               partial: Boolean(ok.costAnalysisPartial),
+              /** Mesmo motor que GET /api/products/:id/cost-analysis (includeDetails=false no resumo). */
+              source: "cost-analysis-motor" as const,
             },
           };
         })

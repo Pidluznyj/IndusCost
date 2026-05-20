@@ -101,7 +101,11 @@ export function OpenBookCompositionTab({ loading, costAnalysisPartial, openBook 
           Resumo executivo (MP + HH + HM)
         </h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <SummaryCard label="Custo total (CIU)" value={formatCurrency(exec.totalIndustrialCost)} emphasis />
+          <SummaryCard
+            label="Custo atual do IndusCost (CIU)"
+            value={formatCurrency(exec.totalIndustrialCost)}
+            emphasis
+          />
           <SummaryCard label="Matéria-prima" value={formatCurrency(exec.totalMaterialCost)} sub={`${formatNumber(exec.pctMp, 2)}% do total`} />
           <SummaryCard label="Mão de obra (HH)" value={formatCurrency(exec.totalHH)} sub={`${formatNumber(exec.pctHh, 2)}% do total`} />
           <SummaryCard label="Máquina (HM)" value={formatCurrency(exec.totalHM)} sub={`${formatNumber(exec.pctHm, 2)}% do total`} />

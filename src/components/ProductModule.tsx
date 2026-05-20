@@ -52,6 +52,15 @@ import {
 import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { getVisibleProductTabs, type ProductTabId } from "@/src/lib/modulePermissions";
+import {
+  GRID_CIU_COLUMN_LABEL,
+  GRID_CIU_COLUMN_TOOLTIP,
+  MODAL_CURRENT_COST_LABEL,
+  MODAL_CURRENT_COST_SUBTEXT,
+  PRODUCT_COST_MOTOR_HINT,
+  costSummaryFromCostAnalysis,
+  formatProductCiu,
+} from "@/src/lib/productCostDisplay";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
 export type ProductWithCostSummary = Product & {
@@ -222,6 +231,30 @@ export const ProductModule = () => {
     }
   }, [engineeringSegment]);
 
+  const patchListCostFromAnalysis = useCallback((productId: string, analysis: unknown) => {
+    const summary = costSummaryFromCostAnalysis(analysis);
+    if (!summary) return;
+    setItems((prev) =>
+      prev.map((p) =>
+        p.id === productId
+          ? { ...p, costSummary: { totalIndustrialCost: summary.totalIndustrialCost, partial: summary.partial } }
+          : p
+      )
+    );
+  }, []);
+
+  const refreshProductCostInList = useCallback(
+    async (productId: string) => {
+      try {
+        const data = await fetchJsonOk(`/api/products/${productId}/cost-analysis`);
+        patchListCostFromAnalysis(productId, data);
+      } catch (err) {
+        console.error("Erro ao atualizar CIU na listagem:", err);
+      }
+    },
+    [patchListCostFromAnalysis]
+  );
+
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
@@ -301,6 +334,7 @@ export const ProductModule = () => {
         if (!cancelled) {
           setBackendCostAnalysis(data);
           setCostAnalysisError(null);
+          if (editingItem?.id) patchListCostFromAnalysis(editingItem.id, data);
         }
       })
       .catch((err) => {
@@ -322,7 +356,7 @@ export const ProductModule = () => {
       ac.abort();
       setLoadingCost(false);
     };
-  }, [activeFormTab, isModalOpen, editingItem?.id]);
+  }, [activeFormTab, isModalOpen, editingItem?.id, patchListCostFromAnalysis]);
 
   const handleOpenModal = (item?: Product) => {
     setBackendCostAnalysis(null);
@@ -380,6 +414,7 @@ export const ProductModule = () => {
     }
     setActiveFormTab("info");
     setIsModalOpen(true);
+    if (item?.id) void refreshProductCostInList(item.id);
   };
 
   const handleOpenProductById = useCallback(
@@ -477,14 +512,9 @@ export const ProductModule = () => {
       });
       if (editingItem && saved?.id === editingItem.id) {
         setItems((prev) =>
-          prev.map((p) => {
-            if (p.id !== saved.id) return p;
-            return {
-              ...saved,
-              costSummary: (p as ProductWithCostSummary).costSummary,
-            } as ProductWithCostSummary;
-          })
+          prev.map((p) => (p.id === saved.id ? ({ ...saved, costSummary: (p as ProductWithCostSummary).costSummary } as ProductWithCostSummary) : p))
         );
+        void refreshProductCostInList(saved.id);
       }
       setBackendCostAnalysis(null);
       setCostAnalysisError(null);
@@ -1032,9 +1062,12 @@ export const ProductModule = () => {
                 <th className="p-4 font-semibold text-sm">Versão</th>
                 <th className="p-4 font-semibold text-sm">Estrutura</th>
                 <th className="p-4 font-semibold text-sm text-right whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="inline-flex items-center gap-1.5"
+                    title={GRID_CIU_COLUMN_TOOLTIP}
+                  >
                     <DollarSign className="h-3.5 w-3.5 text-primary opacity-80" />
-                    Custo industrial (CIU)
+                    {GRID_CIU_COLUMN_LABEL}
                   </span>
                 </th>
                 <th className="p-4 font-semibold text-sm">Status</th>
@@ -1152,9 +1185,12 @@ export const ProductModule = () => {
                           Number.isFinite(cs.totalIndustrialCost)
                         ) {
                           return (
-                            <div className="flex flex-col items-end gap-1">
+                            <div
+                              className="flex flex-col items-end gap-1"
+                              title={GRID_CIU_COLUMN_TOOLTIP}
+                            >
                               <span className="text-sm font-bold tabular-nums tracking-tight text-primary">
-                                {formatCurrency(cs.totalIndustrialCost)}
+                                {formatProductCiu(cs.totalIndustrialCost)}
                               </span>
                               {"partial" in cs && cs.partial ? (
                                 <Badge variant="warning" className="text-[9px] px-1.5 py-0 h-5 font-bold">
@@ -1206,6 +1242,7 @@ export const ProductModule = () => {
       ) : (
         <ProductNomusMaintenanceSection
           onOpenProduct={(productId) => void handleOpenProductById(productId)}
+          onEngineeringListRefresh={fetchData}
         />
       )}
 
@@ -1838,11 +1875,14 @@ export const ProductModule = () => {
                         </div>
                         <div className="p-6 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-primary uppercase">Custo Industrial (CIU)</p>
+                            <div>
+                              <p className="text-xs font-bold text-primary uppercase">{MODAL_CURRENT_COST_LABEL}</p>
+                              <p className="text-[10px] text-primary/70 mt-0.5">{MODAL_CURRENT_COST_SUBTEXT}</p>
+                            </div>
                             <TrendingUp className="h-4 w-4 text-primary" />
                           </div>
                           <CalculatedValue meta={displayCost.calculationExplainability?.totalIndustrialCost ?? null}>
-                            <p className="text-3xl font-black text-primary">{formatCurrency(displayCost.total)}</p>
+                            <p className="text-3xl font-black text-primary">{formatProductCiu(displayCost.total)}</p>
                           </CalculatedValue>
                           {displayCost.costAnalysisPartial && (
                             <p className="text-[10px] font-bold text-amber-900 dark:text-amber-200">
@@ -1876,8 +1916,9 @@ export const ProductModule = () => {
                       )}
 
                       <p className="text-[11px] text-muted-foreground text-center px-2">
-                        Conciliação: MP + HH + HM = CIU; CIF não entra no total (mesmo motor de{" "}
-                        <code className="text-[10px] bg-accent px-1 rounded">/api/products/:id/cost-analysis</code>).
+                        {PRODUCT_COST_MOTOR_HINT} Conciliação: MP + HH + HM = CIU; CIF não entra no total (
+                        <code className="text-[10px] bg-accent px-1 rounded">/api/products/:id/cost-analysis</code>
+                        ).
                       </p>
 
                       <div className="grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-6 xl:gap-8">

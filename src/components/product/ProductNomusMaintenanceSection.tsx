@@ -27,10 +27,13 @@ const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = 
 
 type ProductNomusMaintenanceSectionProps = {
   onOpenProduct?: (productId: string) => void;
+  /** Recarrega a listagem de engenharia (CIU) após aplicação controlada ou refresh manual amplo. */
+  onEngineeringListRefresh?: () => void;
 };
 
 export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSectionProps> = ({
   onOpenProduct,
+  onEngineeringListRefresh,
 }) => {
   const [activeNomusMaintenanceTab, setActiveNomusMaintenanceTab] =
     useState<NomusMaintenanceTab>("overview");
@@ -47,6 +50,7 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
   const [changeProductMode, setChangeProductMode] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [listRefreshHint, setListRefreshHint] = useState<string | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { resolveThen, pickerModal, notFoundMessage } = useNomusParentCodeResolver();
@@ -123,8 +127,17 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     setIsRefreshing(true);
     setRefreshToken((n) => n + 1);
+    onEngineeringListRefresh?.();
     refreshTimerRef.current = setTimeout(() => setIsRefreshing(false), 1500);
-  }, [hasSelection]);
+  }, [hasSelection, onEngineeringListRefresh]);
+
+  const handleControlledApplySuccess = useCallback(() => {
+    setRefreshToken((n) => n + 1);
+    onEngineeringListRefresh?.();
+    setListRefreshHint(
+      "BOM e custos das abas Nomus foram recarregados. A listagem de engenharia também foi atualizada; se o CIU na grade ainda parecer antigo, volte à aba Produtos e aguarde o carregamento."
+    );
+  }, [onEngineeringListRefresh]);
 
   const workspaceProps = {
     selectedParentCode: hasSelection ? selectedParentCode : undefined,
@@ -281,6 +294,12 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
         </p>
       ) : null}
 
+      {listRefreshHint ? (
+        <p className="text-xs text-muted-foreground bg-accent/40 border border-border rounded-lg px-3 py-2">
+          {listRefreshHint}
+        </p>
+      ) : null}
+
       <div
         className="flex flex-wrap gap-2 border-b border-border pb-2"
         role="tablist"
@@ -335,7 +354,11 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
           <NomusEffectiveBomCostImpactPanel {...workspaceProps} onGoToPending={goToPending} />
         ) : null}
         {activeNomusMaintenanceTab === "apply-plan" ? (
-          <NomusBomApplyPlanPanel onOpenProduct={onOpenProduct} {...workspaceProps} />
+          <NomusBomApplyPlanPanel
+            onOpenProduct={onOpenProduct}
+            onControlledApplySuccess={handleControlledApplySuccess}
+            {...workspaceProps}
+          />
         ) : null}
         {activeNomusMaintenanceTab === "diagnostic" ? (
           <NomusMaintenanceDiagnosticPanel onOpenProduct={onOpenProduct} {...workspaceProps} />

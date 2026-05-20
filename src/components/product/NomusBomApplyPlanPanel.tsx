@@ -21,10 +21,12 @@ import type { NomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
 type NomusBomApplyPlanPanelProps = NomusMaintenanceWorkspaceProps & {
   onOpenProduct?: (productId: string) => void;
   disabled?: boolean;
+  onControlledApplySuccess?: () => void;
 };
 
 export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
   onOpenProduct,
+  onControlledApplySuccess,
   disabled = false,
   selectedParentCode,
   selectedParentDescription,
@@ -296,6 +298,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
               parentCode={selectedParentCode}
               refreshToken={refreshToken}
               disabled={disabled}
+              onApplied={onControlledApplySuccess}
             />
           ) : null}
 

@@ -18,6 +18,15 @@ import type {
   CostImpactLine,
   NomusEffectiveBomCostImpactResult,
 } from "@/src/lib/nomusEffectiveBomCostImpactTypes";
+import {
+  NOMUS_IMPACT_CURRENT_LABEL,
+  NOMUS_IMPACT_DELTA_MONEY_LABEL,
+  NOMUS_IMPACT_DELTA_PCT_LABEL,
+  NOMUS_IMPACT_EXPLANATION,
+  NOMUS_IMPACT_SIMULATED_LABEL,
+  NOMUS_IMPACT_USAGE_NOTE,
+  formatProductCiu,
+} from "@/src/lib/productCostDisplay";
 
 const COMPARISON_STATUS_LABEL: Record<string, string> = {
   SAME_COMPONENT_SAME_QTY: "Igual",
@@ -37,8 +46,7 @@ function isLocalIncludedComparisonLine(line: CostImpactComparisonLine): boolean 
 }
 
 function formatMoney(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return formatProductCiu(v);
 }
 
 function formatPct(v: number | null | undefined): string {
@@ -454,12 +462,37 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
             </div>
           ) : null}
 
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-1.5 text-[11px] text-muted-foreground">
+            <p>{NOMUS_IMPACT_EXPLANATION}</p>
+            <p>{NOMUS_IMPACT_USAGE_NOTE}</p>
+          </div>
+
           <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 text-xs">
             {[
-              { label: "Custo atual", value: formatMoney(currentCost?.totalCost), highlight: false },
-              { label: "Custo pela BOM efetiva", value: formatMoney(effectiveCost?.totalCost), highlight: false },
-              { label: "Diferença R$", value: formatMoney(delta?.totalCost), highlight: true },
-              { label: "Diferença %", value: formatPct(delta?.totalCostPct), highlight: true },
+              {
+                label: NOMUS_IMPACT_CURRENT_LABEL,
+                sub: "ProductBOM salva no IndusCost",
+                value: formatMoney(currentCost?.totalCost),
+                highlight: false,
+              },
+              {
+                label: NOMUS_IMPACT_SIMULATED_LABEL,
+                sub: "BOM Nomus + opcionais + decisões locais",
+                value: formatMoney(effectiveCost?.totalCost),
+                highlight: false,
+              },
+              {
+                label: NOMUS_IMPACT_DELTA_MONEY_LABEL,
+                sub: "Simulação − atual",
+                value: formatMoney(delta?.totalCost),
+                highlight: true,
+              },
+              {
+                label: NOMUS_IMPACT_DELTA_PCT_LABEL,
+                sub: null,
+                value: formatPct(delta?.totalCostPct),
+                highlight: true,
+              },
             ].map((c) => (
               <div
                 key={c.label}
@@ -468,7 +501,12 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
                   c.highlight ? "border-primary/40 bg-primary/5" : "border-border bg-background"
                 )}
               >
-                <p className="text-[10px] uppercase text-muted-foreground font-semibold">{c.label}</p>
+                <p className="text-[10px] uppercase text-muted-foreground font-semibold leading-tight">
+                  {c.label}
+                </p>
+                {"sub" in c && c.sub ? (
+                  <p className="text-[9px] text-muted-foreground/90 mt-0.5 leading-tight">{c.sub}</p>
+                ) : null}
                 <p className="font-bold mt-1 tabular-nums">{c.value}</p>
               </div>
             ))}
@@ -485,12 +523,12 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
           {currentCost && effectiveCost ? (
             <div className="grid gap-2 sm:grid-cols-2 text-[11px]">
               <div className="rounded-lg border border-border p-2">
-                <p className="font-bold mb-1">Custo atual (detalhe)</p>
+                <p className="font-bold mb-1">{NOMUS_IMPACT_CURRENT_LABEL} (detalhe)</p>
                 <p>Material: {formatMoney(currentCost.materialCost)}</p>
                 <p>Transformação: {formatMoney(currentCost.transformationCost)}</p>
               </div>
               <div className="rounded-lg border border-border p-2">
-                <p className="font-bold mb-1">Custo BOM efetiva (detalhe)</p>
+                <p className="font-bold mb-1">{NOMUS_IMPACT_SIMULATED_LABEL} (detalhe)</p>
                 <p>Material: {formatMoney(effectiveCost.materialCost)}</p>
                 <p>Transformação: {formatMoney(effectiveCost.transformationCost)}</p>
               </div>
