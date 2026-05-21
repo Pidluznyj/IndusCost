@@ -93,6 +93,28 @@ function lookupMaterialRowFromCostAnalysis(
   );
 }
 
+/**
+ * Detecta se uma linha está presente no snapshot do cost-analysis com `excludedFromCost = true`.
+ * Quando isso acontece, o motor `getProductCostAnalysis` NÃO somou essa linha em `totalMaterialCost`.
+ * O impacto de custo precisa replicar essa exclusão para não inflar o custo efetivo.
+ */
+function lineIsExcludedInCostAnalysis(
+  componentCode: string,
+  bomLineId: string | null,
+  currentAnalysis: CurrentCostSnapshot | null
+): boolean {
+  if (!currentAnalysis?.materials?.length) return false;
+  const codeKey = normalizeComponentCode(componentCode);
+  const row =
+    (bomLineId
+      ? currentAnalysis.materials.find((m) => m.bomLineId === bomLineId)
+      : undefined) ??
+    currentAnalysis.materials.find(
+      (m) => m.sku != null && normalizeComponentCode(m.sku) === codeKey
+    );
+  return Boolean(row?.excludedFromCost);
+}
+
 type ResolvedLocalIncludedCost = {
   currentQuantity: number | null;
   currentLineTotal: number | null;
@@ -134,6 +156,31 @@ async function resolveLocalIncludedReviewLineCost(
       bomLineId && bomLineId !== "unknown" ? bomLineId : null,
       options.currentAnalysis
     );
+  }
+
+  // Reconciliação de linha local já existente: se o motor de custo (getProductCostAnalysis)
+  // marcou essa linha como `excludedFromCost: true`, ela NÃO entrou em currentCost.materialCost.
+  // Aplicar a BOM efetiva (que apenas mantém a linha) não pode aumentar o custo total.
+  // Mantemos current = 0 e effective = 0 para alinhar com o que entra no totalMaterialCost atual.
+  const lineExistsInProductBom =
+    cur != null || Boolean(bomLineId && bomLineId !== "unknown");
+  const excludedFromMotor = lineIsExcludedInCostAnalysis(
+    code,
+    bomLineId && bomLineId !== "unknown" ? bomLineId : null,
+    options.currentAnalysis
+  );
+  if (lineExistsInProductBom && excludedFromMotor) {
+    return {
+      currentQuantity: currentQuantity ?? effectiveQuantity,
+      currentLineTotal: 0,
+      effectiveLineTotal: 0,
+      effectiveQuantity,
+      deltaCost: 0,
+      warnings: [
+        `Linha local ${code} já existente na ProductBOM atual e mantida na BOM efetiva. ` +
+          "Motor de custo não atribui custo a esta linha (excluída do cost-analysis); aplicar não altera o custo.",
+      ],
+    };
   }
 
   if (currentLineTotal == null && bomLineId && bomLineId !== "unknown") {
@@ -379,9 +426,25 @@ async function loadCurrentBomLines(
       });
     } else if (row.childProductId && row.ChildProduct) {
       const requiredQty = loss >= 1 ? qty : qty / (1 - loss / 100);
+      // Ordem: 1) cost-analysis incluído → custo já computado pelo motor;
+      // 2) cost-analysis excluído (excludedFromCost=true) → 0 para alinhar com totalMaterialCost atual;
+      // 3) sem snapshot ou linha ausente do snapshot → fallback por aproximação para listar a linha.
+      const fromAnalysis = lookupLineTotalFromCostAnalysis(
+        row.ChildProduct.sku,
+        row.id,
+        currentAnalysis
+      );
+      const excludedFromMotor = lineIsExcludedInCostAnalysis(
+        row.ChildProduct.sku,
+        row.id,
+        currentAnalysis
+      );
       const lineCost =
-        lookupLineTotalFromCostAnalysis(row.ChildProduct.sku, row.id, currentAnalysis) ??
-        (await loadCurrentBomLineCost(row.id, productId, currentAnalysis));
+        fromAnalysis != null
+          ? fromAnalysis
+          : excludedFromMotor
+            ? 0
+            : await loadCurrentBomLineCost(row.id, productId, currentAnalysis);
       lines.push({
         componentCode: row.ChildProduct.sku,
         description: row.ChildProduct.name,

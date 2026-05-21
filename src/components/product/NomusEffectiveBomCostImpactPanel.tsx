@@ -451,14 +451,40 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
             <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
               <p className="text-[11px] font-bold text-teal-950">Componentes locais incluídos</p>
               <ul className="mt-1 text-[11px] text-teal-900 space-y-0.5">
-                {localIncluded.map((l) => (
-                  <li key={l.componentCode}>
-                    {l.componentCode}
-                    {l.description ? ` — ${l.description}` : ""}
-                    <span className="text-teal-700"> · componente local incluído</span>
-                  </li>
-                ))}
+                {localIncluded.map((l) => {
+                  const reconciled =
+                    (l.deltaCost == null || Math.abs(l.deltaCost) < 0.000001) &&
+                    (l.currentCost == null ||
+                      l.effectiveCost == null ||
+                      Math.abs((l.currentCost ?? 0) - (l.effectiveCost ?? 0)) < 0.000001);
+                  return (
+                    <li key={l.componentCode}>
+                      {l.componentCode}
+                      {l.description ? ` — ${l.description}` : ""}
+                      <span className="text-teal-700">
+                        {" "}
+                        ·{" "}
+                        {reconciled
+                          ? "componente local mantido — sem impacto de custo"
+                          : "componente local incluído"}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
+            </div>
+          ) : null}
+
+          {result &&
+          result.status === "READY" &&
+          delta != null &&
+          Math.abs(delta.totalCost ?? 0) < 0.000001 ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-950">
+              <p className="font-bold">A ProductBOM já reflete a BOM efetiva.</p>
+              <p>
+                A aplicação não deve alterar o custo por estrutura. Linhas locais já existentes na
+                ProductBOM atual são mantidas sem impacto.
+              </p>
             </div>
           ) : null}
 
