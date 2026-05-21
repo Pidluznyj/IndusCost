@@ -2,6 +2,8 @@ import { Material } from "./material";
 
 export type ItemType = "PRODUCT" | "COMPONENT" | "MATERIAL";
 
+export type ProductCostingMode = "OWN_PROCESS" | "BOM_ONLY" | "FINISHING_SERVICE";
+
 export interface ProductBOM {
   id?: string;
   materialId?: string;
@@ -53,6 +55,8 @@ export interface Product {
   sourceExternalId?: string | null;
   isNomusControlled?: boolean;
   lastNomusSyncAt?: string | null;
+
+  costingMode?: ProductCostingMode;
 }
 
 export interface CreateProductInput {
@@ -67,7 +71,9 @@ export interface CreateProductInput {
   cavities?: number | string;
   setupTimeMin?: number | string;
   efficiencyExpected?: number | string;
-  
+
+  costingMode?: ProductCostingMode;
+
   bom: ProductBOM[];
   routing: ProductRouting[];
 }

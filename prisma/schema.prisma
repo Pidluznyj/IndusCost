@@ -127,6 +127,7 @@ model Product {
   isNomusControlled  Boolean              @default(false)
   lastNomusSyncAt    DateTime?            @db.Timestamptz(6)
   nomusPayloadHash   String?
+  costingMode        ProductCostingMode   @default(OWN_PROCESS)
   CostCalculationLog CostCalculationLog[]
   UsedInBOM          ProductBOM[]         @relation("ChildProduct")
   ProductBOM         ProductBOM[]         @relation("ParentProduct")
@@ -139,6 +140,7 @@ model Product {
   @@index([type], map: "idx_Product_type")
   @@index([isNomusControlled], map: "idx_Product_isNomusControlled")
   @@index([sourceSystem], map: "idx_Product_sourceSystem")
+  @@index([costingMode], map: "idx_Product_costingMode")
 }
 
 model ProductBOM {
@@ -977,6 +979,12 @@ enum SalesOrderStatus {
 enum ItemType {
   PRODUCT
   COMPONENT
+}
+
+enum ProductCostingMode {
+  OWN_PROCESS
+  BOM_ONLY
+  FINISHING_SERVICE
 }
 
 enum ProposalStatus {

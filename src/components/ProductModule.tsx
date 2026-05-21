@@ -205,6 +205,7 @@ export const ProductModule = () => {
     cavities: "",
     setupTimeMin: "",
     efficiencyExpected: "",
+    costingMode: "OWN_PROCESS",
     bom: [],
     routing: [],
   });
@@ -374,6 +375,7 @@ export const ProductModule = () => {
         cavities: item.cavities ?? "",
         setupTimeMin: item.setupTimeMin ?? "",
         efficiencyExpected: item.efficiencyExpected ?? "",
+        costingMode: item.costingMode ?? "OWN_PROCESS",
         bom: item.ProductBOM.map(b => ({
           materialId: b.materialId,
           childProductId: b.childProductId,
@@ -408,6 +410,7 @@ export const ProductModule = () => {
         cavities: "",
         setupTimeMin: "",
         efficiencyExpected: "",
+        costingMode: "OWN_PROCESS",
         bom: [],
         routing: [],
       });
@@ -449,7 +452,9 @@ export const ProductModule = () => {
     }
 
     // Validação do Processo Padrão do Componente
-    // Se o ciclo foi informado, TODOS os campos do processo devem ser válidos — sem fallback
+    // Se o ciclo foi informado, TODOS os campos do processo devem ser válidos — sem fallback.
+    // Em modos BOM_ONLY / FINISHING_SERVICE, o processo padrão é IGNORADO no custo, mas a
+    // consistência do cadastro (tudo-ou-nada) continua válida para não criar dados inválidos no banco.
     if (formData.type === "COMPONENT" && formData.cycleTimeSeconds !== "" && formData.cycleTimeSeconds !== null && formData.cycleTimeSeconds !== undefined) {
       const ct = Number(formData.cycleTimeSeconds);
       if (!Number.isFinite(ct) || ct <= 0) {
@@ -506,6 +511,7 @@ export const ProductModule = () => {
       cavities: rawCav === "" || rawCav === null || rawCav === undefined ? null : Number(rawCav),
       setupTimeMin: rawSetup === "" || rawSetup === null || rawSetup === undefined ? null : Number(rawSetup),
       efficiencyExpected: rawEff === "" || rawEff === null || rawEff === undefined ? null : Number(rawEff),
+      costingMode: formData.costingMode ?? "OWN_PROCESS",
     };
 
     try {
@@ -850,6 +856,14 @@ export const ProductModule = () => {
         : [];
       const openBook = (backendCostAnalysis as { openBook?: unknown }).openBook ?? null;
       const productType = (backendCostAnalysis as { productType?: string }).productType ?? null;
+      const costingMode =
+        (backendCostAnalysis as { costingMode?: string }).costingMode ?? "OWN_PROCESS";
+      const ownProcessSkipped = Boolean(
+        (backendCostAnalysis as { ownProcessSkipped?: boolean }).ownProcessSkipped
+      );
+      const ownProcessSkipReason =
+        (backendCostAnalysis as { ownProcessSkipReason?: string | null }).ownProcessSkipReason ??
+        null;
       return {
         bomCost,
         routingCost,
@@ -863,6 +877,9 @@ export const ProductModule = () => {
         excludedBomLines,
         openBook,
         productType,
+        costingMode,
+        ownProcessSkipped,
+        ownProcessSkipReason,
       };
     }
     return {
@@ -878,6 +895,9 @@ export const ProductModule = () => {
       excludedBomLines: [] as unknown[],
       openBook: null as unknown,
       productType: null as string | null,
+      costingMode: "OWN_PROCESS" as string,
+      ownProcessSkipped: false,
+      ownProcessSkipReason: null as string | null,
     };
   }, [backendCostAnalysis]);
 
@@ -1295,6 +1315,22 @@ export const ProductModule = () => {
                           Controlado pelo Nomus
                         </span>
                       ) : null}
+                      {(formData.costingMode ?? "OWN_PROCESS") === "FINISHING_SERVICE" ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-900"
+                          title="Custo de transformação não é calculado neste nível — vem da BOM."
+                        >
+                          Acabamento / beneficiamento
+                        </span>
+                      ) : null}
+                      {(formData.costingMode ?? "OWN_PROCESS") === "BOM_ONLY" ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900"
+                          title="Custo deste item vem somente da BOM."
+                        >
+                          Sem processo próprio
+                        </span>
+                      ) : null}
                     </h3>
                     <p className="text-[11px] text-muted-foreground leading-snug">
                       {editingItem?.isNomusControlled
@@ -1519,13 +1555,82 @@ export const ProductModule = () => {
                         </div>
                       </div>
                       
-                      {formData.type === "COMPONENT" && (
+                      {formData.type !== "MATERIAL" && (
                         <div className="mt-6 border border-border rounded-xl bg-card overflow-hidden">
+                          <div className="bg-muted px-4 py-3 border-b border-border">
+                            <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                              <Cpu className="h-4 w-4 text-primary"/> Modo de custeio do item
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              Define se o motor de custo deve adicionar HH/HM próprio neste nível. O custo dos itens da BOM é sempre somado normalmente.
+                            </p>
+                          </div>
+                          <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 bg-muted/30">
+                            {(
+                              [
+                                {
+                                  id: "OWN_PROCESS" as const,
+                                  label: "Processo próprio",
+                                  desc:
+                                    "Usa BOM + processo/roteiro próprio. Recomendado para itens fabricados neste nível.",
+                                },
+                                {
+                                  id: "BOM_ONLY" as const,
+                                  label: "Somente composição da BOM",
+                                  desc:
+                                    "Usa apenas os custos dos itens da BOM. Não adiciona HH/HM próprio.",
+                                },
+                                {
+                                  id: "FINISHING_SERVICE" as const,
+                                  label: "Acabamento / beneficiamento",
+                                  desc:
+                                    "Use para itens derivados (cromagem, pintura, retrabalho). O custo deve vir do componente base + serviço/insumo na BOM.",
+                                },
+                              ] as const
+                            ).map((opt) => {
+                              const isActive = (formData.costingMode ?? "OWN_PROCESS") === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => setFormData({ ...formData, costingMode: opt.id })}
+                                  className={cn(
+                                    "text-left rounded-xl border-2 p-3 transition-all bg-background",
+                                    isActive
+                                      ? "border-primary bg-primary/5"
+                                      : "border-border hover:border-primary/50 hover:bg-accent"
+                                  )}
+                                >
+                                  <p className={cn("text-xs font-bold", isActive ? "text-primary" : "text-foreground")}>
+                                    {opt.label}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground leading-tight mt-1">{opt.desc}</p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {formData.type === "COMPONENT" && (
+                        <div
+                          className={cn(
+                            "mt-6 border border-border rounded-xl bg-card overflow-hidden",
+                            (formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"
+                              ? "opacity-60"
+                              : ""
+                          )}
+                        >
                           <div className="bg-muted px-4 py-3 border-b border-border">
                             <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
                               <Cpu className="h-4 w-4 text-primary"/> Processo Padrão de Produção
                             </h4>
                             <p className="text-[10px] text-muted-foreground mt-0.5">Parâmetros formadores do Custo do Componente (Substitui Roteiro e Herda a Carga Indireta Global).</p>
+                            {(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS" ? (
+                              <p className="text-[11px] mt-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                                O processo padrão está cadastrado, mas não será usado no custo enquanto o modo "{formData.costingMode === "FINISHING_SERVICE" ? "Acabamento / beneficiamento" : "Somente composição da BOM"}" estiver ativo.
+                              </p>
+                            ) : null}
                           </div>
                           <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-4 bg-muted/30">
                             <div>
@@ -1534,7 +1639,8 @@ export const ProductModule = () => {
                                 type="number" step="0.1"
                                 value={formData.cycleTimeSeconds ?? ""}
                                 onChange={(e) => setFormData({...formData, cycleTimeSeconds: e.target.value})}
-                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="Tempo limpo" 
                               />
                             </div>
@@ -1544,7 +1650,8 @@ export const ProductModule = () => {
                                 type="number"
                                 value={formData.cavities ?? ""}
                                 onChange={(e) => setFormData({...formData, cavities: e.target.value})}
-                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="1"
                               />
                             </div>
@@ -1554,7 +1661,8 @@ export const ProductModule = () => {
                                 type="number" step="0.1"
                                 value={formData.setupTimeMin ?? ""}
                                 onChange={(e) => setFormData({...formData, setupTimeMin: e.target.value})}
-                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                               />
                             </div>
                             <div>
@@ -1563,7 +1671,8 @@ export const ProductModule = () => {
                                 type="number"
                                 value={formData.efficiencyExpected ?? ""}
                                 onChange={(e) => setFormData({...formData, efficiencyExpected: e.target.value})}
-                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background" 
+                                disabled={(formData.costingMode ?? "OWN_PROCESS") !== "OWN_PROCESS"}
+                                className="w-full p-2 text-sm border rounded-lg focus:ring-1 outline-none mt-1 bg-background disabled:bg-muted disabled:cursor-not-allowed" 
                                 placeholder="Ex: 95" 
                               />
                             </div>
@@ -1880,6 +1989,24 @@ export const ProductModule = () => {
                       {costAnalysisError && (
                         <AppAlert variant="destructive" title="Análise de custo indisponível" role="alert">
                           <p className="text-xs whitespace-pre-wrap break-words opacity-95">{costAnalysisError}</p>
+                        </AppAlert>
+                      )}
+                      {!costAnalysisError && displayCost.ownProcessSkipped && (
+                        <AppAlert variant="info" role="status" showIcon={false} className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="info">
+                              {displayCost.costingMode === "FINISHING_SERVICE"
+                                ? "Acabamento / beneficiamento"
+                                : "Sem processo próprio"}
+                            </Badge>
+                            <span className="font-semibold">
+                              O custo de transformação deste item não é calculado neste nível.
+                            </span>
+                          </div>
+                          <p className="text-xs opacity-95">
+                            {displayCost.ownProcessSkipReason ??
+                              "O custo vem da BOM. HH/HM próprios = 0; o HH/HM de componentes filhos continua dentro do custo dos próprios filhos."}
+                          </p>
                         </AppAlert>
                       )}
                       {!costAnalysisError && displayCost.costAnalysisPartial && (

@@ -37,6 +37,7 @@ export function buildProductPutBody(
     cavities: p.cavities ?? null,
     setupTimeMin: p.setupTimeMin ?? null,
     efficiencyExpected: p.efficiencyExpected ?? null,
+    costingMode: p.costingMode ?? "OWN_PROCESS",
     bom,
     routing: p.ProductRouting.map((r) => ({
       sequence: r.sequence,

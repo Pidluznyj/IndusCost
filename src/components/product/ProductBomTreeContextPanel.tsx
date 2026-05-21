@@ -69,6 +69,9 @@ const TreeRow: React.FC<{
   const code = isComponent ? node.item?.sku : node.item?.code;
   const key = `${parentProductId}:${node.id}`;
   const isSelected = selectedKey === key;
+  const childCostingMode: "OWN_PROCESS" | "BOM_ONLY" | "FINISHING_SERVICE" | undefined = isComponent
+    ? node.item?.costingMode
+    : undefined;
 
   return (
     <div className={cn("relative", depth > 0 && "mt-2")}>
@@ -104,7 +107,25 @@ const TreeRow: React.FC<{
             <p className="text-xs font-bold truncate">{name || "Desconhecido"}</p>
             <p className="text-[10px] font-bold text-primary shrink-0">Qtd: {Number(node.quantity)}</p>
           </div>
-          <p className="text-[10px] text-muted-foreground font-mono truncate">{code}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <p className="text-[10px] text-muted-foreground font-mono truncate">{code}</p>
+            {childCostingMode === "FINISHING_SERVICE" ? (
+              <span
+                className="inline-flex items-center rounded-full border border-violet-300 bg-violet-50 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wide text-violet-900"
+                title="Acabamento / beneficiamento — custo vem da BOM."
+              >
+                Acabamento
+              </span>
+            ) : null}
+            {childCostingMode === "BOM_ONLY" ? (
+              <span
+                className="inline-flex items-center rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wide text-sky-900"
+                title="Sem processo próprio — custo vem da BOM."
+              >
+                Sem processo próprio
+              </span>
+            ) : null}
+          </div>
         </div>
       </button>
 

@@ -4104,7 +4104,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   app.post("/api/products", requireAppAuth, requirePermission("products.create"), async (req, res) => {
-    const { sku, name, description, type, version, defaultLotSize, bom, routing, cycleTimeSeconds, cavities, setupTimeMin, efficiencyExpected } = req.body;
+    const { sku, name, description, type, version, defaultLotSize, bom, routing, cycleTimeSeconds, cavities, setupTimeMin, efficiencyExpected, costingMode } = req.body;
 
     const normalizedSku = sku?.toString().trim().toUpperCase();
     if (!normalizedSku) {
@@ -4174,6 +4174,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           return res.status(400).json({ error: "Processo Padrão: efficiencyExpected é obrigatório e deve ser > 0 e <= 100." });
       }
 
+      const validCostingModes = ["OWN_PROCESS", "BOM_ONLY", "FINISHING_SERVICE"] as const;
+      const safeCostingMode =
+        typeof costingMode === "string" &&
+        (validCostingModes as readonly string[]).includes(costingMode)
+          ? (costingMode as (typeof validCostingModes)[number])
+          : "OWN_PROCESS";
+
       const product = await prisma.product.create({
         data: {
           sku: normalizedSku,
@@ -4186,6 +4193,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           cavities: safeCav,
           setupTimeMin: safeSetup,
           efficiencyExpected: safeEff,
+          costingMode: safeCostingMode,
           ProductBOM: {
             create: (bom || []).map((item: any) => ({
               materialId: item.materialId,
@@ -4221,7 +4229,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   app.put("/api/products/:id", requireAppAuth, requirePermission("products.edit"), async (req, res) => {
     const { id } = req.params;
-    const { sku, name, description, type, version, defaultLotSize, bom, routing, cycleTimeSeconds, cavities, setupTimeMin, efficiencyExpected } = req.body;
+    const { sku, name, description, type, version, defaultLotSize, bom, routing, cycleTimeSeconds, cavities, setupTimeMin, efficiencyExpected, costingMode } = req.body;
     const normalizedSku = sku?.toString().trim().toUpperCase();
 
     try {
@@ -4312,6 +4320,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           return res.status(400).json({ error: "Processo Padrão: efficiencyExpected é obrigatório e deve ser > 0 e <= 100." });
       }
 
+      const validCostingModes = ["OWN_PROCESS", "BOM_ONLY", "FINISHING_SERVICE"] as const;
+      const costingModeInPayload = Object.prototype.hasOwnProperty.call(body, "costingMode");
+      const safeCostingMode =
+        costingModeInPayload &&
+        typeof costingMode === "string" &&
+        (validCostingModes as readonly string[]).includes(costingMode)
+          ? (costingMode as (typeof validCostingModes)[number])
+          : undefined;
+
       const product = await prisma.$transaction(async (tx) => {
         await tx.productBOM.deleteMany({ where: { productId: id } });
         await tx.productRouting.deleteMany({ where: { productId: id } });
@@ -4328,6 +4345,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             cavities: resolvedCav,
             setupTimeMin: resolvedSetup,
             efficiencyExpected: resolvedEff,
+            ...(safeCostingMode !== undefined ? { costingMode: safeCostingMode } : {}),
             ProductBOM: {
               create: (bom || []).map((item: any) => ({
                 materialId: item.materialId,
@@ -6882,6 +6900,22 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       product.cycleTimeSeconds !== null && Number(product.cycleTimeSeconds) > 0;
     const preferStandardOverRouting = product.type === "PRODUCT" && productHasStandardCycle;
 
+    /**
+     * Modo de custeio: define se o motor adiciona HH/HM próprio neste nível.
+     * - OWN_PROCESS (default): comportamento atual (BOM + processo/roteiro próprio).
+     * - BOM_ONLY: só soma a BOM neste nível; HH/HM próprio = 0.
+     * - FINISHING_SERVICE: igual BOM_ONLY; cromagem/beneficiamento entra como linha de BOM.
+     * Os custos dos filhos (childProductId) continuam sendo somados normalmente — eles calculam
+     * o próprio processo dentro da própria análise recursiva.
+     */
+    const costingMode = product.costingMode ?? "OWN_PROCESS";
+    const skipOwnProcess = costingMode !== "OWN_PROCESS";
+    const ownProcessSkipReason: string | null = skipOwnProcess
+      ? costingMode === "FINISHING_SERVICE"
+        ? "Processo próprio ignorado porque o item está configurado como Acabamento/beneficiamento."
+        : "Processo próprio ignorado porque o item está configurado como Somente composição da BOM."
+      : null;
+
     const buildStandardOperationItems = (): OperationRow[] | { error: string; message: string } => {
       if (!productHasStandardCycle) {
         return [];
@@ -6945,7 +6979,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       ];
     };
 
-    if (preferStandardOverRouting) {
+    if (skipOwnProcess) {
+      operationItems = [];
+    } else if (preferStandardOverRouting) {
       const std = buildStandardOperationItems();
       if (!Array.isArray(std)) return std;
       operationItems = std;
@@ -7013,7 +7049,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const std = buildStandardOperationItems();
       if (!Array.isArray(std)) return std;
       operationItems = std;
-      if (operationItems.length === 0 && product.type === "COMPONENT") {
+      if (operationItems.length === 0 && product.type === "COMPONENT" && !skipOwnProcess) {
         return { error: "ROUTING_MISSING", message: `Componente [${product.sku}] sem processo (padrão ou roteiro).` };
       }
     }
@@ -7050,11 +7086,25 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
     const costAnalysisPartial = bomLineExcludedByLineId.size > 0 || hasDescendantPartialCost;
 
+    if (skipOwnProcess && productHasStandardCycle) {
+      warnings.push({
+        code: "OWN_PROCESS_SKIPPED_BY_COSTING_MODE",
+        severity: "warning",
+        message: `Processo padrão deste item não foi somado: modo de custeio = ${costingMode}. ${
+          ownProcessSkipReason ?? ""
+        }`.trim(),
+        context: "BOM_LINE",
+      });
+    }
+
     const result: any = {
       productId: product.id,
       sku: product.sku,
       name: product.name,
       productType: product.type,
+      costingMode,
+      ownProcessSkipped: skipOwnProcess,
+      ownProcessSkipReason,
       /** Tempo produtivo próprio (h/unid. deste item), antes de agregar filhos — usado no detalhe de conversão BOM. */
       ownProductiveTimeH_Unit: totalTimeH_Unit,
       totalMaterialCost,
