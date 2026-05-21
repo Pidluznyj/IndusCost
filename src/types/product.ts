@@ -48,6 +48,11 @@ export interface Product {
   ProductRouting: ProductRouting[];
   createdAt: string;
   updatedAt: string;
+
+  sourceSystem?: string | null;
+  sourceExternalId?: string | null;
+  isNomusControlled?: boolean;
+  lastNomusSyncAt?: string | null;
 }
 
 export interface CreateProductInput {

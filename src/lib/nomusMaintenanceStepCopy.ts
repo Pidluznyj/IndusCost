@@ -50,6 +50,15 @@ export const NOMUS_MAINTENANCE_STEP_COPY: Record<NomusMaintenanceTab, NomusMaint
     nextStep:
       "Após importar com confirmação explícita, abra o cadastro e a Análise de Custo (pode ficar incompleta).",
   },
+  "engineering-sync": {
+    title: "Atualizar engenharia pelo Nomus",
+    description:
+      "Mantém Produto e ProductBOM alinhados com o Nomus. Cria/atualiza linhas, remove itens que saíram da BOM Nomus e marca o produto como controlado pelo Nomus.",
+    observe:
+      "Diferenças por linha (antes/depois), bloqueios por ambiguidade ou opcional pendente, pendências de custo/roteiro.",
+    nextStep:
+      "Aplique com confirmação textual. Custo/preço não são publicados automaticamente — revise depois.",
+  },
   diagnostic: {
     title: "Diagnóstico técnico",
     description: "Mostra a comparação detalhada entre Nomus e IndusCost para auditoria.",

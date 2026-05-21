@@ -122,6 +122,11 @@ model Product {
   cavities           Int?
   setupTimeMin       Decimal?             @db.Decimal(20, 6)
   efficiencyExpected Decimal?             @db.Decimal(10, 6)
+  sourceSystem       String?
+  sourceExternalId   String?
+  isNomusControlled  Boolean              @default(false)
+  lastNomusSyncAt    DateTime?            @db.Timestamptz(6)
+  nomusPayloadHash   String?
   CostCalculationLog CostCalculationLog[]
   UsedInBOM          ProductBOM[]         @relation("ChildProduct")
   ProductBOM         ProductBOM[]         @relation("ParentProduct")
@@ -132,22 +137,31 @@ model Product {
   PriceTableItem     PriceTableItem[]
 
   @@index([type], map: "idx_Product_type")
+  @@index([isNomusControlled], map: "idx_Product_isNomusControlled")
+  @@index([sourceSystem], map: "idx_Product_sourceSystem")
 }
 
 model ProductBOM {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId      String    @db.Uuid
-  materialId     String?   @db.Uuid
-  quantity       Decimal   @db.Decimal(20, 6)
-  lossPercentage Decimal?  @default(0) @db.Decimal(10, 6)
-  notes          String?
-  childProductId String?   @db.Uuid
-  ChildProduct   Product?  @relation("ChildProduct", fields: [childProductId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  Material       Material? @relation(fields: [materialId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  ParentProduct  Product   @relation("ParentProduct", fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId          String    @db.Uuid
+  materialId         String?   @db.Uuid
+  quantity           Decimal   @db.Decimal(20, 6)
+  lossPercentage     Decimal?  @default(0) @db.Decimal(10, 6)
+  notes              String?
+  childProductId     String?   @db.Uuid
+  sourceSystem       String?
+  isNomusControlled  Boolean   @default(false)
+  localException     Boolean   @default(false)
+  lastNomusSyncAt    DateTime? @db.Timestamptz(6)
+  nomusComponentCode String?
+  ChildProduct       Product?  @relation("ChildProduct", fields: [childProductId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Material           Material? @relation(fields: [materialId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ParentProduct      Product   @relation("ParentProduct", fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([childProductId], map: "idx_ProductBOM_childProductId")
   @@index([productId], map: "idx_ProductBOM_productId")
+  @@index([isNomusControlled], map: "idx_ProductBOM_isNomusControlled")
+  @@index([localException], map: "idx_ProductBOM_localException")
 }
 
 model ProductRouting {
@@ -1327,4 +1341,85 @@ model NomusProductImportRunLine {
   @@index([runId])
   @@index([componentCode])
   @@index([actionType])
+}
+
+enum EngineeringSyncRunMode {
+  ONE_PRODUCT
+  ALL_NOMUS_PRODUCTS
+}
+
+enum EngineeringSyncRunStatus {
+  PREVIEWED
+  APPLIED
+  FAILED
+  PARTIAL
+}
+
+/// Cabeçalho de execuções do botão "Atualizar engenharia pelo Nomus" (preview/apply).
+model EngineeringSyncRun {
+  id               String                   @id @default(uuid())
+  mode             EngineeringSyncRunMode   @default(ONE_PRODUCT)
+  status           EngineeringSyncRunStatus @default(PREVIEWED)
+  parentCode       String?
+  planHash         String
+  confirmationText String?
+  approvedBy       String?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  summaryJson      Json?
+  warningsJson     Json?
+  errorsJson       Json?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @default(now()) @updatedAt
+  changes          EngineeringChangeLog[]
+
+  @@index([parentCode])
+  @@index([status])
+  @@index([planHash])
+  @@index([createdAt])
+}
+
+enum EngineeringChangeEntityType {
+  PRODUCT
+  PRODUCT_BOM
+  MATERIAL
+  ROUTING
+  PRICE_INPUT
+}
+
+enum EngineeringChangeOrigin {
+  NOMUS_SYNC
+  NOMUS_ENGINEERING_APPLY
+  MANUAL_EDIT
+  LOCAL_EXCEPTION
+}
+
+/// Log antes/depois de cada alteração de engenharia (produto, linha BOM, etc.).
+model EngineeringChangeLog {
+  id            String                       @id @default(uuid())
+  entityType    EngineeringChangeEntityType
+  entityId      String?
+  productId     String?                      @db.Uuid
+  productSku    String?
+  sourceSystem  String?
+  changeOrigin  EngineeringChangeOrigin
+  fieldName     String?
+  oldValue      String?
+  newValue      String?
+  oldValueJson  Json?
+  newValueJson  Json?
+  changedBy     String?
+  changedAt     DateTime                     @default(now())
+  runId         String?
+  planHash      String?
+  reason        String?
+  createdAt     DateTime                     @default(now())
+  run           EngineeringSyncRun?          @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([productSku])
+  @@index([entityType])
+  @@index([changeOrigin])
+  @@index([changedAt])
+  @@index([runId])
 }

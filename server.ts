@@ -113,6 +113,11 @@ import {
   buildNomusProductImportSimulationPreview,
   executeNomusProductImportSimulation,
 } from "./src/lib/nomusProductImportSimulation.js";
+import {
+  applyNomusEngineeringSync,
+  buildNomusEngineeringReconciliationPlan,
+  listEngineeringChangeLog,
+} from "./src/lib/nomusEngineeringReconciliation.js";
 import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
@@ -3838,6 +3843,109 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               ? 422
               : 400;
         return res.status(status).json({ error: message });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/engineering-sync/preview",
+    requireAppAuth,
+    requirePermission("products.view"),
+    async (req, res) => {
+      try {
+        const scopeRaw = String(req.query.scope ?? "ONE_PRODUCT").trim();
+        if (scopeRaw !== "ONE_PRODUCT" && scopeRaw !== "ALL_NOMUS_PRODUCTS") {
+          return res.status(400).json({ error: "scope inválido." });
+        }
+        const parentCode = String(req.query.parentCode ?? "").trim() || undefined;
+        const recursive = req.query.recursive === "true" || req.query.recursive === "1";
+        const maxDepthRaw = Number(req.query.maxDepth);
+        const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : undefined;
+        const plan = await buildNomusEngineeringReconciliationPlan({
+          scope: scopeRaw,
+          parentCode,
+          recursive,
+          maxDepth,
+        });
+        return res.json(plan);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Erro ao gerar plano de sincronização.";
+        console.error("GET /api/nomus/engineering-sync/preview", error);
+        return res.status(400).json({ error: message });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/engineering-sync/apply",
+    requireAppAuth,
+    requirePermission("products.edit"),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const scopeRaw = String(body.scope ?? "ONE_PRODUCT").trim();
+        if (scopeRaw !== "ONE_PRODUCT" && scopeRaw !== "ALL_NOMUS_PRODUCTS") {
+          return res.status(400).json({ error: "scope inválido." });
+        }
+        const parentCode = body.parentCode ? String(body.parentCode).trim() : undefined;
+        const planHash = String(body.planHash ?? "").trim();
+        const confirmationText = String(body.confirmationText ?? "").trim();
+        const approvedBy =
+          body.approvedBy != null && String(body.approvedBy).trim()
+            ? String(body.approvedBy).trim()
+            : undefined;
+        const recursive = body.recursive === true || body.recursive === "true";
+        const maxDepthRaw = Number(body.maxDepth);
+        const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : undefined;
+
+        if (!planHash || !confirmationText) {
+          return res
+            .status(400)
+            .json({ error: "planHash e confirmationText são obrigatórios." });
+        }
+
+        const result = await applyNomusEngineeringSync({
+          scope: scopeRaw,
+          parentCode,
+          recursive,
+          maxDepth,
+          planHash,
+          confirmationText,
+          approvedBy,
+        });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Erro ao aplicar sincronização de engenharia.";
+        console.error("POST /api/nomus/engineering-sync/apply", error);
+        const status =
+          message.includes("Plano desatualizado") || message.includes("Confirmação")
+            ? 409
+            : message.includes("bloqueada") || message.includes("gates") || message.includes("habilitado")
+              ? 422
+              : 400;
+        return res.status(status).json({ error: message });
+      }
+    }
+  );
+
+  app.get(
+    "/api/products/:id/engineering-change-log",
+    requireAppAuth,
+    requireAnyPermission(["products.view", "products.tab.bom"]),
+    async (req, res) => {
+      try {
+        const productId = String(req.params.id);
+        const limitRaw = Number(req.query.limit);
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 200;
+        const entries = await listEngineeringChangeLog({ productId, limit });
+        return res.json({ entries });
+      } catch (error) {
+        console.error("GET /api/products/:id/engineering-change-log", error);
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : "Erro ao buscar histórico de alterações.",
+        });
       }
     }
   );

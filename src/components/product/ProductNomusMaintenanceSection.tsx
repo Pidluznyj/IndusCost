@@ -8,6 +8,7 @@ import { NomusMaintenanceOverviewPanel } from "@/src/components/product/NomusMai
 import { NomusMaintenancePendingPanel } from "@/src/components/product/NomusMaintenancePendingPanel";
 import { NomusMaintenanceDiagnosticPanel } from "@/src/components/product/NomusMaintenanceDiagnosticPanel";
 import { NomusProductImportSimulationPanel } from "@/src/components/product/NomusProductImportSimulationPanel";
+import { NomusEngineeringSyncPanel } from "@/src/components/product/NomusEngineeringSyncPanel";
 import { useNomusParentCodeResolver } from "@/src/hooks/useNomusParentCodeResolver";
 import type { NomusParentCodeOption } from "@/src/lib/nomusParentCodeOptionsTypes";
 import type {
@@ -24,6 +25,7 @@ const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = 
   { id: "cost-impact", label: "Impacto de custo" },
   { id: "apply-plan", label: "Plano de aplicação" },
   { id: "product-import", label: "Importar produto" },
+  { id: "engineering-sync", label: "Atualizar engenharia pelo Nomus" },
   { id: "diagnostic", label: "Diagnóstico técnico" },
 ];
 
@@ -366,6 +368,16 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
           <NomusProductImportSimulationPanel
             onOpenProduct={onOpenProduct}
             onImportSuccess={() => {
+              handleControlledApplySuccess();
+              onEngineeringListRefresh?.();
+            }}
+            {...workspaceProps}
+          />
+        ) : null}
+        {activeNomusMaintenanceTab === "engineering-sync" ? (
+          <NomusEngineeringSyncPanel
+            onOpenProduct={onOpenProduct}
+            onApplySuccess={() => {
               handleControlledApplySuccess();
               onEngineeringListRefresh?.();
             }}

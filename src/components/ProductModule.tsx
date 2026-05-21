@@ -1279,11 +1279,27 @@ export const ProductModule = () => {
                      <Box className="h-5 w-5" />}
                   </div>
                   <div className="min-w-0 flex-1 space-y-1">
-                    <h3 className="text-lg font-bold leading-tight">
-                      {editingItem ? "Editar Engenharia" : "Nova Engenharia"}
+                    <h3 className="text-lg font-bold leading-tight inline-flex items-center gap-2 flex-wrap">
+                      <span>{editingItem ? "Editar Engenharia" : "Nova Engenharia"}</span>
+                      {editingItem?.isNomusControlled ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-900"
+                          title={
+                            editingItem.lastNomusSyncAt
+                              ? `Última sincronização Nomus: ${new Date(
+                                  editingItem.lastNomusSyncAt
+                                ).toLocaleString("pt-BR")}`
+                              : "Produto controlado pelo Nomus"
+                          }
+                        >
+                          Controlado pelo Nomus
+                        </span>
+                      ) : null}
                     </h3>
                     <p className="text-[11px] text-muted-foreground leading-snug">
-                      Defina a estrutura e o processo produtivo do item
+                      {editingItem?.isNomusControlled
+                        ? "Campos de engenharia controlados pelo Nomus ficam bloqueados. Altere no Nomus e sincronize novamente."
+                        : "Defina a estrutura e o processo produtivo do item"}
                     </p>
                     <p
                       className="flex items-baseline gap-2 pt-1 min-w-0 text-sm"
@@ -1373,13 +1389,26 @@ export const ProductModule = () => {
                           </h4>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
-                              <label className="text-xs font-bold text-muted-foreground uppercase">SKU / Código</label>
+                              <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5">
+                                SKU / Código
+                                {editingItem?.isNomusControlled ? (
+                                  <span className="text-[10px] text-blue-700 normal-case font-semibold">
+                                    🔒 Nomus
+                                  </span>
+                                ) : null}
+                              </label>
                               <input
                                 required
                                 type="text"
-                                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm font-mono"
+                                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm font-mono disabled:bg-muted disabled:cursor-not-allowed"
                                 value={formData.sku}
                                 onChange={(e) => setFormData({...formData, sku: e.target.value})}
+                                disabled={Boolean(editingItem?.isNomusControlled)}
+                                title={
+                                  editingItem?.isNomusControlled
+                                    ? "Campo controlado pelo Nomus. Altere no Nomus e sincronize novamente."
+                                    : undefined
+                                }
                               />
                             </div>
                             <div className="space-y-1.5">
@@ -1394,22 +1423,44 @@ export const ProductModule = () => {
                             </div>
                           </div>
                           <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">Nome do Item</label>
+                            <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5">
+                              Nome do Item
+                              {editingItem?.isNomusControlled ? (
+                                <span className="text-[10px] text-blue-700 normal-case font-semibold">🔒 Nomus</span>
+                              ) : null}
+                            </label>
                             <input
                               required
                               type="text"
-                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm disabled:bg-muted disabled:cursor-not-allowed"
                               value={formData.name}
                               onChange={(e) => setFormData({...formData, name: e.target.value})}
+                              disabled={Boolean(editingItem?.isNomusControlled)}
+                              title={
+                                editingItem?.isNomusControlled
+                                  ? "Campo controlado pelo Nomus. Altere no Nomus e sincronize novamente."
+                                  : undefined
+                              }
                             />
                           </div>
                           <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">Descrição</label>
+                            <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5">
+                              Descrição
+                              {editingItem?.isNomusControlled ? (
+                                <span className="text-[10px] text-blue-700 normal-case font-semibold">🔒 Nomus</span>
+                              ) : null}
+                            </label>
                             <textarea
                               rows={3}
-                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
+                              className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none disabled:bg-muted disabled:cursor-not-allowed"
                               value={formData.description}
                               onChange={(e) => setFormData({...formData, description: e.target.value})}
+                              disabled={Boolean(editingItem?.isNomusControlled)}
+                              title={
+                                editingItem?.isNomusControlled
+                                  ? "Campo controlado pelo Nomus. Altere no Nomus e sincronize novamente."
+                                  : undefined
+                              }
                             />
                           </div>
                         </div>
