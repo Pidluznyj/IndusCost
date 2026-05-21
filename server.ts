@@ -118,6 +118,7 @@ import {
   buildNomusEngineeringReconciliationPlan,
   listEngineeringChangeLog,
 } from "./src/lib/nomusEngineeringReconciliation.js";
+import { buildNomusEngineeringOperationsCockpit } from "./src/lib/nomusEngineeringOperationsCockpit.js";
 import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
@@ -3989,6 +3990,53 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               ? 422
               : 400;
         return res.status(status).json({ error: message });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/engineering-operations-cockpit",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.tab.bom",
+      "products.tab.tree",
+      "products.tab.cost",
+      "products.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const scopeRaw = String(req.query.scope ?? "CHANGED_ONLY").trim().toUpperCase();
+        const scope: "ALL" | "CHANGED_ONLY" | "ONE_PRODUCT" =
+          scopeRaw === "ALL" || scopeRaw === "CHANGED_ONLY" || scopeRaw === "ONE_PRODUCT"
+            ? (scopeRaw as "ALL" | "CHANGED_ONLY" | "ONE_PRODUCT")
+            : "CHANGED_ONLY";
+        const parentCode =
+          req.query.parentCode != null && String(req.query.parentCode).trim()
+            ? String(req.query.parentCode).trim()
+            : undefined;
+        const limitRaw = Number(req.query.limit);
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
+        const includeCostImpact =
+          req.query.includeCostImpact === "true" || req.query.includeCostImpact === "1";
+
+        const result = await buildNomusEngineeringOperationsCockpit({
+          scope,
+          parentCode,
+          limit,
+          includeCostImpact,
+        });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao montar Central de Atualização Nomus.";
+        console.error("GET /api/nomus/engineering-operations-cockpit", error);
+        return res.status(500).json({
+          error: "OPERATIONS_COCKPIT_FAILED",
+          message,
+        });
       }
     }
   );

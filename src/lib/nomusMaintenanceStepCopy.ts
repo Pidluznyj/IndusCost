@@ -11,9 +11,11 @@ export const NOMUS_MAINTENANCE_STEP_COPY: Record<NomusMaintenanceTab, NomusMaint
   overview: {
     title: "Visão Geral",
     description:
-      "Resumo da situação do produto. Use esta tela para saber se há pendências, impacto de custo e qual o próximo passo.",
-    observe: "Status geral, opcionais, revisão local, custos em preview e avisos principais.",
-    nextStep: "Siga a próxima ação recomendada ou abra a aba indicada nos atalhos abaixo.",
+      "Sem produto selecionado: Central de Atualização Nomus com fila de trabalho. Com produto selecionado: resumo da situação dele.",
+    observe:
+      "Status operacional por produto, próximas ações recomendadas e atalhos para as abas técnicas.",
+    nextStep:
+      "Gere o diagnóstico, escolha um produto na fila e abra-o para revisar antes de qualquer aplicação.",
   },
   pending: {
     title: "Pendências",

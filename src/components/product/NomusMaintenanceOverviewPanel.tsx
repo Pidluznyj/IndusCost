@@ -21,9 +21,11 @@ import {
 } from "@/src/lib/nomusMaintenanceStatusLabels";
 import { NomusMaintenanceProductBanner } from "@/src/components/product/NomusMaintenanceProductBanner";
 import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
+import { NomusEngineeringOperationsCockpitPanel } from "@/src/components/product/NomusEngineeringOperationsCockpitPanel";
 import type {
   NomusMaintenanceTab,
   NomusMaintenanceWorkspaceProps,
+  NomusWorkspaceParentSelection,
 } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type { NomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
 import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingBomTypes";
@@ -55,6 +57,20 @@ type NomusMaintenanceOverviewPanelProps = NomusMaintenanceWorkspaceProps & {
   onNavigateTab: (tab: NomusMaintenanceTab) => void;
   disabled?: boolean;
 };
+
+function isMaintenanceTab(value: string | undefined): value is NomusMaintenanceTab {
+  if (!value) return false;
+  return [
+    "overview",
+    "pending",
+    "effective-pricing-bom",
+    "cost-impact",
+    "apply-plan",
+    "product-import",
+    "engineering-sync",
+    "diagnostic",
+  ].includes(value);
+}
 
 function formatMoney(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -169,6 +185,7 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
   selectedParentDescription,
   selectedIndusProductId,
   onNavigateTab,
+  onWorkspaceParentChange,
   refreshToken = 0,
   disabled = false,
 }) => {
@@ -285,6 +302,22 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
       <div className="space-y-4">
         <NomusMaintenanceStepHeader tab="overview" />
         <NomusMaintenanceProductBanner />
+        <NomusEngineeringOperationsCockpitPanel
+          disabled={disabled}
+          onOpenProduct={(parentCode, options) => {
+            const selection: NomusWorkspaceParentSelection = {
+              parentCode,
+              parentDescription: null,
+              indusProductId: null,
+              option: null,
+            };
+            onWorkspaceParentChange?.(selection);
+            const nextTab: NomusMaintenanceTab = isMaintenanceTab(options?.tab)
+              ? (options!.tab as NomusMaintenanceTab)
+              : "overview";
+            onNavigateTab(nextTab);
+          }}
+        />
       </div>
     );
   }
