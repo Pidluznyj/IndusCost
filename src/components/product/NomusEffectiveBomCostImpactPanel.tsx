@@ -477,13 +477,14 @@ export const NomusEffectiveBomCostImpactPanel: React.FC<NomusEffectiveBomCostImp
 
           {result &&
           result.status === "READY" &&
-          delta != null &&
-          Math.abs(delta.totalCost ?? 0) < 0.000001 ? (
+          (result.hasStructuralChanges === false ||
+            (delta != null && Math.abs(delta.totalCost ?? 0) < 0.000001)) ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-950">
               <p className="font-bold">A ProductBOM já reflete a BOM efetiva.</p>
               <p>
-                A aplicação não deve alterar o custo por estrutura. Linhas locais já existentes na
-                ProductBOM atual são mantidas sem impacto.
+                {result.noOpReason === "PRODUCT_BOM_ALREADY_MATCHES_EFFECTIVE_BOM"
+                  ? "Nenhuma alteração estrutural prevista. Aplicar a BOM efetiva não altera o custo do produto."
+                  : "A aplicação não deve alterar o custo por estrutura. Linhas locais já existentes na ProductBOM atual são mantidas sem impacto."}
               </p>
             </div>
           ) : null}

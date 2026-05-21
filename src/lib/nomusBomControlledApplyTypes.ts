@@ -97,8 +97,14 @@ export type ControlledApplyPreview = {
   optionalPricingStatus: string;
 };
 
+export type ControlledApplyResultStatus = "APPLIED" | "NO_CHANGES" | "BLOCKED" | "FAILED";
+
 export type ControlledApplyResult = {
   applied: boolean;
+  /** Status estruturado da operação para a UI mostrar mensagem clara (sucesso/no-op/erro). */
+  resultStatus: ControlledApplyResultStatus;
+  /** Mensagem amigável já localizada em PT-BR. */
+  message: string;
   applyRunId: string;
   parentCode: string;
   productId: string;

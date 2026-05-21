@@ -256,6 +256,66 @@ const BLOCKED_EFFECTIVE_STATUSES = new Set([
   "STALE_OPTIONAL_SELECTION",
 ]);
 
+const STRUCTURAL_REMOVAL_SOURCES = new Set([
+  "LOCAL_ONLY_EXCLUDED_BY_REVIEW",
+  "LOCAL_ONLY_DUPLICATED_BY_NOMUS",
+]);
+
+/**
+ * Detecta se a aplicação da BOM efetiva sobre a ProductBOM atual exigiria mutações estruturais
+ * (CREATE, UPDATE_QTY, REMOVE, CONSOLIDATE). Replica a regra mínima usada pelo apply-preview
+ * para evitar dependência circular. Quando retorna `false`, o painel de Impacto de Custo deve
+ * mostrar delta = 0 (alinhado ao plano de aplicação "nenhuma alteração prevista").
+ */
+function detectStructuralChanges(params: {
+  includedEffectiveLines: EffectivePricingBomLine[];
+  reviewAndExcludedLines: EffectivePricingBomLine[];
+  currentByCode: Map<string, CurrentBomLine>;
+}): { hasChanges: boolean; reason: string | null } {
+  const { includedEffectiveLines, reviewAndExcludedLines, currentByCode } = params;
+  const includedCodes = new Set<string>();
+  const removalCodes = new Set<string>();
+
+  for (const line of includedEffectiveLines) {
+    const codeKey = normalizeComponentCode(line.componentCode);
+    includedCodes.add(codeKey);
+    const cur = currentByCode.get(codeKey);
+    if (!cur) {
+      return { hasChanges: true, reason: "CREATE_PRODUCT_BOM_LINE" };
+    }
+    const qtyEff = Number(line.quantity ?? 0);
+    const qtyCur = Number(cur.quantity ?? 0);
+    if (!Number.isFinite(qtyEff) || !Number.isFinite(qtyCur)) continue;
+    if (Math.abs(qtyEff - qtyCur) > 0.000001) {
+      return { hasChanges: true, reason: "UPDATE_PRODUCT_BOM_QUANTITY" };
+    }
+  }
+
+  for (const line of reviewAndExcludedLines) {
+    if (STRUCTURAL_REMOVAL_SOURCES.has(line.source)) {
+      const codeKey = normalizeComponentCode(line.componentCode);
+      if (currentByCode.has(codeKey)) {
+        removalCodes.add(codeKey);
+      }
+    }
+  }
+  if (removalCodes.size > 0) {
+    return { hasChanges: true, reason: "REMOVE_PRODUCT_BOM_LINE" };
+  }
+
+  for (const [codeKey] of currentByCode) {
+    if (!includedCodes.has(codeKey) && !removalCodes.has(codeKey)) {
+      // Linha local sobrando que não é nem mantida pela efetiva nem marcada para remoção:
+      // conservadoramente isso é mudança (o plano vai remover). Mas: linhas com decisão local
+      // de manutenção (LOCAL_ONLY_INCLUDED_BY_REVIEW) já estariam em includedEffectiveLines,
+      // logo aqui sobram apenas itens "fora do escopo". Tratamos como mudança para não esconder.
+      return { hasChanges: true, reason: "REMOVE_PRODUCT_BOM_LINE" };
+    }
+  }
+
+  return { hasChanges: false, reason: null };
+}
+
 /** Mesma regra de linha de material que getProductCostAnalysis (server.ts). */
 function computeMaterialLineTotal(
   material: {
@@ -826,6 +886,8 @@ export async function buildNomusEffectiveBomCostImpact(
         ...warnings,
         "BOM efetiva não está pronta para preview de custo. Resolva opcionais e revisões locais.",
       ],
+      hasStructuralChanges: false,
+      noOpReason: null,
     };
   }
 
@@ -859,6 +921,8 @@ export async function buildNomusEffectiveBomCostImpact(
       excludedLines: [],
       unresolvedLines: [],
       warnings: [...warnings, "Produto não cadastrado no IndusCost — custo atual indisponível."],
+      hasStructuralChanges: false,
+      noOpReason: null,
     };
   }
 
@@ -900,6 +964,8 @@ export async function buildNomusEffectiveBomCostImpact(
       excludedLines: [],
       unresolvedLines: [],
       warnings,
+      hasStructuralChanges: false,
+      noOpReason: null,
     };
   }
 
@@ -1013,7 +1079,53 @@ export async function buildNomusEffectiveBomCostImpact(
     scopeNote: SCOPE_NOTE,
   };
 
-  const delta = buildDelta(currentCost, effectiveNomusCost);
+  // Detecção de mudanças estruturais reais (mesma regra do apply-preview).
+  // Se a ProductBOM atual JÁ reflete a BOM efetiva, qualquer diferença numérica entre
+  // os dois métodos de cálculo (motor recursivo vs lib de impacto) é ruído de cálculo,
+  // não impacto real da aplicação. Nesse caso, harmonizamos o delta para zero para que
+  // o painel de Impacto conte a mesma história do Plano de Aplicação.
+  const structuralIncludedLines = effectiveBom.directLines.filter((l) => l.includedForPricing);
+  const structuralReviewExcluded = [
+    ...effectiveBom.excludedLines,
+    ...effectiveBom.reviewLines,
+  ];
+  const structural = detectStructuralChanges({
+    includedEffectiveLines: structuralIncludedLines,
+    reviewAndExcludedLines: structuralReviewExcluded,
+    currentByCode,
+  });
+
+  let finalEffectiveCost = effectiveNomusCost;
+  let finalDelta = buildDelta(currentCost, effectiveNomusCost);
+  let noOpReason: "PRODUCT_BOM_ALREADY_MATCHES_EFFECTIVE_BOM" | null = null;
+
+  if (!structural.hasChanges) {
+    noOpReason = "PRODUCT_BOM_ALREADY_MATCHES_EFFECTIVE_BOM";
+    finalEffectiveCost = {
+      materialCost: currentCost.materialCost,
+      transformationCost: currentCost.transformationCost,
+      totalCost: currentCost.totalCost,
+    };
+    finalDelta = {
+      materialCost: 0,
+      transformationCost: 0,
+      totalCost: 0,
+      materialCostPct: 0,
+      totalCostPct: 0,
+    };
+    // Harmoniza deltas por linha: sem mudança estrutural, nenhuma linha contribui com delta real.
+    // Mantemos `currentCost`/`effectiveCost` como exibição informativa, mas o delta vai a zero
+    // para não mostrar "diferença prevista se aplicar" em linhas que não vão mudar.
+    for (const cl of comparisonLines) {
+      cl.deltaCost = 0;
+    }
+    for (const inc of includedLines) {
+      inc.deltaCost = 0;
+    }
+    warnings.push(
+      "A ProductBOM já reflete a BOM efetiva — nenhuma alteração estrutural prevista. Diferenças numéricas entre os métodos de cálculo são informativas e não impactam a aplicação."
+    );
+  }
 
   return {
     generatedAt: new Date().toISOString(),
@@ -1024,13 +1136,15 @@ export async function buildNomusEffectiveBomCostImpact(
     optionalPricingStatus: effectiveBom.optionalPricingStatus,
     effectiveBomStatus: effectiveBom.status,
     currentCost,
-    effectiveNomusCost,
-    delta,
+    effectiveNomusCost: finalEffectiveCost,
+    delta: finalDelta,
     summary,
     lines: comparisonLines,
     includedLines,
     excludedLines,
     unresolvedLines,
     warnings,
+    hasStructuralChanges: structural.hasChanges,
+    noOpReason,
   };
 }

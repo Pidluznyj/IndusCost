@@ -108,6 +108,8 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
     try {
       const result = await fetchJsonOk<{
         applied: boolean;
+        resultStatus?: "APPLIED" | "NO_CHANGES" | "BLOCKED" | "FAILED";
+        message?: string;
         applyRunId: string;
       }>("/api/nomus/effective-pricing-bom/apply", {
         method: "POST",
@@ -119,7 +121,20 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
           approvedBy: approvedBy.trim() || undefined,
         }),
       });
-      setApplySuccess(`BOM aplicada com sucesso. Registro de auditoria: ${result.applyRunId}`);
+      const status = result.resultStatus ?? (result.applied ? "APPLIED" : "NO_CHANGES");
+      const baseMsg = result.message?.trim();
+      if (status === "NO_CHANGES") {
+        setApplySuccess(
+          baseMsg ??
+            "Nenhuma alteração necessária. A ProductBOM já reflete a BOM efetiva."
+        );
+      } else if (status === "APPLIED") {
+        setApplySuccess(
+          `${baseMsg ?? "BOM efetiva aplicada com sucesso."} Registro de auditoria: ${result.applyRunId}`
+        );
+      } else {
+        setApplyError(baseMsg ?? "Falha ao aplicar a BOM efetiva.");
+      }
       setConfirmationText("");
       await loadPreview();
       onApplied?.();

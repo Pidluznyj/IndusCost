@@ -80,6 +80,10 @@ export type CostImpactSummary = {
   scopeNote: string;
 };
 
+export type CostImpactNoOpReason =
+  | "PRODUCT_BOM_ALREADY_MATCHES_EFFECTIVE_BOM"
+  | null;
+
 export type NomusEffectiveBomCostImpactResult = {
   generatedAt: string;
   parentCode: string;
@@ -97,4 +101,8 @@ export type NomusEffectiveBomCostImpactResult = {
   excludedLines: CostImpactLine[];
   unresolvedLines: CostImpactLine[];
   warnings: string[];
+  /** True quando a aplicação da BOM efetiva geraria CREATE/UPDATE/REMOVE/CONSOLIDATE na ProductBOM. */
+  hasStructuralChanges: boolean;
+  /** Motivo quando hasStructuralChanges = false. */
+  noOpReason: CostImpactNoOpReason;
 };

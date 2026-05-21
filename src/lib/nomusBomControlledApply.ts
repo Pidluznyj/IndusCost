@@ -1429,19 +1429,36 @@ export async function applyEffectiveBomToProductBom(input: {
 
   const afterRows = await loadCurrentProductBomRows(productId, normalizeSku(trimmed));
 
+  const summary = {
+    created: preview.actions.filter((a) => a.actionType === "CREATE_PRODUCT_BOM_LINE").length,
+    updated:
+      preview.actions.filter(
+        (a) =>
+          a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" ||
+          a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"
+      ).length,
+    kept: preview.actions.filter((a) => a.actionType === "KEEP_PRODUCT_BOM_LINE").length,
+    removed: preview.actions.filter((a) => a.actionType === "REMOVE_PRODUCT_BOM_LINE").length,
+    skipped: preview.actions.filter((a) => a.actionType === "SKIP_UNRESOLVED").length,
+    blocked: preview.actions.filter((a) => a.actionType === "BLOCKED").length,
+  };
+
+  const totalMutations = summary.created + summary.updated + summary.removed;
+  const resultStatus: "APPLIED" | "NO_CHANGES" =
+    totalMutations === 0 ? "NO_CHANGES" : "APPLIED";
+  const message =
+    resultStatus === "NO_CHANGES"
+      ? "Nenhuma alteração necessária. A ProductBOM já reflete a BOM efetiva."
+      : `BOM efetiva aplicada com sucesso (${summary.created} criação(ões), ${summary.updated} atualização(ões), ${summary.removed} remoção(ões)).`;
+
   return {
-    applied: true,
+    applied: resultStatus === "APPLIED",
+    resultStatus,
+    message,
     applyRunId,
     parentCode: trimmed,
     productId,
-    summary: {
-      created: preview.actions.filter((a) => a.actionType === "CREATE_PRODUCT_BOM_LINE").length,
-      updated: preview.actions.filter((a) => a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY").length,
-      kept: preview.actions.filter((a) => a.actionType === "KEEP_PRODUCT_BOM_LINE").length,
-      removed: preview.actions.filter((a) => a.actionType === "REMOVE_PRODUCT_BOM_LINE").length,
-      skipped: preview.actions.filter((a) => a.actionType === "SKIP_UNRESOLVED").length,
-      blocked: preview.actions.filter((a) => a.actionType === "BLOCKED").length,
-    },
+    summary,
     beforeBom: beforeBomJson,
     afterBom: afterRows.map(serializeBomRow),
     actionsApplied: preview.actions,
