@@ -44,6 +44,17 @@ export const MaterialModule = () => {
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Material | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<
+    | null
+    | {
+        kind: "duplicate";
+        code: string;
+        message: string;
+        existingMaterialId: string | null;
+      }
+    | { kind: "generic"; message: string }
+  >(null);
 
   // Form State
   const [formData, setFormData] = useState<CreateMaterialInput>({
@@ -78,6 +89,7 @@ export const MaterialModule = () => {
   }, []);
 
   const handleOpenModal = (material?: Material) => {
+    setFormError(null);
     if (material) {
       setEditingMaterial(material);
       setFormData({
@@ -117,18 +129,86 @@ export const MaterialModule = () => {
     const method = editingMaterial ? "PUT" : "POST";
     const url = editingMaterial ? `/api/materials/${editingMaterial.id}` : "/api/materials";
 
+    setFormError(null);
+    setSubmitting(true);
     try {
-      await fetchJsonOk(url, {
+      const payload = { ...formData, code: formData.code.trim() };
+      const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
+
+      if (!res.ok) {
+        let body: Record<string, unknown> | null = null;
+        const ct = res.headers.get("content-type") ?? "";
+        if (ct.includes("application/json")) {
+          try {
+            body = (await res.json()) as Record<string, unknown>;
+          } catch {
+            body = null;
+          }
+        }
+
+        const errorCode = typeof body?.error === "string" ? body.error : "";
+        const message =
+          typeof body?.message === "string" && body.message.trim()
+            ? body.message.trim()
+            : `Erro HTTP ${res.status}`;
+
+        if (res.status === 409 && errorCode === "MATERIAL_CODE_ALREADY_EXISTS") {
+          const dupCode =
+            typeof body?.code === "string" && body.code ? body.code : payload.code;
+          const existingMaterialId =
+            typeof body?.existingMaterialId === "string"
+              ? body.existingMaterialId
+              : null;
+          setFormError({
+            kind: "duplicate",
+            code: dupCode,
+            message: `Já existe um material com o código ${dupCode}. Abra o cadastro existente para editar ou use outro código.`,
+            existingMaterialId,
+          });
+          return;
+        }
+
+        setFormError({ kind: "generic", message });
+        return;
+      }
+
       setIsModalOpen(false);
+      setFormError(null);
       fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível salvar o material.");
+      setFormError({
+        kind: "generic",
+        message:
+          error instanceof Error
+            ? `Falha de comunicação com o servidor: ${error.message}`
+            : "Falha de comunicação com o servidor.",
+      });
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const handleOpenExistingByCode = (existingMaterialId: string | null, code: string) => {
+    const existing =
+      (existingMaterialId && materials.find((m) => m.id === existingMaterialId)) ||
+      materials.find((m) => m.code.trim().toLowerCase() === code.trim().toLowerCase());
+    if (existing) {
+      setFormError(null);
+      handleOpenModal(existing);
+      return;
+    }
+    fetchData().then(() => {
+      setFormError({
+        kind: "generic",
+        message:
+          "Material existente recarregado na lista. Clique em editar para abrir o cadastro.",
+      });
+    });
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
@@ -556,18 +636,54 @@ export const MaterialModule = () => {
                 </div>
               </div>
 
+              {formError ? (
+                <div
+                  role="alert"
+                  className={cn(
+                    "rounded-lg border px-4 py-3 text-sm",
+                    formError.kind === "duplicate"
+                      ? "border-amber-300 bg-amber-50 text-amber-900"
+                      : "border-red-300 bg-red-50 text-red-900"
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <p className="font-semibold">{formError.message}</p>
+                      {formError.kind === "duplicate" ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleOpenExistingByCode(
+                              formError.existingMaterialId,
+                              formError.code
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 text-xs font-bold underline hover:no-underline"
+                        >
+                          Abrir material existente ({formError.code})
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex items-center justify-end gap-3 pt-6 border-t border-border">
                 <button 
                   type="button"
                   onClick={() => setIsModalOpen(false)}
                   className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
+                  disabled={submitting}
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit"
-                  className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm"
+                  disabled={submitting}
+                  className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                 >
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {editingMaterial ? "Salvar Alterações" : "Cadastrar Material"}
                 </button>
               </div>

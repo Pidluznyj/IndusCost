@@ -2107,34 +2107,180 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   app.post("/api/materials", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
-    const { 
-      code, description, unit, category, supplier, 
-      currentCost, averageCost, standardCost, freight, 
-      standardLoss, conversionFactor 
-    } = req.body;
+    try {
+      const body = req.body ?? {};
+      const code = typeof body.code === "string" ? body.code.trim() : "";
+      const description =
+        typeof body.description === "string" ? body.description.trim() : "";
+      const unit = typeof body.unit === "string" ? body.unit.trim() : "";
+      const category = typeof body.category === "string" ? body.category.trim() : "";
+      const supplier =
+        typeof body.supplier === "string" && body.supplier.trim()
+          ? body.supplier.trim()
+          : null;
 
-    const material = await prisma.material.create({
-      data: {
-        code,
-        description,
-        unit,
-        category,
-        supplier,
-        currentCost,
-        averageCost,
-        standardCost,
-        freight,
-        standardLoss,
-        conversionFactor,
-        MaterialPriceHistory: {
-          create: {
-            price: currentCost,
-            freight: freight,
-          }
-        }
+      if (!code) {
+        return res
+          .status(400)
+          .json({ error: "MATERIAL_CODE_REQUIRED", message: "Código é obrigatório." });
       }
-    });
-    res.json(material);
+      if (!description) {
+        return res.status(400).json({
+          error: "MATERIAL_DESCRIPTION_REQUIRED",
+          message: "Descrição é obrigatória.",
+        });
+      }
+      if (!unit) {
+        return res
+          .status(400)
+          .json({ error: "MATERIAL_UNIT_REQUIRED", message: "Unidade é obrigatória." });
+      }
+      if (!category) {
+        return res.status(400).json({
+          error: "MATERIAL_CATEGORY_REQUIRED",
+          message: "Categoria é obrigatória.",
+        });
+      }
+
+      type NumberParseResult =
+        | { ok: true; value: number }
+        | { ok: false; ok_: false; message: string };
+      const toNonNegativeNumber = (
+        value: unknown,
+        fieldLabel: string
+      ): NumberParseResult => {
+        if (value == null || value === "") return { ok: true, value: 0 };
+        const n = typeof value === "number" ? value : Number(value);
+        if (!Number.isFinite(n)) {
+          return { ok: false, ok_: false, message: `${fieldLabel} inválido (não é número).` };
+        }
+        if (n < 0) {
+          return { ok: false, ok_: false, message: `${fieldLabel} não pode ser negativo.` };
+        }
+        return { ok: true, value: n };
+      };
+      const toPositiveNumber = (value: unknown, fieldLabel: string): NumberParseResult => {
+        if (value == null || value === "") return { ok: true, value: 1 };
+        const n = typeof value === "number" ? value : Number(value);
+        if (!Number.isFinite(n)) {
+          return { ok: false, ok_: false, message: `${fieldLabel} inválido (não é número).` };
+        }
+        if (n <= 0) {
+          return { ok: false, ok_: false, message: `${fieldLabel} deve ser maior que zero.` };
+        }
+        return { ok: true, value: n };
+      };
+
+      const numericFields: Array<{
+        key:
+          | "currentCost"
+          | "standardCost"
+          | "averageCost"
+          | "freight"
+          | "standardLoss";
+        label: string;
+      }> = [
+        { key: "currentCost", label: "Custo atual" },
+        { key: "standardCost", label: "Custo padrão" },
+        { key: "averageCost", label: "Custo médio" },
+        { key: "freight", label: "Frete" },
+        { key: "standardLoss", label: "Perda padrão" },
+      ];
+      const parsedNumeric: Record<string, number> = {};
+      for (const field of numericFields) {
+        const parsed = toNonNegativeNumber(body[field.key], field.label);
+        if (parsed.ok === false) {
+          return res.status(400).json({
+            error: "MATERIAL_INVALID_NUMERIC_FIELD",
+            field: field.key,
+            message: parsed.message,
+          });
+        }
+        parsedNumeric[field.key] = parsed.value;
+      }
+      const conversion = toPositiveNumber(body.conversionFactor, "Fator de conversão");
+      if (conversion.ok === false) {
+        return res.status(400).json({
+          error: "MATERIAL_INVALID_NUMERIC_FIELD",
+          field: "conversionFactor",
+          message: conversion.message,
+        });
+      }
+
+      const existing = await prisma.material.findUnique({
+        where: { code },
+        select: { id: true, code: true },
+      });
+      if (existing) {
+        return res.status(409).json({
+          error: "MATERIAL_CODE_ALREADY_EXISTS",
+          message: "Já existe um material cadastrado com este código.",
+          code: existing.code,
+          existingMaterialId: existing.id,
+        });
+      }
+
+      const material = await prisma.material.create({
+        data: {
+          code,
+          description,
+          unit,
+          category,
+          supplier,
+          currentCost: parsedNumeric.currentCost,
+          averageCost: parsedNumeric.averageCost,
+          standardCost: parsedNumeric.standardCost,
+          freight: parsedNumeric.freight,
+          standardLoss: parsedNumeric.standardLoss,
+          conversionFactor: conversion.value,
+          MaterialPriceHistory: {
+            create: {
+              price: parsedNumeric.currentCost,
+              freight: parsedNumeric.freight,
+            },
+          },
+        },
+      });
+      return res.json(material);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        const target = Array.isArray(error.meta?.target)
+          ? (error.meta?.target as string[])
+          : typeof error.meta?.target === "string"
+            ? [error.meta?.target as string]
+            : [];
+        if (target.includes("code")) {
+          const codeRaw =
+            typeof req.body?.code === "string" ? req.body.code.trim() : "";
+          const existing = codeRaw
+            ? await prisma.material
+                .findUnique({ where: { code: codeRaw }, select: { id: true, code: true } })
+                .catch(() => null)
+            : null;
+          return res.status(409).json({
+            error: "MATERIAL_CODE_ALREADY_EXISTS",
+            message: "Já existe um material cadastrado com este código.",
+            code: existing?.code ?? codeRaw,
+            existingMaterialId: existing?.id ?? null,
+          });
+        }
+        return res.status(409).json({
+          error: "MATERIAL_UNIQUE_CONSTRAINT",
+          message: `Conflito de unicidade em campo(s): ${target.join(", ") || "desconhecido"}.`,
+        });
+      }
+      console.error("POST /api/materials", error);
+      return res.status(500).json({
+        error: "MATERIAL_CREATE_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Erro inesperado ao criar material.",
+      });
+    }
   });
 
   app.put("/api/materials/:id", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
