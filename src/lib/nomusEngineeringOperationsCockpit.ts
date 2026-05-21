@@ -111,29 +111,40 @@ function mapRiskToSeverity(
 /** Texto humano para a próxima ação, sem siglas técnicas. */
 function nextActionFor(
   operatorStatus: CockpitOperatorStatus,
-  hasAssemblyLocal: boolean
+  context: {
+    hasAssemblyLocal: boolean;
+    hasMissingMaterials: boolean;
+    hasMissingChildProducts: boolean;
+  }
 ): string {
+  if (context.hasMissingMaterials) {
+    return "Cadastrar ou mapear o material faltante antes de continuar.";
+  }
+  if (context.hasMissingChildProducts) {
+    return "Importar o componente dependente antes de continuar.";
+  }
+
   switch (operatorStatus) {
     case "OK":
-      return "Nenhuma ação necessária — produto alinhado com o Nomus.";
+      return "Nenhuma ação necessária.";
     case "READY":
-      return "Abrir o produto e revisar o plano antes de aplicar.";
+      return "Revisar o plano de aplicação antes de qualquer alteração.";
     case "REVIEW":
-      return hasAssemblyLocal
-        ? "Revisar diferenças; manter itens locais como montagem (não remover)."
+      return context.hasAssemblyLocal
+        ? "Manter item local de montagem e revisar alterações Nomus."
         : "Revisar diferenças e decidir o que aplicar.";
     case "BLOCKED":
       return "Resolver pendências antes de qualquer atualização.";
     case "NEW":
-      return "Importar o produto do Nomus para iniciar simulação de custo.";
+      return "Importar produto pelo fluxo controlado.";
     case "LOCAL":
-      return hasAssemblyLocal
-        ? "Manter o item de montagem local. Apenas conferir alterações Nomus."
+      return context.hasAssemblyLocal
+        ? "Manter montagem local (800.xx). Apenas conferir alterações Nomus."
         : "Conferir item local e decidir se mantém na BOM.";
     case "OPTIONAL":
-      return "Selecionar qual opcional entra no custo antes de continuar.";
+      return "Ir para Opcionais de Precificação e escolher qual entra no custo.";
     case "AMBIGUOUS":
-      return "Decidir se o código deve ser usado como Produto ou Material.";
+      return "Resolver mapeamento manual — decidir se é Produto ou Material.";
     default:
       return "Abrir o produto para analisar.";
   }
@@ -193,10 +204,10 @@ function buildSituationLabels(
     });
   }
   if (cls?.actionClass === "BLOCKED_MISSING_NOMUS_COMPONENT") {
-    labels.push({ kind: "MISSING_MATERIAL", label: "Material/componente faltante no IndusCost" });
+    labels.push({ kind: "MISSING_MATERIAL", label: "Material faltante" });
   }
   if (cls?.actionClass === "BLOCKED_MISSING_PARENT_PRODUCT") {
-    labels.push({ kind: "MISSING_CHILD_PRODUCT", label: "Produto pai não cadastrado no IndusCost" });
+    labels.push({ kind: "MISSING_CHILD_PRODUCT", label: "Produto filho faltante" });
   }
   if (cls?.isBlocked && !labels.some((l) => l.kind.startsWith("MISSING"))) {
     labels.push({ kind: "BLOCKED_GENERIC", label: "Bloqueado — resolver pendências" });
@@ -349,7 +360,16 @@ function buildOperatorRow(row: NomusBomBatchReportRow): CockpitRow {
     isNewProduct,
   });
   const whatChangedSummary = buildWhatChangedSummary(row);
-  const nextRecommendedAction = nextActionFor(operatorStatus, hasAssemblyLocal);
+  const hasMissingMaterials =
+    actionClass === "BLOCKED_MISSING_NOMUS_COMPONENT";
+  const hasMissingChildProducts =
+    actionClass === "BLOCKED_MISSING_PARENT_PRODUCT";
+
+  const nextRecommendedAction = nextActionFor(operatorStatus, {
+    hasAssemblyLocal,
+    hasMissingMaterials,
+    hasMissingChildProducts,
+  });
   const blockingDetails = buildBlockingDetails(row);
   const warnings = buildRowWarnings(row);
   const technicalRefs = buildTechnicalRefs(operatorStatus);
@@ -360,11 +380,6 @@ function buildOperatorRow(row: NomusBomBatchReportRow): CockpitRow {
     row.quantityDiffs > 0 ||
     row.missingProductInIndusCost;
 
-  const hasMissingMaterials =
-    actionClass === "BLOCKED_MISSING_NOMUS_COMPONENT";
-  const hasMissingChildProducts =
-    actionClass === "BLOCKED_MISSING_PARENT_PRODUCT";
-
   return {
     parentCode: row.parentCode,
     parentDescription: row.parentDescription ?? null,
@@ -372,7 +387,11 @@ function buildOperatorRow(row: NomusBomBatchReportRow): CockpitRow {
     productName: row.indusProductName ?? null,
 
     operatorStatus,
-    operatorStatusLabel: OPERATOR_STATUS_LABEL[operatorStatus],
+    operatorStatusLabel: hasMissingMaterials
+      ? "Material faltante"
+      : hasMissingChildProducts
+        ? "Produto filho faltante"
+        : OPERATOR_STATUS_LABEL[operatorStatus],
     severity,
 
     situationLabels,
@@ -406,7 +425,7 @@ function buildOperatorRow(row: NomusBomBatchReportRow): CockpitRow {
   };
 }
 
-function aggregateTotals(rows: CockpitRow[]): CockpitTotals {
+export function aggregateCockpitTotals(rows: CockpitRow[]): CockpitTotals {
   let noChanges = 0;
   let ready = 0;
   let needsReview = 0;
@@ -474,6 +493,7 @@ export type BuildCockpitInput = {
   scope?: CockpitScope;
   parentCode?: string;
   limit?: number;
+  offset?: number;
   /** Reservado para evolução futura — atualmente sem efeito (lib é read-only). */
   includeCostImpact?: boolean;
 };
@@ -484,12 +504,25 @@ function clampLimit(input: BuildCockpitInput): number {
   return Math.min(Math.max(raw, 1), COCKPIT_MAX_LIMIT);
 }
 
+function clampOffset(offset?: number): number {
+  const raw = Number.isFinite(offset ?? NaN) ? Number(offset) : 0;
+  return Math.max(0, Math.floor(raw));
+}
+
 export async function buildNomusEngineeringOperationsCockpit(
   input: BuildCockpitInput = {}
 ): Promise<CockpitResult> {
   const scope: CockpitScope = input.scope ?? "CHANGED_ONLY";
   const parentCode = input.parentCode?.trim() || null;
   const limitApplied = clampLimit(input);
+  const offsetApplied = clampOffset(input.offset);
+  const includeCostImpact = input.includeCostImpact === true;
+
+  const emptyPagination = {
+    offsetApplied,
+    hasMore: false,
+    nextOffset: null as number | null,
+  };
 
   if (scope === "ONE_PRODUCT" && !parentCode) {
     return {
@@ -500,7 +533,8 @@ export async function buildNomusEngineeringOperationsCockpit(
       totalParentsInStage: 0,
       comparedCount: 0,
       limitApplied,
-      totals: aggregateTotals([]),
+      ...emptyPagination,
+      totals: aggregateCockpitTotals([]),
       rows: [],
       warnings: ["Escopo ONE_PRODUCT exige parentCode."],
     };
@@ -508,7 +542,7 @@ export async function buildNomusEngineeringOperationsCockpit(
 
   const report = await buildNomusBomClassificationReport({
     limit: limitApplied,
-    offset: 0,
+    offset: offsetApplied,
     search: scope === "ONE_PRODUCT" ? (parentCode ?? undefined) : undefined,
   });
 
@@ -516,6 +550,17 @@ export async function buildNomusEngineeringOperationsCockpit(
 
   if (scope === "CHANGED_ONLY") {
     rows = rows.filter((r) => r.operatorStatus !== "OK");
+  }
+
+  const hasMore =
+    offsetApplied + report.comparedCount < report.totalParentsInNomusStage;
+  const nextOffset = hasMore ? offsetApplied + limitApplied : null;
+
+  const warnings: string[] = [];
+  if (includeCostImpact) {
+    warnings.push(
+      "Impacto de custo detalhado não é calculado em lote nesta fase — abra o produto na aba Impacto de custo."
+    );
   }
 
   return {
@@ -526,8 +571,11 @@ export async function buildNomusEngineeringOperationsCockpit(
     totalParentsInStage: report.totalParentsInNomusStage,
     comparedCount: report.comparedCount,
     limitApplied,
-    totals: aggregateTotals(rows),
+    offsetApplied,
+    hasMore,
+    nextOffset,
+    totals: aggregateCockpitTotals(rows),
     rows,
-    warnings: [],
+    warnings,
   };
 }

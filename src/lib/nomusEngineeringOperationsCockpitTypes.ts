@@ -131,10 +131,16 @@ export type CockpitResult = {
   parentCode: string | null;
   /** Total real de produtos com parentCode distinto no stage Nomus (independente do limit). */
   totalParentsInStage: number;
-  /** Quantidade efetivamente analisada nesta chamada. */
+  /** Quantidade de produtos Nomus comparados nesta página (antes do filtro CHANGED_ONLY). */
   comparedCount: number;
   /** Limite aplicado (pode ter sido clampado pelo servidor). */
   limitApplied: number;
+  /** Deslocamento aplicado na paginação do stage Nomus. */
+  offsetApplied: number;
+  /** Indica se há mais produtos no stage para carregar. */
+  hasMore: boolean;
+  /** Próximo offset sugerido para "Carregar mais", ou null se não houver. */
+  nextOffset: number | null;
   totals: CockpitTotals;
   rows: CockpitRow[];
   warnings: string[];

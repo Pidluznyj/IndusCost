@@ -1,7 +1,7 @@
 /**
  * Central de Atualização Nomus — painel operacional (read-only).
  *
- * Fase NOMUS-ENGINEERING-OPERATIONS-COCKPIT-A.
+ * Fase NOMUS-ENGINEERING-OPERATIONS-COCKPIT-B.
  * - Fila de trabalho com status em linguagem de negócio.
  * - Sem botão "Aplicar todos". Nenhuma mutação. Apenas diagnóstico.
  * - Atalhos para as abas técnicas existentes (BOM efetiva, impacto, plano, diagnóstico, etc.).
@@ -21,9 +21,11 @@ import {
   Search,
   ShieldAlert,
   Wrench,
+  X,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { aggregateCockpitTotals } from "@/src/lib/nomusEngineeringOperationsCockpit";
 import type {
   CockpitOperatorStatus,
   CockpitResult,
@@ -93,56 +95,78 @@ const STATUS_TONE: Record<
   },
 };
 
+type RowFilter =
+  | "ALL"
+  | CockpitOperatorStatus
+  | "ASSEMBLY_LOCAL"
+  | "BOM_CHANGED";
+
 const SUMMARY_CARDS: Array<{
-  key: keyof CockpitResult["totals"];
+  filterKey: RowFilter;
+  totalsKey: keyof CockpitResult["totals"];
   title: string;
   description: string;
   tone: "neutral" | "info" | "warn" | "danger" | "success";
 }> = [
   {
-    key: "ready",
+    filterKey: "READY",
+    totalsKey: "ready",
     title: "Prontos",
     description: "Alterações simples para revisar antes de aplicar.",
     tone: "info",
   },
   {
-    key: "needsReview",
+    filterKey: "REVIEW",
+    totalsKey: "needsReview",
     title: "Precisam revisão",
     description: "Diferenças que exigem decisão humana.",
     tone: "warn",
   },
   {
-    key: "blocked",
+    filterKey: "BLOCKED",
+    totalsKey: "blocked",
     title: "Bloqueados",
     description: "Pendências impedem atualização segura.",
     tone: "danger",
   },
   {
-    key: "newProducts",
+    filterKey: "NEW",
+    totalsKey: "newProducts",
     title: "Produtos novos",
     description: "Existem no Nomus, ainda não no IndusCost.",
     tone: "info",
   },
   {
-    key: "bomChanged",
+    filterKey: "BOM_CHANGED",
+    totalsKey: "bomChanged",
     title: "BOM alterada",
     description: "Estrutura ou quantidade mudou no Nomus.",
     tone: "info",
   },
   {
-    key: "optionalPending",
+    filterKey: "OPTIONAL",
+    totalsKey: "optionalPending",
     title: "Opcionais pendentes",
     description: "Falta escolher qual opcional entra no custo.",
     tone: "warn",
   },
   {
-    key: "localExceptions",
+    filterKey: "LOCAL",
+    totalsKey: "localExceptions",
     title: "Exceções locais",
     description: "Itens locais legítimos que devem ser preservados.",
     tone: "neutral",
   },
   {
-    key: "noChanges",
+    filterKey: "ASSEMBLY_LOCAL",
+    totalsKey: "assemblyLocalExceptions",
+    title: "Montagem local",
+    description: "Produtos com 800.xx — montagem preservada.",
+    tone: "neutral",
+  },
+  {
+    filterKey: "OK",
+    totalsKey: "noChanges",
     title: "Sem alteração",
     description: "Produtos já alinhados com o Nomus.",
     tone: "success",
@@ -167,50 +191,107 @@ function severityRingClass(severity: CockpitRow["severity"]): string {
   }
 }
 
+function matchesRowFilter(row: CockpitRow, filter: RowFilter): boolean {
+  if (filter === "ALL") return true;
+  if (filter === "ASSEMBLY_LOCAL") return row.hasAssemblyLocalException;
+  if (filter === "BOM_CHANGED") return row.hasStructuralChanges;
+  return row.operatorStatus === filter;
+}
+
+function mergeCockpitPages(prev: CockpitResult, next: CockpitResult): CockpitResult {
+  const seen = new Set(prev.rows.map((r) => r.parentCode));
+  const appended = next.rows.filter((r) => !seen.has(r.parentCode));
+  const rows = [...prev.rows, ...appended];
+  return {
+    ...next,
+    rows,
+    totals: aggregateCockpitTotals(rows),
+    warnings: [...new Set([...prev.warnings, ...next.warnings])],
+  };
+}
+
 export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
   onOpenProduct,
   disabled = false,
 }) => {
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CockpitResult | null>(null);
   const [scope, setScope] = useState<CockpitScope>("CHANGED_ONLY");
   const [search, setSearch] = useState("");
   const [expandedParentCode, setExpandedParentCode] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<CockpitOperatorStatus | "ALL">("ALL");
+  const [rowFilter, setRowFilter] = useState<RowFilter>("ALL");
+
+  const fetchPage = useCallback(
+    async (offset: number) => {
+      const params = new URLSearchParams({
+        scope,
+        limit: "100",
+        offset: String(offset),
+      });
+      return fetchJsonOk<CockpitResult>(
+        `/api/nomus/engineering-operations-cockpit?${params.toString()}`
+      );
+    },
+    [scope]
+  );
 
   const loadCockpit = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        scope,
-        limit: "100",
-      });
-      const data = await fetchJsonOk<CockpitResult>(
-        `/api/nomus/engineering-operations-cockpit?${params.toString()}`
-      );
+      const data = await fetchPage(0);
       setResult(data);
     } catch (e) {
       setResult(null);
-      setError(e instanceof Error ? e.message : "Erro ao gerar diagnóstico.");
+      setError(
+        e instanceof Error
+          ? `${e.message} Tente novamente ou abra o diagnóstico técnico de um produto específico.`
+          : "Erro ao gerar diagnóstico. Tente novamente ou abra o diagnóstico técnico."
+      );
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, [fetchPage]);
+
+  const loadMore = useCallback(async () => {
+    if (!result?.hasMore || result.nextOffset == null) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const nextPage = await fetchPage(result.nextOffset);
+      setResult((prev) => (prev ? mergeCockpitPages(prev, nextPage) : nextPage));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? `${e.message} Tente novamente ou abra o diagnóstico técnico.`
+          : "Erro ao carregar mais produtos. Tente novamente."
+      );
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [fetchPage, result]);
+
+  const clearFilters = useCallback(() => {
+    setSearch("");
+    setRowFilter("ALL");
+  }, []);
 
   // Não carrega automaticamente: respeita a regra "Gerar diagnóstico" como botão principal,
   // para deixar claro ao operador que a tela é leitura e nada acontece sozinho.
   useEffect(() => {
     setResult(null);
     setExpandedParentCode(null);
+    setRowFilter("ALL");
+    setSearch("");
   }, [scope]);
 
   const filteredRows = useMemo(() => {
     if (!result) return [];
     const q = search.trim().toLowerCase();
     return result.rows.filter((r) => {
-      if (statusFilter !== "ALL" && r.operatorStatus !== statusFilter) return false;
+      if (!matchesRowFilter(r, rowFilter)) return false;
       if (!q) return true;
       return (
         r.parentCode.toLowerCase().includes(q) ||
@@ -218,7 +299,9 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
         (r.productName?.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [result, search, statusFilter]);
+  }, [result, search, rowFilter]);
+
+  const hasActiveFilters = search.trim().length > 0 || rowFilter !== "ALL";
 
   return (
     <div className="space-y-4">
@@ -226,17 +309,22 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
         <div>
           <h3 className="text-base font-bold text-foreground">Central de Atualização Nomus</h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Revise alterações de engenharia vindas do Nomus antes de atualizar o IndusCost.
+            Diagnóstico operacional das alterações de engenharia vindas do Nomus — o que mudou, o
+            risco e a próxima ação recomendada para cada produto.
           </p>
         </div>
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 flex items-start gap-2">
           <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
           <p>
-            Esta tela <strong>não altera ProductBOM, custo, preço, propostas ou pedidos</strong>.
-            Ela apenas mostra o diagnóstico. Toda mutação continua sendo feita produto a produto, com
-            confirmação textual nas abas técnicas.
+            Esta tela é <strong>somente diagnóstico</strong>. Não altera ProductBOM, custo, preço,
+            propostas ou pedidos. Toda alteração continua produto a produto, com confirmação nas
+            abas técnicas.
           </p>
         </div>
+        <p className="text-[10px] text-muted-foreground">
+          Diagnóstico pode levar alguns segundos em bases grandes. Carregamos até 100 produtos por
+          vez — use &quot;Carregar mais&quot; se necessário.
+        </p>
         <div className="flex flex-wrap items-end gap-2">
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground block">
@@ -275,17 +363,26 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
           </button>
           {result ? (
             <span className="text-[10px] text-muted-foreground ml-auto">
-              {result.comparedCount} de {result.totalParentsInStage} produtos no stage Nomus ·{" "}
+              {result.rows.length} produto(s) na fila · {result.comparedCount} comparado(s) nesta
+              página · {result.totalParentsInStage} no stage Nomus ·{" "}
               {new Date(result.generatedAt).toLocaleString("pt-BR")}
             </span>
           ) : null}
         </div>
       </div>
 
+      {loading ? (
+        <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Gerando diagnóstico… isso pode levar alguns segundos.
+        </div>
+      ) : null}
+
       {error ? (
-        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-          {error}
-        </p>
+        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
+          <ShieldAlert className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <p>{error}</p>
+        </div>
       ) : null}
 
       {!result && !loading && !error ? (
@@ -297,9 +394,10 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
 
       {result ? (
         <>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
             {SUMMARY_CARDS.map((card) => {
-              const value = result.totals[card.key];
+              const value = result.totals[card.totalsKey];
+              const isActive = rowFilter === card.filterKey;
               const toneClass =
                 card.tone === "danger"
                   ? "border-red-300 bg-red-50"
@@ -322,25 +420,20 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
                         : "text-foreground";
               return (
                 <button
-                  key={card.key}
+                  key={card.totalsKey}
                   type="button"
                   className={cn(
                     "text-left rounded-xl border p-3 transition-shadow hover:shadow-sm",
-                    toneClass
+                    toneClass,
+                    isActive && "ring-2 ring-primary ring-offset-1 shadow-sm"
                   )}
-                  onClick={() => {
-                    if (card.key === "ready") setStatusFilter("READY");
-                    else if (card.key === "needsReview") setStatusFilter("REVIEW");
-                    else if (card.key === "blocked") setStatusFilter("BLOCKED");
-                    else if (card.key === "newProducts") setStatusFilter("NEW");
-                    else if (card.key === "optionalPending") setStatusFilter("OPTIONAL");
-                    else if (card.key === "localExceptions") setStatusFilter("LOCAL");
-                    else if (card.key === "noChanges") setStatusFilter("OK");
-                    else setStatusFilter("ALL");
-                  }}
+                  onClick={() =>
+                    setRowFilter((prev) => (prev === card.filterKey ? "ALL" : card.filterKey))
+                  }
                 >
                   <p className="text-[10px] uppercase font-semibold text-muted-foreground">
                     {card.title}
+                    {isActive ? " · filtro ativo" : ""}
                   </p>
                   <p className={cn("text-2xl font-bold tabular-nums mt-1", valueClass)}>{value}</p>
                   <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
@@ -369,10 +462,8 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
                 Status
               </label>
               <select
-                value={statusFilter}
-                onChange={(e) =>
-                  setStatusFilter(e.target.value as CockpitOperatorStatus | "ALL")
-                }
+                value={rowFilter}
+                onChange={(e) => setRowFilter(e.target.value as RowFilter)}
                 className="mt-1 h-9 rounded-lg border border-border bg-background px-2 text-xs"
               >
                 <option value="ALL">Todos</option>
@@ -382,18 +473,35 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
                 <option value="BLOCKED">Bloqueado</option>
                 <option value="NEW">Produto novo</option>
                 <option value="LOCAL">Tem item local</option>
+                <option value="ASSEMBLY_LOCAL">Montagem local</option>
                 <option value="OPTIONAL">Opcional pendente</option>
                 <option value="AMBIGUOUS">Código ambíguo</option>
+                <option value="BOM_CHANGED">BOM alterada</option>
               </select>
             </div>
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex h-9 items-center gap-1 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent"
+              >
+                <X className="h-3.5 w-3.5" />
+                Limpar filtros
+              </button>
+            ) : null}
             <span className="text-[10px] text-muted-foreground ml-auto">
-              Mostrando {filteredRows.length} produto(s)
+              Mostrando {filteredRows.length} de {result.rows.length} produto(s) carregado(s)
             </span>
           </div>
 
           {filteredRows.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-              Nenhum produto com os filtros atuais.
+            <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground space-y-1">
+              <p>Nenhum item encontrado para o filtro atual.</p>
+              <p>
+                {scope === "CHANGED_ONLY"
+                  ? "Tente mudar o escopo para Todos ou limpar os filtros."
+                  : "Tente limpar os filtros ou carregar mais produtos."}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-border">
@@ -539,6 +647,24 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
             </div>
           )}
 
+          {result.hasMore ? (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                disabled={disabled || loadingMore}
+                onClick={() => void loadMore()}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-4 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+                Carregar mais
+              </button>
+            </div>
+          ) : null}
+
           {result.warnings.length > 0 ? (
             <ul className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 list-disc list-inside">
               {result.warnings.map((w, i) => (
@@ -602,7 +728,7 @@ const ExpandedRowDetail: React.FC<{
 
       {row.blockingDetails.length > 0 ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-900">
-          <p className="font-bold">Pendências bloqueantes</p>
+          <p className="font-bold">Pendências</p>
           <ul className="mt-1 space-y-0.5 list-disc list-inside">
             {row.blockingDetails.map((d, i) => (
               <li key={i}>{d}</li>

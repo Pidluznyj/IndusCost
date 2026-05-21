@@ -4017,6 +4017,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             : undefined;
         const limitRaw = Number(req.query.limit);
         const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
+        const offsetRaw = Number(req.query.offset);
+        const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : undefined;
         const includeCostImpact =
           req.query.includeCostImpact === "true" || req.query.includeCostImpact === "1";
 
@@ -4024,6 +4026,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           scope,
           parentCode,
           limit,
+          offset,
           includeCostImpact,
         });
         return res.json(result);
