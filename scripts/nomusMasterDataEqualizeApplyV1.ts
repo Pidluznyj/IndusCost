@@ -80,13 +80,25 @@ async function main(): Promise<void> {
     codes,
     requestedBy: "cli",
   });
-  log(`status=${result.status} · ${result.message}`);
-  log(
-    `runId=${result.runId} · history=${result.historyEntriesCreated} entries · errors=${result.errors}`
-  );
-  for (const item of result.report.slice(0, 60)) {
+
+  // Detalhe primeiro, resumo no final — facilita leitura humana/CI.
+  const detailed = result.report.slice(0, 60);
+  for (const item of detailed) {
     log(`  ${item.outcome} · ${item.action} · ${item.code} · ${item.message}`);
   }
+  if (result.report.length > detailed.length) {
+    log(`  … +${result.report.length - detailed.length} linha(s) não mostradas.`);
+  }
+  log("--- RESUMO ---");
+  log(`status=${result.status}`);
+  log(
+    `created · P=${result.createdProducts} M=${result.createdMaterials} · updated · P=${result.updatedProducts} M=${result.updatedMaterials} · deactivated · P=${result.deactivatedProducts} M=${result.deactivatedMaterials}`
+  );
+  log(
+    `historyEntriesCreated=${result.historyEntriesCreated} · preserved=${result.preservedLocal} · blocked=${result.blocked} · errors=${result.errors}`
+  );
+  log(`runId=${result.runId || "(nenhum — apply bloqueado antes do run)"}`);
+  log(`message: ${result.message}`);
   if (result.status === "FAILED") process.exitCode = 1;
 }
 

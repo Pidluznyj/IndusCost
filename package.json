@@ -34,6 +34,7 @@
     "sync:nomus:master-data-apply-safe": "tsx scripts/nomusMasterDataImportApplySafeV1.ts",
     "sync:nomus:master-data-equalize-preview": "tsx scripts/nomusMasterDataEqualizePreviewV1.ts",
     "sync:nomus:master-data-equalize-apply": "tsx scripts/nomusMasterDataEqualizeApplyV1.ts",
+    "sync:nomus:master-data-history-backfill": "tsx scripts/nomusMasterDataHistoryBackfillV1.ts",
     "sync:nomus:sales-orders:dry": "tsx scripts/nomusSalesOrdersSyncV1.ts",
     "test:nomus-sync": "tsx --test scripts/nomusNumberParser.test.ts",
     "test:nomus:maintenance-smoke": "tsx scripts/nomusMaintenanceSmokeTestV1.ts",

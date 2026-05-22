@@ -175,6 +175,7 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
   }, []);
 
   const onApplyEqualize = useCallback(async () => {
+    if (equalizeApplying) return; // anti-duplo-clique
     if (equalizeConfirmText !== EQUALIZE_CONFIRMATION_TEXT) return;
     setEqualizeApplying(true);
     setEqualizeError(null);
@@ -188,15 +189,20 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
       setEqualizeConfirmText("");
       await Promise.all([loadEqualizePreview(), loadDiagnostic(0)]);
     } catch (e) {
+      const isNetwork =
+        e instanceof TypeError ||
+        (e instanceof Error && /Failed to fetch|NetworkError|ECONNREFUSED/i.test(e.message));
       setEqualizeError(
-        e instanceof Error
-          ? `${e.message} Tente novamente ou rode o preview pelo terminal.`
-          : "Erro ao aplicar Igualar Bases."
+        isNetwork
+          ? "Falha de rede ao chamar /api/nomus/master-data-equalize/apply. Verifique se o servidor está rodando e reabra a tela."
+          : e instanceof Error
+            ? `${e.message} Veja o relatório abaixo, rode o preview pelo terminal ou abra o diagnóstico técnico.`
+            : "Erro ao aplicar Igualar Bases."
       );
     } finally {
       setEqualizeApplying(false);
     }
-  }, [equalizeConfirmText, loadEqualizePreview, loadDiagnostic]);
+  }, [equalizeApplying, equalizeConfirmText, loadEqualizePreview, loadDiagnostic]);
 
   const onApply = useCallback(async () => {
     if (confirmText !== MASTER_DATA_CONFIRMATION_TEXT) return;
@@ -333,9 +339,28 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
             <strong>{equalizeResult.historyEntriesCreated}</strong> · Erros:{" "}
             <strong>{equalizeResult.errors}</strong>
           </p>
-          <p className="text-[10px] opacity-80">
-            runId: <code className="font-mono">{equalizeResult.runId}</code>
-          </p>
+          {equalizeResult.runId ? (
+            <p className="text-[10px] opacity-80">
+              runId: <code className="font-mono">{equalizeResult.runId}</code>
+            </p>
+          ) : null}
+          {equalizeResult.errors > 0 && equalizeResult.report.length > 0 ? (
+            <details className="text-[10px] mt-1">
+              <summary className="cursor-pointer underline underline-offset-2">
+                Ver até 5 mensagens de erro
+              </summary>
+              <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                {equalizeResult.report
+                  .filter((r) => r.outcome === "FAILED")
+                  .slice(0, 5)
+                  .map((r, i) => (
+                    <li key={`${r.code}-${i}`}>
+                      <strong>{r.code}</strong> ({r.action}): {r.message}
+                    </li>
+                  ))}
+              </ul>
+            </details>
+          ) : null}
         </div>
       ) : null}
 

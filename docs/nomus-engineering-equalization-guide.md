@@ -385,6 +385,29 @@ Se ainda não houver registros, o painel mostra:
 - `npm run sync:nomus:master-data-equalize-apply -- --confirm="IGUALAR BASES NOMUS"`
   — apply controlado do Igualar bases (com histórico).
 - `npm run test:nomus:master-data-equalize` — smoke read-only do Igualar bases
-  (valida preview e bloqueios do apply sem confirmação correta).
+  (valida preview, bloqueios do apply sem confirmação correta, snapshot
+  `EngineeringSyncRun`/`EngineeringChangeLog` antes/depois e ausência de FK órfã).
+- `npm run sync:nomus:master-data-history-backfill` — dry-run idempotente que
+  lista Products/Materials criados pela Carga Mestre Nomus sem entrada de
+  histórico `IMPORTED`. Para gravar o backfill (idempotente):
+  `npm run sync:nomus:master-data-history-backfill -- --confirm="BACKFILL HISTORICO NOMUS"`.
+  O backfill cria seu próprio `EngineeringSyncRun` (`summaryJson.origin =
+  "MASTER_DATA_HISTORY_BACKFILL"`) e nunca altera Product/Material.
+
+### Diagnóstico do servidor
+
+Para confirmar antes do apply real que a FK `EngineeringChangeLog.runId →
+EngineeringSyncRun.id` está saudável, rodar via psql:
+
+```sql
+SELECT COUNT(*) AS logs_com_runid_orfao
+FROM "EngineeringChangeLog" l
+LEFT JOIN "EngineeringSyncRun" r ON r.id = l."runId"
+WHERE l."runId" IS NOT NULL
+  AND r.id IS NULL;
+```
+
+O resultado deve ser `0`. O smoke test `npm run test:nomus:master-data-equalize`
+já valida exatamente isso, mas o SQL acima é útil para inspeção rápida.
 
 Esses scripts devem ser rodados no servidor (precisam de `DATABASE_URL`).
