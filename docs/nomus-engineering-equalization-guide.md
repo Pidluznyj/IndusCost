@@ -460,7 +460,84 @@ npm run sync:nomus:bom-apply-one -- --parentCode=304.02AA --confirm="APLICAR BOM
 npm run test:nomus:bom-apply-after-master-data
 ```
 
-## 11. Scripts úteis (para o time técnico)
+## 11. Passo a passo do dia para a Engenharia
+
+Sequência recomendada para usar a **Central de Engenharia Nomus** sem se perder.
+
+### a) Toda manhã
+
+1. Abrir **Produtos → Manutenção Nomus → Visão Geral** (sem produto selecionado).
+2. Clicar em **Atualizar painel da engenharia** no card de resumo (topo da tela).
+3. Olhar os 8 cartões agregados:
+   - **Produtos Nomus (stage)** — total no Nomus oficial.
+   - **Cadastro mestre faltante** — se > 0, abrir **Carga Mestre Nomus** e diagnosticar.
+   - **Bases com divergência** — se > 0, rodar **Preview igualar bases**.
+   - **Prontos para aplicar BOM** — fila do dia.
+   - **Precisam revisão** — exigem decisão humana.
+   - **Bloqueados** — pendências (material/filho/opcional).
+   - **Sem ação necessária** — produtos já alinhados.
+   - **Itens com histórico Nomus** — auditoria.
+4. Conferir os 3 cartões inferiores: última **Igualar bases**, última **Aplicar BOM Nomus**, último **Backfill de histórico**.
+
+### b) Tratando um produto
+
+1. Na **Central de Atualização Nomus** (abaixo do painel de resumo), filtrar
+   "Prontos" ou "Precisa revisão".
+2. Clicar em **Abrir produto** — abre direto na aba técnica recomendada.
+3. Na aba Visão Geral do produto aparece o **Checklist de liberação para custeio**
+   no topo, com 8 itens em verde/amarelo/vermelho.
+4. Seguir os atalhos do checklist conforme o status:
+   - Cadastro faltante → Carga Mestre.
+   - Mestre desalinhado → Igualar bases.
+   - Materiais faltantes → Carga Mestre.
+   - Opcionais pendentes → Opcionais de Precificação.
+   - BOM efetiva bloqueada → Diagnóstico técnico.
+   - Impacto a revisar → aba Impacto de Custo.
+   - BOM pronta → aba Plano de aplicação → **Aplicar BOM Nomus**.
+5. Conferir a aba **Histórico** para ver runs e entradas.
+
+### c) Significado de cada status (operador)
+
+| Status visível | O que significa | Ação |
+|---|---|---|
+| **OK** | Etapa concluída — pode seguir. | Nenhuma. |
+| **Atenção** | Há decisão a tomar, sem bloqueio. | Revisar o item indicado. |
+| **Bloqueado** | Não dá para seguir sem resolver. | Resolver a causa exata. |
+| **Pendente** | Ainda não calculado ou registrado. | Rodar a etapa correspondente. |
+| **Não aplicável** | Etapa não vale para o produto. | Ignorar. |
+
+### d) Como saber que posso liberar para custeio
+
+Quando **todos os itens** do Checklist de Liberação estiverem em **OK** ou
+**Não aplicável**:
+
+- Não há cadastro mestre faltante.
+- Cadastro do produto é Nomus controlado.
+- Materiais/componentes existem.
+- Opcionais estão tratados.
+- BOM efetiva sem bloqueio.
+- Impacto de custo revisado.
+- BOM aplicada (ou marcada como sem ação).
+- Histórico aparece na aba.
+
+### e) Se algo der erro
+
+- **"Falha de rede"** ao aplicar — verificar o servidor (pm2 status / systemctl).
+- **"Plano desatualizado"** — clicar em **Atualizar preview** antes de aplicar
+  novamente.
+- **"Confirmação inválida"** — copiar exatamente a frase mostrada no preview
+  (`APLICAR BOM NOMUS <CÓDIGO>` ou `IGUALAR BASES NOMUS` etc.).
+- **"BOM bloqueada"** — abrir Diagnóstico técnico para ver causa.
+
+### f) Antes de liberar para custeio
+
+Recomendação operacional:
+
+1. Conferir Checklist de Liberação inteiro em verde para o(s) produto(s).
+2. Conferir aba **Histórico** do produto com últimos runs.
+3. Sinalizar para a equipe de Custos/Pricing.
+
+## 12. Scripts úteis (para o time técnico)
 
 - `npm run check:frontend-imports` — guardrail que impede Prisma/lib server-side
   no bundle React.
@@ -517,8 +594,12 @@ mas o SQL acima é útil para inspeção rápida.
   `--confirm` o script só lista o que seria aplicado.
 - `npm run sync:nomus:bom-apply-one -- --parentCode=<código> --confirm="APLICAR BOM NOMUS <CÓDIGO>"`
   — apply real do produto único.
-- `npm run test:nomus:bom-apply-after-master-data` — smoke read-only que roda
+-   `npm run test:nomus:bom-apply-after-master-data` — smoke read-only que roda
   preview dos pilotos, garante que confirmação errada **não** muta dado e
   confere FK órfã `EngineeringChangeLog.runId`.
+- `npm run test:nomus:engineering-release-ready` — smoke consolidado de release:
+  valida preview de Igualar bases + preview de Aplicar BOM (piloto) +
+  histórico de um produto + lista de runs recentes + FK órfã + snapshot
+  antes/depois.
 
 Esses scripts devem ser rodados no servidor (precisam de `DATABASE_URL`).

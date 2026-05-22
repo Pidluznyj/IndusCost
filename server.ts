@@ -4383,6 +4383,86 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   );
 
   app.get(
+    "/api/nomus/engineering-runs/recent",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.edit",
+      "materials.view",
+      "materials.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const limitRaw = Number(req.query.limit);
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 10;
+        const runs = await prisma.engineeringSyncRun.findMany({
+          orderBy: { createdAt: "desc" },
+          take: limit,
+          select: {
+            id: true,
+            mode: true,
+            status: true,
+            parentCode: true,
+            planHash: true,
+            approvedBy: true,
+            startedAt: true,
+            finishedAt: true,
+            createdAt: true,
+            summaryJson: true,
+          },
+        });
+        const items = runs.map((r) => {
+          const summary = (r.summaryJson as { origin?: string } | null) ?? null;
+          const origin = summary?.origin ?? null;
+          let label: string;
+          switch (origin) {
+            case "MASTER_DATA_EQUALIZE":
+              label = "Igualar bases";
+              break;
+            case "BOM_APPLY_AFTER_MASTER_DATA":
+              label = r.parentCode
+                ? `Aplicar BOM Nomus · ${r.parentCode}`
+                : "Aplicar BOM Nomus";
+              break;
+            case "MASTER_DATA_HISTORY_BACKFILL":
+              label = "Backfill de histórico";
+              break;
+            default:
+              label = r.parentCode ? `Sync engenharia · ${r.parentCode}` : "Sync engenharia";
+          }
+          return {
+            id: r.id,
+            mode: r.mode,
+            status: r.status,
+            origin,
+            label,
+            parentCode: r.parentCode,
+            planHash: r.planHash,
+            approvedBy: r.approvedBy,
+            startedAt: r.startedAt?.toISOString() ?? null,
+            finishedAt: r.finishedAt?.toISOString() ?? null,
+            createdAt: r.createdAt.toISOString(),
+            summary: summary,
+          };
+        });
+        return res.json({
+          mode: "READ_ONLY",
+          generatedAt: new Date().toISOString(),
+          items,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Erro ao listar runs recentes.";
+        console.error("GET /api/nomus/engineering-runs/recent", error);
+        return res.status(500).json({
+          error: "ENGINEERING_RUNS_RECENT_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.get(
     "/api/products/:id/change-history",
     requireAppAuth,
     requireAnyPermission(["products.view", "products.edit", "products.tab.info"]),

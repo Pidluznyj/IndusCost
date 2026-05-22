@@ -23,6 +23,8 @@ import { NomusMaintenanceProductBanner } from "@/src/components/product/NomusMai
 import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
 import { NomusEngineeringOperationsCockpitPanel } from "@/src/components/product/NomusEngineeringOperationsCockpitPanel";
 import { NomusMasterDataImportPanel } from "@/src/components/product/NomusMasterDataImportPanel";
+import { NomusEngineeringStatusBoard } from "@/src/components/product/NomusEngineeringStatusBoard";
+import { ProductReleaseChecklist } from "@/src/components/product/ProductReleaseChecklist";
 import type {
   NomusMaintenanceTab,
   NomusMaintenanceWorkspaceProps,
@@ -303,6 +305,7 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
       <div className="space-y-4">
         <NomusMaintenanceStepHeader tab="overview" />
         <NomusMaintenanceProductBanner />
+        <NomusEngineeringStatusBoard disabled={disabled} />
         <NomusMasterDataImportPanel disabled={disabled} />
         <NomusEngineeringOperationsCockpitPanel
           disabled={disabled}
@@ -332,6 +335,7 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
         description={selectedParentDescription}
         compact
       />
+      <ProductReleaseChecklist parentCode={selectedParentCode} />
       {loading ? (
         <p className="text-sm text-muted-foreground flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
