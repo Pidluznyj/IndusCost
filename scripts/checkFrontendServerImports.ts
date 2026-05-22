@@ -72,6 +72,20 @@ const FORBIDDEN_SPECIFIERS: Array<{
       return /(^|\/)nomusMasterDataImport$/.test(base);
     },
   },
+  {
+    rule: "Lib server-side do Igualar Bases Nomus (usar ...EqualizeTypes, ...EqualizeShared ou ...EqualizeClient)",
+    test: (s) => {
+      const base = s.replace(/\.(?:ts|tsx|js|jsx)$/, "");
+      return /(^|\/)nomusMasterDataEqualize$/.test(base);
+    },
+  },
+  {
+    rule: "Lib server-side do histórico de alterações (usar ...HistoryTypes ou ...HistoryClient)",
+    test: (s) => {
+      const base = s.replace(/\.(?:ts|tsx|js|jsx)$/, "");
+      return /(^|\/)productChangeHistory$/.test(base);
+    },
+  },
 ];
 
 /**
@@ -82,6 +96,8 @@ const KNOWN_SERVER_LIBS = new Set<string>([
   "nomusEngineeringOperationsCockpit",
   "nomusEngineeringEqualizationActionPlan",
   "nomusMasterDataImport",
+  "nomusMasterDataEqualize",
+  "productChangeHistory",
   // Sinta-se livre para acrescentar outras libs server-side aqui.
 ]);
 

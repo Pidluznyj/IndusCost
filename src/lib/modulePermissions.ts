@@ -218,7 +218,15 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
 };
 
 /** Mapeamento aba do modal de produto → permissão. */
-export const PRODUCT_TAB_IDS = ["info", "bom", "routing", "tree", "cost", "composition"] as const;
+export const PRODUCT_TAB_IDS = [
+  "info",
+  "bom",
+  "routing",
+  "tree",
+  "cost",
+  "composition",
+  "history",
+] as const;
 export type ProductTabId = (typeof PRODUCT_TAB_IDS)[number];
 
 export const PRODUCT_TAB_PERMISSIONS: Record<ProductTabId, string> = {
@@ -228,6 +236,8 @@ export const PRODUCT_TAB_PERMISSIONS: Record<ProductTabId, string> = {
   tree: "products.tab.tree",
   cost: "products.tab.cost",
   composition: "products.tab.composition",
+  // Mesma permissão de info — aba é apenas leitura.
+  history: "products.tab.info",
 };
 
 /** Abas visíveis no modal de produto (legado: só products.view → todas as abas). */

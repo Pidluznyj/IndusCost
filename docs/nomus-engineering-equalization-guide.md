@@ -268,7 +268,102 @@ Material ou Product automaticamente quebraria a regra de montagem local. Por iss
 esses códigos aparecem como `BLOCKED_LOCAL_PROCESS_CODE` no diagnóstico — se for
 necessário cadastrar, é decisão manual.
 
-## 9. Scripts úteis (para o time técnico)
+## 9. Igualar bases
+
+O botão **Igualar bases** vai além da Carga Mestre. Enquanto a Carga Mestre apenas
+**cria** itens faltantes, o Igualar bases **mantém os cadastros mestre Nomus
+alinhados ao longo do tempo**:
+
+- Cria itens novos que apareceram no Nomus (mesmas regras seguras da Carga Mestre).
+- **Atualiza** Products e Materials **controlados pelo Nomus** quando o nome ou
+  a descrição divergiu do stage Nomus.
+- **Inativa** (status = `INACTIVE`) itens que estavam marcados como Nomus mas
+  sumiram do stage Nomus. **Nunca deleta fisicamente.**
+- **Preserva** todos os itens locais/manuais do IndusCost: nada que não esteja
+  marcado como Nomus é alterado.
+- Registra **histórico completo** de cada alteração em `EngineeringChangeLog`.
+
+### Diferença entre os três fluxos
+
+| Fluxo | O que faz | O que NÃO faz |
+|---|---|---|
+| **Carga Mestre Nomus** | Cria Products/Materials que ainda não existem. | Não atualiza, não inativa, não cria BOM. |
+| **Igualar bases** | Cria + atualiza + inativa itens **controlados pelo Nomus**. Registra histórico. | Não cria BOM, não mexe em custos, preços, propostas, pedidos, roteiro, costingMode. |
+| **Aplicar BOM** (fase futura) | Aplica a estrutura BOM produto a produto, com pré-confirmação. | Não roda em lote sem revisão. |
+
+### Por que dados locais são preservados
+
+A regra de ouro: **Nomus é fonte de engenharia; IndusCost é fonte de processo
+local, custo, roteiro, preço e decisão comercial.** Itens criados manualmente
+no IndusCost (sem `isNomusControlled=true` e sem `sourceSystem="NOMUS"`) **nunca**
+são tocados pelo Igualar bases.
+
+### Por que itens 800.xx são preservados
+
+Códigos `800.xx` são montagem local do IndusCost — eles não existem no Nomus
+oficial. O Igualar bases **nunca** importa, atualiza ou inativa esses códigos
+automaticamente. Eles aparecem no preview marcados como
+`BLOCKED_LOCAL_PROCESS_CODE`.
+
+### Como ler o preview
+
+1. Na Visão Geral da Manutenção Nomus, painel **Carga Mestre Nomus**, clique em
+   **Preview igualar bases**.
+2. O painel mostra contagens:
+   - **Criar Produtos / Materiais** — novos cadastros seguros.
+   - **Atualizar Produtos / Materiais (Nomus)** — campos divergentes em itens
+     já controlados pelo Nomus.
+   - **Inativar Produtos / Materiais** — itens Nomus que sumiram do stage.
+   - **Preservar locais** — não serão tocados.
+   - **Ambíguos / Bloqueados** — exigem revisão manual.
+   - **Já alinhados (Nomus)** — sem divergência, nada a fazer.
+3. Apenas as linhas com ação são aplicadas.
+
+### Como executar com confirmação
+
+- **UI**: clique **Igualar bases**, digite exatamente
+  `IGUALAR BASES NOMUS` no modal e confirme.
+- **CLI**:
+  ```bash
+  npm run sync:nomus:master-data-equalize-preview
+  npm run sync:nomus:master-data-equalize-apply   # dry-run (sem --confirm)
+  npm run sync:nomus:master-data-equalize-apply -- --confirm="IGUALAR BASES NOMUS"
+  ```
+- O apply retorna `APPLIED`, `NO_CHANGES`, `BLOCKED` ou `FAILED` com mensagem
+  clara e um `runId` para rastrear.
+
+### O que significa cada outcome
+
+- **Criado** — Product/Material novo registrado.
+- **Atualizado** — campos `name`/`description`/`sourceSystem`/`isNomusControlled`
+  ajustados em item controlado pelo Nomus.
+- **Inativado** — item controlado pelo Nomus marcado como `INACTIVE` (nunca
+  apagado).
+- **Preservado** — item local do IndusCost — nada feito.
+- **Bloqueado** — descrição vazia, código 800.xx, ou outro impedimento.
+- **Ignorado** — payload incompatível ou nada para atualizar (idempotência).
+
+### Como consultar histórico no cadastro do produto
+
+Abra um produto na tela de **Produtos** e selecione a aba **Histórico**.
+A timeline mostra:
+
+- Data e hora de cada alteração.
+- Origem: **Nomus**, **usuário** ou **sistema**.
+- Ação: Criado / Importado / Igualado / Atualizado / Inativado / Bloqueado /
+  Ignorado.
+- Resumo humano da alteração.
+- Detalhes expansíveis: campo, valor anterior, valor novo, `runId`, `planHash`.
+
+Se ainda não houver registros, o painel mostra:
+"Nenhum histórico registrado para este produto ainda."
+
+> **Nota técnica**: o histórico usa a tabela `EngineeringChangeLog` já existente.
+> Itens criados anteriormente pela Carga Mestre Nomus que ainda não tinham
+> entrada de auditoria recebem um registro retroativo `IMPORTED` na primeira vez
+> que forem tocados pelo Igualar bases.
+
+## 10. Scripts úteis (para o time técnico)
 
 - `npm run check:frontend-imports` — guardrail que impede Prisma/lib server-side
   no bundle React.
@@ -285,5 +380,11 @@ necessário cadastrar, é decisão manual.
   — importação segura de cadastro base (Product/Material).
 - `npm run test:nomus:master-data-import` — smoke read-only da Carga Mestre
   Nomus (valida diagnóstico, preview e bloqueio do apply sem confirmação).
+- `npm run sync:nomus:master-data-equalize-preview` — preview read-only do
+  Igualar bases.
+- `npm run sync:nomus:master-data-equalize-apply -- --confirm="IGUALAR BASES NOMUS"`
+  — apply controlado do Igualar bases (com histórico).
+- `npm run test:nomus:master-data-equalize` — smoke read-only do Igualar bases
+  (valida preview e bloqueios do apply sem confirmação correta).
 
 Esses scripts devem ser rodados no servidor (precisam de `DATABASE_URL`).

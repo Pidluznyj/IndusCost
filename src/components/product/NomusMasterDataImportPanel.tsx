@@ -31,6 +31,16 @@ import type {
   MasterDataImportDiagnosticResult,
   MasterDataRow,
 } from "@/src/lib/nomusMasterDataImportTypes";
+import {
+  applyMasterDataEqualize,
+  EQUALIZE_CONFIRMATION_TEXT,
+  fetchMasterDataEqualizePreview,
+} from "@/src/lib/nomusMasterDataEqualizeClient";
+import type {
+  EqualizeApplyResult,
+  EqualizePreviewResult,
+} from "@/src/lib/nomusMasterDataEqualizeTypes";
+import { Scale } from "lucide-react";
 
 type RowFilter =
   | "ALL_MISSING"
@@ -79,6 +89,15 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
   const [applyResult, setApplyResult] = useState<MasterDataImportApplyResult | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState("");
+
+  // Igualar Bases
+  const [equalizePreview, setEqualizePreview] = useState<EqualizePreviewResult | null>(null);
+  const [equalizeLoading, setEqualizeLoading] = useState(false);
+  const [equalizeApplying, setEqualizeApplying] = useState(false);
+  const [equalizeResult, setEqualizeResult] = useState<EqualizeApplyResult | null>(null);
+  const [equalizeError, setEqualizeError] = useState<string | null>(null);
+  const [equalizeShowConfirm, setEqualizeShowConfirm] = useState(false);
+  const [equalizeConfirmText, setEqualizeConfirmText] = useState("");
 
   const filterParams = useMemo(() => {
     let classification: string | undefined;
@@ -131,6 +150,53 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
     setApplyResult(null);
     void loadDiagnostic(0);
   }, [loadDiagnostic]);
+
+  const loadEqualizePreview = useCallback(async () => {
+    setEqualizeLoading(true);
+    setEqualizeError(null);
+    setEqualizeResult(null);
+    try {
+      const data = await fetchMasterDataEqualizePreview({
+        limit: 200,
+        offset: 0,
+        scope: "ACTIONABLE",
+      });
+      setEqualizePreview(data);
+    } catch (e) {
+      setEqualizePreview(null);
+      setEqualizeError(
+        e instanceof Error
+          ? `${e.message} Tente novamente.`
+          : "Erro ao gerar preview de Igualar Bases."
+      );
+    } finally {
+      setEqualizeLoading(false);
+    }
+  }, []);
+
+  const onApplyEqualize = useCallback(async () => {
+    if (equalizeConfirmText !== EQUALIZE_CONFIRMATION_TEXT) return;
+    setEqualizeApplying(true);
+    setEqualizeError(null);
+    setEqualizeResult(null);
+    try {
+      const result = await applyMasterDataEqualize({
+        confirmationText: equalizeConfirmText,
+      });
+      setEqualizeResult(result);
+      setEqualizeShowConfirm(false);
+      setEqualizeConfirmText("");
+      await Promise.all([loadEqualizePreview(), loadDiagnostic(0)]);
+    } catch (e) {
+      setEqualizeError(
+        e instanceof Error
+          ? `${e.message} Tente novamente ou rode o preview pelo terminal.`
+          : "Erro ao aplicar Igualar Bases."
+      );
+    } finally {
+      setEqualizeApplying(false);
+    }
+  }, [equalizeConfirmText, loadEqualizePreview, loadDiagnostic]);
 
   const onApply = useCallback(async () => {
     if (confirmText !== MASTER_DATA_CONFIRMATION_TEXT) return;
@@ -185,6 +251,42 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
           )}
           Diagnosticar cadastro base
         </button>
+        <button
+          type="button"
+          disabled={disabled || equalizeLoading}
+          onClick={() => void loadEqualizePreview()}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/40 bg-background px-3 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-50"
+        >
+          {equalizeLoading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Scale className="h-3.5 w-3.5" />
+          )}
+          Preview igualar bases
+        </button>
+        <button
+          type="button"
+          disabled={
+            disabled ||
+            equalizeApplying ||
+            !equalizePreview ||
+            (equalizePreview.totals.createProducts +
+              equalizePreview.totals.createMaterials +
+              equalizePreview.totals.updateProducts +
+              equalizePreview.totals.updateMaterials +
+              equalizePreview.totals.deactivateProducts +
+              equalizePreview.totals.deactivateMaterials) ===
+              0
+          }
+          onClick={() => {
+            setEqualizeShowConfirm(true);
+            setEqualizeConfirmText("");
+          }}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+        >
+          <Scale className="h-3.5 w-3.5" />
+          Igualar bases
+        </button>
         {diagnostic ? (
           <span className="text-[10px] text-muted-foreground">
             {diagnostic.rows.length} linha(s) carregada(s) ·{" "}
@@ -192,6 +294,94 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
           </span>
         ) : null}
       </div>
+
+      {equalizeError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-900 flex items-start gap-2">
+          <ShieldAlert className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <p>{equalizeError}</p>
+        </div>
+      ) : null}
+
+      {equalizeResult ? (
+        <div
+          className={cn(
+            "rounded-lg border px-3 py-2 text-[11px] space-y-1",
+            equalizeResult.status === "APPLIED"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+              : equalizeResult.status === "NO_CHANGES"
+                ? "border-muted bg-muted/50 text-muted-foreground"
+                : "border-red-300 bg-red-50 text-red-900"
+          )}
+        >
+          <p className="font-bold flex items-center gap-1.5">
+            {equalizeResult.status === "APPLIED" ? (
+              <CircleCheck className="h-3.5 w-3.5" />
+            ) : equalizeResult.status === "NO_CHANGES" ? (
+              <CircleHelp className="h-3.5 w-3.5" />
+            ) : (
+              <ShieldAlert className="h-3.5 w-3.5" />
+            )}
+            {equalizeResult.message}
+          </p>
+          <p>
+            Criados: <strong>{equalizeResult.createdProducts}</strong> P /{" "}
+            <strong>{equalizeResult.createdMaterials}</strong> M · Atualizados:{" "}
+            <strong>{equalizeResult.updatedProducts}</strong> P /{" "}
+            <strong>{equalizeResult.updatedMaterials}</strong> M · Inativados:{" "}
+            <strong>{equalizeResult.deactivatedProducts}</strong> P /{" "}
+            <strong>{equalizeResult.deactivatedMaterials}</strong> M · Histórico:{" "}
+            <strong>{equalizeResult.historyEntriesCreated}</strong> · Erros:{" "}
+            <strong>{equalizeResult.errors}</strong>
+          </p>
+          <p className="text-[10px] opacity-80">
+            runId: <code className="font-mono">{equalizeResult.runId}</code>
+          </p>
+        </div>
+      ) : null}
+
+      {equalizePreview ? (
+        <div className="rounded-lg border border-primary/30 bg-background px-3 py-2 text-[11px] space-y-1">
+          <p className="font-bold text-primary">
+            Preview Igualar Bases · {equalizePreview.totals.totalRowsConsidered} item(ns) analisado(s)
+          </p>
+          <ul className="grid gap-x-4 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3 text-foreground">
+            <li>
+              Criar Produtos: <strong>{equalizePreview.totals.createProducts}</strong>
+            </li>
+            <li>
+              Criar Materiais: <strong>{equalizePreview.totals.createMaterials}</strong>
+            </li>
+            <li>
+              Atualizar Produtos: <strong>{equalizePreview.totals.updateProducts}</strong>
+            </li>
+            <li>
+              Atualizar Materiais: <strong>{equalizePreview.totals.updateMaterials}</strong>
+            </li>
+            <li>
+              Inativar Produtos: <strong>{equalizePreview.totals.deactivateProducts}</strong>
+            </li>
+            <li>
+              Inativar Materiais: <strong>{equalizePreview.totals.deactivateMaterials}</strong>
+            </li>
+            <li>
+              Preservar locais:{" "}
+              <strong>
+                {equalizePreview.totals.preserveLocalProducts +
+                  equalizePreview.totals.preserveLocalMaterials}
+              </strong>
+            </li>
+            <li>
+              Ambíguos/Bloqueados:{" "}
+              <strong>
+                {equalizePreview.totals.ambiguous + equalizePreview.totals.blocked}
+              </strong>
+            </li>
+            <li>
+              Já alinhados (Nomus): <strong>{equalizePreview.totals.preserveNomusControlled}</strong>
+            </li>
+          </ul>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-900 flex items-start gap-2">
@@ -393,6 +583,56 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
               >
                 {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                 Confirmar importação
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {equalizeShowConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-background p-4 space-y-3 shadow-lg">
+            <div className="flex items-start gap-2">
+              <Scale className="h-5 w-5 text-emerald-600 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-bold">Confirmar Igualar Bases Nomus</h4>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Esta ação aplica somente <strong>cadastros mestre seguros</strong>:
+                  cria/atualiza Products e Materials controlados pelo Nomus e marca como
+                  INACTIVE itens controlados que sumiram do Nomus.{" "}
+                  <strong>Nenhuma ProductBOM, preço, proposta ou pedido é alterado.</strong>{" "}
+                  Itens locais do IndusCost são preservados. Digite a frase exata para confirmar.
+                </p>
+              </div>
+            </div>
+            <input
+              type="text"
+              value={equalizeConfirmText}
+              onChange={(e) => setEqualizeConfirmText(e.target.value)}
+              placeholder={EQUALIZE_CONFIRMATION_TEXT}
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs font-mono"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEqualizeShowConfirm(false);
+                  setEqualizeConfirmText("");
+                }}
+                disabled={equalizeApplying}
+                className="inline-flex h-8 items-center rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void onApplyEqualize()}
+                disabled={equalizeApplying || equalizeConfirmText !== EQUALIZE_CONFIRMATION_TEXT}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {equalizeApplying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                Confirmar igualação
               </button>
             </div>
           </div>

@@ -126,6 +126,12 @@ import {
   buildNomusMasterDataImportPreview,
 } from "./src/lib/nomusMasterDataImport.js";
 import { MASTER_DATA_CONFIRMATION_TEXT } from "./src/lib/nomusMasterDataImportTypes.js";
+import {
+  applyNomusMasterDataEqualize,
+  buildNomusMasterDataEqualizePreview,
+} from "./src/lib/nomusMasterDataEqualize.js";
+import { EQUALIZE_CONFIRMATION_TEXT } from "./src/lib/nomusMasterDataEqualizeTypes.js";
+import { loadProductChangeHistory } from "./src/lib/productChangeHistory.js";
 import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
@@ -4257,6 +4263,157 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         console.error("POST /api/nomus/master-data-import/apply-safe", error);
         return res.status(500).json({
           error: "MASTER_DATA_APPLY_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/master-data-equalize/preview",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.edit",
+      "materials.view",
+      "materials.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const limitRaw = Number(req.query.limit);
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
+        const offsetRaw = Number(req.query.offset);
+        const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : undefined;
+        const search =
+          req.query.search != null && String(req.query.search).trim()
+            ? String(req.query.search).trim()
+            : undefined;
+        const scopeRaw = String(req.query.scope ?? "").trim().toUpperCase();
+        const scope: "ALL" | "ACTIONABLE" | undefined =
+          scopeRaw === "ALL" || scopeRaw === "ACTIONABLE"
+            ? (scopeRaw as "ALL" | "ACTIONABLE")
+            : undefined;
+        const includeExisting =
+          req.query.includeExisting === "true" || req.query.includeExisting === "1";
+        const includeUnmatchedIndusCost =
+          req.query.includeUnmatchedIndusCost === "false" ||
+          req.query.includeUnmatchedIndusCost === "0"
+            ? false
+            : true;
+
+        const result = await buildNomusMasterDataEqualizePreview({
+          limit,
+          offset,
+          search,
+          scope,
+          includeExisting,
+          includeUnmatchedIndusCost,
+        });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao montar preview de Igualar Bases Nomus.";
+        console.error("GET /api/nomus/master-data-equalize/preview", error);
+        return res.status(500).json({
+          error: "MASTER_DATA_EQUALIZE_PREVIEW_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/master-data-equalize/apply",
+    requireAppAuth,
+    requireAnyPermission(["products.edit", "materials.edit"]),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const confirmationText = typeof body.confirmationText === "string"
+          ? body.confirmationText
+          : "";
+        if (confirmationText !== EQUALIZE_CONFIRMATION_TEXT) {
+          return res.status(400).json({
+            error: "MASTER_DATA_EQUALIZE_INVALID_CONFIRMATION",
+            message: `Confirmação inválida — envie confirmationText exatamente igual a: "${EQUALIZE_CONFIRMATION_TEXT}".`,
+          });
+        }
+        const scopeRaw = String(body.scope ?? "SAFE_ONLY").trim();
+        if (scopeRaw !== "SAFE_ONLY") {
+          return res.status(400).json({
+            error: "MASTER_DATA_EQUALIZE_INVALID_SCOPE",
+            message: `Apenas scope="SAFE_ONLY" é aceito. Recebido: "${scopeRaw}".`,
+          });
+        }
+        let codes: string[] | undefined;
+        if (Array.isArray(body.codes)) {
+          codes = body.codes
+            .filter((c: unknown): c is string => typeof c === "string")
+            .map((c: string) => c.trim())
+            .filter((c: string) => c.length > 0);
+          if (codes.length === 0) codes = undefined;
+        }
+        const requestedBy =
+          typeof body.requestedBy === "string" && body.requestedBy.trim()
+            ? body.requestedBy.trim()
+            : null;
+
+        const result = await applyNomusMasterDataEqualize({
+          confirmationText,
+          scope: "SAFE_ONLY",
+          codes,
+          requestedBy,
+        });
+        const statusCode = result.status === "FAILED" ? 500 : 200;
+        return res.status(statusCode).json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao aplicar Igualar Bases Nomus.";
+        console.error("POST /api/nomus/master-data-equalize/apply", error);
+        return res.status(500).json({
+          error: "MASTER_DATA_EQUALIZE_APPLY_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/products/:id/change-history",
+    requireAppAuth,
+    requireAnyPermission(["products.view", "products.edit", "products.tab.info"]),
+    async (req, res) => {
+      try {
+        const productId = String(req.params.id ?? "").trim();
+        if (!productId) {
+          return res.status(400).json({
+            error: "PRODUCT_ID_REQUIRED",
+            message: "productId é obrigatório na URL.",
+          });
+        }
+        const limitRaw = Number(req.query.limit);
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
+        const offsetRaw = Number(req.query.offset);
+        const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : undefined;
+
+        const result = await loadProductChangeHistory({
+          productId,
+          limit,
+          offset,
+        });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao carregar histórico do produto.";
+        console.error("GET /api/products/:id/change-history", error);
+        return res.status(500).json({
+          error: "PRODUCT_CHANGE_HISTORY_FAILED",
           message,
         });
       }

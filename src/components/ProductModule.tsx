@@ -44,6 +44,7 @@ import { PRODUCT_TOUR_STEPS } from "@/src/tours/productTourSteps";
 import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomTreeContextPanel";
 import { NomusBomComparisonPanel } from "@/src/components/product/NomusBomComparisonPanel";
 import { ProductNomusMaintenanceSection } from "@/src/components/product/ProductNomusMaintenanceSection";
+import { ProductHistoryTab } from "@/src/components/product/ProductHistoryTab";
 import type { BomCostDetailRowData } from "@/src/components/shared/BomCostDetailRow";
 import {
   OpenBookCompositionTab,
@@ -125,6 +126,7 @@ const PRODUCT_FORM_TABS: {
   { id: "tree", label: "Estrutura em Árvore", icon: ChevronRight },
   { id: "cost", label: "Análise de Custo", icon: DollarSign },
   { id: "composition", label: "Composição de Custos", icon: BookOpen },
+  { id: "history", label: "Histórico", icon: Clock },
 ];
 
 type ProductsMainTab = "products" | "nomus-maintenance";
@@ -1982,6 +1984,12 @@ export const ProductModule = () => {
                       costAnalysisPartial={displayCost.costAnalysisPartial}
                       openBook={displayCost.openBook as OpenBookPayload | null}
                     />
+                  )}
+
+                  {activeFormTab === "history" && (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <ProductHistoryTab productId={editingItem?.id ?? null} />
+                    </div>
                   )}
 
                   {activeFormTab === "cost" && (
