@@ -14,6 +14,7 @@ import type { EffectivePricingBomLine } from "@/src/lib/nomusEffectivePricingBom
 import { buildNomusEffectiveBomCostImpact } from "@/src/lib/nomusEffectiveBomCostImpact";
 import { listReviewDecisionsForParentCode } from "@/src/lib/nomusBomReviewDecision";
 import { prisma } from "@/src/lib/prisma";
+import { recordEngineeringChange } from "@/src/lib/productChangeHistory";
 import type {
   ControlledApplyAction,
   ControlledApplyBlockingCode,
@@ -23,6 +24,7 @@ import type {
   ControlledApplyPreview,
   ControlledApplyResolutionMode,
   ControlledApplyResult,
+  ControlledApplyResultStatus,
   ControlledApplyRiskLevel,
 } from "@/src/lib/nomusBomControlledApplyTypes";
 import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingBomTypes";
@@ -120,8 +122,18 @@ type DesiredTarget = {
   effectiveLine: EffectivePricingBomLine;
 };
 
+/**
+ * Confirmação textual exigida para o apply controlado de BOM.
+ *
+ * Padrão definido na fase NOMUS-BOM-APPLY-AFTER-MASTER-DATA-A:
+ *   "APLICAR BOM NOMUS <PARENTCODE>"
+ *
+ * (Antes era "APLICAR BOM <PARENTCODE>"; o "NOMUS" no meio reduz risco de
+ * confusão com uma frase genérica e fica em linha com as confirmações
+ * "IGUALAR BASES NOMUS" e "IMPORTAR CADASTRO MESTRE NOMUS".)
+ */
 function confirmationTextFor(parentCode: string): string {
-  return `APLICAR BOM ${normalizeSku(parentCode)}`;
+  return `APLICAR BOM NOMUS ${normalizeSku(parentCode)}`;
 }
 
 function stableHash(payload: unknown): string {
@@ -1451,6 +1463,23 @@ export async function applyEffectiveBomToProductBom(input: {
       ? "Nenhuma alteração necessária. A ProductBOM já reflete a BOM efetiva."
       : `BOM efetiva aplicada com sucesso (${summary.created} criação(ões), ${summary.updated} atualização(ões), ${summary.removed} remoção(ões)).`;
 
+  // Ponte de auditoria para a aba "Histórico" do produto.
+  // Cria 1 EngineeringSyncRun (mode=ONE_PRODUCT) e grava EngineeringChangeLog
+  // por ação (entityType="PRODUCT_BOM"). Best-effort: se falhar, não desfaz o
+  // apply (o NomusBomApplyRun + NomusBomApplyRunLine continuam sendo a fonte
+  // técnica oficial).
+  await syncBomApplyToEngineeringChangeLog({
+    parentCode: trimmed,
+    productId,
+    planHash: preview.planHash,
+    confirmationText: input.confirmationText.trim(),
+    approvedBy: input.approvedBy?.trim() || null,
+    actions: preview.actions,
+    summary,
+    resultStatus,
+    applyRunId,
+  });
+
   return {
     applied: resultStatus === "APPLIED",
     resultStatus,
@@ -1463,4 +1492,135 @@ export async function applyEffectiveBomToProductBom(input: {
     afterBom: afterRows.map(serializeBomRow),
     actionsApplied: preview.actions,
   };
+}
+
+/**
+ * Sincroniza o resultado do apply controlado com EngineeringChangeLog para que
+ * a aba "Histórico" do produto e o auditing unificado enxerguem alterações
+ * de ProductBOM.
+ *
+ * Cria o EngineeringSyncRun pai (FK obrigatória de runId). Best-effort:
+ * exceções aqui são logadas mas não relançadas — o apply real já passou.
+ */
+async function syncBomApplyToEngineeringChangeLog(input: {
+  parentCode: string;
+  productId: string;
+  planHash: string;
+  confirmationText: string;
+  approvedBy: string | null;
+  actions: ControlledApplyAction[];
+  summary: ControlledApplyResult["summary"];
+  resultStatus: ControlledApplyResultStatus;
+  applyRunId: string;
+}): Promise<void> {
+  try {
+    const totalMutations = input.summary.created + input.summary.updated + input.summary.removed;
+    const run = await prisma.engineeringSyncRun.create({
+      data: {
+        mode: "ONE_PRODUCT",
+        status: "PREVIEWED",
+        parentCode: input.parentCode,
+        planHash: input.planHash,
+        confirmationText: input.confirmationText,
+        approvedBy: input.approvedBy ?? "nomus-bom-apply",
+        startedAt: new Date(),
+        summaryJson: {
+          origin: "BOM_APPLY_AFTER_MASTER_DATA",
+          nomusBomApplyRunId: input.applyRunId,
+          productId: input.productId,
+          summary: input.summary,
+          resultStatus: input.resultStatus,
+        } as never,
+      },
+      select: { id: true },
+    });
+
+    // Mapeia cada ação aplicada em uma entry de EngineeringChangeLog.
+    const writeOps: Array<{ summary: string; fieldName: string }> = [];
+    for (const a of input.actions) {
+      if (a.actionType === "CREATE_PRODUCT_BOM_LINE") {
+        writeOps.push({
+          fieldName: "@bom_line_added",
+          summary: `BOM: linha ADICIONADA — ${a.componentCode}${a.componentDescription ? ` (${a.componentDescription})` : ""} qty=${a.effectiveQuantity ?? "—"}`,
+        });
+      } else if (
+        a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" ||
+        a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"
+      ) {
+        writeOps.push({
+          fieldName: "quantity",
+          summary: `BOM: ${a.componentCode} qty ${a.currentQuantity ?? "—"} → ${a.effectiveQuantity ?? "—"}`,
+        });
+      } else if (a.actionType === "REMOVE_PRODUCT_BOM_LINE") {
+        writeOps.push({
+          fieldName: "@bom_line_removed",
+          summary: `BOM: linha REMOVIDA — ${a.componentCode}${a.componentDescription ? ` (${a.componentDescription})` : ""}`,
+        });
+      } else if (a.actionType === "KEEP_PRODUCT_BOM_LINE") {
+        writeOps.push({
+          fieldName: "@bom_line_kept",
+          summary: `BOM: linha local preservada — ${a.componentCode}${a.componentDescription ? ` (${a.componentDescription})` : ""}`,
+        });
+      } else if (a.actionType === "SKIP_UNRESOLVED") {
+        writeOps.push({
+          fieldName: "@bom_line_skipped",
+          summary: `BOM: linha não resolvida ignorada — ${a.componentCode}`,
+        });
+      } else if (a.actionType === "BLOCKED") {
+        writeOps.push({
+          fieldName: "@bom_line_blocked",
+          summary: `BOM: linha bloqueada — ${a.componentCode} (${a.reason})`,
+        });
+      }
+    }
+
+    for (const op of writeOps) {
+      const refAction = input.actions.find((a) => op.summary.includes(a.componentCode));
+      await recordEngineeringChange({
+        entityType: "PRODUCT_BOM",
+        entityId: refAction?.productBomLineId ?? null,
+        productId: input.productId,
+        productSku: input.parentCode,
+        sourceSystem: "NOMUS",
+        changeOrigin: "NOMUS_ENGINEERING_APPLY",
+        fieldName: op.fieldName,
+        oldValue:
+          refAction && refAction.currentQuantity != null
+            ? String(refAction.currentQuantity)
+            : null,
+        newValue:
+          refAction && refAction.effectiveQuantity != null
+            ? String(refAction.effectiveQuantity)
+            : null,
+        changedBy: input.approvedBy ?? "nomus-bom-apply",
+        runId: run.id,
+        planHash: input.planHash,
+        summary: op.summary,
+      });
+    }
+
+    const runStatusFinal: "APPLIED" | "PARTIAL" | "FAILED" =
+      input.resultStatus === "APPLIED" ? "APPLIED" : "APPLIED";
+    await prisma.engineeringSyncRun.update({
+      where: { id: run.id },
+      data: {
+        status: runStatusFinal,
+        finishedAt: new Date(),
+        summaryJson: {
+          origin: "BOM_APPLY_AFTER_MASTER_DATA",
+          nomusBomApplyRunId: input.applyRunId,
+          productId: input.productId,
+          summary: input.summary,
+          resultStatus: input.resultStatus,
+          historyEntriesCreated: writeOps.length,
+          totalMutations,
+        } as never,
+      },
+    });
+  } catch (err) {
+    console.error(
+      "[bom-apply] falha ao sincronizar EngineeringChangeLog (auditoria) — apply principal já efetuado:",
+      err instanceof Error ? err.message : err
+    );
+  }
 }

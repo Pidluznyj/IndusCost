@@ -363,7 +363,104 @@ Se ainda não houver registros, o painel mostra:
 > entrada de auditoria recebem um registro retroativo `IMPORTED` na primeira vez
 > que forem tocados pelo Igualar bases.
 
-## 10. Scripts úteis (para o time técnico)
+## 10. Aplicar BOM Nomus por produto
+
+Depois que o cadastro mestre estiver completo (Carga Mestre + Igualar bases),
+a Engenharia pode aplicar a **BOM efetiva Nomus** no IndusCost **produto a
+produto**, com pré-confirmação textual e histórico completo.
+
+### Diferença entre os três fluxos
+
+| Fluxo | O que faz | Confirmação |
+|---|---|---|
+| **Carga Mestre Nomus** | Cria Products/Materials seguros que ainda não existem. | `IMPORTAR CADASTRO MESTRE NOMUS` |
+| **Igualar bases** | Cria + atualiza + inativa cadastro mestre controlado pelo Nomus. Histórico. | `IGUALAR BASES NOMUS` |
+| **Aplicar BOM Nomus (este)** | Aplica a estrutura `ProductBOM` para **um** produto, com preview + planHash + gates. | `APLICAR BOM NOMUS <PARENTCODE>` |
+
+### Quando aplicar
+
+- Cadastro mestre já está em paz (sem `BLOCKED_MISSING_NOMUS_COMPONENT`).
+- O Plano de Ação do produto está em `READY_FOR_CONTROLLED_APPLY` ou
+  `READY_FOR_MANUAL_REVIEW`.
+- O Impacto de Custo bate com o Plano de Aplicação (`hasStructuralChanges` e
+  delta coerentes).
+
+### Quando NÃO aplicar
+
+- Há opcionais pendentes → resolver Opcionais primeiro.
+- Há material faltante / produto filho faltante → resolver via Carga Mestre.
+- Há revisão de linha local pendente → decidir manualmente antes.
+- Produto está como `FINISHING_SERVICE` e o preview marca como ambíguo —
+  rever no produto antes (o preview já bloqueia esses casos).
+
+### Como interpretar bloqueios
+
+Cada `blockingDetail` traz `code`, `componentCode`, `reason` e `suggestedFix`.
+A UI mostra esses itens em vermelho no painel de apply, com botão para
+abrir a aba técnica correspondente (Opcionais, Diagnóstico, etc.).
+
+### Como funcionam os opcionais
+
+Componentes Nomus marcados como **opcional** ou **alternativo**:
+
+- Nunca entram automaticamente na BOM.
+- Aparecem no preview como `SKIP_UNRESOLVED` ou `BLOCKED` quando influenciam o plano.
+- Só passam a integrar a BOM após o operador resolver pela aba **Opcionais de
+  Precificação** com decisão explícita.
+
+### Como linhas locais 800.xx são preservadas
+
+Linhas com `componentCode.startsWith("800.")` representam **montagem local**.
+O preview gera ações `KEEP_PRODUCT_BOM_LINE` (preservar) — nunca `REMOVE`. O
+apply respeita: linhas locais ficam intactas e aparecem no histórico como
+*"linha local preservada"*.
+
+### Onde ver histórico
+
+- No cadastro do produto, aba **Histórico** (`GET /api/products/:id/change-history`).
+- Cada apply de BOM gera:
+  - 1 `NomusBomApplyRun` técnico (linhas before/after por componente).
+  - 1 `EngineeringSyncRun` (`mode=ONE_PRODUCT`, `summaryJson.origin="BOM_APPLY_AFTER_MASTER_DATA"`).
+  - N `EngineeringChangeLog` com `entityType="PRODUCT_BOM"` e `changeOrigin="NOMUS_ENGINEERING_APPLY"` (1 por ação aplicada).
+- A aba Histórico exibe esses logs com linguagem humana: linha adicionada,
+  linha removida, quantidade alterada, linha local preservada etc.
+
+### Como reverter
+
+Não há reverter automático nesta fase. Caminhos manuais seguros:
+
+1. **Backup**: rodar `pg_dump` antes do apply real (recomendado em produção).
+2. **`NomusBomApplyRun.beforeBomJson`**: contém a BOM antes do apply, em JSON.
+   Pode ser usado para reconstruir manualmente via SQL/admin a estrutura
+   anterior se necessário.
+3. **`EngineeringChangeLog`** da aba Histórico documenta cada ação para
+   auditoria.
+
+### Como rodar (UI)
+
+1. Abrir o produto na **Manutenção Nomus**.
+2. Painel **Aplicar BOM Nomus**: revisar bloqueios, ações e impacto.
+3. Digitar exatamente `APLICAR BOM NOMUS <CÓDIGO>` no campo de confirmação.
+4. Clicar em **Aplicar**.
+5. Após sucesso, a BOM efetiva, o Impacto e o Histórico recarregam.
+
+### Como rodar (CLI)
+
+```bash
+# Preview read-only
+npm run sync:nomus:bom-apply-preview -- --parentCode=304.02AA
+
+# Apply de um produto (dry-run sem --confirm)
+npm run sync:nomus:bom-apply-one -- --parentCode=304.02AA
+
+# Apply real (exige frase exata)
+npm run sync:nomus:bom-apply-one -- --parentCode=304.02AA --confirm="APLICAR BOM NOMUS 304.02AA"
+
+# Smoke read-only dos pilotos
+npm run test:nomus:bom-apply-after-master-data
+```
+
+## 11. Scripts úteis (para o time técnico)
 
 - `npm run check:frontend-imports` — guardrail que impede Prisma/lib server-side
   no bundle React.
@@ -407,7 +504,21 @@ WHERE l."runId" IS NOT NULL
   AND r.id IS NULL;
 ```
 
-O resultado deve ser `0`. O smoke test `npm run test:nomus:master-data-equalize`
-já valida exatamente isso, mas o SQL acima é útil para inspeção rápida.
+O resultado deve ser `0`. Os smoke tests
+`npm run test:nomus:master-data-equalize` e
+`npm run test:nomus:bom-apply-after-master-data` já validam exatamente isso,
+mas o SQL acima é útil para inspeção rápida.
+
+### Scripts do Aplicar BOM por produto
+
+- `npm run sync:nomus:bom-apply-preview -- --parentCode=<código>` — preview
+  read-only do apply de BOM. Imprime ações, bloqueios, planHash e impacto.
+- `npm run sync:nomus:bom-apply-one -- --parentCode=<código>` — dry-run; sem
+  `--confirm` o script só lista o que seria aplicado.
+- `npm run sync:nomus:bom-apply-one -- --parentCode=<código> --confirm="APLICAR BOM NOMUS <CÓDIGO>"`
+  — apply real do produto único.
+- `npm run test:nomus:bom-apply-after-master-data` — smoke read-only que roda
+  preview dos pilotos, garante que confirmação errada **não** muta dado e
+  confere FK órfã `EngineeringChangeLog.runId`.
 
 Esses scripts devem ser rodados no servidor (precisam de `DATABASE_URL`).
