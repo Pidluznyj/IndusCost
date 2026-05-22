@@ -1,11 +1,14 @@
 /**
  * Smoke test read-only do fluxo "Igualar Bases" Nomus.
  *
- * Não chama apply real. Valida:
+ * Não chama apply real com confirmação correta. Valida:
  *  - preview retorna READ_ONLY;
  *  - apply sem confirmação retorna BLOCKED;
  *  - apply com confirmação errada retorna BLOCKED;
- *  - nenhuma mutation é executada.
+ *  - nenhuma mutation foi executada (contagens de EngineeringSyncRun e
+ *    EngineeringChangeLog ficam iguais antes/depois);
+ *  - o schema continua tendo a FK runId → EngineeringSyncRun.id, impedindo
+ *    regressões como a do commit anterior (FK violada por runId solto).
  *
  * Uso: npm run test:nomus:master-data-equalize
  */
@@ -31,6 +34,13 @@ function fail(msg: string): never {
 async function main(): Promise<void> {
   log("iniciando…");
 
+  // Snapshot antes para detectar mutation indevida.
+  const [runsBefore, changesBefore] = await Promise.all([
+    prisma.engineeringSyncRun.count(),
+    prisma.engineeringChangeLog.count(),
+  ]);
+  log(`snapshot inicial · EngineeringSyncRun=${runsBefore} EngineeringChangeLog=${changesBefore}`);
+
   const preview = await buildNomusMasterDataEqualizePreview({
     limit: 50,
     offset: 0,
@@ -51,7 +61,10 @@ async function main(): Promise<void> {
   if (blocked1.status !== "BLOCKED") {
     fail(`apply sem confirmação deveria ser BLOCKED, recebido ${blocked1.status}`);
   }
-  log(`apply sem confirmação · status=${blocked1.status} (esperado BLOCKED)`);
+  if (blocked1.runId !== "") {
+    fail(`apply BLOCKED deveria ter runId vazio (sem criar EngineeringSyncRun), recebido "${blocked1.runId}"`);
+  }
+  log(`apply sem confirmação · status=${blocked1.status} runId="" (esperado BLOCKED)`);
 
   // Apply com confirmação errada → BLOCKED.
   const blocked2 = await applyNomusMasterDataEqualize({
@@ -61,7 +74,40 @@ async function main(): Promise<void> {
   if (blocked2.status !== "BLOCKED") {
     fail(`apply com confirmação errada deveria ser BLOCKED, recebido ${blocked2.status}`);
   }
-  log(`apply com confirmação errada · status=${blocked2.status} (esperado BLOCKED)`);
+  if (blocked2.runId !== "") {
+    fail(`apply BLOCKED com confirmação errada deveria ter runId vazio, recebido "${blocked2.runId}"`);
+  }
+  log(`apply com confirmação errada · status=${blocked2.status} runId="" (esperado BLOCKED)`);
+
+  // Snapshot depois — não pode ter mudado.
+  const [runsAfter, changesAfter] = await Promise.all([
+    prisma.engineeringSyncRun.count(),
+    prisma.engineeringChangeLog.count(),
+  ]);
+  if (runsAfter !== runsBefore) {
+    fail(
+      `EngineeringSyncRun cresceu durante smoke read-only: ${runsBefore} → ${runsAfter} (alguma mutation indevida).`
+    );
+  }
+  if (changesAfter !== changesBefore) {
+    fail(
+      `EngineeringChangeLog cresceu durante smoke read-only: ${changesBefore} → ${changesAfter} (alguma mutation indevida).`
+    );
+  }
+  log(`snapshot final igual ao inicial · runs=${runsAfter} changes=${changesAfter}`);
+
+  // Sanity check da FK: garante que todos os EngineeringChangeLog que têm runId
+  // apontam para um EngineeringSyncRun real (caso contrário, regressão histórica).
+  const dangling = await prisma.engineeringChangeLog.count({
+    where: {
+      runId: { not: null },
+      run: null,
+    },
+  });
+  if (dangling > 0) {
+    fail(`Encontrados ${dangling} EngineeringChangeLog com runId órfão — FK quebrada (regressão).`);
+  }
+  log(`FK check · 0 registros órfãos em EngineeringChangeLog.runId`);
 
   log("OK — smoke read-only concluído. Nenhuma mutation executada.");
 }

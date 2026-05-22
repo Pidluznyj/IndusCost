@@ -233,11 +233,15 @@ export async function loadProductChangeHistory(
 /**
  * Garante que existe pelo menos uma entrada "IMPORTED" para um Product já criado
  * pela Carga Mestre Nomus. Idempotente: não cria duplicidade.
+ *
+ * O runId, quando informado, precisa apontar para um EngineeringSyncRun real
+ * (a FK runId é validada pelo banco). Quem chama é responsável por isso.
  */
 export async function ensureNomusImportHistoryForProduct(input: {
   productId: string;
   productSku: string;
   runId?: string | null;
+  planHash?: string | null;
   summary?: string | null;
 }): Promise<{ created: boolean }> {
   const existing = await prisma.engineeringChangeLog.findFirst({
@@ -262,6 +266,7 @@ export async function ensureNomusImportHistoryForProduct(input: {
       input.summary ??
       "Produto criado a partir da Carga Mestre Nomus (registro retroativo de auditoria).",
     runId: input.runId ?? null,
+    planHash: input.planHash ?? null,
   });
   return { created: true };
 }
@@ -274,6 +279,7 @@ export async function ensureNomusImportHistoryForMaterial(input: {
   materialId: string;
   materialCode: string;
   runId?: string | null;
+  planHash?: string | null;
   summary?: string | null;
 }): Promise<{ created: boolean }> {
   const existing = await prisma.engineeringChangeLog.findFirst({
@@ -297,6 +303,7 @@ export async function ensureNomusImportHistoryForMaterial(input: {
       input.summary ??
       "Material criado a partir da Carga Mestre Nomus (registro retroativo de auditoria).",
     runId: input.runId ?? null,
+    planHash: input.planHash ?? null,
   });
   return { created: true };
 }

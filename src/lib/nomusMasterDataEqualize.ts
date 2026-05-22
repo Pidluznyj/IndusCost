@@ -13,7 +13,7 @@
  * roteiro, ProductCostingMode ou simulações. NÃO faz delete físico.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { prisma } from "@/src/lib/prisma";
 import { normalizeSku } from "@/src/lib/nomusBomComparison";
 import {
@@ -54,6 +54,64 @@ const MAX_LIMIT = 500;
 const MAX_APPLY_BATCH = 300;
 const NOMUS_SOURCE = "NOMUS";
 const NOMUS_MATERIAL_CATEGORY = "NOMUS_IMPORT";
+/** Identificador de origem usado no summaryJson do EngineeringSyncRun. */
+const EQUALIZE_RUN_ORIGIN = "MASTER_DATA_EQUALIZE" as const;
+
+/** Cria o EngineeringSyncRun pai antes de gravar histórico (respeita a FK runId). */
+async function openEqualizationRun(input: {
+  applicableCodes: string[];
+  confirmationText: string;
+  requestedBy: string | null;
+  previewTotals: Record<string, number>;
+}): Promise<{ runId: string; planHash: string }> {
+  // planHash determinístico do conjunto de códigos a serem alterados.
+  const fingerprint = [...input.applicableCodes].sort().join("|");
+  const planHash = createHash("sha1")
+    .update(`equalize|${fingerprint || "empty"}|${new Date().toISOString().slice(0, 10)}`)
+    .digest("hex");
+
+  const run = await prisma.engineeringSyncRun.create({
+    data: {
+      mode: "ALL_NOMUS_PRODUCTS",
+      status: "PREVIEWED",
+      parentCode: null,
+      planHash,
+      confirmationText: input.confirmationText,
+      approvedBy: input.requestedBy ?? "nomus-equalize",
+      startedAt: new Date(),
+      summaryJson: {
+        origin: EQUALIZE_RUN_ORIGIN,
+        applicableCount: input.applicableCodes.length,
+        previewTotals: input.previewTotals,
+      } as never,
+    },
+    select: { id: true },
+  });
+  return { runId: run.id, planHash };
+}
+
+/** Atualiza o EngineeringSyncRun com status final e contadores ao fim do apply. */
+async function closeEqualizationRun(input: {
+  runId: string;
+  status: "APPLIED" | "PARTIAL" | "FAILED";
+  summaryJson: Record<string, unknown>;
+  errorsJson?: unknown;
+}): Promise<void> {
+  try {
+    await prisma.engineeringSyncRun.update({
+      where: { id: input.runId },
+      data: {
+        status: input.status,
+        finishedAt: new Date(),
+        summaryJson: input.summaryJson as never,
+        errorsJson: input.errorsJson === undefined ? undefined : (input.errorsJson as never),
+      },
+    });
+  } catch (err) {
+    // Não relançar — o apply principal não pode falhar por causa do update do cabeçalho.
+    console.error("[equalize] falha ao fechar run", input.runId, err);
+  }
+}
 
 function clampLimit(limit?: number): number {
   const raw = Number.isFinite(limit ?? NaN) ? Number(limit) : DEFAULT_LIMIT;
@@ -883,14 +941,15 @@ export async function applyNomusMasterDataEqualize(
   input: ApplyEqualizeInput
 ): Promise<EqualizeApplyResult> {
   const generatedAt = new Date().toISOString();
-  const runId = randomUUID();
 
   const baseEmpty: EqualizeApplyResult = {
     mode: "APPLY_SAFE",
     generatedAt,
     status: "BLOCKED",
     message: "",
-    runId,
+    // Antes da criação do EngineeringSyncRun ainda não temos runId real.
+    // Usamos string vazia em estados de falha pré-run; o cliente trata como ausência.
+    runId: "",
     createdProducts: 0,
     createdMaterials: 0,
     updatedProducts: 0,
@@ -945,6 +1004,19 @@ export async function applyNomusMasterDataEqualize(
     };
   }
 
+  // Cria o EngineeringSyncRun pai ANTES de gravar qualquer EngineeringChangeLog,
+  // para respeitar a FK runId. O runId só existe agora a partir deste ponto.
+  const previewTotalsForRun: Record<string, number> = {};
+  for (const r of applicable) {
+    previewTotalsForRun[r.action] = (previewTotalsForRun[r.action] ?? 0) + 1;
+  }
+  const { runId, planHash } = await openEqualizationRun({
+    applicableCodes: applicable.map((r) => r.code),
+    confirmationText: input.confirmationText,
+    requestedBy: input.requestedBy ?? null,
+    previewTotals: previewTotalsForRun,
+  });
+
   const report: EqualizeApplyReportItem[] = [];
   let createdProducts = 0;
   let createdMaterials = 0;
@@ -982,6 +1054,7 @@ export async function applyNomusMasterDataEqualize(
       newValue: args.newValue,
       changedBy,
       runId,
+      planHash,
       summary: args.summary,
     });
     historyEntriesCreated += 1;
@@ -1150,6 +1223,7 @@ export async function applyNomusMasterDataEqualize(
             productId,
             productSku: row.code,
             runId,
+            planHash,
             summary:
               "Produto criado anteriormente via Carga Mestre Nomus (registro retroativo).",
           });
@@ -1222,6 +1296,7 @@ export async function applyNomusMasterDataEqualize(
             materialId,
             materialCode: row.code,
             runId,
+            planHash,
             summary:
               "Material criado anteriormente via Carga Mestre Nomus (registro retroativo).",
           });
@@ -1401,6 +1476,44 @@ export async function applyNomusMasterDataEqualize(
       : status === "NO_CHANGES"
         ? "Nenhuma alteração aplicada — bases já estavam alinhadas."
         : "Igualação falhou — ver relatório.";
+
+  // Atualiza o EngineeringSyncRun com o status final e contadores.
+  const runStatusFinal: "APPLIED" | "PARTIAL" | "FAILED" =
+    status === "APPLIED" && errors === 0
+      ? "APPLIED"
+      : status === "APPLIED" && errors > 0
+        ? "PARTIAL"
+        : status === "FAILED"
+          ? "FAILED"
+          : // NO_CHANGES → registramos como APPLIED com totalApplied=0 para manter
+            // a semântica do enum (não há valor NO_CHANGES no EngineeringSyncRunStatus).
+            "APPLIED";
+
+  const summaryFinal = {
+    origin: EQUALIZE_RUN_ORIGIN,
+    totalRequested: applicable.length,
+    totalApplied,
+    historyEntriesCreated,
+    createdProducts,
+    createdMaterials,
+    updatedProducts,
+    updatedMaterials,
+    deactivatedProducts,
+    deactivatedMaterials,
+    errors,
+    semanticStatus: status,
+    message,
+  };
+  const errorsListed = report
+    .filter((r) => r.outcome === "FAILED")
+    .map((r) => ({ code: r.code, action: r.action, message: r.message }));
+
+  await closeEqualizationRun({
+    runId,
+    status: runStatusFinal,
+    summaryJson: summaryFinal,
+    errorsJson: errorsListed.length > 0 ? errorsListed : undefined,
+  });
 
   return {
     mode: "APPLY_SAFE",
