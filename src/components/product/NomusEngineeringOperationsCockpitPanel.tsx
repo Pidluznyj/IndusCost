@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
-import { aggregateCockpitTotals } from "@/src/lib/nomusEngineeringOperationsCockpit";
+import { aggregateCockpitTotals } from "@/src/lib/nomusEngineeringOperationsCockpitShared";
 import type {
   CockpitOperatorStatus,
   CockpitResult,
