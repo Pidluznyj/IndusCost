@@ -1,8 +1,14 @@
 # Roadmap de campos de banco — IndusCost (comercial, CRM e referência técnica)
 
-**Versão do documento:** 1.6  
-**Última revisão:** 2026-04-14  
+**Versão do documento:** 1.7
+**Última revisão:** 2026-05-22 (fase `INDUSCOST-SYSTEM-AUDIT-AND-ACTION-PLAN-A`)
 **Fonte de verdade do schema atual:** `prisma/schema.prisma` (PostgreSQL)
+
+> **Atualização 1.7 (auditoria sistêmica)** — sem nova migration nesta
+> versão. Acrescentei a seção 13 com o estado **observado** dos modelos
+> Nomus de auditoria, dos modelos `*_backup_*_20260413` e
+> recomendações de padronização. Decisões de migration permanecem
+> para fase futura aprovada (`INDUSCOST-LEGACY-BACKUP-CLEANUP-A`).
 
 **Escopo cumulativo:** além do backlog comercial/CRM, este documento registra **alterações técnicas validadas no código** (motor de custo, API, UI, roteamento, **compras / solicitação**, **UX / tour guiado**) com classificação explícita de **impacto em banco** vs **somente aplicação**. Problemas de ambiente local (ex.: `DATABASE_URL` ausente) **não** são tratados como exigência de migration.
 
@@ -571,6 +577,85 @@ Referência cruzada: **secção 5** (domínios), **secção 12** (checklist nume
 | **Impacto técnico** | Novas rotas dedicadas: `GET /api/new-product-simulations`, `GET /api/new-product-simulations/:id`, `POST /api/new-product-simulations/save`, `POST /api/new-product-simulations/:id/clone`. Nenhuma alteração nos endpoints existentes de simulações tradicionais. |
 | **Impacto em banco** | **Migration aditiva:** enum `NewProductSimulationStatus` e tabela `NewProductSimulation` com `snapshot` JSON e metadados de rastreabilidade. |
 | **Status** | Implementado com isolamento de domínio (não mistura com `Product`/`ProductBOM` e não cria produto oficial). |
+
+---
+
+## 13. Estado observado em 2026-05-22 (auditoria sistêmica)
+
+> Esta seção foi acrescentada na auditoria
+> `INDUSCOST-SYSTEM-AUDIT-AND-ACTION-PLAN-A`. Não cria/altera nenhum
+> campo: apenas registra o que foi observado no schema real e o que
+> deve entrar em fase futura aprovada.
+
+### 13.1 Modelos Nomus de auditoria — observados
+
+Estes modelos **já existem** no schema e estão sendo usados pelos
+fluxos `Carga Mestre`, `Igualar Bases`, `Aplicar BOM Nomus` e backfill
+de histórico. **Nenhuma alteração necessária nesta versão.**
+
+| Modelo | Função | Status |
+|---|---|---|
+| `EngineeringSyncRun` | Cabeçalho run com `planHash`, `summaryJson.origin`. Origins observadas: `MASTER_DATA_EQUALIZE`, `BOM_APPLY_AFTER_MASTER_DATA`, `MASTER_DATA_HISTORY_BACKFILL`. | Implementado e em uso. |
+| `EngineeringChangeLog` | Auditoria fina por entidade. FK `runId → EngineeringSyncRun.id` validada por smoke. | Implementado e em uso. |
+| `NomusBomApplyRun` / `NomusBomApplyRunLine` | Cabeçalho técnico do apply de BOM (before/after por componente). | Implementado e em uso. |
+| `NomusProductImportRun` / `NomusProductImportRunLine` | Cabeçalho de import de produto novo. | Implementado e em uso. |
+| `NomusBomComponentStage` | Stage de BOM Nomus (ingestão raw). | Implementado e em uso. |
+| `NomusOptionalPricingGroup` / `NomusOptionalPricingChoice` | Decisão de opcional para precificação. | Implementado e em uso. |
+| `NomusBomReviewDecision` | Decisão local sobre linha (excluir/manter/encaminhar a engenharia). | Implementado e em uso. |
+
+### 13.2 Modelos `*_backup_*_20260413` — atenção
+
+Existem **9 modelos persistidos no `schema.prisma`** (linhas 841-950)
+com sufixo `_backup_*_20260413`:
+
+- `ProductBOM_backup_420_01A_20260413`
+- `ProductBOM_backup_61051_mola_atual_20260413`
+- `ProductBOM_backup_add_80001_montagem_20260413`
+- `ProductBOM_backup_auto_remap_componentes_comprados_20260413`
+- `ProductBOM_backup_remap_material_lote2_20260413`
+- `ProductBOM_backup_remap_material_lote4_20260413`
+- `ProductBOM_backup_remove_obsoletos_20260413`
+- `Product_backup_process_componentes_materiais_20260413`
+- `Product_backup_process_xlsx_20260413`
+
+**Status:** atualmente são "snapshots" de migrations passadas que
+ficaram no schema. **Nenhum endpoint ativo lê esses modelos.**
+
+**Recomendação (fase `INDUSCOST-LEGACY-BACKUP-CLEANUP-A`)**:
+
+1. Confirmar que existe `pg_dump` externo arquivado contendo o estado
+   pré-cleanup (data 2026-04-13 ou posterior).
+2. Criar migration única `drop_backup_tables_20260413` com `DROP TABLE
+   IF EXISTS ...` para cada um dos 9 modelos.
+3. Remover as definições de `prisma/schema.prisma`.
+4. Validar que `npx prisma migrate status` fica limpo.
+5. **Não rodar a migration em produção sem autorização explícita**.
+
+### 13.3 Padronizações sugeridas (sem migration agora)
+
+Observações de auditoria — anotar para fases futuras:
+
+| Padronização | Onde | Por que |
+|---|---|---|
+| `Material.category="NOMUS_IMPORT"` como marker | `nomusMasterDataImport.ts` cria com esse valor; `nomusMasterDataEqualize.ts` usa para detectar Nomus-controlled | Funciona, mas é semântico em string. Poderia virar campo dedicado `isNomusControlled: Boolean` em `Material` (espelhando Product). Não bloquear release. |
+| `summaryJson` em `EngineeringSyncRun` sem zod schema | múltiplos | Tipagem `any` no Prisma. Adicionar zod schema em runtime para garantir `origin` válido. |
+| `IntegrationRun` (modelo legado) | `schema.prisma:731` | Confirmar uso. Se ativo, documentar; se inativo, marcar `@deprecated`. |
+| Campos `external*` em `Proposal` / `ProposalItem` | já documentados na seção 11 | Continuar — base para integrações externas. |
+| `Product.sourceSystem` / `isNomusControlled` / `lastNomusSyncAt` / `nomusPayloadHash` | em uso pelos fluxos atuais | Documentar como pattern e replicar em `Material` quando a 1ª padronização avançar. |
+
+### 13.4 FKs validadas por smoke
+
+- `EngineeringChangeLog.runId → EngineeringSyncRun.id` (`onDelete: SetNull`)
+  — validado em `npm run test:nomus:engineering-release-ready` e
+  `npm run test:nomus:master-data-equalize`.
+
+### 13.5 FKs sensíveis para revisar (próxima auditoria)
+
+- `ProductBOM.productId → Product.id` (`onDelete: Cascade`) — verificar
+  se há proteção contra delete de Product com proposta ativa.
+- `ProposalItem.proposalId → Proposal.id` (`onDelete: Cascade`) — coerente.
+- `ProductPricing.productId → Product.id` (`onDelete: NoAction`) —
+  coerente, evita perda silenciosa.
 
 ---
 
