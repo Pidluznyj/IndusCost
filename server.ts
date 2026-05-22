@@ -120,6 +120,12 @@ import {
 } from "./src/lib/nomusEngineeringReconciliation.js";
 import { buildNomusEngineeringOperationsCockpit } from "./src/lib/nomusEngineeringOperationsCockpit.js";
 import { buildNomusEngineeringEqualizationActionPlan } from "./src/lib/nomusEngineeringEqualizationActionPlan.js";
+import {
+  applyNomusMasterDataImport,
+  buildNomusMasterDataImportDiagnostic,
+  buildNomusMasterDataImportPreview,
+} from "./src/lib/nomusMasterDataImport.js";
+import { MASTER_DATA_CONFIRMATION_TEXT } from "./src/lib/nomusMasterDataImportTypes.js";
 import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
@@ -4096,6 +4102,161 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         console.error("GET /api/nomus/engineering-equalization-action-plan", error);
         return res.status(500).json({
           error: "EQUALIZATION_ACTION_PLAN_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/master-data-import/diagnostic",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.edit",
+      "materials.view",
+      "materials.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const limitRaw = Number(req.query.limit);
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
+        const offsetRaw = Number(req.query.offset);
+        const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : undefined;
+        const search =
+          req.query.search != null && String(req.query.search).trim()
+            ? String(req.query.search).trim()
+            : undefined;
+        const classification =
+          req.query.classification != null && String(req.query.classification).trim()
+            ? String(req.query.classification).trim()
+            : undefined;
+        const includeExisting =
+          req.query.includeExisting === "true" || req.query.includeExisting === "1";
+
+        const result = await buildNomusMasterDataImportDiagnostic({
+          limit,
+          offset,
+          search,
+          classification,
+          includeExisting,
+        });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao montar diagnóstico de Carga Mestre Nomus.";
+        console.error("GET /api/nomus/master-data-import/diagnostic", error);
+        return res.status(500).json({
+          error: "MASTER_DATA_DIAGNOSTIC_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/master-data-import/preview",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.edit",
+      "materials.view",
+      "materials.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const classificationRaw =
+          req.query.classification != null
+            ? String(req.query.classification).trim().toUpperCase()
+            : "ALL_SAFE";
+        const classification: "SAFE_PRODUCT_CANDIDATE" | "SAFE_MATERIAL_CANDIDATE" | "ALL_SAFE" =
+          classificationRaw === "SAFE_PRODUCT_CANDIDATE" ||
+          classificationRaw === "SAFE_MATERIAL_CANDIDATE"
+            ? (classificationRaw as "SAFE_PRODUCT_CANDIDATE" | "SAFE_MATERIAL_CANDIDATE")
+            : "ALL_SAFE";
+
+        let codes: string[] | undefined;
+        if (req.query.codes != null) {
+          const raw = String(req.query.codes);
+          codes = raw
+            .split(/[,\n;]/)
+            .map((c) => c.trim())
+            .filter(Boolean);
+          if (codes.length === 0) codes = undefined;
+        }
+
+        const result = await buildNomusMasterDataImportPreview({ classification, codes });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao montar preview de Carga Mestre Nomus.";
+        console.error("GET /api/nomus/master-data-import/preview", error);
+        return res.status(500).json({
+          error: "MASTER_DATA_PREVIEW_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/master-data-import/apply-safe",
+    requireAppAuth,
+    requireAnyPermission(["products.edit", "materials.edit"]),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const modeRaw = String(body.mode ?? "").trim();
+        if (modeRaw !== "SAFE_ONLY") {
+          return res.status(400).json({
+            error: "MASTER_DATA_INVALID_MODE",
+            message: `Apenas mode=SAFE_ONLY é aceito. Recebido: "${modeRaw}".`,
+          });
+        }
+        const confirmationText = typeof body.confirmationText === "string"
+          ? body.confirmationText
+          : "";
+        if (confirmationText !== MASTER_DATA_CONFIRMATION_TEXT) {
+          return res.status(400).json({
+            error: "MASTER_DATA_INVALID_CONFIRMATION",
+            message: `Confirmação inválida — envie confirmationText exatamente igual a: "${MASTER_DATA_CONFIRMATION_TEXT}".`,
+          });
+        }
+
+        let codes: string[] | undefined;
+        if (Array.isArray(body.codes)) {
+          codes = body.codes
+            .filter((c: unknown): c is string => typeof c === "string")
+            .map((c: string) => c.trim())
+            .filter((c: string) => c.length > 0);
+          if (codes.length === 0) codes = undefined;
+        }
+
+        const requestedBy =
+          typeof body.requestedBy === "string" && body.requestedBy.trim()
+            ? body.requestedBy.trim()
+            : undefined;
+
+        const result = await applyNomusMasterDataImport({
+          mode: "SAFE_ONLY",
+          codes,
+          confirmationText,
+          requestedBy,
+        });
+        const statusCode = result.status === "FAILED" ? 500 : 200;
+        return res.status(statusCode).json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao aplicar Carga Mestre Nomus.";
+        console.error("POST /api/nomus/master-data-import/apply-safe", error);
+        return res.status(500).json({
+          error: "MASTER_DATA_APPLY_FAILED",
           message,
         });
       }

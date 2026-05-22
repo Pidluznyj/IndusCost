@@ -65,6 +65,13 @@ const FORBIDDEN_SPECIFIERS: Array<{
       return /(^|\/)nomusEngineeringEqualizationActionPlan$/.test(base);
     },
   },
+  {
+    rule: "Lib server-side da Carga Mestre Nomus (usar ...MasterDataImportTypes, ...MasterDataImportShared ou ...MasterDataImportClient)",
+    test: (s) => {
+      const base = s.replace(/\.(?:ts|tsx|js|jsx)$/, "");
+      return /(^|\/)nomusMasterDataImport$/.test(base);
+    },
+  },
 ];
 
 /**
@@ -74,6 +81,7 @@ const FORBIDDEN_SPECIFIERS: Array<{
 const KNOWN_SERVER_LIBS = new Set<string>([
   "nomusEngineeringOperationsCockpit",
   "nomusEngineeringEqualizationActionPlan",
+  "nomusMasterDataImport",
   // Sinta-se livre para acrescentar outras libs server-side aqui.
 ]);
 

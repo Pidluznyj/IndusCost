@@ -167,7 +167,108 @@ demanda e mostra de forma guiada o que precisa ser feito para aquele produto.
   com pré-confirmação textual, e devolve mensagens claras
   (`APPLIED`, `NO_CHANGES`, `BLOCKED`, `FAILED`).
 
-## 8. Scripts úteis (para o time técnico)
+## 8. Carga Mestre Nomus
+
+A Carga Mestre Nomus é o **passo anterior** à equalização de BOM. Antes de aplicar
+estrutura, todos os componentes que aparecem nas BOMs do Nomus precisam existir
+como **Product** ou **Material** no IndusCost. Sem isso, vários produtos ficam
+bloqueados na Central com "Material faltante" ou "Produto filho faltante".
+
+### Por que precisa existir
+
+Sem cadastro mestre completo:
+
+- a Central marca produtos como **Bloqueado** por "Material faltante";
+- o Plano de Aplicação não consegue criar linhas de BOM;
+- o Impacto de Custo não consegue calcular peças que não existem.
+
+### Diferença entre cadastro mestre e BOM
+
+- **Carga Mestre Nomus** cria **apenas o registro base** de Product/Material
+  (sku/code, descrição, tipo, unidade padrão, categoria de importação).
+- **NÃO cria ProductBOM.** A estrutura BOM continua sendo aplicada
+  produto a produto, na aba técnica do produto, pelo fluxo controlado.
+
+### O que será criado
+
+- `Product` — quando o código aparece como `parentCode` no Nomus
+  (`type=PRODUCT` quando só aparece como pai; `type=COMPONENT` quando também
+  aparece como componente).
+- `Material` — quando o código aparece **apenas** como componente, sem BOM
+  própria. Unidade padrão `UN`, categoria `NOMUS_IMPORT` para reclassificação
+  posterior, custos zerados.
+
+### O que NÃO será criado
+
+- ProductBOM.
+- Preço, proposta, pedido, tabela de preço.
+- Histórico de custo / curva de custo.
+- Roteiro/processo do produto.
+- `ProductCostingMode` permanece no default (`OWN_PROCESS`) — não é alterado.
+
+### Quando um item vira Product
+
+- Aparece como `parentCode` em alguma linha do `NomusBomComponentStage`.
+- Tem descrição utilizável.
+- Não é código 800.xx.
+- Default `PRODUCT`; se também aparece como componente em outras BOMs, vira
+  `COMPONENT`.
+
+### Quando um item vira Material
+
+- Aparece apenas como `componentCode` em BOMs Nomus.
+- Sem BOM própria no stage.
+- Descrição compatível com matéria-prima/insumo.
+- Não é código 800.xx.
+
+### Quando fica bloqueado
+
+- `BLOCKED_LOCAL_PROCESS_CODE` — código 800.xx (montagem local do IndusCost).
+- `BLOCKED_MISSING_DESCRIPTION` — descrição vazia.
+- `BLOCKED_INVALID_CODE` — código inválido (vazio ou > 64 caracteres).
+- `EXISTING_BOTH_AMBIGUOUS` — código existe simultaneamente em Product e Material.
+- `AMBIGUOUS_REVIEW` — sinais contraditórios; revisão manual obrigatória.
+
+### Como rodar (UI)
+
+1. Manutenção Nomus → Visão Geral (sem produto selecionado).
+2. Painel **"Carga Mestre Nomus"** no topo.
+3. Clicar **Diagnosticar cadastro base**.
+4. Conferir totais (faltantes, seguros como Produto, seguros como Material,
+   bloqueados/ambíguos).
+5. Filtrar e revisar (use "Precisa revisão" para ambíguos).
+6. Clicar **Importar itens seguros** e digitar a frase exata
+   `IMPORTAR CADASTRO MESTRE NOMUS` para confirmar.
+7. Após apply, o resultado aparece no topo do painel
+   (criados, ignorados, bloqueados, erros).
+
+### Como rodar (CLI)
+
+```bash
+npm run sync:nomus:master-data-diagnostic
+npm run sync:nomus:master-data-preview
+npm run sync:nomus:master-data-apply-safe -- --confirm="IMPORTAR CADASTRO MESTRE NOMUS"
+```
+
+Sem `--confirm`, o `apply-safe` roda em **dry-run** (não escreve nada). Para
+limitar a um subconjunto, passe `--codes=110.03--,210.05--`.
+
+### Como reprocessar a Central depois
+
+Após o apply, voltar à Central de Atualização Nomus e **Gerar diagnóstico** —
+produtos que antes apareciam como "Material faltante" ou "Produto filho faltante"
+devem deixar de aparecer com esse bloqueio. A aplicação real da BOM continua
+sendo feita produto a produto na aba técnica do produto.
+
+### Por que 800.xx não é importado automaticamente
+
+Códigos `800.xx` representam **montagem local** do IndusCost — eles não vêm do
+Nomus. A Central os preserva como exceção local. Tentar importar `800.xx` como
+Material ou Product automaticamente quebraria a regra de montagem local. Por isso
+esses códigos aparecem como `BLOCKED_LOCAL_PROCESS_CODE` no diagnóstico — se for
+necessário cadastrar, é decisão manual.
+
+## 9. Scripts úteis (para o time técnico)
 
 - `npm run check:frontend-imports` — guardrail que impede Prisma/lib server-side
   no bundle React.
@@ -176,5 +277,13 @@ demanda e mostra de forma guiada o que precisa ser feito para aquele produto.
   + 611.48AA + 317.02AA), totalmente read-only.
 - `npm run test:nomus:engineering-action-plan` — smoke read-only do Plano de
   Ação de Equalização para os pilotos e para um produto da fila do Cockpit.
+- `npm run sync:nomus:master-data-diagnostic` — diagnóstico read-only da
+  Carga Mestre Nomus (lista códigos faltantes + classificação).
+- `npm run sync:nomus:master-data-preview` — preview read-only do que seria
+  criado pela importação segura.
+- `npm run sync:nomus:master-data-apply-safe -- --confirm="IMPORTAR CADASTRO MESTRE NOMUS"`
+  — importação segura de cadastro base (Product/Material).
+- `npm run test:nomus:master-data-import` — smoke read-only da Carga Mestre
+  Nomus (valida diagnóstico, preview e bloqueio do apply sem confirmação).
 
 Esses scripts devem ser rodados no servidor (precisam de `DATABASE_URL`).

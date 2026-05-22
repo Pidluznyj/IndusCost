@@ -22,6 +22,7 @@ import {
 import { NomusMaintenanceProductBanner } from "@/src/components/product/NomusMaintenanceProductBanner";
 import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
 import { NomusEngineeringOperationsCockpitPanel } from "@/src/components/product/NomusEngineeringOperationsCockpitPanel";
+import { NomusMasterDataImportPanel } from "@/src/components/product/NomusMasterDataImportPanel";
 import type {
   NomusMaintenanceTab,
   NomusMaintenanceWorkspaceProps,
@@ -302,6 +303,7 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
       <div className="space-y-4">
         <NomusMaintenanceStepHeader tab="overview" />
         <NomusMaintenanceProductBanner />
+        <NomusMasterDataImportPanel disabled={disabled} />
         <NomusEngineeringOperationsCockpitPanel
           disabled={disabled}
           onOpenProduct={(parentCode, options) => {
