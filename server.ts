@@ -119,6 +119,7 @@ import {
   listEngineeringChangeLog,
 } from "./src/lib/nomusEngineeringReconciliation.js";
 import { buildNomusEngineeringOperationsCockpit } from "./src/lib/nomusEngineeringOperationsCockpit.js";
+import { buildNomusEngineeringEqualizationActionPlan } from "./src/lib/nomusEngineeringEqualizationActionPlan.js";
 import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
@@ -4038,6 +4039,63 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         console.error("GET /api/nomus/engineering-operations-cockpit", error);
         return res.status(500).json({
           error: "OPERATIONS_COCKPIT_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/engineering-equalization-action-plan",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.tab.bom",
+      "products.tab.tree",
+      "products.tab.cost",
+      "products.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const parentCode =
+          req.query.parentCode != null ? String(req.query.parentCode).trim() : "";
+        if (!parentCode) {
+          return res.status(400).json({
+            error: "PARENT_CODE_REQUIRED",
+            message: "parentCode é obrigatório.",
+          });
+        }
+
+        const parseBool = (value: unknown, defaultValue: boolean): boolean => {
+          if (value === undefined) return defaultValue;
+          const v = String(value).trim().toLowerCase();
+          if (v === "true" || v === "1") return true;
+          if (v === "false" || v === "0") return false;
+          return defaultValue;
+        };
+
+        const includeCostImpact = parseBool(req.query.includeCostImpact, true);
+        const includeApplyPreview = parseBool(req.query.includeApplyPreview, true);
+        const includeImportPreviewRaw =
+          req.query.includeImportPreview !== undefined
+            ? parseBool(req.query.includeImportPreview, true)
+            : undefined;
+
+        const result = await buildNomusEngineeringEqualizationActionPlan({
+          parentCode,
+          includeCostImpact,
+          includeApplyPreview,
+          includeImportPreview: includeImportPreviewRaw,
+        });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao montar Plano de Ação de Equalização.";
+        console.error("GET /api/nomus/engineering-equalization-action-plan", error);
+        return res.status(500).json({
+          error: "EQUALIZATION_ACTION_PLAN_FAILED",
           message,
         });
       }

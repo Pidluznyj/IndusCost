@@ -33,6 +33,11 @@ import type {
   CockpitScope,
   CockpitTechnicalRef,
 } from "@/src/lib/nomusEngineeringOperationsCockpitTypes";
+import { fetchEngineeringEqualizationActionPlan } from "@/src/lib/nomusEngineeringEqualizationActionPlanClient";
+import type {
+  ActionPlanStepStatus,
+  EngineeringEqualizationActionPlanResult,
+} from "@/src/lib/nomusEngineeringEqualizationActionPlanTypes";
 import type { NomusMaintenanceTab } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 
 type Props = {
@@ -763,6 +768,253 @@ const ExpandedRowDetail: React.FC<{
           </button>
         ))}
       </div>
+
+      <ActionPlanSection parentCode={row.parentCode} onOpenProduct={onOpenProduct} />
+    </div>
+  );
+};
+
+function stepStatusLabel(status: ActionPlanStepStatus): string {
+  switch (status) {
+    case "DONE":
+      return "Concluído";
+    case "PENDING":
+      return "Pendente";
+    case "BLOCKED":
+      return "Bloqueado";
+    case "REVIEW":
+      return "Revisar";
+    case "NOT_REQUIRED":
+      return "Não necessário";
+  }
+}
+
+function stepStatusClasses(status: ActionPlanStepStatus): string {
+  switch (status) {
+    case "DONE":
+      return "bg-emerald-100 text-emerald-900";
+    case "PENDING":
+      return "bg-amber-100 text-amber-900";
+    case "BLOCKED":
+      return "bg-red-100 text-red-900";
+    case "REVIEW":
+      return "bg-sky-100 text-sky-900";
+    case "NOT_REQUIRED":
+      return "bg-muted text-muted-foreground";
+  }
+}
+
+const ActionPlanSection: React.FC<{
+  parentCode: string;
+  onOpenProduct: (parentCode: string, options?: { tab?: NomusMaintenanceTab }) => void;
+}> = ({ parentCode, onOpenProduct }) => {
+  const [plan, setPlan] = useState<EngineeringEqualizationActionPlanResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setPlan(null);
+    fetchEngineeringEqualizationActionPlan(
+      {
+        parentCode,
+        includeCostImpact: true,
+        includeApplyPreview: true,
+      },
+      { signal: controller.signal }
+    )
+      .then((res) => {
+        if (cancelled) return;
+        setPlan(res);
+      })
+      .catch((err) => {
+        if (cancelled || controller.signal.aborted) return;
+        setError(
+          err instanceof Error
+            ? `${err.message} Tente novamente ou abra o diagnóstico técnico.`
+            : "Erro ao gerar plano de ação. Tente novamente ou abra o diagnóstico técnico."
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [parentCode]);
+
+  return (
+    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] uppercase font-bold text-primary">
+          Plano de ação deste produto
+        </p>
+        {plan ? (
+          <span
+            className={cn(
+              "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+              plan.readiness === "BLOCKED" || plan.readiness === "ERROR"
+                ? "bg-red-100 text-red-900"
+                : plan.readiness === "NO_ACTION_REQUIRED"
+                  ? "bg-emerald-100 text-emerald-900"
+                  : "bg-amber-100 text-amber-900"
+            )}
+          >
+            {plan.readinessLabel}
+          </span>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Gerando plano de ação…
+        </p>
+      ) : null}
+
+      {error ? (
+        <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+          {error}
+        </p>
+      ) : null}
+
+      {plan ? (
+        <div className="space-y-2 text-xs">
+          <p className="text-[11px] text-foreground/80">{plan.summary}</p>
+
+          <div className="rounded-lg border border-border bg-background p-2.5 space-y-1.5">
+            <p className="text-[11px]">
+              <strong>Próxima ação:</strong> {plan.nextRecommendedActionLabel}
+            </p>
+            {plan.nextRecommendedActionTargetTab ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenProduct(plan.parentCode, {
+                    tab: plan.nextRecommendedActionTargetTab as NomusMaintenanceTab,
+                  })
+                }
+                className="inline-flex h-7 items-center gap-1 rounded-lg bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90"
+              >
+                <Package className="h-3 w-3" />
+                {plan.nextRecommendedActionLabel}
+              </button>
+            ) : null}
+          </div>
+
+          {plan.blockers.length > 0 ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] text-red-900">
+              <p className="font-bold">Bloqueios</p>
+              <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                {plan.blockers.map((b, i) => (
+                  <li key={i}>{b}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {plan.warnings.length > 0 ? (
+            <ul className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 list-disc list-inside">
+              {plan.warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          ) : null}
+
+          {plan.localExceptionSummary.hasAssemblyLocal ? (
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] text-teal-900">
+              <p className="font-bold">Montagem local preservada</p>
+              {plan.localExceptionSummary.assemblyLocalLines.length > 0 ? (
+                <ul className="mt-0.5 space-y-0 list-disc list-inside">
+                  {plan.localExceptionSummary.assemblyLocalLines.map((l) => (
+                    <li key={l.componentCode}>
+                      {l.componentCode}
+                      {l.componentDescription ? ` — ${l.componentDescription}` : ""}
+                      {l.quantity != null ? ` (qty ${l.quantity})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+
+          {plan.product.costingMode === "FINISHING_SERVICE" ||
+          plan.product.costingMode === "BOM_ONLY" ? (
+            <p className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] text-violet-900">
+              Modo de custeio: <strong>{plan.product.costingMode}</strong> — processo
+              próprio é ignorado no custo deste item.
+            </p>
+          ) : null}
+
+          {plan.steps.length > 0 ? (
+            <div className="rounded-lg border border-border bg-background p-2.5">
+              <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">
+                Etapas
+              </p>
+              <ol className="space-y-1.5">
+                {plan.steps.map((step, idx) => (
+                  <li key={step.key} className="flex items-start gap-2">
+                    <span className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                      {idx + 1}.
+                    </span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] font-semibold">{step.label}</span>
+                        <span
+                          className={cn(
+                            "inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                            stepStatusClasses(step.status)
+                          )}
+                        >
+                          {stepStatusLabel(step.status)}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                        {step.description}
+                      </p>
+                      {step.actionLabel && step.targetTab ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onOpenProduct(plan.parentCode, {
+                              tab: step.targetTab as NomusMaintenanceTab,
+                            })
+                          }
+                          className="mt-1 inline-flex h-6 items-center gap-1 rounded-md border border-border bg-background px-2 text-[10px] font-semibold hover:bg-accent"
+                        >
+                          {step.actionLabel}
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+
+          {plan.costImpactSummary ? (
+            <p className="text-[10px] text-muted-foreground">
+              Impacto previsto:{" "}
+              <strong>
+                {plan.costImpactSummary.deltaTotalCost == null
+                  ? "—"
+                  : plan.costImpactSummary.deltaTotalCost.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+              </strong>
+              {plan.costImpactSummary.hasStructuralChanges
+                ? " (alterações estruturais detectadas)"
+                : " (sem alterações estruturais)"}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };

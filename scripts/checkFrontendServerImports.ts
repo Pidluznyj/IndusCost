@@ -58,6 +58,13 @@ const FORBIDDEN_SPECIFIERS: Array<{
       return /(^|\/)nomusEngineeringOperationsCockpit$/.test(base);
     },
   },
+  {
+    rule: "Lib server-side do Plano de Ação de Equalização (usar ...ActionPlanTypes, ...ActionPlanShared ou ...ActionPlanClient)",
+    test: (s) => {
+      const base = s.replace(/\.(?:ts|tsx|js|jsx)$/, "");
+      return /(^|\/)nomusEngineeringEqualizationActionPlan$/.test(base);
+    },
+  },
 ];
 
 /**
@@ -66,6 +73,7 @@ const FORBIDDEN_SPECIFIERS: Array<{
  */
 const KNOWN_SERVER_LIBS = new Set<string>([
   "nomusEngineeringOperationsCockpit",
+  "nomusEngineeringEqualizationActionPlan",
   // Sinta-se livre para acrescentar outras libs server-side aqui.
 ]);
 

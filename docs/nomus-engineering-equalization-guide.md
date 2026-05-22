@@ -116,12 +116,65 @@ as alterações de engenharia vindas do Nomus, produto a produto, com segurança
    - Conferir na aba de **Custo** que o processo próprio aparece como ignorado
      (com a mensagem do `ownProcessSkipReason`) e que os filhos seguem calculando.
 
-## 7. Scripts úteis (para o time técnico)
+## 7. Plano de ação do produto
+
+A partir da release **Workflow-A**, ao expandir uma linha da Central, a Engenharia
+vê automaticamente um painel **"Plano de ação deste produto"** que carrega sob
+demanda e mostra de forma guiada o que precisa ser feito para aquele produto.
+
+### O que aparece no painel
+
+- **Status de prontidão (readiness)**: Pronto, Bloqueado, Precisa importar etc.
+- **Resumo** em uma frase, em linguagem humana.
+- **Próxima ação recomendada** com botão direto para a aba técnica certa.
+- **Bloqueios** (quando existem) — material faltante, produto filho faltante etc.
+- **Avisos**.
+- **Montagem local preservada** com as linhas 800.xx identificadas, quando aplicável.
+- **Modo de custeio** (FINISHING_SERVICE / BOM_ONLY) com explicação humana.
+- **Etapas numeradas**: cada etapa do fluxo (Cadastro, Comparação, Opcional,
+  Material, Filho, Montagem local, Impacto, Plano de aplicação) com status
+  `Concluído / Pendente / Revisar / Bloqueado / Não necessário` e botão de
+  atalho para a aba certa.
+- **Impacto previsto** (delta total de custo) sem precisar abrir outra aba.
+
+### Quando abrir cada aba
+
+| Situação | Próxima ação |
+|---|---|
+| Plano diz "Nenhuma ação necessária" | Não abrir nada. O produto está alinhado. |
+| BOM alterada, sem bloqueios | Abrir **Plano de aplicação** e aplicar **produto a produto**. |
+| Pronto para revisão manual | Abrir **BOM efetiva** para entender o que mudou. |
+| Há opcional pendente | Abrir **Opcionais** e escolher antes de aplicar. |
+| Material faltante | Abrir **Diagnóstico técnico**, cadastrar/mapear o material. |
+| Produto filho faltante | Abrir **Importação do produto** para o filho antes do pai. |
+| Produto novo no Nomus | Abrir **Importação do produto** pelo fluxo controlado. |
+| Código ambíguo / casos estranhos | Chamar a Engenharia (revisão humana). |
+
+### O que NÃO fazer
+
+- Não usar a Central para aplicar em lote — **a aplicação continua produto a
+  produto** na aba "Plano de aplicação" do próprio produto.
+- Não remover 800.01 / 800.xx — eles aparecem como **montagem local preservada**.
+- Não escolher opcionais sem entender — abrir Opcionais e decidir caso a caso.
+- Não trocar `costingMode` de produto sem confirmação técnica.
+
+### Como o painel é seguro
+
+- O painel é **read-only**: apenas chama `GET /api/nomus/engineering-equalization-action-plan`.
+- Nenhuma escrita acontece quando o painel abre — nem em ProductBOM, nem em
+  Product, nem em Material, nem em preço, proposta ou pedido.
+- Cada aplicação efetiva continua sendo feita na aba técnica do produto,
+  com pré-confirmação textual, e devolve mensagens claras
+  (`APPLIED`, `NO_CHANGES`, `BLOCKED`, `FAILED`).
+
+## 8. Scripts úteis (para o time técnico)
 
 - `npm run check:frontend-imports` — guardrail que impede Prisma/lib server-side
   no bundle React.
 - `npm run test:nomus:engineering-cockpit-smoke` — smoke read-only da Central.
 - `npm run test:nomus:engineering-release-check` — checagem combinada (Cockpit
   + 611.48AA + 317.02AA), totalmente read-only.
+- `npm run test:nomus:engineering-action-plan` — smoke read-only do Plano de
+  Ação de Equalização para os pilotos e para um produto da fila do Cockpit.
 
 Esses scripts devem ser rodados no servidor (precisam de `DATABASE_URL`).
