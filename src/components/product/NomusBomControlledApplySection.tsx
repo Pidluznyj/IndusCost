@@ -289,6 +289,9 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
                   <p>
                     Alvo BOM efetiva (Nomus):{" "}
                     <span className="font-semibold tabular-nums">{action.effectiveQuantity ?? "—"}</span>
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      (quantidade teórica + perda normal)
+                    </span>
                   </p>
                   <p>
                     Ação: {ACTION_LABEL[action.actionType]}
@@ -399,7 +402,12 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
                     <th className="text-left px-2 py-2">Componente</th>
                     <th className="text-left px-2 py-2">Tipo</th>
                     <th className="text-right px-2 py-2">Atual</th>
-                    <th className="text-right px-2 py-2">Efetiva</th>
+                    <th
+                      className="text-right px-2 py-2"
+                      title="Quantidade efetiva Nomus considera a perda normal — qtdeNecessaria + qtdePerdaNormal. ProductBOM.lossPercentage permanece 0."
+                    >
+                      Efetiva (com perda)
+                    </th>
                     <th className="text-left px-2 py-2">Ação</th>
                   </tr>
                 </thead>

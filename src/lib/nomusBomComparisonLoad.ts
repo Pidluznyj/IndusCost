@@ -2,6 +2,7 @@ import { prisma } from "@/src/lib/prisma";
 import {
   chooseEffectiveNomusList,
   compareBom,
+  computeEffectiveLineQuantity,
   normalizeSku,
   toNumberSafe,
   type BomComparisonResult,
@@ -27,13 +28,21 @@ export function stageRowToNomusLine(row: {
   itemDeEmbarque: boolean | null;
   posicao: number | null;
 }): NomusEffectiveBomLine {
+  const requiredQuantity = toNumberSafe(row.qtdeNecessaria);
+  const lossQuantity = toNumberSafe(row.qtdePerdaNormal);
+  // Regra NOMUS-BOM-EFFECTIVE-QUANTITY-FINAL-A:
+  // a quantidade efetiva (consumo) já embute a perda normal do Nomus.
+  // O motor de custo do IndusCost usa ProductBOM.quantity diretamente,
+  // por isso `quantity` aqui é a soma final (qtdeNecessaria + qtdePerdaNormal).
+  const effectiveQuantity = computeEffectiveLineQuantity(requiredQuantity, lossQuantity);
   return {
     externalLineId: row.externalLineId,
     parentCode: row.parentCode,
     componentCode: row.componentCode,
     componentDescription: row.componentDescription,
-    quantity: toNumberSafe(row.qtdeNecessaria),
-    lossQuantity: toNumberSafe(row.qtdePerdaNormal),
+    quantity: effectiveQuantity,
+    requiredQuantity,
+    lossQuantity,
     listaMateriaisId: row.listaMateriaisId,
     listaMateriaisNome: row.listaMateriaisNome,
     listaMateriaisPadrao: row.listaMateriaisPadrao,
