@@ -379,6 +379,12 @@ export const ProductModule = () => {
   const handleOpenModal = (item?: Product) => {
     setBackendCostAnalysis(null);
     setCostAnalysisError(null);
+    // Quando reabrirmos com um produto existente, marcamos `loadingCost=true`
+    // SÍNCRONAMENTE para que o primeiro render do modal já mostre
+    // "Calculando custo…" em vez de piscar "Custo não calculado" (idle)
+    // antes do effect disparar o fetch. Em criação (sem item) ficamos em
+    // idle real — não há produto para calcular.
+    setLoadingCost(item?.id ? true : false);
     if (item) {
       setEditingItem(item);
       setFormData({
