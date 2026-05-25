@@ -329,8 +329,48 @@ automaticamente. Eles aparecem no preview marcados como
   npm run sync:nomus:master-data-equalize-apply   # dry-run (sem --confirm)
   npm run sync:nomus:master-data-equalize-apply -- --confirm="IGUALAR BASES NOMUS"
   ```
-- O apply retorna `APPLIED`, `NO_CHANGES`, `BLOCKED` ou `FAILED` com mensagem
-  clara e um `runId` para rastrear.
+- O apply retorna `APPLIED`, `NO_CHANGES`, `BLOCKED`, `PARTIAL` ou `FAILED` com
+  mensagem clara e um `runId` para rastrear.
+
+### Relatório da Igualação de Bases (UI)
+
+Após clicar em **Confirmar igualação**, a tela abre um **popup de relatório**
+(com loading enquanto processa). Não use apenas o toast — o modal explica o
+resultado para operadores de engenharia.
+
+**Sucesso (`APPLIED`):**
+
+- Título: *Bases igualadas com sucesso*.
+- Resumo: quantos produtos/materiais foram criados, atualizados ou inativados.
+- Confirma o que **não** foi alterado: BOM, custos, preços, propostas, pedidos,
+  roteiros.
+- Mostra **pendências**: códigos **ambíguos** (Produto e Material ao mesmo tempo)
+  não são erro — precisam de decisão humana antes de automação.
+- Exibe **RunId / protocolo** e botão **Copiar relatório** para suporte.
+- Botões: **Ver preview atualizado**, **Ver histórico** (aba Histórico no cadastro
+  do produto), **Entendi**.
+
+**Sem alterações (`NO_CHANGES`):**
+
+- Título: *Bases já estavam alinhadas*.
+- Nenhum cadastro controlado precisou de update; ambíguos podem continuar no preview.
+
+**Falha / bloqueio:**
+
+- Título: *Não foi possível igualar as bases*.
+- Mensagens orientadas por tipo:
+  - Confirmação errada → digite exatamente `IGUALAR BASES NOMUS`.
+  - Sem permissão → solicite `products.edit` / `materials.edit`.
+  - Rede → Ctrl+F5, reiniciar servidor se persistir.
+  - Histórico/FK → acionar suporte (EngineeringSyncRun).
+- **Copiar relatório técnico** inclui status, contagens, runId e ação recomendada.
+
+**Parcial (`PARTIAL`):**
+
+- Parte dos itens aplicou; lista itens com falha antes de repetir o apply.
+
+O preview da tela é recarregado automaticamente após sucesso (ex.: `updateProducts`
+tende a cair para 0 quando tudo aplicável foi igualado).
 
 ### O que significa cada outcome
 

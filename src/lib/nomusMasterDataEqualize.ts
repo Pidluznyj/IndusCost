@@ -38,8 +38,10 @@ import {
 } from "@/src/lib/nomusMasterDataEqualizeTypes";
 import type {
   EqualizeAction,
+  EqualizeApplyErrorItem,
   EqualizeApplyReportItem,
   EqualizeApplyResult,
+  EqualizeApplySafety,
   EqualizeApplyStatus,
   EqualizeFieldChange,
   EqualizePreviewResult,
@@ -48,6 +50,87 @@ import type {
   EqualizeTotals,
 } from "@/src/lib/nomusMasterDataEqualizeTypes";
 import { equalizeActionLabel } from "@/src/lib/nomusMasterDataEqualizeShared";
+import { buildEqualizeUserMessage } from "@/src/lib/nomusEqualizeUserMessages";
+
+const EQUALIZE_APPLY_SAFETY: EqualizeApplySafety = {
+  productBomChanged: false,
+  costsChanged: false,
+  pricesChanged: false,
+  proposalsChanged: false,
+  ordersChanged: false,
+  routingChanged: false,
+};
+
+function mapFailedReportToApplyErrors(
+  report: EqualizeApplyReportItem[]
+): EqualizeApplyErrorItem[] {
+  return report
+    .filter((r) => r.outcome === "FAILED")
+    .map((r) => ({
+      code: r.code,
+      action: r.action,
+      message: r.message,
+      userMessage: `Não foi possível processar ${r.code} (${equalizeActionLabel(r.action)}).`,
+      resolutionHint:
+        "Revise o cadastro no Nomus e no IndusCost, depois rode o preview novamente.",
+      sku: r.code,
+    }));
+}
+
+function finalizeApplyResult(args: {
+  generatedAt: string;
+  status: EqualizeApplyStatus;
+  message: string;
+  runId: string;
+  planHash?: string | null;
+  createdProducts: number;
+  createdMaterials: number;
+  updatedProducts: number;
+  updatedMaterials: number;
+  deactivatedProducts: number;
+  deactivatedMaterials: number;
+  preservedLocal: number;
+  blocked: number;
+  errors: number;
+  historyEntriesCreated: number;
+  totalRequested: number;
+  report: EqualizeApplyReportItem[];
+  previewTotals?: EqualizeTotals;
+  semanticRunStatus?: string;
+}): EqualizeApplyResult {
+  const applyErrors = mapFailedReportToApplyErrors(args.report);
+  const partial: EqualizeApplyResult = {
+    mode: "APPLY_SAFE",
+    generatedAt: args.generatedAt,
+    status: args.status,
+    message: args.message,
+    userMessage: "",
+    runId: args.runId,
+    createdProducts: args.createdProducts,
+    createdMaterials: args.createdMaterials,
+    updatedProducts: args.updatedProducts,
+    updatedMaterials: args.updatedMaterials,
+    deactivatedProducts: args.deactivatedProducts,
+    deactivatedMaterials: args.deactivatedMaterials,
+    preservedLocal: args.preservedLocal,
+    blocked: args.blocked,
+    errors: args.errors,
+    historyEntriesCreated: args.historyEntriesCreated,
+    totalRequested: args.totalRequested,
+    report: args.report,
+    previewTotals: args.previewTotals,
+    safety: EQUALIZE_APPLY_SAFETY,
+    applyErrors,
+    technicalDetails: {
+      planHash: args.planHash ?? null,
+      generatedAt: args.generatedAt,
+      confirmationRequiredText: EQUALIZE_CONFIRMATION_TEXT,
+      semanticRunStatus: args.semanticRunStatus,
+    },
+  };
+  partial.userMessage = buildEqualizeUserMessage(partial, args.previewTotals ?? null);
+  return partial;
+}
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
@@ -942,39 +1025,33 @@ export async function applyNomusMasterDataEqualize(
 ): Promise<EqualizeApplyResult> {
   const generatedAt = new Date().toISOString();
 
-  const baseEmpty: EqualizeApplyResult = {
-    mode: "APPLY_SAFE",
-    generatedAt,
-    status: "BLOCKED",
-    message: "",
-    // Antes da criação do EngineeringSyncRun ainda não temos runId real.
-    // Usamos string vazia em estados de falha pré-run; o cliente trata como ausência.
-    runId: "",
-    createdProducts: 0,
-    createdMaterials: 0,
-    updatedProducts: 0,
-    updatedMaterials: 0,
-    deactivatedProducts: 0,
-    deactivatedMaterials: 0,
-    preservedLocal: 0,
-    blocked: 0,
-    errors: 0,
-    historyEntriesCreated: 0,
-    totalRequested: 0,
-    report: [],
-  };
+  const blockedResult = (message: string, status: EqualizeApplyStatus = "BLOCKED") =>
+    finalizeApplyResult({
+      generatedAt,
+      status,
+      message,
+      runId: "",
+      createdProducts: 0,
+      createdMaterials: 0,
+      updatedProducts: 0,
+      updatedMaterials: 0,
+      deactivatedProducts: 0,
+      deactivatedMaterials: 0,
+      preservedLocal: 0,
+      blocked: 0,
+      errors: 0,
+      historyEntriesCreated: 0,
+      totalRequested: 0,
+      report: [],
+    });
 
   if ((input.scope ?? "SAFE_ONLY") !== "SAFE_ONLY") {
-    return {
-      ...baseEmpty,
-      message: 'Apenas scope="SAFE_ONLY" é aceito nesta fase.',
-    };
+    return blockedResult('Apenas scope="SAFE_ONLY" é aceito nesta fase.');
   }
   if (input.confirmationText !== EQUALIZE_CONFIRMATION_TEXT) {
-    return {
-      ...baseEmpty,
-      message: `Confirmação inválida — envie confirmationText exatamente igual a: "${EQUALIZE_CONFIRMATION_TEXT}".`,
-    };
+    return blockedResult(
+      `Confirmação inválida — envie confirmationText exatamente igual a: "${EQUALIZE_CONFIRMATION_TEXT}".`
+    );
   }
 
   const allRows = await buildAllEqualizeRows({ includeUnmatchedIndusCost: true });
@@ -988,20 +1065,32 @@ export async function applyNomusMasterDataEqualize(
   });
 
   if (applicable.length === 0) {
-    return {
-      ...baseEmpty,
+    const previewTotals = aggregateTotals(allRows);
+    return finalizeApplyResult({
+      generatedAt,
       status: "NO_CHANGES",
       message: "Nenhuma ação aplicável com os filtros atuais.",
+      runId: "",
+      createdProducts: 0,
+      createdMaterials: 0,
+      updatedProducts: 0,
+      updatedMaterials: 0,
+      deactivatedProducts: 0,
+      deactivatedMaterials: 0,
+      preservedLocal: 0,
+      blocked: 0,
+      errors: 0,
+      historyEntriesCreated: 0,
       totalRequested: 0,
-    };
+      report: [],
+      previewTotals,
+    });
   }
 
   if (applicable.length > MAX_APPLY_BATCH) {
-    return {
-      ...baseEmpty,
-      message: `Lote acima do limite seguro (${MAX_APPLY_BATCH}). Filtre por códigos ou rode em batches menores.`,
-      totalRequested: applicable.length,
-    };
+    return blockedResult(
+      `Lote acima do limite seguro (${MAX_APPLY_BATCH}). Filtre por códigos ou rode em batches menores.`
+    );
   }
 
   // Cria o EngineeringSyncRun pai ANTES de gravar qualquer EngineeringChangeLog,
@@ -1468,6 +1557,7 @@ export async function applyNomusMasterDataEqualize(
   let status: EqualizeApplyStatus;
   if (errors > 0 && totalApplied === 0) status = "FAILED";
   else if (totalApplied === 0) status = "NO_CHANGES";
+  else if (errors > 0) status = "PARTIAL";
   else status = "APPLIED";
 
   const message =
@@ -1475,19 +1565,21 @@ export async function applyNomusMasterDataEqualize(
       ? `Bases igualadas com sucesso. Criados: ${createdProducts} P / ${createdMaterials} M · Atualizados: ${updatedProducts} P / ${updatedMaterials} M · Inativados: ${deactivatedProducts} P / ${deactivatedMaterials} M.`
       : status === "NO_CHANGES"
         ? "Nenhuma alteração aplicada — bases já estavam alinhadas."
-        : "Igualação falhou — ver relatório.";
+        : status === "PARTIAL"
+          ? `Igualação parcial — ${totalApplied} item(ns) aplicado(s), ${errors} erro(s).`
+          : "Igualação falhou — ver relatório.";
+
+  const previewTotals = aggregateTotals(await buildAllEqualizeRows({ includeUnmatchedIndusCost: true }));
 
   // Atualiza o EngineeringSyncRun com o status final e contadores.
   const runStatusFinal: "APPLIED" | "PARTIAL" | "FAILED" =
-    status === "APPLIED" && errors === 0
+    status === "APPLIED"
       ? "APPLIED"
-      : status === "APPLIED" && errors > 0
+      : status === "PARTIAL"
         ? "PARTIAL"
         : status === "FAILED"
           ? "FAILED"
-          : // NO_CHANGES → registramos como APPLIED com totalApplied=0 para manter
-            // a semântica do enum (não há valor NO_CHANGES no EngineeringSyncRunStatus).
-            "APPLIED";
+          : "APPLIED";
 
   const summaryFinal = {
     origin: EQUALIZE_RUN_ORIGIN,
@@ -1515,23 +1607,25 @@ export async function applyNomusMasterDataEqualize(
     errorsJson: errorsListed.length > 0 ? errorsListed : undefined,
   });
 
-  return {
-    mode: "APPLY_SAFE",
+  return finalizeApplyResult({
     generatedAt,
     status,
     message,
     runId,
+    planHash,
     createdProducts,
     createdMaterials,
     updatedProducts,
     updatedMaterials,
     deactivatedProducts,
     deactivatedMaterials,
-    preservedLocal: 0, // computado no preview; o apply não toca preservados
+    preservedLocal: 0,
     blocked: 0,
     errors,
     historyEntriesCreated,
     totalRequested: applicable.length,
     report,
-  };
+    previewTotals,
+    semanticRunStatus: runStatusFinal,
+  });
 }

@@ -96,7 +96,37 @@ export type EqualizePreviewResult = {
   warnings: string[];
 };
 
-export type EqualizeApplyStatus = "APPLIED" | "NO_CHANGES" | "BLOCKED" | "FAILED";
+export type EqualizeApplyStatus =
+  | "APPLIED"
+  | "NO_CHANGES"
+  | "BLOCKED"
+  | "FAILED"
+  | "PARTIAL";
+
+export type EqualizeApplySafety = {
+  productBomChanged: boolean;
+  costsChanged: boolean;
+  pricesChanged: boolean;
+  proposalsChanged: boolean;
+  ordersChanged: boolean;
+  routingChanged: boolean;
+};
+
+export type EqualizeApplyErrorItem = {
+  code: string;
+  action: EqualizeAction;
+  message: string;
+  userMessage: string;
+  resolutionHint: string;
+  sku: string;
+};
+
+export type EqualizeApplyTechnicalDetails = {
+  planHash: string | null;
+  generatedAt: string;
+  confirmationRequiredText: "IGUALAR BASES NOMUS";
+  semanticRunStatus?: string;
+};
 
 export type EqualizeApplyReportItem = {
   code: string;
@@ -119,7 +149,10 @@ export type EqualizeApplyResult = {
   mode: "APPLY_SAFE";
   generatedAt: string;
   status: EqualizeApplyStatus;
+  /** Mensagem técnica resumida (compatível com CLI). */
   message: string;
+  /** Mensagem principal em linguagem de operador. */
+  userMessage: string;
   runId: string;
   createdProducts: number;
   createdMaterials: number;
@@ -133,6 +166,11 @@ export type EqualizeApplyResult = {
   historyEntriesCreated: number;
   totalRequested: number;
   report: EqualizeApplyReportItem[];
+  /** Totais do preview pós-análise (quando disponível no servidor). */
+  previewTotals?: EqualizeTotals;
+  safety: EqualizeApplySafety;
+  applyErrors: EqualizeApplyErrorItem[];
+  technicalDetails: EqualizeApplyTechnicalDetails;
 };
 
 export const EQUALIZE_CONFIRMATION_TEXT = "IGUALAR BASES NOMUS" as const;

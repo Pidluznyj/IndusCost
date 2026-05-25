@@ -36,10 +36,13 @@ import {
   EQUALIZE_CONFIRMATION_TEXT,
   fetchMasterDataEqualizePreview,
 } from "@/src/lib/nomusMasterDataEqualizeClient";
-import type {
-  EqualizeApplyResult,
-  EqualizePreviewResult,
-} from "@/src/lib/nomusMasterDataEqualizeTypes";
+import type { EqualizePreviewResult } from "@/src/lib/nomusMasterDataEqualizeTypes";
+import {
+  buildEqualizeFailureViewModel,
+  buildEqualizeModalViewModel,
+} from "@/src/lib/nomusEqualizeUserMessages";
+import type { EqualizeModalViewModel } from "@/src/lib/nomusEqualizeUserMessages";
+import { NomusEqualizeResultModal } from "@/src/components/product/NomusEqualizeResultModal";
 import { Scale } from "lucide-react";
 
 type RowFilter =
@@ -94,8 +97,10 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
   const [equalizePreview, setEqualizePreview] = useState<EqualizePreviewResult | null>(null);
   const [equalizeLoading, setEqualizeLoading] = useState(false);
   const [equalizeApplying, setEqualizeApplying] = useState(false);
-  const [equalizeResult, setEqualizeResult] = useState<EqualizeApplyResult | null>(null);
-  const [equalizeError, setEqualizeError] = useState<string | null>(null);
+  const [equalizeResultModal, setEqualizeResultModal] = useState<EqualizeModalViewModel | null>(
+    null
+  );
+  const [equalizeResultModalOpen, setEqualizeResultModalOpen] = useState(false);
   const [equalizeShowConfirm, setEqualizeShowConfirm] = useState(false);
   const [equalizeConfirmText, setEqualizeConfirmText] = useState("");
 
@@ -153,8 +158,6 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
 
   const loadEqualizePreview = useCallback(async () => {
     setEqualizeLoading(true);
-    setEqualizeError(null);
-    setEqualizeResult(null);
     try {
       const data = await fetchMasterDataEqualizePreview({
         limit: 200,
@@ -164,45 +167,67 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
       setEqualizePreview(data);
     } catch (e) {
       setEqualizePreview(null);
-      setEqualizeError(
-        e instanceof Error
-          ? `${e.message} Tente novamente.`
-          : "Erro ao gerar preview de Igualar Bases."
+      setEqualizeResultModal(
+        buildEqualizeFailureViewModel(
+          e instanceof Error
+            ? e.message
+            : "Erro ao gerar preview de Igualar Bases."
+        )
       );
+      setEqualizeResultModalOpen(true);
     } finally {
       setEqualizeLoading(false);
     }
   }, []);
 
   const onApplyEqualize = useCallback(async () => {
-    if (equalizeApplying) return; // anti-duplo-clique
+    if (equalizeApplying) return;
     if (equalizeConfirmText !== EQUALIZE_CONFIRMATION_TEXT) return;
     setEqualizeApplying(true);
-    setEqualizeError(null);
-    setEqualizeResult(null);
+    setEqualizeResultModalOpen(true);
+    setEqualizeResultModal(null);
+    setEqualizeShowConfirm(false);
+    const confirmSnapshot = equalizeConfirmText;
+    setEqualizeConfirmText("");
     try {
       const result = await applyMasterDataEqualize({
-        confirmationText: equalizeConfirmText,
+        confirmationText: confirmSnapshot,
       });
-      setEqualizeResult(result);
-      setEqualizeShowConfirm(false);
-      setEqualizeConfirmText("");
-      await Promise.all([loadEqualizePreview(), loadDiagnostic(0)]);
+      let previewTotals = equalizePreview?.totals ?? result.previewTotals ?? null;
+      try {
+        const refreshed = await fetchMasterDataEqualizePreview({
+          limit: 200,
+          offset: 0,
+          scope: "ACTIONABLE",
+        });
+        setEqualizePreview(refreshed);
+        previewTotals = refreshed.totals;
+      } catch {
+        // preview refresh opcional; mantém totais anteriores
+      }
+      await loadDiagnostic(0);
+      setEqualizeResultModal(buildEqualizeModalViewModel(result, previewTotals));
     } catch (e) {
       const isNetwork =
         e instanceof TypeError ||
         (e instanceof Error && /Failed to fetch|NetworkError|ECONNREFUSED/i.test(e.message));
-      setEqualizeError(
-        isNetwork
-          ? "Falha de rede ao chamar /api/nomus/master-data-equalize/apply. Verifique se o servidor está rodando e reabra a tela."
-          : e instanceof Error
-            ? `${e.message} Veja o relatório abaixo, rode o preview pelo terminal ou abra o diagnóstico técnico.`
-            : "Erro ao aplicar Igualar Bases."
+      const msg = isNetwork
+        ? "O navegador não conseguiu se comunicar com o backend da aplicação."
+        : e instanceof Error
+          ? e.message
+          : "Erro ao aplicar Igualar Bases.";
+      setEqualizeResultModal(
+        buildEqualizeFailureViewModel(msg, { isNetwork })
       );
     } finally {
       setEqualizeApplying(false);
     }
-  }, [equalizeApplying, equalizeConfirmText, loadEqualizePreview, loadDiagnostic]);
+  }, [
+    equalizeApplying,
+    equalizeConfirmText,
+    equalizePreview?.totals,
+    loadDiagnostic,
+  ]);
 
   const onApply = useCallback(async () => {
     if (confirmText !== MASTER_DATA_CONFIRMATION_TEXT) return;
@@ -300,69 +325,6 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
           </span>
         ) : null}
       </div>
-
-      {equalizeError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-900 flex items-start gap-2">
-          <ShieldAlert className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          <p>{equalizeError}</p>
-        </div>
-      ) : null}
-
-      {equalizeResult ? (
-        <div
-          className={cn(
-            "rounded-lg border px-3 py-2 text-[11px] space-y-1",
-            equalizeResult.status === "APPLIED"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-              : equalizeResult.status === "NO_CHANGES"
-                ? "border-muted bg-muted/50 text-muted-foreground"
-                : "border-red-300 bg-red-50 text-red-900"
-          )}
-        >
-          <p className="font-bold flex items-center gap-1.5">
-            {equalizeResult.status === "APPLIED" ? (
-              <CircleCheck className="h-3.5 w-3.5" />
-            ) : equalizeResult.status === "NO_CHANGES" ? (
-              <CircleHelp className="h-3.5 w-3.5" />
-            ) : (
-              <ShieldAlert className="h-3.5 w-3.5" />
-            )}
-            {equalizeResult.message}
-          </p>
-          <p>
-            Criados: <strong>{equalizeResult.createdProducts}</strong> P /{" "}
-            <strong>{equalizeResult.createdMaterials}</strong> M · Atualizados:{" "}
-            <strong>{equalizeResult.updatedProducts}</strong> P /{" "}
-            <strong>{equalizeResult.updatedMaterials}</strong> M · Inativados:{" "}
-            <strong>{equalizeResult.deactivatedProducts}</strong> P /{" "}
-            <strong>{equalizeResult.deactivatedMaterials}</strong> M · Histórico:{" "}
-            <strong>{equalizeResult.historyEntriesCreated}</strong> · Erros:{" "}
-            <strong>{equalizeResult.errors}</strong>
-          </p>
-          {equalizeResult.runId ? (
-            <p className="text-[10px] opacity-80">
-              runId: <code className="font-mono">{equalizeResult.runId}</code>
-            </p>
-          ) : null}
-          {equalizeResult.errors > 0 && equalizeResult.report.length > 0 ? (
-            <details className="text-[10px] mt-1">
-              <summary className="cursor-pointer underline underline-offset-2">
-                Ver até 5 mensagens de erro
-              </summary>
-              <ul className="mt-1 space-y-0.5 list-disc list-inside">
-                {equalizeResult.report
-                  .filter((r) => r.outcome === "FAILED")
-                  .slice(0, 5)
-                  .map((r, i) => (
-                    <li key={`${r.code}-${i}`}>
-                      <strong>{r.code}</strong> ({r.action}): {r.message}
-                    </li>
-                  ))}
-              </ul>
-            </details>
-          ) : null}
-        </div>
-      ) : null}
 
       {equalizePreview ? (
         <div className="rounded-lg border border-primary/30 bg-background px-3 py-2 text-[11px] space-y-1">
@@ -613,6 +575,18 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
           </div>
         </div>
       ) : null}
+
+      <NomusEqualizeResultModal
+        open={equalizeResultModalOpen}
+        applying={equalizeApplying}
+        viewModel={equalizeResultModal}
+        onClose={() => {
+          setEqualizeResultModalOpen(false);
+          setEqualizeResultModal(null);
+        }}
+        onRefreshPreview={() => void loadEqualizePreview()}
+        previewRefreshing={equalizeLoading}
+      />
 
       {equalizeShowConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
