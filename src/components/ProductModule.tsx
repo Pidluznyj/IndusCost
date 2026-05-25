@@ -62,6 +62,11 @@ import {
   costSummaryFromCostAnalysis,
   formatProductCiu,
 } from "@/src/lib/productCostDisplay";
+import {
+  buildProductCostSummaryView,
+  COST_SUMMARY_LABELS,
+  pickCostSummaryFromAnalysis,
+} from "@/src/lib/productCostSummaryView";
 
 /** Linha da lista de engenharia com resumo de custo (GET /api/products?cost=1&type=PRODUCT|COMPONENT). */
 export type ProductWithCostSummary = Product & {
@@ -318,6 +323,16 @@ export const ProductModule = () => {
     }
   }, [activeFormTab, editingItem?.id, reloadTree]);
 
+  /**
+   * Token de reload — incrementar dispara nova chamada de cost-analysis sem
+   * precisar reabrir o modal. Usado pelo botão "Atualizar custo" e por mutações
+   * (BOM tree, apply Nomus, etc.) que invalidam o resumo.
+   */
+  const [costReloadToken, setCostReloadToken] = useState(0);
+  const reloadCostSummary = useCallback(() => {
+    setCostReloadToken((t) => t + 1);
+  }, []);
+
   useEffect(() => {
     if (!isModalOpen || !editingItem?.id) {
       setBackendCostAnalysis(null);
@@ -325,13 +340,14 @@ export const ProductModule = () => {
       setLoadingCost(false);
       return;
     }
-    if (activeFormTab !== "cost" && activeFormTab !== "composition") {
-      return;
-    }
 
+    // Carrega o resumo de custo assim que o modal abre com um produto real.
+    // Antes só carregava nas abas "cost"/"composition", o que fazia o rodapé
+    // mostrar R$ 0,00 falso em todas as outras abas.
     const ac = new AbortController();
     let cancelled = false;
     setLoadingCost(true);
+    setCostAnalysisError(null);
     fetchJsonOk(`/api/products/${editingItem.id}/cost-analysis`, { signal: ac.signal })
       .then((data) => {
         if (!cancelled) {
@@ -344,10 +360,10 @@ export const ProductModule = () => {
         if (err instanceof Error && err.name === "AbortError") return;
         console.error("Erro ao carregar custo:", err);
         if (!cancelled) {
-          setBackendCostAnalysis(null);
+          // Não apaga `backendCostAnalysis` anterior — `buildProductCostSummaryView`
+          // exibe valor anterior em modo "stale" enquanto sinaliza o erro.
           const text = err instanceof Error ? err.message : "Não foi possível carregar a análise de custo.";
           setCostAnalysisError(text);
-          alert(text);
         }
       })
       .finally(() => {
@@ -357,9 +373,8 @@ export const ProductModule = () => {
     return () => {
       cancelled = true;
       ac.abort();
-      setLoadingCost(false);
     };
-  }, [activeFormTab, isModalOpen, editingItem?.id, patchListCostFromAnalysis]);
+  }, [isModalOpen, editingItem?.id, costReloadToken, patchListCostFromAnalysis]);
 
   const handleOpenModal = (item?: Product) => {
     setBackendCostAnalysis(null);
@@ -902,6 +917,22 @@ export const ProductModule = () => {
       ownProcessSkipReason: null as string | null,
     };
   }, [backendCostAnalysis]);
+
+  /**
+   * View-model do resumo de custo industrial (rodapé / cards-resumo).
+   * Distingue: idle (criação), loading, error, loaded (zero real ok), stale.
+   * Nunca exibe R$ 0,00 quando o cálculo ainda não terminou.
+   */
+  const costSummaryView = useMemo(
+    () =>
+      buildProductCostSummaryView({
+        productId: editingItem?.id ?? null,
+        loading: loadingCost,
+        errorMessage: costAnalysisError,
+        cost: pickCostSummaryFromAnalysis(backendCostAnalysis),
+      }),
+    [editingItem?.id, loadingCost, costAnalysisError, backendCostAnalysis]
+  );
 
   const showTraditionalProductsView =
     activeProductsMainTab === "products" || !showNomusMaintenanceTab;
@@ -1968,7 +1999,12 @@ export const ProductModule = () => {
                           rootSku={formData.sku || editingItem.sku}
                           rootType={formData.type}
                           onReloadTree={reloadTree}
-                          onAfterMutation={fetchData}
+                          onAfterMutation={() => {
+                            // Mutações na árvore (BOM/processo) invalidam o resumo de custo
+                            // exibido no rodapé/cards do modal.
+                            reloadCostSummary();
+                            fetchData();
+                          }}
                           onOpenFullProductEdit={(p) => handleOpenModal(p)}
                         />
                       ) : (
@@ -2042,7 +2078,20 @@ export const ProductModule = () => {
                             <Layers className="h-4 w-4 text-blue-500" />
                           </div>
                           <CalculatedValue meta={displayCost.calculationExplainability?.totalMaterialCost ?? null}>
-                            <p className="text-3xl font-black text-blue-700">{formatCurrency(displayCost.bomCost)}</p>
+                            {costSummaryView.kind === "loading" ? (
+                              <p className="text-2xl font-bold text-blue-700/60 inline-flex items-center gap-1.5">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                {COST_SUMMARY_LABELS.loading}
+                              </p>
+                            ) : costSummaryView.kind === "error" ? (
+                              <p className="text-base font-semibold text-red-700 dark:text-red-400">
+                                {COST_SUMMARY_LABELS.error}
+                              </p>
+                            ) : (
+                              <p className="text-3xl font-black text-blue-700">
+                                {formatCurrency(displayCost.bomCost)}
+                              </p>
+                            )}
                           </CalculatedValue>
                           <p className="text-[10px] text-blue-600/60">
                             Soma das linhas da BOM (matérias-primas e/ou CIU dos componentes), conforme o motor.
@@ -2054,7 +2103,20 @@ export const ProductModule = () => {
                             <Settings className="h-4 w-4 text-purple-500" />
                           </div>
                           <CalculatedValue meta={displayCost.calculationExplainability?.totalConversionCost ?? null}>
-                            <p className="text-3xl font-black text-purple-700">{formatCurrency(displayCost.routingCost)}</p>
+                            {costSummaryView.kind === "loading" ? (
+                              <p className="text-2xl font-bold text-purple-700/60 inline-flex items-center gap-1.5">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                {COST_SUMMARY_LABELS.loading}
+                              </p>
+                            ) : costSummaryView.kind === "error" ? (
+                              <p className="text-base font-semibold text-red-700 dark:text-red-400">
+                                {COST_SUMMARY_LABELS.error}
+                              </p>
+                            ) : (
+                              <p className="text-3xl font-black text-purple-700">
+                                {formatCurrency(displayCost.routingCost)}
+                              </p>
+                            )}
                           </CalculatedValue>
                           <p className="text-[10px] text-purple-600/60">Processo padrão ou roteiro; sem CIF rateado</p>
                           <p className="text-[10px] text-muted-foreground leading-snug">
@@ -2072,9 +2134,29 @@ export const ProductModule = () => {
                             <TrendingUp className="h-4 w-4 text-primary" />
                           </div>
                           <CalculatedValue meta={displayCost.calculationExplainability?.totalIndustrialCost ?? null}>
-                            <p className="text-3xl font-black text-primary">{formatProductCiu(displayCost.total)}</p>
+                            {costSummaryView.kind === "loading" ? (
+                              <p className="text-2xl font-bold text-primary/60 inline-flex items-center gap-1.5">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                {COST_SUMMARY_LABELS.loading}
+                              </p>
+                            ) : costSummaryView.kind === "error" ? (
+                              <div className="flex items-center gap-2">
+                                <p className="text-base font-semibold text-red-700 dark:text-red-400">
+                                  {COST_SUMMARY_LABELS.error}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={reloadCostSummary}
+                                  className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline"
+                                >
+                                  {COST_SUMMARY_LABELS.retry}
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-3xl font-black text-primary">{formatProductCiu(displayCost.total)}</p>
+                            )}
                           </CalculatedValue>
-                          {displayCost.costAnalysisPartial && (
+                          {displayCost.costAnalysisPartial && costSummaryView.kind !== "loading" && costSummaryView.kind !== "error" && (
                             <p className="text-[10px] font-bold text-amber-900 dark:text-amber-200">
                               Total parcial — exclui itens não custeados na BOM.
                             </p>
@@ -2396,9 +2478,56 @@ export const ProductModule = () => {
                   <div className="flex items-center gap-6">
                     <div className="flex flex-col">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase">Custo Industrial</p>
-                      <p className="text-lg font-black text-primary">{formatCurrency(displayCost.total)}</p>
-                      {displayCost.costAnalysisPartial && (
-                        <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200">Parcial</span>
+                      {costSummaryView.kind === "loading" ? (
+                        <p
+                          className="text-sm font-semibold text-muted-foreground inline-flex items-center gap-1.5"
+                          aria-live="polite"
+                          aria-busy="true"
+                          data-testid="cost-summary-loading"
+                        >
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          {costSummaryView.message}
+                        </p>
+                      ) : costSummaryView.kind === "error" ? (
+                        <div
+                          className="flex items-center gap-2"
+                          role="alert"
+                          data-testid="cost-summary-error"
+                        >
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                            {costSummaryView.message}
+                          </p>
+                          {costSummaryView.showRetry && (
+                            <button
+                              type="button"
+                              onClick={reloadCostSummary}
+                              className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline"
+                            >
+                              {COST_SUMMARY_LABELS.retry}
+                            </button>
+                          )}
+                        </div>
+                      ) : costSummaryView.kind === "idle" ? (
+                        <p className="text-sm font-semibold text-muted-foreground" data-testid="cost-summary-idle">
+                          {costSummaryView.message}
+                        </p>
+                      ) : (
+                        <div data-testid="cost-summary-loaded" className="flex items-baseline gap-2">
+                          <p className="text-lg font-black text-primary">
+                            {formatCurrency(costSummaryView.totalIndustrialCost ?? 0)}
+                          </p>
+                          {costSummaryView.kind === "stale" && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              {costSummaryView.message || COST_SUMMARY_LABELS.loading}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {costSummaryView.partial && costSummaryView.totalIndustrialCost != null && (
+                        <span className="text-[10px] font-bold text-amber-900 dark:text-amber-200">
+                          {COST_SUMMARY_LABELS.partial}
+                        </span>
                       )}
                     </div>
                     <div className="h-8 w-px bg-border" />
