@@ -63,6 +63,36 @@ describe("nomusBomAutoApplyAfterSync — agregação de totais", () => {
     assert.equal(pilot!.status, "APPLIED");
     assert.equal(pilot!.summary?.updated, 2);
   });
+
+  it("metadata-only conta como updated sem UPDATE_PRODUCT_BOM_QUANTITY", () => {
+    const metadataOnly: NomusBomAutoApplyProductResult[] = [
+      {
+        parentCode: "307.05AA",
+        productId: "p1",
+        status: "APPLIED",
+        canApply: true,
+        blockingReasons: [],
+        summary: { created: 0, updated: 2, removed: 0, kept: 0, skipped: 0, blocked: 0 },
+        actionsPreview: [
+          {
+            actionType: "UPDATE_PRODUCT_BOM_NOMUS_METADATA",
+            componentCode: "115.01--",
+            currentQuantity: 0.001268,
+            effectiveQuantity: 0.001268,
+          },
+          {
+            actionType: "UPDATE_PRODUCT_BOM_NOMUS_METADATA",
+            componentCode: "121.16--",
+            currentQuantity: 0.000033,
+            effectiveQuantity: 0.000033,
+          },
+        ],
+      },
+    ];
+    const totals = aggregateAutoApplyTotals(metadataOnly, 1);
+    assert.equal(totals.parentsApplied, 1);
+    assert.equal(totals.linesUpdated, 2);
+  });
 });
 
 describe("nomusBomAutoApplyAfterSync — relatório markdown", () => {

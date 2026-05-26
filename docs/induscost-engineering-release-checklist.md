@@ -201,7 +201,9 @@ npm run sync:nomus:bom-apply-preview -- --parentCode=307.05AA
 ```
 
 Esperado: `canApply=true`, ações majoritariamente `KEEP_PRODUCT_BOM_LINE`,
-sem `UPDATE_PRODUCT_BOM_QUANTITY` pendente.
+sem `UPDATE_PRODUCT_BOM_QUANTITY` pendente. Linhas Nomus devem ter:
+`sourceSystem=NOMUS`, `isNomusControlled=true`, `nomusComponentCode` preenchido,
+`lastNomusSyncAt` preenchido, `lossPercentage=0`.
 
 3. Conferir ProductBOM:
    - `115.01--` = `0.001268`

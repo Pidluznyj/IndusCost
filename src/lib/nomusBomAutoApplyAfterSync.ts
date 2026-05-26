@@ -119,9 +119,12 @@ export function buildAutoApplyReportMarkdown(report: NomusBomAutoApplyReport): s
       }
       if (p.actionsPreview?.length) {
         for (const a of p.actionsPreview.filter((x) =>
-          ["UPDATE_PRODUCT_BOM_QUANTITY", "CREATE_PRODUCT_BOM_LINE", "REMOVE_PRODUCT_BOM_LINE"].includes(
-            x.actionType
-          )
+          [
+            "UPDATE_PRODUCT_BOM_QUANTITY",
+            "UPDATE_PRODUCT_BOM_NOMUS_METADATA",
+            "CREATE_PRODUCT_BOM_LINE",
+            "REMOVE_PRODUCT_BOM_LINE",
+          ].includes(x.actionType)
         )) {
           lines.push(
             `- \`${a.actionType}\` ${a.componentCode}: ${a.currentQuantity ?? "—"} → ${a.effectiveQuantity ?? "—"}`
@@ -217,9 +220,13 @@ async function processOneProduct(
     }
 
     const hasMutations = preview.actions.some((a) =>
-      ["CREATE_PRODUCT_BOM_LINE", "UPDATE_PRODUCT_BOM_QUANTITY", "REMOVE_PRODUCT_BOM_LINE", "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"].includes(
-        a.actionType
-      )
+      [
+        "CREATE_PRODUCT_BOM_LINE",
+        "UPDATE_PRODUCT_BOM_QUANTITY",
+        "UPDATE_PRODUCT_BOM_NOMUS_METADATA",
+        "REMOVE_PRODUCT_BOM_LINE",
+        "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES",
+      ].includes(a.actionType)
     );
 
     if (mode === "DRY") {
@@ -230,7 +237,11 @@ async function processOneProduct(
         summary: {
           created: preview.actions.filter((a) => a.actionType === "CREATE_PRODUCT_BOM_LINE").length,
           updated: preview.actions.filter((a) =>
-            ["UPDATE_PRODUCT_BOM_QUANTITY", "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"].includes(a.actionType)
+            [
+              "UPDATE_PRODUCT_BOM_QUANTITY",
+              "UPDATE_PRODUCT_BOM_NOMUS_METADATA",
+              "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES",
+            ].includes(a.actionType)
           ).length,
           removed: preview.actions.filter((a) => a.actionType === "REMOVE_PRODUCT_BOM_LINE").length,
           kept: preview.actions.filter((a) => a.actionType === "KEEP_PRODUCT_BOM_LINE").length,

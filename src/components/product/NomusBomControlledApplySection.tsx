@@ -20,6 +20,7 @@ type NomusBomControlledApplySectionProps = {
 const ACTION_LABEL: Record<ControlledApplyAction["actionType"], string> = {
   CREATE_PRODUCT_BOM_LINE: "Criar linha",
   UPDATE_PRODUCT_BOM_QUANTITY: "Atualizar qtd.",
+  UPDATE_PRODUCT_BOM_NOMUS_METADATA: "Marcar Nomus",
   CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES: "Consolidar duplicidade",
   KEEP_PRODUCT_BOM_LINE: "Manter",
   REMOVE_PRODUCT_BOM_LINE: "Remover",
@@ -46,6 +47,7 @@ function actionBadgeClass(actionType: ControlledApplyAction["actionType"]): stri
     case "CREATE_PRODUCT_BOM_LINE":
       return "bg-blue-100 text-blue-900";
     case "UPDATE_PRODUCT_BOM_QUANTITY":
+    case "UPDATE_PRODUCT_BOM_NOMUS_METADATA":
     case "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES":
       return "bg-amber-100 text-amber-900";
     case "REMOVE_PRODUCT_BOM_LINE":
@@ -153,6 +155,7 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
       [
         "CREATE_PRODUCT_BOM_LINE",
         "UPDATE_PRODUCT_BOM_QUANTITY",
+        "UPDATE_PRODUCT_BOM_NOMUS_METADATA",
         "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES",
         "REMOVE_PRODUCT_BOM_LINE",
       ].includes(a.actionType)

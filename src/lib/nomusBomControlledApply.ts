@@ -15,6 +15,12 @@ import { buildNomusEffectiveBomCostImpact } from "@/src/lib/nomusEffectiveBomCos
 import { listReviewDecisionsForParentCode } from "@/src/lib/nomusBomReviewDecision";
 import { prisma } from "@/src/lib/prisma";
 import { recordEngineeringChange } from "@/src/lib/productChangeHistory";
+import {
+  buildNomusControlledBomMetadata,
+  describeNomusBomMetadataGap,
+  needsNomusBomMetadataUpdate,
+  NOMUS_BOM_METADATA_UPDATE_REASON,
+} from "@/src/lib/nomusBomGovernanceMetadata";
 import type {
   ControlledApplyAction,
   ControlledApplyBlockingCode,
@@ -109,6 +115,11 @@ type CurrentBomRow = {
   componentCode: string;
   componentKind: ControlledApplyComponentKind;
   componentDescription: string | null;
+  sourceSystem: string | null;
+  isNomusControlled: boolean;
+  localException: boolean;
+  lastNomusSyncAt: Date | null;
+  nomusComponentCode: string | null;
 };
 
 type DesiredTarget = {
@@ -171,6 +182,8 @@ function riskForAction(
       return "HIGH";
     case "UPDATE_PRODUCT_BOM_QUANTITY":
       return "MEDIUM";
+    case "UPDATE_PRODUCT_BOM_NOMUS_METADATA":
+      return "LOW";
     case "CREATE_PRODUCT_BOM_LINE":
       return "MEDIUM";
     case "BLOCKED":
@@ -317,6 +330,7 @@ function controlledApplyHandlesComponent(actions: ControlledApplyAction[], compo
     return (
       a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES" ||
       a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" ||
+      a.actionType === "UPDATE_PRODUCT_BOM_NOMUS_METADATA" ||
       a.actionType === "CREATE_PRODUCT_BOM_LINE" ||
       a.actionType === "REMOVE_PRODUCT_BOM_LINE"
     );
@@ -416,6 +430,13 @@ async function loadCurrentProductBomRows(productId: string, productSku: string):
   });
 
   return rows.map((row) => {
+    const governance = {
+      sourceSystem: row.sourceSystem ?? null,
+      isNomusControlled: row.isNomusControlled,
+      localException: row.localException,
+      lastNomusSyncAt: row.lastNomusSyncAt ?? null,
+      nomusComponentCode: row.nomusComponentCode ?? null,
+    };
     if (row.materialId && row.Material) {
       return {
         id: row.id,
@@ -428,6 +449,7 @@ async function loadCurrentProductBomRows(productId: string, productSku: string):
         componentCode: row.Material.code,
         componentKind: "Material",
         componentDescription: row.Material.description,
+        ...governance,
       };
     }
     if (row.childProductId && row.ChildProduct) {
@@ -442,6 +464,7 @@ async function loadCurrentProductBomRows(productId: string, productSku: string):
         componentCode: row.ChildProduct.sku,
         componentKind: "Produto",
         componentDescription: row.ChildProduct.name,
+        ...governance,
       };
     }
     return {
@@ -455,6 +478,7 @@ async function loadCurrentProductBomRows(productId: string, productSku: string):
       componentCode: `UNKNOWN:${row.id}`,
       componentKind: "Desconhecido",
       componentDescription: null,
+      ...governance,
     };
   });
 }
@@ -477,7 +501,22 @@ function serializeBomRow(row: CurrentBomRow) {
     quantity: row.quantity,
     lossPercentage: row.lossPercentage,
     notes: row.notes,
+    sourceSystem: row.sourceSystem,
+    isNomusControlled: row.isNomusControlled,
+    localException: row.localException,
+    lastNomusSyncAt: row.lastNomusSyncAt?.toISOString() ?? null,
+    nomusComponentCode: row.nomusComponentCode,
   };
+}
+
+function isNomusManagedTarget(target: DesiredTarget): boolean {
+  return target.componentKind !== "Local";
+}
+
+function metadataActionReason(row: CurrentBomRow, target: DesiredTarget): string {
+  const gaps = describeNomusBomMetadataGap(row, { componentCode: target.componentCode });
+  if (gaps.length === 0) return NOMUS_BOM_METADATA_UPDATE_REASON;
+  return `${NOMUS_BOM_METADATA_UPDATE_REASON} (${gaps.join("; ")})`;
 }
 
 async function hasBomCycle(parentId: string, childProductId: string): Promise<boolean> {
@@ -722,19 +761,39 @@ function buildActions(
     }
 
     const currentQty = current.quantity ?? 0;
-    if (Math.abs(currentQty - target.quantity) < 1e-9) {
-      actions.push({
-        actionType: "KEEP_PRODUCT_BOM_LINE",
-        componentCode: target.componentCode,
-        componentDescription: target.componentDescription ?? current.componentDescription,
-        componentKind: target.componentKind,
-        currentQuantity: currentQty,
-        effectiveQuantity: target.quantity,
-        productBomLineId: current.id,
-        reason: "Quantidade já coincide com a BOM efetiva.",
-        riskLevel: "LOW",
-        reviewDecisionType: target.effectiveLine.reviewDecisionType ?? null,
-      });
+    const qtyMatches = Math.abs(currentQty - target.quantity) < 1e-9;
+    const metadataNeedsUpdate =
+      isNomusManagedTarget(target) &&
+      needsNomusBomMetadataUpdate(current, { componentCode: target.componentCode });
+
+    if (qtyMatches) {
+      if (metadataNeedsUpdate) {
+        actions.push({
+          actionType: "UPDATE_PRODUCT_BOM_NOMUS_METADATA",
+          componentCode: target.componentCode,
+          componentDescription: target.componentDescription ?? current.componentDescription,
+          componentKind: target.componentKind,
+          currentQuantity: currentQty,
+          effectiveQuantity: target.quantity,
+          productBomLineId: current.id,
+          reason: metadataActionReason(current, target),
+          riskLevel: riskForAction("UPDATE_PRODUCT_BOM_NOMUS_METADATA"),
+          reviewDecisionType: target.effectiveLine.reviewDecisionType ?? null,
+        });
+      } else {
+        actions.push({
+          actionType: "KEEP_PRODUCT_BOM_LINE",
+          componentCode: target.componentCode,
+          componentDescription: target.componentDescription ?? current.componentDescription,
+          componentKind: target.componentKind,
+          currentQuantity: currentQty,
+          effectiveQuantity: target.quantity,
+          productBomLineId: current.id,
+          reason: "Quantidade e metadata Nomus já coincidem com a BOM efetiva.",
+          riskLevel: "LOW",
+          reviewDecisionType: target.effectiveLine.reviewDecisionType ?? null,
+        });
+      }
     } else {
       actions.push({
         actionType: "UPDATE_PRODUCT_BOM_QUANTITY",
@@ -792,10 +851,11 @@ function buildActions(
     CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES: 0,
     CREATE_PRODUCT_BOM_LINE: 1,
     UPDATE_PRODUCT_BOM_QUANTITY: 2,
-    REMOVE_PRODUCT_BOM_LINE: 3,
-    KEEP_PRODUCT_BOM_LINE: 4,
-    BLOCKED: 5,
-    SKIP_UNRESOLVED: 6,
+    UPDATE_PRODUCT_BOM_NOMUS_METADATA: 3,
+    REMOVE_PRODUCT_BOM_LINE: 4,
+    KEEP_PRODUCT_BOM_LINE: 5,
+    BLOCKED: 6,
+    SKIP_UNRESOLVED: 7,
   };
 
   actions.sort((a, b) => {
@@ -1127,6 +1187,8 @@ export async function buildControlledApplyPreview(
       const keep = afterRowsPreview.find((r) => r.id === action.keepBomLineId);
       if (keep && action.effectiveQuantity != null) {
         keep.quantity = action.effectiveQuantity;
+        keep.lossPercentage = 0;
+        Object.assign(keep, buildNomusControlledBomMetadata({ componentCode: action.componentCode }));
       }
     }
     if (action.actionType === "REMOVE_PRODUCT_BOM_LINE" && action.productBomLineId) {
@@ -1135,7 +1197,17 @@ export async function buildControlledApplyPreview(
     }
     if (action.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" && action.productBomLineId) {
       const row = afterRowsPreview.find((r) => r.id === action.productBomLineId);
-      if (row && action.effectiveQuantity != null) row.quantity = action.effectiveQuantity;
+      if (row && action.effectiveQuantity != null) {
+        row.quantity = action.effectiveQuantity;
+        row.lossPercentage = 0;
+        Object.assign(row, buildNomusControlledBomMetadata({ componentCode: action.componentCode }));
+      }
+    }
+    if (action.actionType === "UPDATE_PRODUCT_BOM_NOMUS_METADATA" && action.productBomLineId) {
+      const row = afterRowsPreview.find((r) => r.id === action.productBomLineId);
+      if (row) {
+        Object.assign(row, buildNomusControlledBomMetadata({ componentCode: action.componentCode }));
+      }
     }
   }
 
@@ -1288,9 +1360,13 @@ export async function applyEffectiveBomToProductBom(input: {
         action.keepBomLineId
       ) {
         const before = currentById.get(action.keepBomLineId);
+        const nomusMeta = buildNomusControlledBomMetadata({ componentCode: action.componentCode });
         const updated = await tx.productBOM.update({
           where: { id: action.keepBomLineId },
-          data: { quantity: action.effectiveQuantity ?? 0, lossPercentage: 0 },
+          data: {
+            quantity: action.effectiveQuantity ?? 0,
+            ...nomusMeta,
+          },
         });
         await tx.nomusBomApplyRunLine.create({
           data: {
@@ -1333,9 +1409,13 @@ export async function applyEffectiveBomToProductBom(input: {
 
       if (action.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" && action.productBomLineId) {
         const before = currentById.get(action.productBomLineId);
+        const nomusMeta = buildNomusControlledBomMetadata({ componentCode: action.componentCode });
         const updated = await tx.productBOM.update({
           where: { id: action.productBomLineId },
-          data: { quantity: action.effectiveQuantity ?? 0, lossPercentage: 0 },
+          data: {
+            quantity: action.effectiveQuantity ?? 0,
+            ...nomusMeta,
+          },
         });
         await tx.nomusBomApplyRunLine.create({
           data: {
@@ -1348,6 +1428,37 @@ export async function applyEffectiveBomToProductBom(input: {
             afterJson: {
               id: updated.id,
               quantity: toNumberSafe(updated.quantity),
+              ...nomusMeta,
+              lastNomusSyncAt: nomusMeta.lastNomusSyncAt.toISOString(),
+            },
+            status: "APPLIED",
+            reason: action.reason,
+          },
+        });
+        appliedActions.push(action);
+        continue;
+      }
+
+      if (action.actionType === "UPDATE_PRODUCT_BOM_NOMUS_METADATA" && action.productBomLineId) {
+        const before = currentById.get(action.productBomLineId);
+        const nomusMeta = buildNomusControlledBomMetadata({ componentCode: action.componentCode });
+        const updated = await tx.productBOM.update({
+          where: { id: action.productBomLineId },
+          data: nomusMeta,
+        });
+        await tx.nomusBomApplyRunLine.create({
+          data: {
+            runId: run.id,
+            actionType: action.actionType,
+            componentCode: action.componentCode,
+            componentDescription: action.componentDescription,
+            productBomLineId: action.productBomLineId,
+            beforeJson: before ? serializeBomRow(before) : undefined,
+            afterJson: {
+              id: updated.id,
+              quantity: toNumberSafe(updated.quantity),
+              ...nomusMeta,
+              lastNomusSyncAt: nomusMeta.lastNomusSyncAt.toISOString(),
             },
             status: "APPLIED",
             reason: action.reason,
@@ -1372,13 +1483,14 @@ export async function applyEffectiveBomToProductBom(input: {
           }
         }
 
+        const nomusMeta = buildNomusControlledBomMetadata({ componentCode: target.componentCode });
         const created = await tx.productBOM.create({
           data: {
             productId,
             materialId: target.materialId,
             childProductId: target.childProductId,
             quantity: target.quantity,
-            lossPercentage: 0,
+            ...nomusMeta,
           },
         });
 
@@ -1395,6 +1507,8 @@ export async function applyEffectiveBomToProductBom(input: {
               materialId: created.materialId,
               childProductId: created.childProductId,
               quantity: toNumberSafe(created.quantity),
+              ...nomusMeta,
+              lastNomusSyncAt: nomusMeta.lastNomusSyncAt.toISOString(),
             },
             status: "APPLIED",
             reason: action.reason,
@@ -1413,6 +1527,7 @@ export async function applyEffectiveBomToProductBom(input: {
         appliedActions.filter(
           (a) =>
             a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" ||
+            a.actionType === "UPDATE_PRODUCT_BOM_NOMUS_METADATA" ||
             a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"
         ).length,
       kept: appliedActions.filter((a) => a.actionType === "KEEP_PRODUCT_BOM_LINE").length,
@@ -1442,6 +1557,7 @@ export async function applyEffectiveBomToProductBom(input: {
       preview.actions.filter(
         (a) =>
           a.actionType === "UPDATE_PRODUCT_BOM_QUANTITY" ||
+          a.actionType === "UPDATE_PRODUCT_BOM_NOMUS_METADATA" ||
           a.actionType === "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES"
       ).length,
     kept: preview.actions.filter((a) => a.actionType === "KEEP_PRODUCT_BOM_LINE").length,
@@ -1550,6 +1666,11 @@ async function syncBomApplyToEngineeringChangeLog(input: {
         writeOps.push({
           fieldName: "quantity",
           summary: `BOM: ${a.componentCode} qty ${a.currentQuantity ?? "—"} → ${a.effectiveQuantity ?? "—"}`,
+        });
+      } else if (a.actionType === "UPDATE_PRODUCT_BOM_NOMUS_METADATA") {
+        writeOps.push({
+          fieldName: "@bom_nomus_metadata",
+          summary: `BOM: metadata Nomus — ${a.componentCode} (${a.reason || NOMUS_BOM_METADATA_UPDATE_REASON})`,
         });
       } else if (a.actionType === "REMOVE_PRODUCT_BOM_LINE") {
         writeOps.push({
