@@ -132,6 +132,12 @@ import {
 } from "./src/lib/nomusMasterDataEqualize.js";
 import { EQUALIZE_CONFIRMATION_TEXT } from "./src/lib/nomusMasterDataEqualizeTypes.js";
 import { loadProductChangeHistory } from "./src/lib/productChangeHistory.js";
+import {
+  buildReclassificationImpactForMaterial,
+  buildReclassificationImpactForProduct,
+  executeItemReclassification,
+} from "./src/lib/itemReclassificationServer.js";
+import type { ItemReclassificationKind } from "./src/lib/itemReclassificationTypes.js";
 import type { NomusBomReviewDecisionType } from "@prisma/client";
 import type { NomusOptionalPricingSelectionMode } from "@prisma/client";
 
@@ -4746,6 +4752,39 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         select: { type: true, cycleTimeSeconds: true, cavities: true, setupTimeMin: true, efficiencyExpected: true }
       });
       if (!currentProduct) return res.status(404).json({ error: "Produto não encontrado." });
+
+      // Validação explícita de `type` ANTES do Prisma — evita 500 genérico
+      // "Erro ao atualizar produto." quando o frontend envia "MATERIAL".
+      // MATERIAL não é update direto: passa pelo fluxo de reclassificação
+      // (POST /api/products/:id/reclassify).
+      if (type !== undefined && type !== null) {
+        if (type === "MATERIAL") {
+          return res.status(409).json({
+            error: "PRODUCT_TYPE_RECLASSIFICATION_REQUIRED",
+            code: "PRODUCT_TYPE_RECLASSIFICATION_REQUIRED",
+            message:
+              "Converter um Produto/Componente em Material exige análise de impacto. Use o fluxo de reclassificação (modal Reclassificar Item) em vez de salvar diretamente.",
+            targetKind: "MATERIAL",
+          });
+        }
+        if (type !== "PRODUCT" && type !== "COMPONENT") {
+          return res.status(400).json({
+            error: "INVALID_PRODUCT_TYPE",
+            code: "INVALID_PRODUCT_TYPE",
+            message: `Tipo de produto inválido: ${String(type)}. Use PRODUCT ou COMPONENT.`,
+          });
+        }
+        if (type !== currentProduct.type) {
+          return res.status(409).json({
+            error: "PRODUCT_TYPE_RECLASSIFICATION_REQUIRED",
+            code: "PRODUCT_TYPE_RECLASSIFICATION_REQUIRED",
+            message:
+              "A troca de tipo (Produto ⇄ Componente) exige análise de impacto. Use o fluxo de reclassificação (modal Reclassificar Item) em vez de salvar diretamente.",
+            targetKind: type,
+            currentKind: currentProduct.type,
+          });
+        }
+      }
       const effectiveType = type ?? currentProduct.type;
 
       if (normalizedSku) {
@@ -4883,9 +4922,191 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       res.json(product);
     } catch (error) {
       console.error("Product update error:", error);
-      res.status(500).json({ error: "Erro ao atualizar produto." });
+      // Erros conhecidos do Prisma viram 409/400 com detalhe; o resto cai em 500
+      // mas com a mensagem real do erro (não mais "Erro ao atualizar produto." cego).
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === "P2002") {
+          return res.status(409).json({
+            error: "UNIQUE_CONSTRAINT_VIOLATION",
+            code: "UNIQUE_CONSTRAINT_VIOLATION",
+            message: "Conflito de unicidade ao atualizar o produto (provavelmente SKU duplicado).",
+            meta: error.meta,
+          });
+        }
+        if (error.code === "P2025") {
+          return res
+            .status(404)
+            .json({ error: "PRODUCT_NOT_FOUND", code: "PRODUCT_NOT_FOUND", message: "Produto não encontrado." });
+        }
+      }
+      const detail = error instanceof Error ? error.message : "Erro desconhecido.";
+      res.status(500).json({
+        error: "PRODUCT_UPDATE_FAILED",
+        code: "PRODUCT_UPDATE_FAILED",
+        message: `Não foi possível atualizar o produto. ${detail}`,
+      });
     }
   });
+
+  /* ------------------------------------------------------------------ *
+   * Item reclassification — Fase INDUSCOST-ITEM-RECLASSIFICATION-WORKFLOW-A
+   *
+   * GET  /api/products/:id/reclassification-impact?targetKind=...
+   *   Análise read-only do impacto de reclassificar um Product.
+   *
+   * POST /api/products/:id/reclassify
+   *   Aplica o plano com confirmação textual obrigatória, transacional.
+   *
+   * GET  /api/materials/:id/reclassification-impact?targetKind=...
+   *   Análise read-only para Material. Caminho atual sempre BLOCKED nesta
+   *   fase (apenas orienta o usuário a usar o caminho manual).
+   * ------------------------------------------------------------------ */
+
+  function parseTargetKind(raw: unknown): ItemReclassificationKind | null {
+    if (raw !== "PRODUCT" && raw !== "COMPONENT" && raw !== "MATERIAL") return null;
+    return raw as ItemReclassificationKind;
+  }
+
+  app.get(
+    "/api/products/:id/reclassification-impact",
+    requireAppAuth,
+    requirePermission("products.edit"),
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isUuid(id)) {
+          return res
+            .status(400)
+            .json({ error: "INVALID_PRODUCT_ID", message: "ID de produto inválido." });
+        }
+        const targetKind = parseTargetKind(req.query.targetKind);
+        if (!targetKind) {
+          return res.status(400).json({
+            error: "INVALID_TARGET_KIND",
+            message: "targetKind deve ser PRODUCT, COMPONENT ou MATERIAL.",
+          });
+        }
+        const impact = await buildReclassificationImpactForProduct(id, targetKind);
+        if (!impact) {
+          return res
+            .status(404)
+            .json({ error: "PRODUCT_NOT_FOUND", message: "Produto não encontrado." });
+        }
+        return res.json(impact);
+      } catch (error) {
+        console.error("GET /api/products/:id/reclassification-impact", error);
+        return res.status(500).json({
+          error: "RECLASSIFICATION_IMPACT_FAILED",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Erro ao montar análise de impacto.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/materials/:id/reclassification-impact",
+    requireAppAuth,
+    requireAnyPermission(["products.edit", "materials.edit"]),
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isUuid(id)) {
+          return res
+            .status(400)
+            .json({ error: "INVALID_MATERIAL_ID", message: "ID de material inválido." });
+        }
+        const targetKind = parseTargetKind(req.query.targetKind);
+        if (!targetKind) {
+          return res.status(400).json({
+            error: "INVALID_TARGET_KIND",
+            message: "targetKind deve ser PRODUCT, COMPONENT ou MATERIAL.",
+          });
+        }
+        const impact = await buildReclassificationImpactForMaterial(id, targetKind);
+        if (!impact) {
+          return res
+            .status(404)
+            .json({ error: "MATERIAL_NOT_FOUND", message: "Material não encontrado." });
+        }
+        return res.json(impact);
+      } catch (error) {
+        console.error("GET /api/materials/:id/reclassification-impact", error);
+        return res.status(500).json({
+          error: "RECLASSIFICATION_IMPACT_FAILED",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Erro ao montar análise de impacto.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/products/:id/reclassify",
+    requireAppAuth,
+    requirePermission("products.edit"),
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isUuid(id)) {
+          return res
+            .status(400)
+            .json({ error: "INVALID_PRODUCT_ID", message: "ID de produto inválido." });
+        }
+        const body = req.body ?? {};
+        const targetKind = parseTargetKind(body.targetKind);
+        if (!targetKind) {
+          return res.status(400).json({
+            error: "INVALID_TARGET_KIND",
+            code: "INVALID_TARGET_KIND",
+            message: "targetKind deve ser PRODUCT, COMPONENT ou MATERIAL.",
+          });
+        }
+        const confirmationText =
+          typeof body.confirmationText === "string" ? body.confirmationText : "";
+        const extraConfirmationText =
+          typeof body.extraConfirmationText === "string"
+            ? body.extraConfirmationText
+            : null;
+
+        const result = await executeItemReclassification({
+          sourceProductId: id,
+          targetKind,
+          confirmationText,
+          extraConfirmationText,
+          changedBy: req.appAuth?.id ?? req.appAuth?.email ?? null,
+        });
+
+        if (result.ok === false) {
+          // 409 para bloqueios/confirmação inválida; 400 para inputs inválidos.
+          const status =
+            result.code === "RECLASSIFICATION_BLOCKED" ||
+            result.code === "TARGET_IDENTIFIER_CONFLICT"
+              ? 409
+              : result.code === "SOURCE_NOT_FOUND"
+              ? 404
+              : 400;
+          return res.status(status).json(result);
+        }
+        return res.json(result);
+      } catch (error) {
+        console.error("POST /api/products/:id/reclassify", error);
+        return res.status(500).json({
+          ok: false,
+          error: "INTERNAL_ERROR",
+          code: "INTERNAL_ERROR",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Erro inesperado ao reclassificar o item.",
+        });
+      }
+    }
+  );
 
   app.delete("/api/products/:id", requireAppAuth, requirePermission("products.delete"), async (req, res) => {
     const { id } = req.params;

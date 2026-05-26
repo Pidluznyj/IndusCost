@@ -203,6 +203,53 @@ LIMIT 5;
 - [ ] Painel Impacto mostra `hasStructuralChanges=false` e delta zero
       (para 611.48AA).
 
+## 9b. Reclassificação de item (Produto / Componente / Material)
+
+Fase: `INDUSCOST-ITEM-RECLASSIFICATION-WORKFLOW-A`.
+
+1. Abrir o módulo **Produtos** → **Editar Engenharia** em um produto
+   conhecido sem propostas/pedidos/preço.
+2. Na aba **Informações**, clicar no botão **Componente** (item está
+   como Produto). Esperado:
+   - Modal **Reclassificar item** abre.
+   - Cards mostram contagens reais de dependência (BOM, roteiro,
+     pricing, propostas, pedidos, tabela de preço, Nomus, histórico).
+   - Status `ALLOWED` ou `REQUIRES_CONFIRMATION`.
+   - Texto exigido: `RECLASSIFICAR ITEM`.
+3. Digitar o texto e confirmar. Esperado:
+   - Lista atualiza com badge `Componente`.
+   - Histórico do produto registra entry com `fieldName=type`,
+     `oldValue=PRODUCT`, `newValue=COMPONENT`, origem `MANUAL_EDIT` e
+     `reason` começando com `ITEM_RECLASSIFICATION:`.
+4. Repetir para um produto **com** propostas/pedidos. Esperado:
+   - Modal abre como `REQUIRES_CONFIRMATION` com warning
+     `HAS_HISTORY` — propostas/pedidos não são apagados.
+5. Tentar **Produto → Material** num item com BOM. Esperado:
+   - Modal abre como `BLOCKED` com motivo `BOM_AS_PARENT_PRESENT`.
+   - Nenhuma alteração é gravada.
+6. Tentar **Produto → Material** num item realmente órfão. Esperado:
+   - Status `REQUIRES_CONFIRMATION`; texto exigido
+     `RECLASSIFICAR PARA MATERIAL <SKU>`.
+   - Após confirmar: novo `Material.code = SKU` criado, Product
+     original `status=INACTIVE`, duas entries em
+     `EngineeringChangeLog` (uma `PRODUCT @reclassified_to_material`,
+     outra `MATERIAL @created_from_product`).
+7. Em qualquer aba do modal, nenhum alert genérico
+   `"Erro ao atualizar produto."` deve aparecer.
+
+```sql
+-- Auditoria das reclassificações nas últimas 24h
+runuser -u postgres -- psql -d teste_bi -P pager=off -c "
+  select \"changedAt\", \"productSku\", \"fieldName\",
+         \"oldValue\", \"newValue\", reason
+    from \"EngineeringChangeLog\"
+   where reason like 'ITEM_RECLASSIFICATION:%'
+     and \"changedAt\" > now() - interval '24 hours'
+   order by \"changedAt\" desc
+   limit 50;
+"
+```
+
 ## 10. Critérios de aceite final
 
 A versão está **aceita para Engenharia** quando todos os checkboxes
@@ -216,6 +263,9 @@ desta lista estão marcados:
 - [ ] Seção 7.1–7.5 visualmente OK.
 - [ ] (Se rodado) 9.3 com `status=APPLIED` ou `NO_CHANGES` e nenhum
       `FAILED`.
+- [ ] Seção 9b: reclassificação mostra análise de impacto, exige
+      confirmação textual, registra histórico e nunca exibe
+      `"Erro ao atualizar produto."` genérico.
 
 ## 11. Plano de rollback
 

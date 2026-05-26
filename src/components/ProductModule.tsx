@@ -45,6 +45,11 @@ import { ProductBomTreeContextPanel } from "@/src/components/product/ProductBomT
 import { NomusBomComparisonPanel } from "@/src/components/product/NomusBomComparisonPanel";
 import { ProductNomusMaintenanceSection } from "@/src/components/product/ProductNomusMaintenanceSection";
 import { ProductHistoryTab } from "@/src/components/product/ProductHistoryTab";
+import { ItemReclassificationModal } from "@/src/components/product/ItemReclassificationModal";
+import type {
+  ItemReclassificationApplyResult,
+  ItemReclassificationKind,
+} from "@/src/lib/itemReclassificationTypes";
 import type { BomCostDetailRowData } from "@/src/components/shared/BomCostDetailRow";
 import {
   OpenBookCompositionTab,
@@ -199,6 +204,12 @@ export const ProductModule = () => {
   const [loadingCost, setLoadingCost] = useState(false);
   const [costAnalysisError, setCostAnalysisError] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
+
+  // Reclassificação de item: estado do modal de análise de impacto.
+  const [reclassifyTargetKind, setReclassifyTargetKind] =
+    useState<ItemReclassificationKind | null>(null);
+  const reclassifyOpen =
+    reclassifyTargetKind !== null && Boolean(editingItem?.id);
 
   // Form State
   const [formData, setFormData] = useState<CreateProductInput>({
@@ -558,6 +569,50 @@ export const ProductModule = () => {
       alert(error instanceof Error ? error.message : "Erro de conexão ao salvar o item.");
     }
   };
+
+  /**
+   * Callback após a aplicação bem-sucedida da reclassificação no backend.
+   * Atualiza a lista, fecha o modal de impacto e — quando o item virou Material —
+   * fecha o modal de engenharia (pois o registro principal mudou de entidade).
+   */
+  const handleReclassifyApplied = useCallback(
+    (result: ItemReclassificationApplyResult) => {
+      setReclassifyTargetKind(null);
+      const plan = result.appliedPlan;
+      if (plan.kind === "UPDATE_PRODUCT_TYPE") {
+        const newType: ItemType = plan.to;
+        if (editingItem?.id === plan.productId) {
+          setEditingItem({ ...editingItem, type: newType });
+          setFormData((prev) => ({
+            ...prev,
+            type: newType,
+            cycleTimeSeconds: plan.clearProcessFields ? "" : prev.cycleTimeSeconds,
+            cavities: plan.clearProcessFields ? "" : prev.cavities,
+            setupTimeMin: plan.clearProcessFields ? "" : prev.setupTimeMin,
+            efficiencyExpected: plan.clearProcessFields ? "" : prev.efficiencyExpected,
+          }));
+        }
+        void fetchData();
+        if (plan.productId) void refreshProductCostInList(plan.productId);
+        alert(result.message);
+        return;
+      }
+      if (plan.kind === "CONVERT_PRODUCT_TO_MATERIAL") {
+        // Produto virou Material — o registro principal mudou de entidade.
+        // Fechar o modal de engenharia e recarregar a lista.
+        setBackendCostAnalysis(null);
+        setCostAnalysisError(null);
+        setIsModalOpen(false);
+        setEditingItem(null);
+        void fetchData();
+        alert(result.message);
+        return;
+      }
+      // Demais planos não são aplicáveis nesta fase; nada a fazer.
+      void fetchData();
+    },
+    [editingItem, fetchData, refreshProductCostInList]
+  );
 
   const handleDelete = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir este item? Esta ação não pode ser desfeita.")) {
@@ -1556,12 +1611,20 @@ export const ProductModule = () => {
                                   key={type.id}
                                   type="button"
                                   onClick={() => {
+                                    const targetId = type.id as ItemType;
+                                    if (formData.type === targetId) return;
+                                    // Em criação (sem editingItem.id) trocar é livre — não há registro no banco.
+                                    // Em edição, qualquer troca de tipo passa pelo fluxo de reclassificação
+                                    // (modal de impacto + confirmação textual + endpoint /reclassify).
+                                    if (editingItem?.id) {
+                                      setReclassifyTargetKind(targetId);
+                                      return;
+                                    }
                                     setFormData({
-                                      ...formData, 
-                                      type: type.id as ItemType,
-                                      // Reset BOM/Routing if switching to Material
-                                      bom: type.id === "MATERIAL" ? [] : formData.bom,
-                                      routing: type.id === "MATERIAL" ? [] : formData.routing
+                                      ...formData,
+                                      type: targetId,
+                                      bom: targetId === "MATERIAL" ? [] : formData.bom,
+                                      routing: targetId === "MATERIAL" ? [] : formData.routing,
                                     });
                                   }}
                                   className={cn(
@@ -1570,6 +1633,11 @@ export const ProductModule = () => {
                                       ? "border-primary bg-primary/5 text-primary" 
                                       : "border-border hover:border-primary/50 hover:bg-accent"
                                   )}
+                                  title={
+                                    editingItem?.id && formData.type !== type.id
+                                      ? `Reclassificar item para ${type.label}: abre análise de impacto antes de aplicar.`
+                                      : type.desc
+                                  }
                                 >
                                   <type.icon className={cn("h-6 w-6", formData.type === type.id ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
                                   <div>
@@ -2564,6 +2632,17 @@ export const ProductModule = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {reclassifyOpen && editingItem?.id && reclassifyTargetKind && (
+        <ItemReclassificationModal
+          open={reclassifyOpen}
+          sourceId={editingItem.id}
+          sourceKind={(editingItem.type === "MATERIAL" ? "MATERIAL" : editingItem.type) as ItemReclassificationKind}
+          targetKind={reclassifyTargetKind}
+          onClose={() => setReclassifyTargetKind(null)}
+          onApplied={(result) => handleReclassifyApplied(result)}
+        />
+      )}
     </div>
   );
 };
