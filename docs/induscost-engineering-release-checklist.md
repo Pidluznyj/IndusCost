@@ -250,6 +250,46 @@ runuser -u postgres -- psql -d teste_bi -P pager=off -c "
 "
 ```
 
+## 9c. Permissões e controle de acesso
+
+Fase: `INDUSCOST-ACCESS-PERMISSIONS-AUDIT-UX-A`.
+
+```bash
+npm run audit:permissions
+```
+
+Saída esperada (resumo):
+
+- `catálogo=73 | observadas=73 | órfãs<=5 | fantasmas=0 | somente_fe<=2 | somente_be<=26`
+- `rotas=179 | sem permissão direta=9 | mutations sem permissão=4`
+- Relatório gravado em `docs/generated/permissions-audit-report.md`.
+- O número de **fantasmas deve sempre ser 0**. Qualquer aumento
+  indica que alguém usou uma string de permissão fora do catálogo.
+
+Validação manual da tela **Configurações → Usuários e Permissões**:
+
+1. [ ] Logar como Super Admin. Sua linha tem badge **Você**.
+2. [ ] Cadastrar um VIEWER de engenharia (template **Engenharia /
+       Custos**). Confirmar que ele acessa BOM/custo mas **não** acessa
+       Configurações/Usuários e **não** vê botão Excluir item.
+3. [ ] Cadastrar um VIEWER somente leitura (template **Somente Leitura**).
+       Confirmar que ele acessa propostas em modo consulta e **não** vê
+       botão Editar.
+4. [ ] Cadastrar um usuário com `users.manage` (ADMIN). Confirmar que
+       ele acessa Usuários e Permissões, mas **não** consegue inativar a
+       si mesmo (`409 CANNOT_DEACTIVATE_SELF`) nem rebaixar (se for o
+       último Super) o último Super Admin.
+5. [ ] Sendo o único Super Admin ativo, tentar inativar sua própria
+       conta pelo botão da lista → botão desabilitado com tooltip;
+       tentar via edição do form → backend devolve
+       `409 LAST_SUPER_ADMIN_PROTECTED`. Tentar remover sua própria
+       `users.manage` → backend devolve `409 CANNOT_REMOVE_OWN_USERS_MANAGE`.
+6. [ ] Aplicar **Modelos rápidos** (`Vendedor`, `Compras`, `Engenharia`,
+       `Admin Sistema`, `Leitura`) — verificar que a seleção bate com
+       `PERMISSION_TEMPLATES`.
+7. [ ] Buscar `bom`, `custo`, `nomus` — busca filtra catálogo
+       preservando pais.
+
 ## 10. Critérios de aceite final
 
 A versão está **aceita para Engenharia** quando todos os checkboxes
@@ -266,6 +306,8 @@ desta lista estão marcados:
 - [ ] Seção 9b: reclassificação mostra análise de impacto, exige
       confirmação textual, registra histórico e nunca exibe
       `"Erro ao atualizar produto."` genérico.
+- [ ] Seção 9c: `npm run audit:permissions` verde, fantasmas=0,
+      auto-bloqueio impedido, último Super Admin protegido.
 
 ## 11. Plano de rollback
 

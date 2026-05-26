@@ -1404,6 +1404,78 @@ async function startServer() {
         return res.status(400).json({ error: "NO_CHANGES", message: "Nenhum campo para atualizar." });
       }
 
+      // Guardrails anti-auto-bloqueio e proteção do último SUPER_ADMIN.
+      // Fase: INDUSCOST-ACCESS-PERMISSIONS-AUDIT-UX-A.
+      const isEditingSelf = req.appAuth?.id === existing.id;
+
+      if (isEditingSelf) {
+        if (data.isActive === false) {
+          return res.status(409).json({
+            error: "CANNOT_DEACTIVATE_SELF",
+            code: "CANNOT_DEACTIVATE_SELF",
+            message:
+              "Você não pode inativar seu próprio usuário. Peça a outro administrador para fazer isso.",
+          });
+        }
+        if (
+          typeof data.role === "string" &&
+          existing.role === AppUserRole.SUPER_ADMIN &&
+          data.role !== AppUserRole.SUPER_ADMIN
+        ) {
+          return res.status(409).json({
+            error: "CANNOT_DEMOTE_SELF",
+            code: "CANNOT_DEMOTE_SELF",
+            message:
+              "Você não pode rebaixar o próprio perfil de Super Administrador. Peça a outro administrador para fazer isso.",
+          });
+        }
+        if (Array.isArray(data.permissions)) {
+          const nextRole = (data.role as AppUserRole | undefined) ?? existing.role;
+          const willKeepUsersManage =
+            nextRole === AppUserRole.SUPER_ADMIN ||
+            (data.permissions as string[]).includes("users.manage");
+          const currentlyHasUsersManage =
+            existing.role === AppUserRole.SUPER_ADMIN ||
+            existing.permissions.includes("users.manage");
+          if (currentlyHasUsersManage && !willKeepUsersManage) {
+            return res.status(409).json({
+              error: "CANNOT_REMOVE_OWN_USERS_MANAGE",
+              code: "CANNOT_REMOVE_OWN_USERS_MANAGE",
+              message:
+                "Você não pode remover a própria permissão de administrar usuários. Peça a outro administrador para fazer isso.",
+            });
+          }
+        }
+      }
+
+      // Proteção do último SUPER_ADMIN ativo: nunca permitir inativar/rebaixar
+      // o único Super Administrador ativo do sistema, mesmo que outro admin
+      // esteja realizando a operação.
+      const willMakeInactive = data.isActive === false;
+      const willChangeRole = typeof data.role === "string" && data.role !== existing.role;
+      if (
+        existing.role === AppUserRole.SUPER_ADMIN &&
+        existing.isActive &&
+        (willMakeInactive ||
+          (willChangeRole && (data.role as AppUserRole) !== AppUserRole.SUPER_ADMIN))
+      ) {
+        const otherActiveSuperAdmins = await prisma.appUser.count({
+          where: {
+            role: AppUserRole.SUPER_ADMIN,
+            isActive: true,
+            id: { not: existing.id },
+          },
+        });
+        if (otherActiveSuperAdmins === 0) {
+          return res.status(409).json({
+            error: "LAST_SUPER_ADMIN_PROTECTED",
+            code: "LAST_SUPER_ADMIN_PROTECTED",
+            message:
+              "Este é o único Super Administrador ativo do sistema. Cadastre outro Super Administrador antes de inativá-lo ou rebaixá-lo.",
+          });
+        }
+      }
+
       const user = await prisma.appUser.update({ where: { id }, data });
       return res.json({ user: toSafeAppUser(user) });
     } catch (error) {

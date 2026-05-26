@@ -75,8 +75,9 @@ function formHasCrmSellerOwn(form: UserFormState): boolean {
 }
 
 export const AdminUsersModule: React.FC = () => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, authUser } = useAuth();
   const canManage = hasPermission("users.manage");
+  const currentUserId = authUser?.id ?? null;
 
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [catalog, setCatalog] = useState<PermissionCatalogEntry[]>([]);
@@ -177,6 +178,61 @@ export const AdminUsersModule: React.FC = () => {
     }
     return null;
   }, [form]);
+
+  // Quantos Super Administradores ativos existem na lista carregada — usado para
+  // alertar antes que o admin tente inativar/rebaixar o único Super Admin.
+  const activeSuperAdminCount = useMemo(
+    () => users.filter((u) => u.isActive && u.role === "SUPER_ADMIN").length,
+    [users]
+  );
+
+  const isEditingSelf = editingId !== null && editingId === currentUserId;
+  const editingExistingUser = users.find((u) => u.id === editingId) ?? null;
+  const isEditingTheLastSuperAdmin =
+    editingExistingUser?.role === "SUPER_ADMIN" &&
+    editingExistingUser.isActive &&
+    activeSuperAdminCount === 1;
+
+  /**
+   * Avisos de auto-bloqueio exibidos no editor:
+   * - O backend já bloqueia (409). Aqui antecipamos o feedback para o
+   *   admin não chegar a clicar "Salvar".
+   */
+  const selfBlockWarnings = useMemo<string[]>(() => {
+    if (!isEditingSelf || !editingExistingUser) return [];
+    const out: string[] = [];
+    if (!form.isActive) {
+      out.push("Você está prestes a inativar a si mesmo. O backend bloqueia essa operação.");
+    }
+    if (
+      editingExistingUser.role === "SUPER_ADMIN" &&
+      form.role !== "SUPER_ADMIN"
+    ) {
+      out.push(
+        "Você está prestes a rebaixar o próprio perfil de Super Administrador. O backend bloqueia essa operação."
+      );
+    }
+    const willKeepUsersManage =
+      form.role === "SUPER_ADMIN" || form.permissions.includes("users.manage");
+    const currentlyHasUsersManage =
+      editingExistingUser.role === "SUPER_ADMIN" ||
+      editingExistingUser.permissions.includes("users.manage");
+    if (currentlyHasUsersManage && !willKeepUsersManage) {
+      out.push(
+        "Você está prestes a remover a própria permissão Usuários e Permissões. O backend bloqueia essa operação para não te deixar sem acesso."
+      );
+    }
+    return out;
+  }, [isEditingSelf, editingExistingUser, form]);
+
+  const lastSuperAdminWarning = useMemo<string | null>(() => {
+    if (!isEditingTheLastSuperAdmin) return null;
+    if (!form.isActive)
+      return "Este é o único Super Administrador ativo. Cadastre outro Super Admin antes de inativar.";
+    if (form.role !== "SUPER_ADMIN")
+      return "Este é o único Super Administrador ativo. Cadastre outro Super Admin antes de mudar o perfil.";
+    return null;
+  }, [isEditingTheLastSuperAdmin, form.isActive, form.role]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -357,7 +413,29 @@ export const AdminUsersModule: React.FC = () => {
               <tbody>
                 {users.map((user) => (
                   <tr key={user.id} className="border-b border-border/60 hover:bg-accent/20">
-                    <td className="px-4 py-3 font-medium">{user.name}</td>
+                    <td className="px-4 py-3 font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        {user.name}
+                        {user.id === currentUserId ? (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wide text-blue-900"
+                            title="Este é o usuário com o qual você está logado."
+                          >
+                            Você
+                          </span>
+                        ) : null}
+                        {user.role === "SUPER_ADMIN" &&
+                        user.isActive &&
+                        activeSuperAdminCount === 1 ? (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wide text-amber-900"
+                            title="Este é o único Super Administrador ativo do sistema. Não pode ser inativado ou rebaixado."
+                          >
+                            Único Super
+                          </span>
+                        ) : null}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground">{user.email}</td>
                     <td className="px-4 py-3">{formatRoleLabel(user.role)}</td>
                     <td className="px-4 py-3">
@@ -399,19 +477,35 @@ export const AdminUsersModule: React.FC = () => {
                           <KeyRound className="h-3 w-3" />
                           Senha
                         </button>
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void toggleActive(user)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
-                        >
-                          {user.isActive ? (
-                            <UserX className="h-3 w-3" />
-                          ) : (
-                            <UserCheck className="h-3 w-3" />
-                          )}
-                          {user.isActive ? "Inativar" : "Ativar"}
-                        </button>
+                        {(() => {
+                          const isSelf = user.id === currentUserId;
+                          const isLastSuper =
+                            user.role === "SUPER_ADMIN" &&
+                            user.isActive &&
+                            activeSuperAdminCount === 1;
+                          const blockedReason = isSelf
+                            ? "Você não pode inativar a si mesmo. Peça a outro administrador."
+                            : isLastSuper && user.isActive
+                              ? "Único Super Administrador ativo — cadastre outro antes de inativar."
+                              : null;
+                          const isBlocked = Boolean(blockedReason);
+                          return (
+                            <button
+                              type="button"
+                              disabled={saving || isBlocked}
+                              onClick={() => void toggleActive(user)}
+                              title={blockedReason ?? undefined}
+                              className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {user.isActive ? (
+                                <UserX className="h-3 w-3" />
+                              ) : (
+                                <UserCheck className="h-3 w-3" />
+                              )}
+                              {user.isActive ? "Inativar" : "Ativar"}
+                            </button>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -450,6 +544,38 @@ export const AdminUsersModule: React.FC = () => {
                 <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
                   {formError}
                 </div>
+              ) : null}
+              {isEditingSelf ? (
+                <div
+                  className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
+                  role="status"
+                >
+                  <strong className="font-bold">Você está editando seu próprio usuário.</strong>{" "}
+                  Mudanças de perfil, status ativo ou a permissão "Usuários e Permissões" podem
+                  bloquear seu próprio acesso — o sistema bloqueia essas operações por segurança.
+                </div>
+              ) : null}
+              {lastSuperAdminWarning ? (
+                <div
+                  className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-start gap-1.5"
+                  role="alert"
+                >
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>{lastSuperAdminWarning}</span>
+                </div>
+              ) : null}
+              {selfBlockWarnings.length > 0 ? (
+                <ul
+                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 space-y-1"
+                  role="alert"
+                >
+                  {selfBlockWarnings.map((w, idx) => (
+                    <li key={idx} className="flex items-start gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>{w}</span>
+                    </li>
+                  ))}
+                </ul>
               ) : null}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1 sm:col-span-2">
