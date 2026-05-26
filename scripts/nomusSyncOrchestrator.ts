@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { runNomusBomAutoApplyAfterSync } from "../src/lib/nomusBomAutoApplyAfterSync.ts";
+import type { NomusBomAutoApplyReport } from "../src/lib/nomusBomAutoApplyAfterSyncTypes.ts";
 
 type SyncMode = "dry" | "apply";
 type SyncTarget = "customers" | "products" | "bom-components" | "proposals" | "sales-orders";
@@ -23,6 +25,15 @@ type StepExecution = {
   step: StepResult;
   stdout: string;
   stderr: string;
+};
+
+type BomAutoApplyStep = {
+  status: "SUCCESS" | "FAILED" | "SKIPPED";
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  report: NomusBomAutoApplyReport | null;
+  reason?: string;
 };
 
 const ALL_TARGETS: SyncTarget[] = ["customers", "products", "bom-components", "proposals", "sales-orders"];
@@ -337,6 +348,42 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepExecut
   };
 }
 
+async function runBomAutoApplyStep(mode: SyncMode): Promise<BomAutoApplyStep> {
+  const startedAt = nowStamp();
+  const started = Date.now();
+
+  if (mode !== "apply") {
+    return {
+      status: "SKIPPED",
+      startedAt,
+      finishedAt: nowStamp(),
+      durationMs: Date.now() - started,
+      report: null,
+      reason: "Auto apply de BOM só roda em modo --apply.",
+    };
+  }
+
+  try {
+    const report = await runNomusBomAutoApplyAfterSync({ mode: "APPLY" });
+    return {
+      status: report.totals.parentsErrored > 0 ? "FAILED" : "SUCCESS",
+      startedAt,
+      finishedAt: nowStamp(),
+      durationMs: Date.now() - started,
+      report,
+    };
+  } catch (err) {
+    return {
+      status: "FAILED",
+      startedAt,
+      finishedAt: nowStamp(),
+      durationMs: Date.now() - started,
+      report: null,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 async function main() {
   try {
     const { mode, only } = parseArgs();
@@ -346,6 +393,8 @@ async function main() {
 
     const startedAt = nowStamp();
     const results: StepResult[] = [];
+    let bomAutoApply: BomAutoApplyStep | null = null;
+    let stopAfterFailure = false;
 
     for (const target of ALL_TARGETS) {
       if (!only.includes(target)) {
@@ -363,12 +412,39 @@ async function main() {
         continue;
       }
 
+      if (stopAfterFailure) {
+        results.push({
+          target,
+          status: "SKIPPED",
+          command: null,
+          startedAt: nowStamp(),
+          finishedAt: nowStamp(),
+          durationMs: 0,
+          exitCode: null,
+          logFile: null,
+          reason: "Etapa anterior falhou.",
+        });
+        continue;
+      }
+
       const execution = runStep(target, mode, logDir);
       results.push(execution.step);
       await persistIntegrationRunBestEffort(execution.step, execution.stdout, execution.stderr);
 
       if (execution.step.status === "FAILED") {
-        break;
+        stopAfterFailure = true;
+        continue;
+      }
+
+      if (
+        target === "bom-components" &&
+        execution.step.status === "SUCCESS" &&
+        only.includes("bom-components")
+      ) {
+        bomAutoApply = await runBomAutoApplyStep(mode);
+        if (bomAutoApply.status === "FAILED") {
+          stopAfterFailure = true;
+        }
       }
     }
 
@@ -379,7 +455,12 @@ async function main() {
       finishedAt: nowStamp(),
       logDir,
       results,
-      success: results.every((r) => r.status === "SUCCESS" || r.status === "SKIPPED"),
+      bomAutoApply,
+      success:
+        results.every((r) => r.status === "SUCCESS" || r.status === "SKIPPED") &&
+        (bomAutoApply == null ||
+          bomAutoApply.status === "SUCCESS" ||
+          bomAutoApply.status === "SKIPPED"),
     };
 
     console.log(JSON.stringify(summary, null, 2));

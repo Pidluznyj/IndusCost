@@ -47,6 +47,7 @@ npm run test:nomus:master-data-equalize
 npm run test:nomus:engineering-action-plan
 npm run test:nomus:engineering-release-check
 npm run test:nomus:bom-apply-after-master-data
+npm run test:nomus:auto-sync-bom-apply
 npm run test:nomus:engineering-release-ready
 ```
 
@@ -184,6 +185,34 @@ npm run sync:nomus:master-data-history-backfill -- --confirm="BACKFILL HISTORICO
 ```bash
 npm run sync:nomus:bom-apply-one -- --parentCode=611.48AA --confirm="APLICAR BOM NOMUS 611.48AA"
 npm run sync:nomus:bom-apply-one -- --parentCode=304.02AA --confirm="APLICAR BOM NOMUS 304.02AA"
+```
+
+### 9.3b Auto apply BOM após sync Nomus (rotina automática)
+
+Fase: `NOMUS-AUTO-SYNC-APPLY-BOM-TRUTH-A`.
+
+Após `npm run sync:nomus:all:apply` (ou rotina diária `runNomusDailySync.sh apply`):
+
+1. Conferir relatório: `docs/generated/nomus-auto-sync-bom-apply-report.md`
+2. Validar piloto 307.05AA:
+
+```bash
+npm run sync:nomus:bom-apply-preview -- --parentCode=307.05AA
+```
+
+Esperado: `canApply=true`, ações majoritariamente `KEEP_PRODUCT_BOM_LINE`,
+sem `UPDATE_PRODUCT_BOM_QUANTITY` pendente.
+
+3. Conferir ProductBOM:
+   - `115.01--` = `0.001268`
+   - `121.16--` = `0.000033`
+4. Histórico: entries com `changeOrigin=NOMUS_SYNC`, `changedBy=nomus-auto-sync`.
+
+Comando manual (fora do orquestrador):
+
+```bash
+npm run sync:nomus:bom-auto-apply              # dry-run
+npm run sync:nomus:bom-auto-apply -- --apply   # aplica todos os elegíveis
 ```
 
 Cada apply imprime `--- RESUMO ---` com `status`, contagens e `runId`.

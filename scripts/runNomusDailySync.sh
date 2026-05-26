@@ -115,6 +115,12 @@ sleep 120
 run_target "bom-components"
 
 echo
+echo "=== BOM AUTO-APPLY ==="
+echo "A etapa bom-components acima já dispara apply automático de ProductBOM"
+echo "via nomusSyncOrchestrator (modo apply, após sync de bom-components)."
+echo "Relatório: docs/generated/nomus-auto-sync-bom-apply-report.md"
+
+echo
 echo "=== PAUSA ENTRE BOM-COMPONENTS E PROPOSALS ==="
 sleep 180
 

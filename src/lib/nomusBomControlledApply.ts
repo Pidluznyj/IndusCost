@@ -1176,6 +1176,8 @@ export async function applyEffectiveBomToProductBom(input: {
   planHash: string;
   confirmationText: string;
   approvedBy?: string;
+  /** Origem de auditoria em EngineeringSyncRun.summaryJson (ex.: NOMUS_AUTO_SYNC_BOM_APPLY). */
+  auditOrigin?: string;
 }): Promise<ControlledApplyResult> {
   const trimmed = input.parentCode.trim();
   const preview = await buildControlledApplyPreview(trimmed);
@@ -1288,7 +1290,7 @@ export async function applyEffectiveBomToProductBom(input: {
         const before = currentById.get(action.keepBomLineId);
         const updated = await tx.productBOM.update({
           where: { id: action.keepBomLineId },
-          data: { quantity: action.effectiveQuantity ?? 0 },
+          data: { quantity: action.effectiveQuantity ?? 0, lossPercentage: 0 },
         });
         await tx.nomusBomApplyRunLine.create({
           data: {
@@ -1333,7 +1335,7 @@ export async function applyEffectiveBomToProductBom(input: {
         const before = currentById.get(action.productBomLineId);
         const updated = await tx.productBOM.update({
           where: { id: action.productBomLineId },
-          data: { quantity: action.effectiveQuantity ?? 0 },
+          data: { quantity: action.effectiveQuantity ?? 0, lossPercentage: 0 },
         });
         await tx.nomusBomApplyRunLine.create({
           data: {
@@ -1370,20 +1372,13 @@ export async function applyEffectiveBomToProductBom(input: {
           }
         }
 
-        const existingLoss =
-          beforeRows.find(
-            (r) =>
-              (target.materialId && r.materialId === target.materialId) ||
-              (target.childProductId && r.childProductId === target.childProductId)
-          )?.lossPercentage ?? 0;
-
         const created = await tx.productBOM.create({
           data: {
             productId,
             materialId: target.materialId,
             childProductId: target.childProductId,
             quantity: target.quantity,
-            lossPercentage: existingLoss,
+            lossPercentage: 0,
           },
         });
 
@@ -1474,6 +1469,7 @@ export async function applyEffectiveBomToProductBom(input: {
     planHash: preview.planHash,
     confirmationText: input.confirmationText.trim(),
     approvedBy: input.approvedBy?.trim() || null,
+    auditOrigin: input.auditOrigin,
     actions: preview.actions,
     summary,
     resultStatus,
@@ -1508,6 +1504,7 @@ async function syncBomApplyToEngineeringChangeLog(input: {
   planHash: string;
   confirmationText: string;
   approvedBy: string | null;
+  auditOrigin?: string;
   actions: ControlledApplyAction[];
   summary: ControlledApplyResult["summary"];
   resultStatus: ControlledApplyResultStatus;
@@ -1515,6 +1512,9 @@ async function syncBomApplyToEngineeringChangeLog(input: {
 }): Promise<void> {
   try {
     const totalMutations = input.summary.created + input.summary.updated + input.summary.removed;
+    const auditOrigin = input.auditOrigin ?? "BOM_APPLY_AFTER_MASTER_DATA";
+    const changeOrigin =
+      auditOrigin === "NOMUS_AUTO_SYNC_BOM_APPLY" ? "NOMUS_SYNC" : "NOMUS_ENGINEERING_APPLY";
     const run = await prisma.engineeringSyncRun.create({
       data: {
         mode: "ONE_PRODUCT",
@@ -1525,7 +1525,7 @@ async function syncBomApplyToEngineeringChangeLog(input: {
         approvedBy: input.approvedBy ?? "nomus-bom-apply",
         startedAt: new Date(),
         summaryJson: {
-          origin: "BOM_APPLY_AFTER_MASTER_DATA",
+          origin: auditOrigin,
           nomusBomApplyRunId: input.applyRunId,
           productId: input.productId,
           summary: input.summary,
@@ -1582,7 +1582,7 @@ async function syncBomApplyToEngineeringChangeLog(input: {
         productId: input.productId,
         productSku: input.parentCode,
         sourceSystem: "NOMUS",
-        changeOrigin: "NOMUS_ENGINEERING_APPLY",
+        changeOrigin,
         fieldName: op.fieldName,
         oldValue:
           refAction && refAction.currentQuantity != null
@@ -1607,7 +1607,7 @@ async function syncBomApplyToEngineeringChangeLog(input: {
         status: runStatusFinal,
         finishedAt: new Date(),
         summaryJson: {
-          origin: "BOM_APPLY_AFTER_MASTER_DATA",
+          origin: auditOrigin,
           nomusBomApplyRunId: input.applyRunId,
           productId: input.productId,
           summary: input.summary,
