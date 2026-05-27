@@ -308,12 +308,13 @@ export const NomusEngineeringStatusBoard: React.FC<{
         <Database className="h-5 w-5 mt-0.5 text-primary shrink-0" />
         <div className="flex-1">
           <h3 className="text-base font-bold text-foreground">
-            Central de Engenharia Nomus — Resumo
+            Central Engenharia Nomus — fila operacional principal
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Read-only. Os números de <strong>BOM / auto apply</strong> vêm do relatório oficial da
-            rotina <code className="font-mono">sync:nomus:all:apply</code>. Os números de{" "}
-            <strong>Cadastro mestre</strong> vêm dos diagnósticos de Carga Mestre e Igualar bases.
+            Comece pelos <strong>bloqueados</strong> abaixo. Read-only: os números de{" "}
+            <strong>BOM / auto apply</strong> vêm do relatório{" "}
+            <code className="font-mono">sync:nomus:all:apply</code>. Cadastro mestre (Carga Mestre /
+            Igualar bases) é outro assunto — não confundir com bloqueios de BOM.
           </p>
         </div>
       </div>

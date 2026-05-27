@@ -312,10 +312,13 @@ export const NomusEngineeringOperationsCockpitPanel: React.FC<Props> = ({
     <div className="space-y-4">
       <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
         <div>
-          <h3 className="text-base font-bold text-foreground">Central de Atualização Nomus</h3>
+          <h3 className="text-base font-bold text-foreground">
+            Central de Atualização Nomus — visão complementar
+          </h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Diagnóstico operacional das alterações de engenharia vindas do Nomus — o que mudou, o
-            risco e a próxima ação recomendada para cada produto.
+            Diagnóstico read-only por produto (API própria). Para equalização em massa após sync, use
+            a <strong>Central Engenharia Nomus</strong> na Visão Geral — fila principal do relatório
+            de auto apply.
           </p>
         </div>
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 flex items-start gap-2">

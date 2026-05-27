@@ -177,7 +177,9 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
         <ShieldAlert className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
         <div>
           <h4 className="text-base font-semibold">
-            {previewOnly ? "Preview de aplicação (somente leitura)" : "Aplicação controlada"}
+            {previewOnly
+              ? "Preview de aplicação (somente leitura)"
+              : "Aplicação controlada da BOM efetiva"}
           </h4>
           <p className="text-sm text-muted-foreground mt-1">
             {previewOnly

@@ -25,7 +25,7 @@ const NOMUS_MAINTENANCE_SUBTABS: { id: NomusMaintenanceTab; label: string }[] = 
   { id: "cost-impact", label: "Impacto de custo" },
   { id: "apply-plan", label: "Plano de aplicação" },
   { id: "product-import", label: "Importar produto" },
-  { id: "engineering-sync", label: "Atualizar engenharia pelo Nomus" },
+  { id: "engineering-sync", label: "Eng. Nomus (avançado)" },
   { id: "diagnostic", label: "Diagnóstico técnico" },
 ];
 
@@ -160,8 +160,10 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
           <div>
             <h3 className="text-lg font-bold text-foreground">Manutenção Nomus</h3>
             <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-              Selecione o produto uma vez para analisar todas as subtabs. Ações somente leitura/dry-run
-              — nenhuma alteração é aplicada ao IndusCost.
+              Selecione o produto uma vez para analisar todas as subtabs. As telas de{" "}
+              <strong>BOM efetiva</strong> e <strong>impacto de custo</strong> são análises prévias.
+              Alterações reais só ocorrem em ações explícitas de aplicação, importação ou
+              sincronização avançada — sempre com confirmação.
             </p>
           </div>
           {hasSelection && !changeProductMode ? (

@@ -11,60 +11,76 @@ export const NOMUS_MAINTENANCE_STEP_COPY: Record<NomusMaintenanceTab, NomusMaint
   overview: {
     title: "Visão Geral",
     description:
-      "Sem produto selecionado: Central de Atualização Nomus com fila de trabalho. Com produto selecionado: resumo da situação dele.",
+      "Sem produto: use a Central Engenharia Nomus como fila principal. Com produto selecionado: resumo e atalhos para as etapas de revisão.",
     observe:
-      "Status operacional por produto, próximas ações recomendadas e atalhos para as abas técnicas.",
+      "Status do produto, próxima ação recomendada e atalhos. BOM efetiva e impacto de custo são análises prévias.",
     nextStep:
-      "Gere o diagnóstico, escolha um produto na fila e abra-o para revisar antes de qualquer aplicação.",
+      "Atualize a Central Engenharia, abra um produto bloqueado, resolva pendências e aplique somente quando o preview permitir.",
   },
   pending: {
     title: "Pendências",
-    description: "Resolva decisões humanas: opcionais de precificação e itens locais do IndusCost.",
-    observe: "Opcionais pendentes ou desatualizados e itens locais aguardando inclusão/exclusão.",
-    nextStep: "Após resolver, confira a BOM efetiva e o impacto de custo.",
+    description:
+      "Decisões humanas antes de aplicar BOM: opcionais de precificação e itens locais somente IndusCost.",
+    observe: "Opcionais pendentes ou desatualizados e itens locais aguardando decisão.",
+    nextStep: "Salve as decisões aqui; depois confira BOM efetiva e impacto de custo (preview).",
   },
   "effective-pricing-bom": {
     title: "BOM efetiva",
     description:
-      "Mostra quais itens entram ou saem da precificação considerando Nomus, opcionais e decisões locais.",
+      "Análise prévia: quais itens entram na precificação considerando Nomus, opcionais e decisões locais. Não altera ProductBOM.",
     observe: "Linhas incluídas, excluídas e em revisão; status da BOM efetiva.",
-    nextStep: "Se estiver pronta, abra Impacto de custo para comparar custos em preview.",
+    nextStep: "Se estiver pronta, abra Impacto de custo (também preview) antes do plano de aplicação.",
   },
   "cost-impact": {
     title: "Impacto de custo",
     description:
-      "Compara o custo atual com o custo simulado pela BOM efetiva. É apenas preview.",
+      "Compara o custo atual com o custo simulado pela BOM efetiva. Somente preview — não altera custo oficial nem preço.",
     observe: "Totais, diferença em R$ e %, e linhas com maior variação.",
-    nextStep: "Revise o plano de aplicação (simulação) antes de qualquer decisão futura.",
+    nextStep: "Revise o plano de aplicação: simulação legada e, se liberado, aplicação controlada com confirmação.",
   },
   "apply-plan": {
     title: "Plano de aplicação",
-    description: "Mostra o que poderia ser alterado futuramente. Nenhuma alteração é aplicada.",
-    observe: "Ações simuladas, bloqueios, opcionais e classificação de risco.",
-    nextStep: "Use o diagnóstico técnico para auditar divergências linha a linha.",
+    description:
+      "Duas camadas: (1) simulação do plano legado (read-only) e (2) aplicação controlada da BOM efetiva, somente com confirmação explícita quando canApply=true.",
+    observe:
+      "Primeiro a tabela de simulação; abaixo, o bloco de aplicação controlada com texto de confirmação obrigatório.",
+    nextStep:
+      "Resolva bloqueios em Pendências antes de aplicar. Use Diagnóstico técnico só se precisar auditar linha a linha.",
   },
   "product-import": {
     title: "Importar produto do Nomus",
     description:
-      "Fluxo para produto oficial Nomus ainda ausente no IndusCost. Cria cadastro e ProductBOM inicial para simulação — separado da aplicação de BOM em produto existente.",
+      "Para produto Nomus ainda ausente no IndusCost. Cria cadastro e estrutura inicial — ação real com confirmação explícita.",
     observe:
       "Produto principal, componentes a criar/usar, BOM planejada, opcionais pendentes e itens sem custo.",
     nextStep:
-      "Após importar com confirmação explícita, abra o cadastro e a Análise de Custo (pode ficar incompleta).",
+      "Após importar, volte à Visão Geral e siga o fluxo: Pendências → BOM efetiva → Plano de aplicação.",
   },
   "engineering-sync": {
-    title: "Atualizar engenharia pelo Nomus",
+    title: "Atualizar engenharia pelo Nomus (avançado)",
     description:
-      "Mantém Produto e ProductBOM alinhados com o Nomus. Cria/atualiza linhas, remove itens que saíram da BOM Nomus e marca o produto como controlado pelo Nomus.",
+      "Ferramenta técnica/administrativa de reconciliação em lote. Pode criar, atualizar e remover linhas de ProductBOM com confirmação.",
     observe:
-      "Diferenças por linha (antes/depois), bloqueios por ambiguidade ou opcional pendente, pendências de custo/roteiro.",
+      "Plano de sincronização por linha, bloqueios e resultado após apply. Preferir o fluxo operacional padrão na maioria dos casos.",
     nextStep:
-      "Aplique com confirmação textual. Custo/preço não são publicados automaticamente — revise depois.",
+      "Fluxo recomendado: Central Engenharia → Pendências → BOM efetiva → Plano de aplicação (aplicação controlada).",
   },
   diagnostic: {
     title: "Diagnóstico técnico",
-    description: "Mostra a comparação detalhada entre Nomus e IndusCost para auditoria.",
-    observe: "Comparação de linhas, classificação técnica e resumo do plano simulado.",
-    nextStep: "Volte às pendências se houver bloqueios ou opcionais em aberto.",
+    description:
+      "Área de suporte técnico e auditoria. Não é etapa obrigatória do fluxo operacional do estagiário.",
+    observe: "Comparação detalhada Nomus × IndusCost, classificação técnica e relatórios em lote.",
+    nextStep: "Use apenas para investigação ou suporte. Para operação diária, use a Central Engenharia.",
   },
 };
+
+/** Passos do fluxo operacional exibidos na Visão Geral. */
+export const NOMUS_OPERATIONAL_WORKFLOW_STEPS: string[] = [
+  "Atualize a Central Engenharia Nomus (botão no painel).",
+  "Abra produtos bloqueados pela fila ou pela busca.",
+  "Resolva pendências (opcionais e itens locais).",
+  "Confira a BOM efetiva (análise prévia).",
+  "Confira o impacto de custo (análise prévia).",
+  "Aplique somente quando o preview de aplicação controlada permitir (confirmação obrigatória).",
+  "Revalide na Central Engenharia se o produto saiu de bloqueado.",
+];

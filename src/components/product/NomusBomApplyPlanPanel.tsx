@@ -202,12 +202,20 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
       {loading && !report ? (
         <p className="text-xs text-muted-foreground flex items-center gap-2">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Gerando plano de aplicaÃ§Ã£o (simulaÃ§Ã£o)â€¦
+          Gerando simulação do plano…
         </p>
       ) : null}
 
       {report && summary ? (
         <div className="space-y-4">
+          <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2 text-[11px] text-sky-950">
+            <p className="font-semibold">Simulação do plano (read-only)</p>
+            <p className="mt-0.5 text-sky-900/90">
+              A tabela abaixo não altera ProductBOM. A aplicação real está no bloco seguinte,
+              &quot;Aplicação controlada da BOM efetiva&quot;, somente com confirmação quando
+              canApply=true.
+            </p>
+          </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
             {[
               { label: "Importar produto", value: summary.importProductActions },
@@ -233,22 +241,22 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
 
           {primaryPlan?.optionalPricingStatus === "RESOLVED" ? (
             <p className="text-sm text-green-900 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-              Opcionais resolvidos para este produto. Consulte a aba BOM efetiva para ver o que entrarÃ¡ na
-              precificaÃ§Ã£o.
+              Opcionais resolvidos para este produto. Consulte a aba BOM efetiva para ver o que entrará na
+              precificação.
             </p>
           ) : primaryPlan?.optionalPricingStatus === "PENDING" ||
             primaryPlan?.optionalPricingStatus === "STALE" ? (
             <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              Opcionais pendentes ou desatualizados. A BOM efetiva deste produto ainda nÃ£o estÃ¡ pronta.
+              Opcionais pendentes ou desatualizados. A BOM efetiva deste produto ainda não está pronta.
             </p>
           ) : null}
 
           {primaryPlan ? (
             <div className="rounded-lg border border-border bg-background px-4 py-3 text-sm space-y-2">
               <p>
-                <span className="font-semibold">ClassificaÃ§Ã£o: </span>
-                {primaryPlan.classification.actionClass?.replace(/_/g, " ") ?? "â€”"}
-                {" Â· "}
+                <span className="font-semibold">Classificação: </span>
+                {primaryPlan.classification.actionClass?.replace(/_/g, " ") ?? "—"}
+                {" · "}
                 <span className="font-semibold">Risco: </span>
                 {formatNomusStatusLabel(primaryPlan.classification.riskLevel, CLASSIFICATION_RISK_LABEL)}
               </p>
@@ -259,7 +267,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
                     <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
                       <tr>
                         <th className="text-left px-2 py-2">Componente</th>
-                        <th className="text-left px-2 py-2">AÃ§Ã£o simulada</th>
+                        <th className="text-left px-2 py-2">Ação simulada</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -288,7 +296,7 @@ export const NomusBomApplyPlanPanel: React.FC<NomusBomApplyPlanPanelProps> = ({
                 className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
               >
                 <GitCompareArrows className="h-4 w-4" />
-                Ver anÃ¡lise completa (opcional)
+                Ver análise completa (opcional)
               </button>
             </div>
           ) : null}

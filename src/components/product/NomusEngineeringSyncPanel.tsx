@@ -15,6 +15,7 @@ import type {
   EngineeringBomActionPlan,
   EngineeringSyncPlan,
 } from "@/src/lib/nomusEngineeringReconciliationTypes";
+import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMaintenanceStepHeader";
 
 const BOM_ACTION_LABEL: Record<EngineeringBomActionPlan["actionType"], string> = {
   CREATE_PRODUCT_BOM_LINE: "Criar linha",
@@ -169,6 +170,15 @@ export const NomusEngineeringSyncPanel: React.FC<Props> = ({
 
   return (
     <div className="space-y-4 p-3 sm:p-4">
+      <NomusMaintenanceStepHeader tab="engineering-sync" />
+      <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-950 space-y-1">
+        <p className="font-bold uppercase tracking-wide text-[10px]">Uso avançado</p>
+        <p>
+          Ferramenta técnica/administrativa. Pode alterar ProductBOM com confirmação.{" "}
+          <strong>Fluxo recomendado:</strong> Central Engenharia → Pendências → BOM efetiva → Plano
+          de aplicação (aplicação controlada).
+        </p>
+      </div>
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex-1 min-w-[180px]">
           <label className="text-[10px] uppercase font-bold text-muted-foreground">

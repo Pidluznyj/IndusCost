@@ -24,6 +24,7 @@ import { NomusMaintenanceStepHeader } from "@/src/components/product/NomusMainte
 import { NomusEngineeringOperationsCockpitPanel } from "@/src/components/product/NomusEngineeringOperationsCockpitPanel";
 import { NomusMasterDataImportPanel } from "@/src/components/product/NomusMasterDataImportPanel";
 import { NomusEngineeringStatusBoard } from "@/src/components/product/NomusEngineeringStatusBoard";
+import { NomusOperationalWorkflowGuide } from "@/src/components/product/NomusOperationalWorkflowGuide";
 import { ProductReleaseChecklist } from "@/src/components/product/ProductReleaseChecklist";
 import type {
   NomusMaintenanceTab,
@@ -305,6 +306,12 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
       <div className="space-y-4">
         <NomusMaintenanceStepHeader tab="overview" />
         <NomusMaintenanceProductBanner />
+        <NomusOperationalWorkflowGuide />
+        <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+          <strong>Fila principal:</strong> comece pelos bloqueados na Central Engenharia Nomus abaixo.
+          Abra um produto, resolva pendências e aplique somente quando o preview de aplicação
+          controlada permitir.
+        </p>
         <NomusEngineeringStatusBoard
           disabled={disabled}
           onOpenProduct={(parentCode, options) => {
@@ -322,22 +329,36 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
           }}
         />
         <NomusMasterDataImportPanel disabled={disabled} />
-        <NomusEngineeringOperationsCockpitPanel
-          disabled={disabled}
-          onOpenProduct={(parentCode, options) => {
-            const selection: NomusWorkspaceParentSelection = {
-              parentCode,
-              parentDescription: null,
-              indusProductId: null,
-              option: null,
-            };
-            onWorkspaceParentChange?.(selection);
-            const nextTab: NomusMaintenanceTab = isMaintenanceTab(options?.tab)
-              ? (options!.tab as NomusMaintenanceTab)
-              : "overview";
-            onNavigateTab(nextTab);
-          }}
-        />
+        <details className="rounded-xl border border-border/80 bg-card/40 group">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <span className="inline-flex items-center gap-2">
+              Central de Atualização Nomus — visão complementar (técnica)
+              <span className="text-[10px] font-normal opacity-70">clique para expandir</span>
+            </span>
+          </summary>
+          <div className="px-2 pb-3 pt-1 border-t border-border/60">
+            <p className="text-[11px] text-muted-foreground px-2 pb-2">
+              Fila alternativa read-only. Para operação diária, prefira a Central Engenharia Nomus
+              (relatório de auto apply) acima.
+            </p>
+            <NomusEngineeringOperationsCockpitPanel
+              disabled={disabled}
+              onOpenProduct={(parentCode, options) => {
+                const selection: NomusWorkspaceParentSelection = {
+                  parentCode,
+                  parentDescription: null,
+                  indusProductId: null,
+                  option: null,
+                };
+                onWorkspaceParentChange?.(selection);
+                const nextTab: NomusMaintenanceTab = isMaintenanceTab(options?.tab)
+                  ? (options!.tab as NomusMaintenanceTab)
+                  : "overview";
+                onNavigateTab(nextTab);
+              }}
+            />
+          </div>
+        </details>
       </div>
     );
   }
@@ -350,6 +371,7 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
         description={selectedParentDescription}
         compact
       />
+      <NomusOperationalWorkflowGuide />
       <ProductReleaseChecklist parentCode={selectedParentCode} />
       {loading ? (
         <p className="text-sm text-muted-foreground flex items-center gap-2">
