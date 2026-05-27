@@ -74,13 +74,39 @@ export const NOMUS_MAINTENANCE_STEP_COPY: Record<NomusMaintenanceTab, NomusMaint
   },
 };
 
+export type NomusOperationalWorkflowStep = {
+  title: string;
+  description: string;
+};
+
 /** Passos do fluxo operacional exibidos na Visão Geral. */
-export const NOMUS_OPERATIONAL_WORKFLOW_STEPS: string[] = [
-  "Atualize a Central Engenharia Nomus (botão no painel).",
-  "Abra produtos bloqueados pela fila ou pela busca.",
-  "Resolva pendências (opcionais e itens locais).",
-  "Confira a BOM efetiva (análise prévia).",
-  "Confira o impacto de custo (análise prévia).",
-  "Aplique somente quando o preview de aplicação controlada permitir (confirmação obrigatória).",
-  "Revalide na Central Engenharia se o produto saiu de bloqueado.",
+export const NOMUS_OPERATIONAL_WORKFLOW_STEPS: NomusOperationalWorkflowStep[] = [
+  {
+    title: "Atualize a Central Engenharia",
+    description: "Atualize o painel da Central Engenharia Nomus pelo botão no painel.",
+  },
+  {
+    title: "Abra produtos bloqueados",
+    description: "Escolha um produto na fila de bloqueados ou pela busca.",
+  },
+  {
+    title: "Resolva pendências",
+    description: "Trate opcionais de precificação e itens locais somente IndusCost.",
+  },
+  {
+    title: "Confira a BOM efetiva",
+    description: "Revise a análise prévia antes de qualquer aplicação.",
+  },
+  {
+    title: "Confira impacto de custo",
+    description: "Compare o custo simulado com o atual — também é preview.",
+  },
+  {
+    title: "Aplique somente quando permitido",
+    description: "Use a aplicação controlada apenas com confirmação explícita.",
+  },
+  {
+    title: "Revalide se saiu de bloqueado",
+    description: "Volte à Central Engenharia e confirme que o produto foi liberado.",
+  },
 ];
