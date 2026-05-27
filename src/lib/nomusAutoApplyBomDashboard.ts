@@ -357,6 +357,7 @@ export async function buildNomusAutoApplyBomDashboard(input: {
       needsReportRegeneration: false,
       regenerateReportCommand: null,
       productListSource: null,
+      checklistMdPath: null,
       partialReportWarning: null,
       emptyMessage: "Nenhuma rotina de auto apply BOM executada ainda.",
       lastRun: null,
@@ -398,6 +399,9 @@ export async function buildNomusAutoApplyBomDashboard(input: {
         ? "ENGINEERING_SYNC_RUN"
         : "REPORT_FILE";
 
+  const checklistMdPath = join(process.cwd(), "docs/generated/nomus-engineering-validation-checklist.md");
+  const checklistExists = existsSync(checklistMdPath);
+
   return {
     generatedAt: new Date().toISOString(),
     mode: "READ_ONLY",
@@ -407,6 +411,7 @@ export async function buildNomusAutoApplyBomDashboard(input: {
     needsReportRegeneration,
     regenerateReportCommand: needsReportRegeneration ? NOMUS_AUTO_APPLY_REGENERATE_COMMAND : null,
     productListSource: parsed.productListSource,
+    checklistMdPath: checklistExists ? checklistMdPath : null,
     partialReportWarning,
     emptyMessage: null,
     lastRun: {

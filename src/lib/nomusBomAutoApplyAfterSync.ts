@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { serializeAutoApplyReportForDisk } from "@/src/lib/nomusAutoApplyBomReportParser";
+import { buildEngineeringValidationChecklistMarkdown } from "@/src/lib/nomusEngineeringValidationChecklist";
 import {
   countDistinctParentCodesInStage,
   listDistinctParentCodesFromStage,
@@ -298,6 +299,13 @@ function writeReportFiles(
   const latestJson = join(reportDir, "nomus-auto-sync-bom-apply-report.json");
   writeFileSync(latestMd, buildAutoApplyReportMarkdown(report), "utf8");
   writeFileSync(latestJson, serialized, "utf8");
+
+  const checklistMd = buildEngineeringValidationChecklistMarkdown({
+    generatedAt: report.generatedAt,
+    totals: report.totals,
+    products: report.products,
+  });
+  writeFileSync(join(reportDir, "nomus-engineering-validation-checklist.md"), checklistMd, "utf8");
 
   return { mdPath, jsonPath };
 }

@@ -75,6 +75,7 @@ export type AutoApplyBomDashboardResult = {
   needsReportRegeneration: boolean;
   regenerateReportCommand: string | null;
   productListSource: string | null;
+  checklistMdPath: string | null;
   partialReportWarning: string | null;
   emptyMessage: string | null;
   lastRun: AutoApplyBomDashboardLastRun | null;

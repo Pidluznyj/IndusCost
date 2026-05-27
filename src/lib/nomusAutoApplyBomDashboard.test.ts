@@ -8,6 +8,7 @@ import {
   buildNomusAutoApplyBomDashboard,
   classifyAutoApplyProduct,
 } from "./nomusAutoApplyBomDashboard";
+import { buildEngineeringValidationChecklistMarkdown } from "./nomusEngineeringValidationChecklist";
 import {
   enrichDashboardProductRow,
   filterDashboardProducts,
@@ -281,5 +282,20 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
     assert.ok(result.partialReportWarning?.includes("389 bloqueados"));
     assert.equal(result.regenerateReportCommand, "npm run sync:nomus:all:apply");
     assert.equal(result.products.length, 0);
+  });
+});
+
+describe("nomusEngineeringValidationChecklist", () => {
+  it("gera checklist com 308.05AB e ações previstas", () => {
+    const md = buildEngineeringValidationChecklistMarkdown({
+      generatedAt: "2026-05-26T10:00:00.000Z",
+      totals: SAMPLE_TOTALS,
+      products: [SAMPLE_308],
+    });
+    assert.ok(md.includes("308.05AB"));
+    assert.ok(md.includes("UPDATE_PRODUCT_BOM_QUANTITY"));
+    assert.ok(md.includes("115.01--"));
+    assert.ok(md.includes("115.08--"));
+    assert.ok(md.includes("BOM efetiva"));
   });
 });

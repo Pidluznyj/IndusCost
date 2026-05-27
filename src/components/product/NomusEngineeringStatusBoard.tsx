@@ -399,6 +399,9 @@ export const NomusEngineeringStatusBoard: React.FC<{
                       <> · batch <code className="font-mono">{autoApply.lastRun.batchRunId.slice(0, 8)}…</code></>
                     ) : null}
                     {autoApply.source === "REPORT_FILE" ? " · relatório JSON" : " · run batch (fallback)"}
+                    {autoApply.productListSource ? (
+                      <> · lista em <code className="font-mono">{autoApply.productListSource}</code></>
+                    ) : null}
                   </p>
                 ) : null}
 
@@ -435,12 +438,25 @@ export const NomusEngineeringStatusBoard: React.FC<{
                       tone={card.tone}
                       label={card.label}
                       value={card.value}
-                      hint={card.hint}
-                      active={filter === card.filter}
-                      onClick={() => applyCardFilter(card.filter)}
+                      hint={
+                        autoApply.hasProductList
+                          ? card.hint
+                          : `${card.hint} (filtro disponível após regenerar relatório)`
+                      }
+                      active={autoApply.hasProductList && filter === card.filter}
+                      onClick={
+                        autoApply.hasProductList ? () => applyCardFilter(card.filter) : undefined
+                      }
                     />
                   ))}
                 </div>
+
+                {autoApply.checklistMdPath ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    Checklist operacional gerado:{" "}
+                    <code className="font-mono">docs/generated/nomus-engineering-validation-checklist.md</code>
+                  </p>
+                ) : null}
 
                 {autoApply.hasProductList && autoApply.blockingReasonBuckets.length > 0 ? (
                   <div className="rounded-lg border border-border bg-card p-2.5 space-y-1.5">
