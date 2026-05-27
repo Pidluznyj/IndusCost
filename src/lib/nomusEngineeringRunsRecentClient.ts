@@ -9,6 +9,7 @@ export type EngineeringRunRecentOrigin =
   | "MASTER_DATA_EQUALIZE"
   | "BOM_APPLY_AFTER_MASTER_DATA"
   | "MASTER_DATA_HISTORY_BACKFILL"
+  | "NOMUS_SYNC"
   | null;
 
 export type EngineeringRunRecentItem = {

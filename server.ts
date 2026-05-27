@@ -119,6 +119,10 @@ import {
   listEngineeringChangeLog,
 } from "./src/lib/nomusEngineeringReconciliation.js";
 import { buildNomusEngineeringOperationsCockpit } from "./src/lib/nomusEngineeringOperationsCockpit.js";
+import {
+  buildNomusAutoApplyBomDashboard,
+  normalizeAutoApplyFilter,
+} from "./src/lib/nomusAutoApplyBomDashboard.js";
 import { buildNomusEngineeringEqualizationActionPlan } from "./src/lib/nomusEngineeringEqualizationActionPlan.js";
 import {
   applyNomusMasterDataImport,
@@ -4505,6 +4509,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             case "MASTER_DATA_HISTORY_BACKFILL":
               label = "Backfill de histórico";
               break;
+            case "NOMUS_SYNC":
+              label = "Auto apply BOM Nomus (batch)";
+              break;
             default:
               label = r.parentCode ? `Sync engenharia · ${r.parentCode}` : "Sync engenharia";
           }
@@ -4534,6 +4541,42 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         console.error("GET /api/nomus/engineering-runs/recent", error);
         return res.status(500).json({
           error: "ENGINEERING_RUNS_RECENT_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/auto-apply-bom-dashboard",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.tab.bom",
+      "products.tab.tree",
+      "products.tab.cost",
+      "products.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const filter = normalizeAutoApplyFilter(
+          req.query.filter != null ? String(req.query.filter) : undefined
+        );
+        const search =
+          req.query.search != null && String(req.query.search).trim()
+            ? String(req.query.search).trim()
+            : undefined;
+
+        const result = await buildNomusAutoApplyBomDashboard({ filter, search });
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao montar dashboard de auto apply BOM Nomus.";
+        console.error("GET /api/nomus/auto-apply-bom-dashboard", error);
+        return res.status(500).json({
+          error: "AUTO_APPLY_BOM_DASHBOARD_FAILED",
           message,
         });
       }

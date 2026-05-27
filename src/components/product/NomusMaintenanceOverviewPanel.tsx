@@ -305,7 +305,19 @@ export const NomusMaintenanceOverviewPanel: React.FC<NomusMaintenanceOverviewPan
       <div className="space-y-4">
         <NomusMaintenanceStepHeader tab="overview" />
         <NomusMaintenanceProductBanner />
-        <NomusEngineeringStatusBoard disabled={disabled} />
+        <NomusEngineeringStatusBoard
+          disabled={disabled}
+          onOpenProduct={(parentCode) => {
+            const selection: NomusWorkspaceParentSelection = {
+              parentCode,
+              parentDescription: null,
+              indusProductId: null,
+              option: null,
+            };
+            onWorkspaceParentChange?.(selection);
+            onNavigateTab("overview");
+          }}
+        />
         <NomusMasterDataImportPanel disabled={disabled} />
         <NomusEngineeringOperationsCockpitPanel
           disabled={disabled}
