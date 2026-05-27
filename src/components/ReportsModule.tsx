@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Info,
   RefreshCw,
+  Search,
 } from "lucide-react";
 import {
   BarChart,
@@ -269,6 +270,17 @@ export const ReportsModule = () => {
 
   const handlePrint = () => window.print();
 
+  const resetFilters = () => {
+    setDateFrom(defaultFrom);
+    setDateTo(new Date().toISOString().slice(0, 10));
+    setCustomerId("");
+    setResponsible("");
+    setStatus("ALL");
+    setMinNet("");
+    setMaxNet("");
+    setProductId("");
+  };
+
   return (
     <div id="reports-print-root" className="space-y-6 text-foreground" data-tour="reports-root">
       <header className="reports-print-break border-b border-border pb-4">
@@ -386,6 +398,38 @@ export const ReportsModule = () => {
             />
           </div>
         </div>
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-border/60">
+          <button
+            type="button"
+            onClick={resetFilters}
+            disabled={loading}
+            className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-card text-sm font-semibold hover:bg-accent disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Limpar filtros
+          </button>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed min-w-[9.5rem]"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Pesquisando...
+              </>
+            ) : (
+              <>
+                <Search className="h-4 w-4" aria-hidden />
+                Pesquisar
+              </>
+            )}
+          </button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Os relatórios também atualizam ao alterar um filtro. Use <strong className="font-semibold">Pesquisar</strong>{" "}
+          para recarregar com os valores atuais.
+        </p>
       </section>
 
       {data?.disclaimers && data.disclaimers.length > 0 && (
