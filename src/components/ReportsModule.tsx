@@ -32,8 +32,6 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { REPORTS_TOUR_STEPS } from "@/src/tours/reportsTourSteps";
 import type { Customer } from "@/src/types/commercial";
-import type { ProposalStatus } from "@/src/types/commercial";
-import { STATUS_FUNNEL_META } from "@/src/lib/salesFunnel";
 
 type ReportsData = {
   generatedAt: string;
@@ -49,42 +47,35 @@ type ReportsData = {
   };
   disclaimers: string[];
   commercial: {
-    proposalCount: number;
+    orderCount: number;
     totalNet: number;
-    approvedNet: number;
-    pipelineOpenNet: number;
-    weightedPipeline: number;
+    sentToNomusNet: number;
+    openOrdersNet: number;
+    cancelledCount: number;
+    sentToNomusCount: number;
+    openOrdersCount: number;
     ticketAvg: number;
-    conversionRate: number | null;
-    closedWon: number;
-    closedLost: number;
     byStatus: Record<string, { count: number; netSum: number }>;
     byResponsible: Array<{ responsible: string; count: number; netSum: number }>;
-    byMonth: Array<{ month: string; count: number; netSum: number; approvedNet: number }>;
-    staleProposals: Array<{
-      number: number;
+    byMonth: Array<{ month: string; count: number; netSum: number; sentToNomusNet: number }>;
+    staleOrders: Array<{
+      orderCode: string;
       status: string;
       customerName: string;
       responsible: string;
       totalNetValue: number;
       daysSinceUpdate: number;
     }>;
-    validityExpiredOpen: Array<{
-      number: number;
-      status: string;
-      customerName: string;
-      daysOpen: number;
-    }>;
     topCustomersByNet: Array<{
       customerId: string;
       companyName: string;
       netSum: number;
-      proposalCount: number;
+      orderCount: number;
     }>;
     topCustomersByCount: Array<{
       customerId: string;
       companyName: string;
-      proposalCount: number;
+      orderCount: number;
       netSum: number;
     }>;
   };
@@ -106,8 +97,8 @@ type ReportsData = {
     }>;
     inactiveInPeriod: Array<{
       companyName: string;
-      proposalCount: number;
-      lastProposalAt: string;
+      orderCount: number;
+      lastOrderAt: string;
     }>;
   };
   products: {
@@ -119,6 +110,7 @@ type ReportsData = {
       revenue: number;
       marginSum: number;
       lines: number;
+      orders: number;
     }>;
   };
   costing: {
@@ -136,22 +128,28 @@ type ReportsData = {
   };
   executive: {
     previousPeriod: {
-      proposalCount: number;
+      orderCount: number;
       totalNet: number;
-      approvedNet: number;
+      sentToNomusNet: number;
     } | null;
   };
 };
 
-const STATUS_FILTER: { value: ProposalStatus | "ALL"; label: string }[] = [
+const SALES_ORDER_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Rascunho",
+  READY_TO_SEND: "Pronto para envio",
+  SENT_TO_NOMUS: "Enviado ao Nomus",
+  CANCELLED: "Cancelado",
+  ERROR: "Erro",
+};
+
+const STATUS_FILTER: { value: string; label: string }[] = [
   { value: "ALL", label: "Todos os status" },
-  { value: "DRAFT", label: "Rascunho" },
-  { value: "ANALYSIS", label: "Em análise" },
-  { value: "SENT", label: "Enviada" },
-  { value: "APPROVED", label: "Aprovada" },
-  { value: "REJECTED", label: "Rejeitada" },
-  { value: "EXPIRED", label: "Expirada" },
-  { value: "CANCELED", label: "Cancelada" },
+  { value: "DRAFT", label: SALES_ORDER_STATUS_LABELS.DRAFT },
+  { value: "READY_TO_SEND", label: SALES_ORDER_STATUS_LABELS.READY_TO_SEND },
+  { value: "SENT_TO_NOMUS", label: SALES_ORDER_STATUS_LABELS.SENT_TO_NOMUS },
+  { value: "CANCELLED", label: SALES_ORDER_STATUS_LABELS.CANCELLED },
+  { value: "ERROR", label: SALES_ORDER_STATUS_LABELS.ERROR },
 ];
 
 const TAB_OPTS = [
@@ -182,7 +180,7 @@ export const ReportsModule = () => {
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [customerId, setCustomerId] = useState("");
   const [responsible, setResponsible] = useState("");
-  const [status, setStatus] = useState<ProposalStatus | "ALL">("ALL");
+  const [status, setStatus] = useState<string>("ALL");
   const [minNet, setMinNet] = useState("");
   const [maxNet, setMaxNet] = useState("");
   const [productId, setProductId] = useState("");
@@ -253,7 +251,7 @@ export const ReportsModule = () => {
     return Object.entries(data.commercial.byStatus).map(([name, v]) => {
       const row = v as { count: number; netSum: number };
       return {
-        name: STATUS_FUNNEL_META[name as ProposalStatus]?.stageLabel ?? name,
+        name: SALES_ORDER_STATUS_LABELS[name] ?? name,
         count: row.count,
         netSum: row.netSum,
       };
@@ -288,7 +286,7 @@ export const ReportsModule = () => {
           <div>
             <h2 className="text-2xl font-bold tracking-tight">Central de relatórios gerenciais</h2>
             <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-              Indicadores comerciais, carteira, mix e custo industrial alinhados aos dados reais do IndusCost.
+              Indicadores de pedidos de venda, carteira, mix e custo industrial alinhados aos dados reais do IndusCost.
               Imprima ou salve em PDF pelo navegador (Ctrl+P).
             </p>
             {data && (
@@ -326,7 +324,7 @@ export const ReportsModule = () => {
         <p className="text-xs font-bold uppercase text-muted-foreground">Filtros globais</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
           <div>
-            <label className="text-[10px] font-bold text-muted-foreground">De</label>
+            <label className="text-[10px] font-bold text-muted-foreground">De (emissão pedido)</label>
             <input
               type="date"
               className="mt-1 w-full p-2 rounded-lg border border-border text-sm"
@@ -335,7 +333,7 @@ export const ReportsModule = () => {
             />
           </div>
           <div>
-            <label className="text-[10px] font-bold text-muted-foreground">Até</label>
+            <label className="text-[10px] font-bold text-muted-foreground">Até (emissão pedido)</label>
             <input
               type="date"
               className="mt-1 w-full p-2 rounded-lg border border-border text-sm"
@@ -355,7 +353,7 @@ export const ReportsModule = () => {
               className="mt-1 w-full p-2 rounded-lg border border-border text-sm"
               value={responsible}
               onChange={(e) => setResponsible(e.target.value)}
-              placeholder="Nome como na proposta"
+              placeholder="Nome como no pedido"
             />
           </div>
           <div className="min-w-[180px]">
@@ -368,19 +366,19 @@ export const ReportsModule = () => {
                   searchTerms: s.label,
                 }))}
                 value={status}
-                onChange={(v) => setStatus(v as ProposalStatus | "ALL")}
+                onChange={setStatus}
                 placeholder="Status"
               />
             </div>
           </div>
           <div className="min-w-[200px]">
-            <label className="text-[10px] font-bold text-muted-foreground">Produto (filtra propostas com item)</label>
+            <label className="text-[10px] font-bold text-muted-foreground">Produto (filtra pedidos com item)</label>
             <div className="mt-1">
               <SearchableSelect options={productOpts} value={productId} onChange={setProductId} placeholder="—" />
             </div>
           </div>
           <div>
-            <label className="text-[10px] font-bold text-muted-foreground">Valor líq. min</label>
+            <label className="text-[10px] font-bold text-muted-foreground">Valor pedido min</label>
             <input
               type="number"
               className="mt-1 w-full p-2 rounded-lg border border-border text-sm"
@@ -389,7 +387,7 @@ export const ReportsModule = () => {
             />
           </div>
           <div>
-            <label className="text-[10px] font-bold text-muted-foreground">Valor líq. max</label>
+            <label className="text-[10px] font-bold text-muted-foreground">Valor pedido max</label>
             <input
               type="number"
               className="mt-1 w-full p-2 rounded-lg border border-border text-sm"
@@ -483,55 +481,41 @@ export const ReportsModule = () => {
           {tab === "executive" && (
             <div className="space-y-6">
               <ReportsContextNote>
-                Os indicadores desta aba respeitam o período e filtros globais (data de criação da proposta).
-                <strong className="font-semibold text-foreground"> Valor aprovado</strong> soma propostas com status
-                Aprovada no IndusCost — não representa faturamento, NF ou pedido faturado.
+                Indicadores por <strong className="font-semibold text-foreground">data de emissão do pedido</strong>{" "}
+                (issueDate) e filtros globais. Pedidos de venda registrados no IndusCost não representam necessariamente
+                NF ou faturamento fiscal.
               </ReportsContextNote>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KpiCard label="Propostas (período)" value={String(data.commercial.proposalCount)} />
+                <KpiCard label="Pedidos (período)" value={String(data.commercial.orderCount)} />
                 <KpiCard label="Valor líq. total" value={formatCurrency(data.commercial.totalNet)} />
                 <KpiCard
-                  label="Valor aprovado"
-                  value={formatCurrency(data.commercial.approvedNet)}
-                  hint="Propostas Aprovada — não é faturamento"
+                  label="Enviados ao Nomus (líq.)"
+                  value={formatCurrency(data.commercial.sentToNomusNet)}
+                  hint="Status Enviado ao Nomus"
                 />
-                <KpiCard label="Pipeline aberto (líq.)" value={formatCurrency(data.commercial.pipelineOpenNet)} />
-                <KpiCard label="Pipeline ponderado" value={formatCurrency(data.commercial.weightedPipeline)} />
+                <KpiCard label="Pedidos em aberto (líq.)" value={formatCurrency(data.commercial.openOrdersNet)} />
                 <KpiCard label="Ticket médio" value={formatCurrency(data.commercial.ticketAvg)} />
                 <KpiCard
-                  label="Propostas ganhas (aprovadas)"
-                  value={String(data.commercial.closedWon)}
-                  hint="Status Aprovada no filtro"
+                  label="Pedidos enviados ao Nomus"
+                  value={String(data.commercial.sentToNomusCount)}
                 />
-                <KpiCard
-                  label="Propostas perdidas"
-                  value={String(data.commercial.closedLost)}
-                  hint="Rejeitada ou Cancelada"
-                />
-                <KpiCard
-                  label="Conversão (ganhas ÷ ganhas+perdidas)"
-                  value={
-                    data.commercial.conversionRate != null
-                      ? `${formatNumber(data.commercial.conversionRate * 100, 1)}%`
-                      : "—"
-                  }
-                  hint="Só conta aprovadas vs rejeitada/cancelada"
-                />
-                <KpiCard label="Propostas paradas (alerta)" value={String(data.commercial.staleProposals.length)} />
+                <KpiCard label="Pedidos em aberto" value={String(data.commercial.openOrdersCount)} />
+                <KpiCard label="Pedidos cancelados" value={String(data.commercial.cancelledCount)} />
+                <KpiCard label="Pedidos parados (alerta)" value={String(data.commercial.staleOrders.length)} />
               </div>
 
               {data.executive.previousPeriod && (
                 <div className="rounded-xl border border-border p-4 reports-print-break">
                   <h3 className="text-sm font-bold mb-2">Comparação com período anterior (mesma duração)</h3>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Mesmos filtros do período atual (cliente, responsável, status, faixa de valor líq. e produto, quando
+                    Mesmos filtros do período atual (cliente, responsável, status, faixa de valor e produto, quando
                     informados).
                   </p>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
-                      <p className="text-muted-foreground text-xs">Propostas</p>
-                      <p className="font-mono font-bold">{data.executive.previousPeriod.proposalCount}</p>
-                      <Delta cur={data.commercial.proposalCount} prev={data.executive.previousPeriod.proposalCount} />
+                      <p className="text-muted-foreground text-xs">Pedidos</p>
+                      <p className="font-mono font-bold">{data.executive.previousPeriod.orderCount}</p>
+                      <Delta cur={data.commercial.orderCount} prev={data.executive.previousPeriod.orderCount} />
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs">Valor líq.</p>
@@ -539,9 +523,14 @@ export const ReportsModule = () => {
                       <Delta cur={data.commercial.totalNet} prev={data.executive.previousPeriod.totalNet} />
                     </div>
                     <div>
-                      <p className="text-muted-foreground text-xs">Valor aprovado (propostas)</p>
-                      <p className="font-mono font-bold">{formatCurrency(data.executive.previousPeriod.approvedNet)}</p>
-                      <Delta cur={data.commercial.approvedNet} prev={data.executive.previousPeriod.approvedNet} />
+                      <p className="text-muted-foreground text-xs">Enviados ao Nomus</p>
+                      <p className="font-mono font-bold">
+                        {formatCurrency(data.executive.previousPeriod.sentToNomusNet)}
+                      </p>
+                      <Delta
+                        cur={data.commercial.sentToNomusNet}
+                        prev={data.executive.previousPeriod.sentToNomusNet}
+                      />
                     </div>
                   </div>
                 </div>
@@ -549,20 +538,20 @@ export const ReportsModule = () => {
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="rounded-xl border border-border p-4 reports-print-break">
-                  <h3 className="text-sm font-bold mb-4">Top clientes — valor negociado (período)</h3>
+                  <h3 className="text-sm font-bold mb-4">Top clientes — valor vendido (período)</h3>
                   <Table
-                    cols={["Cliente", "Propostas", "Valor líq."]}
+                    cols={["Cliente", "Pedidos", "Valor líq."]}
                     rows={data.commercial.topCustomersByNet.slice(0, 10).map((r) => [
                       r.companyName,
-                      String(r.proposalCount),
+                      String(r.orderCount),
                       formatCurrency(r.netSum),
                     ])}
                   />
                 </div>
                 <div className="rounded-xl border border-border p-4 reports-print-break">
-                  <h3 className="text-sm font-bold mb-4">Top produtos — receita em propostas (período)</h3>
+                  <h3 className="text-sm font-bold mb-4">Top produtos — valor vendido (período)</h3>
                   <Table
-                    cols={["SKU", "Receita (itens)", "Margem R$"]}
+                    cols={["SKU", "Valor vendido", "Margem R$"]}
                     rows={data.products.mixByProduct.slice(0, 10).map((r) => [
                       r.sku,
                       formatCurrency(r.revenue),
@@ -573,7 +562,7 @@ export const ReportsModule = () => {
               </div>
 
               <div className="rounded-xl border border-border p-4 h-80 reports-print-break">
-                <h3 className="text-sm font-bold mb-2">Valor líquido por mês (criação proposta)</h3>
+                <h3 className="text-sm font-bold mb-2">Valor líquido por mês (emissão do pedido)</h3>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={monthChartData}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -582,7 +571,7 @@ export const ReportsModule = () => {
                     <Tooltip formatter={(v: number) => formatCurrency(v)} />
                     <Legend />
                     <Bar dataKey="netSum" name="Valor líq." fill="#0d9488" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="approvedNet" name="Aprovado" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="sentToNomusNet" name="Enviado Nomus" fill="#6366f1" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -593,7 +582,7 @@ export const ReportsModule = () => {
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="rounded-xl border border-border p-4 h-72">
-                  <h3 className="text-sm font-bold mb-2">Propostas por status (quantidade)</h3>
+                  <h3 className="text-sm font-bold mb-2">Pedidos por status (quantidade)</h3>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -614,7 +603,7 @@ export const ReportsModule = () => {
                   </ResponsiveContainer>
                 </div>
                 <div className="rounded-xl border border-border p-4">
-                  <h3 className="text-sm font-bold mb-4">Por responsável</h3>
+                  <h3 className="text-sm font-bold mb-4">Por responsável / vendedor</h3>
                   <Table
                     cols={["Responsável", "Qtd", "Valor líq."]}
                     rows={data.commercial.byResponsible.map((r) => [
@@ -629,36 +618,20 @@ export const ReportsModule = () => {
               <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 reports-print-break">
                 <h3 className="text-sm font-bold flex items-center gap-2 text-red-900 mb-2">
                   <AlertTriangle className="h-4 w-4" />
-                  Pipeline sem atualização há ≥14 dias
+                  Pedidos em aberto sem atualização há ≥14 dias
                 </h3>
                 <Table
-                  cols={["#", "Cliente", "Resp.", "Status", "Dias s/ atual.", "Líq."]}
-                  rows={data.commercial.staleProposals.map((p) => [
-                    String(p.number),
+                  cols={["Código", "Cliente", "Resp.", "Status", "Dias s/ atual.", "Líq."]}
+                  rows={data.commercial.staleOrders.map((p) => [
+                    p.orderCode,
                     p.customerName,
                     p.responsible,
-                    STATUS_FUNNEL_META[p.status as ProposalStatus]?.stageLabel ?? p.status,
+                    SALES_ORDER_STATUS_LABELS[p.status] ?? p.status,
                     String(p.daysSinceUpdate),
                     formatCurrency(p.totalNetValue),
                   ])}
                 />
-                {data.commercial.staleProposals.length === 0 && (
-                  <p className="text-sm text-muted-foreground">Nenhuma ocorrência no filtro atual.</p>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-amber-500/30 p-4 reports-print-break">
-                <h3 className="text-sm font-bold mb-2">Abertas com validade ultrapassada (regra: criada + validityDays)</h3>
-                <Table
-                  cols={["#", "Cliente", "Status", "Dias aberta"]}
-                  rows={data.commercial.validityExpiredOpen.map((p) => [
-                    String(p.number),
-                    p.customerName,
-                    STATUS_FUNNEL_META[p.status as ProposalStatus]?.stageLabel ?? p.status,
-                    String(p.daysOpen),
-                  ])}
-                />
-                {data.commercial.validityExpiredOpen.length === 0 && (
+                {data.commercial.staleOrders.length === 0 && (
                   <p className="text-sm text-muted-foreground">Nenhuma ocorrência no filtro atual.</p>
                 )}
               </div>
@@ -668,17 +641,16 @@ export const ReportsModule = () => {
           {tab === "customers" && (
             <div className="space-y-6">
               <ReportsContextNote>
-                Curva ABC e atraso de recompra usam histórico aprovado global do sistema, não apenas o período
-                filtrado. A tabela &quot;Menos ativos no período&quot; segue os filtros globais da tela.
+                Curva ABC usa pedidos do período/filtro (exceto cancelados). Recompra usa histórico global de pedidos não
+                cancelados. &quot;Menos ativos&quot; segue os filtros globais da tela.
               </ReportsContextNote>
               <div className="rounded-xl border border-border p-4 reports-print-break overflow-x-auto">
-                <h3 className="text-sm font-bold mb-2">Curva ABC — receita aprovada histórica (carteira total)</h3>
+                <h3 className="text-sm font-bold mb-2">Curva ABC — valor vendido em pedidos (período filtrado)</h3>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Classe A/B/C pela regra Pareto 80/15 sobre toda a receita aprovada acumulada — independente do
-                  período selecionado nos filtros globais.
+                  Classe A/B/C pela regra Pareto 80/15 sobre o valor líquido dos pedidos do filtro (exceto cancelados).
                 </p>
                 <Table
-                  cols={["#", "Cliente", "Classe", "Receita aprov.", "% carteira", "Acum. %"]}
+                  cols={["#", "Cliente", "Classe", "Valor vendido", "% carteira", "Acum. %"]}
                   rows={data.customers.abc.slice(0, 40).map((r) => [
                     String(r.rank),
                     r.companyName,
@@ -690,12 +662,12 @@ export const ReportsModule = () => {
                 />
               </div>
               <div className="rounded-xl border border-border p-4 reports-print-break">
-                <h3 className="text-sm font-bold mb-2">Clientes — atraso vs. mediana de dias entre aprovações</h3>
+                <h3 className="text-sm font-bold mb-2">Clientes — atraso vs. mediana entre pedidos</h3>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Baseado no histórico de aprovações do cliente (todas as propostas Aprovada), não no período filtrado.
+                  Baseado no histórico de pedidos do cliente (exceto cancelados), não no período filtrado.
                 </p>
                 <Table
-                  cols={["Cliente", "Mediana (d)", "Dias última aprov."]}
+                  cols={["Cliente", "Mediana (d)", "Dias último pedido"]}
                   rows={data.customers.repurchaseLate.map((r) => [
                     r.companyName,
                     r.medianDays != null ? String(Math.round(r.medianDays)) : "—",
@@ -707,13 +679,13 @@ export const ReportsModule = () => {
                 )}
               </div>
               <div className="rounded-xl border border-border p-4 reports-print-break">
-                <h3 className="text-sm font-bold mb-2">Menos ativos no período (por data da última proposta no filtro)</h3>
+                <h3 className="text-sm font-bold mb-2">Menos ativos no período (último pedido no filtro)</h3>
                 <Table
-                  cols={["Cliente", "Propostas (filtro)", "Última proposta"]}
+                  cols={["Cliente", "Pedidos (filtro)", "Último pedido"]}
                   rows={data.customers.inactiveInPeriod.map((r) => [
                     r.companyName,
-                    String(r.proposalCount),
-                    new Date(r.lastProposalAt).toLocaleDateString("pt-BR"),
+                    String(r.orderCount),
+                    new Date(r.lastOrderAt).toLocaleDateString("pt-BR"),
                   ])}
                 />
               </div>
@@ -723,9 +695,9 @@ export const ReportsModule = () => {
           {tab === "products" && (
             <div className="space-y-6">
               <div className="rounded-xl border border-border p-4 overflow-x-auto reports-print-break">
-                <h3 className="text-sm font-bold mb-2">Mix por produto (itens das propostas filtradas)</h3>
+                <h3 className="text-sm font-bold mb-2">Mix por produto (itens dos pedidos filtrados)</h3>
                 <Table
-                  cols={["SKU", "Nome", "Tipo", "Qtd", "Receita", "Margem R$", "Linhas"]}
+                  cols={["SKU", "Nome", "Tipo", "Qtd", "Valor vendido", "Margem R$", "Pedidos", "Linhas"]}
                   rows={data.products.mixByProduct.map((r) => [
                     r.sku,
                     r.name,
@@ -733,6 +705,7 @@ export const ReportsModule = () => {
                     formatNumber(r.qty, 2),
                     formatCurrency(r.revenue),
                     formatCurrency(r.marginSum),
+                    String(r.orders),
                     String(r.lines),
                   ])}
                 />
@@ -744,7 +717,7 @@ export const ReportsModule = () => {
             <div className="space-y-6">
               <p className="text-sm text-muted-foreground">
                 Custo industrial via motor CIU (mesma base do pricing). Preço sugerido = formação de preço da primeira regra
-                encontrada para o produto. Negociado = média ponderada por quantidade nas propostas do filtro.
+                encontrada para o produto. Preço vendido = média ponderada por quantidade nos itens dos pedidos do filtro.
               </p>
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-950">
                 <strong className="font-semibold">Amostra limitada:</strong> análise de custo industrial restrita aos
@@ -754,7 +727,7 @@ export const ReportsModule = () => {
               </div>
               <div className="rounded-xl border border-border p-4 overflow-x-auto reports-print-break">
                 <Table
-                  cols={["SKU", "Custo ind.", "Preço sugerido", "Média negociada", "Δ", "Linhas"]}
+                  cols={["SKU", "Custo ind.", "Preço sugerido", "Média vendida", "Δ", "Linhas"]}
                   rows={data.costing.productsAnalyzed.map((r) => {
                     const sug = r.suggestedPricePremissa;
                     const neg = r.avgNegotiatedInPeriod;

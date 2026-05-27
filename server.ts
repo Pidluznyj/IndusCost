@@ -9065,11 +9065,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     };
 
     const where: any = {};
-    if (dateFrom) where.createdAt = { ...(where.createdAt || {}), gte: new Date(dateFrom) };
-    if (dateTo) where.createdAt = { ...(where.createdAt || {}), lte: endOfDay(dateTo) };
+    if (dateFrom || dateTo) {
+      where.issueDate = {};
+      if (dateFrom) where.issueDate.gte = new Date(dateFrom);
+      if (dateTo) where.issueDate.lte = endOfDay(dateTo);
+    }
     if (customerIdF) where.customerId = customerIdF;
     if (responsibleF) where.responsible = responsibleF;
     if (statusF) where.status = statusF;
+    if (productIdF) where.items = { some: { productId: productIdF } };
     if (
       (minNet != null && Number.isFinite(minNet)) ||
       (maxNet != null && Number.isFinite(maxNet))
@@ -9080,7 +9084,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
 
     try {
-      const proposals = await prisma.proposal.findMany({
+      const orders = await prisma.salesOrder.findMany({
         where,
         include: {
           Customer: { select: { id: true, companyName: true, tradeName: true } },
@@ -9090,28 +9094,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             },
           },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: { issueDate: "desc" },
       });
 
-      const probW: Record<string, number> = {
-        DRAFT: 0.2,
-        ANALYSIS: 0.4,
-        SENT: 0.65,
-        APPROVED: 1,
-        REJECTED: 0,
-        EXPIRED: 0.05,
-        CANCELED: 0,
-      };
-      const pipelineOpen = (s: string) =>
-        s === "DRAFT" || s === "ANALYSIS" || s === "SENT";
+      const orderOpen = (s: string) => s === "DRAFT" || s === "READY_TO_SEND";
       const now = new Date();
 
-      let proposalsFiltered = proposals;
-      if (productIdF) {
-        proposalsFiltered = proposals.filter((p) =>
-          p.items.some((it) => it.productId === productIdF)
-        );
-      }
+      const ordersFiltered = orders;
 
       const num = (v: unknown) => {
         const x = Number(v);
@@ -9119,68 +9108,63 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       };
 
       let totalNet = 0;
-      let weightedPipeline = 0;
-      let pipelineOpenNet = 0;
-      let approvedNet = 0;
+      let openOrdersNet = 0;
+      let sentToNomusNet = 0;
+      let cancelledCount = 0;
+      let sentToNomusCount = 0;
+      let openOrdersCount = 0;
       const byStatus: Record<string, { count: number; netSum: number }> = {};
       const byResponsible = new Map<string, { count: number; netSum: number }>();
-      const byMonth = new Map<string, { month: string; count: number; netSum: number; approvedNet: number }>();
+      const byMonth = new Map<string, { month: string; count: number; netSum: number; sentToNomusNet: number }>();
 
-      for (const p of proposalsFiltered) {
-        const net = num(p.totalNetValue);
+      for (const o of ordersFiltered) {
+        const net = num(o.totalNetValue);
         totalNet += net;
-        const st = p.status;
-        weightedPipeline += net * (probW[st] ?? 0);
-        if (pipelineOpen(st)) pipelineOpenNet += net;
-        if (st === "APPROVED") approvedNet += net;
+        const st = o.status;
+        if (orderOpen(st)) openOrdersNet += net;
+        if (st === "SENT_TO_NOMUS") sentToNomusNet += net;
+        if (st === "CANCELLED") cancelledCount += 1;
+        if (st === "SENT_TO_NOMUS") sentToNomusCount += 1;
+        if (orderOpen(st)) openOrdersCount += 1;
         if (!byStatus[st]) byStatus[st] = { count: 0, netSum: 0 };
         byStatus[st].count++;
         byStatus[st].netSum += net;
-        const resp = (p.responsible || "").trim() || "(sem responsável)";
+        const resp = (o.responsible || "").trim() || "(sem responsável)";
         const br = byResponsible.get(resp) || { count: 0, netSum: 0 };
         br.count++;
         br.netSum += net;
         byResponsible.set(resp, br);
-        const c = new Date(p.createdAt);
+        const c = new Date(o.issueDate);
         const key = `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, "0")}`;
         const m = byMonth.get(key) || {
           month: key,
           count: 0,
           netSum: 0,
-          approvedNet: 0,
+          sentToNomusNet: 0,
         };
         m.count++;
         m.netSum += net;
-        if (st === "APPROVED") m.approvedNet += net;
+        if (st === "SENT_TO_NOMUS") m.sentToNomusNet += net;
         byMonth.set(key, m);
       }
 
-      const closedWon = proposalsFiltered.filter((p) => p.status === "APPROVED").length;
-      const closedLost = proposalsFiltered.filter((p) =>
-        ["REJECTED", "CANCELED"].includes(p.status)
-      ).length;
-      const convDenom = closedWon + closedLost;
-      const conversionRate = convDenom > 0 ? closedWon / convDenom : null;
-
       const custAgg = new Map<
         string,
-        { companyName: string; netSum: number; count: number; approvedNet: number; lastAt: Date }
+        { companyName: string; netSum: number; count: number; lastAt: Date }
       >();
-      for (const p of proposalsFiltered) {
-        const cid = p.customerId;
-        const name = p.Customer?.companyName || "—";
-        const net = num(p.totalNetValue);
+      for (const o of ordersFiltered) {
+        const cid = o.customerId;
+        const name = o.Customer?.companyName || "—";
+        const net = num(o.totalNetValue);
         const g = custAgg.get(cid) || {
           companyName: name,
           netSum: 0,
           count: 0,
-          approvedNet: 0,
           lastAt: new Date(0),
         };
         g.netSum += net;
         g.count++;
-        if (p.status === "APPROVED") g.approvedNet += net;
-        const ca = new Date(p.createdAt);
+        const ca = new Date(o.issueDate);
         if (ca > g.lastAt) g.lastAt = ca;
         custAgg.set(cid, g);
       }
@@ -9189,7 +9173,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           customerId,
           companyName: v.companyName,
           netSum: v.netSum,
-          proposalCount: v.count,
+          orderCount: v.count,
         }))
         .sort((a, b) => b.netSum - a.netSum)
         .slice(0, 25);
@@ -9197,72 +9181,50 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         .map(([customerId, v]) => ({
           customerId,
           companyName: v.companyName,
-          proposalCount: v.count,
+          orderCount: v.count,
           netSum: v.netSum,
         }))
-        .sort((a, b) => b.proposalCount - a.proposalCount)
+        .sort((a, b) => b.orderCount - a.orderCount)
         .slice(0, 25);
 
-      const approvedGroup = await prisma.proposal.groupBy({
-        by: ["customerId"],
-        where: { status: "APPROVED" },
-        _sum: { totalNetValue: true },
-      });
       const nameMap = new Map<string, string>();
       const customers = await prisma.customer.findMany({ select: { id: true, companyName: true } });
       customers.forEach((c) => nameMap.set(c.id, c.companyName));
+
+      const abcRevenueByCustomer = new Map<string, number>();
+      for (const o of ordersFiltered) {
+        if (o.status === "CANCELLED") continue;
+        const cid = o.customerId;
+        abcRevenueByCustomer.set(cid, (abcRevenueByCustomer.get(cid) || 0) + num(o.totalNetValue));
+      }
       const abcRows = buildCustomerAbcRanking(
-        approvedGroup.map((g) => ({
-          customerId: g.customerId,
-          revenue: Number(g._sum.totalNetValue ?? 0),
+        [...abcRevenueByCustomer.entries()].map(([customerId, revenue]) => ({
+          customerId,
+          revenue,
         })),
         nameMap
       );
 
       const STALE_DAYS = 14;
-      const staleProposals = proposalsFiltered
-        .filter((p) => pipelineOpen(p.status))
-        .map((p) => {
+      const staleOrders = ordersFiltered
+        .filter((o) => orderOpen(o.status))
+        .map((o) => {
           const daysSinceUpd = Math.floor(
-            (now.getTime() - new Date(p.updatedAt).getTime()) / 86400000
+            (now.getTime() - new Date(o.updatedAt).getTime()) / 86400000
           );
           return {
-            id: p.id,
-            number: p.number,
-            status: p.status,
-            customerName: p.Customer?.companyName || "—",
-            responsible: (p.responsible || "").trim() || "—",
-            createdAt: p.createdAt,
-            updatedAt: p.updatedAt,
-            totalNetValue: num(p.totalNetValue),
+            id: o.id,
+            orderCode: o.orderCode,
+            status: o.status,
+            customerName: o.Customer?.companyName || "—",
+            responsible: (o.responsible || "").trim() || "—",
+            totalNetValue: num(o.totalNetValue),
             daysSinceUpdate: daysSinceUpd,
             stale: daysSinceUpd >= STALE_DAYS,
           };
         })
         .filter((x) => x.stale)
         .slice(0, 100);
-
-      const validityExpiredOpen: Array<{
-        id: string;
-        number: number;
-        status: string;
-        customerName: string;
-        daysOpen: number;
-      }> = [];
-      for (const p of proposalsFiltered) {
-        if (!pipelineOpen(p.status)) continue;
-        const vd = p.validityDays && p.validityDays > 0 ? p.validityDays : 15;
-        const exp = new Date(p.createdAt).getTime() + vd * 86400000;
-        if (exp < now.getTime()) {
-          validityExpiredOpen.push({
-            id: p.id,
-            number: p.number,
-            status: p.status,
-            customerName: p.Customer?.companyName || "—",
-            daysOpen: Math.floor((now.getTime() - new Date(p.createdAt).getTime()) / 86400000),
-          });
-        }
-      }
 
       const mixMap = new Map<
         string,
@@ -9275,24 +9237,26 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           revenue: number;
           marginSum: number;
           lines: number;
+          orderIds: Set<string>;
         }
       >();
-      for (const p of proposalsFiltered) {
-        for (const it of p.items) {
+      for (const o of ordersFiltered) {
+        for (const it of o.items) {
           const pr = it.Product;
           const pid = it.productId;
           const qty = num(it.quantity);
-          const rev = qty * num(it.negotiatedPrice);
+          const rev = num(it.totalNetValue);
           const mg = num(it.marginValue);
           const prev = mixMap.get(pid);
-          const sku = pr?.sku || "—";
-          const name = pr?.name || "Produto";
+          const sku = pr?.sku || it.skuSnapshot || "—";
+          const name = pr?.name || it.productNameSnapshot || "Produto";
           const type = String(pr?.type || "—");
           if (prev) {
             prev.qty += qty;
             prev.revenue += rev;
             prev.marginSum += mg;
             prev.lines += 1;
+            prev.orderIds.add(o.id);
           } else {
             mixMap.set(pid, {
               productId: pid,
@@ -9303,21 +9267,24 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               revenue: rev,
               marginSum: mg,
               lines: 1,
+              orderIds: new Set([o.id]),
             });
           }
         }
       }
-      const mixByProduct = [...mixMap.values()].sort((a, b) => b.revenue - a.revenue);
+      const mixByProduct = [...mixMap.values()]
+        .map(({ orderIds, ...row }) => ({ ...row, orders: orderIds.size }))
+        .sort((a, b) => b.revenue - a.revenue);
 
-      const allApprovedList = await prisma.proposal.findMany({
-        where: { status: "APPROVED" },
-        select: { customerId: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
+      const allOrdersForRepurchase = await prisma.salesOrder.findMany({
+        where: { status: { not: "CANCELLED" } },
+        select: { customerId: true, issueDate: true },
+        orderBy: { issueDate: "asc" },
       });
       const datesByCustomer = new Map<string, Date[]>();
-      for (const row of allApprovedList) {
+      for (const row of allOrdersForRepurchase) {
         const arr = datesByCustomer.get(row.customerId) || [];
-        arr.push(row.createdAt);
+        arr.push(row.issueDate);
         datesByCustomer.set(row.customerId, arr);
       }
       function medianIntervals(dates: Date[]): number | null {
@@ -9363,13 +9330,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         .map(([customerId, v]) => ({
           customerId,
           companyName: v.companyName,
-          proposalCount: v.count,
-          lastProposalAt: v.lastAt.toISOString(),
+          orderCount: v.count,
+          lastOrderAt: v.lastAt.toISOString(),
         }))
-        .sort((a, b) => new Date(a.lastProposalAt).getTime() - new Date(b.lastProposalAt).getTime())
+        .sort((a, b) => new Date(a.lastOrderAt).getTime() - new Date(b.lastOrderAt).getTime())
         .slice(0, 30);
 
-      const uniqueProductIds = [...new Set(proposalsFiltered.flatMap((p) => p.items.map((i) => i.productId)))];
+      const uniqueProductIds = [...new Set(ordersFiltered.flatMap((o) => o.items.map((i) => i.productId)))];
       const MAX_COST_PRODUCTS = 50;
       const costSampleIds = uniqueProductIds.slice(0, MAX_COST_PRODUCTS);
       const productCostRows: Array<{
@@ -9384,14 +9351,14 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       }> = [];
 
       const negPriceByProduct = new Map<string, { sum: number; w: number }>();
-      for (const p of proposalsFiltered) {
-        for (const it of p.items) {
+      for (const o of ordersFiltered) {
+        for (const it of o.items) {
           const q = num(it.quantity);
           const price = num(it.negotiatedPrice);
-          const o = negPriceByProduct.get(it.productId) || { sum: 0, w: 0 };
-          o.sum += price * q;
-          o.w += q;
-          negPriceByProduct.set(it.productId, o);
+          const agg = negPriceByProduct.get(it.productId) || { sum: 0, w: 0 };
+          agg.sum += price * q;
+          agg.w += q;
+          negPriceByProduct.set(it.productId, agg);
         }
       }
 
@@ -9446,9 +9413,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       });
 
       let previousPeriod: {
-        proposalCount: number;
+        orderCount: number;
         totalNet: number;
-        approvedNet: number;
+        sentToNomusNet: number;
       } | null = null;
       if (dateFrom && dateTo) {
         const df = new Date(dateFrom);
@@ -9459,11 +9426,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const prevStart = new Date(prevEnd.getTime() - ms);
         prevStart.setHours(0, 0, 0, 0);
         const prevWhere: any = {
-          createdAt: { gte: prevStart, lte: prevEnd },
+          issueDate: { gte: prevStart, lte: prevEnd },
         };
         if (customerIdF) prevWhere.customerId = customerIdF;
         if (responsibleF) prevWhere.responsible = responsibleF;
         if (statusF) prevWhere.status = statusF;
+        if (productIdF) prevWhere.items = { some: { productId: productIdF } };
         if (
           (minNet != null && Number.isFinite(minNet)) ||
           (maxNet != null && Number.isFinite(maxNet))
@@ -9472,25 +9440,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           if (minNet != null && Number.isFinite(minNet)) prevWhere.totalNetValue.gte = minNet;
           if (maxNet != null && Number.isFinite(maxNet)) prevWhere.totalNetValue.lte = maxNet;
         }
-        const prevList = await prisma.proposal.findMany({
+        const prevList = await prisma.salesOrder.findMany({
           where: prevWhere,
-          include: { items: true },
         });
-        let prevFiltered = prevList;
-        if (productIdF) {
-          prevFiltered = prevList.filter((p) => p.items.some((it) => it.productId === productIdF));
-        }
         let pNet = 0;
-        let pApp = 0;
-        for (const p of prevFiltered) {
-          const net = num(p.totalNetValue);
+        let pSent = 0;
+        for (const o of prevList) {
+          const net = num(o.totalNetValue);
           pNet += net;
-          if (p.status === "APPROVED") pApp += net;
+          if (o.status === "SENT_TO_NOMUS") pSent += net;
         }
         previousPeriod = {
-          proposalCount: prevFiltered.length,
+          orderCount: prevList.length,
           totalNet: pNet,
-          approvedNet: pApp,
+          sentToNomusNet: pSent,
         };
       }
 
@@ -9507,29 +9470,28 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           productId: productIdF,
         },
         disclaimers: [
-          "Não existe tabela de pedido faturado: valores aprovados usam propostas APPROVED como proxy de negócio fechado.",
-          "Curva ABC e recompra usam histórico global de aprovações onde indicado.",
+          "Relatórios baseados em pedidos de venda (SalesOrder), filtrados pela data de emissão (issueDate).",
+          "Pedidos de venda representam vendas registradas no IndusCost/Nomus; não necessariamente faturamento fiscal/NF.",
+          "Curva ABC usa pedidos do período/filtro (exceto cancelados). Recompra usa histórico global de pedidos não cancelados.",
           uniqueProductIds.length > MAX_COST_PRODUCTS
             ? `Custo industrial: amostra de ${MAX_COST_PRODUCTS} produtos entre os do período (${uniqueProductIds.length} distintos).`
             : null,
         ].filter(Boolean),
         commercial: {
-          proposalCount: proposalsFiltered.length,
+          orderCount: ordersFiltered.length,
           totalNet,
-          approvedNet,
-          pipelineOpenNet,
-          weightedPipeline,
-          ticketAvg: proposalsFiltered.length ? totalNet / proposalsFiltered.length : 0,
-          conversionRate,
-          closedWon,
-          closedLost,
+          sentToNomusNet,
+          openOrdersNet,
+          cancelledCount,
+          sentToNomusCount,
+          openOrdersCount,
+          ticketAvg: ordersFiltered.length ? totalNet / ordersFiltered.length : 0,
           byStatus,
           byResponsible: [...byResponsible.entries()]
             .map(([responsible, v]) => ({ responsible, ...v }))
             .sort((a, b) => b.netSum - a.netSum),
           byMonth: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)),
-          staleProposals,
-          validityExpiredOpen,
+          staleOrders,
           topCustomersByNet,
           topCustomersByCount,
         },
