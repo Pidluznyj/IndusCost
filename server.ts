@@ -9464,6 +9464,14 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         if (customerIdF) prevWhere.customerId = customerIdF;
         if (responsibleF) prevWhere.responsible = responsibleF;
         if (statusF) prevWhere.status = statusF;
+        if (
+          (minNet != null && Number.isFinite(minNet)) ||
+          (maxNet != null && Number.isFinite(maxNet))
+        ) {
+          prevWhere.totalNetValue = {} as { gte?: number; lte?: number };
+          if (minNet != null && Number.isFinite(minNet)) prevWhere.totalNetValue.gte = minNet;
+          if (maxNet != null && Number.isFinite(maxNet)) prevWhere.totalNetValue.lte = maxNet;
+        }
         const prevList = await prisma.proposal.findMany({
           where: prevWhere,
           include: { items: true },

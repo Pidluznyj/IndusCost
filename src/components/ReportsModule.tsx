@@ -438,13 +438,32 @@ export const ReportsModule = () => {
 
           {tab === "executive" && (
             <div className="space-y-6">
+              <ReportsContextNote>
+                Os indicadores desta aba respeitam o período e filtros globais (data de criação da proposta).
+                <strong className="font-semibold text-foreground"> Valor aprovado</strong> soma propostas com status
+                Aprovada no IndusCost — não representa faturamento, NF ou pedido faturado.
+              </ReportsContextNote>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <KpiCard label="Propostas (período)" value={String(data.commercial.proposalCount)} />
                 <KpiCard label="Valor líq. total" value={formatCurrency(data.commercial.totalNet)} />
-                <KpiCard label="Valor aprovado (proxy)" value={formatCurrency(data.commercial.approvedNet)} />
+                <KpiCard
+                  label="Valor aprovado"
+                  value={formatCurrency(data.commercial.approvedNet)}
+                  hint="Propostas Aprovada — não é faturamento"
+                />
                 <KpiCard label="Pipeline aberto (líq.)" value={formatCurrency(data.commercial.pipelineOpenNet)} />
                 <KpiCard label="Pipeline ponderado" value={formatCurrency(data.commercial.weightedPipeline)} />
                 <KpiCard label="Ticket médio" value={formatCurrency(data.commercial.ticketAvg)} />
+                <KpiCard
+                  label="Propostas ganhas (aprovadas)"
+                  value={String(data.commercial.closedWon)}
+                  hint="Status Aprovada no filtro"
+                />
+                <KpiCard
+                  label="Propostas perdidas"
+                  value={String(data.commercial.closedLost)}
+                  hint="Rejeitada ou Cancelada"
+                />
                 <KpiCard
                   label="Conversão (ganhas ÷ ganhas+perdidas)"
                   value={
@@ -452,6 +471,7 @@ export const ReportsModule = () => {
                       ? `${formatNumber(data.commercial.conversionRate * 100, 1)}%`
                       : "—"
                   }
+                  hint="Só conta aprovadas vs rejeitada/cancelada"
                 />
                 <KpiCard label="Propostas paradas (alerta)" value={String(data.commercial.staleProposals.length)} />
               </div>
@@ -459,6 +479,10 @@ export const ReportsModule = () => {
               {data.executive.previousPeriod && (
                 <div className="rounded-xl border border-border p-4 reports-print-break">
                   <h3 className="text-sm font-bold mb-2">Comparação com período anterior (mesma duração)</h3>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Mesmos filtros do período atual (cliente, responsável, status, faixa de valor líq. e produto, quando
+                    informados).
+                  </p>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
                       <p className="text-muted-foreground text-xs">Propostas</p>
@@ -471,7 +495,7 @@ export const ReportsModule = () => {
                       <Delta cur={data.commercial.totalNet} prev={data.executive.previousPeriod.totalNet} />
                     </div>
                     <div>
-                      <p className="text-muted-foreground text-xs">Valor aprovado</p>
+                      <p className="text-muted-foreground text-xs">Valor aprovado (propostas)</p>
                       <p className="font-mono font-bold">{formatCurrency(data.executive.previousPeriod.approvedNet)}</p>
                       <Delta cur={data.commercial.approvedNet} prev={data.executive.previousPeriod.approvedNet} />
                     </div>
@@ -599,10 +623,15 @@ export const ReportsModule = () => {
 
           {tab === "customers" && (
             <div className="space-y-6">
+              <ReportsContextNote>
+                Curva ABC e atraso de recompra usam histórico aprovado global do sistema, não apenas o período
+                filtrado. A tabela &quot;Menos ativos no período&quot; segue os filtros globais da tela.
+              </ReportsContextNote>
               <div className="rounded-xl border border-border p-4 reports-print-break overflow-x-auto">
-                <h3 className="text-sm font-bold mb-2">Curva ABC — receita aprovada (carteira global)</h3>
+                <h3 className="text-sm font-bold mb-2">Curva ABC — receita aprovada histórica (carteira total)</h3>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Classe A/B/C pela regra Pareto 80/15 sobre receita aprovada total do sistema.
+                  Classe A/B/C pela regra Pareto 80/15 sobre toda a receita aprovada acumulada — independente do
+                  período selecionado nos filtros globais.
                 </p>
                 <Table
                   cols={["#", "Cliente", "Classe", "Receita aprov.", "% carteira", "Acum. %"]}
@@ -617,7 +646,10 @@ export const ReportsModule = () => {
                 />
               </div>
               <div className="rounded-xl border border-border p-4 reports-print-break">
-                <h3 className="text-sm font-bold mb-2">Clientes — atraso vs. mediana de dias entre aprovações (proxy)</h3>
+                <h3 className="text-sm font-bold mb-2">Clientes — atraso vs. mediana de dias entre aprovações</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Baseado no histórico de aprovações do cliente (todas as propostas Aprovada), não no período filtrado.
+                </p>
                 <Table
                   cols={["Cliente", "Mediana (d)", "Dias última aprov."]}
                   rows={data.customers.repurchaseLate.map((r) => [
@@ -670,6 +702,12 @@ export const ReportsModule = () => {
                 Custo industrial via motor CIU (mesma base do pricing). Preço sugerido = formação de preço da primeira regra
                 encontrada para o produto. Negociado = média ponderada por quantidade nas propostas do filtro.
               </p>
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-950">
+                <strong className="font-semibold">Amostra limitada:</strong> análise de custo industrial restrita aos
+                primeiros {data.costing.costProductLimit} SKUs distintos encontrados no filtro (
+                {data.costing.totalDistinctProductsInFilter} no total), por custo de processamento. Produtos fora da
+                amostra não aparecem nesta tabela.
+              </div>
               <div className="rounded-xl border border-border p-4 overflow-x-auto reports-print-break">
                 <Table
                   cols={["SKU", "Custo ind.", "Preço sugerido", "Média negociada", "Δ", "Linhas"]}
@@ -709,11 +747,21 @@ export const ReportsModule = () => {
   );
 };
 
-function KpiCard({ label, value }: { label: string; value: string }) {
+function ReportsContextNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground flex gap-2 reports-print-break">
+      <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary" aria-hidden />
+      <p className="leading-relaxed">{children}</p>
+    </div>
+  );
+}
+
+function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 reports-print-break">
       <p className="text-[10px] font-bold uppercase text-muted-foreground leading-tight">{label}</p>
       <p className="text-lg font-black mt-1">{value}</p>
+      {hint ? <p className="text-[10px] text-muted-foreground mt-1 leading-snug">{hint}</p> : null}
     </div>
   );
 }
