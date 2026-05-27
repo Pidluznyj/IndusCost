@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { serializeAutoApplyReportForDisk } from "@/src/lib/nomusAutoApplyBomReportParser";
 import {
   countDistinctParentCodesInStage,
   listDistinctParentCodesFromStage,
@@ -290,12 +291,13 @@ function writeReportFiles(
   const mdPath = join(reportDir, `nomus-auto-sync-bom-apply-report-${stamp}.md`);
   const jsonPath = join(reportDir, `nomus-auto-sync-bom-apply-report-${stamp}.json`);
   writeFileSync(mdPath, buildAutoApplyReportMarkdown(report), "utf8");
-  writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  const serialized = `${JSON.stringify(serializeAutoApplyReportForDisk(report), null, 2)}\n`;
+  writeFileSync(jsonPath, serialized, "utf8");
 
   const latestMd = join(reportDir, "nomus-auto-sync-bom-apply-report.md");
   const latestJson = join(reportDir, "nomus-auto-sync-bom-apply-report.json");
   writeFileSync(latestMd, buildAutoApplyReportMarkdown(report), "utf8");
-  writeFileSync(latestJson, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  writeFileSync(latestJson, serialized, "utf8");
 
   return { mdPath, jsonPath };
 }

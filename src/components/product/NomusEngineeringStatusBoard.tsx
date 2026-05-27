@@ -403,8 +403,27 @@ export const NomusEngineeringStatusBoard: React.FC<{
                 ) : null}
 
                 {autoApply.partialReportWarning ? (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-950">
-                    {autoApply.partialReportWarning}
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-950 space-y-2">
+                    <p>{autoApply.partialReportWarning}</p>
+                    {autoApply.regenerateReportCommand ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code className="rounded bg-amber-100 px-2 py-1 font-mono text-[10px]">
+                          {autoApply.regenerateReportCommand}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => void copyText(autoApply.regenerateReportCommand ?? "")}
+                          className="inline-flex items-center gap-1 rounded border border-amber-400 bg-white px-2 py-1 text-[10px] font-semibold hover:bg-amber-100"
+                        >
+                          <ClipboardCopy className="h-3 w-3" />
+                          Copiar comando
+                        </button>
+                      </div>
+                    ) : null}
+                    <p className="text-[10px]">
+                      Os cards refletem os totais da última rotina, mas a lista operacional só fica
+                      disponível após regenerar o relatório completo.
+                    </p>
                   </div>
                 ) : null}
 
@@ -423,7 +442,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
                   ))}
                 </div>
 
-                {autoApply.blockingReasonBuckets.length > 0 ? (
+                {autoApply.hasProductList && autoApply.blockingReasonBuckets.length > 0 ? (
                   <div className="rounded-lg border border-border bg-card p-2.5 space-y-1.5">
                     <p className="text-[10px] uppercase font-bold text-muted-foreground">
                       Tipos de bloqueio (clique para filtrar)
@@ -453,6 +472,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
                   </div>
                 ) : null}
 
+                {autoApply.hasProductList ? (
                 <div className="rounded-xl border border-border bg-card p-3 space-y-2">
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">
@@ -704,6 +724,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
                     </div>
                   ) : null}
                 </div>
+                ) : null}
               </>
             )}
           </section>

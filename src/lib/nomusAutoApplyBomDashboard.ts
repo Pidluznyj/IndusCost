@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { NomusBomAutoApplyProductResult, NomusBomAutoApplyReport } from "@/src/lib/nomusBomAutoApplyAfterSyncTypes";
 import type {
@@ -12,9 +12,14 @@ import {
   computeFilterCounts,
   enrichDashboardProductRow,
 } from "@/src/lib/nomusAutoApplyBomDashboardShared";
+import {
+  parseAutoApplyReportJson,
+  type ParsedAutoApplyReport,
+} from "@/src/lib/nomusAutoApplyBomReportParser";
 import { prisma } from "@/src/lib/prisma";
 
 const DEFAULT_REPORT_JSON = join(process.cwd(), "docs/generated/nomus-auto-sync-bom-apply-report.json");
+export const NOMUS_AUTO_APPLY_REGENERATE_COMMAND = "npm run sync:nomus:all:apply";
 
 export function normalizeAutoApplyFilter(value: string | undefined): AutoApplyDashboardFilter {
   const v = (value ?? "ALL").trim().toUpperCase();
@@ -196,26 +201,61 @@ export function bucketBlockingReasons(
     .sort((a, b) => b.count - a.count);
 }
 
-function parseReportJson(raw: string): NomusBomAutoApplyReport | null {
+function tryParseReportFile(filePath: string): ParsedAutoApplyReport | null {
+  if (!existsSync(filePath)) return null;
   try {
-    const parsed = JSON.parse(raw) as NomusBomAutoApplyReport;
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.products)) return null;
-    return parsed;
+    return parseAutoApplyReportJson(readFileSync(filePath, "utf8"));
   } catch {
     return null;
   }
 }
 
-function readLatestReportFile(reportPath = DEFAULT_REPORT_JSON): NomusBomAutoApplyReport | null {
-  if (!existsSync(reportPath)) return null;
-  try {
-    return parseReportJson(readFileSync(reportPath, "utf8"));
-  } catch {
-    return null;
+function listReportJsonCandidates(reportDir: string): string[] {
+  if (!existsSync(reportDir)) return [DEFAULT_REPORT_JSON];
+
+  const files: Array<{ path: string; mtimeMs: number }> = [];
+  for (const name of readdirSync(reportDir)) {
+    if (!name.startsWith("nomus-auto-sync-bom-apply-report") || !name.endsWith(".json")) continue;
+    const path = join(reportDir, name);
+    try {
+      files.push({ path, mtimeMs: statSync(path).mtimeMs });
+    } catch {
+      /* ignore */
+    }
   }
+
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const ordered = files.map((f) => f.path);
+  if (!ordered.includes(DEFAULT_REPORT_JSON)) ordered.unshift(DEFAULT_REPORT_JSON);
+  return ordered;
 }
 
-async function readLatestBatchRunReport(): Promise<NomusBomAutoApplyReport | null> {
+function pickBestParsedReport(candidates: ParsedAutoApplyReport[]): ParsedAutoApplyReport | null {
+  if (candidates.length === 0) return null;
+
+  const withList = candidates.filter((c) => c.hasProductList);
+  if (withList.length > 0) {
+    withList.sort((a, b) => b.products.length - a.products.length);
+    return withList[0];
+  }
+
+  return candidates[0];
+}
+
+function readLatestReportFile(reportPath = DEFAULT_REPORT_JSON): ParsedAutoApplyReport | null {
+  const reportDir = join(reportPath, "..");
+  const paths = listReportJsonCandidates(reportDir);
+
+  const parsedCandidates: ParsedAutoApplyReport[] = [];
+  for (const path of paths) {
+    const parsed = tryParseReportFile(path);
+    if (parsed) parsedCandidates.push(parsed);
+  }
+
+  return pickBestParsedReport(parsedCandidates);
+}
+
+async function readLatestBatchRunReport(): Promise<ParsedAutoApplyReport | null> {
   const runs = await prisma.engineeringSyncRun.findMany({
     where: { mode: "ALL_NOMUS_PRODUCTS" },
     orderBy: { createdAt: "desc" },
@@ -239,17 +279,34 @@ async function readLatestBatchRunReport(): Promise<NomusBomAutoApplyReport | nul
   const totals = (summary?.totals as NomusBomAutoApplyReport["totals"] | undefined) ?? null;
   if (!totals) return null;
 
+  const reportJsonPath =
+    typeof summary?.reportJsonPath === "string" ? summary.reportJsonPath : null;
+
+  if (reportJsonPath) {
+    const fromPath = tryParseReportFile(reportJsonPath);
+    if (fromPath?.hasProductList) return fromPath;
+  }
+
+  const fromDir = readLatestReportFile();
+  if (fromDir?.hasProductList) return fromDir;
+
   return {
-    generatedAt: run.finishedAt?.toISOString() ?? new Date().toISOString(),
-    mode: "APPLY",
-    startedAt: run.startedAt?.toISOString() ?? run.finishedAt?.toISOString() ?? new Date().toISOString(),
-    finishedAt: run.finishedAt?.toISOString() ?? new Date().toISOString(),
-    approvedBy: run.approvedBy ?? "nomus-auto-sync",
-    batchRunId: run.id,
-    reportMdPath: typeof summary?.reportMdPath === "string" ? summary.reportMdPath : null,
-    reportJsonPath: typeof summary?.reportJsonPath === "string" ? summary.reportJsonPath : null,
-    totals,
+    report: {
+      generatedAt: run.finishedAt?.toISOString() ?? new Date().toISOString(),
+      mode: "APPLY",
+      startedAt: run.startedAt?.toISOString() ?? run.finishedAt?.toISOString() ?? new Date().toISOString(),
+      finishedAt: run.finishedAt?.toISOString() ?? new Date().toISOString(),
+      approvedBy: run.approvedBy ?? "nomus-auto-sync",
+      batchRunId: run.id,
+      reportMdPath: typeof summary?.reportMdPath === "string" ? summary.reportMdPath : null,
+      reportJsonPath,
+      totals,
+      products: [],
+    },
     products: [],
+    totals,
+    productListSource: null,
+    hasProductList: false,
   };
 }
 
@@ -282,16 +339,24 @@ export async function buildNomusAutoApplyBomDashboard(input: {
   const reportPath = input.reportPath ?? DEFAULT_REPORT_JSON;
 
   const fileReport = readLatestReportFile(reportPath);
-  const runFallback = fileReport ? null : await readLatestBatchRunReport();
-  const report = fileReport ?? runFallback;
+  const runFallback =
+    fileReport == null ? await readLatestBatchRunReport().catch(() => null) : null;
+  const parsed = fileReport?.hasProductList
+    ? fileReport
+    : runFallback?.hasProductList
+      ? runFallback
+      : fileReport ?? runFallback;
 
-  if (!report) {
+  if (!parsed) {
     return {
       generatedAt: new Date().toISOString(),
       mode: "READ_ONLY",
       source: "NONE",
       hasReport: false,
       hasProductList: false,
+      needsReportRegeneration: false,
+      regenerateReportCommand: null,
+      productListSource: null,
       partialReportWarning: null,
       emptyMessage: "Nenhuma rotina de auto apply BOM executada ainda.",
       lastRun: null,
@@ -316,21 +381,32 @@ export async function buildNomusAutoApplyBomDashboard(input: {
     };
   }
 
-  const allRows = mapProductRows(report.products);
-  const hasProductList = allRows.length > 0;
-  const partialReportWarning =
-    !hasProductList && report.totals
-      ? "Relatório parcial: totais disponíveis, mas a lista de produtos não está no arquivo JSON. Execute novamente sync:nomus:all:apply para regenerar o relatório completo."
-      : null;
+  const report = parsed.report;
+  const allRows = mapProductRows(parsed.products);
+  const hasProductList = parsed.hasProductList && allRows.length > 0;
+  const needsReportRegeneration = !hasProductList && Boolean(parsed.totals);
+  const partialReportWarning = needsReportRegeneration
+    ? `Relatório parcial: totais disponíveis (${parsed.totals.parentsBlocked} bloqueados), mas a lista de produtos não foi encontrada no JSON. Regenerar com: ${NOMUS_AUTO_APPLY_REGENERATE_COMMAND}`
+    : null;
 
   const filterCounts = computeFilterCounts(allRows);
+
+  const source: AutoApplyBomDashboardResult["source"] =
+    parsed === fileReport && fileReport?.hasProductList
+      ? "REPORT_FILE"
+      : parsed === runFallback
+        ? "ENGINEERING_SYNC_RUN"
+        : "REPORT_FILE";
 
   return {
     generatedAt: new Date().toISOString(),
     mode: "READ_ONLY",
-    source: fileReport ? "REPORT_FILE" : "ENGINEERING_SYNC_RUN",
+    source,
     hasReport: true,
     hasProductList,
+    needsReportRegeneration,
+    regenerateReportCommand: needsReportRegeneration ? NOMUS_AUTO_APPLY_REGENERATE_COMMAND : null,
+    productListSource: parsed.productListSource,
     partialReportWarning,
     emptyMessage: null,
     lastRun: {
@@ -342,8 +418,8 @@ export async function buildNomusAutoApplyBomDashboard(input: {
       reportJsonPath: report.reportJsonPath,
       reportMdPath: report.reportMdPath,
     },
-    totals: report.totals,
-    blockingReasonBuckets: bucketBlockingReasons(report.products),
+    totals: parsed.totals,
+    blockingReasonBuckets: bucketBlockingReasons(parsed.products),
     products: allRows,
     filterCounts,
     totalProducts: allRows.length,

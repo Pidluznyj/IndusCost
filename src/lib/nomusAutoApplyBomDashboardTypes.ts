@@ -72,6 +72,9 @@ export type AutoApplyBomDashboardResult = {
   source: "REPORT_FILE" | "ENGINEERING_SYNC_RUN" | "NONE";
   hasReport: boolean;
   hasProductList: boolean;
+  needsReportRegeneration: boolean;
+  regenerateReportCommand: string | null;
+  productListSource: string | null;
   partialReportWarning: string | null;
   emptyMessage: string | null;
   lastRun: AutoApplyBomDashboardLastRun | null;
