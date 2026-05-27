@@ -5,13 +5,15 @@
  *  - Cadastro mestre / Igualar bases (diagnóstico existente);
  *  - BOM / auto apply ProductBOM (relatório oficial da rotina sync:nomus:all:apply).
  */
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCopy,
   Database,
-  History,
   Layers,
   Loader2,
   PackagePlus,
@@ -20,6 +22,7 @@ import {
   Search,
   ShieldAlert,
   Wrench,
+  X,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchMasterDataImportDiagnostic } from "@/src/lib/nomusMasterDataImportClient";
@@ -29,11 +32,17 @@ import {
   type EngineeringRunRecentItem,
 } from "@/src/lib/nomusEngineeringRunsRecentClient";
 import { fetchNomusAutoApplyBomDashboard } from "@/src/lib/nomusAutoApplyBomDashboardClient";
+import {
+  filterDashboardProducts,
+  sortDashboardProducts,
+  type AutoApplyBlockBucketFilter,
+} from "@/src/lib/nomusAutoApplyBomDashboardShared";
 import type {
   AutoApplyBomDashboardProductRow,
   AutoApplyBomDashboardResult,
   AutoApplyDashboardFilter,
 } from "@/src/lib/nomusAutoApplyBomDashboardTypes";
+import type { NomusMaintenanceTab } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type { MasterDataImportDiagnosticResult } from "@/src/lib/nomusMasterDataImportTypes";
 import type { EqualizePreviewResult } from "@/src/lib/nomusMasterDataEqualizeTypes";
 
@@ -56,6 +65,8 @@ const FILTER_OPTIONS: Array<{ value: AutoApplyDashboardFilter; label: string }> 
   { value: "APPLIED", label: "Aplicados" },
   { value: "ERROR", label: "Erros" },
 ];
+
+const PAGE_SIZE = 50;
 
 function formatDateShort(iso: string | null): string {
   if (!iso) return "—";
@@ -90,27 +101,55 @@ function statusBadgeClass(status: AutoApplyBomDashboardProductRow["status"]): st
   }
 }
 
-function summarizeActions(row: AutoApplyBomDashboardProductRow): string {
-  const parts: string[] = [];
-  if (row.quantityDiffCount > 0) parts.push(`${row.quantityDiffCount} qtd.`);
-  if (row.metadataOnlyCount > 0) parts.push(`${row.metadataOnlyCount} metadata`);
-  const preview = row.actionsPreview ?? [];
-  const creates = preview.filter((a) => a.actionType === "CREATE_PRODUCT_BOM_LINE").length;
-  const removes = preview.filter((a) => a.actionType === "REMOVE_PRODUCT_BOM_LINE").length;
-  if (creates > 0) parts.push(`${creates} criar`);
-  if (removes > 0) parts.push(`${removes} remover`);
-  return parts.length > 0 ? parts.join(" · ") : "—";
+function statusLabel(status: AutoApplyBomDashboardProductRow["status"]): string {
+  switch (status) {
+    case "BLOCKED":
+      return "Bloqueado";
+    case "ERROR":
+      return "Erro";
+    case "SKIPPED":
+      return "Ignorado";
+    case "APPLIED":
+      return "Aplicado";
+    case "NO_CHANGES":
+      return "Sem alteração";
+    default:
+      return status;
+  }
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
+
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    /* ignore */
+  }
 }
 
 export const NomusEngineeringStatusBoard: React.FC<{
   disabled?: boolean;
-  onOpenProduct?: (parentCode: string) => void;
+  onOpenProduct?: (parentCode: string, options?: { tab?: NomusMaintenanceTab }) => void;
 }> = ({ disabled = false, onOpenProduct }) => {
   const [snapshot, setSnapshot] = useState<StatusSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<AutoApplyDashboardFilter>("ALL");
+  const [blockBucket, setBlockBucket] = useState<AutoApplyBlockBucketFilter>("ALL");
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"product" | "severity">("severity");
+  const [page, setPage] = useState(0);
+  const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
+
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -119,9 +158,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
       const [masterData, equalize, autoApply, runs] = await Promise.all([
         fetchMasterDataImportDiagnostic({ limit: 1, includeExisting: true }).catch(() => null),
         fetchMasterDataEqualizePreview({ limit: 1, scope: "ACTIONABLE" }).catch(() => null),
-        fetchNomusAutoApplyBomDashboard({ filter, search: search.trim() || undefined }).catch(
-          () => null
-        ),
+        fetchNomusAutoApplyBomDashboard().catch(() => null),
         fetchEngineeringRunsRecent(30).catch(() => ({
           mode: "READ_ONLY" as const,
           generatedAt: new Date().toISOString(),
@@ -135,6 +172,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
         runs: runs?.items ?? [],
         generatedAt: new Date().toISOString(),
       });
+      setPage(0);
     } catch (e) {
       setError(
         e instanceof Error
@@ -144,17 +182,36 @@ export const NomusEngineeringStatusBoard: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [filter, search]);
+  }, []);
+
+  useEffect(() => {
+    setPage(0);
+  }, [filter, blockBucket, debouncedSearch, sortBy]);
 
   const md = snapshot?.masterData ?? null;
   const eq = snapshot?.equalize ?? null;
   const autoApply = snapshot?.autoApply ?? null;
   const totals = autoApply?.totals ?? null;
+  const allProducts = autoApply?.products ?? [];
+
+  const filteredProducts = useMemo(() => {
+    const filtered = filterDashboardProducts(allProducts, {
+      filter,
+      search: debouncedSearch,
+      blockBucket,
+    });
+    return sortDashboardProducts(filtered, sortBy);
+  }, [allProducts, filter, debouncedSearch, blockBucket, sortBy]);
+
+  const pagedProducts = useMemo(() => {
+    const start = page * PAGE_SIZE;
+    return filteredProducts.slice(start, start + PAGE_SIZE);
+  }, [filteredProducts, page]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
 
   const lastEqualize = snapshot ? pickLastByOrigin(snapshot.runs, ["MASTER_DATA_EQUALIZE"]) : null;
-  const lastAutoApply = snapshot
-    ? pickLastByOrigin(snapshot.runs, ["NOMUS_SYNC"])
-    : null;
+  const lastAutoApply = snapshot ? pickLastByOrigin(snapshot.runs, ["NOMUS_SYNC"]) : null;
   const lastManualBomApply = snapshot
     ? pickLastByOrigin(snapshot.runs, ["BOM_APPLY_AFTER_MASTER_DATA"])
     : null;
@@ -162,7 +219,88 @@ export const NomusEngineeringStatusBoard: React.FC<{
     ? pickLastByOrigin(snapshot.runs, ["MASTER_DATA_HISTORY_BACKFILL"])
     : null;
 
-  const visibleProducts = useMemo(() => autoApply?.products ?? [], [autoApply?.products]);
+  const applyCardFilter = (next: AutoApplyDashboardFilter) => {
+    setFilter(next);
+    setBlockBucket("ALL");
+  };
+
+  const clearFilters = () => {
+    setFilter("ALL");
+    setBlockBucket("ALL");
+    setSearch("");
+    setPage(0);
+  };
+
+  const toggleExpanded = (code: string) => {
+    setExpandedCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  const openProduct = (row: AutoApplyBomDashboardProductRow) => {
+    onOpenProduct?.(row.parentCode, { tab: row.recommendedTab });
+  };
+
+  const cardDefs: Array<{
+    filter: AutoApplyDashboardFilter;
+    icon: React.ReactNode;
+    tone: "neutral" | "info" | "warn" | "danger" | "success";
+    label: string;
+    value: number | string;
+    hint: string;
+  }> = [
+    {
+      filter: "ALL",
+      icon: <Database className="h-3.5 w-3.5" />,
+      tone: "neutral",
+      label: "Produtos avaliados",
+      value: totals?.parentsEvaluated ?? "—",
+      hint: "Total processado na última rotina.",
+    },
+    {
+      filter: "NO_CHANGES",
+      icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+      tone: "success",
+      label: "Sem alteração",
+      value: totals?.parentsNoChanges ?? "—",
+      hint: "ProductBOM já alinhada com Nomus.",
+    },
+    {
+      filter: "APPLIED",
+      icon: <Wrench className="h-3.5 w-3.5" />,
+      tone: "info",
+      label: "Aplicados",
+      value: totals?.parentsApplied ?? "—",
+      hint: "Produtos com alteração aplicada.",
+    },
+    {
+      filter: "BLOCKED",
+      icon: <ShieldAlert className="h-3.5 w-3.5" />,
+      tone: "danger",
+      label: "Bloqueados",
+      value: totals?.parentsBlocked ?? "—",
+      hint: "Pendências impedem apply automático.",
+    },
+    {
+      filter: "SKIPPED",
+      icon: <AlertTriangle className="h-3.5 w-3.5" />,
+      tone: "warn",
+      label: "Ignorados",
+      value: totals?.parentsSkipped ?? "—",
+      hint: "Sem produto IndusCost ou fora do escopo.",
+    },
+    {
+      filter: "ERROR",
+      icon: <ShieldAlert className="h-3.5 w-3.5" />,
+      tone: "danger",
+      label: "Erros",
+      value: totals?.parentsErrored ?? "—",
+      hint: "Falhas durante a rotina batch.",
+    },
+  ];
 
   return (
     <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-4">
@@ -232,15 +370,13 @@ export const NomusEngineeringStatusBoard: React.FC<{
                       eq.totals.deactivateMaterials
                     : "—"
                 }
-                hint="Produtos/materiais controlados para Igualar bases."
+                hint="Produtos/materiais controlados para Igualar bases — não confundir com bloqueios de BOM."
               />
               <SummaryCard
                 icon={<Database className="h-3.5 w-3.5" />}
                 tone="neutral"
                 label="Itens com histórico Nomus"
-                value={
-                  md ? md.totals.existingProducts + md.totals.existingMaterials : "—"
-                }
+                value={md ? md.totals.existingProducts + md.totals.existingMaterials : "—"}
                 hint="Já cadastrados como Nomus no IndusCost."
               />
             </div>
@@ -250,8 +386,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
             <SectionTitle icon={<Layers className="h-3.5 w-3.5" />} title="BOM / ProductBOM × Nomus (auto apply)" />
             {!autoApply?.hasReport ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-950">
-                {autoApply?.emptyMessage ??
-                  "Nenhuma rotina de auto apply BOM executada ainda."}
+                {autoApply?.emptyMessage ?? "Nenhuma rotina de auto apply BOM executada ainda."}
               </div>
             ) : (
               <>
@@ -260,67 +395,61 @@ export const NomusEngineeringStatusBoard: React.FC<{
                     Última execução: {formatDateShort(autoApply.lastRun.finishedAt)} · modo{" "}
                     <code className="font-mono">{autoApply.lastRun.mode}</code> · por{" "}
                     {autoApply.lastRun.approvedBy}
-                    {autoApply.source === "REPORT_FILE" ? " · relatório JSON" : " · run batch"}
+                    {autoApply.lastRun.batchRunId ? (
+                      <> · batch <code className="font-mono">{autoApply.lastRun.batchRunId.slice(0, 8)}…</code></>
+                    ) : null}
+                    {autoApply.source === "REPORT_FILE" ? " · relatório JSON" : " · run batch (fallback)"}
                   </p>
                 ) : null}
+
+                {autoApply.partialReportWarning ? (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-950">
+                    {autoApply.partialReportWarning}
+                  </div>
+                ) : null}
+
                 <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-                  <SummaryCard
-                    icon={<Database className="h-3.5 w-3.5" />}
-                    tone="neutral"
-                    label="Produtos avaliados"
-                    value={totals?.parentsEvaluated ?? "—"}
-                    hint="Total processado na última rotina."
-                  />
-                  <SummaryCard
-                    icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-                    tone="success"
-                    label="Sem alteração"
-                    value={totals?.parentsNoChanges ?? "—"}
-                    hint="ProductBOM já alinhada com Nomus."
-                  />
-                  <SummaryCard
-                    icon={<Wrench className="h-3.5 w-3.5" />}
-                    tone="info"
-                    label="Aplicados"
-                    value={totals?.parentsApplied ?? "—"}
-                    hint="Produtos com alteração aplicada."
-                  />
-                  <SummaryCard
-                    icon={<ShieldAlert className="h-3.5 w-3.5" />}
-                    tone="danger"
-                    label="Bloqueados"
-                    value={totals?.parentsBlocked ?? "—"}
-                    hint="Pendências impedem apply automático."
-                  />
-                  <SummaryCard
-                    icon={<AlertTriangle className="h-3.5 w-3.5" />}
-                    tone="warn"
-                    label="Ignorados"
-                    value={totals?.parentsSkipped ?? "—"}
-                    hint="Sem produto IndusCost ou fora do escopo."
-                  />
-                  <SummaryCard
-                    icon={<ShieldAlert className="h-3.5 w-3.5" />}
-                    tone="danger"
-                    label="Erros"
-                    value={totals?.parentsErrored ?? "—"}
-                    hint="Falhas durante a rotina batch."
-                  />
+                  {cardDefs.map((card) => (
+                    <SummaryCard
+                      key={card.filter}
+                      icon={card.icon}
+                      tone={card.tone}
+                      label={card.label}
+                      value={card.value}
+                      hint={card.hint}
+                      active={filter === card.filter}
+                      onClick={() => applyCardFilter(card.filter)}
+                    />
+                  ))}
                 </div>
 
                 {autoApply.blockingReasonBuckets.length > 0 ? (
-                  <div className="rounded-lg border border-border bg-card p-2.5 space-y-1">
+                  <div className="rounded-lg border border-border bg-card p-2.5 space-y-1.5">
                     <p className="text-[10px] uppercase font-bold text-muted-foreground">
-                      Top motivos de bloqueio
+                      Tipos de bloqueio (clique para filtrar)
                     </p>
-                    <ul className="text-[11px] space-y-0.5">
-                      {autoApply.blockingReasonBuckets.slice(0, 6).map((b) => (
-                        <li key={b.key} className="flex justify-between gap-2">
-                          <span>{b.label}</span>
-                          <strong className="tabular-nums">{b.count}</strong>
-                        </li>
+                    <div className="flex flex-wrap gap-1.5">
+                      {autoApply.blockingReasonBuckets.map((b) => (
+                        <button
+                          key={b.key}
+                          type="button"
+                          onClick={() => {
+                            setFilter("BLOCKED");
+                            setBlockBucket(b.key as AutoApplyBlockBucketFilter);
+                            setPage(0);
+                          }}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors",
+                            blockBucket === b.key
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-muted/40 hover:bg-muted"
+                          )}
+                        >
+                          {b.label}
+                          <span className="tabular-nums font-bold">{b.count}</span>
+                        </button>
                       ))}
-                    </ul>
+                    </div>
                   </div>
                 ) : null}
 
@@ -331,9 +460,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
                       <select
                         value={filter}
                         disabled={disabled || loading}
-                        onChange={(e) =>
-                          setFilter(e.target.value as AutoApplyDashboardFilter)
-                        }
+                        onChange={(e) => setFilter(e.target.value as AutoApplyDashboardFilter)}
                         className="mt-1 block h-8 w-full min-w-[160px] rounded-md border border-input bg-background px-2 text-xs"
                       >
                         {FILTER_OPTIONS.map((opt) => (
@@ -343,98 +470,238 @@ export const NomusEngineeringStatusBoard: React.FC<{
                         ))}
                       </select>
                     </label>
-                    <label className="text-[10px] font-semibold uppercase text-muted-foreground flex-1 min-w-[180px]">
-                      Buscar parentCode / motivo
+                    <label className="text-[10px] font-semibold uppercase text-muted-foreground flex-1 min-w-[200px]">
+                      Buscar produto, componente ou motivo
                       <div className="relative mt-1">
                         <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                         <input
                           value={search}
                           disabled={disabled || loading}
                           onChange={(e) => setSearch(e.target.value)}
-                          placeholder="Ex.: 308.05AB"
+                          placeholder="Ex.: 308.05, 115.01--, itens locais"
                           className="h-8 w-full rounded-md border border-input bg-background pl-7 pr-2 text-xs"
                         />
                       </div>
                     </label>
-                    <button
-                      type="button"
-                      disabled={disabled || loading}
-                      onClick={() => void loadAll()}
-                      className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2.5 text-xs font-semibold hover:bg-muted"
-                    >
-                      Aplicar filtros
-                    </button>
+                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">
+                      Ordenar
+                      <select
+                        value={sortBy}
+                        disabled={disabled || loading}
+                        onChange={(e) => setSortBy(e.target.value as "product" | "severity")}
+                        className="mt-1 block h-8 w-full min-w-[140px] rounded-md border border-input bg-background px-2 text-xs"
+                      >
+                        <option value="severity">Criticidade</option>
+                        <option value="product">Produto (A–Z)</option>
+                      </select>
+                    </label>
+                    {(filter !== "ALL" || blockBucket !== "ALL" || search.trim()) ? (
+                      <button
+                        type="button"
+                        disabled={disabled || loading}
+                        onClick={clearFilters}
+                        className="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2.5 text-xs font-semibold hover:bg-muted"
+                      >
+                        <X className="h-3 w-3" />
+                        Limpar filtros
+                      </button>
+                    ) : null}
                   </div>
 
                   <p className="text-[10px] text-muted-foreground">
-                    Exibindo {autoApply.matchedCount} produto(s) neste filtro.
+                    Exibindo {filteredProducts.length === 0 ? 0 : page * PAGE_SIZE + 1}–
+                    {Math.min((page + 1) * PAGE_SIZE, filteredProducts.length)} de{" "}
+                    {filteredProducts.length} produto(s) neste filtro
+                    {autoApply.totalProducts > 0 ? ` (total no relatório: ${autoApply.totalProducts})` : ""}.
                   </p>
 
                   <div className="overflow-x-auto rounded-lg border border-border">
                     <table className="min-w-full text-[11px]">
                       <thead className="bg-muted/50 text-left">
                         <tr>
+                          <th className="px-2 py-1.5 w-6" />
                           <th className="px-2 py-1.5 font-semibold">Produto</th>
                           <th className="px-2 py-1.5 font-semibold">Status</th>
+                          <th className="px-2 py-1.5 font-semibold">Tipo pendência</th>
                           <th className="px-2 py-1.5 font-semibold">Motivo principal</th>
-                          <th className="px-2 py-1.5 font-semibold">Ações previstas</th>
+                          <th className="px-2 py-1.5 font-semibold">Ações</th>
+                          <th className="px-2 py-1.5 font-semibold">Recomendação</th>
                           <th className="px-2 py-1.5 font-semibold text-right">Abrir</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleProducts.length === 0 ? (
+                        {filteredProducts.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-2 py-3 text-muted-foreground italic">
-                              Nenhum produto neste filtro.
+                            <td colSpan={8} className="px-2 py-3 text-muted-foreground italic">
+                              {autoApply.hasProductList
+                                ? "Nenhum produto encontrado para este filtro."
+                                : "Lista de produtos indisponível no relatório atual."}
                             </td>
                           </tr>
                         ) : (
-                          visibleProducts.slice(0, 200).map((row) => (
-                            <tr key={row.parentCode} className="border-t border-border/70">
-                              <td className="px-2 py-1.5 font-mono font-semibold">
-                                {row.parentCode}
-                              </td>
-                              <td className="px-2 py-1.5">
-                                <span
-                                  className={cn(
-                                    "inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
-                                    statusBadgeClass(row.status)
-                                  )}
-                                >
-                                  {row.status}
-                                </span>
-                              </td>
-                              <td className="px-2 py-1.5 max-w-[320px]">
-                                <span className="line-clamp-2">{row.primaryReason}</span>
-                              </td>
-                              <td className="px-2 py-1.5 whitespace-nowrap">
-                                {summarizeActions(row)}
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                {onOpenProduct ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => onOpenProduct(row.parentCode)}
-                                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-primary hover:bg-primary/10"
-                                  >
-                                    Manutenção
-                                    <ArrowRight className="h-3 w-3" />
-                                  </button>
-                                ) : (
-                                  "—"
-                                )}
-                              </td>
-                            </tr>
-                          ))
+                          pagedProducts.map((row) => {
+                            const expanded = expandedCodes.has(row.parentCode);
+                            return (
+                              <React.Fragment key={row.parentCode}>
+                                <tr className="border-t border-border/70 align-top">
+                                  <td className="px-1 py-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpanded(row.parentCode)}
+                                      className="rounded p-0.5 hover:bg-muted"
+                                      aria-label={expanded ? "Recolher detalhes" : "Expandir detalhes"}
+                                    >
+                                      {expanded ? (
+                                        <ChevronDown className="h-3.5 w-3.5" />
+                                      ) : (
+                                        <ChevronRight className="h-3.5 w-3.5" />
+                                      )}
+                                    </button>
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => openProduct(row)}
+                                        className="font-mono font-semibold text-primary hover:underline"
+                                      >
+                                        {row.parentCode}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Copiar código"
+                                        onClick={() => void copyText(row.parentCode)}
+                                        className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+                                      >
+                                        <ClipboardCopy className="h-3 w-3" />
+                                      </button>
+                                      {(row.status === "BLOCKED" || row.status === "ERROR") && (
+                                        <span className="rounded bg-red-100 px-1 py-0.5 text-[9px] font-bold uppercase text-red-800">
+                                          Ação
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <span
+                                      className={cn(
+                                        "inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                                        statusBadgeClass(row.status)
+                                      )}
+                                    >
+                                      {statusLabel(row.status)}
+                                    </span>
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap">
+                                    {row.pendingTypeLabel}
+                                  </td>
+                                  <td className="px-2 py-1.5 max-w-[240px]">
+                                    <span className="line-clamp-2">{row.primaryReason}</span>
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <span className="font-semibold tabular-nums">{row.actionsCount}</span>
+                                    {row.actionsSummaryLines.length > 0 ? (
+                                      <span className="text-muted-foreground">
+                                        {" "}
+                                        · {row.actionsSummaryLines.slice(0, 2).join(" · ")}
+                                        {row.actionsSummaryLines.length > 2 ? "…" : ""}
+                                      </span>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-2 py-1.5 max-w-[220px]">
+                                    <span className="line-clamp-2 text-[10px]">{row.recommendedAction}</span>
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                    {onOpenProduct ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openProduct(row)}
+                                        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-primary hover:bg-primary/10"
+                                      >
+                                        Abrir ajuste
+                                        <ArrowRight className="h-3 w-3" />
+                                      </button>
+                                    ) : (
+                                      "—"
+                                    )}
+                                  </td>
+                                </tr>
+                                {expanded ? (
+                                  <tr className="border-t border-border/40 bg-muted/20">
+                                    <td colSpan={8} className="px-3 py-2 space-y-2">
+                                      {row.blockingReasons.length > 0 ? (
+                                        <div>
+                                          <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                                            Motivos de bloqueio
+                                          </p>
+                                          <ul className="list-disc pl-4 text-[11px]">
+                                            {row.blockingReasons.map((r) => (
+                                              <li key={r}>{r}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      ) : null}
+                                      {row.actionsPreview && row.actionsPreview.length > 0 ? (
+                                        <div>
+                                          <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                                            Ações previstas
+                                          </p>
+                                          <ul className="text-[11px] font-mono space-y-0.5">
+                                            {row.actionsPreview.map((action, idx) => (
+                                              <li key={`${action.componentCode}-${idx}`}>
+                                                <strong>{action.actionType}</strong> {action.componentCode}
+                                                {action.currentQuantity != null || action.effectiveQuantity != null
+                                                  ? ` · ${action.currentQuantity ?? "—"} → ${action.effectiveQuantity ?? "—"}`
+                                                  : ""}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      ) : null}
+                                      {row.localOnlyLineCodes.length > 0 ? (
+                                        <p className="text-[11px]">
+                                          Itens locais:{" "}
+                                          <code className="font-mono">{row.localOnlyLineCodes.join(", ")}</code>
+                                        </p>
+                                      ) : null}
+                                      {row.errorMessage ? (
+                                        <p className="text-[11px] text-red-800">{row.errorMessage}</p>
+                                      ) : null}
+                                    </td>
+                                  </tr>
+                                ) : null}
+                              </React.Fragment>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
                   </div>
-                  {visibleProducts.length > 200 ? (
-                    <p className="text-[10px] text-muted-foreground italic">
-                      Mostrando os primeiros 200 de {visibleProducts.length}. Refine o filtro ou a
-                      busca.
-                    </p>
+
+                  {filteredProducts.length > PAGE_SIZE ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[10px] text-muted-foreground">
+                        Página {page + 1} de {totalPages}
+                      </p>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          disabled={page <= 0}
+                          onClick={() => setPage((p) => Math.max(0, p - 1))}
+                          className="rounded border border-input px-2 py-1 text-[10px] font-semibold disabled:opacity-40"
+                        >
+                          Anterior
+                        </button>
+                        <button
+                          type="button"
+                          disabled={page >= totalPages - 1}
+                          onClick={() => setPage((p) => p + 1)}
+                          className="rounded border border-input px-2 py-1 text-[10px] font-semibold disabled:opacity-40"
+                        >
+                          Próxima
+                        </button>
+                      </div>
+                    </div>
                   ) : null}
                 </div>
               </>
@@ -472,8 +739,8 @@ export const NomusEngineeringStatusBoard: React.FC<{
 
       {!snapshot && !loading && !error ? (
         <p className="text-[11px] text-muted-foreground italic">
-          Clique em <strong>Atualizar painel da engenharia</strong> para carregar Cadastro mestre e
-          o relatório de auto apply BOM.
+          Clique em <strong>Atualizar painel da engenharia</strong> para carregar Cadastro mestre e o
+          relatório de auto apply BOM.
         </p>
       ) : null}
     </div>
@@ -493,7 +760,9 @@ const SummaryCard: React.FC<{
   label: string;
   value: number | string;
   hint: string;
-}> = ({ icon, tone, label, value, hint }) => {
+  active?: boolean;
+  onClick?: () => void;
+}> = ({ icon, tone, label, value, hint, active = false, onClick }) => {
   const toneClass =
     tone === "danger"
       ? "border-red-300 bg-red-50 text-red-900"
@@ -504,15 +773,25 @@ const SummaryCard: React.FC<{
           : tone === "success"
             ? "border-emerald-300 bg-emerald-50 text-emerald-900"
             : "border-border bg-card text-foreground";
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className={cn("rounded-xl border p-2.5", toneClass)}>
+    <Tag
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={cn(
+        "rounded-xl border p-2.5 text-left transition-all",
+        toneClass,
+        onClick && "cursor-pointer hover:ring-2 hover:ring-primary/30",
+        active && "ring-2 ring-primary shadow-sm"
+      )}
+    >
       <p className="text-[10px] uppercase font-semibold opacity-80 flex items-center gap-1">
         {icon}
         {label}
       </p>
       <p className="text-2xl font-bold tabular-nums mt-1">{value}</p>
       <p className="text-[10px] opacity-80 mt-0.5 leading-tight">{hint}</p>
-    </div>
+    </Tag>
   );
 };
 

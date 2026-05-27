@@ -8,6 +8,10 @@ import type {
   AutoApplyDashboardFilter,
   AutoApplyProductCategory,
 } from "@/src/lib/nomusAutoApplyBomDashboardTypes";
+import {
+  computeFilterCounts,
+  enrichDashboardProductRow,
+} from "@/src/lib/nomusAutoApplyBomDashboardShared";
 import { prisma } from "@/src/lib/prisma";
 
 const DEFAULT_REPORT_JSON = join(process.cwd(), "docs/generated/nomus-auto-sync-bom-apply-report.json");
@@ -34,7 +38,20 @@ function matchesReason(text: string, patterns: RegExp[]): boolean {
 
 export function classifyAutoApplyProduct(
   product: NomusBomAutoApplyProductResult
-): Omit<AutoApplyBomDashboardProductRow, "parentCode" | "productId" | "status" | "canApply" | "errorMessage"> {
+): Omit<
+  AutoApplyBomDashboardProductRow,
+  | "parentCode"
+  | "productId"
+  | "status"
+  | "canApply"
+  | "errorMessage"
+  | "pendingTypeLabel"
+  | "recommendedAction"
+  | "recommendedTab"
+  | "severity"
+  | "actionsCount"
+  | "actionsSummaryLines"
+> {
   const blockingReasons = product.blockingReasons ?? [];
   const actions = product.actionsPreview ?? [];
 
@@ -237,35 +254,22 @@ async function readLatestBatchRunReport(): Promise<NomusBomAutoApplyReport | nul
 }
 
 function mapProductRows(products: NomusBomAutoApplyProductResult[]): AutoApplyBomDashboardProductRow[] {
-  return products.map((product) => ({
-    parentCode: product.parentCode,
-    productId: product.productId,
-    status: product.status,
-    canApply: product.canApply,
-    errorMessage: product.errorMessage,
-    ...classifyAutoApplyProduct(product),
-  }));
-}
-
-function applyDashboardFilters(
-  rows: AutoApplyBomDashboardProductRow[],
-  filter: AutoApplyDashboardFilter,
-  search: string | null
-): AutoApplyBomDashboardProductRow[] {
-  let out = rows;
-  if (filter !== "ALL") {
-    out = out.filter((r) => r.filterBuckets.includes(filter));
-  }
-  const q = search?.trim().toLowerCase();
-  if (q) {
-    out = out.filter(
-      (r) =>
-        r.parentCode.toLowerCase().includes(q) ||
-        r.primaryReason.toLowerCase().includes(q) ||
-        r.blockingReasons.some((b) => b.toLowerCase().includes(q))
-    );
-  }
-  return out;
+  return products.map((product) =>
+    enrichDashboardProductRow({
+      parentCode: product.parentCode,
+      productId: product.productId,
+      status: product.status,
+      canApply: product.canApply,
+      errorMessage: product.errorMessage,
+      ...classifyAutoApplyProduct(product),
+      pendingTypeLabel: "",
+      recommendedAction: "",
+      recommendedTab: "overview",
+      severity: 0,
+      actionsCount: 0,
+      actionsSummaryLines: [],
+    })
+  );
 }
 
 export async function buildNomusAutoApplyBomDashboard(input: {
@@ -287,11 +291,25 @@ export async function buildNomusAutoApplyBomDashboard(input: {
       mode: "READ_ONLY",
       source: "NONE",
       hasReport: false,
+      hasProductList: false,
+      partialReportWarning: null,
       emptyMessage: "Nenhuma rotina de auto apply BOM executada ainda.",
       lastRun: null,
       totals: null,
       blockingReasonBuckets: [],
       products: [],
+      filterCounts: {
+        ALL: 0,
+        BLOCKED: 0,
+        DIVERGENT: 0,
+        OPTIONAL_PENDING: 0,
+        LOCAL_PENDING: 0,
+        SKIPPED: 0,
+        NO_CHANGES: 0,
+        APPLIED: 0,
+        ERROR: 0,
+      },
+      totalProducts: 0,
       filter,
       search,
       matchedCount: 0,
@@ -299,13 +317,21 @@ export async function buildNomusAutoApplyBomDashboard(input: {
   }
 
   const allRows = mapProductRows(report.products);
-  const products = applyDashboardFilters(allRows, filter, search);
+  const hasProductList = allRows.length > 0;
+  const partialReportWarning =
+    !hasProductList && report.totals
+      ? "Relatório parcial: totais disponíveis, mas a lista de produtos não está no arquivo JSON. Execute novamente sync:nomus:all:apply para regenerar o relatório completo."
+      : null;
+
+  const filterCounts = computeFilterCounts(allRows);
 
   return {
     generatedAt: new Date().toISOString(),
     mode: "READ_ONLY",
     source: fileReport ? "REPORT_FILE" : "ENGINEERING_SYNC_RUN",
     hasReport: true,
+    hasProductList,
+    partialReportWarning,
     emptyMessage: null,
     lastRun: {
       startedAt: report.startedAt,
@@ -318,9 +344,11 @@ export async function buildNomusAutoApplyBomDashboard(input: {
     },
     totals: report.totals,
     blockingReasonBuckets: bucketBlockingReasons(report.products),
-    products,
+    products: allRows,
+    filterCounts,
+    totalProducts: allRows.length,
     filter,
     search,
-    matchedCount: products.length,
+    matchedCount: allRows.length,
   };
 }
