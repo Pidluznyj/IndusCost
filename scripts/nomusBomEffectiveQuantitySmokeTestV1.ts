@@ -1,14 +1,11 @@
 /**
- * Smoke test read-only da regra "BOM efetiva Nomus = qtdeNecessaria + qtdePerdaNormal".
- *
- * Fase: NOMUS-BOM-EFFECTIVE-QUANTITY-FINAL-A.
+ * Smoke test read-only da regra "BOM efetiva Nomus = qtdeNecessaria" (sem somar qtdePerdaNormal).
  *
  * 1. Sempre roda asserts puros sobre `computeEffectiveLineQuantity` e
  *    `stageRowToNomusLine` — não exige DATABASE_URL.
- * 2. Se DATABASE_URL estiver definida, valida com dados reais o caso piloto
- *    311.90AA / 110.02-- (consumo final = 0.007116) e a comparação com
- *    a ProductBOM atual (não deve gerar QUANTITY_DIFF quando ProductBOM já
- *    estiver com 0.007116 e lossPercentage=0).
+ * 2. Se DATABASE_URL estiver definida, valida com dados reais (ex.: 311.90AA / 110.02--)
+ *    e a comparação com ProductBOM (divergência esperada se Indus ainda tiver quantidade antiga
+ *    com perda somada).
  * 3. Não executa apply nem mutation.
  *
  * Uso: npm run test:nomus:bom-effective-quantity
@@ -39,11 +36,15 @@ function assertEq(actual: unknown, expected: unknown, label: string): void {
 function runPureChecks(): void {
   log("1) Asserts puros (sem DB)");
 
-  // Caso real validado: 0.00650 + 0.000616 = 0.007116
+  assertEq(
+    computeEffectiveLineQuantity(0.010878, 0.001771),
+    0.010878,
+    "309.02AA/115.01-- effective qty"
+  );
   assertEq(
     computeEffectiveLineQuantity(0.0065, 0.000616),
-    0.007116,
-    "311.90AA/110.02-- effective qty"
+    0.0065,
+    "311.90AA/110.02-- effective qty (ignora perda)"
   );
 
   // Sem perda
@@ -64,8 +65,8 @@ function runPureChecks(): void {
     "loss=NaN é ignorado"
   );
 
-  // Float-safety
-  assertEq(computeEffectiveLineQuantity(0.1, 0.2), 0.3, "0.1+0.2 = 0.3 (sem ruído)");
+  // Float-safety (arredonda required, não soma loss)
+  assertEq(computeEffectiveLineQuantity(0.123456789, 0.5), 0.123457, "arredonda 6 casas");
 
   // stageRowToNomusLine: caso piloto
   const line = stageRowToNomusLine({
@@ -86,7 +87,7 @@ function runPureChecks(): void {
     itemDeEmbarque: false,
     posicao: 1,
   });
-  assertEq(line.quantity, 0.007116, "stageRowToNomusLine.quantity (efetiva)");
+  assertEq(line.quantity, 0.0065, "stageRowToNomusLine.quantity (efetiva)");
   assertEq(line.requiredQuantity, 0.0065, "stageRowToNomusLine.requiredQuantity");
   assertEq(line.lossQuantity, 0.000616, "stageRowToNomusLine.lossQuantity");
 
@@ -142,7 +143,7 @@ async function runDbChecks(): Promise<void> {
             Math.abs(target.quantity - expected) > QUANTITY_TOLERANCE
           ) {
             fail(
-              `    quantity efetiva (${target.quantity}) diverge de requiredQuantity+lossQuantity (${expected})`
+              `    quantity efetiva (${target.quantity}) diverge de qtdeNecessaria (${expected})`
             );
           }
         }
@@ -158,20 +159,28 @@ async function runDbChecks(): Promise<void> {
       log(
         `    comparação 110.02-- · status=${cmpLine.status} nomusQty=${cmpLine.nomusQuantity} indusQty=${cmpLine.indusQuantity}`
       );
-      // Critério de aceite: se ProductBOM atual já estiver 0.007116, não deve haver QUANTITY_DIFF.
+      const nomusExpected = 0.0065;
       if (
+        cmpLine.nomusQuantity != null &&
+        Math.abs(cmpLine.nomusQuantity - nomusExpected) < 0.0000005 &&
         cmpLine.indusQuantity != null &&
         Math.abs(cmpLine.indusQuantity - 0.007116) < 0.0000005
       ) {
-        if (cmpLine.status !== "MATCH") {
+        if (cmpLine.status !== "QUANTITY_DIFF") {
           fail(
-            `    Esperado MATCH (ProductBOM já está 0.007116), recebido ${cmpLine.status}.`
+            `    Esperado QUANTITY_DIFF (Nomus=${nomusExpected}, Indus legado=0.007116), recebido ${cmpLine.status}.`
           );
         }
-        log("    OK · MATCH com ProductBOM=0.007116 (sem UPDATE_PRODUCT_BOM_QUANTITY)");
+        log("    OK · divergência detectada (Indus ainda com qty antiga somando perda)");
+      } else if (
+        cmpLine.nomusQuantity != null &&
+        cmpLine.indusQuantity != null &&
+        Math.abs(cmpLine.nomusQuantity - cmpLine.indusQuantity) < 0.0000005
+      ) {
+        log(`    OK · MATCH nomus=${cmpLine.nomusQuantity} indus=${cmpLine.indusQuantity}`);
       } else {
         log(
-          "    Aviso: ProductBOM atual não está em 0.007116 — comparação esperada DIVERGENTE até a aplicação ajustar."
+          `    Info: nomusQty=${cmpLine.nomusQuantity} indusQty=${cmpLine.indusQuantity} status=${cmpLine.status}`
         );
       }
     } else {

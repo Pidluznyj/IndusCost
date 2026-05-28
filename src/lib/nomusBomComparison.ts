@@ -2,26 +2,24 @@ export const QUANTITY_TOLERANCE = 0.000001;
 
 /**
  * Casas decimais de quantidade armazenadas em `NomusBomComponentStage`
- * (Decimal(20,6)). Usado para arredondar a soma `qtdeNecessaria + qtdePerdaNormal`
- * e evitar resíduos de ponto flutuante (ex.: 0.0065 + 0.000616 ≈ 0.007116000000000001).
+ * (Decimal(20,6)). Usado para arredondar `qtdeNecessaria` e evitar resíduos de ponto flutuante.
  */
 export const NOMUS_QUANTITY_DECIMAL_PLACES = 6;
 
 /**
- * Quantidade efetiva de consumo Nomus = quantidade teórica + perda normal.
+ * Quantidade efetiva Nomus para ProductBOM = `qtdeNecessaria` (quantidade teórica necessária).
  *
- * Regra (NOMUS-BOM-EFFECTIVE-QUANTITY-FINAL-A):
- * - `requiredQuantity` é `qtdeNecessaria` do Nomus (sem perda).
- * - `lossQuantity` é `qtdePerdaNormal` (em unidade absoluta).
- * - Quando há perda, o consumo final usado para custo no IndusCost é
- *   `requiredQuantity + lossQuantity` arredondado para a precisão do stage.
- * - Quando não há perda (`lossQuantity` nulo ou zero), retorna a própria
- *   `requiredQuantity`.
+ * Regra (governança Nomus → IndusCost):
+ * - `requiredQuantity` é `qtdeNecessaria` do stage Nomus.
+ * - `lossQuantity` (`qtdePerdaNormal`) é ignorada na quantidade aplicada; permanece apenas
+ *   em `NomusEffectiveBomLine.lossQuantity` para diagnóstico.
+ * - `ProductBOM.quantity` e comparações de apply usam somente esta quantidade necessária.
+ * - `ProductBOM.lossPercentage` permanece 0 (perda Nomus não é modelada no IndusCost).
  * - `null` quando `requiredQuantity` é nulo ou não-finito.
  */
 export function computeEffectiveLineQuantity(
   requiredQuantity: number | null | undefined,
-  lossQuantity: number | null | undefined
+  _lossQuantity?: number | null | undefined
 ): number | null {
   if (
     requiredQuantity == null ||
@@ -30,15 +28,8 @@ export function computeEffectiveLineQuantity(
   ) {
     return null;
   }
-  const loss =
-    lossQuantity != null &&
-    typeof lossQuantity === "number" &&
-    Number.isFinite(lossQuantity)
-      ? lossQuantity
-      : 0;
-  if (loss === 0) return requiredQuantity;
   const factor = 10 ** NOMUS_QUANTITY_DECIMAL_PLACES;
-  return Math.round((requiredQuantity + loss) * factor) / factor;
+  return Math.round(requiredQuantity * factor) / factor;
 }
 
 export type NomusEffectiveBomLine = {
@@ -47,17 +38,15 @@ export type NomusEffectiveBomLine = {
   componentCode: string;
   componentDescription?: string | null;
   /**
-   * Quantidade EFETIVA de consumo (`qtdeNecessaria` + `qtdePerdaNormal`).
+   * Quantidade Nomus para BOM IndusCost (`qtdeNecessaria` arredondada).
    *
-   * É este valor que entra no cálculo de custo IndusCost e na BOM aplicada
-   * (ProductBOM.quantity = quantity, ProductBOM.lossPercentage = 0).
-   * A perda normal Nomus já está embutida aqui — não usar `lossPercentage`
-   * adicional sobre esta quantidade, sob pena de aplicar perda em duplicidade.
+   * Entra na comparação, no apply controlado e no custo (ProductBOM.quantity;
+   * ProductBOM.lossPercentage = 0).
    */
   quantity: number | null;
-  /** Quantidade teórica do Nomus (`qtdeNecessaria`), sem perda. Diagnóstico. */
+  /** Quantidade teórica do Nomus (`qtdeNecessaria`). Igual a `quantity` após arredondamento. */
   requiredQuantity: number | null;
-  /** Perda normal absoluta (`qtdePerdaNormal`) já embutida em `quantity`. */
+  /** Perda normal absoluta (`qtdePerdaNormal`) — apenas diagnóstico; não somada em `quantity`. */
   lossQuantity: number | null;
   listaMateriaisId?: number | null;
   listaMateriaisNome?: string | null;

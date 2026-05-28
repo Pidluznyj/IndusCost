@@ -30,10 +30,7 @@ export function stageRowToNomusLine(row: {
 }): NomusEffectiveBomLine {
   const requiredQuantity = toNumberSafe(row.qtdeNecessaria);
   const lossQuantity = toNumberSafe(row.qtdePerdaNormal);
-  // Regra NOMUS-BOM-EFFECTIVE-QUANTITY-FINAL-A:
-  // a quantidade efetiva (consumo) já embute a perda normal do Nomus.
-  // O motor de custo do IndusCost usa ProductBOM.quantity diretamente,
-  // por isso `quantity` aqui é a soma final (qtdeNecessaria + qtdePerdaNormal).
+  // ProductBOM.quantity = qtdeNecessaria (perda normal Nomus não é somada no IndusCost).
   const effectiveQuantity = computeEffectiveLineQuantity(requiredQuantity, lossQuantity);
   return {
     externalLineId: row.externalLineId,

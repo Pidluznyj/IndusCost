@@ -409,7 +409,7 @@ export const NomusBomControlledApplySection: React.FC<NomusBomControlledApplySec
                     <th className="text-right px-2 py-2">Atual</th>
                     <th
                       className="text-right px-2 py-2"
-                      title="Quantidade efetiva Nomus considera a perda normal — qtdeNecessaria + qtdePerdaNormal. ProductBOM.lossPercentage permanece 0."
+                      title="Quantidade efetiva Nomus = qtdeNecessaria (perda normal do Nomus não é somada). ProductBOM.lossPercentage permanece 0."
                     >
                       Efetiva (com perda)
                     </th>
