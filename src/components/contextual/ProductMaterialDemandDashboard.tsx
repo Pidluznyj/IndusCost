@@ -15,6 +15,7 @@ type FiltersState = {
   productId: string;
   materialId: string;
   companyIssuer: string;
+  unitKey: string;
   mode: "quantity" | "value" | "orders" | "products";
   search: string;
 };
@@ -24,6 +25,8 @@ type MaterialRow = {
   code: string | null;
   description: string;
   unit: string | null;
+  unitKey?: string;
+  unitLabel?: string;
   quantityTotal: number;
   unitCostReference: number | null;
   estimatedValueTotal: number;
@@ -45,14 +48,29 @@ type MaterialRow = {
   }>;
 };
 
+type QuantityByUnitRow = {
+  unitKey: string;
+  unitLabel: string;
+  totalQuantity: number;
+  materialCount: number;
+};
+
 type SummaryBlock = {
-  totalEstimatedQuantity: number;
+  totalEstimatedQuantity: number | null;
   totalEstimatedValue: number;
   uniqueMaterials: number;
   orderCount: number;
   productCount: number;
   customerCount: number;
-  leaderMaterial: null | { code: string | null; description: string };
+  hasMixedUnits: boolean;
+  quantityTotalsComparable: boolean;
+  quantityByUnit: QuantityByUnitRow[];
+  leaderMaterial: null | {
+    code: string | null;
+    description: string;
+    unit?: string | null;
+    unitLabel?: string;
+  };
   leaderSharePct: number | null;
 };
 
@@ -60,9 +78,9 @@ type SummaryResponse = {
   semantics: { label: string };
   summary: SummaryBlock;
   charts: {
-    paretoByQuantity: MaterialRow[];
+    paretoByQuantityByUnit: Array<{ unitKey: string; unitLabel: string; rows: MaterialRow[] }>;
     paretoByValue: MaterialRow[];
-    evolution: Array<{ period: string; quantity: number; value: number; orderCount: number }>;
+    evolution: Array<{ period: string; quantity: number | null; value: number; orderCount: number }>;
   };
   facets: {
     statuses: string[];
@@ -70,6 +88,7 @@ type SummaryResponse = {
     products: Array<{ id: string; sku: string | null; name: string }>;
     materials: Array<{ materialId: string; code: string | null; description: string; unit: string | null }>;
     companyIssuers: string[];
+    units: QuantityByUnitRow[];
   };
 };
 
@@ -127,7 +146,8 @@ const INITIAL_FILTERS: FiltersState = {
   productId: "",
   materialId: "",
   companyIssuer: "",
-  mode: "quantity",
+  unitKey: "",
+  mode: "value",
   search: "",
 };
 
@@ -201,8 +221,8 @@ function MaterialDemandInfoBanner() {
           <p className="text-sm font-semibold text-foreground">Esta visão não representa consumo real de produção</p>
           <p className="text-sm leading-relaxed text-muted-foreground">
             Os volumes apresentados são estimativas calculadas a partir dos produtos, estruturas e quantidades presentes
-            nos pedidos de venda filtrados. Use esta tela para planejamento de compra, análise de demanda e visão
-            antecipada da necessidade de matéria-prima.
+            nos pedidos de venda filtrados. Quantidades em KG, UN e outras unidades não podem ser somadas nem
+            ranqueadas juntas — use o filtro de unidade ou compare por valor estimado (R$).
           </p>
         </div>
       </div>
@@ -436,10 +456,10 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
     };
   }, [filterKey, rowsPage, appliedFilters, retryNonce]);
 
-  const maxParetoQty = useMemo(
-    () => Math.max(0, ...(summaryData?.charts.paretoByQuantity.map((r) => r.quantityTotal) ?? [0])),
-    [summaryData]
-  );
+  const showEvolutionQuantity =
+    summaryData?.summary.quantityTotalsComparable === true ||
+    Boolean(appliedFilters.unitKey);
+
   const maxParetoVal = useMemo(
     () => Math.max(0, ...(summaryData?.charts.paretoByValue.map((r) => r.estimatedValueTotal) ?? [0])),
     [summaryData]
@@ -630,6 +650,27 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             </select>
           </div>
           <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-unit">
+              Unidade de medida
+            </label>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              Necessário para comparar quantidades (ex.: só KG ou só UN).
+            </p>
+            <select
+              id="mdf-unit"
+              value={filters.unitKey}
+              onChange={(e) => setFilters((p) => ({ ...p, unitKey: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Todas (ranking de qtd. por unidade)</option>
+              {(summaryData?.facets.units ?? []).map((u) => (
+                <option key={u.unitKey} value={u.unitKey}>
+                  {u.unitLabel} ({u.materialCount} MP · {num(u.totalQuantity)})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-material">
               Matéria-prima
             </label>
@@ -733,10 +774,23 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
           ) : (
             <>
               <div className="relative grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                <ContextualDashboardKpiCard
-                  label="Quantidade estimada (matéria-prima)"
-                  value={num(summaryData.summary.totalEstimatedQuantity)}
-                />
+                {summaryData.summary.quantityTotalsComparable ? (
+                  <ContextualDashboardKpiCard
+                    label={
+                      appliedFilters.unitKey
+                        ? `Quantidade estimada (${summaryData.facets.units.find((u) => u.unitKey === appliedFilters.unitKey)?.unitLabel ?? "unidade"})`
+                        : "Quantidade estimada (única unidade no filtro)"
+                    }
+                    value={num(summaryData.summary.totalEstimatedQuantity)}
+                  />
+                ) : (
+                  <ContextualDashboardKpiCard
+                    label="Quantidade estimada"
+                    value="Várias unidades"
+                    hint="Filtre por unidade ou veja o detalhe abaixo"
+                    valueClassName="text-base font-semibold leading-snug sm:text-lg"
+                  />
+                )}
                 <ContextualDashboardKpiCard
                   label="Valor estimado (matéria-prima)"
                   value={money(summaryData.summary.totalEstimatedValue)}
@@ -759,11 +813,11 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 />
                 {summaryData.summary.leaderMaterial ? (
                   <ContextualDashboardKpiCard
-                    label="Principal matéria-prima demandada"
+                    label="Principal matéria-prima (valor estimado)"
                     value={`${summaryData.summary.leaderMaterial.code ? `[${summaryData.summary.leaderMaterial.code}] ` : ""}${summaryData.summary.leaderMaterial.description}`}
                     hint={
                       summaryData.summary.leaderSharePct != null
-                        ? `${pct(summaryData.summary.leaderSharePct)} da quantidade total`
+                        ? `${pct(summaryData.summary.leaderSharePct)} do valor total${summaryData.summary.leaderMaterial.unitLabel ? ` · ${summaryData.summary.leaderMaterial.unitLabel}` : ""}`
                         : undefined
                     }
                     valueClassName="text-base font-semibold leading-snug sm:text-lg normal-nums"
@@ -771,25 +825,84 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 ) : null}
               </div>
 
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-sm">
-                  <h3 className="text-sm font-bold text-foreground">Pareto por quantidade (Top 10)</h3>
-                  <div className="space-y-2">
-                    {summaryData.charts.paretoByQuantity.slice(0, 10).map((row) => (
-                      <div key={`q-${row.materialId}`} className="space-y-1">
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="truncate">{(row.code ? `[${row.code}] ` : "") + row.description}</span>
-                          <span className="tabular-nums font-semibold">{num(row.quantityTotal)}</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full bg-blue-600/80"
-                            style={{ width: `${maxParetoQty > 0 ? (row.quantityTotal / maxParetoQty) * 100 : 0}%` }}
-                          />
-                        </div>
-                      </div>
+              {summaryData.summary.hasMixedUnits && summaryData.summary.quantityByUnit.length > 0 ? (
+                <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-foreground">Totais de quantidade por unidade de medida</p>
+                  <p className="text-xs text-muted-foreground">
+                    Não é possível somar KG com UN. Selecione uma unidade no filtro para ver ranking e percentuais de
+                    quantidade comparáveis.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {summaryData.summary.quantityByUnit.map((u) => (
+                      <button
+                        key={u.unitKey}
+                        type="button"
+                        onClick={() => {
+                          const next = { ...filters, unitKey: u.unitKey };
+                          setFilters(next);
+                          setAppliedFilters(next);
+                          setRowsPage(1);
+                        }}
+                        className={cn(
+                          "inline-flex flex-col items-start rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+                          appliedFilters.unitKey === u.unitKey
+                            ? "border-primary bg-primary/5"
+                            : "border-border bg-card hover:bg-accent"
+                        )}
+                      >
+                        <span className="font-bold text-foreground">{u.unitLabel}</span>
+                        <span className="tabular-nums text-muted-foreground">
+                          {num(u.totalQuantity)} · {u.materialCount} MP
+                        </span>
+                      </button>
                     ))}
                   </div>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                <div className="space-y-4">
+                  {summaryData.charts.paretoByQuantityByUnit.length === 0 ? (
+                    <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+                      Sem dados de quantidade para exibir.
+                    </div>
+                  ) : (
+                    summaryData.charts.paretoByQuantityByUnit.map((group) => {
+                      const maxQty = Math.max(0, ...group.rows.map((r) => r.quantityTotal));
+                      return (
+                        <div
+                          key={group.unitKey}
+                          className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-sm"
+                        >
+                          <h3 className="text-sm font-bold text-foreground">
+                            Pareto por quantidade — {group.unitLabel} (Top 10)
+                          </h3>
+                          <div className="space-y-2">
+                            {group.rows.slice(0, 10).map((row) => (
+                              <div key={`q-${group.unitKey}-${row.materialId}`} className="space-y-1">
+                                <div className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="truncate">
+                                    {(row.code ? `[${row.code}] ` : "") + row.description}
+                                  </span>
+                                  <span className="tabular-nums font-semibold shrink-0">
+                                    {num(row.quantityTotal)} {group.unitLabel}
+                                  </span>
+                                </div>
+                                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full bg-blue-600/80"
+                                    style={{
+                                      width: `${maxQty > 0 ? (row.quantityTotal / maxQty) * 100 : 0}%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
                 <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-sm">
                   <h3 className="text-sm font-bold text-foreground">Pareto por valor (Top 10)</h3>
@@ -819,7 +932,14 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                     <thead>
                       <tr className="border-b border-border">
                         <th className="py-2 text-left font-semibold">Período</th>
-                        <th className="py-2 text-right font-semibold">Quantidade estimada</th>
+                        {showEvolutionQuantity ? (
+                          <th className="py-2 text-right font-semibold">
+                            Qtd. estimada
+                            {appliedFilters.unitKey
+                              ? ` (${summaryData.facets.units.find((u) => u.unitKey === appliedFilters.unitKey)?.unitLabel ?? ""})`
+                              : ""}
+                          </th>
+                        ) : null}
                         <th className="py-2 text-right font-semibold">Valor estimado</th>
                         <th className="py-2 text-right font-semibold">Pedidos</th>
                       </tr>
@@ -828,7 +948,9 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                       {summaryData.charts.evolution.map((r) => (
                         <tr key={r.period}>
                           <td className="py-2">{periodLabel(r.period)}</td>
-                          <td className="py-2 text-right tabular-nums">{num(r.quantity)}</td>
+                          {showEvolutionQuantity ? (
+                            <td className="py-2 text-right tabular-nums">{num(r.quantity)}</td>
+                          ) : null}
                           <td className="py-2 text-right tabular-nums">{money(r.value)}</td>
                           <td className="py-2 text-right tabular-nums">{r.orderCount}</td>
                         </tr>
@@ -867,7 +989,9 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                             <th className="p-3 text-right font-semibold">Pedidos</th>
                             <th className="p-3 text-right font-semibold">Produtos</th>
                             <th className="p-3 text-right font-semibold">Último uso</th>
-                            <th className="p-3 text-right font-semibold">% qtd.</th>
+                            <th className="p-3 text-right font-semibold" title="Percentual dentro da mesma unidade de medida">
+                              % qtd. (un.)
+                            </th>
                             <th className="p-3 text-right font-semibold">% valor</th>
                           </tr>
                         </thead>

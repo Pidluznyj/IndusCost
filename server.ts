@@ -46,6 +46,7 @@ import {
   sumExplosionTotalCost,
   type ExplosionRowCore,
 } from "./src/lib/openBookMaterialExplosion.js";
+import { normalizeMaterialUnitKey } from "./src/lib/materialDemandUnits.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
 import {
@@ -8378,6 +8379,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     productId: string | null;
     materialId: string | null;
     companyIssuer: string | null;
+    unitKey: string | null;
     mode: MaterialDemandMode;
     search: string;
   };
@@ -8406,6 +8408,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       productId: typeof q.productId === "string" && q.productId ? q.productId : null,
       materialId: typeof q.materialId === "string" && q.materialId ? q.materialId : null,
       companyIssuer: typeof q.companyIssuer === "string" && q.companyIssuer.trim() ? q.companyIssuer.trim() : null,
+      unitKey: typeof q.unitKey === "string" && q.unitKey.trim() ? q.unitKey.trim() : null,
       mode,
       search: typeof q.search === "string" ? q.search.trim().toLowerCase() : "",
     };
@@ -8499,6 +8502,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       code: string | null;
       description: string;
       unit: string | null;
+      unitKey: string;
+      unitLabel: string;
       quantityTotal: number;
       valueTotal: number;
       unitCostReference: number | null;
@@ -8526,7 +8531,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     };
 
     const byMaterial = new Map<string, MaterialAgg>();
-    const byPeriod = new Map<string, { quantity: number; value: number; orderIds: Set<string> }>();
+    const byPeriod = new Map<
+      string,
+      { value: number; orderIds: Set<string>; quantityByUnit: Map<string, number> }
+    >();
     const byProduct = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number; orderIds: Set<string> }>();
     const byCustomer = new Map<string, { customerId: string; customerName: string; quantity: number; value: number; orderIds: Set<string> }>();
     const byCompany = new Map<string, { companyIssuer: string; quantity: number; value: number; orderIds: Set<string> }>();
@@ -8569,6 +8577,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               ? row.description.trim()
               : "Matéria-prima";
           const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
+          const { unitKey, unitLabel } = normalizeMaterialUnitKey(unit);
+          if (filters.unitKey && unitKey !== filters.unitKey) continue;
           const textHaystack = `${mid} ${code ?? ""} ${desc} ${unit ?? ""}`.toLowerCase();
           if (filters.search && !textHaystack.includes(filters.search)) continue;
 
@@ -8585,6 +8595,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               code,
               description: desc,
               unit,
+              unitKey,
+              unitLabel,
               quantityTotal: 0,
               valueTotal: 0,
               unitCostReference: unitCostRef,
@@ -8628,8 +8640,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           byMaterial.set(mid, current);
 
           const periodAgg =
-            byPeriod.get(periodKey) ?? { quantity: 0, value: 0, orderIds: new Set<string>() };
-          if (estimatedQuantity != null) periodAgg.quantity += estimatedQuantity;
+            byPeriod.get(periodKey) ?? {
+              value: 0,
+              orderIds: new Set<string>(),
+              quantityByUnit: new Map<string, number>(),
+            };
+          if (estimatedQuantity != null) {
+            periodAgg.quantityByUnit.set(
+              unitKey,
+              (periodAgg.quantityByUnit.get(unitKey) ?? 0) + estimatedQuantity
+            );
+          }
           if (estimatedValue != null) periodAgg.value += estimatedValue;
           periodAgg.orderIds.add(order.id);
           byPeriod.set(periodKey, periodAgg);
@@ -8678,8 +8699,29 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
 
     const materials = [...byMaterial.values()];
-    const totalEstimatedQuantity = materials.reduce((acc, m) => acc + m.quantityTotal, 0);
     const totalEstimatedValue = materials.reduce((acc, m) => acc + m.valueTotal, 0);
+
+    const quantityByUnitMap = new Map<
+      string,
+      { unitKey: string; unitLabel: string; totalQuantity: number; materialCount: number }
+    >();
+    for (const m of materials) {
+      const bucket =
+        quantityByUnitMap.get(m.unitKey) ??
+        { unitKey: m.unitKey, unitLabel: m.unitLabel, totalQuantity: 0, materialCount: 0 };
+      bucket.totalQuantity += m.quantityTotal;
+      bucket.materialCount += 1;
+      quantityByUnitMap.set(m.unitKey, bucket);
+    }
+    const quantityByUnit = [...quantityByUnitMap.values()].sort(
+      (a, b) => b.totalQuantity - a.totalQuantity
+    );
+    const hasMixedUnits = quantityByUnit.length > 1;
+    const activeUnitKey = filters.unitKey ?? (quantityByUnit.length === 1 ? quantityByUnit[0]?.unitKey ?? null : null);
+    const activeUnitBucket = activeUnitKey ? quantityByUnitMap.get(activeUnitKey) : null;
+    const totalEstimatedQuantity =
+      activeUnitBucket != null ? activeUnitBucket.totalQuantity : hasMixedUnits ? null : materials.reduce((acc, m) => acc + m.quantityTotal, 0);
+    const quantityTotalsComparable = activeUnitKey != null || !hasMixedUnits;
 
     const allOrderIds = new Set<string>();
     const allProductIds = new Set<string>();
@@ -8734,11 +8776,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         }
       }
 
+      const unitQuantityDenominator = quantityByUnitMap.get(m.unitKey)?.totalQuantity ?? 0;
+
       const baseRow = {
         materialId: m.materialId,
         code: m.code,
         description: m.description,
         unit: m.unit,
+        unitKey: m.unitKey,
+        unitLabel: m.unitLabel,
         quantityTotal: m.quantityTotal,
         unitCostReference:
           m.unitCostReference != null
@@ -8752,7 +8798,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         customerCount: m.customerIds.size,
         latestUsageAt: m.latestUsageAt ? m.latestUsageAt.toISOString() : null,
         pctOfTotalQuantity:
-          totalEstimatedQuantity > 0 ? (m.quantityTotal / totalEstimatedQuantity) * 100 : null,
+          unitQuantityDenominator > 0 ? (m.quantityTotal / unitQuantityDenominator) * 100 : null,
         pctOfTotalValue: totalEstimatedValue > 0 ? (m.valueTotal / totalEstimatedValue) * 100 : null,
       };
 
@@ -8774,17 +8820,29 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       };
     });
 
-    const leader = [...rows].sort((a, b) => Number(b.quantityTotal ?? 0) - Number(a.quantityTotal ?? 0))[0] ?? null;
+    const leaderByValue =
+      [...rows].sort((a, b) => Number(b.estimatedValueTotal ?? 0) - Number(a.estimatedValueTotal ?? 0))[0] ?? null;
     const leaderSharePct =
-      leader && totalEstimatedQuantity > 0
-        ? (Number(leader.quantityTotal ?? 0) / totalEstimatedQuantity) * 100
+      leaderByValue && totalEstimatedValue > 0
+        ? (Number(leaderByValue.estimatedValueTotal ?? 0) / totalEstimatedValue) * 100
         : null;
+
+    const paretoByQuantityByUnit = quantityByUnit.map((u) => ({
+      unitKey: u.unitKey,
+      unitLabel: u.unitLabel,
+      rows: rows
+        .filter((r) => r.unitKey === u.unitKey)
+        .sort((a, b) => Number(b.quantityTotal ?? 0) - Number(a.quantityTotal ?? 0))
+        .slice(0, 10),
+    }));
 
     const semantics = {
       source: "SALES_ORDER_ITEMS_WITH_PRODUCT_OPEN_BOOK",
       meaning: "DEMANDA_ESTIMADA_MATERIA_PRIMA",
       label:
         "Base derivada de itens de pedidos de venda. Os valores representam demanda/uso estimado de matéria-prima, não consumo real de produção.",
+      quantityRankingNote:
+        "Quantidades só são comparáveis entre matérias-primas com a mesma unidade de medida. Rankings globais de quantidade usam grupos por unidade; comparação entre unidades distintas use valor estimado (R$).",
     };
 
     const filtersApplied = {
@@ -8795,6 +8853,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       productId: filters.productId,
       materialId: filters.materialId,
       companyIssuer: filters.companyIssuer,
+      unitKey: filters.unitKey,
       mode: filters.mode,
       search: filters.search || null,
     };
@@ -8806,33 +8865,44 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       orderCount: allOrderIds.size,
       productCount: allProductIds.size,
       customerCount: allCustomerIds.size,
-      leaderMaterial: leader
+      hasMixedUnits,
+      quantityTotalsComparable,
+      quantityByUnit,
+      leaderMaterial: leaderByValue
         ? {
-            materialId: leader.materialId,
-            code: leader.code,
-            description: leader.description,
-            quantityTotal: leader.quantityTotal,
-            estimatedValueTotal: leader.estimatedValueTotal,
+            materialId: leaderByValue.materialId,
+            code: leaderByValue.code,
+            description: leaderByValue.description,
+            quantityTotal: leaderByValue.quantityTotal,
+            estimatedValueTotal: leaderByValue.estimatedValueTotal,
+            unit: leaderByValue.unit,
+            unitLabel: leaderByValue.unitLabel,
           }
         : null,
       leaderSharePct,
     };
 
     const charts = {
-      paretoByQuantity: [...rows]
-        .sort((a, b) => Number(b.quantityTotal ?? 0) - Number(a.quantityTotal ?? 0))
-        .slice(0, 15),
+      paretoByQuantityByUnit,
       paretoByValue: [...rows]
         .sort((a, b) => Number(b.estimatedValueTotal ?? 0) - Number(a.estimatedValueTotal ?? 0))
         .slice(0, 15),
       evolution: [...byPeriod.entries()]
         .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([period, v]) => ({
-          period,
-          quantity: v.quantity,
-          value: v.value,
-          orderCount: v.orderIds.size,
-        })),
+        .map(([period, v]) => {
+          const quantity =
+            activeUnitKey != null
+              ? (v.quantityByUnit.get(activeUnitKey) ?? 0)
+              : quantityTotalsComparable
+                ? [...v.quantityByUnit.values()].reduce((acc, q) => acc + q, 0)
+                : null;
+          return {
+            period,
+            quantity,
+            value: v.value,
+            orderCount: v.orderIds.size,
+          };
+        }),
       byProduct: [...byProduct.values()]
         .sort((a, b) => b.value - a.value)
         .slice(0, 20)
@@ -8899,6 +8969,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             .filter((v): v is string => Boolean(v))
         ),
       ].sort(),
+      units: quantityByUnit.map((u) => ({
+        unitKey: u.unitKey,
+        unitLabel: u.unitLabel,
+        materialCount: u.materialCount,
+        totalQuantity: u.totalQuantity,
+      })),
     };
 
     return {
