@@ -15,7 +15,7 @@ type FiltersState = {
   productId: string;
   materialId: string;
   companyIssuer: string;
-  mode: "quantity" | "value" | "proposals" | "products";
+  mode: "quantity" | "value" | "orders" | "products";
   search: string;
 };
 
@@ -27,7 +27,7 @@ type MaterialRow = {
   quantityTotal: number;
   unitCostReference: number | null;
   estimatedValueTotal: number;
-  proposalCount: number;
+  orderCount: number;
   productCount: number;
   customerCount?: number;
   latestUsageAt: string | null;
@@ -35,11 +35,11 @@ type MaterialRow = {
   pctOfTotalValue: number | null;
   topProducts?: Array<{ productId: string; sku: string | null; name: string; quantity: number; value: number }>;
   topCustomers?: Array<{ customerId: string; customerName: string; quantity: number; value: number }>;
-  proposals?: Array<{
-    proposalId: string;
-    proposalNumber: number;
-    proposalDate: string;
-    proposalStatus: string;
+  orders?: Array<{
+    salesOrderId: string;
+    orderCode: string;
+    orderDate: string;
+    orderStatus: string;
     quantity: number;
     value: number;
   }>;
@@ -49,7 +49,7 @@ type SummaryBlock = {
   totalEstimatedQuantity: number;
   totalEstimatedValue: number;
   uniqueMaterials: number;
-  proposalCount: number;
+  orderCount: number;
   productCount: number;
   customerCount: number;
   leaderMaterial: null | { code: string | null; description: string };
@@ -62,7 +62,7 @@ type SummaryResponse = {
   charts: {
     paretoByQuantity: MaterialRow[];
     paretoByValue: MaterialRow[];
-    evolution: Array<{ period: string; quantity: number; value: number; proposalCount: number }>;
+    evolution: Array<{ period: string; quantity: number; value: number; orderCount: number }>;
   };
   facets: {
     statuses: string[];
@@ -83,7 +83,7 @@ type MaterialDetailsResponse = {
   totals: {
     quantityTotal: number;
     estimatedValueTotal: number;
-    proposalCount: number;
+    orderCount: number;
     productCount: number;
     customerCount?: number;
     unitCostReference: number | null;
@@ -91,8 +91,33 @@ type MaterialDetailsResponse = {
   };
   topProducts: NonNullable<MaterialRow["topProducts"]>;
   topCustomers: NonNullable<MaterialRow["topCustomers"]>;
-  proposals: NonNullable<MaterialRow["proposals"]>;
+  orders: NonNullable<MaterialRow["orders"]>;
 };
+
+export type ProductMaterialDemandDashboardProps = {
+  context?: "products" | "sales-orders";
+};
+
+const DASHBOARD_CONTEXT = {
+  products: {
+    moduleLabel: "Engenharia — demanda estimada",
+    backPath: "/products",
+    backLabel: "Voltar para Engenharia",
+    baseBadge: "Base: pedidos de venda",
+    title: "Engenharia — Inteligência de Matéria-Prima",
+    subtitle:
+      "Visão estimada da necessidade de matéria-prima com base nos itens dos pedidos de venda selecionados.",
+  },
+  "sales-orders": {
+    moduleLabel: "Pedidos de venda — demanda estimada",
+    backPath: "/sales-orders",
+    backLabel: "Voltar para Pedidos de venda",
+    baseBadge: "Base: pedidos de venda",
+    title: "Pedidos de venda — Inteligência de Matéria-Prima",
+    subtitle:
+      "Visão estimada da necessidade de matéria-prima com base nos itens dos pedidos de venda filtrados.",
+  },
+} as const;
 
 const INITIAL_FILTERS: FiltersState = {
   startDate: "",
@@ -118,8 +143,8 @@ function sortParamsForMode(mode: FiltersState["mode"]): { sortBy: string; sortDi
   switch (mode) {
     case "value":
       return { sortBy: "estimatedValueTotal", sortDir: "desc" };
-    case "proposals":
-      return { sortBy: "proposalCount", sortDir: "desc" };
+    case "orders":
+      return { sortBy: "orderCount", sortDir: "desc" };
     case "products":
       return { sortBy: "productCount", sortDir: "desc" };
     default:
@@ -152,8 +177,8 @@ function modeOptionLabel(mode: FiltersState["mode"]): string {
   switch (mode) {
     case "value":
       return "Valor estimado";
-    case "proposals":
-      return "Pedidos e propostas (contagem)";
+    case "orders":
+      return "Pedidos de venda (contagem)";
     case "products":
       return "Produtos impactados (contagem)";
     default:
@@ -176,7 +201,7 @@ function MaterialDemandInfoBanner() {
           <p className="text-sm font-semibold text-foreground">Esta visão não representa consumo real de produção</p>
           <p className="text-sm leading-relaxed text-muted-foreground">
             Os volumes apresentados são estimativas calculadas a partir dos produtos, estruturas e quantidades presentes
-            nas propostas e pedidos filtrados. Use esta tela para planejamento de compra, análise de demanda e visão
+            nos pedidos de venda filtrados. Use esta tela para planejamento de compra, análise de demanda e visão
             antecipada da necessidade de matéria-prima.
           </p>
         </div>
@@ -200,7 +225,7 @@ function MaterialDemandLoadingState({ phase }: { phase: "summary" | "rows" | "bo
           <div className="min-w-0 flex-1 space-y-1">
             <p className="text-sm font-semibold text-foreground">Calculando demanda estimada…</p>
             <p className="text-sm text-muted-foreground">
-              Isso pode levar alguns segundos dependendo do volume de propostas e da complexidade das estruturas de
+              Isso pode levar alguns segundos dependendo do volume de pedidos e da complexidade das estruturas de
               produto.
             </p>
           </div>
@@ -283,7 +308,8 @@ function MaterialDemandErrorState({
   );
 }
 
-export function ProductMaterialDemandDashboard() {
+export function ProductMaterialDemandDashboard({ context = "products" }: ProductMaterialDemandDashboardProps) {
+  const ctx = DASHBOARD_CONTEXT[context];
   const [filters, setFilters] = useState<FiltersState>(INITIAL_FILTERS);
   const [searchInput, setSearchInput] = useState("");
   const [appliedFilters, setAppliedFilters] = useState<FiltersState>(INITIAL_FILTERS);
@@ -492,9 +518,9 @@ export function ProductMaterialDemandDashboard() {
 
   return (
     <ContextualDashboardLayout
-      moduleLabel="Engenharia — demanda estimada"
-      backPath="/products"
-      backLabel="Voltar para Engenharia"
+      moduleLabel={ctx.moduleLabel}
+      backPath={ctx.backPath}
+      backLabel={ctx.backLabel}
     >
       <header className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -504,15 +530,11 @@ export function ProductMaterialDemandDashboard() {
                 Demanda estimada
               </span>
               <span className="inline-flex items-center rounded-full border border-border bg-muted/20 px-2.5 py-0.5 text-xs text-muted-foreground">
-                Base: propostas e itens comerciais
+                {ctx.baseBadge}
               </span>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-              Engenharia — Inteligência de Matéria-Prima
-            </h1>
-            <p className="text-sm leading-relaxed text-muted-foreground max-w-3xl">
-              Visão estimada da necessidade de matéria-prima com base nos itens de propostas e pedidos selecionados.
-            </p>
+            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{ctx.title}</h1>
+            <p className="text-sm leading-relaxed text-muted-foreground max-w-3xl">{ctx.subtitle}</p>
           </div>
         </div>
         <MaterialDemandInfoBanner />
@@ -531,7 +553,7 @@ export function ProductMaterialDemandDashboard() {
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-start">
               Data inicial
             </label>
-            <p className="text-[11px] text-muted-foreground leading-snug">Período usado para selecionar propostas e pedidos.</p>
+            <p className="text-[11px] text-muted-foreground leading-snug">Período usado para selecionar pedidos de venda (data de emissão).</p>
             <input
               id="mdf-start"
               type="date"
@@ -544,7 +566,7 @@ export function ProductMaterialDemandDashboard() {
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-end">
               Data final
             </label>
-            <p className="text-[11px] text-muted-foreground leading-snug">Período usado para selecionar propostas e pedidos.</p>
+            <p className="text-[11px] text-muted-foreground leading-snug">Período usado para selecionar pedidos de venda (data de emissão).</p>
             <input
               id="mdf-end"
               type="date"
@@ -656,7 +678,7 @@ export function ProductMaterialDemandDashboard() {
             >
               <option value="quantity">{modeOptionLabel("quantity")}</option>
               <option value="value">{modeOptionLabel("value")}</option>
-              <option value="proposals">{modeOptionLabel("proposals")}</option>
+              <option value="orders">{modeOptionLabel("orders")}</option>
               <option value="products">{modeOptionLabel("products")}</option>
             </select>
           </div>
@@ -724,8 +746,8 @@ export function ProductMaterialDemandDashboard() {
                   value={String(summaryData.summary.uniqueMaterials)}
                 />
                 <ContextualDashboardKpiCard
-                  label="Propostas e pedidos considerados"
-                  value={String(summaryData.summary.proposalCount)}
+                  label="Pedidos de venda considerados"
+                  value={String(summaryData.summary.orderCount)}
                 />
                 <ContextualDashboardKpiCard
                   label="Produtos impactados"
@@ -799,7 +821,7 @@ export function ProductMaterialDemandDashboard() {
                         <th className="py-2 text-left font-semibold">Período</th>
                         <th className="py-2 text-right font-semibold">Quantidade estimada</th>
                         <th className="py-2 text-right font-semibold">Valor estimado</th>
-                        <th className="py-2 text-right font-semibold">Propostas / pedidos</th>
+                        <th className="py-2 text-right font-semibold">Pedidos</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -808,7 +830,7 @@ export function ProductMaterialDemandDashboard() {
                           <td className="py-2">{periodLabel(r.period)}</td>
                           <td className="py-2 text-right tabular-nums">{num(r.quantity)}</td>
                           <td className="py-2 text-right tabular-nums">{money(r.value)}</td>
-                          <td className="py-2 text-right tabular-nums">{r.proposalCount}</td>
+                          <td className="py-2 text-right tabular-nums">{r.orderCount}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -820,7 +842,7 @@ export function ProductMaterialDemandDashboard() {
                 <div className="px-5 py-4 border-b border-border bg-muted/20">
                   <h3 className="text-sm font-bold text-foreground">Matérias-primas (detalhe)</h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Clique em uma linha para ver produtos, clientes e propostas relacionados. A lista é paginada para
+                    Clique em uma linha para ver produtos, clientes e pedidos relacionados. A lista é paginada para
                     manter a tela responsiva.
                   </p>
                 </div>
@@ -842,7 +864,7 @@ export function ProductMaterialDemandDashboard() {
                             <th className="p-3 text-right font-semibold">Qtd. total</th>
                             <th className="p-3 text-right font-semibold">Custo unit. ref.</th>
                             <th className="p-3 text-right font-semibold">Valor total</th>
-                            <th className="p-3 text-right font-semibold">Propostas</th>
+                            <th className="p-3 text-right font-semibold">Pedidos</th>
                             <th className="p-3 text-right font-semibold">Produtos</th>
                             <th className="p-3 text-right font-semibold">Último uso</th>
                             <th className="p-3 text-right font-semibold">% qtd.</th>
@@ -856,7 +878,7 @@ export function ProductMaterialDemandDashboard() {
                             const isOpen = expandedMaterialId === row.materialId;
                             const topProducts = cached?.topProducts ?? row.topProducts ?? [];
                             const topCustomers = cached?.topCustomers ?? row.topCustomers ?? [];
-                            const proposals = cached?.proposals ?? row.proposals ?? [];
+                            const orders = cached?.orders ?? row.orders ?? [];
 
                             return (
                               <React.Fragment key={row.materialId}>
@@ -886,7 +908,7 @@ export function ProductMaterialDemandDashboard() {
                                   <td className="p-3 text-right tabular-nums font-semibold">
                                     {money(row.estimatedValueTotal)}
                                   </td>
-                                  <td className="p-3 text-right tabular-nums">{row.proposalCount}</td>
+                                  <td className="p-3 text-right tabular-nums">{row.orderCount}</td>
                                   <td className="p-3 text-right tabular-nums">{row.productCount}</td>
                                   <td className="p-3 text-right tabular-nums">
                                     {row.latestUsageAt ? new Date(row.latestUsageAt).toLocaleDateString("pt-BR") : "—"}
@@ -932,14 +954,14 @@ export function ProductMaterialDemandDashboard() {
                                           </div>
                                           <div className="rounded-lg border border-border bg-background p-3">
                                             <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2">
-                                              Propostas e pedidos
+                                              Pedidos de venda
                                             </p>
                                             <ul className="space-y-1 text-xs">
-                                              {proposals.slice(0, 6).map((p) => (
-                                                <li key={`${row.materialId}-${p.proposalId}`}>
-                                                  #{p.proposalNumber} ({p.proposalStatus}) ·{" "}
-                                                  {new Date(p.proposalDate).toLocaleDateString("pt-BR")} ·{" "}
-                                                  {money(p.value)}
+                                              {orders.slice(0, 6).map((o) => (
+                                                <li key={`${row.materialId}-${o.salesOrderId}`}>
+                                                  {o.orderCode} ({o.orderStatus}) ·{" "}
+                                                  {new Date(o.orderDate).toLocaleDateString("pt-BR")} ·{" "}
+                                                  {money(o.value)}
                                                 </li>
                                               ))}
                                             </ul>

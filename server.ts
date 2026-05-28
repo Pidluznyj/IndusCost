@@ -8369,7 +8369,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  type MaterialDemandMode = "quantity" | "value" | "proposals" | "products";
+  type MaterialDemandMode = "quantity" | "value" | "orders" | "products";
   type MaterialDemandFilters = {
     startDate: string | null;
     endDate: string | null;
@@ -8385,7 +8385,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   const materialDemandSortBySet = new Set([
     "estimatedValueTotal",
     "quantityTotal",
-    "proposalCount",
+    "orderCount",
     "productCount",
     "latestUsageAt",
     "description",
@@ -8397,7 +8397,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   ): MaterialDemandFilters => {
     const modeRaw = typeof q.mode === "string" ? q.mode : "";
     const mode: MaterialDemandMode =
-      modeRaw === "value" || modeRaw === "proposals" || modeRaw === "products" ? modeRaw : "quantity";
+      modeRaw === "value" || modeRaw === "orders" || modeRaw === "products" ? modeRaw : "quantity";
     const base: MaterialDemandFilters = {
       startDate: typeof q.startDate === "string" && q.startDate ? q.startDate : null,
       endDate: typeof q.endDate === "string" && q.endDate ? q.endDate : null,
@@ -8449,7 +8449,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   const sortRowsByMode = (rows: Array<Record<string, unknown>>, mode: MaterialDemandMode) => {
     return [...rows].sort((a, b) => {
       if (mode === "value") return Number(b.estimatedValueTotal ?? 0) - Number(a.estimatedValueTotal ?? 0);
-      if (mode === "proposals") return Number(b.proposalCount ?? 0) - Number(a.proposalCount ?? 0);
+      if (mode === "orders") return Number(b.orderCount ?? 0) - Number(a.orderCount ?? 0);
       if (mode === "products") return Number(b.productCount ?? 0) - Number(a.productCount ?? 0);
       return Number(b.quantityTotal ?? 0) - Number(a.quantityTotal ?? 0);
     });
@@ -8461,14 +8461,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   ) => {
     const includeRowDetails = options?.includeRowDetails ?? true;
     const where: any = {};
-    if (filters.startDate) where.createdAt = { ...(where.createdAt || {}), gte: new Date(filters.startDate) };
-    if (filters.endDate) where.createdAt = { ...(where.createdAt || {}), lte: endOfDay(filters.endDate) };
+    if (filters.startDate || filters.endDate) {
+      where.issueDate = {};
+      if (filters.startDate) where.issueDate.gte = new Date(filters.startDate);
+      if (filters.endDate) where.issueDate.lte = endOfDay(filters.endDate);
+    }
     if (filters.status) where.status = filters.status;
     if (filters.customerId) where.customerId = filters.customerId;
     if (filters.companyIssuer) where.companyIssuer = filters.companyIssuer;
     if (filters.productId) where.items = { some: { productId: filters.productId } };
 
-    const proposals = await prisma.proposal.findMany({
+    const salesOrders = await prisma.salesOrder.findMany({
       where,
       include: {
         Customer: { select: { id: true, companyName: true } },
@@ -8478,7 +8481,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { issueDate: "desc" },
     });
 
     const analysisCache = await initAnalysisCache();
@@ -8499,22 +8502,22 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       quantityTotal: number;
       valueTotal: number;
       unitCostReference: number | null;
-      proposalIds: Set<string>;
+      orderIds: Set<string>;
       productIds: Set<string>;
       customerIds: Set<string>;
       latestUsageAt: Date | null;
       origins: Array<{
-        proposalId: string;
-        proposalNumber: number;
-        proposalStatus: string;
-        proposalDate: string;
+        salesOrderId: string;
+        orderCode: string;
+        orderStatus: string;
+        orderDate: string;
         customerId: string | null;
         customerName: string | null;
         companyIssuer: string | null;
         productId: string;
         productSku: string | null;
         productName: string | null;
-        proposalQty: number;
+        orderQty: number;
         materialQtyPerUnit: number | null;
         estimatedQuantity: number | null;
         unitCostReference: number | null;
@@ -8523,20 +8526,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     };
 
     const byMaterial = new Map<string, MaterialAgg>();
-    const byPeriod = new Map<string, { quantity: number; value: number; proposalIds: Set<string> }>();
-    const byProduct = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number; proposalIds: Set<string> }>();
-    const byCustomer = new Map<string, { customerId: string; customerName: string; quantity: number; value: number; proposalIds: Set<string> }>();
-    const byCompany = new Map<string, { companyIssuer: string; quantity: number; value: number; proposalIds: Set<string> }>();
+    const byPeriod = new Map<string, { quantity: number; value: number; orderIds: Set<string> }>();
+    const byProduct = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number; orderIds: Set<string> }>();
+    const byCustomer = new Map<string, { customerId: string; customerName: string; quantity: number; value: number; orderIds: Set<string> }>();
+    const byCompany = new Map<string, { companyIssuer: string; quantity: number; value: number; orderIds: Set<string> }>();
 
-    for (const p of proposals) {
-      const proposalDate = new Date(p.createdAt);
-      const periodKey = `${proposalDate.getFullYear()}-${String(proposalDate.getMonth() + 1).padStart(2, "0")}`;
-      const customerName = p.Customer?.companyName ?? null;
-      const companyIssuerSafe = p.companyIssuer?.trim() || null;
+    for (const order of salesOrders) {
+      const orderDate = new Date(order.issueDate);
+      const periodKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, "0")}`;
+      const customerName = order.Customer?.companyName ?? null;
+      const companyIssuerSafe = order.companyIssuer?.trim() || null;
 
-      for (const item of p.items) {
-        const proposalQty = safeNum(item.quantity) ?? 0;
-        if (!(proposalQty > 0)) continue;
+      for (const item of order.items) {
+        const orderQty = safeNum(item.quantity) ?? 0;
+        if (!(orderQty > 0)) continue;
 
         const analysis = await getProductAnalysis(item.productId);
         if (!analysis || isCostAnalysisFailure(analysis)) continue;
@@ -8551,6 +8554,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
         const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
         if (rows.length === 0) continue;
+
+        const productSku = item.Product?.sku?.trim() || item.skuSnapshot?.trim() || null;
+        const productName = item.Product?.name?.trim() || item.productNameSnapshot?.trim() || "Produto";
 
         for (const row of rows) {
           const mid = typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
@@ -8569,8 +8575,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           const qtyPerUnit = safeNum(row.quantity);
           const valuePerUnit = safeNum(row.totalCost);
           const unitCostRef = safeNum(row.unitCostEffective);
-          const estimatedQuantity = qtyPerUnit != null ? qtyPerUnit * proposalQty : null;
-          const estimatedValue = valuePerUnit != null ? valuePerUnit * proposalQty : null;
+          const estimatedQuantity = qtyPerUnit != null ? qtyPerUnit * orderQty : null;
+          const estimatedValue = valuePerUnit != null ? valuePerUnit * orderQty : null;
 
           const current =
             byMaterial.get(mid) ??
@@ -8582,7 +8588,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               quantityTotal: 0,
               valueTotal: 0,
               unitCostReference: unitCostRef,
-              proposalIds: new Set<string>(),
+              orderIds: new Set<string>(),
               productIds: new Set<string>(),
               customerIds: new Set<string>(),
               latestUsageAt: null,
@@ -8594,25 +8600,25 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           if (current.unitCostReference == null && unitCostRef != null) {
             current.unitCostReference = unitCostRef;
           }
-          current.proposalIds.add(p.id);
+          current.orderIds.add(order.id);
           current.productIds.add(item.productId);
-          if (p.customerId) current.customerIds.add(p.customerId);
-          if (!current.latestUsageAt || proposalDate > current.latestUsageAt) {
-            current.latestUsageAt = proposalDate;
+          if (order.customerId) current.customerIds.add(order.customerId);
+          if (!current.latestUsageAt || orderDate > current.latestUsageAt) {
+            current.latestUsageAt = orderDate;
           }
           if (includeRowDetails) {
             current.origins.push({
-              proposalId: p.id,
-              proposalNumber: p.number,
-              proposalStatus: p.status,
-              proposalDate: p.createdAt.toISOString(),
-              customerId: p.customerId ?? null,
+              salesOrderId: order.id,
+              orderCode: order.orderCode,
+              orderStatus: order.status,
+              orderDate: order.issueDate.toISOString(),
+              customerId: order.customerId ?? null,
               customerName,
               companyIssuer: companyIssuerSafe,
               productId: item.productId,
-              productSku: item.Product?.sku?.trim() || null,
-              productName: item.Product?.name?.trim() || null,
-              proposalQty,
+              productSku,
+              productName,
+              orderQty,
               materialQtyPerUnit: qtyPerUnit,
               estimatedQuantity,
               unitCostReference: unitCostRef,
@@ -8622,10 +8628,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           byMaterial.set(mid, current);
 
           const periodAgg =
-            byPeriod.get(periodKey) ?? { quantity: 0, value: 0, proposalIds: new Set<string>() };
+            byPeriod.get(periodKey) ?? { quantity: 0, value: 0, orderIds: new Set<string>() };
           if (estimatedQuantity != null) periodAgg.quantity += estimatedQuantity;
           if (estimatedValue != null) periodAgg.value += estimatedValue;
-          periodAgg.proposalIds.add(p.id);
+          periodAgg.orderIds.add(order.id);
           byPeriod.set(periodKey, periodAgg);
 
           const pid = item.productId;
@@ -8633,39 +8639,39 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             byProduct.get(pid) ??
             {
               productId: pid,
-              sku: item.Product?.sku?.trim() || null,
-              name: item.Product?.name?.trim() || "Produto",
+              sku: productSku,
+              name: productName,
               quantity: 0,
               value: 0,
-              proposalIds: new Set<string>(),
+              orderIds: new Set<string>(),
             };
           if (estimatedQuantity != null) prodAgg.quantity += estimatedQuantity;
           if (estimatedValue != null) prodAgg.value += estimatedValue;
-          prodAgg.proposalIds.add(p.id);
+          prodAgg.orderIds.add(order.id);
           byProduct.set(pid, prodAgg);
 
-          const cid = p.customerId ?? "__unknown_customer__";
+          const cid = order.customerId ?? "__unknown_customer__";
           const custAgg =
             byCustomer.get(cid) ??
             {
-              customerId: p.customerId ?? "",
+              customerId: order.customerId ?? "",
               customerName: customerName ?? "Cliente",
               quantity: 0,
               value: 0,
-              proposalIds: new Set<string>(),
+              orderIds: new Set<string>(),
             };
           if (estimatedQuantity != null) custAgg.quantity += estimatedQuantity;
           if (estimatedValue != null) custAgg.value += estimatedValue;
-          custAgg.proposalIds.add(p.id);
+          custAgg.orderIds.add(order.id);
           byCustomer.set(cid, custAgg);
 
           const companyKey = companyIssuerSafe ?? "Não informado";
           const compAgg =
             byCompany.get(companyKey) ??
-            { companyIssuer: companyKey, quantity: 0, value: 0, proposalIds: new Set<string>() };
+            { companyIssuer: companyKey, quantity: 0, value: 0, orderIds: new Set<string>() };
           if (estimatedQuantity != null) compAgg.quantity += estimatedQuantity;
           if (estimatedValue != null) compAgg.value += estimatedValue;
-          compAgg.proposalIds.add(p.id);
+          compAgg.orderIds.add(order.id);
           byCompany.set(companyKey, compAgg);
         }
       }
@@ -8675,11 +8681,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const totalEstimatedQuantity = materials.reduce((acc, m) => acc + m.quantityTotal, 0);
     const totalEstimatedValue = materials.reduce((acc, m) => acc + m.valueTotal, 0);
 
-    const allProposalIds = new Set<string>();
+    const allOrderIds = new Set<string>();
     const allProductIds = new Set<string>();
     const allCustomerIds = new Set<string>();
     for (const m of materials) {
-      m.proposalIds.forEach((x) => allProposalIds.add(x));
+      m.orderIds.forEach((x) => allOrderIds.add(x));
       m.productIds.forEach((x) => allProductIds.add(x));
       m.customerIds.forEach((x) => allCustomerIds.add(x));
     }
@@ -8687,7 +8693,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const rows = materials.map((m) => {
       const byProd = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number }>();
       const byCust = new Map<string, { customerId: string; customerName: string; quantity: number; value: number }>();
-      const byProp = new Map<string, { proposalId: string; proposalNumber: number; proposalDate: string; proposalStatus: string; quantity: number; value: number }>();
+      const byOrder = new Map<string, { salesOrderId: string; orderCode: string; orderDate: string; orderStatus: string; quantity: number; value: number }>();
 
       if (includeRowDetails) {
         for (const o of m.origins) {
@@ -8714,17 +8720,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           if (o.estimatedValue != null) c.value += o.estimatedValue;
           byCust.set(cKey, c);
 
-          const pr = byProp.get(o.proposalId) ?? {
-            proposalId: o.proposalId,
-            proposalNumber: o.proposalNumber,
-            proposalDate: o.proposalDate,
-            proposalStatus: o.proposalStatus,
+          const ord = byOrder.get(o.salesOrderId) ?? {
+            salesOrderId: o.salesOrderId,
+            orderCode: o.orderCode,
+            orderDate: o.orderDate,
+            orderStatus: o.orderStatus,
             quantity: 0,
             value: 0,
           };
-          if (o.estimatedQuantity != null) pr.quantity += o.estimatedQuantity;
-          if (o.estimatedValue != null) pr.value += o.estimatedValue;
-          byProp.set(o.proposalId, pr);
+          if (o.estimatedQuantity != null) ord.quantity += o.estimatedQuantity;
+          if (o.estimatedValue != null) ord.value += o.estimatedValue;
+          byOrder.set(o.salesOrderId, ord);
         }
       }
 
@@ -8741,7 +8747,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               ? m.valueTotal / m.quantityTotal
               : null,
         estimatedValueTotal: m.valueTotal,
-        proposalCount: m.proposalIds.size,
+        orderCount: m.orderIds.size,
         productCount: m.productIds.size,
         customerCount: m.customerIds.size,
         latestUsageAt: m.latestUsageAt ? m.latestUsageAt.toISOString() : null,
@@ -8762,8 +8768,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         topCustomers: [...byCust.values()]
           .sort((a, b) => b.value - a.value)
           .slice(0, 8),
-        proposals: [...byProp.values()]
-          .sort((a, b) => b.proposalDate.localeCompare(a.proposalDate))
+        orders: [...byOrder.values()]
+          .sort((a, b) => b.orderDate.localeCompare(a.orderDate))
           .slice(0, 12),
       };
     });
@@ -8775,10 +8781,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         : null;
 
     const semantics = {
-      source: "PROPOSAL_ITEMS_WITH_PRODUCT_OPEN_BOOK",
+      source: "SALES_ORDER_ITEMS_WITH_PRODUCT_OPEN_BOOK",
       meaning: "DEMANDA_ESTIMADA_MATERIA_PRIMA",
       label:
-        "Base derivada de itens de proposta. Os valores representam demanda/uso estimado de matéria-prima, não consumo real de produção.",
+        "Base derivada de itens de pedidos de venda. Os valores representam demanda/uso estimado de matéria-prima, não consumo real de produção.",
     };
 
     const filtersApplied = {
@@ -8797,7 +8803,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       totalEstimatedQuantity,
       totalEstimatedValue,
       uniqueMaterials: rows.length,
-      proposalCount: allProposalIds.size,
+      orderCount: allOrderIds.size,
       productCount: allProductIds.size,
       customerCount: allCustomerIds.size,
       leaderMaterial: leader
@@ -8825,7 +8831,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           period,
           quantity: v.quantity,
           value: v.value,
-          proposalCount: v.proposalIds.size,
+          orderCount: v.orderIds.size,
         })),
       byProduct: [...byProduct.values()]
         .sort((a, b) => b.value - a.value)
@@ -8836,7 +8842,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           name: x.name,
           quantity: x.quantity,
           value: x.value,
-          proposalCount: x.proposalIds.size,
+          orderCount: x.orderIds.size,
         })),
       byCustomer: [...byCustomer.values()]
         .filter((x) => x.customerId)
@@ -8847,7 +8853,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           customerName: x.customerName,
           quantity: x.quantity,
           value: x.value,
-          proposalCount: x.proposalIds.size,
+          orderCount: x.orderIds.size,
         })),
       byCompanyIssuer: [...byCompany.values()]
         .sort((a, b) => b.value - a.value)
@@ -8855,22 +8861,26 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           companyIssuer: x.companyIssuer,
           quantity: x.quantity,
           value: x.value,
-          proposalCount: x.proposalIds.size,
+          orderCount: x.orderIds.size,
         })),
     };
 
     const facets = {
-      statuses: [...new Set(proposals.map((p) => p.status))].sort(),
+      statuses: [...new Set(salesOrders.map((o) => o.status))].sort(),
       customers: [...new Map(
-        proposals
-          .filter((p) => p.Customer?.id)
-          .map((p) => [p.Customer!.id, { id: p.Customer!.id, companyName: p.Customer!.companyName }])
+        salesOrders
+          .filter((o) => o.Customer?.id)
+          .map((o) => [o.Customer!.id, { id: o.Customer!.id, companyName: o.Customer!.companyName }])
       ).values()],
       products: [...new Map(
-        proposals.flatMap((p) =>
-          p.items.map((it) => [
+        salesOrders.flatMap((o) =>
+          o.items.map((it) => [
             it.productId,
-            { id: it.productId, sku: it.Product?.sku ?? null, name: it.Product?.name ?? "Produto" },
+            {
+              id: it.productId,
+              sku: it.Product?.sku?.trim() || it.skuSnapshot?.trim() || null,
+              name: it.Product?.name?.trim() || it.productNameSnapshot?.trim() || "Produto",
+            },
           ] as const)
         )
       ).values()],
@@ -8884,8 +8894,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         .sort((a, b) => String(a.description ?? "").localeCompare(String(b.description ?? ""))),
       companyIssuers: [
         ...new Set(
-          proposals
-            .map((p) => p.companyIssuer?.trim())
+          salesOrders
+            .map((o) => o.companyIssuer?.trim())
             .filter((v): v is string => Boolean(v))
         ),
       ].sort(),
@@ -8902,7 +8912,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     };
   };
 
-  app.get("/api/products/material-demand/summary", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
+  const materialDemandViewPermissions = ["proposals.material_report.view", "products.view", "sales_orders.view"];
+
+  app.get("/api/products/material-demand/summary", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
@@ -8919,7 +8931,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  app.get("/api/products/material-demand/rows", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
+  app.get("/api/products/material-demand/rows", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const page = parsePositiveInt((req.query as Record<string, unknown>).page, 1);
@@ -8964,7 +8976,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  app.get("/api/products/material-demand/materials/:materialId/details", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
+  app.get("/api/products/material-demand/materials/:materialId/details", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
     try {
       const materialIdParam = typeof req.params.materialId === "string" ? req.params.materialId.trim() : "";
       if (!materialIdParam) {
@@ -8990,7 +9002,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         totals: {
           quantityTotal: target.quantityTotal,
           estimatedValueTotal: target.estimatedValueTotal,
-          proposalCount: target.proposalCount,
+          orderCount: target.orderCount,
           productCount: target.productCount,
           customerCount: target.customerCount,
           unitCostReference: target.unitCostReference,
@@ -8998,7 +9010,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         },
         topProducts: Array.isArray(target.topProducts) ? target.topProducts : [],
         topCustomers: Array.isArray(target.topCustomers) ? target.topCustomers : [],
-        proposals: Array.isArray(target.proposals) ? target.proposals : [],
+        orders: Array.isArray(target.orders) ? target.orders : [],
       });
     } catch (error) {
       console.error("Material demand details endpoint error:", error);
@@ -9006,7 +9018,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  app.get("/api/products/material-demand/facets", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
+  app.get("/api/products/material-demand/facets", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
@@ -9022,10 +9034,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   /**
-   * Inteligência de matéria-prima (demanda estimada) derivada de propostas.
-   * Base: itens de proposta + openBook do motor por produto (não é consumo real de chão de fábrica).
+   * Inteligência de matéria-prima (demanda estimada) derivada de pedidos de venda.
+   * Base: itens de pedido + openBook do motor por produto (não é consumo real de chão de fábrica).
    */
-  app.get("/api/products/material-demand/analysis", requireAppAuth, requireAnyPermission(["proposals.material_report.view", "products.view"]), async (req, res) => {
+  app.get("/api/products/material-demand/analysis", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const data = await buildMaterialDemandDataset(filters, { includeRowDetails: true });

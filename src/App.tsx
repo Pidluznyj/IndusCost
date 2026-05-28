@@ -353,9 +353,20 @@ export default function App() {
           element={
             <ModulePageShell
               title="Engenharia — Inteligência de Matéria-Prima"
-              description="Visão estimada da necessidade de matéria-prima com base nos itens de propostas e pedidos selecionados."
+              description="Visão estimada da necessidade de matéria-prima com base nos itens dos pedidos de venda selecionados."
             >
-              <ProductMaterialDemandDashboard />
+              <ProductMaterialDemandDashboard context="products" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="sales-orders/material-demand"
+          element={
+            <ModulePageShell
+              title="Pedidos de venda — Inteligência de Matéria-Prima"
+              description="Demanda estimada de matéria-prima a partir dos pedidos de venda filtrados."
+            >
+              <ProductMaterialDemandDashboard context="sales-orders" />
             </ModulePageShell>
           }
         />
@@ -447,13 +458,6 @@ export default function App() {
               headerActions={
                 <>
                   <Link
-                    to="/products/material-demand"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                  >
-                    <Factory className="h-4 w-4 text-primary" />
-                    Relatório Geral de MP
-                  </Link>
-                  <Link
                     to="/sales-orders"
                     className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
                   >
@@ -495,7 +499,18 @@ export default function App() {
             <ModulePageShell
               title="Pedidos de venda"
               description="Pedidos internos originados de propostas aprovadas. Integração Nomus (POST /rest/pedidos) ainda não ativa."
-              headerActions={<ModuleIndicatorsButton to="/sales-orders/indicators" />}
+              headerActions={
+                <>
+                  <Link
+                    to="/sales-orders/material-demand"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <Factory className="h-4 w-4 text-primary" />
+                    Relatório Geral de MP
+                  </Link>
+                  <ModuleIndicatorsButton to="/sales-orders/indicators" />
+                </>
+              }
             >
               <SalesOrdersModule />
             </ModulePageShell>
