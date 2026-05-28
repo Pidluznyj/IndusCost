@@ -9,6 +9,11 @@ import type {
   ReviewDecisionView,
 } from "@/src/lib/nomusEffectivePricingBomTypes";
 import { isLocalAssemblyComponentCode } from "@/src/lib/nomusEffectivePricingBomTypes";
+import {
+  AUTO_OBSOLETE_NOMUS_UNIVERSE_REASON,
+  isAutoRemovableObsoleteLocalLine,
+  type NomusUniverseCodeSet,
+} from "@/src/lib/nomusBomUniverse";
 
 export type {
   LocalReviewCatalogItem,
@@ -75,11 +80,17 @@ export function inferDefaultLocalReviewDecision(
   return null;
 }
 
+export type AutoObsoleteLocalContext = {
+  nomusUniverse: NomusUniverseCodeSet;
+  localRowFlags?: ReadonlyMap<string, { localException: boolean }>;
+};
+
 function syntheticReviewDecision(
   parentCode: string,
   base: EffectivePricingBomLine,
   bomLineId: string,
-  decision: NomusBomReviewDecisionType
+  decision: NomusBomReviewDecisionType,
+  reason?: string
 ): ReviewDecisionView {
   return {
     id: "",
@@ -92,23 +103,57 @@ function syntheticReviewDecision(
     decision,
     includeForPricing: decision === "INCLUDE_AS_LOCAL_EXCEPTION",
     relatedNomusComponentCode: null,
-    reason: "Regra padrão: montagem 800.xx como componente local na precificação.",
+    reason:
+      reason ??
+      "Regra padrão: montagem 800.xx como componente local na precificação.",
     notes: null,
     decidedBy: null,
     decidedAt: null,
   };
 }
 
+function syntheticAutoObsoleteReviewDecision(
+  parentCode: string,
+  base: EffectivePricingBomLine,
+  bomLineId: string
+): ReviewDecisionView {
+  return syntheticReviewDecision(
+    parentCode,
+    base,
+    bomLineId,
+    "EXCLUDE_FROM_PRICING",
+    AUTO_OBSOLETE_NOMUS_UNIVERSE_REASON
+  );
+}
+
 function effectiveReviewDecision(
   saved: ReviewDecisionView | undefined,
   parentCode: string,
   base: EffectivePricingBomLine,
-  bomLineId: string
+  bomLineId: string,
+  autoObsoleteContext?: AutoObsoleteLocalContext
 ): ReviewDecisionView | null {
-  if (saved) return saved;
+  if (saved && saved.decision !== "PENDING") return saved;
+
   const inferred = inferDefaultLocalReviewDecision(base.componentCode);
-  if (!inferred) return null;
-  return syntheticReviewDecision(parentCode, base, bomLineId, inferred);
+  if (inferred) return syntheticReviewDecision(parentCode, base, bomLineId, inferred);
+
+  if (autoObsoleteContext) {
+    const localException = autoObsoleteContext.localRowFlags?.get(bomLineId)?.localException;
+    if (
+      isAutoRemovableObsoleteLocalLine({
+        componentCode: base.componentCode,
+        componentDescription: base.componentDescription,
+        localException,
+        nomusUniverse: autoObsoleteContext.nomusUniverse,
+      })
+    ) {
+      return syntheticAutoObsoleteReviewDecision(parentCode, base, bomLineId);
+    }
+  }
+
+  if (saved) return saved;
+  return null;
 }
 
 function matchDecision(
@@ -307,19 +352,23 @@ function applyDecisionToLine(
           relatedNomusComponentCode: saved?.relatedNomusComponentCode ?? undefined,
         },
       };
-    case "EXCLUDE_FROM_PRICING":
+    case "EXCLUDE_FROM_PRICING": {
+      const isAutoObsolete = saved?.reason === AUTO_OBSOLETE_NOMUS_UNIVERSE_REASON && !saved.id;
       return {
         bucket: "excluded",
         line: {
           ...base,
-          source: "LOCAL_ONLY_EXCLUDED_BY_REVIEW",
+          source: isAutoObsolete ? "LOCAL_ONLY_OBSOLETE_NOMUS" : "LOCAL_ONLY_EXCLUDED_BY_REVIEW",
           decision: "EXCLUDE",
           includedForPricing: false,
-          reason: `Excluído da precificação por decisão do usuário.${notesSuffix}`,
+          reason: isAutoObsolete
+            ? `${AUTO_OBSOLETE_NOMUS_UNIVERSE_REASON}${notesSuffix}`
+            : `Excluído da precificação por decisão do usuário.${notesSuffix}`,
           reviewDecisionId: saved?.id,
           reviewDecisionType: decision,
         },
       };
+    }
     case "DUPLICATED_BY_NOMUS_COMPONENT":
       return {
         bucket: "excluded",
@@ -387,7 +436,8 @@ function isLocalReviewDerivedLine(line: EffectivePricingBomLine): boolean {
 export function applyReviewDecisionsToEffectiveBom(
   result: EffectivePricingBomResult,
   decisions: ReviewDecisionView[],
-  rawLocalLines: EffectivePricingBomLine[]
+  rawLocalLines: EffectivePricingBomLine[],
+  autoObsoleteContext?: AutoObsoleteLocalContext
 ): EffectivePricingBomResult {
   const nonLocalDirect = result.directLines.filter((l) => !isLocalReviewDerivedLine(l));
   const nonLocalExcluded = result.excludedLines.filter((l) => !isLocalReviewDerivedLine(l));
@@ -401,7 +451,13 @@ export function applyReviewDecisionsToEffectiveBom(
   for (const base of rawLocalLines) {
     const bomLineId = parseProductBomLineIdFromLine(base) ?? "unknown";
     const saved = matchDecision(decisions, result.parentCode, base.componentCode, bomLineId);
-    const effective = effectiveReviewDecision(saved, result.parentCode, base, bomLineId);
+    const effective = effectiveReviewDecision(
+      saved,
+      result.parentCode,
+      base,
+      bomLineId,
+      autoObsoleteContext
+    );
     const { line, bucket } = applyDecisionToLine(base, effective);
 
     let placement: LocalReviewCatalogItem["placement"];
@@ -441,6 +497,7 @@ export function applyReviewDecisionsToEffectiveBom(
   const localExcludedByReviewCount = newExcluded.filter((l) =>
     [
       "LOCAL_ONLY_EXCLUDED_BY_REVIEW",
+      "LOCAL_ONLY_OBSOLETE_NOMUS",
       "LOCAL_ONLY_DUPLICATED_BY_NOMUS",
       "OPERATIONAL_ROUTING_COST",
     ].includes(l.source)

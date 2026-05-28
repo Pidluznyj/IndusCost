@@ -31,6 +31,7 @@ const SOURCE_LABEL: Record<string, string> = {
   LOCAL_ONLY_INDUS_REVIEW: "Somente IndusCost",
   LOCAL_ONLY_INCLUDED_BY_REVIEW: "Componente local incluído",
   LOCAL_ONLY_EXCLUDED_BY_REVIEW: "Local excluído",
+  LOCAL_ONLY_OBSOLETE_NOMUS: "Local obsoleto (Nomus)",
   LOCAL_ONLY_DUPLICATED_BY_NOMUS: "Duplicado Nomus",
   LOCAL_ONLY_ENGINEERING_REVIEW: "Engenharia",
   OPERATIONAL_ROUTING_COST: "Roteiro/processo",

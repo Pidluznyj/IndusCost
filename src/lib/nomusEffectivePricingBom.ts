@@ -25,7 +25,10 @@ import {
 import {
   applyReviewDecisionsToEffectiveBom,
   listReviewDecisionsForParentCode,
+  parseProductBomLineIdFromLine,
 } from "@/src/lib/nomusBomReviewDecision";
+import { buildNomusUniverseCodeSet, type NomusUniverseCodeSet } from "@/src/lib/nomusBomUniverse";
+import { prisma } from "@/src/lib/prisma";
 import type {
   EffectivePricingBomLine,
   EffectivePricingBomResult,
@@ -448,6 +451,7 @@ export async function buildEffectivePricingBomForParentCode(
     recursive?: boolean;
     maxDepth?: number;
     _cache?: Map<string, EffectivePricingBomResult>;
+    nomusUniverse?: NomusUniverseCodeSet;
   }
 ): Promise<EffectivePricingBomResult> {
   const trimmed = parentCode.trim();
@@ -641,7 +645,28 @@ export async function buildEffectivePricingBomForParentCode(
   };
 
   const { decisions } = await listReviewDecisionsForParentCode(ctx.parentCode);
-  result = applyReviewDecisionsToEffectiveBom(result, decisions, rawLocalReviewLines);
+
+  const bomLineIds = rawLocalReviewLines
+    .map((line) => parseProductBomLineIdFromLine(line))
+    .filter((id): id is string => !!id && id !== "unknown");
+
+  const localRowFlags = new Map<string, { localException: boolean }>();
+  if (bomLineIds.length > 0) {
+    const bomRows = await prisma.productBOM.findMany({
+      where: { id: { in: bomLineIds } },
+      select: { id: true, localException: true },
+    });
+    for (const row of bomRows) {
+      localRowFlags.set(row.id, { localException: row.localException });
+    }
+  }
+
+  const nomusUniverse = options?.nomusUniverse ?? (await buildNomusUniverseCodeSet());
+
+  result = applyReviewDecisionsToEffectiveBom(result, decisions, rawLocalReviewLines, {
+    nomusUniverse,
+    localRowFlags,
+  });
 
   return result;
 }

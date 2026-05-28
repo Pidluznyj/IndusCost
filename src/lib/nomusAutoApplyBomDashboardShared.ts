@@ -138,7 +138,7 @@ export function formatActionPreviewLine(action: NonNullable<AutoApplyBomDashboar
     case "CREATE_PRODUCT_BOM_LINE":
       return `Criar linha ${code} (qty ${action.effectiveQuantity ?? "—"})`;
     case "REMOVE_PRODUCT_BOM_LINE":
-      return `Remover ${code} (somente IndusCost / decisão pendente)`;
+      return `Remover da BOM IndusCost — ${code} (não consta mais no Nomus)`;
     case "KEEP_PRODUCT_BOM_LINE":
       if (/115\.08|local/i.test(code)) return `Resolver item local ${code}`;
       return `Manter ${code}`;

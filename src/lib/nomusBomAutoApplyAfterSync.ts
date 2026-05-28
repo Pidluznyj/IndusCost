@@ -11,6 +11,7 @@ import {
   applyEffectiveBomToProductBom,
   buildControlledApplyPreview,
 } from "@/src/lib/nomusBomControlledApply";
+import { buildNomusUniverseCodeSet } from "@/src/lib/nomusBomUniverse";
 import { prisma } from "@/src/lib/prisma";
 import type {
   NomusBomAutoApplyMode,
@@ -192,10 +193,11 @@ async function listParentCodesToProcess(options: RunNomusBomAutoApplyOptions): P
 async function processOneProduct(
   parentCode: string,
   mode: NomusBomAutoApplyMode,
-  approvedBy: string
+  approvedBy: string,
+  nomusUniverse: ReadonlySet<string>
 ): Promise<NomusBomAutoApplyProductResult> {
   try {
-    const preview = await buildControlledApplyPreview(parentCode);
+    const preview = await buildControlledApplyPreview(parentCode, { nomusUniverse });
 
     const base: NomusBomAutoApplyProductResult = {
       parentCode: preview.parentCode,
@@ -347,8 +349,9 @@ export async function runNomusBomAutoApplyAfterSync(
   }
 
   const products: NomusBomAutoApplyProductResult[] = [];
+  const nomusUniverse = await buildNomusUniverseCodeSet();
   for (const parentCode of parentCodes) {
-    const result = await processOneProduct(parentCode, options.mode, approvedBy);
+    const result = await processOneProduct(parentCode, options.mode, approvedBy, nomusUniverse);
     products.push(result);
   }
 

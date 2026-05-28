@@ -45,6 +45,7 @@ const BLOCKED_EFFECTIVE_STATUSES = new Set([
 
 const REMOVAL_SOURCES = new Set([
   "LOCAL_ONLY_EXCLUDED_BY_REVIEW",
+  "LOCAL_ONLY_OBSOLETE_NOMUS",
   "LOCAL_ONLY_DUPLICATED_BY_NOMUS",
   "NOMUS_OPTIONAL_NOT_SELECTED",
   "NOMUS_ALTERNATIVE_NOT_SELECTED",
@@ -644,11 +645,28 @@ function buildRemovalKeys(
   return removeKeys;
 }
 
+function buildRemovalLineReasons(
+  effectiveBom: Awaited<ReturnType<typeof buildEffectivePricingBomForParentCode>>,
+  currentRows: CurrentBomRow[]
+): Map<string, string> {
+  const reasons = new Map<string, string>();
+  for (const line of [...effectiveBom.excludedLines, ...effectiveBom.reviewLines]) {
+    if (!REMOVAL_SOURCES.has(line.source)) continue;
+    const lineId =
+      resolveLocalProductBomLineId(line, currentRows) ??
+      (line.productBomLineId && line.productBomLineId !== "unknown" ? line.productBomLineId : null);
+    if (!lineId) continue;
+    reasons.set(lineId, line.reason);
+  }
+  return reasons;
+}
+
 function buildActions(
   currentRows: CurrentBomRow[],
   targets: DesiredTarget[],
   unresolved: EffectivePricingBomLine[],
-  removalKeys: Set<string>
+  removalKeys: Set<string>,
+  removalLineReasons?: Map<string, string>
 ): ControlledApplyAction[] {
   const actions: ControlledApplyAction[] = [];
 
@@ -842,7 +860,9 @@ function buildActions(
       currentQuantity: row.quantity,
       effectiveQuantity: null,
       productBomLineId: row.id,
-      reason: "Remover da ProductBOM conforme BOM efetiva e decisões de revisão.",
+      reason:
+        removalLineReasons?.get(row.id) ??
+        "Remover da ProductBOM conforme BOM efetiva e decisões de revisão.",
       riskLevel: riskForAction("REMOVE_PRODUCT_BOM_LINE"),
     });
   }
@@ -1103,7 +1123,8 @@ function collectApplyGates(input: {
 }
 
 export async function buildControlledApplyPreview(
-  parentCode: string
+  parentCode: string,
+  options?: { nomusUniverse?: ReadonlySet<string> }
 ): Promise<ControlledApplyPreview> {
   const trimmed = parentCode.trim();
   const sku = normalizeSku(trimmed);
@@ -1116,6 +1137,7 @@ export async function buildControlledApplyPreview(
   const effectiveBom = await buildEffectivePricingBomForParentCode(trimmed, {
     recursive: false,
     maxDepth: 10,
+    nomusUniverse: options?.nomusUniverse,
   });
 
   const dryReport = await buildNomusBomApplyPlansReport({
@@ -1152,7 +1174,14 @@ export async function buildControlledApplyPreview(
     currentRows
   );
   const removalKeys = buildRemovalKeys(effectiveBom, currentRows);
-  const actions = buildActions(currentRows, targets, unresolved, removalKeys);
+  const removalLineReasons = buildRemovalLineReasons(effectiveBom, currentRows);
+  const actions = buildActions(
+    currentRows,
+    targets,
+    unresolved,
+    removalKeys,
+    removalLineReasons
+  );
 
   const { decisions } = await listReviewDecisionsForParentCode(trimmed);
   const planHash = buildPlanHash({
