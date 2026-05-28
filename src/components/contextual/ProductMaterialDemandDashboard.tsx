@@ -8,9 +8,12 @@ import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
 
 const PAGE_SIZE = 25;
 
+type DateBasis = "issueDate" | "expectedDeliveryDate";
+
 type FiltersState = {
   startDate: string;
   endDate: string;
+  dateBasis: DateBasis;
   status: string;
   customerId: string;
   productId: string;
@@ -43,10 +46,26 @@ type MaterialRow = {
     salesOrderId: string;
     orderCode: string;
     orderDate: string;
+    issueDate?: string;
+    expectedDeliveryDate?: string | null;
     orderStatus: string;
     quantity: number;
     value: number;
   }>;
+};
+
+type NeedByDeliveryRow = {
+  period: string;
+  periodLabel: string;
+  materialId: string;
+  code: string | null;
+  description: string;
+  unit: string | null;
+  unitKey: string;
+  unitLabel: string;
+  quantity: number;
+  estimatedValue: number;
+  orderCount: number;
 };
 
 type QuantityByUnitRow = {
@@ -73,15 +92,27 @@ type SummaryBlock = {
     unitLabel?: string;
   };
   leaderSharePct: number | null;
+  ordersWithoutDeliveryDate: number;
 };
 
 type SummaryResponse = {
-  semantics: { label: string };
+  semantics: {
+    label: string;
+    deliveryDateNote?: string | null;
+  };
+  filtersApplied?: { dateBasis?: DateBasis };
   summary: SummaryBlock;
   charts: {
+    needByDeliveryPeriod: NeedByDeliveryRow[];
     paretoByQuantityByUnit: Array<{ unitKey: string; unitLabel: string; rows: MaterialRow[] }>;
     paretoByValue: MaterialRow[];
-    evolution: Array<{ period: string; quantity: number | null; value: number; orderCount: number }>;
+    evolution: Array<{
+      period: string;
+      periodLabel?: string;
+      quantity: number | null;
+      value: number;
+      orderCount: number;
+    }>;
   };
   facets: {
     statuses: string[];
@@ -139,37 +170,94 @@ const DASHBOARD_CONTEXT = {
   },
 } as const;
 
-type PeriodPreset = "ytd" | "last90" | "thisMonth";
+type PeriodPreset =
+  | "ytd"
+  | "last90"
+  | "thisMonth"
+  | "next30"
+  | "next60"
+  | "next90"
+  | "nextMonth";
 
-const PERIOD_PRESET_OPTIONS: Array<{ id: PeriodPreset; label: string }> = [
+const ISSUE_PERIOD_PRESETS: Array<{ id: PeriodPreset; label: string }> = [
   { id: "ytd", label: "Ano atual (YTD)" },
   { id: "last90", label: "Últimos 90 dias" },
   { id: "thisMonth", label: "Este mês" },
 ];
 
+const DELIVERY_PERIOD_PRESETS: Array<{ id: PeriodPreset; label: string }> = [
+  { id: "next30", label: "Próximos 30 dias" },
+  { id: "next60", label: "Próximos 60 dias" },
+  { id: "next90", label: "Próximos 90 dias" },
+  { id: "thisMonth", label: "Este mês" },
+  { id: "nextMonth", label: "Próximo mês" },
+];
+
 const FILTER_CONTROL_CLASS =
   "h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20";
 
-function resolvePeriodPreset(preset: PeriodPreset): Pick<FiltersState, "startDate" | "endDate"> {
+function resolvePeriodPreset(
+  preset: PeriodPreset,
+  dateBasis: DateBasis
+): Pick<FiltersState, "startDate" | "endDate"> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const endDate = formatYmdLocal(today);
+  const todayYmd = formatYmdLocal(today);
+
+  if (dateBasis === "expectedDeliveryDate") {
+    if (preset === "next30") {
+      const end = new Date(today);
+      end.setDate(end.getDate() + 30);
+      return { startDate: todayYmd, endDate: formatYmdLocal(end) };
+    }
+    if (preset === "next60") {
+      const end = new Date(today);
+      end.setDate(end.getDate() + 60);
+      return { startDate: todayYmd, endDate: formatYmdLocal(end) };
+    }
+    if (preset === "next90") {
+      const end = new Date(today);
+      end.setDate(end.getDate() + 90);
+      return { startDate: todayYmd, endDate: formatYmdLocal(end) };
+    }
+    if (preset === "thisMonth") {
+      const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      return {
+        startDate: formatYmdLocal(new Date(today.getFullYear(), today.getMonth(), 1)),
+        endDate: formatYmdLocal(end),
+      };
+    }
+    if (preset === "nextMonth") {
+      const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+      return { startDate: formatYmdLocal(start), endDate: formatYmdLocal(end) };
+    }
+    const end = new Date(today);
+    end.setDate(end.getDate() + 30);
+    return { startDate: todayYmd, endDate: formatYmdLocal(end) };
+  }
+
   if (preset === "ytd") {
-    return { startDate: formatYmdLocal(new Date(today.getFullYear(), 0, 1)), endDate };
+    return { startDate: formatYmdLocal(new Date(today.getFullYear(), 0, 1)), endDate: todayYmd };
   }
   if (preset === "thisMonth") {
-    return { startDate: formatYmdLocal(new Date(today.getFullYear(), today.getMonth(), 1)), endDate };
+    return {
+      startDate: formatYmdLocal(new Date(today.getFullYear(), today.getMonth(), 1)),
+      endDate: todayYmd,
+    };
   }
   const start = new Date(today);
   start.setDate(start.getDate() - 90);
-  return { startDate: formatYmdLocal(start), endDate };
+  return { startDate: formatYmdLocal(start), endDate: todayYmd };
 }
 
 function buildDefaultMaterialDemandFilters(): FiltersState {
-  const { startDate, endDate } = resolvePeriodPreset("ytd");
+  const dateBasis: DateBasis = "expectedDeliveryDate";
+  const { startDate, endDate } = resolvePeriodPreset("next30", dateBasis);
   return {
     startDate,
     endDate,
+    dateBasis,
     status: "",
     customerId: "",
     productId: "",
@@ -181,12 +269,24 @@ function buildDefaultMaterialDemandFilters(): FiltersState {
   };
 }
 
-function detectPeriodPreset(startDate: string, endDate: string): PeriodPreset | "custom" {
-  for (const opt of PERIOD_PRESET_OPTIONS) {
-    const range = resolvePeriodPreset(opt.id);
+function periodPresetOptions(dateBasis: DateBasis) {
+  return dateBasis === "expectedDeliveryDate" ? DELIVERY_PERIOD_PRESETS : ISSUE_PERIOD_PRESETS;
+}
+
+function detectPeriodPreset(
+  startDate: string,
+  endDate: string,
+  dateBasis: DateBasis
+): PeriodPreset | "custom" {
+  for (const opt of periodPresetOptions(dateBasis)) {
+    const range = resolvePeriodPreset(opt.id, dateBasis);
     if (range.startDate === startDate && range.endDate === endDate) return opt.id;
   }
   return "custom";
+}
+
+function dateBasisLabel(dateBasis: DateBasis): string {
+  return dateBasis === "expectedDeliveryDate" ? "Entrega prevista" : "Emissão do pedido";
 }
 
 function MaterialDemandFilterField({
@@ -249,10 +349,18 @@ function pct(v: number | null | undefined): string {
   return `${formatNumberAdaptive(v)}%`;
 }
 
-function periodLabel(yyyymm: string): string {
+function periodLabel(yyyymm: string, labelFromApi?: string): string {
+  if (labelFromApi) return labelFromApi;
+  if (yyyymm === "__sem_entrega__") return "Sem data de entrega";
   const [yy, mm] = yyyymm.split("-");
   if (!yy || !mm) return yyyymm;
   return `${mm}/${yy}`;
+}
+
+function formatDatePt(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
 }
 
 function modeOptionLabel(mode: FiltersState["mode"]): string {
@@ -283,8 +391,9 @@ function MaterialDemandInfoBanner() {
           <p className="text-sm font-semibold text-foreground">Esta visão não representa consumo real de produção</p>
           <p className="text-sm leading-relaxed text-muted-foreground">
             Os volumes apresentados são estimativas calculadas a partir dos produtos, estruturas e quantidades presentes
-            nos pedidos de venda filtrados. Quantidades em KG, UN e outras unidades não podem ser somadas nem
-            ranqueadas juntas — use o filtro de unidade ou compare por valor estimado (R$).
+            nos pedidos de venda filtrados. A necessidade vem da explosão estimada de BOM — não é consumo real de
+            fábrica, não considera estoque disponível nem compras em aberto. Quantidades em KG, UN e outras unidades
+            não podem ser somadas nem ranqueadas juntas — use o filtro de unidade ou compare por valor estimado (R$).
           </p>
         </div>
       </div>
@@ -543,14 +652,14 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   }, []);
 
   const activePeriodPreset = useMemo(
-    () => detectPeriodPreset(appliedFilters.startDate, appliedFilters.endDate),
-    [appliedFilters.startDate, appliedFilters.endDate]
+    () => detectPeriodPreset(appliedFilters.startDate, appliedFilters.endDate, appliedFilters.dateBasis),
+    [appliedFilters.startDate, appliedFilters.endDate, appliedFilters.dateBasis]
   );
 
   const applyPeriodPreset = useCallback(
     (preset: PeriodPreset) => {
-      const range = resolvePeriodPreset(preset);
       setFilters((p) => {
+        const range = resolvePeriodPreset(preset, p.dateBasis);
         const merged: FiltersState = {
           ...p,
           ...range,
@@ -654,18 +763,37 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
         <div>
           <h2 className="text-sm font-bold text-foreground">Filtros da análise</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Por padrão carrega o ano atual (YTD) para evitar consultas pesadas. Refine por cliente, produto,
-            matéria-prima ou unidade de medida (KG, UN, etc.).
+            Por padrão usa entrega prevista nos próximos 30 dias. Ajuste a base do período, presets ou filtros
+            adicionais. Não inclui estoque nem compras em aberto.
           </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end max-w-3xl">
+          <MaterialDemandFilterField label="Base do período" htmlFor="mdf-date-basis">
+            <select
+              id="mdf-date-basis"
+              value={filters.dateBasis}
+              onChange={(e) => {
+                const dateBasis = e.target.value as DateBasis;
+                const defaultPreset = dateBasis === "expectedDeliveryDate" ? "next30" : "ytd";
+                const range = resolvePeriodPreset(defaultPreset, dateBasis);
+                setFilters((p) => ({ ...p, dateBasis, ...range }));
+              }}
+              className={FILTER_CONTROL_CLASS}
+            >
+              <option value="expectedDeliveryDate">Entrega prevista</option>
+              <option value="issueDate">Emissão do pedido</option>
+            </select>
+          </MaterialDemandFilterField>
         </div>
 
         <div className="rounded-lg border border-border/80 bg-muted/15 p-4 space-y-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground shrink-0">
-              Período · emissão do pedido
+              Período · {dateBasisLabel(filters.dateBasis).toLowerCase()}
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {PERIOD_PRESET_OPTIONS.map((opt) => (
+              {periodPresetOptions(filters.dateBasis).map((opt) => (
                 <button
                   key={opt.id}
                   type="button"
@@ -953,6 +1081,65 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 </div>
               ) : null}
 
+              {summaryData.summary.ordersWithoutDeliveryDate > 0 ? (
+                <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 px-4 py-3 text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground">
+                    {summaryData.summary.ordersWithoutDeliveryDate} pedido(s) sem data de entrega prevista
+                  </span>
+                  {summaryData.filtersApplied?.dateBasis === "expectedDeliveryDate" ||
+                  appliedFilters.dateBasis === "expectedDeliveryDate" ? (
+                    <>
+                      {" "}
+                      — agrupados em «Sem data de entrega» e incluídos mesmo ao filtrar por período de entrega.
+                    </>
+                  ) : (
+                    <> — verifique o cadastro do pedido para planejamento por entrega.</>
+                  )}
+                </div>
+              ) : null}
+
+              {summaryData.charts.needByDeliveryPeriod.length > 0 ? (
+                <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Necessidade por período de entrega</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Agrupamento mensal pela data de entrega prevista do pedido (explosão estimada de BOM). Quantidades
+                      separadas por unidade de medida — não some KG com UN.
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-card border-b border-border">
+                        <tr>
+                          <th className="py-2 text-left font-semibold">Período entrega</th>
+                          <th className="py-2 text-left font-semibold">Matéria-prima</th>
+                          <th className="py-2 text-left font-semibold">Un.</th>
+                          <th className="py-2 text-right font-semibold">Qtd. necessária</th>
+                          <th className="py-2 text-right font-semibold">Valor est.</th>
+                          <th className="py-2 text-right font-semibold">Pedidos</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {summaryData.charts.needByDeliveryPeriod.map((row) => (
+                          <tr key={`${row.period}-${row.materialId}-${row.unitKey}`}>
+                            <td className="py-2 whitespace-nowrap">{row.periodLabel}</td>
+                            <td className="py-2">
+                              {(row.code ? `[${row.code}] ` : "") + row.description}
+                            </td>
+                            <td className="py-2">{row.unitLabel}</td>
+                            <td className="py-2 text-right tabular-nums">
+                              {num(row.quantity)} {row.unitLabel}
+                            </td>
+                            <td className="py-2 text-right tabular-nums">{money(row.estimatedValue)}</td>
+                            <td className="py-2 text-right tabular-nums">{row.orderCount}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <div className="space-y-4">
                   {summaryData.charts.paretoByQuantityByUnit.length === 0 ? (
@@ -1019,7 +1206,10 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               </div>
 
               <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground">Evolução mensal estimada</h3>
+                <h3 className="text-sm font-bold text-foreground">
+                  Evolução mensal estimada (
+                  {appliedFilters.dateBasis === "expectedDeliveryDate" ? "por entrega prevista" : "por emissão"})
+                </h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
@@ -1040,7 +1230,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                     <tbody className="divide-y divide-border">
                       {summaryData.charts.evolution.map((r) => (
                         <tr key={r.period}>
-                          <td className="py-2">{periodLabel(r.period)}</td>
+                          <td className="py-2">{periodLabel(r.period, r.periodLabel)}</td>
                           {showEvolutionQuantity ? (
                             <td className="py-2 text-right tabular-nums">{num(r.quantity)}</td>
                           ) : null}
@@ -1176,9 +1366,9 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                                             <ul className="space-y-1 text-xs">
                                               {orders.slice(0, 6).map((o) => (
                                                 <li key={`${row.materialId}-${o.salesOrderId}`}>
-                                                  {o.orderCode} ({o.orderStatus}) ·{" "}
-                                                  {new Date(o.orderDate).toLocaleDateString("pt-BR")} ·{" "}
-                                                  {money(o.value)}
+                                                  {o.orderCode} ({o.orderStatus}) · Emissão{" "}
+                                                  {formatDatePt(o.issueDate ?? o.orderDate)} · Entrega{" "}
+                                                  {formatDatePt(o.expectedDeliveryDate ?? null)} · {money(o.value)}
                                                 </li>
                                               ))}
                                             </ul>

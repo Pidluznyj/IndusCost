@@ -8371,9 +8371,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   type MaterialDemandMode = "quantity" | "value" | "orders" | "products";
+  type MaterialDemandDateBasis = "issueDate" | "expectedDeliveryDate";
   type MaterialDemandFilters = {
     startDate: string | null;
     endDate: string | null;
+    dateBasis: MaterialDemandDateBasis;
     status: string | null;
     customerId: string | null;
     productId: string | null;
@@ -8382,6 +8384,21 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     unitKey: string | null;
     mode: MaterialDemandMode;
     search: string;
+  };
+
+  const MATERIAL_DEMAND_NO_DELIVERY_PERIOD = "__sem_entrega__";
+
+  const materialDemandDeliveryPeriodKey = (expectedDeliveryDate: Date | null) => {
+    if (!expectedDeliveryDate) return MATERIAL_DEMAND_NO_DELIVERY_PERIOD;
+    const d = new Date(expectedDeliveryDate);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+
+  const materialDemandPeriodLabel = (periodKey: string) => {
+    if (periodKey === MATERIAL_DEMAND_NO_DELIVERY_PERIOD) return "Sem data de entrega";
+    const [yy, mm] = periodKey.split("-");
+    if (!yy || !mm) return periodKey;
+    return `${mm}/${yy}`;
   };
 
   const materialDemandSortBySet = new Set([
@@ -8400,9 +8417,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const modeRaw = typeof q.mode === "string" ? q.mode : "";
     const mode: MaterialDemandMode =
       modeRaw === "value" || modeRaw === "orders" || modeRaw === "products" ? modeRaw : "quantity";
+    const dateBasisRaw = typeof q.dateBasis === "string" ? q.dateBasis : "";
+    const dateBasis: MaterialDemandDateBasis =
+      dateBasisRaw === "issueDate" ? "issueDate" : "expectedDeliveryDate";
     const base: MaterialDemandFilters = {
       startDate: typeof q.startDate === "string" && q.startDate ? q.startDate : null,
       endDate: typeof q.endDate === "string" && q.endDate ? q.endDate : null,
+      dateBasis,
       status: typeof q.status === "string" && q.status && q.status !== "ALL" ? q.status : null,
       customerId: typeof q.customerId === "string" && q.customerId ? q.customerId : null,
       productId: typeof q.productId === "string" && q.productId ? q.productId : null,
@@ -8465,9 +8486,14 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const includeRowDetails = options?.includeRowDetails ?? true;
     const where: any = {};
     if (filters.startDate || filters.endDate) {
-      where.issueDate = {};
-      if (filters.startDate) where.issueDate.gte = new Date(filters.startDate);
-      if (filters.endDate) where.issueDate.lte = endOfDay(filters.endDate);
+      const dateRange: { gte?: Date; lte?: Date } = {};
+      if (filters.startDate) dateRange.gte = new Date(filters.startDate);
+      if (filters.endDate) dateRange.lte = endOfDay(filters.endDate);
+      if (filters.dateBasis === "expectedDeliveryDate") {
+        where.OR = [{ expectedDeliveryDate: dateRange }, { expectedDeliveryDate: null }];
+      } else {
+        where.issueDate = dateRange;
+      }
     }
     if (filters.status) where.status = filters.status;
     if (filters.customerId) where.customerId = filters.customerId;
@@ -8484,8 +8510,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           },
         },
       },
-      orderBy: { issueDate: "desc" },
+      orderBy:
+        filters.dateBasis === "expectedDeliveryDate"
+          ? [{ expectedDeliveryDate: "asc" }, { issueDate: "desc" }]
+          : { issueDate: "desc" },
     });
+
+    const ordersWithoutDeliveryDate = salesOrders.filter((o) => !o.expectedDeliveryDate).length;
 
     const analysisCache = await initAnalysisCache();
     const productAnalysisMemo = new Map<string, any>();
@@ -8516,6 +8547,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         orderCode: string;
         orderStatus: string;
         orderDate: string;
+        issueDate: string;
+        expectedDeliveryDate: string | null;
         customerId: string | null;
         customerName: string | null;
         companyIssuer: string | null;
@@ -8535,13 +8568,41 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       string,
       { value: number; orderIds: Set<string>; quantityByUnit: Map<string, number> }
     >();
+    const byNeedDeliveryPeriod = new Map<
+      string,
+      {
+        period: string;
+        periodLabel: string;
+        materialId: string;
+        code: string | null;
+        description: string;
+        unit: string | null;
+        unitKey: string;
+        unitLabel: string;
+        quantity: number;
+        value: number;
+        orderIds: Set<string>;
+      }
+    >();
     const byProduct = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number; orderIds: Set<string> }>();
     const byCustomer = new Map<string, { customerId: string; customerName: string; quantity: number; value: number; orderIds: Set<string> }>();
     const byCompany = new Map<string, { companyIssuer: string; quantity: number; value: number; orderIds: Set<string> }>();
 
     for (const order of salesOrders) {
       const orderDate = new Date(order.issueDate);
-      const periodKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, "0")}`;
+      const issueDateIso = order.issueDate.toISOString();
+      const expectedDeliveryDateIso = order.expectedDeliveryDate
+        ? order.expectedDeliveryDate.toISOString()
+        : null;
+      const deliveryPeriodKey = materialDemandDeliveryPeriodKey(order.expectedDeliveryDate);
+      const aggregationPeriodKey =
+        filters.dateBasis === "expectedDeliveryDate"
+          ? deliveryPeriodKey
+          : `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, "0")}`;
+      const planningDate =
+        filters.dateBasis === "expectedDeliveryDate" && order.expectedDeliveryDate
+          ? new Date(order.expectedDeliveryDate)
+          : orderDate;
       const customerName = order.Customer?.companyName ?? null;
       const companyIssuerSafe = order.companyIssuer?.trim() || null;
 
@@ -8615,15 +8676,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           current.orderIds.add(order.id);
           current.productIds.add(item.productId);
           if (order.customerId) current.customerIds.add(order.customerId);
-          if (!current.latestUsageAt || orderDate > current.latestUsageAt) {
-            current.latestUsageAt = orderDate;
+          if (!current.latestUsageAt || planningDate > current.latestUsageAt) {
+            current.latestUsageAt = planningDate;
           }
           if (includeRowDetails) {
             current.origins.push({
               salesOrderId: order.id,
               orderCode: order.orderCode,
               orderStatus: order.status,
-              orderDate: order.issueDate.toISOString(),
+              orderDate: issueDateIso,
+              issueDate: issueDateIso,
+              expectedDeliveryDate: expectedDeliveryDateIso,
               customerId: order.customerId ?? null,
               customerName,
               companyIssuer: companyIssuerSafe,
@@ -8639,8 +8702,29 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           }
           byMaterial.set(mid, current);
 
+          const needKey = `${deliveryPeriodKey}|${unitKey}|${mid}`;
+          const needAgg =
+            byNeedDeliveryPeriod.get(needKey) ??
+            {
+              period: deliveryPeriodKey,
+              periodLabel: materialDemandPeriodLabel(deliveryPeriodKey),
+              materialId: mid,
+              code,
+              description: desc,
+              unit,
+              unitKey,
+              unitLabel,
+              quantity: 0,
+              value: 0,
+              orderIds: new Set<string>(),
+            };
+          if (estimatedQuantity != null) needAgg.quantity += estimatedQuantity;
+          if (estimatedValue != null) needAgg.value += estimatedValue;
+          needAgg.orderIds.add(order.id);
+          byNeedDeliveryPeriod.set(needKey, needAgg);
+
           const periodAgg =
-            byPeriod.get(periodKey) ?? {
+            byPeriod.get(aggregationPeriodKey) ?? {
               value: 0,
               orderIds: new Set<string>(),
               quantityByUnit: new Map<string, number>(),
@@ -8653,7 +8737,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           }
           if (estimatedValue != null) periodAgg.value += estimatedValue;
           periodAgg.orderIds.add(order.id);
-          byPeriod.set(periodKey, periodAgg);
+          byPeriod.set(aggregationPeriodKey, periodAgg);
 
           const pid = item.productId;
           const prodAgg =
@@ -8735,7 +8819,19 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const rows = materials.map((m) => {
       const byProd = new Map<string, { productId: string; sku: string | null; name: string; quantity: number; value: number }>();
       const byCust = new Map<string, { customerId: string; customerName: string; quantity: number; value: number }>();
-      const byOrder = new Map<string, { salesOrderId: string; orderCode: string; orderDate: string; orderStatus: string; quantity: number; value: number }>();
+      const byOrder = new Map<
+        string,
+        {
+          salesOrderId: string;
+          orderCode: string;
+          orderDate: string;
+          issueDate: string;
+          expectedDeliveryDate: string | null;
+          orderStatus: string;
+          quantity: number;
+          value: number;
+        }
+      >();
 
       if (includeRowDetails) {
         for (const o of m.origins) {
@@ -8766,6 +8862,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             salesOrderId: o.salesOrderId,
             orderCode: o.orderCode,
             orderDate: o.orderDate,
+            issueDate: o.issueDate,
+            expectedDeliveryDate: o.expectedDeliveryDate,
             orderStatus: o.orderStatus,
             quantity: 0,
             value: 0,
@@ -8815,7 +8913,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           .sort((a, b) => b.value - a.value)
           .slice(0, 8),
         orders: [...byOrder.values()]
-          .sort((a, b) => b.orderDate.localeCompare(a.orderDate))
+          .sort((a, b) => {
+            const aKey = a.expectedDeliveryDate ?? a.orderDate;
+            const bKey = b.expectedDeliveryDate ?? b.orderDate;
+            return bKey.localeCompare(aKey);
+          })
           .slice(0, 12),
       };
     });
@@ -8836,18 +8938,45 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         .slice(0, 10),
     }));
 
+    const needByDeliveryPeriod = [...byNeedDeliveryPeriod.values()]
+      .sort(
+        (a, b) =>
+          a.period.localeCompare(b.period) ||
+          b.value - a.value ||
+          String(a.description ?? "").localeCompare(String(b.description ?? ""))
+      )
+      .slice(0, 200)
+      .map((row) => ({
+        period: row.period,
+        periodLabel: row.periodLabel,
+        materialId: row.materialId,
+        code: row.code,
+        description: row.description,
+        unit: row.unit,
+        unitKey: row.unitKey,
+        unitLabel: row.unitLabel,
+        quantity: row.quantity,
+        estimatedValue: row.value,
+        orderCount: row.orderIds.size,
+      }));
+
     const semantics = {
       source: "SALES_ORDER_ITEMS_WITH_PRODUCT_OPEN_BOOK",
       meaning: "DEMANDA_ESTIMADA_MATERIA_PRIMA",
       label:
-        "Base derivada de itens de pedidos de venda. Os valores representam demanda/uso estimado de matéria-prima, não consumo real de produção.",
+        "Base derivada de itens de pedidos de venda com explosão estimada de BOM (open book). Não representa consumo real de fábrica, estoque disponível nem compras em aberto.",
       quantityRankingNote:
         "Quantidades só são comparáveis entre matérias-primas com a mesma unidade de medida. Rankings globais de quantidade usam grupos por unidade; comparação entre unidades distintas use valor estimado (R$).",
+      deliveryDateNote:
+        filters.dateBasis === "expectedDeliveryDate"
+          ? "Pedidos sem data de entrega prevista aparecem no agrupamento «Sem data de entrega» e permanecem visíveis ao filtrar por entrega."
+          : null,
     };
 
     const filtersApplied = {
       startDate: filters.startDate,
       endDate: filters.endDate,
+      dateBasis: filters.dateBasis,
       status: filters.status,
       customerId: filters.customerId,
       productId: filters.productId,
@@ -8880,9 +9009,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           }
         : null,
       leaderSharePct,
+      ordersWithoutDeliveryDate,
     };
 
     const charts = {
+      needByDeliveryPeriod,
       paretoByQuantityByUnit,
       paretoByValue: [...rows]
         .sort((a, b) => Number(b.estimatedValueTotal ?? 0) - Number(a.estimatedValueTotal ?? 0))
@@ -8898,6 +9029,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
                 : null;
           return {
             period,
+            periodLabel: materialDemandPeriodLabel(period),
             quantity,
             value: v.value,
             orderCount: v.orderIds.size,
