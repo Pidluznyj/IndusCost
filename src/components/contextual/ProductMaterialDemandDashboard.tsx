@@ -543,14 +543,31 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   }, []);
 
   const activePeriodPreset = useMemo(
-    () => detectPeriodPreset(filters.startDate, filters.endDate),
-    [filters.startDate, filters.endDate]
+    () => detectPeriodPreset(appliedFilters.startDate, appliedFilters.endDate),
+    [appliedFilters.startDate, appliedFilters.endDate]
   );
 
-  const applyPeriodPreset = useCallback((preset: PeriodPreset) => {
-    const range = resolvePeriodPreset(preset);
-    setFilters((p) => ({ ...p, ...range }));
-  }, []);
+  const applyPeriodPreset = useCallback(
+    (preset: PeriodPreset) => {
+      const range = resolvePeriodPreset(preset);
+      setFilters((p) => {
+        const merged: FiltersState = {
+          ...p,
+          ...range,
+          search: searchInput.trim().toLowerCase(),
+        };
+        setRowsPage(1);
+        lastCompletedFilterKeyRef.current = null;
+        setDetailsCache(new Map());
+        detailsCacheRef.current = new Map();
+        setDetailsErrorById(new Map());
+        setExpandedMaterialId(null);
+        setAppliedFilters(merged);
+        return merged;
+      });
+    },
+    [searchInput]
+  );
 
   const handleRetry = useCallback(() => {
     lastCompletedFilterKeyRef.current = null;
