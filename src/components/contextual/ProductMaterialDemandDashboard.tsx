@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Info, Loader2, RefreshCw, Search } from "lucide-react";
+import { formatYmdLocal } from "@/src/components/crmSellerDashboardUi";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
@@ -138,18 +139,79 @@ const DASHBOARD_CONTEXT = {
   },
 } as const;
 
-const INITIAL_FILTERS: FiltersState = {
-  startDate: "",
-  endDate: "",
-  status: "",
-  customerId: "",
-  productId: "",
-  materialId: "",
-  companyIssuer: "",
-  unitKey: "",
-  mode: "value",
-  search: "",
-};
+type PeriodPreset = "ytd" | "last90" | "thisMonth";
+
+const PERIOD_PRESET_OPTIONS: Array<{ id: PeriodPreset; label: string }> = [
+  { id: "ytd", label: "Ano atual (YTD)" },
+  { id: "last90", label: "Últimos 90 dias" },
+  { id: "thisMonth", label: "Este mês" },
+];
+
+const FILTER_CONTROL_CLASS =
+  "h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20";
+
+function resolvePeriodPreset(preset: PeriodPreset): Pick<FiltersState, "startDate" | "endDate"> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const endDate = formatYmdLocal(today);
+  if (preset === "ytd") {
+    return { startDate: formatYmdLocal(new Date(today.getFullYear(), 0, 1)), endDate };
+  }
+  if (preset === "thisMonth") {
+    return { startDate: formatYmdLocal(new Date(today.getFullYear(), today.getMonth(), 1)), endDate };
+  }
+  const start = new Date(today);
+  start.setDate(start.getDate() - 90);
+  return { startDate: formatYmdLocal(start), endDate };
+}
+
+function buildDefaultMaterialDemandFilters(): FiltersState {
+  const { startDate, endDate } = resolvePeriodPreset("ytd");
+  return {
+    startDate,
+    endDate,
+    status: "",
+    customerId: "",
+    productId: "",
+    materialId: "",
+    companyIssuer: "",
+    unitKey: "",
+    mode: "value",
+    search: "",
+  };
+}
+
+function detectPeriodPreset(startDate: string, endDate: string): PeriodPreset | "custom" {
+  for (const opt of PERIOD_PRESET_OPTIONS) {
+    const range = resolvePeriodPreset(opt.id);
+    if (range.startDate === startDate && range.endDate === endDate) return opt.id;
+  }
+  return "custom";
+}
+
+function MaterialDemandFilterField({
+  label,
+  htmlFor,
+  className,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+      <label
+        htmlFor={htmlFor}
+        className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground leading-none"
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
 
 function filtersQueryString(f: FiltersState): string {
   const qs = new URLSearchParams();
@@ -330,9 +392,9 @@ function MaterialDemandErrorState({
 
 export function ProductMaterialDemandDashboard({ context = "products" }: ProductMaterialDemandDashboardProps) {
   const ctx = DASHBOARD_CONTEXT[context];
-  const [filters, setFilters] = useState<FiltersState>(INITIAL_FILTERS);
+  const [filters, setFilters] = useState<FiltersState>(() => buildDefaultMaterialDemandFilters());
   const [searchInput, setSearchInput] = useState("");
-  const [appliedFilters, setAppliedFilters] = useState<FiltersState>(INITIAL_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<FiltersState>(() => buildDefaultMaterialDemandFilters());
   const [rowsPage, setRowsPage] = useState(1);
 
   const [loadingSummary, setLoadingSummary] = useState(false);
@@ -473,10 +535,21 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   }, [filters, searchInput]);
 
   const handleClear = useCallback(() => {
-    setFilters(INITIAL_FILTERS);
+    const defaults = buildDefaultMaterialDemandFilters();
+    setFilters(defaults);
     setSearchInput("");
     setRowsPage(1);
-    setAppliedFilters(INITIAL_FILTERS);
+    setAppliedFilters(defaults);
+  }, []);
+
+  const activePeriodPreset = useMemo(
+    () => detectPeriodPreset(filters.startDate, filters.endDate),
+    [filters.startDate, filters.endDate]
+  );
+
+  const applyPeriodPreset = useCallback((preset: PeriodPreset) => {
+    const range = resolvePeriodPreset(preset);
+    setFilters((p) => ({ ...p, ...range }));
   }, []);
 
   const handleRetry = useCallback(() => {
@@ -560,50 +633,72 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
         <MaterialDemandInfoBanner />
       </header>
 
-      <section className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
+      <section className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-5">
         <div>
           <h2 className="text-sm font-bold text-foreground">Filtros da análise</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Refine a visão para entender a demanda estimada por período, cliente, produto ou matéria-prima.
+            Por padrão carrega o ano atual (YTD) para evitar consultas pesadas. Refine por cliente, produto,
+            matéria-prima ou unidade de medida (KG, UN, etc.).
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-start">
-              Data inicial
-            </label>
-            <p className="text-[11px] text-muted-foreground leading-snug">Período usado para selecionar pedidos de venda (data de emissão).</p>
-            <input
-              id="mdf-start"
-              type="date"
-              value={filters.startDate}
-              onChange={(e) => setFilters((p) => ({ ...p, startDate: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-            />
+        <div className="rounded-lg border border-border/80 bg-muted/15 p-4 space-y-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground shrink-0">
+              Período · emissão do pedido
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {PERIOD_PRESET_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => applyPeriodPreset(opt.id)}
+                  className={cn(
+                    "inline-flex h-9 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                    activePeriodPreset === opt.id
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-foreground hover:bg-accent"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              {activePeriodPreset === "custom" ? (
+                <span className="inline-flex h-9 items-center rounded-lg border border-dashed border-border px-3 text-xs text-muted-foreground">
+                  Período personalizado
+                </span>
+              ) : null}
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-end">
-              Data final
-            </label>
-            <p className="text-[11px] text-muted-foreground leading-snug">Período usado para selecionar pedidos de venda (data de emissão).</p>
-            <input
-              id="mdf-end"
-              type="date"
-              value={filters.endDate}
-              onChange={(e) => setFilters((p) => ({ ...p, endDate: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end max-w-xl">
+            <MaterialDemandFilterField label="Data inicial" htmlFor="mdf-start">
+              <input
+                id="mdf-start"
+                type="date"
+                value={filters.startDate}
+                onChange={(e) => setFilters((p) => ({ ...p, startDate: e.target.value }))}
+                className={FILTER_CONTROL_CLASS}
+              />
+            </MaterialDemandFilterField>
+            <MaterialDemandFilterField label="Data final" htmlFor="mdf-end">
+              <input
+                id="mdf-end"
+                type="date"
+                value={filters.endDate}
+                onChange={(e) => setFilters((p) => ({ ...p, endDate: e.target.value }))}
+                className={FILTER_CONTROL_CLASS}
+              />
+            </MaterialDemandFilterField>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-status">
-              Status
-            </label>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+          <MaterialDemandFilterField label="Status" htmlFor="mdf-status">
             <select
               id="mdf-status"
               value={filters.status}
               onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todos os status</option>
               {(summaryData?.facets.statuses ?? []).map((s) => (
@@ -612,16 +707,13 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 </option>
               ))}
             </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-customer">
-              Cliente
-            </label>
+          </MaterialDemandFilterField>
+          <MaterialDemandFilterField label="Cliente" htmlFor="mdf-customer">
             <select
               id="mdf-customer"
               value={filters.customerId}
               onChange={(e) => setFilters((p) => ({ ...p, customerId: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todos os clientes</option>
               {(summaryData?.facets.customers ?? []).map((c) => (
@@ -630,16 +722,13 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 </option>
               ))}
             </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-product">
-              Produto
-            </label>
+          </MaterialDemandFilterField>
+          <MaterialDemandFilterField label="Produto" htmlFor="mdf-product">
             <select
               id="mdf-product"
               value={filters.productId}
               onChange={(e) => setFilters((p) => ({ ...p, productId: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todos os produtos</option>
               {(summaryData?.facets.products ?? []).map((p) => (
@@ -648,55 +737,13 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 </option>
               ))}
             </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-unit">
-              Unidade de medida
-            </label>
-            <p className="text-[11px] text-muted-foreground leading-snug">
-              Necessário para comparar quantidades (ex.: só KG ou só UN).
-            </p>
-            <select
-              id="mdf-unit"
-              value={filters.unitKey}
-              onChange={(e) => setFilters((p) => ({ ...p, unitKey: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="">Todas (ranking de qtd. por unidade)</option>
-              {(summaryData?.facets.units ?? []).map((u) => (
-                <option key={u.unitKey} value={u.unitKey}>
-                  {u.unitLabel} ({u.materialCount} MP · {num(u.totalQuantity)})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-material">
-              Matéria-prima
-            </label>
-            <select
-              id="mdf-material"
-              value={filters.materialId}
-              onChange={(e) => setFilters((p) => ({ ...p, materialId: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="">Todas as matérias-primas</option>
-              {(summaryData?.facets.materials ?? []).map((m) => (
-                <option key={m.materialId} value={m.materialId}>
-                  {(m.code ? `[${m.code}] ` : "") + m.description}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-company">
-              Empresa emissora
-            </label>
+          </MaterialDemandFilterField>
+          <MaterialDemandFilterField label="Empresa emissora" htmlFor="mdf-company">
             <select
               id="mdf-company"
               value={filters.companyIssuer}
               onChange={(e) => setFilters((p) => ({ ...p, companyIssuer: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todas</option>
               {(summaryData?.facets.companyIssuers ?? []).map((c) => (
@@ -705,41 +752,70 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 </option>
               ))}
             </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-mode">
-              Modo de análise
-            </label>
-            <p className="text-[11px] text-muted-foreground leading-snug">Quantidade ou valor estimado (e visões por contagem).</p>
+          </MaterialDemandFilterField>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
+          <MaterialDemandFilterField label="Unidade de medida" htmlFor="mdf-unit">
+            <select
+              id="mdf-unit"
+              value={filters.unitKey}
+              onChange={(e) => setFilters((p) => ({ ...p, unitKey: e.target.value }))}
+              className={FILTER_CONTROL_CLASS}
+            >
+              <option value="">Todas (ranking por unidade)</option>
+              {(summaryData?.facets.units ?? []).map((u) => (
+                <option key={u.unitKey} value={u.unitKey}>
+                  {u.unitLabel} ({u.materialCount} MP · {num(u.totalQuantity)})
+                </option>
+              ))}
+            </select>
+          </MaterialDemandFilterField>
+          <MaterialDemandFilterField label="Matéria-prima" htmlFor="mdf-material">
+            <select
+              id="mdf-material"
+              value={filters.materialId}
+              onChange={(e) => setFilters((p) => ({ ...p, materialId: e.target.value }))}
+              className={FILTER_CONTROL_CLASS}
+            >
+              <option value="">Todas as matérias-primas</option>
+              {(summaryData?.facets.materials ?? []).map((m) => (
+                <option key={m.materialId} value={m.materialId}>
+                  {(m.code ? `[${m.code}] ` : "") + m.description}
+                </option>
+              ))}
+            </select>
+          </MaterialDemandFilterField>
+          <MaterialDemandFilterField label="Modo de análise" htmlFor="mdf-mode">
             <select
               id="mdf-mode"
               value={filters.mode}
               onChange={(e) => setFilters((p) => ({ ...p, mode: e.target.value as FiltersState["mode"] }))}
-              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              className={FILTER_CONTROL_CLASS}
             >
               <option value="quantity">{modeOptionLabel("quantity")}</option>
               <option value="value">{modeOptionLabel("value")}</option>
               <option value="orders">{modeOptionLabel("orders")}</option>
               <option value="products">{modeOptionLabel("products")}</option>
             </select>
-          </div>
-          <div className="space-y-1.5 md:col-span-2 xl:col-span-2">
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="mdf-search">
-              Buscar matéria-prima
-            </label>
-            <p className="text-[11px] text-muted-foreground leading-snug">Pesquise por código ou descrição (atualização suavizada ao digitar).</p>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-              <input
-                id="mdf-search"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Código ou descrição"
-                className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-          </div>
+          </MaterialDemandFilterField>
         </div>
+
+        <MaterialDemandFilterField label="Buscar matéria-prima" htmlFor="mdf-search">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <input
+              id="mdf-search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Código ou descrição"
+              className={cn(FILTER_CONTROL_CLASS, "pl-10")}
+            />
+          </div>
+        </MaterialDemandFilterField>
 
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
           <button
