@@ -47,6 +47,7 @@ import {
   type ExplosionRowCore,
 } from "./src/lib/openBookMaterialExplosion.js";
 import { normalizeMaterialUnitKey } from "./src/lib/materialDemandUnits.js";
+import { resolveProductBomUsage, type BomUsageSearchKind } from "./src/lib/productBomUsage.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
 import {
@@ -3332,6 +3333,51 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     } catch (e: any) {
       console.error("GET /api/products/bom-item-options", e);
       res.status(500).json({ error: e?.message || "Erro ao listar opções de BOM." });
+    }
+  });
+
+  app.get("/api/products/bom-usage", requireAppAuth, requirePermission("products.view"), async (req, res) => {
+    try {
+      const rawCode = typeof req.query.code === "string" ? req.query.code : "";
+      if (!rawCode.trim()) {
+        return res.status(400).json({
+          error: "CODE_REQUIRED",
+          message: "Informe o parâmetro code com o código do produto, componente ou matéria-prima.",
+        });
+      }
+
+      const kindRaw = typeof req.query.kind === "string" ? req.query.kind.trim().toUpperCase() : "";
+      let kind: BomUsageSearchKind | undefined;
+      if (kindRaw === "PRODUCT") kind = "PRODUCT";
+      else if (kindRaw === "MATERIAL") kind = "MATERIAL";
+      else if (kindRaw) {
+        return res.status(400).json({
+          error: "INVALID_KIND",
+          message: "Parâmetro kind inválido. Use kind=PRODUCT ou kind=MATERIAL.",
+        });
+      }
+
+      const outcome = await resolveProductBomUsage({ code: rawCode, kind });
+
+      if (outcome.status === "ok") {
+        return res.json(outcome.data);
+      }
+      if (outcome.status === "ambiguous") {
+        return res.status(409).json({
+          error: "AMBIGUOUS_CODE",
+          message: outcome.message,
+          searchedCode: outcome.searchedCode,
+          candidates: outcome.candidates,
+        });
+      }
+      return res.status(404).json({
+        error: "ITEM_NOT_FOUND",
+        message: outcome.message,
+        searchedCode: outcome.searchedCode,
+      });
+    } catch (error) {
+      console.error("GET /api/products/bom-usage", error);
+      return res.status(500).json({ error: "Erro ao consultar uso na estrutura ProductBOM." });
     }
   });
 
