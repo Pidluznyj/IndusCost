@@ -1,5 +1,85 @@
 import { CreateEmployeeInput, Employee } from "@/src/types/employee";
 
+export type EmployeeFichaTabId =
+  | "professional"
+  | "personal"
+  | "emergency"
+  | "epi"
+  | "admin"
+  | "notes";
+
+export const EMPLOYEE_FICHA_TABS: { id: EmployeeFichaTabId; label: string }[] = [
+  { id: "professional", label: "Profissional" },
+  { id: "personal", label: "Pessoal" },
+  { id: "emergency", label: "Emergência" },
+  { id: "epi", label: "EPI / Uniformes" },
+  { id: "admin", label: "Referência administrativa" },
+  { id: "notes", label: "Observações" },
+];
+
+export const EPI_TOP_SIZE_OPTIONS = [
+  "PP",
+  "P",
+  "M",
+  "G",
+  "GG",
+  "XGG",
+  "EXGG",
+  "Sob medida",
+  "Não se aplica",
+] as const;
+
+export const EPI_PANTS_SIZE_OPTIONS = [
+  "34",
+  "36",
+  "38",
+  "40",
+  "42",
+  "44",
+  "46",
+  "48",
+  "50",
+  "52",
+  "54",
+  "56",
+  "58",
+  "60",
+  "Sob medida",
+  "Não se aplica",
+] as const;
+
+export const EPI_GLOVE_SIZE_OPTIONS = [
+  "6 / PP",
+  "7 / P",
+  "8 / M",
+  "9 / G",
+  "10 / GG",
+  "11 / XGG",
+  "Único",
+  "Não se aplica",
+] as const;
+
+export const EPI_SHOE_SIZE_OPTIONS = [
+  "33",
+  "34",
+  "35",
+  "36",
+  "37",
+  "38",
+  "39",
+  "40",
+  "41",
+  "42",
+  "43",
+  "44",
+  "45",
+  "46",
+  "47",
+  "48",
+  "Sob medida",
+  "Não se aplica",
+] as const;
+
 export const CONTRACT_TYPE_OPTIONS = [
   { value: "CLT", label: "CLT", searchTerms: "CLT clt" },
   { value: "PJ", label: "PJ", searchTerms: "PJ pj" },

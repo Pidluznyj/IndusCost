@@ -23,9 +23,15 @@ import {
   createEmptyEmployeeForm,
   displayText,
   employeeToFormData,
+  EPI_GLOVE_SIZE_OPTIONS,
+  EPI_PANTS_SIZE_OPTIONS,
+  EPI_SHOE_SIZE_OPTIONS,
+  EPI_TOP_SIZE_OPTIONS,
   formatContractType,
   formatEmployeeDate,
+  type EmployeeFichaTabId,
 } from "@/src/lib/employeeHrUi";
+import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
 import { motion } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -56,6 +62,62 @@ const INPUT_CLASS =
 const TEXTAREA_CLASS =
   "w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm min-h-[88px] resize-y";
 
+const FICHA_MODAL_CLASS =
+  "bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh]";
+
+function EpiSizeSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  onChange: (next: string) => void;
+}) {
+  const normalized = value ?? "";
+  const isLegacy = normalized.length > 0 && !options.includes(normalized);
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-bold text-muted-foreground uppercase">{label}</label>
+      <select
+        className={INPUT_CLASS}
+        value={normalized}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">—</option>
+        {isLegacy && <option value={normalized}>{normalized}</option>}
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function DetailField({
+  label,
+  value,
+  className,
+  multiline,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  multiline?: boolean;
+}) {
+  return (
+    <div className={className}>
+      <p className="text-muted-foreground text-xs">{label}</p>
+      <p className={cn("font-medium", multiline && "whitespace-pre-wrap")}>{value}</p>
+    </div>
+  );
+}
+
 export const EmployeeModule = () => {
   const auth = useAuth();
   const canEdit = auth.hasPermission("employees.edit");
@@ -78,6 +140,8 @@ export const EmployeeModule = () => {
   const [isComponentModalOpen, setIsComponentModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
+  const [employeeFichaTab, setEmployeeFichaTab] = useState<EmployeeFichaTabId>("professional");
+  const [viewFichaTab, setViewFichaTab] = useState<EmployeeFichaTabId>("professional");
 
   // Form State
   const [formData, setFormData] = useState<CreateEmployeeInput>(createEmptyEmployeeForm());
@@ -113,6 +177,7 @@ export const EmployeeModule = () => {
   }, []);
 
   const handleOpenModal = (employee?: Employee) => {
+    setEmployeeFichaTab("professional");
     if (employee) {
       setEditingEmployee(employee);
       setFormData(employeeToFormData(employee));
@@ -121,6 +186,11 @@ export const EmployeeModule = () => {
       setFormData(createEmptyEmployeeForm(roles[0]?.id || ""));
     }
     setIsModalOpen(true);
+  };
+
+  const openEmployeeView = (employee: Employee) => {
+    setViewFichaTab("professional");
+    setViewingEmployee(employee);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -420,7 +490,7 @@ export const EmployeeModule = () => {
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => setViewingEmployee(emp)}
+                          onClick={() => openEmployeeView(emp)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
                           title="Ver ficha do colaborador"
                         >
@@ -459,223 +529,210 @@ export const EmployeeModule = () => {
 
       {/* Modal: Employee Form */}
       {isModalOpen && canEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <motion.div 
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-sm">
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-card w-full max-w-4xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            className={FICHA_MODAL_CLASS}
           >
-            <div className="p-6 border-b border-border flex items-center justify-between bg-accent/30">
+            <div className="p-5 sm:p-6 border-b border-border flex items-center justify-between bg-accent/30 shrink-0">
               <h3 className="text-xl font-bold">{editingEmployee ? "Editar Colaborador" : "Novo Colaborador"}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
+              <button type="button" onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
-              <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
-                Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
-              </p>
 
-              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">1. Dados profissionais</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Nome completo</label>
-                    <input required type="text" className={INPUT_CLASS} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Nome social / apelido</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.socialName ?? ""} onChange={(e) => setFormData({ ...formData, socialName: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Cargo</label>
-                    <SearchableSelect required placeholder="Selecione o cargo..." options={roles.map((role) => ({ value: role.id, label: role.name, searchTerms: role.name }))} value={formData.roleId} onChange={(v) => setFormData({ ...formData, roleId: v })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Departamento / setor</label>
-                    <input required type="text" className={INPUT_CLASS} value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Centro de custo</label>
-                    <input required type="text" className={INPUT_CLASS} value={formData.costCenter} onChange={(e) => setFormData({ ...formData, costCenter: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Classificação</label>
-                    <SearchableSelect required placeholder="Classificação..." options={EMPLOYEE_CLASSIFICATION_OPTIONS} value={formData.classification} onChange={(v) => setFormData({ ...formData, classification: v })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de contrato</label>
-                    <SearchableSelect placeholder="Tipo de contrato..." options={CONTRACT_TYPE_OPTIONS} value={formData.contractType ?? ""} onChange={(v) => setFormData({ ...formData, contractType: v })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Gestor responsável</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.managerName ?? ""} onChange={(e) => setFormData({ ...formData, managerName: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Data de admissão</label>
-                    <input type="date" className={INPUT_CLASS} value={formData.admissionDate ?? ""} onChange={(e) => setFormData({ ...formData, admissionDate: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Data de desligamento</label>
-                    <input type="date" className={INPUT_CLASS} value={formData.terminationDate ?? ""} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Status</label>
-                    <select className={INPUT_CLASS} value={formData.status ?? "ACTIVE"} onChange={(e) => setFormData({ ...formData, status: e.target.value as CreateEmployeeInput["status"] })}>
-                      <option value="ACTIVE">Ativo</option>
-                      <option value="INACTIVE">Inativo</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+                <EmployeeFichaTabNav activeTab={employeeFichaTab} onTabChange={setEmployeeFichaTab} layout="sidebar" />
 
-              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">2. Dados pessoais</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">CPF</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.cpf ?? ""} onChange={(e) => setFormData({ ...formData, cpf: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">RG</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.rg ?? ""} onChange={(e) => setFormData({ ...formData, rg: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Data de nascimento</label>
-                    <input type="date" className={INPUT_CLASS} value={formData.birthDate ?? ""} onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
-                    <input type="tel" className={INPUT_CLASS} value={formData.phone ?? ""} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">E-mail pessoal</label>
-                    <input type="email" className={INPUT_CLASS} value={formData.personalEmail ?? ""} onChange={(e) => setFormData({ ...formData, personalEmail: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Endereço</label>
-                    <textarea className={TEXTAREA_CLASS} value={formData.address ?? ""} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">3. Contato de emergência</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Nome</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.emergencyContactName ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
-                    <input type="tel" className={INPUT_CLASS} value={formData.emergencyContactPhone ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Grau / relação</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.emergencyContactRelationship ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactRelationship: e.target.value })} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">4. EPI / Uniformes</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Camiseta / camisa</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.shirtSize ?? ""} onChange={(e) => setFormData({ ...formData, shirtSize: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Calça</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.pantsSize ?? ""} onChange={(e) => setFormData({ ...formData, pantsSize: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Jaqueta / blusa</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.jacketSize ?? ""} onChange={(e) => setFormData({ ...formData, jacketSize: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Luva</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.gloveSize ?? ""} onChange={(e) => setFormData({ ...formData, gloveSize: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Calçado / bota</label>
-                    <input type="text" className={INPUT_CLASS} value={formData.shoeSize ?? ""} onChange={(e) => setFormData({ ...formData, shoeSize: e.target.value })} />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Observações de EPI / uniforme</label>
-                  <textarea className={TEXTAREA_CLASS} value={formData.epiNotes ?? ""} onChange={(e) => setFormData({ ...formData, epiNotes: e.target.value })} />
-                </div>
-              </div>
-
-              <div className="space-y-4 rounded-xl border border-border p-5 bg-muted/20">
-                <div>
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">5. Referência administrativa</h4>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
+                  <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
+                    Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
                   </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Referência salarial (R$)</label>
-                    <input required type="number" step="0.00001" className={INPUT_CLASS} value={formData.salary} onChange={(e) => setFormData({ ...formData, salary: parseFloat(e.target.value) })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Jornada (horas/mês)</label>
-                    <input required type="number" className={INPUT_CLASS} value={formData.monthlyHours} onChange={(e) => setFormData({ ...formData, monthlyHours: parseInt(e.target.value, 10) })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Produtividade (%)</label>
-                    <input required type="number" step="0.00001" className={INPUT_CLASS} value={formData.productivity} onChange={(e) => setFormData({ ...formData, productivity: parseFloat(e.target.value) })} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-bold text-muted-foreground uppercase">Verbas / benefícios legados</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {payrollComponents.map((comp) => (
-                      <div
-                        key={comp.id}
-                        onClick={() => toggleComponent(comp.id)}
-                        className={cn(
-                          "p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between",
-                          formData.componentIds?.includes(comp.id)
-                            ? "bg-primary/5 border-primary shadow-sm"
-                            : "bg-background border-border hover:border-primary/50"
-                        )}
-                      >
-                        <div>
-                          <p className="text-xs font-bold">{comp.name}</p>
-                          <p className="text-[10px] text-muted-foreground">
-                            {comp.calculationType === "PERCENTAGE" ? `${comp.value}%` : formatCurrency(comp.value)}
-                          </p>
+
+                  {employeeFichaTab === "professional" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome completo</label>
+                        <input required type="text" className={INPUT_CLASS} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome social / apelido</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.socialName ?? ""} onChange={(e) => setFormData({ ...formData, socialName: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Cargo</label>
+                        <SearchableSelect required placeholder="Selecione o cargo..." options={roles.map((role) => ({ value: role.id, label: role.name, searchTerms: role.name }))} value={formData.roleId} onChange={(v) => setFormData({ ...formData, roleId: v })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Departamento / setor</label>
+                        <input required type="text" className={INPUT_CLASS} value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Centro de custo</label>
+                        <input required type="text" className={INPUT_CLASS} value={formData.costCenter} onChange={(e) => setFormData({ ...formData, costCenter: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Classificação</label>
+                        <SearchableSelect required placeholder="Classificação..." options={EMPLOYEE_CLASSIFICATION_OPTIONS} value={formData.classification} onChange={(v) => setFormData({ ...formData, classification: v })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de contrato</label>
+                        <SearchableSelect placeholder="Tipo de contrato..." options={CONTRACT_TYPE_OPTIONS} value={formData.contractType ?? ""} onChange={(v) => setFormData({ ...formData, contractType: v })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de admissão</label>
+                        <input type="date" className={INPUT_CLASS} value={formData.admissionDate ?? ""} onChange={(e) => setFormData({ ...formData, admissionDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de desligamento</label>
+                        <input type="date" className={INPUT_CLASS} value={formData.terminationDate ?? ""} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Gestor responsável</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.managerName ?? ""} onChange={(e) => setFormData({ ...formData, managerName: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Status</label>
+                        <select className={INPUT_CLASS} value={formData.status ?? "ACTIVE"} onChange={(e) => setFormData({ ...formData, status: e.target.value as CreateEmployeeInput["status"] })}>
+                          <option value="ACTIVE">Ativo</option>
+                          <option value="INACTIVE">Inativo</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {employeeFichaTab === "personal" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">CPF</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.cpf ?? ""} onChange={(e) => setFormData({ ...formData, cpf: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">RG</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.rg ?? ""} onChange={(e) => setFormData({ ...formData, rg: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de nascimento</label>
+                        <input type="date" className={INPUT_CLASS} value={formData.birthDate ?? ""} onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
+                        <input type="tel" className={INPUT_CLASS} value={formData.phone ?? ""} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">E-mail pessoal</label>
+                        <input type="email" className={INPUT_CLASS} value={formData.personalEmail ?? ""} onChange={(e) => setFormData({ ...formData, personalEmail: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Endereço</label>
+                        <textarea className={TEXTAREA_CLASS} value={formData.address ?? ""} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
+
+                  {employeeFichaTab === "emergency" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+                      <div className="space-y-1.5 md:col-span-2">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome do contato</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.emergencyContactName ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
+                        <input type="tel" className={INPUT_CLASS} value={formData.emergencyContactPhone ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Grau / relação</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.emergencyContactRelationship ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactRelationship: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
+
+                  {employeeFichaTab === "epi" && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <EpiSizeSelect label="Camiseta / camisa" value={formData.shirtSize ?? ""} options={EPI_TOP_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, shirtSize: v })} />
+                        <EpiSizeSelect label="Calça" value={formData.pantsSize ?? ""} options={EPI_PANTS_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, pantsSize: v })} />
+                        <EpiSizeSelect label="Jaqueta / blusa" value={formData.jacketSize ?? ""} options={EPI_TOP_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, jacketSize: v })} />
+                        <EpiSizeSelect label="Luva" value={formData.gloveSize ?? ""} options={EPI_GLOVE_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, gloveSize: v })} />
+                        <EpiSizeSelect label="Calçado / bota" value={formData.shoeSize ?? ""} options={EPI_SHOE_SIZE_OPTIONS} onChange={(v) => setFormData({ ...formData, shoeSize: v })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Observações de EPI / uniforme</label>
+                        <textarea className={TEXTAREA_CLASS} value={formData.epiNotes ?? ""} onChange={(e) => setFormData({ ...formData, epiNotes: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
+
+                  {employeeFichaTab === "admin" && (
+                    <div className="space-y-5">
+                      <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+                        Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-muted-foreground uppercase">Referência salarial (R$)</label>
+                          <input required type="number" step="0.00001" className={INPUT_CLASS} value={formData.salary} onChange={(e) => setFormData({ ...formData, salary: parseFloat(e.target.value) })} />
                         </div>
-                        <div className={cn(
-                          "h-4 w-4 rounded-full border flex items-center justify-center",
-                          formData.componentIds?.includes(comp.id) ? "bg-primary border-primary" : "border-border"
-                        )}>
-                          {formData.componentIds?.includes(comp.id) && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-muted-foreground uppercase">Jornada (horas/mês)</label>
+                          <input required type="number" className={INPUT_CLASS} value={formData.monthlyHours} onChange={(e) => setFormData({ ...formData, monthlyHours: parseInt(e.target.value, 10) })} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-muted-foreground uppercase">Produtividade (%)</label>
+                          <input required type="number" step="0.00001" className={INPUT_CLASS} value={formData.productivity} onChange={(e) => setFormData({ ...formData, productivity: parseFloat(e.target.value) })} />
                         </div>
                       </div>
-                    ))}
-                  </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Verbas / benefícios legados</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                          {payrollComponents.map((comp) => (
+                            <div
+                              key={comp.id}
+                              onClick={() => toggleComponent(comp.id)}
+                              className={cn(
+                                "p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between",
+                                formData.componentIds?.includes(comp.id)
+                                  ? "bg-primary/5 border-primary shadow-sm"
+                                  : "bg-background border-border hover:border-primary/50"
+                              )}
+                            >
+                              <div>
+                                <p className="text-xs font-bold">{comp.name}</p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  {comp.calculationType === "PERCENTAGE" ? `${comp.value}%` : formatCurrency(comp.value)}
+                                </p>
+                              </div>
+                              <div className={cn(
+                                "h-4 w-4 rounded-full border flex items-center justify-center",
+                                formData.componentIds?.includes(comp.id) ? "bg-primary border-primary" : "border-border"
+                              )}>
+                                {formData.componentIds?.includes(comp.id) && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {employeeFichaTab === "notes" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Observações profissionais</label>
+                        <textarea className={TEXTAREA_CLASS} value={formData.professionalNotes ?? ""} onChange={(e) => setFormData({ ...formData, professionalNotes: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">Observações administrativas</label>
+                        <textarea className={TEXTAREA_CLASS} value={formData.adminNotes ?? ""} onChange={(e) => setFormData({ ...formData, adminNotes: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">6. Observações</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Observações profissionais</label>
-                    <textarea className={TEXTAREA_CLASS} value={formData.professionalNotes ?? ""} onChange={(e) => setFormData({ ...formData, professionalNotes: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Observações administrativas</label>
-                    <textarea className={TEXTAREA_CLASS} value={formData.adminNotes ?? ""} onChange={(e) => setFormData({ ...formData, adminNotes: e.target.value })} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2 border-t border-border">
+              <div className="shrink-0 border-t border-border bg-card px-5 sm:px-6 py-4 flex items-center justify-end gap-3">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm">
                   Cancelar
                 </button>
@@ -758,13 +815,13 @@ export const EmployeeModule = () => {
 
       {/* Modal: Ficha do colaborador */}
       {viewingEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <motion.div 
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-sm">
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-card w-full max-w-3xl rounded-2xl border border-border shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+            className={FICHA_MODAL_CLASS}
           >
-            <div className="p-6 border-b border-border flex items-center justify-between bg-accent/40">
+            <div className="p-5 sm:p-6 border-b border-border flex items-center justify-between bg-accent/40 shrink-0">
               <div>
                 <h3 className="text-xl font-bold">{viewingEmployee.name}</h3>
                 <p className="text-xs text-muted-foreground">
@@ -777,8 +834,9 @@ export const EmployeeModule = () => {
                   <button
                     type="button"
                     onClick={() => {
+                      const employee = viewingEmployee;
                       setViewingEmployee(null);
-                      handleOpenModal(viewingEmployee);
+                      handleOpenModal(employee);
                     }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-accent text-sm font-medium"
                   >
@@ -786,136 +844,123 @@ export const EmployeeModule = () => {
                     Editar
                   </button>
                 )}
-                <button onClick={() => setViewingEmployee(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
+                <button type="button" onClick={() => setViewingEmployee(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
                   <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
-            
-            <div className="p-6 space-y-5 overflow-y-auto">
-              <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
-                Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
-              </p>
 
-              <div className="space-y-3 rounded-xl border border-border p-4">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Dados profissionais</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-muted-foreground text-xs">Nome social / apelido</p><p className="font-medium">{displayText(viewingEmployee.socialName)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Cargo</p><p className="font-medium">{viewingEmployee.Role.name}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Departamento</p><p className="font-medium">{displayText(viewingEmployee.department)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Centro de custo</p><p className="font-medium">{displayText(viewingEmployee.costCenter)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Classificação</p><p className="font-medium">{displayText(viewingEmployee.classification)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Tipo de contrato</p><p className="font-medium">{formatContractType(viewingEmployee.contractType)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Admissão</p><p className="font-medium">{formatEmployeeDate(viewingEmployee.admissionDate)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Desligamento</p><p className="font-medium">{formatEmployeeDate(viewingEmployee.terminationDate)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Gestor responsável</p><p className="font-medium">{displayText(viewingEmployee.managerName)}</p></div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Status</p>
-                    <div className={cn(
-                      "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mt-1",
-                      viewingEmployee.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                    )}>
-                      {viewingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
+            <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+              <EmployeeFichaTabNav activeTab={viewFichaTab} onTabChange={setViewFichaTab} layout="sidebar" />
+
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
+                <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
+                  Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
+                </p>
+
+                {viewFichaTab === "professional" && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <DetailField label="Nome social / apelido" value={displayText(viewingEmployee.socialName)} />
+                    <DetailField label="Cargo" value={displayText(viewingEmployee.Role.name)} />
+                    <DetailField label="Departamento" value={displayText(viewingEmployee.department)} />
+                    <DetailField label="Centro de custo" value={displayText(viewingEmployee.costCenter)} />
+                    <DetailField label="Classificação" value={displayText(viewingEmployee.classification)} />
+                    <DetailField label="Tipo de contrato" value={formatContractType(viewingEmployee.contractType)} />
+                    <DetailField label="Admissão" value={formatEmployeeDate(viewingEmployee.admissionDate)} />
+                    <DetailField label="Desligamento" value={formatEmployeeDate(viewingEmployee.terminationDate)} />
+                    <DetailField label="Gestor responsável" value={displayText(viewingEmployee.managerName)} />
+                    <div>
+                      <p className="text-muted-foreground text-xs">Status</p>
+                      <div className={cn(
+                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mt-1",
+                        viewingEmployee.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
+                      )}>
+                        {viewingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                )}
 
-              <div className="space-y-3 rounded-xl border border-border p-4">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Dados pessoais</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-muted-foreground text-xs">CPF</p><p className="font-medium">{displayText(viewingEmployee.cpf)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">RG</p><p className="font-medium">{displayText(viewingEmployee.rg)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Nascimento</p><p className="font-medium">{formatEmployeeDate(viewingEmployee.birthDate)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Telefone</p><p className="font-medium">{displayText(viewingEmployee.phone)}</p></div>
-                  <div className="col-span-2"><p className="text-muted-foreground text-xs">E-mail pessoal</p><p className="font-medium">{displayText(viewingEmployee.personalEmail)}</p></div>
-                  <div className="col-span-2"><p className="text-muted-foreground text-xs">Endereço</p><p className="font-medium whitespace-pre-wrap">{displayText(viewingEmployee.address)}</p></div>
-                </div>
-              </div>
+                {viewFichaTab === "personal" && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <DetailField label="CPF" value={displayText(viewingEmployee.cpf)} />
+                    <DetailField label="RG" value={displayText(viewingEmployee.rg)} />
+                    <DetailField label="Nascimento" value={formatEmployeeDate(viewingEmployee.birthDate)} />
+                    <DetailField label="Telefone" value={displayText(viewingEmployee.phone)} />
+                    <DetailField label="E-mail pessoal" value={displayText(viewingEmployee.personalEmail)} className="col-span-2 md:col-span-3" />
+                    <DetailField label="Endereço" value={displayText(viewingEmployee.address)} className="col-span-2 md:col-span-3" multiline />
+                  </div>
+                )}
 
-              <div className="space-y-3 rounded-xl border border-border p-4">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Contato de emergência</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="col-span-2"><p className="text-muted-foreground text-xs">Nome</p><p className="font-medium">{displayText(viewingEmployee.emergencyContactName)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Telefone</p><p className="font-medium">{displayText(viewingEmployee.emergencyContactPhone)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Grau / relação</p><p className="font-medium">{displayText(viewingEmployee.emergencyContactRelationship)}</p></div>
-                </div>
-              </div>
+                {viewFichaTab === "emergency" && (
+                  <div className="grid grid-cols-2 gap-4 text-sm max-w-3xl">
+                    <DetailField label="Nome do contato" value={displayText(viewingEmployee.emergencyContactName)} className="col-span-2" />
+                    <DetailField label="Telefone" value={displayText(viewingEmployee.emergencyContactPhone)} />
+                    <DetailField label="Grau / relação" value={displayText(viewingEmployee.emergencyContactRelationship)} />
+                  </div>
+                )}
 
-              <div className="space-y-3 rounded-xl border border-border p-4">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">EPI / Uniformes</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                  <div><p className="text-muted-foreground text-xs">Camiseta / camisa</p><p className="font-medium">{displayText(viewingEmployee.shirtSize)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Calça</p><p className="font-medium">{displayText(viewingEmployee.pantsSize)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Jaqueta / blusa</p><p className="font-medium">{displayText(viewingEmployee.jacketSize)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Luva</p><p className="font-medium">{displayText(viewingEmployee.gloveSize)}</p></div>
-                  <div><p className="text-muted-foreground text-xs">Calçado / bota</p><p className="font-medium">{displayText(viewingEmployee.shoeSize)}</p></div>
-                </div>
-                {viewingEmployee.epiNotes?.trim() && (
-                  <div className="text-sm">
-                    <p className="text-muted-foreground text-xs">Observações</p>
-                    <p className="font-medium whitespace-pre-wrap">{viewingEmployee.epiNotes}</p>
+                {viewFichaTab === "epi" && (
+                  <div className="space-y-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <DetailField label="Camiseta / camisa" value={displayText(viewingEmployee.shirtSize)} />
+                      <DetailField label="Calça" value={displayText(viewingEmployee.pantsSize)} />
+                      <DetailField label="Jaqueta / blusa" value={displayText(viewingEmployee.jacketSize)} />
+                      <DetailField label="Luva" value={displayText(viewingEmployee.gloveSize)} />
+                      <DetailField label="Calçado / bota" value={displayText(viewingEmployee.shoeSize)} />
+                    </div>
+                    <DetailField label="Observações de EPI / uniforme" value={displayText(viewingEmployee.epiNotes)} multiline />
+                  </div>
+                )}
+
+                {viewFichaTab === "admin" && (
+                  <div className="space-y-5">
+                    <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+                      Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="p-3 rounded-lg bg-muted/20 border border-border">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa mensal</p>
+                        <p className="text-lg font-semibold">{formatCurrency(viewingEmployee.costs?.totalMonthlyCost || 0)}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/20 border border-border">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa /h produtiva</p>
+                        <p className="text-lg font-semibold">{formatCurrency(viewingEmployee.costs?.costPerProductiveHour || 0, 5)}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Referência salarial</span><span>{formatCurrency(viewingEmployee.costs?.salary || 0)}</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Jornada mensal</span><span>{viewingEmployee.monthlyHours}h</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Produtividade</span><span>{formatNumber(viewingEmployee.productivity, 2)}%</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Benefícios (estimativa)</span><span className="text-green-600">{formatCurrency(viewingEmployee.costs?.totalBenefits || 0)}</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Encargos (estimativa)</span><span className="text-orange-600">{formatCurrency(viewingEmployee.costs?.totalCharges || 0)}</span></div>
+                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Provisões (estimativa)</span><span className="text-blue-600">{formatCurrency(viewingEmployee.costs?.totalProvisions || 0)}</span></div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase mb-2">Verbas vinculadas</p>
+                      {viewingEmployee.EmployeePayrollComponent.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">—</p>
+                      ) : (
+                        <ul className="space-y-1 text-sm">
+                          {viewingEmployee.EmployeePayrollComponent.map((c) => (
+                            <li key={c.PayrollComponent.id} className="flex justify-between gap-2">
+                              <span>{c.PayrollComponent.name}</span>
+                              <span className="text-muted-foreground text-xs">{c.PayrollComponent.type}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {viewFichaTab === "notes" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <DetailField label="Observações profissionais" value={displayText(viewingEmployee.professionalNotes)} multiline />
+                    <DetailField label="Observações administrativas" value={displayText(viewingEmployee.adminNotes)} multiline />
                   </div>
                 )}
               </div>
-
-              <div className="space-y-3 rounded-xl border border-border p-4 bg-muted/20">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Referência administrativa</h4>
-                <p className="text-xs text-muted-foreground">
-                  Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
-                </p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-background border border-border">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa mensal</p>
-                    <p className="text-lg font-semibold">{formatCurrency(viewingEmployee.costs?.totalMonthlyCost || 0)}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-background border border-border">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa /h produtiva</p>
-                    <p className="text-lg font-semibold">{formatCurrency(viewingEmployee.costs?.costPerProductiveHour || 0, 5)}</p>
-                  </div>
-                </div>
-                <div className="space-y-2 pt-1 text-sm">
-                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Referência salarial</span><span>{formatCurrency(viewingEmployee.costs?.salary || 0)}</span></div>
-                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Jornada mensal</span><span>{viewingEmployee.monthlyHours}h</span></div>
-                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Produtividade</span><span>{formatNumber(viewingEmployee.productivity, 2)}%</span></div>
-                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Benefícios (estimativa)</span><span className="text-green-600">{formatCurrency(viewingEmployee.costs?.totalBenefits || 0)}</span></div>
-                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Encargos (estimativa)</span><span className="text-orange-600">{formatCurrency(viewingEmployee.costs?.totalCharges || 0)}</span></div>
-                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Provisões (estimativa)</span><span className="text-blue-600">{formatCurrency(viewingEmployee.costs?.totalProvisions || 0)}</span></div>
-                </div>
-                <div className="pt-2">
-                  <p className="text-xs font-bold text-muted-foreground uppercase mb-2">Verbas vinculadas</p>
-                  {viewingEmployee.EmployeePayrollComponent.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Nenhuma verba vinculada.</p>
-                  ) : (
-                    <ul className="space-y-1 text-sm">
-                      {viewingEmployee.EmployeePayrollComponent.map((c) => (
-                        <li key={c.PayrollComponent.id} className="flex justify-between gap-2">
-                          <span>{c.PayrollComponent.name}</span>
-                          <span className="text-muted-foreground text-xs">{c.PayrollComponent.type}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              {(viewingEmployee.professionalNotes?.trim() || viewingEmployee.adminNotes?.trim()) && (
-                <div className="space-y-3 rounded-xl border border-border p-4">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Observações</h4>
-                  {viewingEmployee.professionalNotes?.trim() && (
-                    <div className="text-sm">
-                      <p className="text-muted-foreground text-xs">Profissionais</p>
-                      <p className="font-medium whitespace-pre-wrap">{viewingEmployee.professionalNotes}</p>
-                    </div>
-                  )}
-                  {viewingEmployee.adminNotes?.trim() && (
-                    <div className="text-sm">
-                      <p className="text-muted-foreground text-xs">Administrativas</p>
-                      <p className="font-medium whitespace-pre-wrap">{viewingEmployee.adminNotes}</p>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </motion.div>
         </div>
