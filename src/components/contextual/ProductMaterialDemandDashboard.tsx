@@ -1,10 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Info, Loader2, RefreshCw, Search } from "lucide-react";
+import { Info, Loader2, RefreshCw, Search } from "lucide-react";
 import { formatYmdLocal } from "@/src/components/crmSellerDashboardUi";
+import {
+  defaultMaterialDemandTab,
+  MATERIAL_DEMAND_TABS,
+  materialDemandTabButtonClass,
+  type MaterialDemandDashboardTab,
+} from "@/src/components/contextual/materialDemandDashboardUi";
 import { fetchJsonOk } from "@/src/lib/http";
-import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
+import { cn, formatNumberAdaptive } from "@/src/lib/utils";
+import {
+  MaterialDemandEvolutionTable,
+  MaterialDemandKpiGrid,
+  MaterialDemandMaterialsTable,
+  MaterialDemandMixedUnitsBlock,
+  MaterialDemandNeedByPeriodSection,
+  MaterialDemandOrdersWithoutDeliveryWarning,
+  MaterialDemandParetoSection,
+  MaterialDemandTablePagination,
+  MaterialDemandUsageEstimateHeader,
+  type MaterialOriginRow,
+} from "@/src/components/contextual/MaterialDemandDashboardPanels";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
-import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
 
 const PAGE_SIZE = 25;
 
@@ -40,6 +57,17 @@ type MaterialRow = {
   latestUsageAt: string | null;
   pctOfTotalQuantity: number | null;
   pctOfTotalValue: number | null;
+  leadingProduct?: {
+    productId: string;
+    sku: string | null;
+    name: string;
+    value: number;
+  } | null;
+  leadingCustomer?: {
+    customerId: string;
+    customerName: string;
+    value: number;
+  } | null;
   topProducts?: Array<{ productId: string; sku: string | null; name: string; quantity: number; value: number }>;
   topCustomers?: Array<{ customerId: string; customerName: string; quantity: number; value: number }>;
   orders?: Array<{
@@ -143,6 +171,7 @@ type MaterialDetailsResponse = {
   topProducts: NonNullable<MaterialRow["topProducts"]>;
   topCustomers: NonNullable<MaterialRow["topCustomers"]>;
   orders: NonNullable<MaterialRow["orders"]>;
+  origins?: MaterialOriginRow[];
 };
 
 export type ProductMaterialDemandDashboardProps = {
@@ -166,7 +195,7 @@ const DASHBOARD_CONTEXT = {
     baseBadge: "Base: pedidos de venda",
     title: "Pedidos de venda — Inteligência de Matéria-Prima",
     subtitle:
-      "Visão estimada da necessidade de matéria-prima com base nos itens dos pedidos de venda filtrados.",
+      "Estimativa de quanto matéria-prima será necessária para atender os pedidos de venda filtrados, com base na composição atual dos produtos.",
   },
 } as const;
 
@@ -334,33 +363,38 @@ function sortParamsForMode(mode: FiltersState["mode"]): { sortBy: string; sortDi
   }
 }
 
-function money(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  return formatCurrencyAdaptive(v);
-}
-
 function num(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return formatNumberAdaptive(v);
 }
 
-function pct(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  return `${formatNumberAdaptive(v)}%`;
-}
-
-function periodLabel(yyyymm: string, labelFromApi?: string): string {
-  if (labelFromApi) return labelFromApi;
-  if (yyyymm === "__sem_entrega__") return "Sem data de entrega";
-  const [yy, mm] = yyyymm.split("-");
-  if (!yy || !mm) return yyyymm;
-  return `${mm}/${yy}`;
-}
-
-function formatDatePt(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
+function MaterialDemandInfoBanner({ context }: { context: "products" | "sales-orders" }) {
+  const operational = context === "sales-orders";
+  return (
+    <div
+      className="relative overflow-hidden rounded-xl border border-sky-200/80 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/25 pl-4 pr-4 py-4 shadow-sm"
+      role="status"
+    >
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-sky-500/80" aria-hidden />
+      <div className="flex gap-3 pl-2">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-white/80 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+          <Info className="h-4 w-4" aria-hidden />
+        </div>
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-semibold text-foreground">
+            {operational
+              ? "Estimativa de uso — não é estoque, compra em aberto nem consumo real de fábrica"
+              : "Esta visão não representa consumo real de produção"}
+          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {operational
+              ? "Os volumes são calculados a partir dos pedidos de venda filtrados e da composição atual dos produtos. Não considera estoque disponível, compras em aberto, consumo real de fábrica nem MRP completo. Quantidades em KG, UN e outras unidades não podem ser somadas — filtre por unidade ou compare por valor estimado (R$)."
+              : "Os volumes apresentados são estimativas calculadas a partir dos produtos, estruturas e quantidades presentes nos pedidos de venda filtrados. A necessidade vem da composição estimada dos produtos — não é consumo real de fábrica, não considera estoque disponível nem compras em aberto. Quantidades em KG, UN e outras unidades não podem ser somadas nem ranqueadas juntas — use o filtro de unidade ou compare por valor estimado (R$)."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function modeOptionLabel(mode: FiltersState["mode"]): string {
@@ -374,31 +408,6 @@ function modeOptionLabel(mode: FiltersState["mode"]): string {
     default:
       return "Quantidade estimada";
   }
-}
-
-function MaterialDemandInfoBanner() {
-  return (
-    <div
-      className="relative overflow-hidden rounded-xl border border-sky-200/80 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/25 pl-4 pr-4 py-4 shadow-sm"
-      role="status"
-    >
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-sky-500/80" aria-hidden />
-      <div className="flex gap-3 pl-2">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-white/80 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
-          <Info className="h-4 w-4" aria-hidden />
-        </div>
-        <div className="min-w-0 space-y-1">
-          <p className="text-sm font-semibold text-foreground">Esta visão não representa consumo real de produção</p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Os volumes apresentados são estimativas calculadas a partir dos produtos, estruturas e quantidades presentes
-            nos pedidos de venda filtrados. A necessidade vem da explosão estimada de BOM — não é consumo real de
-            fábrica, não considera estoque disponível nem compras em aberto. Quantidades em KG, UN e outras unidades
-            não podem ser somadas nem ranqueadas juntas — use o filtro de unidade ou compare por valor estimado (R$).
-          </p>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function DashboardSkeletonBlock({ className }: { className?: string }) {
@@ -450,7 +459,9 @@ function MaterialDemandLoadingState({ phase }: { phase: "summary" | "rows" | "bo
 function MaterialDemandEmptyState({ onClear }: { onClear: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-6 py-14 text-center">
-      <p className="text-base font-semibold text-foreground">Nenhuma demanda encontrada para os filtros selecionados</p>
+      <p className="text-base font-semibold text-foreground">
+        Nenhuma demanda estimada encontrada para os filtros selecionados
+      </p>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">
         Tente ampliar o período, remover filtros de cliente ou produto ou selecionar outro status.
       </p>
@@ -501,6 +512,8 @@ function MaterialDemandErrorState({
 
 export function ProductMaterialDemandDashboard({ context = "products" }: ProductMaterialDemandDashboardProps) {
   const ctx = DASHBOARD_CONTEXT[context];
+  const [activeTab, setActiveTab] = useState<MaterialDemandDashboardTab>(() => defaultMaterialDemandTab(context));
+  const [usageTableSort, setUsageTableSort] = useState<"value" | "quantity">("value");
   const [filters, setFilters] = useState<FiltersState>(() => buildDefaultMaterialDemandFilters());
   const [searchInput, setSearchInput] = useState("");
   const [appliedFilters, setAppliedFilters] = useState<FiltersState>(() => buildDefaultMaterialDemandFilters());
@@ -543,6 +556,18 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
 
   const filterKey = useMemo(() => JSON.stringify(appliedFilters), [appliedFilters]);
 
+  const rowsSort = useMemo(() => {
+    if (activeTab === "usage-estimate") {
+      return {
+        sortBy: usageTableSort === "quantity" ? "quantityTotal" : "estimatedValueTotal",
+        sortDir: "desc" as const,
+      };
+    }
+    return sortParamsForMode(appliedFilters.mode);
+  }, [activeTab, usageTableSort, appliedFilters.mode]);
+
+  const rowsSortKey = useMemo(() => JSON.stringify(rowsSort), [rowsSort]);
+
   useEffect(() => {
     detailsCacheRef.current = detailsCache;
   }, [detailsCache]);
@@ -550,7 +575,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   useEffect(() => {
     const ac = new AbortController();
     const qs = filtersQueryString(appliedFilters);
-    const sort = sortParamsForMode(appliedFilters.mode);
+    const sort = rowsSort;
     const sameFilterKey = lastCompletedFilterKeyRef.current === filterKey;
 
     let cancelled = false;
@@ -625,7 +650,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       cancelled = true;
       ac.abort();
     };
-  }, [filterKey, rowsPage, appliedFilters, retryNonce]);
+  }, [filterKey, rowsPage, appliedFilters, retryNonce, rowsSortKey]);
 
   const showEvolutionQuantity =
     summaryData?.summary.quantityTotalsComparable === true ||
@@ -731,6 +756,120 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
     [loadDetails]
   );
 
+  const handleSelectUnit = useCallback(
+    (unitKey: string) => {
+      const next = { ...filters, unitKey };
+      setFilters(next);
+      setAppliedFilters(next);
+      setRowsPage(1);
+    },
+    [filters]
+  );
+
+  const handleTabChange = useCallback((tab: MaterialDemandDashboardTab) => {
+    setActiveTab(tab);
+    setExpandedMaterialId(null);
+    setRowsPage(1);
+  }, []);
+
+  const getDetailOrigins = useCallback(
+    (materialId: string): MaterialOriginRow[] => detailsCache.get(materialId)?.origins ?? [],
+    [detailsCache]
+  );
+
+  const getDetailTopProducts = useCallback(
+    (materialId: string) => detailsCache.get(materialId)?.topProducts ?? [],
+    [detailsCache]
+  );
+
+  const getDetailTopCustomers = useCallback(
+    (materialId: string) => detailsCache.get(materialId)?.topCustomers ?? [],
+    [detailsCache]
+  );
+
+  const getDetailOrders = useCallback(
+    (materialId: string) => detailsCache.get(materialId)?.orders ?? [],
+    [detailsCache]
+  );
+
+  const renderMaterialsTableCard = (variant: "usage" | "detail", title: string, description: string) => (
+    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm relative">
+      <div className="px-5 py-4 border-b border-border bg-muted/20 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-foreground">{title}</h3>
+          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+        </div>
+        {variant === "usage" ? (
+          <div className="flex flex-wrap gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setUsageTableSort("value");
+                setRowsPage(1);
+              }}
+              className={cn(
+                "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                materialDemandTabButtonClass(usageTableSort === "value")
+              )}
+            >
+              Ordenar por valor
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setUsageTableSort("quantity");
+                setRowsPage(1);
+              }}
+              className={cn(
+                "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                materialDemandTabButtonClass(usageTableSort === "quantity")
+              )}
+            >
+              Ordenar por quantidade
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {rowsError ? (
+        <div className="p-6 text-center text-sm text-destructive">{rowsError}</div>
+      ) : showTableSkeleton ? (
+        <div className="p-6 space-y-3">
+          <DashboardSkeletonBlock className="h-6 w-40" />
+          <DashboardSkeletonBlock className="h-48" />
+        </div>
+      ) : (
+        <>
+          <MaterialDemandMaterialsTable
+            variant={variant}
+            rows={tableRows}
+            expandedMaterialId={expandedMaterialId}
+            detailsLoadingId={detailsLoadingId}
+            detailsErrorById={detailsErrorById}
+            getOrigins={getDetailOrigins}
+            getTopProducts={getDetailTopProducts}
+            getTopCustomers={getDetailTopCustomers}
+            getOrders={getDetailOrders}
+            onToggleRow={toggleRow}
+          />
+          {pagination ? (
+            <MaterialDemandTablePagination
+              pagination={pagination}
+              loadingRows={loadingRows}
+              onPrev={() => setRowsPage((p) => Math.max(1, p - 1))}
+              onNext={() => setRowsPage((p) => p + 1)}
+            />
+          ) : null}
+          {loadingRows && rowsData != null ? (
+            <div className="absolute bottom-3 right-4 flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              Atualizando tabela…
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+
   const showFullPageLoading = (loadingSummary || loadingRows) && !summaryData && !fatalError;
   const showSummaryLoadingOverlay = loadingSummary && summaryData != null;
   const showTableSkeleton = loadingRows && summaryData != null && rowsData == null && !rowsError;
@@ -756,7 +895,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             <p className="text-sm leading-relaxed text-muted-foreground max-w-3xl">{ctx.subtitle}</p>
           </div>
         </div>
-        <MaterialDemandInfoBanner />
+        <MaterialDemandInfoBanner context={context} />
       </header>
 
       <section className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-5">
@@ -994,430 +1133,111 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             <MaterialDemandEmptyState onClear={handleClear} />
           ) : (
             <>
-              <div className="relative grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {summaryData.summary.quantityTotalsComparable ? (
-                  <ContextualDashboardKpiCard
-                    label={
+              <nav
+                className="flex flex-wrap gap-2 border-b border-border pb-1"
+                aria-label="Abas da análise de matéria-prima"
+              >
+                {MATERIAL_DEMAND_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleTabChange(tab.id)}
+                    className={cn(
+                      "inline-flex h-10 items-center rounded-lg border px-4 text-sm font-semibold transition-colors",
+                      materialDemandTabButtonClass(activeTab === tab.id)
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+
+              {activeTab === "usage-estimate" ? (
+                <div className="space-y-6">
+                  <MaterialDemandUsageEstimateHeader
+                    appliedFilters={appliedFilters}
+                    facets={summaryData.facets}
+                  />
+                  <MaterialDemandKpiGrid summaryData={summaryData} appliedFilters={appliedFilters} />
+                  <MaterialDemandMixedUnitsBlock
+                    summaryData={summaryData}
+                    appliedFilters={appliedFilters}
+                    onSelectUnit={handleSelectUnit}
+                  />
+                  <MaterialDemandOrdersWithoutDeliveryWarning
+                    count={summaryData.summary.ordersWithoutDeliveryDate}
+                    dateBasis={appliedFilters.dateBasis}
+                  />
+                  {renderMaterialsTableCard(
+                    "usage",
+                    "Estimativa de uso por matéria-prima",
+                    "Quanto de cada matéria-prima será necessário para atender os pedidos filtrados. Clique em uma linha para ver a origem por pedido e produto."
+                  )}
+                  <MaterialDemandNeedByPeriodSection
+                    rows={summaryData.charts.needByDeliveryPeriod}
+                    dateBasis={appliedFilters.dateBasis}
+                  />
+                </div>
+              ) : null}
+
+              {activeTab === "summary" ? (
+                <div className="space-y-6">
+                  <MaterialDemandKpiGrid summaryData={summaryData} appliedFilters={appliedFilters} />
+                  <MaterialDemandMixedUnitsBlock
+                    summaryData={summaryData}
+                    appliedFilters={appliedFilters}
+                    onSelectUnit={handleSelectUnit}
+                  />
+                  <MaterialDemandOrdersWithoutDeliveryWarning
+                    count={summaryData.summary.ordersWithoutDeliveryDate}
+                    dateBasis={appliedFilters.dateBasis}
+                  />
+                  <MaterialDemandParetoSection
+                    paretoByQuantityByUnit={summaryData.charts.paretoByQuantityByUnit}
+                    paretoByValue={summaryData.charts.paretoByValue}
+                    maxParetoVal={maxParetoVal}
+                  />
+                  <MaterialDemandEvolutionTable
+                    evolution={summaryData.charts.evolution}
+                    showQuantity={showEvolutionQuantity}
+                    unitLabel={
                       appliedFilters.unitKey
-                        ? `Quantidade estimada (${summaryData.facets.units.find((u) => u.unitKey === appliedFilters.unitKey)?.unitLabel ?? "unidade"})`
-                        : "Quantidade estimada (única unidade no filtro)"
-                    }
-                    value={num(summaryData.summary.totalEstimatedQuantity)}
-                  />
-                ) : (
-                  <ContextualDashboardKpiCard
-                    label="Quantidade estimada"
-                    value="Várias unidades"
-                    hint="Filtre por unidade ou veja o detalhe abaixo"
-                    valueClassName="text-base font-semibold leading-snug sm:text-lg"
-                  />
-                )}
-                <ContextualDashboardKpiCard
-                  label="Valor estimado (matéria-prima)"
-                  value={money(summaryData.summary.totalEstimatedValue)}
-                />
-                <ContextualDashboardKpiCard
-                  label="Matérias-primas analisadas"
-                  value={String(summaryData.summary.uniqueMaterials)}
-                />
-                <ContextualDashboardKpiCard
-                  label="Pedidos de venda considerados"
-                  value={String(summaryData.summary.orderCount)}
-                />
-                <ContextualDashboardKpiCard
-                  label="Produtos impactados"
-                  value={String(summaryData.summary.productCount)}
-                />
-                <ContextualDashboardKpiCard
-                  label="Clientes impactados"
-                  value={String(summaryData.summary.customerCount)}
-                />
-                {summaryData.summary.leaderMaterial ? (
-                  <ContextualDashboardKpiCard
-                    label="Principal matéria-prima (valor estimado)"
-                    value={`${summaryData.summary.leaderMaterial.code ? `[${summaryData.summary.leaderMaterial.code}] ` : ""}${summaryData.summary.leaderMaterial.description}`}
-                    hint={
-                      summaryData.summary.leaderSharePct != null
-                        ? `${pct(summaryData.summary.leaderSharePct)} do valor total${summaryData.summary.leaderMaterial.unitLabel ? ` · ${summaryData.summary.leaderMaterial.unitLabel}` : ""}`
+                        ? summaryData.facets.units.find((u) => u.unitKey === appliedFilters.unitKey)?.unitLabel
                         : undefined
                     }
-                    valueClassName="text-base font-semibold leading-snug sm:text-lg normal-nums"
+                    dateBasis={appliedFilters.dateBasis}
                   />
-                ) : null}
-              </div>
-
-              {summaryData.summary.hasMixedUnits && summaryData.summary.quantityByUnit.length > 0 ? (
-                <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 p-4 space-y-3">
-                  <p className="text-sm font-semibold text-foreground">Totais de quantidade por unidade de medida</p>
-                  <p className="text-xs text-muted-foreground">
-                    Não é possível somar KG com UN. Selecione uma unidade no filtro para ver ranking e percentuais de
-                    quantidade comparáveis.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {summaryData.summary.quantityByUnit.map((u) => (
-                      <button
-                        key={u.unitKey}
-                        type="button"
-                        onClick={() => {
-                          const next = { ...filters, unitKey: u.unitKey };
-                          setFilters(next);
-                          setAppliedFilters(next);
-                          setRowsPage(1);
-                        }}
-                        className={cn(
-                          "inline-flex flex-col items-start rounded-lg border px-3 py-2 text-left text-xs transition-colors",
-                          appliedFilters.unitKey === u.unitKey
-                            ? "border-primary bg-primary/5"
-                            : "border-border bg-card hover:bg-accent"
-                        )}
-                      >
-                        <span className="font-bold text-foreground">{u.unitLabel}</span>
-                        <span className="tabular-nums text-muted-foreground">
-                          {num(u.totalQuantity)} · {u.materialCount} MP
-                        </span>
-                      </button>
-                    ))}
-                  </div>
                 </div>
               ) : null}
 
-              {summaryData.summary.ordersWithoutDeliveryDate > 0 ? (
-                <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 px-4 py-3 text-sm text-muted-foreground">
-                  <span className="font-semibold text-foreground">
-                    {summaryData.summary.ordersWithoutDeliveryDate} pedido(s) sem data de entrega prevista
-                  </span>
-                  {summaryData.filtersApplied?.dateBasis === "expectedDeliveryDate" ||
-                  appliedFilters.dateBasis === "expectedDeliveryDate" ? (
-                    <>
-                      {" "}
-                      — agrupados em «Sem data de entrega» e incluídos mesmo ao filtrar por período de entrega.
-                    </>
-                  ) : (
-                    <> — verifique o cadastro do pedido para planejamento por entrega.</>
+              {activeTab === "by-material" ? (
+                <div className="space-y-6">
+                  {renderMaterialsTableCard(
+                    "detail",
+                    "Matérias-primas (detalhe)",
+                    "Lista paginada com percentuais e último uso. Clique em uma linha para ver produtos, clientes e pedidos relacionados."
                   )}
                 </div>
               ) : null}
 
-              {summaryData.charts.needByDeliveryPeriod.length > 0 ? (
-                <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">Necessidade por período de entrega</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Agrupamento mensal pela data de entrega prevista do pedido (explosão estimada de BOM). Quantidades
-                      separadas por unidade de medida — não some KG com UN.
-                    </p>
-                  </div>
-                  <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-card border-b border-border">
-                        <tr>
-                          <th className="py-2 text-left font-semibold">Período entrega</th>
-                          <th className="py-2 text-left font-semibold">Matéria-prima</th>
-                          <th className="py-2 text-left font-semibold">Un.</th>
-                          <th className="py-2 text-right font-semibold">Qtd. necessária</th>
-                          <th className="py-2 text-right font-semibold">Valor est.</th>
-                          <th className="py-2 text-right font-semibold">Pedidos</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {summaryData.charts.needByDeliveryPeriod.map((row) => (
-                          <tr key={`${row.period}-${row.materialId}-${row.unitKey}`}>
-                            <td className="py-2 whitespace-nowrap">{row.periodLabel}</td>
-                            <td className="py-2">
-                              {(row.code ? `[${row.code}] ` : "") + row.description}
-                            </td>
-                            <td className="py-2">{row.unitLabel}</td>
-                            <td className="py-2 text-right tabular-nums">
-                              {num(row.quantity)} {row.unitLabel}
-                            </td>
-                            <td className="py-2 text-right tabular-nums">{money(row.estimatedValue)}</td>
-                            <td className="py-2 text-right tabular-nums">{row.orderCount}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+              {activeTab === "by-period" ? (
+                <div className="space-y-6">
+                  <MaterialDemandNeedByPeriodSection
+                    rows={summaryData.charts.needByDeliveryPeriod}
+                    dateBasis={appliedFilters.dateBasis}
+                  />
+                  <MaterialDemandEvolutionTable
+                    evolution={summaryData.charts.evolution}
+                    showQuantity={showEvolutionQuantity}
+                    unitLabel={
+                      appliedFilters.unitKey
+                        ? summaryData.facets.units.find((u) => u.unitKey === appliedFilters.unitKey)?.unitLabel
+                        : undefined
+                    }
+                    dateBasis={appliedFilters.dateBasis}
+                  />
                 </div>
               ) : null}
-
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                <div className="space-y-4">
-                  {summaryData.charts.paretoByQuantityByUnit.length === 0 ? (
-                    <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
-                      Sem dados de quantidade para exibir.
-                    </div>
-                  ) : (
-                    summaryData.charts.paretoByQuantityByUnit.map((group) => {
-                      const maxQty = Math.max(0, ...group.rows.map((r) => r.quantityTotal));
-                      return (
-                        <div
-                          key={group.unitKey}
-                          className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-sm"
-                        >
-                          <h3 className="text-sm font-bold text-foreground">
-                            Pareto por quantidade — {group.unitLabel} (Top 10)
-                          </h3>
-                          <div className="space-y-2">
-                            {group.rows.slice(0, 10).map((row) => (
-                              <div key={`q-${group.unitKey}-${row.materialId}`} className="space-y-1">
-                                <div className="flex items-center justify-between gap-2 text-xs">
-                                  <span className="truncate">
-                                    {(row.code ? `[${row.code}] ` : "") + row.description}
-                                  </span>
-                                  <span className="tabular-nums font-semibold shrink-0">
-                                    {num(row.quantityTotal)} {group.unitLabel}
-                                  </span>
-                                </div>
-                                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                                  <div
-                                    className="h-full bg-blue-600/80"
-                                    style={{
-                                      width: `${maxQty > 0 ? (row.quantityTotal / maxQty) * 100 : 0}%`,
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-                <div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-sm">
-                  <h3 className="text-sm font-bold text-foreground">Pareto por valor (Top 10)</h3>
-                  <div className="space-y-2">
-                    {summaryData.charts.paretoByValue.slice(0, 10).map((row) => (
-                      <div key={`v-${row.materialId}`} className="space-y-1">
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="truncate">{(row.code ? `[${row.code}] ` : "") + row.description}</span>
-                          <span className="tabular-nums font-semibold">{money(row.estimatedValueTotal)}</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full bg-emerald-600/80"
-                            style={{ width: `${maxParetoVal > 0 ? (row.estimatedValueTotal / maxParetoVal) * 100 : 0}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground">
-                  Evolução mensal estimada (
-                  {appliedFilters.dateBasis === "expectedDeliveryDate" ? "por entrega prevista" : "por emissão"})
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="py-2 text-left font-semibold">Período</th>
-                        {showEvolutionQuantity ? (
-                          <th className="py-2 text-right font-semibold">
-                            Qtd. estimada
-                            {appliedFilters.unitKey
-                              ? ` (${summaryData.facets.units.find((u) => u.unitKey === appliedFilters.unitKey)?.unitLabel ?? ""})`
-                              : ""}
-                          </th>
-                        ) : null}
-                        <th className="py-2 text-right font-semibold">Valor estimado</th>
-                        <th className="py-2 text-right font-semibold">Pedidos</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {summaryData.charts.evolution.map((r) => (
-                        <tr key={r.period}>
-                          <td className="py-2">{periodLabel(r.period, r.periodLabel)}</td>
-                          {showEvolutionQuantity ? (
-                            <td className="py-2 text-right tabular-nums">{num(r.quantity)}</td>
-                          ) : null}
-                          <td className="py-2 text-right tabular-nums">{money(r.value)}</td>
-                          <td className="py-2 text-right tabular-nums">{r.orderCount}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm relative">
-                <div className="px-5 py-4 border-b border-border bg-muted/20">
-                  <h3 className="text-sm font-bold text-foreground">Matérias-primas (detalhe)</h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Clique em uma linha para ver produtos, clientes e pedidos relacionados. A lista é paginada para
-                    manter a tela responsiva.
-                  </p>
-                </div>
-                {rowsError ? (
-                  <div className="p-6 text-center text-sm text-destructive">{rowsError}</div>
-                ) : showTableSkeleton ? (
-                  <div className="p-6 space-y-3">
-                    <DashboardSkeletonBlock className="h-6 w-40" />
-                    <DashboardSkeletonBlock className="h-48" />
-                  </div>
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead className="bg-muted/15 border-b border-border">
-                          <tr>
-                            <th className="p-3 text-left font-semibold">Matéria-prima</th>
-                            <th className="p-3 text-left font-semibold">Unidade</th>
-                            <th className="p-3 text-right font-semibold">Qtd. total</th>
-                            <th className="p-3 text-right font-semibold">Custo unit. ref.</th>
-                            <th className="p-3 text-right font-semibold">Valor total</th>
-                            <th className="p-3 text-right font-semibold">Pedidos</th>
-                            <th className="p-3 text-right font-semibold">Produtos</th>
-                            <th className="p-3 text-right font-semibold">Último uso</th>
-                            <th className="p-3 text-right font-semibold" title="Percentual dentro da mesma unidade de medida">
-                              % qtd. (un.)
-                            </th>
-                            <th className="p-3 text-right font-semibold">% valor</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                          {tableRows.map((row) => {
-                            const cached = detailsCache.get(row.materialId);
-                            const detailErr = detailsErrorById.get(row.materialId);
-                            const isOpen = expandedMaterialId === row.materialId;
-                            const topProducts = cached?.topProducts ?? row.topProducts ?? [];
-                            const topCustomers = cached?.topCustomers ?? row.topCustomers ?? [];
-                            const orders = cached?.orders ?? row.orders ?? [];
-
-                            return (
-                              <React.Fragment key={row.materialId}>
-                                <tr
-                                  className="hover:bg-muted/30 cursor-pointer"
-                                  onClick={() => toggleRow(row.materialId)}
-                                >
-                                  <td className="p-3">
-                                    <div className="flex items-start gap-2">
-                                      <ChevronDown
-                                        className={cn(
-                                          "h-4 w-4 mt-0.5 shrink-0 transition-transform text-muted-foreground",
-                                          isOpen && "rotate-180"
-                                        )}
-                                        aria-hidden
-                                      />
-                                      <div className="min-w-0">
-                                        <p className="font-semibold break-words">
-                                          {(row.code ? `[${row.code}] ` : "") + row.description}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="p-3">{row.unit ?? "—"}</td>
-                                  <td className="p-3 text-right tabular-nums">{num(row.quantityTotal)}</td>
-                                  <td className="p-3 text-right tabular-nums">{money(row.unitCostReference)}</td>
-                                  <td className="p-3 text-right tabular-nums font-semibold">
-                                    {money(row.estimatedValueTotal)}
-                                  </td>
-                                  <td className="p-3 text-right tabular-nums">{row.orderCount}</td>
-                                  <td className="p-3 text-right tabular-nums">{row.productCount}</td>
-                                  <td className="p-3 text-right tabular-nums">
-                                    {row.latestUsageAt ? new Date(row.latestUsageAt).toLocaleDateString("pt-BR") : "—"}
-                                  </td>
-                                  <td className="p-3 text-right tabular-nums">{pct(row.pctOfTotalQuantity)}</td>
-                                  <td className="p-3 text-right tabular-nums">{pct(row.pctOfTotalValue)}</td>
-                                </tr>
-                                {isOpen ? (
-                                  <tr className="bg-muted/10">
-                                    <td colSpan={10} className="p-3">
-                                      {detailsLoadingId === row.materialId ? (
-                                        <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
-                                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                                          Carregando detalhes…
-                                        </div>
-                                      ) : detailErr ? (
-                                        <p className="text-sm text-destructive py-2">{detailErr}</p>
-                                      ) : (
-                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                                          <div className="rounded-lg border border-border bg-background p-3">
-                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2">
-                                              Principais produtos
-                                            </p>
-                                            <ul className="space-y-1 text-xs">
-                                              {topProducts.slice(0, 6).map((p) => (
-                                                <li key={`${row.materialId}-${p.productId}`}>
-                                                  {(p.sku ? `[${p.sku}] ` : "") + p.name} · {money(p.value)}
-                                                </li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                          <div className="rounded-lg border border-border bg-background p-3">
-                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2">
-                                              Principais clientes
-                                            </p>
-                                            <ul className="space-y-1 text-xs">
-                                              {topCustomers.slice(0, 6).map((c) => (
-                                                <li key={`${row.materialId}-${c.customerId}`}>
-                                                  {c.customerName} · {money(c.value)}
-                                                </li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                          <div className="rounded-lg border border-border bg-background p-3">
-                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2">
-                                              Pedidos de venda
-                                            </p>
-                                            <ul className="space-y-1 text-xs">
-                                              {orders.slice(0, 6).map((o) => (
-                                                <li key={`${row.materialId}-${o.salesOrderId}`}>
-                                                  {o.orderCode} ({o.orderStatus}) · Emissão{" "}
-                                                  {formatDatePt(o.issueDate ?? o.orderDate)} · Entrega{" "}
-                                                  {formatDatePt(o.expectedDeliveryDate ?? null)} · {money(o.value)}
-                                                </li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ) : null}
-                              </React.Fragment>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    {pagination && pagination.totalPages > 1 ? (
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-sm">
-                        <p className="text-muted-foreground">
-                          Página {pagination.page} de {pagination.totalPages} · {pagination.totalItems} itens
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            disabled={pagination.page <= 1 || loadingRows}
-                            onClick={() => setRowsPage((p) => Math.max(1, p - 1))}
-                            className="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
-                          >
-                            Anterior
-                          </button>
-                          <button
-                            type="button"
-                            disabled={pagination.page >= pagination.totalPages || loadingRows}
-                            onClick={() => setRowsPage((p) => p + 1)}
-                            className="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
-                          >
-                            Próxima
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                    {loadingRows && rowsData != null ? (
-                      <div className="absolute bottom-3 right-4 flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                        Atualizando tabela…
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
             </>
           )}
         </div>

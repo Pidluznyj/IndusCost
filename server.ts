@@ -8641,6 +8641,14 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       productIds: Set<string>;
       customerIds: Set<string>;
       latestUsageAt: Date | null;
+      productContrib: Map<
+        string,
+        { productId: string; sku: string | null; name: string; value: number }
+      >;
+      customerContrib: Map<
+        string,
+        { customerId: string; customerName: string; value: number }
+      >;
       origins: Array<{
         salesOrderId: string;
         orderCode: string;
@@ -8764,11 +8772,36 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               productIds: new Set<string>(),
               customerIds: new Set<string>(),
               latestUsageAt: null,
+              productContrib: new Map(),
+              customerContrib: new Map(),
               origins: [],
             };
 
           if (estimatedQuantity != null) current.quantityTotal += estimatedQuantity;
           if (estimatedValue != null) current.valueTotal += estimatedValue;
+          if (estimatedValue != null) {
+            const prodContrib =
+              current.productContrib.get(item.productId) ??
+              {
+                productId: item.productId,
+                sku: productSku,
+                name: productName,
+                value: 0,
+              };
+            prodContrib.value += estimatedValue;
+            current.productContrib.set(item.productId, prodContrib);
+            if (order.customerId) {
+              const custContrib =
+                current.customerContrib.get(order.customerId) ??
+                {
+                  customerId: order.customerId,
+                  customerName: customerName ?? "Cliente",
+                  value: 0,
+                };
+              custContrib.value += estimatedValue;
+              current.customerContrib.set(order.customerId, custContrib);
+            }
+          }
           if (current.unitCostReference == null && unitCostRef != null) {
             current.unitCostReference = unitCostRef;
           }
@@ -8975,6 +9008,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
       const unitQuantityDenominator = quantityByUnitMap.get(m.unitKey)?.totalQuantity ?? 0;
 
+      const leadingProductEntry = [...m.productContrib.values()].sort((a, b) => b.value - a.value)[0] ?? null;
+      const leadingCustomerEntry = [...m.customerContrib.values()].sort((a, b) => b.value - a.value)[0] ?? null;
+
       const baseRow = {
         materialId: m.materialId,
         code: m.code,
@@ -8997,6 +9033,21 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         pctOfTotalQuantity:
           unitQuantityDenominator > 0 ? (m.quantityTotal / unitQuantityDenominator) * 100 : null,
         pctOfTotalValue: totalEstimatedValue > 0 ? (m.valueTotal / totalEstimatedValue) * 100 : null,
+        leadingProduct: leadingProductEntry
+          ? {
+              productId: leadingProductEntry.productId,
+              sku: leadingProductEntry.sku,
+              name: leadingProductEntry.name,
+              value: leadingProductEntry.value,
+            }
+          : null,
+        leadingCustomer: leadingCustomerEntry
+          ? {
+              customerId: leadingCustomerEntry.customerId,
+              customerName: leadingCustomerEntry.customerName,
+              value: leadingCustomerEntry.value,
+            }
+          : null,
       };
 
       if (!includeRowDetails) {
@@ -9018,6 +9069,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             return bKey.localeCompare(aKey);
           })
           .slice(0, 12),
+        origins: m.origins,
       };
     });
 
@@ -9318,6 +9370,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         topProducts: Array.isArray(target.topProducts) ? target.topProducts : [],
         topCustomers: Array.isArray(target.topCustomers) ? target.topCustomers : [],
         orders: Array.isArray(target.orders) ? target.orders : [],
+        origins: Array.isArray(target.origins) ? target.origins : [],
       });
     } catch (error) {
       console.error("Material demand details endpoint error:", error);
