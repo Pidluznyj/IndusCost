@@ -4,7 +4,9 @@ import { formatYmdLocal } from "@/src/components/crmSellerDashboardUi";
 import {
   defaultMaterialDemandTab,
   MATERIAL_DEMAND_TABS,
+  MATERIAL_DEMAND_TAB_HINTS,
   materialDemandTabButtonClass,
+  materialDemandTabNeedsRows,
   type MaterialDemandDashboardTab,
 } from "@/src/components/contextual/materialDemandDashboardUi";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -544,6 +546,11 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
     debouncedSearchCommit.current = setTimeout(() => {
       const next = searchInput.trim().toLowerCase();
       setFilters((f) => (f.search === next ? f : { ...f, search: next }));
+      setAppliedFilters((f) => {
+        if (f.search === next) return f;
+        setRowsPage(1);
+        return { ...f, search: next };
+      });
     }, 320);
     return () => {
       if (debouncedSearchCommit.current) clearTimeout(debouncedSearchCommit.current);
@@ -567,6 +574,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   }, [activeTab, usageTableSort, appliedFilters.mode]);
 
   const rowsSortKey = useMemo(() => JSON.stringify(rowsSort), [rowsSort]);
+  const tabNeedsRows = materialDemandTabNeedsRows(activeTab);
 
   useEffect(() => {
     detailsCacheRef.current = detailsCache;
@@ -585,14 +593,14 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       if (!sameFilterKey) {
         setFatalError(null);
         setLoadingSummary(true);
-        setLoadingRows(true);
+        if (tabNeedsRows) setLoadingRows(true);
         setSummaryData(null);
-        setRowsData(null);
+        if (!tabNeedsRows) setRowsData(null);
         setDetailsCache(new Map());
         detailsCacheRef.current = new Map();
         setDetailsErrorById(new Map());
         setExpandedMaterialId(null);
-      } else {
+      } else if (tabNeedsRows) {
         setLoadingRows(true);
       }
 
@@ -600,10 +608,14 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
 
       try {
         if (!sameFilterKey) {
-          const settled = await Promise.allSettled([
+          const requests: Promise<unknown>[] = [
             fetchJsonOk<SummaryResponse>(`/api/products/material-demand/summary?${qs}`, { signal: ac.signal }),
-            fetchJsonOk<RowsResponse>(rowsUrl, { signal: ac.signal }),
-          ]);
+          ];
+          if (tabNeedsRows) {
+            requests.push(fetchJsonOk<RowsResponse>(rowsUrl, { signal: ac.signal }));
+          }
+
+          const settled = await Promise.allSettled(requests);
           if (cancelled || ac.signal.aborted) return;
 
           if (settled[0].status === "rejected") {
@@ -612,18 +624,21 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             setFatalError(err instanceof Error ? err.message : "Não foi possível carregar o resumo da análise.");
             setSummaryData(null);
           } else {
-            setSummaryData(settled[0].value);
+            setSummaryData(settled[0].value as SummaryResponse);
             lastCompletedFilterKeyRef.current = filterKey;
           }
 
-          if (settled[1].status === "rejected") {
-            console.error("[MaterialDemand] rows", settled[1].reason);
-            setRowsError("Não foi possível carregar a tabela de matérias-primas.");
-            setRowsData(null);
-          } else {
-            setRowsData(settled[1].value);
+          if (tabNeedsRows) {
+            const rowsResult = settled[1];
+            if (!rowsResult || rowsResult.status === "rejected") {
+              console.error("[MaterialDemand] rows", rowsResult?.status === "rejected" ? rowsResult.reason : "missing");
+              setRowsError("Não foi possível carregar a tabela de matérias-primas.");
+              setRowsData(null);
+            } else {
+              setRowsData(rowsResult.value as RowsResponse);
+            }
           }
-        } else {
+        } else if (tabNeedsRows) {
           const rowPayload = await fetchJsonOk<RowsResponse>(rowsUrl, { signal: ac.signal });
           if (cancelled || ac.signal.aborted) return;
           setRowsData(rowPayload);
@@ -633,7 +648,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
         console.error("[MaterialDemand] load", e);
         if (!sameFilterKey) {
           setFatalError(e instanceof Error ? e.message : "Erro inesperado ao carregar a análise.");
-        } else {
+        } else if (tabNeedsRows) {
           setRowsError("Não foi possível atualizar a página da tabela.");
         }
       } finally {
@@ -650,7 +665,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       cancelled = true;
       ac.abort();
     };
-  }, [filterKey, rowsPage, appliedFilters, retryNonce, rowsSortKey]);
+  }, [filterKey, rowsPage, appliedFilters, retryNonce, rowsSortKey, tabNeedsRows]);
 
   const showEvolutionQuantity =
     summaryData?.summary.quantityTotalsComparable === true ||
@@ -800,33 +815,41 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
           <p className="text-xs text-muted-foreground mt-1">{description}</p>
         </div>
         {variant === "usage" ? (
-          <div className="flex flex-wrap gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                setUsageTableSort("value");
-                setRowsPage(1);
-              }}
-              className={cn(
-                "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
-                materialDemandTabButtonClass(usageTableSort === "value")
-              )}
-            >
-              Ordenar por valor
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setUsageTableSort("quantity");
-                setRowsPage(1);
-              }}
-              className={cn(
-                "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
-                materialDemandTabButtonClass(usageTableSort === "quantity")
-              )}
-            >
-              Ordenar por quantidade
-            </button>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <div className="flex flex-wrap gap-1.5 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setUsageTableSort("value");
+                  setRowsPage(1);
+                }}
+                className={cn(
+                  "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                  materialDemandTabButtonClass(usageTableSort === "value")
+                )}
+              >
+                Ordenar por valor
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsageTableSort("quantity");
+                  setRowsPage(1);
+                }}
+                className={cn(
+                  "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                  materialDemandTabButtonClass(usageTableSort === "quantity")
+                )}
+              >
+                Ordenar por quantidade
+              </button>
+            </div>
+            {summaryData?.summary.hasMixedUnits && !appliedFilters.unitKey ? (
+              <p className="text-[10px] text-muted-foreground text-right max-w-xs">
+                Ordenação por quantidade compara MPs de unidades diferentes — prefira filtrar por unidade ou ordenar
+                por valor.
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -870,9 +893,10 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
     </div>
   );
 
-  const showFullPageLoading = (loadingSummary || loadingRows) && !summaryData && !fatalError;
+  const showFullPageLoading = loadingSummary && !summaryData && !fatalError;
   const showSummaryLoadingOverlay = loadingSummary && summaryData != null;
-  const showTableSkeleton = loadingRows && summaryData != null && rowsData == null && !rowsError;
+  const showTableSkeleton =
+    tabNeedsRows && loadingRows && summaryData != null && rowsData == null && !rowsError;
 
   return (
     <ContextualDashboardLayout
@@ -885,7 +909,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
           <div className="space-y-2 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                Demanda estimada
+                {context === "sales-orders" ? "Estimativa de uso" : "Demanda estimada"}
               </span>
               <span className="inline-flex items-center rounded-full border border-border bg-muted/20 px-2.5 py-0.5 text-xs text-muted-foreground">
                 {ctx.baseBadge}
@@ -1074,7 +1098,14 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             <select
               id="mdf-mode"
               value={filters.mode}
-              onChange={(e) => setFilters((p) => ({ ...p, mode: e.target.value as FiltersState["mode"] }))}
+              onChange={(e) => {
+                const mode = e.target.value as FiltersState["mode"];
+                setFilters((p) => ({ ...p, mode }));
+                if (activeTab === "by-material") {
+                  setAppliedFilters((p) => ({ ...p, mode }));
+                  setRowsPage(1);
+                }
+              }}
               className={FILTER_CONTROL_CLASS}
             >
               <option value="quantity">{modeOptionLabel("quantity")}</option>
@@ -1082,6 +1113,10 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               <option value="orders">{modeOptionLabel("orders")}</option>
               <option value="products">{modeOptionLabel("products")}</option>
             </select>
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              Afeta a ordenação da aba «Por matéria-prima». Na aba «Estimativa de uso», use os botões de ordenação da
+              tabela.
+            </p>
           </MaterialDemandFilterField>
         </div>
 
@@ -1099,6 +1134,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               className={cn(FILTER_CONTROL_CLASS, "pl-10")}
             />
           </div>
+          <p className="text-[10px] text-muted-foreground leading-snug">A busca é aplicada automaticamente ao digitar.</p>
         </MaterialDemandFilterField>
 
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
@@ -1134,22 +1170,27 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
           ) : (
             <>
               <nav
-                className="flex flex-wrap gap-2 border-b border-border pb-1"
+                className="space-y-2 border-b border-border pb-3"
                 aria-label="Abas da análise de matéria-prima"
               >
-                {MATERIAL_DEMAND_TABS.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => handleTabChange(tab.id)}
-                    className={cn(
-                      "inline-flex h-10 items-center rounded-lg border px-4 text-sm font-semibold transition-colors",
-                      materialDemandTabButtonClass(activeTab === tab.id)
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+                <div className="flex flex-wrap gap-2">
+                  {MATERIAL_DEMAND_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={activeTab === tab.id}
+                      onClick={() => handleTabChange(tab.id)}
+                      className={cn(
+                        "inline-flex h-10 items-center rounded-lg border px-4 text-sm font-semibold transition-colors",
+                        materialDemandTabButtonClass(activeTab === tab.id)
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-sm text-muted-foreground">{MATERIAL_DEMAND_TAB_HINTS[activeTab]}</p>
               </nav>
 
               {activeTab === "usage-estimate" ? (

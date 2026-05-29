@@ -18,6 +18,18 @@ export const MATERIAL_DEMAND_TABS: MaterialDemandTabDef[] = [
   { id: "by-period", label: "Por período" },
 ];
 
+export const MATERIAL_DEMAND_TAB_HINTS: Record<MaterialDemandDashboardTab, string> = {
+  "usage-estimate":
+    "Quanto de cada matéria-prima será necessário para atender os pedidos filtrados no período selecionado.",
+  summary: "Indicadores consolidados, distribuição por valor e evolução mensal estimada.",
+  "by-material": "Lista analítica por matéria-prima com percentuais e detalhamento expandível.",
+  "by-period": "Necessidade agrupada por mês e evolução temporal da estimativa.",
+};
+
+export function materialDemandTabNeedsRows(tab: MaterialDemandDashboardTab): boolean {
+  return tab === "usage-estimate" || tab === "by-material";
+}
+
 export function defaultMaterialDemandTab(
   context: "products" | "sales-orders"
 ): MaterialDemandDashboardTab {

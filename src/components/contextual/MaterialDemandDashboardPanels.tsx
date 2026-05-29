@@ -393,6 +393,11 @@ export function MaterialDemandExpandedDetail({
         <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
           Origem da demanda por pedido e produto
         </p>
+        {origins.length >= 50 ? (
+          <p className="text-xs text-muted-foreground">
+            Exibindo as primeiras 50 linhas de origem. Refine os filtros para reduzir o volume.
+          </p>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[960px]">
             <thead className="border-b border-border bg-muted/20">
@@ -511,7 +516,15 @@ export function MaterialDemandMaterialsTable({
   onToggleRow,
 }: MaterialsTableProps) {
   const usageMode = variant === "usage";
-  const colSpan = usageMode ? 12 : 10;
+  const colSpan = usageMode ? 12 : 11;
+
+  if (rows.length === 0) {
+    return (
+      <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+        Nenhuma matéria-prima encontrada para os filtros selecionados.
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-x-auto">
