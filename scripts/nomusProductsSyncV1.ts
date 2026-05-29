@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { ItemType, PrismaClient } from "@prisma/client";
+import { upsertNomusProductCatalogFromApiRows } from "../src/lib/nomusProductCatalog.ts";
 
 const prisma = new PrismaClient();
 
@@ -795,6 +796,13 @@ async function main(): Promise<void> {
   const existingSkuSet = new Set(existingProducts.map((p) => p.sku));
 
   const { eligible, blocked, diagnostics } = mapProducts(raw, existingSkuSet);
+
+  const blockedBySku = new Map<string, string[]>();
+  for (const b of blocked) {
+    if (b.sku) blockedBySku.set(b.sku, b.reasons);
+  }
+  const catalogSync = await upsertNomusProductCatalogFromApiRows(prisma, raw, blockedBySku);
+
   const dry = await runDry(eligible);
   const blockedReasons: Record<string, number> = {};
   for (const b of blocked) for (const r of b.reasons) blockedReasons[r] = (blockedReasons[r] ?? 0) + 1;
@@ -806,6 +814,8 @@ async function main(): Promise<void> {
         mode: isApply ? "apply" : "dry-run",
         summary: {
           totalRead: raw.length,
+          catalogUpserted: catalogSync.upserted,
+          catalogSkipped: catalogSync.skipped,
           eligibleCount: eligible.length,
           blockedCount: blocked.length,
           blockedReasons,

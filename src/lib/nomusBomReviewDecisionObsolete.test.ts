@@ -82,6 +82,39 @@ function makeLocalLine(
 describe("applyReviewDecisionsToEffectiveBom — linhas obsoletas Nomus", () => {
   const universe = new Set(["115.03--", "140.04--", "301.04AA"]);
 
+  it("132.07-- no catálogo Nomus (fora da BOM efetiva) → obsoleto automático", () => {
+    const raw = [
+      makeLocalLine("132.07--", "bom-132", 1),
+    ];
+    const result = applyReviewDecisionsToEffectiveBom(
+      makeBaseResult({ parentCode: "312.06AB" }),
+      [],
+      raw,
+      { nomusUniverse: new Set(["132.07--", "312.06AB"]) }
+    );
+
+    assert.notEqual(result.status, "PENDING_LOCAL_REVIEW");
+    assert.equal(result.summary.localReviewPendingCount, 0);
+    assert.equal(result.excludedLines.length, 1);
+    assert.equal(result.excludedLines[0]?.componentCode, "132.07--");
+    assert.equal(result.excludedLines[0]?.source, "LOCAL_ONLY_OBSOLETE_NOMUS");
+  });
+
+  it("980.03 Cromagem fora do universo permanece em revisão pendente", () => {
+    const raw = [makeLocalLine("980.03--", "bom-980", 1)];
+    const result = applyReviewDecisionsToEffectiveBom(
+      makeBaseResult({ parentCode: "312.06AB" }),
+      [],
+      raw,
+      { nomusUniverse: new Set(["312.06AB"]) }
+    );
+
+    assert.equal(result.status, "PENDING_LOCAL_REVIEW");
+    assert.equal(result.reviewLines.length, 1);
+    assert.equal(result.reviewLines[0]?.componentCode, "980.03--");
+    assert.equal(result.excludedLines.length, 0);
+  });
+
   it("301.08AA: MPs no universo Nomus geram exclusão automática e não ficam pendentes", () => {
     const raw = [
       makeLocalLine("115.03--", "bom-115"),

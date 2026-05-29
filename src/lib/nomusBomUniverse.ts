@@ -18,13 +18,17 @@ export function isCodeKnownInNomusUniverse(
 }
 
 /**
- * Códigos conhecidos no ecossistema Nomus (BOM stage + produtos controlados).
+ * Códigos conhecidos no ecossistema Nomus:
+ * - BOM stage (componentes/pais)
+ * - produtos controlados IndusCost
+ * - catálogo ERP Nomus (NomusProductCatalog), incluindo matérias-primas
+ *
  * Material.code não tem origem Nomus confiável no schema — não entra neste universo.
  */
 export async function buildNomusUniverseCodeSet(): Promise<Set<string>> {
   const codes = new Set<string>();
 
-  const [componentGroups, parentGroups, products] = await Promise.all([
+  const [componentGroups, parentGroups, products, catalogRows] = await Promise.all([
     prisma.nomusBomComponentStage.groupBy({ by: ["componentCode"] }),
     prisma.nomusBomComponentStage.groupBy({ by: ["parentCode"] }),
     prisma.product.findMany({
@@ -35,6 +39,9 @@ export async function buildNomusUniverseCodeSet(): Promise<Set<string>> {
         ],
       },
       select: { sku: true },
+    }),
+    prisma.nomusProductCatalog.findMany({
+      select: { code: true },
     }),
   ]);
 
@@ -48,6 +55,12 @@ export async function buildNomusUniverseCodeSet(): Promise<Set<string>> {
     if (product.sku) {
       codes.add(normalizeComponentCode(product.sku));
       codes.add(normalizeSku(product.sku));
+    }
+  }
+  for (const row of catalogRows) {
+    if (row.code) {
+      codes.add(normalizeComponentCode(row.code));
+      codes.add(normalizeSku(row.code));
     }
   }
 

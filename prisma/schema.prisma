@@ -1120,6 +1120,28 @@ model AppSession {
   @@index([revokedAt])
 }
 
+/// Catálogo administrativo de produtos do ERP Nomus (inclui matérias-primas bloqueadas do sync Product).
+model NomusProductCatalog {
+  id                String   @id @default(uuid())
+  externalProductId String?
+  code              String   @unique
+  description       String?
+  typeName          String?
+  groupName         String?
+  familyName        String?
+  statusName        String?
+  active            Boolean?
+  rawPayload        Json?
+  blockedReasons    Json?
+  syncedAt          DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([externalProductId])
+  @@index([active])
+  @@index([syncedAt])
+}
+
 /// Stage/rastreabilidade da BOM Nomus (componentesListaMateriais). Não substitui ProductBOM nesta fase.
 model NomusBomComponentStage {
   id String @id @default(uuid())

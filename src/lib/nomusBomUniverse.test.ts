@@ -70,6 +70,31 @@ describe("nomusBomUniverse — universo Nomus", () => {
     );
   });
 
+  it("132.07-- (matéria-prima só no catálogo) → removível quando no universo", () => {
+    const catalogUniverse = new Set(["132.07--", "312.06AB"]);
+    assert.equal(
+      isAutoRemovableObsoleteLocalLine({
+        componentCode: "132.07--",
+        componentDescription: "*TPE* Elastômero 2210-1",
+        nomusUniverse: catalogUniverse,
+      }),
+      true
+    );
+    assert.equal(isCodeKnownInNomusUniverse("132.07--", catalogUniverse), true);
+  });
+
+  it("980.03 fora do universo Nomus → não removível (serviço local conservador)", () => {
+    const universeWithout980 = new Set(["312.06AB"]);
+    assert.equal(
+      isAutoRemovableObsoleteLocalLine({
+        componentCode: "980.03--",
+        componentDescription: "Cromagem",
+        nomusUniverse: universeWithout980,
+      }),
+      false
+    );
+  });
+
   it("motivo padrão de auto-obsoleto está definido", () => {
     assert.match(AUTO_OBSOLETE_NOMUS_UNIVERSE_REASON, /universo Nomus/i);
     assert.match(AUTO_OBSOLETE_NOMUS_UNIVERSE_REASON, /BOM efetiva Nomus/i);
