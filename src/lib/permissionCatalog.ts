@@ -445,13 +445,13 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   }),
 
   // —— Custos / Operação ——
-  perm({ key: "employees.view", label: "Colaboradores", group: OPS, module: "employees", description: "Consultar colaboradores.", type: "menu" }),
+  perm({ key: "employees.view", label: "Pessoas / RH", group: OPS, module: "employees", description: "Consultar colaboradores (módulo administrativo de RH).", type: "menu" }),
   perm({
     key: "employees.edit",
-    label: "Colaboradores — Editar",
+    label: "Pessoas / RH — Editar",
     group: OPS,
     module: "employees",
-    description: "Editar colaboradores e custos de mão de obra.",
+    description: "Editar colaboradores no módulo administrativo de RH.",
     type: "action",
     parentKey: "employees.view",
     requires: ["employees.view"],

@@ -198,7 +198,7 @@ export function getFirstAllowedModulePath(check: PermissionChecker): string | nu
 
 export const MODULE_LABELS: Record<AppModuleId, string> = {
   dashboard: "Dashboard",
-  employees: "Colaboradores",
+  employees: "Pessoas / RH",
   machines: "Máquinas",
   materials: "Suprimentos",
   purchases: "Compras",

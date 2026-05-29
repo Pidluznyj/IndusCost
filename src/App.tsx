@@ -275,8 +275,8 @@ export default function App() {
           path="employees"
           element={
             <ModulePageShell
-              title="Colaboradores"
-              description="Gestão de pessoas e custos de mão de obra direta."
+              title="Pessoas / RH"
+              description="Cadastro administrativo de colaboradores, cargos e benefícios. Não altera CIU, custo de produtos, HH global ou roteiros de produção."
             >
               <EmployeeModule />
             </ModulePageShell>
