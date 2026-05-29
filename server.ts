@@ -1945,6 +1945,53 @@ function sanitizeUuidArray(value: unknown): string[] {
     .filter((item) => item.length > 0 && isUuid(item));
 }
 
+function normalizeOptionalDigits(value: unknown): string | null {
+  if (!isNonEmptyString(value)) return null;
+  const digits = value.replace(/\D/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+function normalizeOptionalDate(value: unknown): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed}T12:00:00.000Z` : trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+function buildEmployeeHrProfileData(body: Record<string, unknown>) {
+  return {
+    socialName: normalizeOptionalText(body.socialName),
+    cpf: normalizeOptionalDigits(body.cpf),
+    rg: normalizeOptionalText(body.rg),
+    birthDate: normalizeOptionalDate(body.birthDate),
+    phone: normalizeOptionalDigits(body.phone),
+    personalEmail: normalizeOptionalText(body.personalEmail),
+    emergencyContactName: normalizeOptionalText(body.emergencyContactName),
+    emergencyContactPhone: normalizeOptionalDigits(body.emergencyContactPhone),
+    emergencyContactRelationship: normalizeOptionalText(body.emergencyContactRelationship),
+    admissionDate: normalizeOptionalDate(body.admissionDate),
+    terminationDate: normalizeOptionalDate(body.terminationDate),
+    contractType: normalizeOptionalText(body.contractType),
+    managerName: normalizeOptionalText(body.managerName),
+    professionalNotes: normalizeOptionalText(body.professionalNotes),
+    address: normalizeOptionalText(body.address),
+    adminNotes: normalizeOptionalText(body.adminNotes),
+    shirtSize: normalizeOptionalText(body.shirtSize),
+    pantsSize: normalizeOptionalText(body.pantsSize),
+    jacketSize: normalizeOptionalText(body.jacketSize),
+    gloveSize: normalizeOptionalText(body.gloveSize),
+    shoeSize: normalizeOptionalText(body.shoeSize),
+    epiNotes: normalizeOptionalText(body.epiNotes),
+  };
+}
+
 app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
   try {
     const {
@@ -1957,12 +2004,14 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       monthlyHours,
       productivity,
       status,
-      componentIds
+      componentIds,
+      ...hrProfileBody
     } = req.body;
 
     const cleanName = normalizeRequiredText(name);
     const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
     const cleanComponentIds = sanitizeUuidArray(componentIds);
+    const hrProfile = buildEmployeeHrProfileData(hrProfileBody as Record<string, unknown>);
 
     if (!cleanName) {
       return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
@@ -1983,6 +2032,7 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
         monthlyHours: toNumber(monthlyHours, 0),
         productivity: toNumber(productivity, 0),
         status: normalizeOptionalText(status) ?? "ACTIVE",
+        ...hrProfile,
         EmployeePayrollComponent:
           cleanComponentIds.length > 0
             ? {
@@ -2022,7 +2072,8 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
       salary,
       monthlyHours,
       productivity,
-      status
+      status,
+      ...hrProfileBody
     } = req.body;
 
     if (!isUuid(id)) {
@@ -2032,6 +2083,7 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
     const cleanName = normalizeRequiredText(name);
     const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
     const cleanComponentIds = sanitizeUuidArray(componentIds);
+    const hrProfile = buildEmployeeHrProfileData(hrProfileBody as Record<string, unknown>);
 
     if (!cleanName) {
       return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
@@ -2057,6 +2109,7 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         monthlyHours: toNumber(monthlyHours, 0),
         productivity: toNumber(productivity, 0),
         status: normalizeOptionalText(status) ?? "ACTIVE",
+        ...hrProfile,
         EmployeePayrollComponent:
           cleanComponentIds.length > 0
             ? {

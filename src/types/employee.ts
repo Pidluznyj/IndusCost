@@ -13,7 +13,32 @@ export interface PayrollComponent {
   value: number;
 }
 
-export interface Employee {
+export interface EmployeeHrProfileFields {
+  socialName?: string | null;
+  cpf?: string | null;
+  rg?: string | null;
+  birthDate?: string | null;
+  phone?: string | null;
+  personalEmail?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelationship?: string | null;
+  admissionDate?: string | null;
+  terminationDate?: string | null;
+  contractType?: string | null;
+  managerName?: string | null;
+  professionalNotes?: string | null;
+  address?: string | null;
+  adminNotes?: string | null;
+  shirtSize?: string | null;
+  pantsSize?: string | null;
+  jacketSize?: string | null;
+  gloveSize?: string | null;
+  shoeSize?: string | null;
+  epiNotes?: string | null;
+}
+
+export interface Employee extends EmployeeHrProfileFields {
   id: string;
   name: string;
   roleId: string;
@@ -40,7 +65,7 @@ export interface Employee {
   updatedAt: string;
 }
 
-export interface CreateEmployeeInput {
+export interface CreateEmployeeInput extends EmployeeHrProfileFields {
   name: string;
   roleId: string;
   department: string;

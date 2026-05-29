@@ -1,0 +1,23 @@
+-- RH-2A: campos administrativos opcionais na ficha do colaborador (sem impacto em custo industrial)
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "socialName" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "cpf" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "rg" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "birthDate" TIMESTAMPTZ(6);
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "phone" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "personalEmail" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "emergencyContactName" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "emergencyContactPhone" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "emergencyContactRelationship" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "admissionDate" TIMESTAMPTZ(6);
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "terminationDate" TIMESTAMPTZ(6);
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "contractType" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "managerName" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "professionalNotes" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "address" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "adminNotes" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "shirtSize" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "pantsSize" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "jacketSize" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "gloveSize" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "shoeSize" TEXT;
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "epiNotes" TEXT;

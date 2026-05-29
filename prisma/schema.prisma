@@ -50,8 +50,30 @@ model Employee {
   salary                   Decimal                    @db.Decimal(20, 6)
   monthlyHours             Int
   productivity             Decimal?                   @default(100.00) @db.Decimal(10, 6)
-  status                   String?                    @default("ACTIVE")
-  createdAt                DateTime?                  @default(now()) @db.Timestamptz(6)
+  status                         String?                    @default("ACTIVE")
+  socialName                     String?
+  cpf                            String?
+  rg                             String?
+  birthDate                      DateTime?                  @db.Timestamptz(6)
+  phone                          String?
+  personalEmail                  String?
+  emergencyContactName           String?
+  emergencyContactPhone          String?
+  emergencyContactRelationship   String?
+  admissionDate                  DateTime?                  @db.Timestamptz(6)
+  terminationDate                DateTime?                  @db.Timestamptz(6)
+  contractType                   String?
+  managerName                    String?
+  professionalNotes              String?
+  address                        String?
+  adminNotes                     String?
+  shirtSize                      String?
+  pantsSize                      String?
+  jacketSize                     String?
+  gloveSize                      String?
+  shoeSize                       String?
+  epiNotes                       String?
+  createdAt                      DateTime?                  @default(now()) @db.Timestamptz(6)
   updatedAt                DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
   Role                     Role                       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   EmployeePayrollComponent EmployeePayrollComponent[]

@@ -8,17 +8,24 @@ import {
   UserCheck, 
   X,
   Loader2,
-  DollarSign,
-  Clock,
   PieChart,
   Info,
   Settings,
   Eye,
-  EyeOff
+  EyeOff,
+  User
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Employee, Role, CreateEmployeeInput, PayrollComponent } from "@/src/types/employee";
+import {
+  CONTRACT_TYPE_OPTIONS,
+  createEmptyEmployeeForm,
+  displayText,
+  employeeToFormData,
+  formatContractType,
+  formatEmployeeDate,
+} from "@/src/lib/employeeHrUi";
 import { motion } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -43,6 +50,12 @@ const PAYROLL_CALC_OPTIONS = [
   { value: "FIXED", label: "Valor Fixo (R$)", searchTerms: "FIXED fixo" },
 ];
 
+const INPUT_CLASS =
+  "w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm";
+
+const TEXTAREA_CLASS =
+  "w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm min-h-[88px] resize-y";
+
 export const EmployeeModule = () => {
   const auth = useAuth();
   const canEdit = auth.hasPermission("employees.edit");
@@ -64,20 +77,10 @@ export const EmployeeModule = () => {
   const [tourOpen, setTourOpen] = useState(false);
   const [isComponentModalOpen, setIsComponentModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const [viewingCosts, setViewingCosts] = useState<Employee | null>(null);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
 
   // Form State
-  const [formData, setFormData] = useState<CreateEmployeeInput>({
-    name: "",
-    roleId: "",
-    department: "",
-    costCenter: "",
-    classification: "DIRETO",
-    salary: 0,
-    monthlyHours: 220,
-    productivity: 100,
-    componentIds: [],
-  });
+  const [formData, setFormData] = useState<CreateEmployeeInput>(createEmptyEmployeeForm());
 
   const [compFormData, setCompFormData] = useState({
     name: "",
@@ -112,30 +115,10 @@ export const EmployeeModule = () => {
   const handleOpenModal = (employee?: Employee) => {
     if (employee) {
       setEditingEmployee(employee);
-      setFormData({
-        name: employee.name,
-        roleId: employee.roleId,
-        department: employee.department,
-        costCenter: employee.costCenter,
-        classification: employee.classification,
-        salary: Number(employee.salary),
-        monthlyHours: employee.monthlyHours,
-        productivity: Number(employee.productivity),
-        componentIds: employee.EmployeePayrollComponent.map(c => c.PayrollComponent.id),
-      });
+      setFormData(employeeToFormData(employee));
     } else {
       setEditingEmployee(null);
-      setFormData({
-        name: "",
-        roleId: roles[0]?.id || "",
-        department: "",
-        costCenter: "",
-        classification: "DIRETO",
-        salary: 0,
-        monthlyHours: 220,
-        productivity: 100,
-        componentIds: [],
-      });
+      setFormData(createEmptyEmployeeForm(roles[0]?.id || ""));
     }
     setIsModalOpen(true);
   };
@@ -207,6 +190,7 @@ export const EmployeeModule = () => {
       if (!q) return true;
       return (
         (emp.name ?? "").toLowerCase().includes(q) ||
+        (emp.socialName ?? "").toLowerCase().includes(q) ||
         (emp.Role?.name ?? "").toLowerCase().includes(q) ||
         (emp.department ?? "").toLowerCase().includes(q)
       );
@@ -219,7 +203,7 @@ export const EmployeeModule = () => {
     setListStatusFilter("");
   };
 
-  const tableColSpan = 4 + (showLegacyEstimates ? 2 : 0) + 1;
+  const tableColSpan = 6 + (showLegacyEstimates ? 3 : 0);
 
   return (
     <div className="space-y-6" data-tour="employees-root">
@@ -354,9 +338,11 @@ export const EmployeeModule = () => {
               <tr className="bg-accent/50 border-b border-border">
                 <th className="p-4 font-semibold text-sm">Colaborador</th>
                 <th className="p-4 font-semibold text-sm">Cargo / Setor</th>
-                <th className="p-4 font-semibold text-sm">Ref. salarial</th>
+                <th className="p-4 font-semibold text-sm">Contrato</th>
+                <th className="p-4 font-semibold text-sm">Admissão</th>
                 {showLegacyEstimates && (
                   <>
+                    <th className="p-4 font-semibold text-sm text-muted-foreground">Ref. salarial</th>
                     <th className="p-4 font-semibold text-sm text-muted-foreground">Estimativa mensal</th>
                     <th className="p-4 font-semibold text-sm text-muted-foreground text-center">Estimativa /h prod.</th>
                   </>
@@ -389,6 +375,9 @@ export const EmployeeModule = () => {
                         </div>
                         <div>
                           <p className="font-medium text-sm">{emp.name}</p>
+                          {emp.socialName?.trim() && (
+                            <p className="text-xs text-muted-foreground">Apelido: {emp.socialName}</p>
+                          )}
                           <p className="text-xs text-muted-foreground">{emp.costCenter}</p>
                         </div>
                       </div>
@@ -398,11 +387,17 @@ export const EmployeeModule = () => {
                       <p className="text-xs text-muted-foreground">{emp.department}</p>
                     </td>
                     <td className="p-4">
-                      <p className="text-sm">{formatCurrency(emp.salary)}</p>
-                      <p className="text-[10px] text-muted-foreground">{emp.monthlyHours}h/mês · ref. admin.</p>
+                      <p className="text-sm">{formatContractType(emp.contractType)}</p>
+                    </td>
+                    <td className="p-4">
+                      <p className="text-sm">{formatEmployeeDate(emp.admissionDate)}</p>
                     </td>
                     {showLegacyEstimates && (
                       <>
+                        <td className="p-4">
+                          <p className="text-sm text-muted-foreground">{formatCurrency(emp.salary)}</p>
+                          <p className="text-[10px] text-muted-foreground">{emp.monthlyHours}h/mês · ref. admin.</p>
+                        </td>
                         <td className="p-4">
                           <p className="text-sm text-muted-foreground">{formatCurrency(emp.costs?.totalMonthlyCost || 0)}</p>
                           <p className="text-[10px] text-muted-foreground">Estimativa legada</p>
@@ -425,11 +420,11 @@ export const EmployeeModule = () => {
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => setViewingCosts(emp)}
+                          onClick={() => setViewingEmployee(emp)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
-                          title="Ver referência administrativa"
+                          title="Ver ficha do colaborador"
                         >
-                          <DollarSign className="h-4 w-4" />
+                          <User className="h-4 w-4" />
                         </button>
                         {canEdit && (
                           <>
@@ -477,175 +472,214 @@ export const EmployeeModule = () => {
               </button>
             </div>
             
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-8">
-              {/* Dados profissionais */}
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+              <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+                Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
+              </p>
+
               <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Dados profissionais</h4>
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">1. Dados profissionais</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5 md:col-span-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Nome completo</label>
-                    <input
-                      required
-                      type="text"
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    />
+                    <input required type="text" className={INPUT_CLASS} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Nome social / apelido</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.socialName ?? ""} onChange={(e) => setFormData({ ...formData, socialName: e.target.value })} />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Setor</label>
-                    <input
-                      required
-                      type="text"
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.department}
-                      onChange={(e) => setFormData({...formData, department: e.target.value})}
-                    />
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Cargo</label>
+                    <SearchableSelect required placeholder="Selecione o cargo..." options={roles.map((role) => ({ value: role.id, label: role.name, searchTerms: role.name }))} value={formData.roleId} onChange={(v) => setFormData({ ...formData, roleId: v })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Departamento / setor</label>
+                    <input required type="text" className={INPUT_CLASS} value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Centro de custo</label>
-                    <input
-                      required
-                      type="text"
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.costCenter}
-                      onChange={(e) => setFormData({...formData, costCenter: e.target.value})}
-                    />
+                    <input required type="text" className={INPUT_CLASS} value={formData.costCenter} onChange={(e) => setFormData({ ...formData, costCenter: e.target.value })} />
                   </div>
-                  <div className="space-y-1.5 md:col-span-2">
+                  <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Classificação</label>
-                    <SearchableSelect
-                      required
-                      placeholder="Classificação..."
-                      options={EMPLOYEE_CLASSIFICATION_OPTIONS}
-                      value={formData.classification}
-                      onChange={(v) => setFormData({ ...formData, classification: v })}
-                    />
+                    <SearchableSelect required placeholder="Classificação..." options={EMPLOYEE_CLASSIFICATION_OPTIONS} value={formData.classification} onChange={(v) => setFormData({ ...formData, classification: v })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de contrato</label>
+                    <SearchableSelect placeholder="Tipo de contrato..." options={CONTRACT_TYPE_OPTIONS} value={formData.contractType ?? ""} onChange={(v) => setFormData({ ...formData, contractType: v })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Gestor responsável</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.managerName ?? ""} onChange={(e) => setFormData({ ...formData, managerName: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Data de admissão</label>
+                    <input type="date" className={INPUT_CLASS} value={formData.admissionDate ?? ""} onChange={(e) => setFormData({ ...formData, admissionDate: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Data de desligamento</label>
+                    <input type="date" className={INPUT_CLASS} value={formData.terminationDate ?? ""} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Status</label>
+                    <select className={INPUT_CLASS} value={formData.status ?? "ACTIVE"} onChange={(e) => setFormData({ ...formData, status: e.target.value as CreateEmployeeInput["status"] })}>
+                      <option value="ACTIVE">Ativo</option>
+                      <option value="INACTIVE">Inativo</option>
+                    </select>
                   </div>
                 </div>
               </div>
 
-              {/* Cargo e jornada */}
               <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Cargo e jornada</h4>
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">2. Dados pessoais</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">CPF</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.cpf ?? ""} onChange={(e) => setFormData({ ...formData, cpf: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">RG</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.rg ?? ""} onChange={(e) => setFormData({ ...formData, rg: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Data de nascimento</label>
+                    <input type="date" className={INPUT_CLASS} value={formData.birthDate ?? ""} onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
+                    <input type="tel" className={INPUT_CLASS} value={formData.phone ?? ""} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">E-mail pessoal</label>
+                    <input type="email" className={INPUT_CLASS} value={formData.personalEmail ?? ""} onChange={(e) => setFormData({ ...formData, personalEmail: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Endereço</label>
+                    <textarea className={TEXTAREA_CLASS} value={formData.address ?? ""} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">3. Contato de emergência</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Cargo</label>
-                    <SearchableSelect
-                      required
-                      placeholder="Selecione o cargo..."
-                      options={roles.map((role) => ({
-                        value: role.id,
-                        label: role.name,
-                        searchTerms: role.name,
-                      }))}
-                      value={formData.roleId}
-                      onChange={(v) => setFormData({ ...formData, roleId: v })}
-                    />
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Nome</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.emergencyContactName ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })} />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Jornada (horas/mês)</label>
-                    <input
-                      required
-                      type="number"
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.monthlyHours}
-                      onChange={(e) => setFormData({...formData, monthlyHours: parseInt(e.target.value)})}
-                    />
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
+                    <input type="tel" className={INPUT_CLASS} value={formData.emergencyContactPhone ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })} />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Produtividade (%)</label>
-                    <input
-                      required
-                      type="number"
-                      step="0.00001"
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.productivity}
-                      onChange={(e) => setFormData({...formData, productivity: parseFloat(e.target.value)})}
-                    />
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Grau / relação</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.emergencyContactRelationship ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactRelationship: e.target.value })} />
                   </div>
                 </div>
               </div>
 
-              {/* Referência administrativa */}
+              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">4. EPI / Uniformes</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Camiseta / camisa</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.shirtSize ?? ""} onChange={(e) => setFormData({ ...formData, shirtSize: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Calça</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.pantsSize ?? ""} onChange={(e) => setFormData({ ...formData, pantsSize: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Jaqueta / blusa</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.jacketSize ?? ""} onChange={(e) => setFormData({ ...formData, jacketSize: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Luva</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.gloveSize ?? ""} onChange={(e) => setFormData({ ...formData, gloveSize: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Calçado / bota</label>
+                    <input type="text" className={INPUT_CLASS} value={formData.shoeSize ?? ""} onChange={(e) => setFormData({ ...formData, shoeSize: e.target.value })} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Observações de EPI / uniforme</label>
+                  <textarea className={TEXTAREA_CLASS} value={formData.epiNotes ?? ""} onChange={(e) => setFormData({ ...formData, epiNotes: e.target.value })} />
+                </div>
+              </div>
+
               <div className="space-y-4 rounded-xl border border-border p-5 bg-muted/20">
                 <div>
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Referência administrativa</h4>
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">5. Referência administrativa</h4>
                   <p className="text-xs text-muted-foreground mt-1">
                     Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
                   </p>
                 </div>
-                <div className="space-y-1.5 max-w-sm">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Referência salarial (R$)</label>
-                  <input
-                    required
-                    type="number"
-                    step="0.00001"
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                    value={formData.salary}
-                    onChange={(e) => setFormData({...formData, salary: parseFloat(e.target.value)})}
-                  />
-                </div>
-              </div>
-
-              {/* Benefícios / verbas */}
-              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Benefícios / verbas</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {payrollComponents.map(comp => (
-                    <div 
-                      key={comp.id}
-                      onClick={() => toggleComponent(comp.id)}
-                      className={cn(
-                        "p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between",
-                        formData.componentIds?.includes(comp.id)
-                          ? "bg-primary/5 border-primary shadow-sm"
-                          : "bg-background border-border hover:border-primary/50"
-                      )}
-                    >
-                      <div>
-                        <p className="text-xs font-bold">{comp.name}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {comp.calculationType === "PERCENTAGE" ? `${comp.value}%` : formatCurrency(comp.value)}
-                        </p>
-                      </div>
-                      <div className={cn(
-                        "h-4 w-4 rounded-full border flex items-center justify-center",
-                        formData.componentIds?.includes(comp.id) ? "bg-primary border-primary" : "border-border"
-                      )}>
-                        {formData.componentIds?.includes(comp.id) && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {editingEmployee && (
-                <div className="space-y-2 rounded-xl border border-border p-5 bg-background">
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Status</h4>
-                  <div className={cn(
-                    "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                    editingEmployee.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                  )}>
-                    <div className={cn("h-1.5 w-1.5 rounded-full", editingEmployee.status === "ACTIVE" ? "bg-green-600" : "bg-red-600")} />
-                    {editingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Referência salarial (R$)</label>
+                    <input required type="number" step="0.00001" className={INPUT_CLASS} value={formData.salary} onChange={(e) => setFormData({ ...formData, salary: parseFloat(e.target.value) })} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Use Ativar/Inativar na lista para alterar o status.</p>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Jornada (horas/mês)</label>
+                    <input required type="number" className={INPUT_CLASS} value={formData.monthlyHours} onChange={(e) => setFormData({ ...formData, monthlyHours: parseInt(e.target.value, 10) })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Produtividade (%)</label>
+                    <input required type="number" step="0.00001" className={INPUT_CLASS} value={formData.productivity} onChange={(e) => setFormData({ ...formData, productivity: parseFloat(e.target.value) })} />
+                  </div>
                 </div>
-              )}
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-muted-foreground uppercase">Verbas / benefícios legados</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {payrollComponents.map((comp) => (
+                      <div
+                        key={comp.id}
+                        onClick={() => toggleComponent(comp.id)}
+                        className={cn(
+                          "p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between",
+                          formData.componentIds?.includes(comp.id)
+                            ? "bg-primary/5 border-primary shadow-sm"
+                            : "bg-background border-border hover:border-primary/50"
+                        )}
+                      >
+                        <div>
+                          <p className="text-xs font-bold">{comp.name}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {comp.calculationType === "PERCENTAGE" ? `${comp.value}%` : formatCurrency(comp.value)}
+                          </p>
+                        </div>
+                        <div className={cn(
+                          "h-4 w-4 rounded-full border flex items-center justify-center",
+                          formData.componentIds?.includes(comp.id) ? "bg-primary border-primary" : "border-border"
+                        )}>
+                          {formData.componentIds?.includes(comp.id) && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
-              <div className="flex items-center justify-end gap-3 pt-6 border-t border-border">
-                <button 
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
-                >
+              <div className="space-y-4 rounded-xl border border-border p-5 bg-background">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">6. Observações</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Observações profissionais</label>
+                    <textarea className={TEXTAREA_CLASS} value={formData.professionalNotes ?? ""} onChange={(e) => setFormData({ ...formData, professionalNotes: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Observações administrativas</label>
+                    <textarea className={TEXTAREA_CLASS} value={formData.adminNotes ?? ""} onChange={(e) => setFormData({ ...formData, adminNotes: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-border">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm">
                   Cancelar
                 </button>
-                <button 
-                  type="submit"
-                  className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm"
-                >
+                <button type="submit" className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm">
                   {editingEmployee ? "Salvar alterações" : "Cadastrar colaborador"}
                 </button>
               </div>
@@ -722,131 +756,166 @@ export const EmployeeModule = () => {
         </div>
       )}
 
-      {/* Modal: Referência administrativa */}
-      {viewingCosts && (
+      {/* Modal: Ficha do colaborador */}
+      {viewingEmployee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-card w-full max-w-2xl rounded-2xl border border-border shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+            className="bg-card w-full max-w-3xl rounded-2xl border border-border shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
           >
             <div className="p-6 border-b border-border flex items-center justify-between bg-accent/40">
               <div>
-                <h3 className="text-xl font-bold">{viewingCosts.name}</h3>
-                <p className="text-xs text-muted-foreground">{viewingCosts.Role.name} · {viewingCosts.department}</p>
+                <h3 className="text-xl font-bold">{viewingEmployee.name}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {viewingEmployee.socialName?.trim() ? `${viewingEmployee.socialName} · ` : ""}
+                  {viewingEmployee.Role.name} · {viewingEmployee.department}
+                </p>
               </div>
-              <button onClick={() => setViewingCosts(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewingEmployee(null);
+                      handleOpenModal(viewingEmployee);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-accent text-sm font-medium"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                    Editar
+                  </button>
+                )}
+                <button onClick={() => setViewingEmployee(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             
-            <div className="p-6 space-y-6 overflow-y-auto">
+            <div className="p-6 space-y-5 overflow-y-auto">
               <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
-                Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
+                Dados pessoais e administrativos devem ser acessados apenas por pessoas autorizadas do RH.
               </p>
 
               <div className="space-y-3 rounded-xl border border-border p-4">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Dados profissionais</h4>
                 <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><p className="text-muted-foreground text-xs">Nome social / apelido</p><p className="font-medium">{displayText(viewingEmployee.socialName)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Cargo</p><p className="font-medium">{viewingEmployee.Role.name}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Departamento</p><p className="font-medium">{displayText(viewingEmployee.department)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Centro de custo</p><p className="font-medium">{displayText(viewingEmployee.costCenter)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Classificação</p><p className="font-medium">{displayText(viewingEmployee.classification)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Tipo de contrato</p><p className="font-medium">{formatContractType(viewingEmployee.contractType)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Admissão</p><p className="font-medium">{formatEmployeeDate(viewingEmployee.admissionDate)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Desligamento</p><p className="font-medium">{formatEmployeeDate(viewingEmployee.terminationDate)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Gestor responsável</p><p className="font-medium">{displayText(viewingEmployee.managerName)}</p></div>
                   <div>
-                    <p className="text-muted-foreground text-xs">Centro de custo</p>
-                    <p className="font-medium">{viewingCosts.costCenter}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Classificação</p>
-                    <p className="font-medium">{viewingCosts.classification}</p>
+                    <p className="text-muted-foreground text-xs">Status</p>
+                    <div className={cn(
+                      "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mt-1",
+                      viewingEmployee.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
+                    )}>
+                      {viewingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-3 rounded-xl border border-border p-4">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Cargo e jornada</h4>
+                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Dados pessoais</h4>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground text-xs">Cargo</p>
-                    <p className="font-medium">{viewingCosts.Role.name}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Jornada mensal</p>
-                    <p className="font-medium">{viewingCosts.monthlyHours}h</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Produtividade</p>
-                    <p className="font-medium">{formatNumber(viewingCosts.productivity, 2)}%</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3 rounded-xl border border-border p-4 bg-muted/20">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Referência salarial / estimativa legada</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-background border border-border">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa mensal</p>
-                    <p className="text-lg font-semibold">{formatCurrency(viewingCosts.costs?.totalMonthlyCost || 0)}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-background border border-border">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa /h produtiva</p>
-                    <p className="text-lg font-semibold">{formatCurrency(viewingCosts.costs?.costPerProductiveHour || 0, 5)}</p>
-                  </div>
-                </div>
-                <div className="space-y-2 pt-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Referência salarial</span>
-                    <span>{formatCurrency(viewingCosts.costs?.salary || 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Benefícios (estimativa)</span>
-                    <span className="text-green-600">{formatCurrency(viewingCosts.costs?.totalBenefits || 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Encargos (estimativa)</span>
-                    <span className="text-orange-600">{formatCurrency(viewingCosts.costs?.totalCharges || 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Provisões (estimativa)</span>
-                    <span className="text-blue-600">{formatCurrency(viewingCosts.costs?.totalProvisions || 0)}</span>
-                  </div>
+                  <div><p className="text-muted-foreground text-xs">CPF</p><p className="font-medium">{displayText(viewingEmployee.cpf)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">RG</p><p className="font-medium">{displayText(viewingEmployee.rg)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Nascimento</p><p className="font-medium">{formatEmployeeDate(viewingEmployee.birthDate)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Telefone</p><p className="font-medium">{displayText(viewingEmployee.phone)}</p></div>
+                  <div className="col-span-2"><p className="text-muted-foreground text-xs">E-mail pessoal</p><p className="font-medium">{displayText(viewingEmployee.personalEmail)}</p></div>
+                  <div className="col-span-2"><p className="text-muted-foreground text-xs">Endereço</p><p className="font-medium whitespace-pre-wrap">{displayText(viewingEmployee.address)}</p></div>
                 </div>
               </div>
 
               <div className="space-y-3 rounded-xl border border-border p-4">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Benefícios / verbas vinculadas</h4>
-                {viewingCosts.EmployeePayrollComponent.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhuma verba vinculada.</p>
-                ) : (
-                  <ul className="space-y-1 text-sm">
-                    {viewingCosts.EmployeePayrollComponent.map((c) => (
-                      <li key={c.PayrollComponent.id} className="flex justify-between gap-2">
-                        <span>{c.PayrollComponent.name}</span>
-                        <span className="text-muted-foreground text-xs">{c.PayrollComponent.type}</span>
-                      </li>
-                    ))}
-                  </ul>
+                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Contato de emergência</h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="col-span-2"><p className="text-muted-foreground text-xs">Nome</p><p className="font-medium">{displayText(viewingEmployee.emergencyContactName)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Telefone</p><p className="font-medium">{displayText(viewingEmployee.emergencyContactPhone)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Grau / relação</p><p className="font-medium">{displayText(viewingEmployee.emergencyContactRelationship)}</p></div>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-border p-4">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">EPI / Uniformes</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                  <div><p className="text-muted-foreground text-xs">Camiseta / camisa</p><p className="font-medium">{displayText(viewingEmployee.shirtSize)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Calça</p><p className="font-medium">{displayText(viewingEmployee.pantsSize)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Jaqueta / blusa</p><p className="font-medium">{displayText(viewingEmployee.jacketSize)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Luva</p><p className="font-medium">{displayText(viewingEmployee.gloveSize)}</p></div>
+                  <div><p className="text-muted-foreground text-xs">Calçado / bota</p><p className="font-medium">{displayText(viewingEmployee.shoeSize)}</p></div>
+                </div>
+                {viewingEmployee.epiNotes?.trim() && (
+                  <div className="text-sm">
+                    <p className="text-muted-foreground text-xs">Observações</p>
+                    <p className="font-medium whitespace-pre-wrap">{viewingEmployee.epiNotes}</p>
+                  </div>
                 )}
               </div>
 
-              <div className="space-y-2 rounded-xl border border-border p-4">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Status</h4>
-                <div className={cn(
-                  "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                  viewingCosts.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                )}>
-                  <div className={cn("h-1.5 w-1.5 rounded-full", viewingCosts.status === "ACTIVE" ? "bg-green-600" : "bg-red-600")} />
-                  {viewingCosts.status === "ACTIVE" ? "Ativo" : "Inativo"}
+              <div className="space-y-3 rounded-xl border border-border p-4 bg-muted/20">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Referência administrativa</h4>
+                <p className="text-xs text-muted-foreground">
+                  Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg bg-background border border-border">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa mensal</p>
+                    <p className="text-lg font-semibold">{formatCurrency(viewingEmployee.costs?.totalMonthlyCost || 0)}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-background border border-border">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Estimativa /h produtiva</p>
+                    <p className="text-lg font-semibold">{formatCurrency(viewingEmployee.costs?.costPerProductiveHour || 0, 5)}</p>
+                  </div>
+                </div>
+                <div className="space-y-2 pt-1 text-sm">
+                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Referência salarial</span><span>{formatCurrency(viewingEmployee.costs?.salary || 0)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Jornada mensal</span><span>{viewingEmployee.monthlyHours}h</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Produtividade</span><span>{formatNumber(viewingEmployee.productivity, 2)}%</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Benefícios (estimativa)</span><span className="text-green-600">{formatCurrency(viewingEmployee.costs?.totalBenefits || 0)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Encargos (estimativa)</span><span className="text-orange-600">{formatCurrency(viewingEmployee.costs?.totalCharges || 0)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted-foreground">Provisões (estimativa)</span><span className="text-blue-600">{formatCurrency(viewingEmployee.costs?.totalProvisions || 0)}</span></div>
+                </div>
+                <div className="pt-2">
+                  <p className="text-xs font-bold text-muted-foreground uppercase mb-2">Verbas vinculadas</p>
+                  {viewingEmployee.EmployeePayrollComponent.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhuma verba vinculada.</p>
+                  ) : (
+                    <ul className="space-y-1 text-sm">
+                      {viewingEmployee.EmployeePayrollComponent.map((c) => (
+                        <li key={c.PayrollComponent.id} className="flex justify-between gap-2">
+                          <span>{c.PayrollComponent.name}</span>
+                          <span className="text-muted-foreground text-xs">{c.PayrollComponent.type}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-dashed border-border bg-accent/20 flex items-center gap-4">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-primary" />
+              {(viewingEmployee.professionalNotes?.trim() || viewingEmployee.adminNotes?.trim()) && (
+                <div className="space-y-3 rounded-xl border border-border p-4">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Observações</h4>
+                  {viewingEmployee.professionalNotes?.trim() && (
+                    <div className="text-sm">
+                      <p className="text-muted-foreground text-xs">Profissionais</p>
+                      <p className="font-medium whitespace-pre-wrap">{viewingEmployee.professionalNotes}</p>
+                    </div>
+                  )}
+                  {viewingEmployee.adminNotes?.trim() && (
+                    <div className="text-sm">
+                      <p className="text-muted-foreground text-xs">Administrativas</p>
+                      <p className="font-medium whitespace-pre-wrap">{viewingEmployee.adminNotes}</p>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <p className="text-xs font-bold">Horas produtivas (estimativa)</p>
-                  <p className="text-sm text-muted-foreground">
-                    Referência de <strong>{viewingCosts.costs?.productiveHours.toFixed(1)}h</strong> produtivas das {viewingCosts.monthlyHours}h contratadas.
-                  </p>
-                </div>
-              </div>
+              )}
             </div>
           </motion.div>
         </div>
