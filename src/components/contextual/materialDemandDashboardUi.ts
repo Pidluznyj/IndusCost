@@ -1,3 +1,5 @@
+import { salesOrderStatusLabel } from "@/src/lib/materialDemandFilters";
+
 export type MaterialDemandDateBasis = "issueDate" | "expectedDeliveryDate";
 
 export type MaterialDemandDashboardTab =
@@ -65,12 +67,14 @@ export type FilterSummaryInput = {
   dateBasis: MaterialDemandDateBasis;
   startDate: string;
   endDate: string;
+  statuses: string[];
   status: string;
   customerId: string;
   productId: string;
   companyIssuer: string;
   materialId: string;
   unitKey: string;
+  includeOrdersWithoutDeliveryDate?: boolean;
   facets?: {
     customers: Array<{ id: string; companyName: string }>;
     products: Array<{ id: string; sku: string | null; name: string }>;
@@ -84,7 +88,14 @@ export function buildFilterSummaryLines(f: FilterSummaryInput): string[] {
     `Base do período: ${dateBasisLabelPt(f.dateBasis)}`,
     `Período: ${formatYmdAsPtBr(f.startDate)} a ${formatYmdAsPtBr(f.endDate)}`,
   ];
-  if (f.status) lines.push(`Status: ${f.status}`);
+  if (f.statuses.length > 0) {
+    lines.push(`Status: ${f.statuses.map((s) => salesOrderStatusLabel(s)).join(", ")}`);
+  } else if (f.status) {
+    lines.push(`Status: ${salesOrderStatusLabel(f.status)}`);
+  }
+  if (f.includeOrdersWithoutDeliveryDate === false) {
+    lines.push("Pedidos sem data de entrega: excluídos");
+  }
   if (f.companyIssuer) lines.push(`Empresa emissora: ${f.companyIssuer}`);
   if (f.customerId && f.facets) {
     const c = f.facets.customers.find((x) => x.id === f.customerId);

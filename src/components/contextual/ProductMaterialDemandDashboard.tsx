@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Info, Loader2, RefreshCw, Search } from "lucide-react";
-import { formatYmdLocal } from "@/src/components/crmSellerDashboardUi";
+import { ChevronDown, Download, Info, Loader2, Printer, RefreshCw, Search } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import {
   defaultMaterialDemandTab,
   MATERIAL_DEMAND_TABS,
@@ -10,9 +10,26 @@ import {
   type MaterialDemandDashboardTab,
 } from "@/src/components/contextual/materialDemandDashboardUi";
 import { fetchJsonOk } from "@/src/lib/http";
+import {
+  ALL_SALES_ORDER_STATUSES,
+  buildDefaultMaterialDemandUiFilters,
+  materialDemandUiFiltersToQueryParams,
+  parseMaterialDemandUiFiltersFromSearchParams,
+  resolveMaterialDemandPeriodPreset,
+  salesOrderStatusLabel,
+  type MaterialDemandCoverage,
+  type MaterialDemandUiFilters,
+} from "@/src/lib/materialDemandFilters";
+import {
+  buildMaterialDemandUsageCsv,
+  downloadMaterialDemandCsv,
+} from "@/src/lib/materialDemandExport";
 import { cn, formatNumberAdaptive } from "@/src/lib/utils";
 import {
+  MaterialDemandCoveragePanel,
   MaterialDemandEvolutionTable,
+  MaterialDemandFilterChips,
+  type MaterialDemandFilterChip,
   MaterialDemandKpiGrid,
   MaterialDemandMaterialsTable,
   MaterialDemandMixedUnitsBlock,
@@ -20,28 +37,17 @@ import {
   MaterialDemandOrdersWithoutDeliveryWarning,
   MaterialDemandParetoSection,
   MaterialDemandTablePagination,
+  MaterialDemandTopMaterialsByPeriod,
   MaterialDemandUsageEstimateHeader,
   type MaterialOriginRow,
 } from "@/src/components/contextual/MaterialDemandDashboardPanels";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 
 const PAGE_SIZE = 25;
+const ORIGINS_PAGE_SIZE = 50;
 
 type DateBasis = "issueDate" | "expectedDeliveryDate";
-
-type FiltersState = {
-  startDate: string;
-  endDate: string;
-  dateBasis: DateBasis;
-  status: string;
-  customerId: string;
-  productId: string;
-  materialId: string;
-  companyIssuer: string;
-  unitKey: string;
-  mode: "quantity" | "value" | "orders" | "products";
-  search: string;
-};
+type FiltersState = MaterialDemandUiFilters & { status: string };
 
 type MaterialRow = {
   materialId: string;
@@ -130,8 +136,9 @@ type SummaryResponse = {
     label: string;
     deliveryDateNote?: string | null;
   };
-  filtersApplied?: { dateBasis?: DateBasis };
+  filtersApplied?: { dateBasis?: DateBasis; statuses?: string[]; includeOrdersWithoutDeliveryDate?: boolean };
   summary: SummaryBlock;
+  coverage?: MaterialDemandCoverage;
   charts: {
     needByDeliveryPeriod: NeedByDeliveryRow[];
     paretoByQuantityByUnit: Array<{ unitKey: string; unitLabel: string; rows: MaterialRow[] }>;
@@ -174,6 +181,12 @@ type MaterialDetailsResponse = {
   topCustomers: NonNullable<MaterialRow["topCustomers"]>;
   orders: NonNullable<MaterialRow["orders"]>;
   origins?: MaterialOriginRow[];
+  originsPagination?: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+  };
 };
 
 export type ProductMaterialDemandDashboardProps = {
@@ -191,11 +204,11 @@ const DASHBOARD_CONTEXT = {
       "Visão estimada da necessidade de matéria-prima com base nos itens dos pedidos de venda selecionados.",
   },
   "sales-orders": {
-    moduleLabel: "Pedidos de venda — demanda estimada",
+    moduleLabel: "Pedidos de venda — estimativa de uso",
     backPath: "/sales-orders",
     backLabel: "Voltar para Pedidos de venda",
     baseBadge: "Base: pedidos de venda",
-    title: "Pedidos de venda — Inteligência de Matéria-Prima",
+    title: "Pedidos de venda — Estimativa de uso de matéria-prima",
     subtitle:
       "Estimativa de quanto matéria-prima será necessária para atender os pedidos de venda filtrados, com base na composição atual dos produtos.",
   },
@@ -205,6 +218,7 @@ type PeriodPreset =
   | "ytd"
   | "last90"
   | "thisMonth"
+  | "lastMonth"
   | "next30"
   | "next60"
   | "next90"
@@ -214,6 +228,7 @@ const ISSUE_PERIOD_PRESETS: Array<{ id: PeriodPreset; label: string }> = [
   { id: "ytd", label: "Ano atual (YTD)" },
   { id: "last90", label: "Últimos 90 dias" },
   { id: "thisMonth", label: "Este mês" },
+  { id: "lastMonth", label: "Mês passado" },
 ];
 
 const DELIVERY_PERIOD_PRESETS: Array<{ id: PeriodPreset; label: string }> = [
@@ -222,6 +237,7 @@ const DELIVERY_PERIOD_PRESETS: Array<{ id: PeriodPreset; label: string }> = [
   { id: "next90", label: "Próximos 90 dias" },
   { id: "thisMonth", label: "Este mês" },
   { id: "nextMonth", label: "Próximo mês" },
+  { id: "lastMonth", label: "Mês passado" },
 ];
 
 const FILTER_CONTROL_CLASS =
@@ -231,73 +247,23 @@ function resolvePeriodPreset(
   preset: PeriodPreset,
   dateBasis: DateBasis
 ): Pick<FiltersState, "startDate" | "endDate"> {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayYmd = formatYmdLocal(today);
-
-  if (dateBasis === "expectedDeliveryDate") {
-    if (preset === "next30") {
-      const end = new Date(today);
-      end.setDate(end.getDate() + 30);
-      return { startDate: todayYmd, endDate: formatYmdLocal(end) };
-    }
-    if (preset === "next60") {
-      const end = new Date(today);
-      end.setDate(end.getDate() + 60);
-      return { startDate: todayYmd, endDate: formatYmdLocal(end) };
-    }
-    if (preset === "next90") {
-      const end = new Date(today);
-      end.setDate(end.getDate() + 90);
-      return { startDate: todayYmd, endDate: formatYmdLocal(end) };
-    }
-    if (preset === "thisMonth") {
-      const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      return {
-        startDate: formatYmdLocal(new Date(today.getFullYear(), today.getMonth(), 1)),
-        endDate: formatYmdLocal(end),
-      };
-    }
-    if (preset === "nextMonth") {
-      const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-      const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-      return { startDate: formatYmdLocal(start), endDate: formatYmdLocal(end) };
-    }
-    const end = new Date(today);
-    end.setDate(end.getDate() + 30);
-    return { startDate: todayYmd, endDate: formatYmdLocal(end) };
-  }
-
-  if (preset === "ytd") {
-    return { startDate: formatYmdLocal(new Date(today.getFullYear(), 0, 1)), endDate: todayYmd };
-  }
-  if (preset === "thisMonth") {
-    return {
-      startDate: formatYmdLocal(new Date(today.getFullYear(), today.getMonth(), 1)),
-      endDate: todayYmd,
-    };
-  }
-  const start = new Date(today);
-  start.setDate(start.getDate() - 90);
-  return { startDate: formatYmdLocal(start), endDate: todayYmd };
+  return resolveMaterialDemandPeriodPreset(preset, dateBasis);
 }
 
-function buildDefaultMaterialDemandFilters(): FiltersState {
-  const dateBasis: DateBasis = "expectedDeliveryDate";
-  const { startDate, endDate } = resolvePeriodPreset("next30", dateBasis);
+function buildDefaultMaterialDemandFilters(context: "products" | "sales-orders"): FiltersState {
+  const base = buildDefaultMaterialDemandUiFilters(context);
+  return { ...base, status: "" };
+}
+
+function toAppliedFiltersPanel(f: FiltersState) {
   return {
-    startDate,
-    endDate,
-    dateBasis,
-    status: "",
-    customerId: "",
-    productId: "",
-    materialId: "",
-    companyIssuer: "",
-    unitKey: "",
-    mode: "value",
-    search: "",
+    ...f,
+    status: f.statuses.length === 1 ? f.statuses[0] : f.status,
   };
+}
+
+function filtersQueryString(f: FiltersState): string {
+  return materialDemandUiFiltersToQueryParams(f).toString();
 }
 
 function periodPresetOptions(dateBasis: DateBasis) {
@@ -342,14 +308,6 @@ function MaterialDemandFilterField({
       {children}
     </div>
   );
-}
-
-function filtersQueryString(f: FiltersState): string {
-  const qs = new URLSearchParams();
-  (Object.entries(f) as Array<[keyof FiltersState, string]>).forEach(([k, v]) => {
-    if (v) qs.set(k, v);
-  });
-  return qs.toString();
 }
 
 function sortParamsForMode(mode: FiltersState["mode"]): { sortBy: string; sortDir: "desc" } {
@@ -514,12 +472,33 @@ function MaterialDemandErrorState({
 
 export function ProductMaterialDemandDashboard({ context = "products" }: ProductMaterialDemandDashboardProps) {
   const ctx = DASHBOARD_CONTEXT[context];
-  const [activeTab, setActiveTab] = useState<MaterialDemandDashboardTab>(() => defaultMaterialDemandTab(context));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const apiBase =
+    context === "sales-orders" ? "/api/sales-orders/material-demand" : "/api/products/material-demand";
+
+  const initialFilters = useMemo(() => {
+    const fromUrl = parseMaterialDemandUiFiltersFromSearchParams(searchParams, context);
+    return { ...fromUrl, status: "" } satisfies FiltersState;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- only on mount
+
+  const initialTab = useMemo(() => {
+    const tab = searchParams.get("tab");
+    if (tab && MATERIAL_DEMAND_TABS.some((t) => t.id === tab)) {
+      return tab as MaterialDemandDashboardTab;
+    }
+    return defaultMaterialDemandTab(context);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [activeTab, setActiveTab] = useState<MaterialDemandDashboardTab>(initialTab);
   const [usageTableSort, setUsageTableSort] = useState<"value" | "quantity">("value");
-  const [filters, setFilters] = useState<FiltersState>(() => buildDefaultMaterialDemandFilters());
-  const [searchInput, setSearchInput] = useState("");
-  const [appliedFilters, setAppliedFilters] = useState<FiltersState>(() => buildDefaultMaterialDemandFilters());
+  const [filters, setFilters] = useState<FiltersState>(initialFilters);
+  const [searchInput, setSearchInput] = useState(initialFilters.search);
+  const [appliedFilters, setAppliedFilters] = useState<FiltersState>(initialFilters);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const [rowsPage, setRowsPage] = useState(1);
+  const [originsPageByMaterial, setOriginsPageByMaterial] = useState<Map<string, number>>(new Map());
+  const [loadingMoreOriginsId, setLoadingMoreOriginsId] = useState<string | null>(null);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -540,6 +519,32 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   const lastCompletedFilterKeyRef = useRef<string | null>(null);
   const detailsCacheRef = useRef<Map<string, MaterialDetailsResponse>>(new Map());
 
+  const filterKey = useMemo(() => JSON.stringify(appliedFilters), [appliedFilters]);
+
+  const syncUrlFromState = useCallback(
+    (nextFilters: FiltersState, tab: MaterialDemandDashboardTab) => {
+      const qs = materialDemandUiFiltersToQueryParams(nextFilters);
+      qs.set("tab", tab);
+      setSearchParams(qs, { replace: true });
+    },
+    [setSearchParams]
+  );
+
+  const commitAppliedFilters = useCallback(
+    (next: FiltersState, tab: MaterialDemandDashboardTab = activeTab) => {
+      setAppliedFilters(next);
+      syncUrlFromState(next, tab);
+      lastCompletedFilterKeyRef.current = null;
+      setRowsPage(1);
+      setDetailsCache(new Map());
+      detailsCacheRef.current = new Map();
+      setDetailsErrorById(new Map());
+      setOriginsPageByMaterial(new Map());
+      setExpandedMaterialId(null);
+    },
+    [activeTab, syncUrlFromState]
+  );
+
   const debouncedSearchCommit = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (debouncedSearchCommit.current) clearTimeout(debouncedSearchCommit.current);
@@ -548,20 +553,32 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       setFilters((f) => (f.search === next ? f : { ...f, search: next }));
       setAppliedFilters((f) => {
         if (f.search === next) return f;
+        const merged = { ...f, search: next };
+        syncUrlFromState(merged, activeTab);
         setRowsPage(1);
-        return { ...f, search: next };
+        lastCompletedFilterKeyRef.current = null;
+        return merged;
       });
     }, 320);
     return () => {
       if (debouncedSearchCommit.current) clearTimeout(debouncedSearchCommit.current);
     };
-  }, [searchInput]);
+  }, [searchInput, activeTab, syncUrlFromState]);
 
   useEffect(() => {
     setSearchInput(appliedFilters.search);
   }, [appliedFilters]);
 
-  const filterKey = useMemo(() => JSON.stringify(appliedFilters), [appliedFilters]);
+  const applySelectFilter = useCallback(
+    (patch: Partial<FiltersState>) => {
+      setFilters((prev) => {
+        const merged = { ...prev, ...patch, search: searchInput.trim().toLowerCase() };
+        commitAppliedFilters(merged);
+        return merged;
+      });
+    },
+    [commitAppliedFilters, searchInput]
+  );
 
   const rowsSort = useMemo(() => {
     if (activeTab === "usage-estimate") {
@@ -604,12 +621,12 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
         setLoadingRows(true);
       }
 
-      const rowsUrl = `/api/products/material-demand/rows?${qs}&page=${rowsPage}&pageSize=${PAGE_SIZE}&sortBy=${sort.sortBy}&sortDir=${sort.sortDir}`;
+      const rowsUrl = `${apiBase}/rows?${qs}&page=${rowsPage}&pageSize=${PAGE_SIZE}&sortBy=${sort.sortBy}&sortDir=${sort.sortDir}`;
 
       try {
         if (!sameFilterKey) {
           const requests: Promise<unknown>[] = [
-            fetchJsonOk<SummaryResponse>(`/api/products/material-demand/summary?${qs}`, { signal: ac.signal }),
+            fetchJsonOk<SummaryResponse>(`${apiBase}/summary?${qs}`, { signal: ac.signal }),
           ];
           if (tabNeedsRows) {
             requests.push(fetchJsonOk<RowsResponse>(rowsUrl, { signal: ac.signal }));
@@ -665,7 +682,74 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       cancelled = true;
       ac.abort();
     };
-  }, [filterKey, rowsPage, appliedFilters, retryNonce, rowsSortKey, tabNeedsRows]);
+  }, [filterKey, rowsPage, appliedFilters, retryNonce, rowsSortKey, tabNeedsRows, apiBase]);
+
+  const appliedFiltersPanel = useMemo(() => toAppliedFiltersPanel(appliedFilters), [appliedFilters]);
+
+  const filterChips = useMemo((): MaterialDemandFilterChip[] => {
+    const chips: MaterialDemandFilterChip[] = [];
+    const facets = summaryData?.facets;
+    if (appliedFilters.statuses.length > 0) {
+      chips.push({
+        id: "statuses",
+        label: `Status: ${appliedFilters.statuses.map((s) => salesOrderStatusLabel(s)).join(", ")}`,
+      });
+    }
+    if (appliedFilters.customerId && facets) {
+      const c = facets.customers.find((x) => x.id === appliedFilters.customerId);
+      chips.push({ id: "customerId", label: `Cliente: ${c?.companyName ?? appliedFilters.customerId}` });
+    }
+    if (appliedFilters.productId && facets) {
+      const p = facets.products.find((x) => x.id === appliedFilters.productId);
+      chips.push({
+        id: "productId",
+        label: `Produto: ${p ? (p.sku ? `[${p.sku}] ${p.name}` : p.name) : appliedFilters.productId}`,
+      });
+    }
+    if (appliedFilters.materialId && facets) {
+      const m = facets.materials.find((x) => x.materialId === appliedFilters.materialId);
+      chips.push({
+        id: "materialId",
+        label: `MP: ${m ? (m.code ? `[${m.code}] ${m.description}` : m.description) : appliedFilters.materialId}`,
+      });
+    }
+    if (appliedFilters.companyIssuer) {
+      chips.push({ id: "companyIssuer", label: `Empresa: ${appliedFilters.companyIssuer}` });
+    }
+    if (appliedFilters.unitKey && facets) {
+      const u = facets.units.find((x) => x.unitKey === appliedFilters.unitKey);
+      chips.push({ id: "unitKey", label: `Unidade: ${u?.unitLabel ?? appliedFilters.unitKey}` });
+    }
+    if (!appliedFilters.includeOrdersWithoutDeliveryDate) {
+      chips.push({ id: "includeOrdersWithoutDeliveryDate", label: "Sem pedidos sem entrega" });
+    }
+    if (appliedFilters.search) {
+      chips.push({ id: "search", label: `Busca: ${appliedFilters.search}` });
+    }
+    return chips;
+  }, [appliedFilters, summaryData?.facets]);
+
+  const handleRemoveFilterChip = useCallback(
+    (id: string) => {
+      const defaults = buildDefaultMaterialDemandFilters(context);
+      const patch: Partial<FiltersState> = {};
+      if (id === "statuses") patch.statuses = defaults.statuses;
+      else if (id === "customerId") patch.customerId = "";
+      else if (id === "productId") patch.productId = "";
+      else if (id === "materialId") patch.materialId = "";
+      else if (id === "companyIssuer") patch.companyIssuer = "";
+      else if (id === "unitKey") patch.unitKey = "";
+      else if (id === "includeOrdersWithoutDeliveryDate") patch.includeOrdersWithoutDeliveryDate = true;
+      else if (id === "search") {
+        patch.search = "";
+        setSearchInput("");
+      }
+      const next = { ...appliedFilters, ...patch };
+      setFilters(next);
+      commitAppliedFilters(next);
+    },
+    [appliedFilters, commitAppliedFilters, context]
+  );
 
   const showEvolutionQuantity =
     summaryData?.summary.quantityTotalsComparable === true ||
@@ -679,17 +763,15 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   const handleApply = useCallback(() => {
     const merged: FiltersState = { ...filters, search: searchInput.trim().toLowerCase() };
     setFilters(merged);
-    setRowsPage(1);
-    setAppliedFilters(merged);
-  }, [filters, searchInput]);
+    commitAppliedFilters(merged);
+  }, [filters, searchInput, commitAppliedFilters]);
 
   const handleClear = useCallback(() => {
-    const defaults = buildDefaultMaterialDemandFilters();
+    const defaults = buildDefaultMaterialDemandFilters(context);
     setFilters(defaults);
     setSearchInput("");
-    setRowsPage(1);
-    setAppliedFilters(defaults);
-  }, []);
+    commitAppliedFilters(defaults);
+  }, [commitAppliedFilters, context]);
 
   const activePeriodPreset = useMemo(
     () => detectPeriodPreset(appliedFilters.startDate, appliedFilters.endDate, appliedFilters.dateBasis),
@@ -705,17 +787,11 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
           ...range,
           search: searchInput.trim().toLowerCase(),
         };
-        setRowsPage(1);
-        lastCompletedFilterKeyRef.current = null;
-        setDetailsCache(new Map());
-        detailsCacheRef.current = new Map();
-        setDetailsErrorById(new Map());
-        setExpandedMaterialId(null);
-        setAppliedFilters(merged);
+        commitAppliedFilters(merged);
         return merged;
       });
     },
-    [searchInput]
+    [searchInput, commitAppliedFilters]
   );
 
   const handleRetry = useCallback(() => {
@@ -733,38 +809,60 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   const tableRows = rowsData?.rows ?? [];
   const pagination = rowsData?.pagination;
 
-  const loadDetails = useCallback(async (materialId: string) => {
-    if (detailsCacheRef.current.has(materialId)) return;
-    setDetailsLoadingId(materialId);
-    setDetailsErrorById((m) => {
-      const next = new Map(m);
-      next.delete(materialId);
-      return next;
-    });
-    const qs = filtersQueryString(appliedFilters);
-    try {
-      const d = await fetchJsonOk<MaterialDetailsResponse>(
-        `/api/products/material-demand/materials/${encodeURIComponent(materialId)}/details?${qs}`
-      );
-      setDetailsCache((prev) => {
-        const next = new Map(prev).set(materialId, d);
-        detailsCacheRef.current = next;
+  const loadDetails = useCallback(
+    async (materialId: string, originsPage = 1, append = false) => {
+      if (!append && detailsCacheRef.current.has(materialId)) return;
+      if (append) setLoadingMoreOriginsId(materialId);
+      else setDetailsLoadingId(materialId);
+      setDetailsErrorById((m) => {
+        const next = new Map(m);
+        next.delete(materialId);
         return next;
       });
-    } catch (e) {
-      console.error("[MaterialDemand] details", e);
-      const msg = e instanceof Error ? e.message : "Não foi possível carregar os detalhes.";
-      setDetailsErrorById((prev) => new Map(prev).set(materialId, msg));
-    } finally {
-      setDetailsLoadingId(null);
-    }
-  }, [appliedFilters]);
+      const qs = filtersQueryString(appliedFilters);
+      try {
+        const d = await fetchJsonOk<MaterialDetailsResponse>(
+          `${apiBase}/materials/${encodeURIComponent(materialId)}/details?${qs}&originsPage=${originsPage}&originsPageSize=${ORIGINS_PAGE_SIZE}`
+        );
+        setDetailsCache((prev) => {
+          const existing = prev.get(materialId);
+          const merged: MaterialDetailsResponse = append && existing
+            ? {
+                ...d,
+                origins: [...(existing.origins ?? []), ...(d.origins ?? [])],
+              }
+            : d;
+          const next = new Map(prev).set(materialId, merged);
+          detailsCacheRef.current = next;
+          return next;
+        });
+        setOriginsPageByMaterial((prev) => new Map(prev).set(materialId, originsPage));
+      } catch (e) {
+        console.error("[MaterialDemand] details", e);
+        const msg = e instanceof Error ? e.message : "Não foi possível carregar os detalhes.";
+        setDetailsErrorById((prev) => new Map(prev).set(materialId, msg));
+      } finally {
+        setDetailsLoadingId(null);
+        setLoadingMoreOriginsId(null);
+      }
+    },
+    [appliedFilters, apiBase]
+  );
+
+  const loadMoreOrigins = useCallback(
+    (materialId: string) => {
+      const cached = detailsCacheRef.current.get(materialId);
+      const currentPage = originsPageByMaterial.get(materialId) ?? cached?.originsPagination?.page ?? 1;
+      void loadDetails(materialId, currentPage + 1, true);
+    },
+    [loadDetails, originsPageByMaterial]
+  );
 
   const toggleRow = useCallback(
     (materialId: string) => {
       setExpandedMaterialId((prev) => {
         if (prev === materialId) return null;
-        void loadDetails(materialId);
+        void loadDetails(materialId, 1, false);
         return materialId;
       });
     },
@@ -775,16 +873,41 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
     (unitKey: string) => {
       const next = { ...filters, unitKey };
       setFilters(next);
-      setAppliedFilters(next);
-      setRowsPage(1);
+      commitAppliedFilters(next);
     },
-    [filters]
+    [filters, commitAppliedFilters]
   );
 
-  const handleTabChange = useCallback((tab: MaterialDemandDashboardTab) => {
-    setActiveTab(tab);
-    setExpandedMaterialId(null);
-    setRowsPage(1);
+  const handleTabChange = useCallback(
+    (tab: MaterialDemandDashboardTab) => {
+      setActiveTab(tab);
+      setExpandedMaterialId(null);
+      setRowsPage(1);
+      syncUrlFromState(appliedFilters, tab);
+    },
+    [appliedFilters, syncUrlFromState]
+  );
+
+  const handleExportCsv = useCallback(async () => {
+    setExportingCsv(true);
+    try {
+      const qs = filtersQueryString(appliedFilters);
+      const sort = rowsSort;
+      const payload = await fetchJsonOk<RowsResponse>(
+        `${apiBase}/rows?${qs}&page=1&pageSize=100&sortBy=${sort.sortBy}&sortDir=${sort.sortDir}`
+      );
+      const csv = buildMaterialDemandUsageCsv(payload.rows, { ...appliedFilters, status: appliedFiltersPanel.status }, summaryData?.facets);
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadMaterialDemandCsv(`estimativa-uso-mp-${stamp}.csv`, csv);
+    } catch (e) {
+      console.error("[MaterialDemand] export csv", e);
+    } finally {
+      setExportingCsv(false);
+    }
+  }, [apiBase, appliedFilters, appliedFiltersPanel.status, rowsSort, summaryData?.facets]);
+
+  const handlePrint = useCallback(() => {
+    window.print();
   }, []);
 
   const getDetailOrigins = useCallback(
@@ -804,6 +927,11 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
 
   const getDetailOrders = useCallback(
     (materialId: string) => detailsCache.get(materialId)?.orders ?? [],
+    [detailsCache]
+  );
+
+  const getOriginsPagination = useCallback(
+    (materialId: string) => detailsCache.get(materialId)?.originsPagination,
     [detailsCache]
   );
 
@@ -872,6 +1000,9 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             getTopProducts={getDetailTopProducts}
             getTopCustomers={getDetailTopCustomers}
             getOrders={getDetailOrders}
+            getOriginsPagination={getOriginsPagination}
+            onLoadMoreOrigins={loadMoreOrigins}
+            loadingMoreOriginsId={loadingMoreOriginsId}
             onToggleRow={toggleRow}
           />
           {pagination ? (
@@ -904,6 +1035,13 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       backPath={ctx.backPath}
       backLabel={ctx.backLabel}
     >
+      <style>{`
+        @media print {
+          .material-demand-no-print { display: none !important; }
+          .material-demand-print-root { padding: 0; }
+        }
+      `}</style>
+      <div className="material-demand-print-root space-y-6">
       <header className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2 min-w-0">
@@ -918,19 +1056,58 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{ctx.title}</h1>
             <p className="text-sm leading-relaxed text-muted-foreground max-w-3xl">{ctx.subtitle}</p>
           </div>
+          <div className="flex flex-wrap gap-2 material-demand-no-print shrink-0">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={exportingCsv || !hasData}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-accent disabled:opacity-50"
+            >
+              {exportingCsv ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Exportar CSV
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-accent"
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir
+            </button>
+          </div>
         </div>
         <MaterialDemandInfoBanner context={context} />
       </header>
 
-      <section className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-5">
-        <div>
-          <h2 className="text-sm font-bold text-foreground">Filtros da análise</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Por padrão usa entrega prevista nos próximos 30 dias. Ajuste a base do período, presets ou filtros
-            adicionais. Não inclui estoque nem compras em aberto.
-          </p>
+      <section className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-5 material-demand-no-print">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-foreground">Filtros da análise</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {context === "sales-orders"
+                ? "Por padrão: entrega prevista nos próximos 30 dias e carteira firme (pronto para envio + enviado ao Nomus)."
+                : "Por padrão usa entrega prevista nos próximos 30 dias."}{" "}
+              Não inclui estoque nem compras em aberto.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFiltersExpanded((v) => !v)}
+            className="inline-flex h-9 items-center gap-1 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent"
+          >
+            {filtersExpanded ? "Recolher filtros" : "Expandir filtros"}
+            <ChevronDown className={cn("h-4 w-4 transition-transform", filtersExpanded && "rotate-180")} />
+          </button>
         </div>
 
+        <MaterialDemandFilterChips
+          chips={filterChips}
+          onRemove={handleRemoveFilterChip}
+          onClearAll={handleClear}
+        />
+
+        {filtersExpanded ? (
+          <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end max-w-3xl">
           <MaterialDemandFilterField label="Base do período" htmlFor="mdf-date-basis">
             <select
@@ -940,7 +1117,9 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 const dateBasis = e.target.value as DateBasis;
                 const defaultPreset = dateBasis === "expectedDeliveryDate" ? "next30" : "ytd";
                 const range = resolvePeriodPreset(defaultPreset, dateBasis);
-                setFilters((p) => ({ ...p, dateBasis, ...range }));
+                const merged = { ...filters, dateBasis, ...range };
+                setFilters(merged);
+                applySelectFilter({ dateBasis, ...range });
               }}
               className={FILTER_CONTROL_CLASS}
             >
@@ -948,6 +1127,24 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               <option value="issueDate">Emissão do pedido</option>
             </select>
           </MaterialDemandFilterField>
+          {filters.dateBasis === "expectedDeliveryDate" ? (
+            <MaterialDemandFilterField label="Pedidos sem entrega" htmlFor="mdf-no-delivery">
+              <label className="flex h-10 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm cursor-pointer">
+                <input
+                  id="mdf-no-delivery"
+                  type="checkbox"
+                  checked={filters.includeOrdersWithoutDeliveryDate}
+                  onChange={(e) => {
+                    const includeOrdersWithoutDeliveryDate = e.target.checked;
+                    setFilters((p) => ({ ...p, includeOrdersWithoutDeliveryDate }));
+                    applySelectFilter({ includeOrdersWithoutDeliveryDate });
+                  }}
+                  className="rounded border-border"
+                />
+                Incluir no período
+              </label>
+            </MaterialDemandFilterField>
+          ) : null}
         </div>
 
         <div className="rounded-lg border border-border/80 bg-muted/15 p-4 space-y-3">
@@ -984,7 +1181,11 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 id="mdf-start"
                 type="date"
                 value={filters.startDate}
-                onChange={(e) => setFilters((p) => ({ ...p, startDate: e.target.value }))}
+                onChange={(e) => {
+                  const startDate = e.target.value;
+                  setFilters((p) => ({ ...p, startDate }));
+                  applySelectFilter({ startDate });
+                }}
                 className={FILTER_CONTROL_CLASS}
               />
             </MaterialDemandFilterField>
@@ -993,34 +1194,53 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 id="mdf-end"
                 type="date"
                 value={filters.endDate}
-                onChange={(e) => setFilters((p) => ({ ...p, endDate: e.target.value }))}
+                onChange={(e) => {
+                  const endDate = e.target.value;
+                  setFilters((p) => ({ ...p, endDate }));
+                  applySelectFilter({ endDate });
+                }}
                 className={FILTER_CONTROL_CLASS}
               />
             </MaterialDemandFilterField>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
-          <MaterialDemandFilterField label="Status" htmlFor="mdf-status">
-            <select
-              id="mdf-status"
-              value={filters.status}
-              onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
-              className={FILTER_CONTROL_CLASS}
-            >
-              <option value="">Todos os status</option>
-              {(summaryData?.facets.statuses ?? []).map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </MaterialDemandFilterField>
-          <MaterialDemandFilterField label="Cliente" htmlFor="mdf-customer">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-start">
+          <div className="lg:col-span-1 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Status do pedido</p>
+            <div className="rounded-lg border border-border bg-background p-3 space-y-2 max-h-40 overflow-y-auto">
+              {ALL_SALES_ORDER_STATUSES.map((status) => {
+                const checked = filters.statuses.includes(status);
+                return (
+                  <label key={status} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        const statuses = checked
+                          ? filters.statuses.filter((s) => s !== status)
+                          : [...filters.statuses, status];
+                        setFilters((p) => ({ ...p, statuses }));
+                        applySelectFilter({ statuses });
+                      }}
+                      className="rounded border-border"
+                    />
+                    {salesOrderStatusLabel(status)}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-muted-foreground">Vazio = todos os status.</p>
+          </div>
+          <MaterialDemandFilterField label="Cliente" htmlFor="mdf-customer" className="lg:col-span-1">
             <select
               id="mdf-customer"
               value={filters.customerId}
-              onChange={(e) => setFilters((p) => ({ ...p, customerId: e.target.value }))}
+              onChange={(e) => {
+                const customerId = e.target.value;
+                setFilters((p) => ({ ...p, customerId }));
+                applySelectFilter({ customerId });
+              }}
               className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todos os clientes</option>
@@ -1031,11 +1251,15 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ))}
             </select>
           </MaterialDemandFilterField>
-          <MaterialDemandFilterField label="Produto" htmlFor="mdf-product">
+          <MaterialDemandFilterField label="Produto" htmlFor="mdf-product" className="lg:col-span-1">
             <select
               id="mdf-product"
               value={filters.productId}
-              onChange={(e) => setFilters((p) => ({ ...p, productId: e.target.value }))}
+              onChange={(e) => {
+                const productId = e.target.value;
+                setFilters((p) => ({ ...p, productId }));
+                applySelectFilter({ productId });
+              }}
               className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todos os produtos</option>
@@ -1046,11 +1270,15 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ))}
             </select>
           </MaterialDemandFilterField>
-          <MaterialDemandFilterField label="Empresa emissora" htmlFor="mdf-company">
+          <MaterialDemandFilterField label="Empresa emissora" htmlFor="mdf-company" className="lg:col-span-1">
             <select
               id="mdf-company"
               value={filters.companyIssuer}
-              onChange={(e) => setFilters((p) => ({ ...p, companyIssuer: e.target.value }))}
+              onChange={(e) => {
+                const companyIssuer = e.target.value;
+                setFilters((p) => ({ ...p, companyIssuer }));
+                applySelectFilter({ companyIssuer });
+              }}
               className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todas</option>
@@ -1068,7 +1296,11 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             <select
               id="mdf-unit"
               value={filters.unitKey}
-              onChange={(e) => setFilters((p) => ({ ...p, unitKey: e.target.value }))}
+              onChange={(e) => {
+                const unitKey = e.target.value;
+                setFilters((p) => ({ ...p, unitKey }));
+                applySelectFilter({ unitKey });
+              }}
               className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todas (ranking por unidade)</option>
@@ -1083,7 +1315,11 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             <select
               id="mdf-material"
               value={filters.materialId}
-              onChange={(e) => setFilters((p) => ({ ...p, materialId: e.target.value }))}
+              onChange={(e) => {
+                const materialId = e.target.value;
+                setFilters((p) => ({ ...p, materialId }));
+                applySelectFilter({ materialId });
+              }}
               className={FILTER_CONTROL_CLASS}
             >
               <option value="">Todas as matérias-primas</option>
@@ -1094,6 +1330,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ))}
             </select>
           </MaterialDemandFilterField>
+          {activeTab === "by-material" ? (
           <MaterialDemandFilterField label="Modo de análise" htmlFor="mdf-mode">
             <select
               id="mdf-mode"
@@ -1101,10 +1338,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               onChange={(e) => {
                 const mode = e.target.value as FiltersState["mode"];
                 setFilters((p) => ({ ...p, mode }));
-                if (activeTab === "by-material") {
-                  setAppliedFilters((p) => ({ ...p, mode }));
-                  setRowsPage(1);
-                }
+                applySelectFilter({ mode });
               }}
               className={FILTER_CONTROL_CLASS}
             >
@@ -1114,10 +1348,10 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               <option value="products">{modeOptionLabel("products")}</option>
             </select>
             <p className="text-[10px] text-muted-foreground leading-snug">
-              Afeta a ordenação da aba «Por matéria-prima». Na aba «Estimativa de uso», use os botões de ordenação da
-              tabela.
+              Afeta a ordenação da aba «Por matéria-prima».
             </p>
           </MaterialDemandFilterField>
+          ) : null}
         </div>
 
         <MaterialDemandFilterField label="Buscar matéria-prima" htmlFor="mdf-search">
@@ -1153,6 +1387,8 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             Limpar
           </button>
         </div>
+          </>
+        ) : null}
       </section>
 
       {fatalError ? (
@@ -1196,13 +1432,16 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               {activeTab === "usage-estimate" ? (
                 <div className="space-y-6">
                   <MaterialDemandUsageEstimateHeader
-                    appliedFilters={appliedFilters}
+                    appliedFilters={appliedFiltersPanel}
                     facets={summaryData.facets}
                   />
-                  <MaterialDemandKpiGrid summaryData={summaryData} appliedFilters={appliedFilters} />
+                  {summaryData.coverage ? (
+                    <MaterialDemandCoveragePanel coverage={summaryData.coverage} />
+                  ) : null}
+                  <MaterialDemandKpiGrid summaryData={summaryData} appliedFilters={appliedFiltersPanel} />
                   <MaterialDemandMixedUnitsBlock
                     summaryData={summaryData}
-                    appliedFilters={appliedFilters}
+                    appliedFilters={appliedFiltersPanel}
                     onSelectUnit={handleSelectUnit}
                   />
                   <MaterialDemandOrdersWithoutDeliveryWarning
@@ -1223,10 +1462,13 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
 
               {activeTab === "summary" ? (
                 <div className="space-y-6">
-                  <MaterialDemandKpiGrid summaryData={summaryData} appliedFilters={appliedFilters} />
+                  {summaryData.coverage ? (
+                    <MaterialDemandCoveragePanel coverage={summaryData.coverage} />
+                  ) : null}
+                  <MaterialDemandKpiGrid summaryData={summaryData} appliedFilters={appliedFiltersPanel} />
                   <MaterialDemandMixedUnitsBlock
                     summaryData={summaryData}
-                    appliedFilters={appliedFilters}
+                    appliedFilters={appliedFiltersPanel}
                     onSelectUnit={handleSelectUnit}
                   />
                   <MaterialDemandOrdersWithoutDeliveryWarning
@@ -1263,6 +1505,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
 
               {activeTab === "by-period" ? (
                 <div className="space-y-6">
+                  <MaterialDemandTopMaterialsByPeriod rows={summaryData.charts.needByDeliveryPeriod} />
                   <MaterialDemandNeedByPeriodSection
                     rows={summaryData.charts.needByDeliveryPeriod}
                     dateBasis={appliedFilters.dateBasis}
@@ -1283,6 +1526,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
           )}
         </div>
       ) : null}
+      </div>
     </ContextualDashboardLayout>
   );
 }

@@ -47,6 +47,17 @@ import {
   type ExplosionRowCore,
 } from "./src/lib/openBookMaterialExplosion.js";
 import { normalizeMaterialUnitKey } from "./src/lib/materialDemandUnits.js";
+import {
+  buildMaterialDemandSalesOrderWhere,
+  createMaterialDemandCoverage,
+  materialDemandAggregationPeriodKey,
+  materialDemandPeriodLabel,
+  parseMaterialDemandFilters,
+  recordMaterialDemandSkip,
+  type MaterialDemandFilters,
+  type MaterialDemandMode,
+} from "./src/lib/materialDemandFilters.js";
+import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
 import { resolveProductBomUsage, type BomUsageSearchKind } from "./src/lib/productBomUsage.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
@@ -8469,36 +8480,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  type MaterialDemandMode = "quantity" | "value" | "orders" | "products";
-  type MaterialDemandDateBasis = "issueDate" | "expectedDeliveryDate";
-  type MaterialDemandFilters = {
-    startDate: string | null;
-    endDate: string | null;
-    dateBasis: MaterialDemandDateBasis;
-    status: string | null;
-    customerId: string | null;
-    productId: string | null;
-    materialId: string | null;
-    companyIssuer: string | null;
-    unitKey: string | null;
-    mode: MaterialDemandMode;
-    search: string;
-  };
-
-  const MATERIAL_DEMAND_NO_DELIVERY_PERIOD = "__sem_entrega__";
-
-  const materialDemandDeliveryPeriodKey = (expectedDeliveryDate: Date | null) => {
-    if (!expectedDeliveryDate) return MATERIAL_DEMAND_NO_DELIVERY_PERIOD;
-    const d = new Date(expectedDeliveryDate);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  };
-
-  const materialDemandPeriodLabel = (periodKey: string) => {
-    if (periodKey === MATERIAL_DEMAND_NO_DELIVERY_PERIOD) return "Sem data de entrega";
-    const [yy, mm] = periodKey.split("-");
-    if (!yy || !mm) return periodKey;
-    return `${mm}/${yy}`;
-  };
+  type MaterialDemandDateBasis = import("./src/lib/materialDemandFilters.js").MaterialDemandDateBasis;
 
   const materialDemandSortBySet = new Set([
     "estimatedValueTotal",
@@ -8509,31 +8491,10 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     "description",
   ]);
 
-  const parseMaterialDemandFilters = (
-    q: Record<string, unknown>,
-    overrides?: Partial<MaterialDemandFilters>
-  ): MaterialDemandFilters => {
-    const modeRaw = typeof q.mode === "string" ? q.mode : "";
-    const mode: MaterialDemandMode =
-      modeRaw === "value" || modeRaw === "orders" || modeRaw === "products" ? modeRaw : "quantity";
-    const dateBasisRaw = typeof q.dateBasis === "string" ? q.dateBasis : "";
-    const dateBasis: MaterialDemandDateBasis =
-      dateBasisRaw === "issueDate" ? "issueDate" : "expectedDeliveryDate";
-    const base: MaterialDemandFilters = {
-      startDate: typeof q.startDate === "string" && q.startDate ? q.startDate : null,
-      endDate: typeof q.endDate === "string" && q.endDate ? q.endDate : null,
-      dateBasis,
-      status: typeof q.status === "string" && q.status && q.status !== "ALL" ? q.status : null,
-      customerId: typeof q.customerId === "string" && q.customerId ? q.customerId : null,
-      productId: typeof q.productId === "string" && q.productId ? q.productId : null,
-      materialId: typeof q.materialId === "string" && q.materialId ? q.materialId : null,
-      companyIssuer: typeof q.companyIssuer === "string" && q.companyIssuer.trim() ? q.companyIssuer.trim() : null,
-      unitKey: typeof q.unitKey === "string" && q.unitKey.trim() ? q.unitKey.trim() : null,
-      mode,
-      search: typeof q.search === "string" ? q.search.trim().toLowerCase() : "",
-    };
-    return { ...base, ...(overrides ?? {}) };
-  };
+  const loadMaterialDemandDataset = (filters: MaterialDemandFilters) =>
+    getCachedMaterialDemandDataset(filters, () =>
+      buildMaterialDemandDataset(filters, { includeRowDetails: true })
+    );
 
   const endOfDay = (iso: string) => {
     const d = new Date(iso);
@@ -8583,21 +8544,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     options?: { includeRowDetails?: boolean }
   ) => {
     const includeRowDetails = options?.includeRowDetails ?? true;
-    const where: any = {};
-    if (filters.startDate || filters.endDate) {
-      const dateRange: { gte?: Date; lte?: Date } = {};
-      if (filters.startDate) dateRange.gte = new Date(filters.startDate);
-      if (filters.endDate) dateRange.lte = endOfDay(filters.endDate);
-      if (filters.dateBasis === "expectedDeliveryDate") {
-        where.OR = [{ expectedDeliveryDate: dateRange }, { expectedDeliveryDate: null }];
-      } else {
-        where.issueDate = dateRange;
-      }
-    }
-    if (filters.status) where.status = filters.status;
-    if (filters.customerId) where.customerId = filters.customerId;
-    if (filters.companyIssuer) where.companyIssuer = filters.companyIssuer;
-    if (filters.productId) where.items = { some: { productId: filters.productId } };
+    const where = buildMaterialDemandSalesOrderWhere(filters);
 
     const salesOrders = await prisma.salesOrder.findMany({
       where,
@@ -8616,6 +8563,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     });
 
     const ordersWithoutDeliveryDate = salesOrders.filter((o) => !o.expectedDeliveryDate).length;
+    const coverage = createMaterialDemandCoverage();
+    coverage.ordersMatched = salesOrders.length;
+    coverage.ordersWithoutDeliveryDate = ordersWithoutDeliveryDate;
 
     const analysisCache = await initAnalysisCache();
     const productAnalysisMemo = new Map<string, any>();
@@ -8701,11 +8651,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const expectedDeliveryDateIso = order.expectedDeliveryDate
         ? order.expectedDeliveryDate.toISOString()
         : null;
-      const deliveryPeriodKey = materialDemandDeliveryPeriodKey(order.expectedDeliveryDate);
-      const aggregationPeriodKey =
-        filters.dateBasis === "expectedDeliveryDate"
-          ? deliveryPeriodKey
-          : `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, "0")}`;
+      const aggregationPeriodKey = materialDemandAggregationPeriodKey(
+        filters.dateBasis,
+        orderDate,
+        order.expectedDeliveryDate
+      );
       const planningDate =
         filters.dateBasis === "expectedDeliveryDate" && order.expectedDeliveryDate
           ? new Date(order.expectedDeliveryDate)
@@ -8714,25 +8664,66 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const companyIssuerSafe = order.companyIssuer?.trim() || null;
 
       for (const item of order.items) {
+        coverage.orderItemsTotal += 1;
         const orderQty = safeNum(item.quantity) ?? 0;
-        if (!(orderQty > 0)) continue;
+        const productSkuEarly = item.Product?.sku?.trim() || item.skuSnapshot?.trim() || null;
+        const productNameEarly = item.Product?.name?.trim() || item.productNameSnapshot?.trim() || "Produto";
+        if (!(orderQty > 0)) {
+          coverage.orderItemsSkippedInvalidQty += 1;
+          recordMaterialDemandSkip(coverage, {
+            orderCode: order.orderCode,
+            productSku: productSkuEarly,
+            productName: productNameEarly,
+            reason: "Quantidade do item inválida ou zero",
+          });
+          continue;
+        }
 
         const analysis = await getProductAnalysis(item.productId);
-        if (!analysis || isCostAnalysisFailure(analysis)) continue;
+        if (!analysis || isCostAnalysisFailure(analysis)) {
+          coverage.orderItemsSkippedAnalysisFailure += 1;
+          recordMaterialDemandSkip(coverage, {
+            orderCode: order.orderCode,
+            productSku: productSkuEarly,
+            productName: productNameEarly,
+            reason: "Análise de custo/composição indisponível para o produto",
+          });
+          continue;
+        }
         const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
           item.productId,
           analysisCache,
           new Set<string>(),
           openBookExplosionMemo
         );
-        if (!(explosion instanceof Map)) continue;
+        if (!(explosion instanceof Map)) {
+          coverage.orderItemsSkippedExplosionError += 1;
+          recordMaterialDemandSkip(coverage, {
+            orderCode: order.orderCode,
+            productSku: productSkuEarly,
+            productName: productNameEarly,
+            reason: "Não foi possível explodir a composição do produto",
+          });
+          continue;
+        }
         const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
         const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
         const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
-        if (rows.length === 0) continue;
+        if (rows.length === 0) {
+          coverage.orderItemsSkippedNoMaterials += 1;
+          recordMaterialDemandSkip(coverage, {
+            orderCode: order.orderCode,
+            productSku: productSkuEarly,
+            productName: productNameEarly,
+            reason: "Composição sem matéria-prima registrada para custeio",
+          });
+          continue;
+        }
 
-        const productSku = item.Product?.sku?.trim() || item.skuSnapshot?.trim() || null;
-        const productName = item.Product?.name?.trim() || item.productNameSnapshot?.trim() || "Produto";
+        coverage.orderItemsProcessed += 1;
+
+        const productSku = productSkuEarly;
+        const productName = productNameEarly;
 
         for (const row of rows) {
           const mid = typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
@@ -8834,12 +8825,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           }
           byMaterial.set(mid, current);
 
-          const needKey = `${deliveryPeriodKey}|${unitKey}|${mid}`;
+          const needKey = `${aggregationPeriodKey}|${unitKey}|${mid}`;
           const needAgg =
             byNeedDeliveryPeriod.get(needKey) ??
             {
-              period: deliveryPeriodKey,
-              periodLabel: materialDemandPeriodLabel(deliveryPeriodKey),
+              period: aggregationPeriodKey,
+              periodLabel: materialDemandPeriodLabel(aggregationPeriodKey),
               materialId: mid,
               code,
               description: desc,
@@ -8915,6 +8906,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
 
     const materials = [...byMaterial.values()];
+    coverage.uniqueMaterials = materials.length;
     const totalEstimatedValue = materials.reduce((acc, m) => acc + m.valueTotal, 0);
 
     const quantityByUnitMap = new Map<
@@ -9089,6 +9081,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         .slice(0, 10),
     }));
 
+    const needByPeriodTotalRows = byNeedDeliveryPeriod.size;
     const needByDeliveryPeriod = [...byNeedDeliveryPeriod.values()]
       .sort(
         (a, b) =>
@@ -9115,13 +9108,21 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       source: "SALES_ORDER_ITEMS_WITH_PRODUCT_OPEN_BOOK",
       meaning: "DEMANDA_ESTIMADA_MATERIA_PRIMA",
       label:
-        "Base derivada de itens de pedidos de venda com explosão estimada de BOM (open book). Não representa consumo real de fábrica, estoque disponível nem compras em aberto.",
+        "Base derivada de itens de pedidos de venda com explosão estimada da composição atual dos produtos. Não representa consumo real de fábrica, estoque disponível nem compras em aberto.",
       quantityRankingNote:
         "Quantidades só são comparáveis entre matérias-primas com a mesma unidade de medida. Rankings globais de quantidade usam grupos por unidade; comparação entre unidades distintas use valor estimado (R$).",
       deliveryDateNote:
         filters.dateBasis === "expectedDeliveryDate"
-          ? "Pedidos sem data de entrega prevista aparecem no agrupamento «Sem data de entrega» e permanecem visíveis ao filtrar por entrega."
+          ? filters.includeOrdersWithoutDeliveryDate
+            ? "Pedidos sem data de entrega prevista aparecem no agrupamento «Sem data de entrega» e permanecem visíveis ao filtrar por entrega."
+            : "Pedidos sem data de entrega prevista foram excluídos desta estimativa."
           : null,
+      periodGroupingNote:
+        filters.dateBasis === "expectedDeliveryDate"
+          ? "Agrupamento mensal pela entrega prevista do pedido."
+          : "Agrupamento mensal pela emissão do pedido.",
+      needByPeriodTruncated: needByPeriodTotalRows > 200,
+      needByPeriodTotalRows,
     };
 
     const filtersApplied = {
@@ -9129,6 +9130,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       endDate: filters.endDate,
       dateBasis: filters.dateBasis,
       status: filters.status,
+      statuses: filters.statuses,
       customerId: filters.customerId,
       productId: filters.productId,
       materialId: filters.materialId,
@@ -9136,6 +9138,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       unitKey: filters.unitKey,
       mode: filters.mode,
       search: filters.search || null,
+      includeOrdersWithoutDeliveryDate: filters.includeOrdersWithoutDeliveryDate,
     };
 
     const summary = {
@@ -9264,6 +9267,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       semantics,
       filtersApplied,
       summary,
+      coverage,
       charts,
       rows,
       facets,
@@ -9272,15 +9276,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   };
 
   const materialDemandViewPermissions = ["proposals.material_report.view", "products.view", "sales_orders.view"];
+  const materialDemandRouteGuard = [requireAppAuth, requireAnyPermission(materialDemandViewPermissions)] as const;
 
-  app.get("/api/products/material-demand/summary", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
+  const handleMaterialDemandSummary = async (req: express.Request, res: express.Response) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
-      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
+      const data = await loadMaterialDemandDataset(filters);
       res.json({
         semantics: data.semantics,
         filtersApplied: data.filtersApplied,
         summary: data.summary,
+        coverage: data.coverage,
         charts: data.charts,
         facets: data.facets,
       });
@@ -9288,9 +9294,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       console.error("Material demand summary endpoint error:", error);
       res.status(500).json({ error: "Erro ao montar resumo de demanda de matéria-prima." });
     }
-  });
+  };
 
-  app.get("/api/products/material-demand/rows", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
+  const handleMaterialDemandRows = async (req: express.Request, res: express.Response) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
       const page = parsePositiveInt((req.query as Record<string, unknown>).page, 1);
@@ -9306,7 +9312,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const sortDir: "asc" | "desc" = sortDirRaw === "asc" ? "asc" : "desc";
       const sortBy = materialDemandSortBySet.has(sortByRaw) ? sortByRaw : "estimatedValueTotal";
 
-      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
+      const data = await loadMaterialDemandDataset(filters);
       const sorted = sortMaterialRows(data.rows, sortBy, sortDir);
       const totalItems = sorted.length;
       const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -9333,22 +9339,33 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       console.error("Material demand rows endpoint error:", error);
       res.status(500).json({ error: "Erro ao montar linhas de demanda de matéria-prima." });
     }
-  });
+  };
 
-  app.get("/api/products/material-demand/materials/:materialId/details", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
+  const handleMaterialDemandDetails = async (req: express.Request, res: express.Response) => {
     try {
       const materialIdParam = typeof req.params.materialId === "string" ? req.params.materialId.trim() : "";
       if (!materialIdParam) {
         return res.status(400).json({ error: "materialId é obrigatório." });
       }
+      const originsPage = parsePositiveInt((req.query as Record<string, unknown>).originsPage, 1);
+      const originsPageSize = Math.min(
+        parsePositiveInt((req.query as Record<string, unknown>).originsPageSize, 50),
+        200
+      );
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>, {
         materialId: materialIdParam,
       });
-      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: true });
+      const data = await loadMaterialDemandDataset(filters);
       const target = data.rows.find((r) => r.materialId === materialIdParam) as Record<string, unknown> | undefined;
       if (!target) {
         return res.status(404).json({ error: "Matéria-prima não encontrada para os filtros informados." });
       }
+      const allOrigins = Array.isArray(target.origins) ? (target.origins as unknown[]) : [];
+      const originsTotal = allOrigins.length;
+      const originsTotalPages = Math.max(1, Math.ceil(originsTotal / originsPageSize));
+      const safeOriginsPage = Math.min(originsPage, originsTotalPages);
+      const originsStart = (safeOriginsPage - 1) * originsPageSize;
+      const origins = allOrigins.slice(originsStart, originsStart + originsPageSize);
       res.json({
         semantics: data.semantics,
         filtersApplied: data.filtersApplied,
@@ -9370,18 +9387,24 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         topProducts: Array.isArray(target.topProducts) ? target.topProducts : [],
         topCustomers: Array.isArray(target.topCustomers) ? target.topCustomers : [],
         orders: Array.isArray(target.orders) ? target.orders : [],
-        origins: Array.isArray(target.origins) ? target.origins : [],
+        origins,
+        originsPagination: {
+          page: safeOriginsPage,
+          pageSize: originsPageSize,
+          totalItems: originsTotal,
+          totalPages: originsTotalPages,
+        },
       });
     } catch (error) {
       console.error("Material demand details endpoint error:", error);
       res.status(500).json({ error: "Erro ao montar detalhes de demanda de matéria-prima." });
     }
-  });
+  };
 
-  app.get("/api/products/material-demand/facets", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
+  const handleMaterialDemandFacets = async (req: express.Request, res: express.Response) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
-      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: false });
+      const data = await loadMaterialDemandDataset(filters);
       res.json({
         semantics: data.semantics,
         filtersApplied: data.filtersApplied,
@@ -9391,20 +9414,21 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       console.error("Material demand facets endpoint error:", error);
       res.status(500).json({ error: "Erro ao montar filtros de demanda de matéria-prima." });
     }
-  });
+  };
 
   /**
    * Inteligência de matéria-prima (demanda estimada) derivada de pedidos de venda.
-   * Base: itens de pedido + openBook do motor por produto (não é consumo real de chão de fábrica).
+   * Base: itens de pedido + composição atual dos produtos (não é consumo real de chão de fábrica).
    */
-  app.get("/api/products/material-demand/analysis", requireAppAuth, requireAnyPermission(materialDemandViewPermissions), async (req, res) => {
+  const handleMaterialDemandAnalysis = async (req: express.Request, res: express.Response) => {
     try {
       const filters = parseMaterialDemandFilters(req.query as Record<string, unknown>);
-      const data = await buildMaterialDemandDataset(filters, { includeRowDetails: true });
+      const data = await loadMaterialDemandDataset(filters);
       res.json({
         semantics: data.semantics,
         filtersApplied: data.filtersApplied,
         summary: data.summary,
+        coverage: data.coverage,
         charts: data.charts,
         rows: data.sortedRowsByMode,
         facets: data.facets,
@@ -9413,7 +9437,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       console.error("Material demand analysis endpoint error:", error);
       res.status(500).json({ error: "Erro ao montar análise de matéria-prima." });
     }
-  });
+  };
+
+  for (const base of ["/api/products/material-demand", "/api/sales-orders/material-demand"] as const) {
+    app.get(`${base}/summary`, ...materialDemandRouteGuard, handleMaterialDemandSummary);
+    app.get(`${base}/rows`, ...materialDemandRouteGuard, handleMaterialDemandRows);
+    app.get(`${base}/materials/:materialId/details`, ...materialDemandRouteGuard, handleMaterialDemandDetails);
+    app.get(`${base}/facets`, ...materialDemandRouteGuard, handleMaterialDemandFacets);
+    app.get(`${base}/analysis`, ...materialDemandRouteGuard, handleMaterialDemandAnalysis);
+  }
 
   /** Agregações para a aba Relatórios (sem BI externo). Respeita filtros de query. */
   app.get("/api/reports/data", requireAppAuth, requirePermission("reports.view"), async (req, res) => {

@@ -1,10 +1,15 @@
 import React from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2, X } from "lucide-react";
+import { Link } from "react-router-dom";
 import {
   buildFilterSummaryLines,
   buildUsageEstimateTitle,
   formatDatePtBr,
 } from "@/src/components/contextual/materialDemandDashboardUi";
+import {
+  salesOrderStatusLabel,
+  type MaterialDemandCoverage,
+} from "@/src/lib/materialDemandFilters";
 import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import { ContextualDashboardKpiCard } from "./ContextualDashboardKpiCard";
 
@@ -62,12 +67,14 @@ export type AppliedFiltersPanel = {
   startDate: string;
   endDate: string;
   dateBasis: MaterialDemandDateBasis;
+  statuses: string[];
   status: string;
   customerId: string;
   productId: string;
   companyIssuer: string;
   materialId: string;
   unitKey: string;
+  includeOrdersWithoutDeliveryDate?: boolean;
 };
 
 export type SummaryPanelData = {
@@ -242,6 +249,185 @@ export function MaterialDemandMixedUnitsBlock({
   );
 }
 
+export function MaterialDemandCoveragePanel({ coverage }: { coverage: MaterialDemandCoverage }) {
+  const skippedTotal =
+    coverage.orderItemsSkippedInvalidQty +
+    coverage.orderItemsSkippedAnalysisFailure +
+    coverage.orderItemsSkippedExplosionError +
+    coverage.orderItemsSkippedNoMaterials;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4 print:break-inside-avoid">
+      <div>
+        <h3 className="text-sm font-bold text-foreground">Cobertura da análise</h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          Quantos pedidos e itens entraram no cálculo e quantos foram ignorados (com motivo).
+        </p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
+        <div className="rounded-lg border border-border bg-muted/15 p-3">
+          <p className="text-muted-foreground">Pedidos no filtro</p>
+          <p className="text-lg font-bold tabular-nums">{coverage.ordersMatched}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-muted/15 p-3">
+          <p className="text-muted-foreground">Itens processados</p>
+          <p className="text-lg font-bold tabular-nums">{coverage.orderItemsProcessed}</p>
+          <p className="text-[10px] text-muted-foreground">de {coverage.orderItemsTotal} itens</p>
+        </div>
+        <div className="rounded-lg border border-border bg-muted/15 p-3">
+          <p className="text-muted-foreground">MPs únicas</p>
+          <p className="text-lg font-bold tabular-nums">{coverage.uniqueMaterials}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-muted/15 p-3">
+          <p className="text-muted-foreground">Sem data de entrega</p>
+          <p className="text-lg font-bold tabular-nums">{coverage.ordersWithoutDeliveryDate}</p>
+        </div>
+        {skippedTotal > 0 ? (
+          <div className="rounded-lg border border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 p-3 col-span-2 sm:col-span-3 lg:col-span-4">
+            <p className="font-semibold text-foreground mb-2">Itens ignorados ({skippedTotal})</p>
+            <ul className="grid sm:grid-cols-2 gap-1 text-muted-foreground">
+              {coverage.orderItemsSkippedInvalidQty > 0 ? (
+                <li>Quantidade inválida: {coverage.orderItemsSkippedInvalidQty}</li>
+              ) : null}
+              {coverage.orderItemsSkippedAnalysisFailure > 0 ? (
+                <li>Falha na análise de custo: {coverage.orderItemsSkippedAnalysisFailure}</li>
+              ) : null}
+              {coverage.orderItemsSkippedExplosionError > 0 ? (
+                <li>Erro na explosão de MP: {coverage.orderItemsSkippedExplosionError}</li>
+              ) : null}
+              {coverage.orderItemsSkippedNoMaterials > 0 ? (
+                <li>Sem matérias-primas na composição: {coverage.orderItemsSkippedNoMaterials}</li>
+              ) : null}
+            </ul>
+            {coverage.sampleSkipped.length > 0 ? (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-[10px]">
+                  <thead>
+                    <tr className="border-b border-border text-left">
+                      <th className="py-1 pr-2">Pedido</th>
+                      <th className="py-1 pr-2">Produto</th>
+                      <th className="py-1">Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {coverage.sampleSkipped.map((s, i) => (
+                      <tr key={`skip-${i}`} className="border-b border-border/50">
+                        <td className="py-1 pr-2">{s.orderCode}</td>
+                        <td className="py-1 pr-2">{productLabel(s.productSku, s.productName)}</td>
+                        <td className="py-1">{s.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export type MaterialDemandFilterChip = {
+  id: string;
+  label: string;
+};
+
+export function MaterialDemandFilterChips({
+  chips,
+  onRemove,
+  onClearAll,
+}: {
+  chips: MaterialDemandFilterChip[];
+  onRemove: (id: string) => void;
+  onClearAll: () => void;
+}) {
+  if (chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 print:hidden">
+      <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Filtros ativos</span>
+      {chips.map((chip) => (
+        <button
+          key={chip.id}
+          type="button"
+          onClick={() => onRemove(chip.id)}
+          className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-xs hover:bg-accent"
+        >
+          {chip.label}
+          <X className="h-3 w-3" aria-hidden />
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={onClearAll}
+        className="text-xs font-medium text-primary hover:underline"
+      >
+        Limpar todos
+      </button>
+    </div>
+  );
+}
+
+export function MaterialDemandTopMaterialsByPeriod({
+  rows,
+  limit = 10,
+}: {
+  rows: SummaryPanelData["charts"]["needByDeliveryPeriod"];
+  limit?: number;
+}) {
+  const byPeriod = new Map<
+    string,
+    { periodLabel: string; items: Array<{ materialId: string; label: string; value: number }> }
+  >();
+
+  for (const row of rows) {
+    const bucket = byPeriod.get(row.period) ?? {
+      periodLabel: row.periodLabel,
+      items: [],
+    };
+    const label = (row.code ? `[${row.code}] ` : "") + row.description;
+    const existing = bucket.items.find((i) => i.materialId === row.materialId);
+    if (existing) {
+      existing.value += row.estimatedValue;
+    } else {
+      bucket.items.push({ materialId: row.materialId, label, value: row.estimatedValue });
+    }
+    byPeriod.set(row.period, bucket);
+  }
+
+  const periods = [...byPeriod.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  if (periods.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4 print:break-inside-avoid">
+      <div>
+        <h3 className="text-sm font-bold text-foreground">Principais matérias-primas por período</h3>
+        <p className="text-xs text-muted-foreground mt-1">Top {limit} por valor estimado em cada mês.</p>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {periods.map(([period, data]) => {
+          const top = [...data.items].sort((a, b) => b.value - a.value).slice(0, limit);
+          return (
+            <div key={period} className="rounded-lg border border-border/80 bg-muted/10 p-4 space-y-2">
+              <p className="text-xs font-bold text-foreground">{data.periodLabel}</p>
+              <ul className="space-y-1.5">
+                {top.map((item, idx) => (
+                  <li key={`${period}-${item.materialId}`} className="flex justify-between gap-2 text-xs">
+                    <span className="truncate">
+                      {idx + 1}. {item.label}
+                    </span>
+                    <span className="tabular-nums font-semibold shrink-0">{money(item.value)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function MaterialDemandOrdersWithoutDeliveryWarning({
   count,
   dateBasis,
@@ -357,6 +543,9 @@ export function MaterialDemandExpandedDetail({
   loading,
   error,
   origins,
+  originsPagination,
+  onLoadMoreOrigins,
+  loadingMoreOrigins,
   topProducts,
   topCustomers,
   orders,
@@ -365,6 +554,14 @@ export function MaterialDemandExpandedDetail({
   loading: boolean;
   error: string | undefined;
   origins: MaterialOriginRow[];
+  originsPagination?: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+  };
+  onLoadMoreOrigins?: () => void;
+  loadingMoreOrigins?: boolean;
   topProducts: Array<{ productId: string; sku: string | null; name: string; value: number }>;
   topCustomers: Array<{ customerId: string; customerName: string; value: number }>;
   orders: Array<{
@@ -388,14 +585,16 @@ export function MaterialDemandExpandedDetail({
   if (error) return <p className="text-sm text-destructive py-2">{error}</p>;
 
   if (origins.length > 0) {
+    const showPaginationHint =
+      originsPagination && originsPagination.totalItems > origins.length;
     return (
       <div className="space-y-3">
         <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
           Origem da demanda por pedido e produto
         </p>
-        {origins.length >= 50 ? (
+        {originsPagination ? (
           <p className="text-xs text-muted-foreground">
-            Exibindo as primeiras 50 linhas de origem. Refine os filtros para reduzir o volume.
+            Exibindo {origins.length} de {originsPagination.totalItems} linhas de origem.
           </p>
         ) : null}
         <div className="overflow-x-auto">
@@ -415,10 +614,17 @@ export function MaterialDemandExpandedDetail({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {origins.slice(0, 50).map((o, idx) => (
+              {origins.map((o, idx) => (
                 <tr key={`${materialId}-origin-${idx}`}>
                   <td className="p-2 whitespace-nowrap">
-                    {o.orderCode} ({o.orderStatus})
+                    <Link
+                      to={`/sales-orders/${o.salesOrderId}`}
+                      className="font-semibold text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {o.orderCode}
+                    </Link>{" "}
+                    ({salesOrderStatusLabel(o.orderStatus)})
                   </td>
                   <td className="p-2">{o.customerName ?? "—"}</td>
                   <td className="p-2">{productLabel(o.productSku, o.productName)}</td>
@@ -434,6 +640,20 @@ export function MaterialDemandExpandedDetail({
             </tbody>
           </table>
         </div>
+        {showPaginationHint && onLoadMoreOrigins ? (
+          <button
+            type="button"
+            disabled={loadingMoreOrigins}
+            onClick={(e) => {
+              e.stopPropagation();
+              onLoadMoreOrigins();
+            }}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+          >
+            {loadingMoreOrigins ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Carregar mais origens
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -467,7 +687,10 @@ export function MaterialDemandExpandedDetail({
         <ul className="space-y-1 text-xs">
           {orders.slice(0, 6).map((o) => (
             <li key={`${materialId}-${o.salesOrderId}`}>
-              {o.orderCode} ({o.orderStatus}) · Emissão {formatDatePtBr(o.issueDate ?? o.orderDate)} · Entrega{" "}
+              <Link to={`/sales-orders/${o.salesOrderId}`} className="text-primary hover:underline">
+                {o.orderCode}
+              </Link>{" "}
+              ({salesOrderStatusLabel(o.orderStatus)}) · Emissão {formatDatePtBr(o.issueDate ?? o.orderDate)} · Entrega{" "}
               {formatDatePtBr(o.expectedDeliveryDate ?? null)} · {money(o.value)}
             </li>
           ))}
@@ -500,6 +723,16 @@ type MaterialsTableProps = {
     expectedDeliveryDate?: string | null;
     value: number;
   }>;
+  getOriginsPagination?: (materialId: string) =>
+    | {
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+      }
+    | undefined;
+  onLoadMoreOrigins?: (materialId: string) => void;
+  loadingMoreOriginsId?: string | null;
   onToggleRow: (materialId: string) => void;
 };
 
@@ -513,6 +746,9 @@ export function MaterialDemandMaterialsTable({
   getTopProducts,
   getTopCustomers,
   getOrders,
+  getOriginsPagination,
+  onLoadMoreOrigins,
+  loadingMoreOriginsId,
   onToggleRow,
 }: MaterialsTableProps) {
   const usageMode = variant === "usage";
@@ -634,6 +870,11 @@ export function MaterialDemandMaterialsTable({
                         loading={detailsLoadingId === row.materialId}
                         error={detailErr}
                         origins={getOrigins(row.materialId)}
+                        originsPagination={getOriginsPagination?.(row.materialId)}
+                        onLoadMoreOrigins={
+                          onLoadMoreOrigins ? () => onLoadMoreOrigins(row.materialId) : undefined
+                        }
+                        loadingMoreOrigins={loadingMoreOriginsId === row.materialId}
                         topProducts={getTopProducts(row.materialId)}
                         topCustomers={getTopCustomers(row.materialId)}
                         orders={getOrders(row.materialId)}
