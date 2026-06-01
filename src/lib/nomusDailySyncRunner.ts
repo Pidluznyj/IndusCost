@@ -11,6 +11,9 @@ export { NOMUS_DAILY_SYNC_CONFIRM_PHRASE, NOMUS_DAILY_SYNC_MODE, NOMUS_DAILY_SYN
 const DAILY_LOG_RE = /^runner-daily-(apply|dry)_.+\.log$/i;
 const LOCK_FILE = process.env.NOMUS_SYNC_LOCK_FILE || "/tmp/induscost-nomus-sync-global.lock";
 
+/** Idade máxima de um log runner-daily sem FINISHED_AT para inferir execução em andamento. */
+export const DAILY_LOG_STALE_RUNNING_MS = 12 * 60 * 60 * 1000;
+
 let trackedChild: ChildProcess | null = null;
 
 export class NomusDailySyncConflictError extends Error {
@@ -114,6 +117,31 @@ async function listDailyRunnerLogs(logDir: string): Promise<
   }
 }
 
+/** pgrep exit 0 = processo encontrado; qualquer outro código = ausente. */
+export function isProcessActiveFromPgrepStatus(status: number | null | undefined): boolean {
+  return status === 0;
+}
+
+/**
+ * flock -n: exit 0 = lock adquirido (livre); exit ≠ 0 = ocupado por outro processo.
+ * Arquivo de lock no disco sem lock ativo não deve ser tratado como "rodando".
+ */
+export function isGlobalNomusSyncLockHeldFromFlockProbe(
+  flockExitStatus: number | null | undefined
+): boolean {
+  if (flockExitStatus == null) return false;
+  return flockExitStatus !== 0;
+}
+
+export function shouldInferDailyRunningFromLog(
+  parsed: ReturnType<typeof parseDailyRunnerLogContent>,
+  logAgeMs: number,
+  maxAgeMs: number = DAILY_LOG_STALE_RUNNING_MS
+): boolean {
+  if (logAgeMs > maxAgeMs) return false;
+  return parsed.status === "running";
+}
+
 function isNomusDailySyncProcessActive(): boolean {
   if (trackedChild && trackedChild.exitCode === null && !trackedChild.killed) {
     return true;
@@ -122,32 +150,29 @@ function isNomusDailySyncProcessActive(): boolean {
     return false;
   }
   try {
-    spawnSync("pgrep", ["-f", NOMUS_DAILY_SYNC_SCRIPT_NAME], { stdio: "ignore" });
-    return true;
+    const result = spawnSync("pgrep", ["-f", NOMUS_DAILY_SYNC_SCRIPT_NAME], { stdio: "ignore" });
+    return isProcessActiveFromPgrepStatus(result.status);
+  } catch {
+    return false;
+  }
+}
+
+export async function probeGlobalNomusSyncLockHeld(
+  lockFile: string = LOCK_FILE
+): Promise<boolean> {
+  if (process.platform === "win32") {
+    return false;
+  }
+  try {
+    const probe = spawnSync("flock", ["-n", lockFile, "-c", "true"], { stdio: "ignore" });
+    return isGlobalNomusSyncLockHeldFromFlockProbe(probe.status);
   } catch {
     return false;
   }
 }
 
 async function isLockHeld(): Promise<boolean> {
-  try {
-    await fs.access(LOCK_FILE);
-  } catch {
-    return false;
-  }
-  if (process.platform === "win32") {
-    return false;
-  }
-  try {
-    const probe = spawnSync(
-      "bash",
-      ["-c", `exec 9>"${LOCK_FILE.replace(/"/g, '\\"')}"; flock -n 9`],
-      { stdio: "ignore" }
-    );
-    return probe.status !== 0;
-  } catch {
-    return false;
-  }
+  return probeGlobalNomusSyncLockHeld(LOCK_FILE);
 }
 
 async function inferRunningFromLatestLog(
@@ -156,11 +181,10 @@ async function inferRunningFromLatestLog(
   const latest = logs[0];
   if (!latest) return false;
   const ageMs = Date.now() - latest.modifiedAtMs;
-  if (ageMs > 12 * 60 * 60 * 1000) return false;
   try {
     const content = await fs.readFile(latest.absolutePath, "utf8");
     const parsed = parseDailyRunnerLogContent(content);
-    return parsed.status === "running";
+    return shouldInferDailyRunningFromLog(parsed, ageMs);
   } catch {
     return false;
   }

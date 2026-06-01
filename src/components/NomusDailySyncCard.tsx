@@ -223,23 +223,25 @@ export function NomusDailySyncCard({
           </div>
           <div className="rounded-lg border border-border bg-background px-3 py-2">
             <p className="text-[10px] font-bold uppercase text-muted-foreground">Última execução</p>
-            <p className="mt-1 font-semibold">
-              {status?.lastRun ? (
-                <span
-                  className={cn(
-                    "inline-flex rounded-full border px-2 py-0.5 text-xs",
-                    statusBadgeClass(status.lastRun.status)
-                  )}
-                >
-                  {statusLabel(status.lastRun.status)}
-                </span>
-              ) : (
-                "—"
-              )}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {formatDateTimeSafe(status?.lastRun?.finishedAt ?? status?.lastRun?.startedAt)}
-            </p>
+            {status?.lastRun ? (
+              <>
+                <p className="mt-1 font-semibold">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full border px-2 py-0.5 text-xs",
+                      statusBadgeClass(status.lastRun.status)
+                    )}
+                  >
+                    {statusLabel(status.lastRun.status)}
+                  </span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatDateTimeSafe(status.lastRun.finishedAt ?? status.lastRun.startedAt)}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">Nenhuma execução diária encontrada</p>
+            )}
           </div>
           <div className="rounded-lg border border-border bg-background px-3 py-2">
             <p className="text-[10px] font-bold uppercase text-muted-foreground">Último sucesso</p>
