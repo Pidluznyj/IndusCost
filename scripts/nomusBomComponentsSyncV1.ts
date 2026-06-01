@@ -266,7 +266,9 @@ function mapRow(raw: JsonObject): { eligible: EligibleRow | null; blocked: Block
   return { eligible, blocked: null };
 }
 
-async function fetchAllNomusBomComponents(baseUrl: string): Promise<JsonObject[]> {
+async function fetchAllNomusBomComponents(
+  baseUrl: string
+): Promise<{ rows: JsonObject[]; fetchComplete: boolean }> {
   const pageSize = Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? DEFAULT_PAGE_SIZE);
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
@@ -280,6 +282,7 @@ async function fetchAllNomusBomComponents(baseUrl: string): Promise<JsonObject[]
 
   const rows: JsonObject[] = [];
   let page = startPage;
+  let fetchComplete = false;
 
   while (true) {
     const url = buildNomusUrl(baseUrl, "componentesListaMateriais");
@@ -287,7 +290,10 @@ async function fetchAllNomusBomComponents(baseUrl: string): Promise<JsonObject[]
     url.searchParams.set("tamanhoPagina", String(pageSize));
     const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
     const arr = pickArrayFromUnknown(payload).filter((x): x is JsonObject => !!x && typeof x === "object");
-    if (arr.length === 0) break;
+    if (arr.length === 0) {
+      fetchComplete = true;
+      break;
+    }
     rows.push(...arr);
     console.warn(
       `[nomus-bom-components-v1] página ${page} lida com ${arr.length} linhas; acumulado=${rows.length}.`
@@ -296,14 +302,18 @@ async function fetchAllNomusBomComponents(baseUrl: string): Promise<JsonObject[]
       console.warn(
         `[nomus-bom-components-v1] limite de bloco atingido: startPage=${startPage}, maxPages=${maxPages}, lastPage=${lastPage}.`
       );
+      fetchComplete = false;
       break;
     }
-    if (!hasNextPage(payload, page, arr.length)) break;
+    if (!hasNextPage(payload, page, arr.length)) {
+      fetchComplete = true;
+      break;
+    }
     page += 1;
     if (delayMs > 0) await sleep(delayMs);
   }
 
-  return rows;
+  return { rows, fetchComplete };
 }
 
 function buildStageData(row: EligibleRow, fetchedAt: Date, runId: string): Prisma.NomusBomComponentStageUncheckedCreateInput {
@@ -351,10 +361,11 @@ async function runApply(
   eligible: EligibleRow[],
   fetchedAt: Date,
   runId: string
-): Promise<{ created: number; updated: number; unchanged: number }> {
+): Promise<{ created: number; updated: number; unchanged: number; touched: number }> {
   let created = 0;
   let updated = 0;
   let unchanged = 0;
+  let touched = 0;
 
   for (const row of eligible) {
     const data = buildStageData(row, fetchedAt, runId);
@@ -366,11 +377,21 @@ async function runApply(
     if (!existing) {
       await prisma.nomusBomComponentStage.create({ data });
       created += 1;
+      touched += 1;
       continue;
     }
 
     if (existing.payloadHash === row.payloadHash) {
+      await prisma.nomusBomComponentStage.update({
+        where: { externalLineId: row.externalLineId },
+        data: {
+          runId,
+          fetchedAt,
+          syncedAt: fetchedAt,
+        },
+      });
       unchanged += 1;
+      touched += 1;
       continue;
     }
 
@@ -382,9 +403,18 @@ async function runApply(
       },
     });
     updated += 1;
+    touched += 1;
   }
 
-  return { created, updated, unchanged };
+  return { created, updated, unchanged, touched };
+}
+
+async function reconcileRemovedStageLines(seenExternalLineIds: number[]): Promise<number> {
+  if (seenExternalLineIds.length === 0) return 0;
+  const removed = await prisma.nomusBomComponentStage.deleteMany({
+    where: { externalLineId: { notIn: seenExternalLineIds } },
+  });
+  return removed.count;
 }
 
 async function main(): Promise<void> {
@@ -393,7 +423,7 @@ async function main(): Promise<void> {
   const runId = crypto.randomUUID();
   const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
 
-  const raw = await fetchAllNomusBomComponents(baseUrl);
+  const { rows: raw, fetchComplete } = await fetchAllNomusBomComponents(baseUrl);
   const eligible: EligibleRow[] = [];
   const blocked: BlockedRow[] = [];
 
@@ -402,6 +432,8 @@ async function main(): Promise<void> {
     if (mapped.eligible) eligible.push(mapped.eligible);
     if (mapped.blocked) blocked.push(mapped.blocked);
   }
+
+  const seenExternalLineIds = eligible.map((r) => r.externalLineId);
 
   const blockedReasons: Record<string, number> = {};
   for (const b of blocked) {
@@ -440,7 +472,21 @@ async function main(): Promise<void> {
 
   const applied = isApply
     ? await runApply(eligible, startedAt, runId)
-    : { created: 0, updated: 0, unchanged: 0 };
+    : { created: 0, updated: 0, unchanged: 0, touched: 0 };
+
+  let removedStale = 0;
+  if (isApply && fetchComplete && seenExternalLineIds.length > 0) {
+    removedStale = await reconcileRemovedStageLines(seenExternalLineIds);
+    if (removedStale > 0) {
+      console.warn(
+        `[nomus-bom-components-v1] reconciliação: ${removedStale} linha(s) removida(s) do stage (ausentes na API atual).`
+      );
+    }
+  } else if (isApply && !fetchComplete) {
+    console.warn(
+      "[nomus-bom-components-v1] fetch incompleto — reconciliação de linhas removidas foi ignorada por segurança."
+    );
+  }
 
   const finishedAt = new Date();
 
@@ -452,8 +498,9 @@ async function main(): Promise<void> {
         startedAt: startedAt.toISOString(),
         finishedAt: finishedAt.toISOString(),
         runId,
+        fetchComplete,
         summary,
-        applied,
+        applied: { ...applied, removedStale },
       },
       null,
       2

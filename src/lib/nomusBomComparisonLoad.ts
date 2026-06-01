@@ -9,6 +9,10 @@ import {
   type IndusBomLine,
   type NomusEffectiveBomLine,
 } from "@/src/lib/nomusBomComparison";
+import {
+  filterStageRowsToCurrentParentSnapshot,
+  getParentStageSnapshotMeta,
+} from "@/src/lib/nomusBomComponentStageSnapshot";
 
 export function stageRowToNomusLine(row: {
   externalLineId: number;
@@ -56,14 +60,19 @@ export function stageRowToNomusLine(row: {
 export async function loadNomusStageLinesForParent(parentCode: string): Promise<NomusEffectiveBomLine[]> {
   const trimmed = parentCode.trim();
   const normalized = normalizeSku(trimmed);
-  const rows = await prisma.nomusBomComponentStage.findMany({
-    where: {
-      OR: [{ parentCode: trimmed }, { parentCode: normalized }],
-    },
-    orderBy: [{ posicao: "asc" }, { componentCode: "asc" }],
-  });
+  const [rows, snapshotMeta] = await Promise.all([
+    prisma.nomusBomComponentStage.findMany({
+      where: {
+        OR: [{ parentCode: trimmed }, { parentCode: normalized }],
+      },
+      orderBy: [{ posicao: "asc" }, { componentCode: "asc" }],
+    }),
+    getParentStageSnapshotMeta(trimmed),
+  ]);
 
-  return rows.map((row) =>
+  const currentRows = filterStageRowsToCurrentParentSnapshot(rows, snapshotMeta);
+
+  return currentRows.map((row) =>
     stageRowToNomusLine({
       externalLineId: row.externalLineId,
       parentCode: row.parentCode,

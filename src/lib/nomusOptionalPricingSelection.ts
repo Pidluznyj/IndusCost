@@ -179,16 +179,82 @@ export function resolveGroupStatus(
   }
 }
 
+/** Grupo cujas choices não existem mais na BOM opcional atual — não bloqueia precificação. */
+export function resolveGroupStatusForCurrentOptionalPool(
+  group: {
+    selectionMode: NomusOptionalPricingSelectionMode;
+    selectedNone: boolean;
+    choices: Array<{
+      componentCode: string;
+      isActive: boolean;
+      isSelectedForPricing: boolean;
+      isStale: boolean;
+    }>;
+  },
+  optionalByCode: Map<string, AggregatedOptionalItem>
+): OptionalPricingGroupStatus {
+  const activeChoices = group.choices.filter((c) => c.isActive);
+  if (activeChoices.length === 0) return "RESOLVED";
+
+  const allObsolete = activeChoices.every((c) => {
+    const inPool = optionalByCode.has(normalizeComponentCode(c.componentCode));
+    return !inPool;
+  });
+  if (allObsolete) return "RESOLVED";
+
+  return resolveGroupStatus({
+    selectionMode: group.selectionMode,
+    selectedNone: group.selectedNone,
+    choices: activeChoices,
+  });
+}
+
+function groupBlocksOptionalPricing(
+  group: OptionalPricingGroupView,
+  optionalByCode: Map<string, AggregatedOptionalItem>
+): boolean {
+  if (!group.isActive) return false;
+  if (group.status === "PENDING") {
+    return group.choices.some((c) =>
+      optionalByCode.has(normalizeComponentCode(c.componentCode))
+    );
+  }
+  if (group.status === "STALE") {
+    return group.choices.some(
+      (c) =>
+        c.isActive &&
+        c.isStale &&
+        optionalByCode.has(normalizeComponentCode(c.componentCode))
+    );
+  }
+  return false;
+}
+
 export function buildOptionalSelectionStatus(input: {
   optionalItems: AggregatedOptionalItem[];
   unassignedOptionalItems: AggregatedOptionalItem[];
   groups: OptionalPricingGroupView[];
 }): PricingOptionalStatus {
   if (input.optionalItems.length === 0) return "NO_OPTIONALS";
-  if (input.groups.some((g) => g.isActive && g.status === "STALE")) return "STALE";
-  if (input.unassignedOptionalItems.length > 0) return "PENDING";
+
+  const optionalByCode = new Map(
+    input.optionalItems.map((i) => [normalizeComponentCode(i.componentCode), i])
+  );
+
+  const blockingStale = input.groups.some(
+    (g) => g.isActive && g.status === "STALE" && groupBlocksOptionalPricing(g, optionalByCode)
+  );
+  if (blockingStale) return "STALE";
+
+  const blockingUnassigned = input.unassignedOptionalItems.filter((i) =>
+    optionalByCode.has(normalizeComponentCode(i.componentCode))
+  );
+  if (blockingUnassigned.length > 0) return "PENDING";
+
   const activeGroups = input.groups.filter((g) => g.isActive);
-  if (activeGroups.some((g) => g.status === "PENDING")) return "PENDING";
+  if (activeGroups.some((g) => g.status === "PENDING" && groupBlocksOptionalPricing(g, optionalByCode))) {
+    return "PENDING";
+  }
   return "RESOLVED";
 }
 
@@ -238,11 +304,14 @@ export async function loadGroupsForParent(parentCode: string): Promise<OptionalP
 
   return groups.map((g) => {
     const choiceViews = buildChoiceViews(g.choices, optionalByCode);
-    const status = resolveGroupStatus({
-      selectionMode: g.selectionMode,
-      selectedNone: g.selectedNone,
-      choices: choiceViews,
-    });
+    const status = resolveGroupStatusForCurrentOptionalPool(
+      {
+        selectionMode: g.selectionMode,
+        selectedNone: g.selectedNone,
+        choices: choiceViews,
+      },
+      optionalByCode
+    );
     return {
       id: g.id,
       groupName: g.groupName,

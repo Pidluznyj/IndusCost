@@ -47,7 +47,7 @@
     "test:nomus:master-data-import": "tsx scripts/nomusMasterDataImportSmokeTestV1.ts",
     "test:nomus:master-data-equalize": "tsx scripts/nomusMasterDataEqualizeSmokeTestV1.ts",
     "test:nomus:bom-apply-after-master-data": "tsx scripts/nomusBomApplyAfterMasterDataSmokeTestV1.ts",
-    "test:nomus:auto-sync-bom-apply": "tsx --test src/lib/nomusBomAutoApplyAfterSync.test.ts src/lib/nomusBomGovernanceMetadata.test.ts src/lib/nomusAutoApplyBomDashboard.test.ts src/lib/nomusAutoApplyDashboardTotals.test.ts src/lib/nomusAutoApplyPreviewProductStatus.test.ts src/lib/nomusBomUniverse.test.ts src/lib/nomusBomReviewDecisionObsolete.test.ts src/lib/nomusBomControlledApplyRemoval.test.ts && tsx scripts/nomusAutoSyncBomApplySmokeTestV1.ts",
+    "test:nomus:auto-sync-bom-apply": "tsx --test src/lib/nomusBomAutoApplyAfterSync.test.ts src/lib/nomusBomGovernanceMetadata.test.ts src/lib/nomusAutoApplyBomDashboard.test.ts src/lib/nomusAutoApplyDashboardTotals.test.ts src/lib/nomusAutoApplyPreviewProductStatus.test.ts src/lib/nomusBomComponentStageSnapshot.test.ts src/lib/nomusOptionalPricingStale.test.ts src/lib/nomusBomUniverse.test.ts src/lib/nomusBomReviewDecisionObsolete.test.ts src/lib/nomusBomControlledApplyRemoval.test.ts && tsx scripts/nomusAutoSyncBomApplySmokeTestV1.ts",
     "test:nomus:engineering-release-ready": "tsx scripts/nomusEngineeringReleaseReadySmokeTestV1.ts",
     "test:nomus:equalize-user-messages": "tsx --test src/lib/nomusEqualizeUserMessages.test.ts",
     "test:nomus:bom-effective-quantity": "tsx scripts/nomusBomEffectiveQuantitySmokeTestV1.ts",
