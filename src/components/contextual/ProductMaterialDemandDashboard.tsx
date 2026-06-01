@@ -26,6 +26,11 @@ import {
 } from "@/src/lib/materialDemandExport";
 import { cn, formatNumberAdaptive } from "@/src/lib/utils";
 import {
+  MaterialDemandPrintReport,
+  MATERIAL_DEMAND_PRINT_ROWS_LIMIT,
+  type MaterialDemandPrintReportData,
+} from "@/src/components/contextual/MaterialDemandPrintReport";
+import {
   MaterialDemandCoveragePanel,
   MaterialDemandEvolutionTable,
   MaterialDemandFilterChips,
@@ -499,6 +504,8 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   const [originsPageByMaterial, setOriginsPageByMaterial] = useState<Map<string, number>>(new Map());
   const [loadingMoreOriginsId, setLoadingMoreOriginsId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [preparingPrint, setPreparingPrint] = useState(false);
+  const [printReportData, setPrintReportData] = useState<MaterialDemandPrintReportData | null>(null);
 
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -906,16 +913,60 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
     }
   }, [apiBase, appliedFilters, appliedFiltersPanel.status, rowsSort, summaryData?.facets]);
 
-  const handlePrint = useCallback(() => {
-    const bodyClass = "material-demand-printing";
-    document.body.classList.add(bodyClass);
-    const cleanup = () => {
-      document.body.classList.remove(bodyClass);
-      window.removeEventListener("afterprint", cleanup);
-    };
-    window.addEventListener("afterprint", cleanup);
-    window.print();
-  }, []);
+  const handlePrint = useCallback(async () => {
+    if (activeTab !== "usage-estimate" || !summaryData) return;
+    setPreparingPrint(true);
+    try {
+      const qs = filtersQueryString(appliedFilters);
+      const sort = rowsSort;
+      const payload = await fetchJsonOk<RowsResponse>(
+        `${apiBase}/rows?${qs}&page=1&pageSize=${MATERIAL_DEMAND_PRINT_ROWS_LIMIT}&sortBy=${sort.sortBy}&sortDir=${sort.sortDir}`
+      );
+      setPrintReportData({
+        context,
+        generatedAt: new Date().toISOString(),
+        filterSummary: { ...appliedFiltersPanel, facets: summaryData.facets },
+        summary: {
+          totalEstimatedQuantity: summaryData.summary.totalEstimatedQuantity,
+          totalEstimatedValue: summaryData.summary.totalEstimatedValue,
+          uniqueMaterials: summaryData.summary.uniqueMaterials,
+          orderCount: summaryData.summary.orderCount,
+          productCount: summaryData.summary.productCount,
+          customerCount: summaryData.summary.customerCount,
+          quantityTotalsComparable: summaryData.summary.quantityTotalsComparable,
+        },
+        coverage: summaryData.coverage ?? null,
+        rows: payload.rows,
+        rowsTotalItems: payload.pagination.totalItems,
+        rowsLimit: MATERIAL_DEMAND_PRINT_ROWS_LIMIT,
+        sortLabel: usageTableSort === "quantity" ? "quantidade estimada" : "valor estimado",
+        needByPeriod: summaryData.charts.needByDeliveryPeriod,
+      });
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+      document.body.classList.add("material-demand-printing");
+      const cleanup = () => {
+        document.body.classList.remove("material-demand-printing");
+        window.removeEventListener("afterprint", cleanup);
+      };
+      window.addEventListener("afterprint", cleanup);
+      window.print();
+    } catch (e) {
+      console.error("[MaterialDemand] print", e);
+    } finally {
+      setPreparingPrint(false);
+    }
+  }, [
+    activeTab,
+    summaryData,
+    appliedFilters,
+    apiBase,
+    rowsSort,
+    appliedFiltersPanel,
+    context,
+    usageTableSort,
+  ]);
 
   const getDetailOrigins = useCallback(
     (materialId: string): MaterialOriginRow[] => detailsCache.get(materialId)?.origins ?? [],
@@ -1042,8 +1093,12 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       backPath={ctx.backPath}
       backLabel={ctx.backLabel}
     >
-      <div id="material-demand-print-root" className="material-demand-printable material-demand-print-root space-y-6">
-      <header className="space-y-4 material-demand-print-break">
+      <div id="material-demand-print-root" className="material-demand-print-only" aria-hidden>
+        {printReportData ? <MaterialDemandPrintReport data={printReportData} /> : null}
+      </div>
+
+      <div className="material-demand-screen-only space-y-6">
+      <header className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -1069,11 +1124,21 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             </button>
             <button
               type="button"
-              onClick={handlePrint}
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-accent"
+              onClick={() => void handlePrint()}
+              disabled={preparingPrint || activeTab !== "usage-estimate" || !hasData}
+              title={
+                activeTab !== "usage-estimate"
+                  ? "Impressão disponível na aba Estimativa de uso"
+                  : "Gera relatório em PDF com tabela principal e necessidade por período"
+              }
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-accent disabled:opacity-50"
             >
-              <Printer className="h-4 w-4" />
-              Imprimir
+              {preparingPrint ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Printer className="h-4 w-4" aria-hidden />
+              )}
+              {preparingPrint ? "Preparando impressão…" : "Imprimir"}
             </button>
           </div>
         </div>
@@ -1436,7 +1501,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               </nav>
 
               {activeTab === "usage-estimate" ? (
-                <div className="material-demand-printable space-y-6">
+                <div className="space-y-6">
                   <MaterialDemandUsageEstimateHeader
                     appliedFilters={appliedFiltersPanel}
                     facets={summaryData.facets}
@@ -1467,7 +1532,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ) : null}
 
               {activeTab === "summary" ? (
-                <div className="material-demand-printable space-y-6">
+                <div className="space-y-6">
                   {summaryData.coverage ? (
                     <MaterialDemandCoveragePanel coverage={summaryData.coverage} />
                   ) : null}
@@ -1500,7 +1565,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ) : null}
 
               {activeTab === "by-material" ? (
-                <div className="material-demand-printable space-y-6">
+                <div className="space-y-6">
                   {renderMaterialsTableCard(
                     "detail",
                     "Matérias-primas (detalhe)",
@@ -1510,7 +1575,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ) : null}
 
               {activeTab === "by-period" ? (
-                <div className="material-demand-printable space-y-6">
+                <div className="space-y-6">
                   <MaterialDemandTopMaterialsByPeriod rows={summaryData.charts.needByDeliveryPeriod} />
                   <MaterialDemandNeedByPeriodSection
                     rows={summaryData.charts.needByDeliveryPeriod}
