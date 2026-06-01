@@ -66,7 +66,10 @@ export async function revalidateAutoApplyDashboardProducts(
     const previous = batchProducts[index];
     try {
       const preview = await buildControlledApplyPreview(previous.parentCode, { nomusUniverse });
-      merged[index] = mapControlledApplyPreviewToAutoApplyProduct(preview);
+      merged[index] = {
+        ...mapControlledApplyPreviewToAutoApplyProduct(preview),
+        errorMessage: undefined,
+      };
     } catch {
       revalidationErrors += 1;
       merged[index] = {

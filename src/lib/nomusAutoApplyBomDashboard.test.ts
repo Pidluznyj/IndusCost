@@ -268,7 +268,9 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
     assert.equal(result.needsReportRegeneration, false);
     assert.equal(result.products.length, 1);
     assert.equal(result.products[0].parentCode, "308.05AB");
-    assert.equal(result.totals?.parentsBlocked, 389);
+    assert.equal(result.totals?.parentsBlocked, 1);
+    assert.equal(result.totals?.parentsEvaluated, 1);
+    assert.equal(result.batchTotals, null);
     assert.equal(result.productListSource, "items");
   });
 

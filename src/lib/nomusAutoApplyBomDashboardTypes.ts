@@ -79,7 +79,10 @@ export type AutoApplyBomDashboardResult = {
   partialReportWarning: string | null;
   emptyMessage: string | null;
   lastRun: AutoApplyBomDashboardLastRun | null;
+  /** Totais exibidos nos cards — lista atual (revalidada quando statusRevalidatedAt). */
   totals: NomusBomAutoApplyTotals | null;
+  /** Snapshot da última execução batch APPLY (somente quando difere de totals após revalidação). */
+  batchTotals: NomusBomAutoApplyTotals | null;
   blockingReasonBuckets: AutoApplyBlockingReasonBucket[];
   /** Lista completa enriquecida — filtragem principal no cliente. */
   products: AutoApplyBomDashboardProductRow[];
@@ -97,9 +100,6 @@ export type AutoApplyBomDashboardResult = {
   revalidatedProductCount: number;
   /** Produtos cuja revalidação falhou e permanecem com snapshot batch. */
   revalidationErrorCount: number;
-  /**
-   * Totais do card superior (avaliados/aplicados/bloqueados batch) vêm do último relatório APPLY.
-   * A lista e filterCounts refletem revalidação read-only quando statusRevalidatedAt está preenchido.
-   */
+  /** Nota de UX sobre origem dos totais (batch vs revalidação). */
   batchTotalsNote: string | null;
 };

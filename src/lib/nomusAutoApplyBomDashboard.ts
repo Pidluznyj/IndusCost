@@ -9,6 +9,7 @@ import type {
   AutoApplyProductCategory,
 } from "@/src/lib/nomusAutoApplyBomDashboardTypes";
 import {
+  computeAutoApplyStatusTotals,
   computeFilterCounts,
   enrichDashboardProductRow,
 } from "@/src/lib/nomusAutoApplyBomDashboardShared";
@@ -395,6 +396,7 @@ export async function buildNomusAutoApplyBomDashboard(input: {
       revalidatedProductCount: 0,
       revalidationErrorCount: 0,
       batchTotalsNote: null,
+      batchTotals: null,
     };
   }
 
@@ -420,6 +422,11 @@ export async function buildNomusAutoApplyBomDashboard(input: {
     : null;
 
   const filterCounts = computeFilterCounts(allRows);
+  const batchTotals = parsed.totals;
+  const liveTotals =
+    hasProductList && productsForRows.length > 0
+      ? computeAutoApplyStatusTotals(productsForRows, batchTotals)
+      : batchTotals;
 
   const source: AutoApplyBomDashboardResult["source"] =
     parsed === fileReport && fileReport?.hasProductList
@@ -452,7 +459,9 @@ export async function buildNomusAutoApplyBomDashboard(input: {
       reportJsonPath: report.reportJsonPath,
       reportMdPath: report.reportMdPath,
     },
-    totals: parsed.totals,
+    totals: liveTotals,
+    batchTotals:
+      statusRevalidatedAt != null && batchTotals != null ? batchTotals : null,
     blockingReasonBuckets: bucketBlockingReasons(productsForRows),
     products: allRows,
     filterCounts,
@@ -465,7 +474,7 @@ export async function buildNomusAutoApplyBomDashboard(input: {
     revalidationErrorCount,
     batchTotalsNote:
       statusRevalidatedAt != null
-        ? "Totais do batch (última execução APPLY) podem diferir da lista: status dos bloqueados foi revalidado em read-only com as decisões atuais (opcionais, revisão local, BOM efetiva)."
+        ? "Cards e filtros refletem a lista revalidada (preview read-only). Totais da última execução batch APPLY aparecem abaixo quando diferentes."
         : parsed.totals
           ? "Status da lista conforme o último relatório batch salvo. Clique em Atualizar para revalidar bloqueados com preview read-only."
           : null,

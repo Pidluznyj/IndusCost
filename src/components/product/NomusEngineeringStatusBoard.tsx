@@ -258,7 +258,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
       tone: "neutral",
       label: "Produtos avaliados",
       value: totals?.parentsEvaluated ?? "—",
-      hint: "Total processado na última rotina.",
+      hint: "Total na lista atual (revalidada quando aplicável).",
     },
     {
       filter: "NO_CHANGES",
@@ -298,7 +298,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
       tone: "danger",
       label: "Erros",
       value: totals?.parentsErrored ?? "—",
-      hint: "Falhas durante a rotina batch.",
+      hint: "Falhas reais de processamento/preview (não bloqueios operacionais).",
     },
   ];
 
@@ -311,10 +311,9 @@ export const NomusEngineeringStatusBoard: React.FC<{
             Central Engenharia Nomus — fila operacional principal
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Comece pelos <strong>bloqueados</strong> abaixo. Ao atualizar, a <strong>lista</strong>{" "}
-            revalida bloqueados/ignorados com preview read-only (decisões atuais). Os{" "}
-            <strong>totais do batch</strong> (cards superiores) vêm do último relatório{" "}
-            <code className="font-mono">sync:nomus:all:apply</code>.
+            Comece pelos <strong>bloqueados</strong> abaixo. Ao atualizar, a lista e os{" "}
+            <strong>cards</strong> usam a mesma base revalidada (preview read-only). Totais da
+            última execução batch APPLY aparecem separados quando diferentes.
           </p>
         </div>
       </div>
@@ -415,6 +414,16 @@ export const NomusEngineeringStatusBoard: React.FC<{
 
                 {autoApply.batchTotalsNote ? (
                   <p className="text-[11px] text-muted-foreground">{autoApply.batchTotalsNote}</p>
+                ) : null}
+
+                {autoApply.batchTotals ? (
+                  <p className="text-[10px] text-muted-foreground border border-dashed border-border rounded-lg px-3 py-2">
+                    <span className="font-semibold">Totais da última execução batch APPLY:</span>{" "}
+                    avaliados {autoApply.batchTotals.parentsEvaluated}, sem alteração{" "}
+                    {autoApply.batchTotals.parentsNoChanges}, aplicados {autoApply.batchTotals.parentsApplied},
+                    bloqueados {autoApply.batchTotals.parentsBlocked}, ignorados{" "}
+                    {autoApply.batchTotals.parentsSkipped}, erros {autoApply.batchTotals.parentsErrored}.
+                  </p>
                 ) : null}
 
                 {autoApply.partialReportWarning ? (

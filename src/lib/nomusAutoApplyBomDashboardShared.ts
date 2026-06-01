@@ -3,6 +3,10 @@
  */
 import type { NomusMaintenanceTab } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
 import type {
+  NomusBomAutoApplyProductResult,
+  NomusBomAutoApplyTotals,
+} from "@/src/lib/nomusBomAutoApplyAfterSyncTypes";
+import type {
   AutoApplyBlockingReasonBucket,
   AutoApplyBomDashboardProductRow,
   AutoApplyDashboardFilter,
@@ -224,6 +228,74 @@ export function filterDashboardProducts(
       matchesBlockBucketFilter(row, blockBucket) &&
       matchesDashboardSearch(row, search)
   );
+}
+
+/** Contagem por status primário (mutuamente exclusivo) — base dos cards superiores. */
+export function computeAutoApplyStatusTotals(
+  products: NomusBomAutoApplyProductResult[],
+  batchTotals?: NomusBomAutoApplyTotals | null
+): NomusBomAutoApplyTotals {
+  let parentsNoChanges = 0;
+  let parentsApplied = 0;
+  let parentsBlocked = 0;
+  let parentsSkipped = 0;
+  let parentsErrored = 0;
+
+  for (const product of products) {
+    switch (product.status) {
+      case "NO_CHANGES":
+        parentsNoChanges += 1;
+        break;
+      case "APPLIED":
+        parentsApplied += 1;
+        break;
+      case "BLOCKED":
+        parentsBlocked += 1;
+        break;
+      case "SKIPPED":
+        parentsSkipped += 1;
+        break;
+      case "ERROR":
+        parentsErrored += 1;
+        break;
+      default:
+        break;
+    }
+  }
+
+  const parentsEvaluated = products.length;
+
+  return {
+    parentsInNomusStage: batchTotals?.parentsInNomusStage ?? parentsEvaluated,
+    parentsEvaluated,
+    parentsApplied,
+    parentsNoChanges,
+    parentsBlocked,
+    parentsSkipped,
+    parentsErrored,
+    linesCreated: batchTotals?.linesCreated ?? 0,
+    linesUpdated: batchTotals?.linesUpdated ?? 0,
+    linesRemoved: batchTotals?.linesRemoved ?? 0,
+    linesKept: batchTotals?.linesKept ?? 0,
+  };
+}
+
+export function countRowsByPrimaryStatus(
+  rows: AutoApplyBomDashboardProductRow[]
+): Record<"NO_CHANGES" | "APPLIED" | "BLOCKED" | "SKIPPED" | "ERROR", number> {
+  const counts = {
+    NO_CHANGES: 0,
+    APPLIED: 0,
+    BLOCKED: 0,
+    SKIPPED: 0,
+    ERROR: 0,
+  };
+  for (const row of rows) {
+    if (row.status in counts) {
+      counts[row.status as keyof typeof counts] += 1;
+    }
+  }
+  return counts;
 }
 
 export function computeFilterCounts(
