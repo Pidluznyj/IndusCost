@@ -222,7 +222,7 @@ function buildLineFromOptional(
           groupId: group.id,
           groupName: group.groupName,
           selectedChoiceId: choiceId,
-          resolution: "selected_none",
+          resolution: "EXCLUDED_BY_OPTIONAL_SELECTION_NONE",
         };
       }
       if (selected) {
@@ -247,7 +247,7 @@ function buildLineFromOptional(
         groupId: group.id,
         groupName: group.groupName,
         selectedChoiceId: choiceId,
-        resolution: "not_selected",
+        resolution: "EXCLUDED_OPTIONAL_NOT_SELECTED",
       };
     }
     default:

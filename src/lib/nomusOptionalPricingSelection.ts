@@ -166,7 +166,7 @@ export function resolveGroupStatus(
 
   switch (group.selectionMode) {
     case "EXACTLY_ONE":
-      if (group.selectedNone) return "PENDING";
+      if (group.selectedNone) return "RESOLVED";
       return selected.length === 1 ? "RESOLVED" : "PENDING";
     case "OPTIONAL_ONE":
       if (group.selectedNone) return "RESOLVED";

@@ -34,6 +34,10 @@ import type {
   ControlledApplyRiskLevel,
 } from "@/src/lib/nomusBomControlledApplyTypes";
 import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingBomTypes";
+import {
+  isEffectiveLineRemovableByControlledApply,
+  isProductBomRowEligibleForExcludedComponentRemoval,
+} from "@/src/lib/nomusBomControlledApplyRemoval";
 
 const BLOCKED_EFFECTIVE_STATUSES = new Set([
   "NO_NOMUS_BOM",
@@ -41,14 +45,6 @@ const BLOCKED_EFFECTIVE_STATUSES = new Set([
   "STALE_OPTIONAL_SELECTION",
   "BLOCKED_UNRESOLVED_COMPONENTS",
   "PENDING_LOCAL_REVIEW",
-]);
-
-const REMOVAL_SOURCES = new Set([
-  "LOCAL_ONLY_EXCLUDED_BY_REVIEW",
-  "LOCAL_ONLY_OBSOLETE_NOMUS",
-  "LOCAL_ONLY_DUPLICATED_BY_NOMUS",
-  "NOMUS_OPTIONAL_NOT_SELECTED",
-  "NOMUS_ALTERNATIVE_NOT_SELECTED",
 ]);
 
 const LOCAL_INCLUDED_SOURCES = new Set([
@@ -615,15 +611,27 @@ async function buildDesiredTargets(
   return { targets, unresolved };
 }
 
+function reviewDecisionForRow(
+  row: CurrentBomRow,
+  decisions: { productBomLineId: string | null; componentCode: string; decision: string }[]
+): string | null {
+  const byLine = decisions.find((d) => d.productBomLineId === row.id);
+  if (byLine) return byLine.decision;
+  const codeKey = normalizeComponentCode(row.componentCode);
+  const byCode = decisions.find((d) => normalizeComponentCode(d.componentCode) === codeKey);
+  return byCode?.decision ?? null;
+}
+
 function buildRemovalKeys(
   effectiveBom: Awaited<ReturnType<typeof buildEffectivePricingBomForParentCode>>,
-  currentRows: CurrentBomRow[]
+  currentRows: CurrentBomRow[],
+  reviewDecisions: { productBomLineId: string | null; componentCode: string; decision: string }[] = []
 ): Set<string> {
   const removeKeys = new Set<string>();
   const removeCodes = new Set<string>();
 
   for (const line of [...effectiveBom.excludedLines, ...effectiveBom.reviewLines]) {
-    if (!REMOVAL_SOURCES.has(line.source)) continue;
+    if (!isEffectiveLineRemovableByControlledApply(line.source)) continue;
     if (line.productBomLineId) {
       removeKeys.add(`local:${line.productBomLineId}`);
     }
@@ -633,6 +641,16 @@ function buildRemovalKeys(
   for (const row of currentRows) {
     const code = normalizeComponentCode(row.componentCode);
     if (!removeCodes.has(code)) continue;
+    if (
+      !isProductBomRowEligibleForExcludedComponentRemoval({
+        componentCode: row.componentCode,
+        componentDescription: row.componentDescription,
+        localException: row.localException,
+        reviewDecisionType: reviewDecisionForRow(row, reviewDecisions),
+      })
+    ) {
+      continue;
+    }
     const key =
       bomTargetKey({
         materialId: row.materialId,
@@ -647,15 +665,28 @@ function buildRemovalKeys(
 
 function buildRemovalLineReasons(
   effectiveBom: Awaited<ReturnType<typeof buildEffectivePricingBomForParentCode>>,
-  currentRows: CurrentBomRow[]
+  currentRows: CurrentBomRow[],
+  reviewDecisions: { productBomLineId: string | null; componentCode: string; decision: string }[] = []
 ): Map<string, string> {
   const reasons = new Map<string, string>();
   for (const line of [...effectiveBom.excludedLines, ...effectiveBom.reviewLines]) {
-    if (!REMOVAL_SOURCES.has(line.source)) continue;
+    if (!isEffectiveLineRemovableByControlledApply(line.source)) continue;
     const lineId =
       resolveLocalProductBomLineId(line, currentRows) ??
       (line.productBomLineId && line.productBomLineId !== "unknown" ? line.productBomLineId : null);
     if (!lineId) continue;
+    const row = currentRows.find((r) => r.id === lineId);
+    if (
+      row &&
+      !isProductBomRowEligibleForExcludedComponentRemoval({
+        componentCode: row.componentCode,
+        componentDescription: row.componentDescription,
+        localException: row.localException,
+        reviewDecisionType: reviewDecisionForRow(row, reviewDecisions),
+      })
+    ) {
+      continue;
+    }
     reasons.set(lineId, line.reason);
   }
   return reasons;
@@ -1173,8 +1204,18 @@ export async function buildControlledApplyPreview(
     effectiveBom.directLines,
     currentRows
   );
-  const removalKeys = buildRemovalKeys(effectiveBom, currentRows);
-  const removalLineReasons = buildRemovalLineReasons(effectiveBom, currentRows);
+  const { decisions } = await listReviewDecisionsForParentCode(trimmed);
+  const reviewDecisionRows = decisions.map((d) => ({
+    productBomLineId: d.productBomLineId,
+    componentCode: d.componentCode,
+    decision: d.decision,
+  }));
+  const removalKeys = buildRemovalKeys(effectiveBom, currentRows, reviewDecisionRows);
+  const removalLineReasons = buildRemovalLineReasons(
+    effectiveBom,
+    currentRows,
+    reviewDecisionRows
+  );
   const actions = buildActions(
     currentRows,
     targets,
@@ -1182,8 +1223,6 @@ export async function buildControlledApplyPreview(
     removalKeys,
     removalLineReasons
   );
-
-  const { decisions } = await listReviewDecisionsForParentCode(trimmed);
   const planHash = buildPlanHash({
     parentCode: trimmed,
     effectiveBomHash,
@@ -1315,7 +1354,16 @@ export async function applyEffectiveBomToProductBom(input: {
   }
 
   const effectiveBom = await buildEffectivePricingBomForParentCode(trimmed, { recursive: false });
-  const removalKeys = buildRemovalKeys(effectiveBom, beforeRows);
+  const { decisions: applyReviewDecisions } = await listReviewDecisionsForParentCode(trimmed);
+  const removalKeys = buildRemovalKeys(
+    effectiveBom,
+    beforeRows,
+    applyReviewDecisions.map((d) => ({
+      productBomLineId: d.productBomLineId,
+      componentCode: d.componentCode,
+      decision: d.decision,
+    }))
+  );
   const actions = buildActions(beforeRows, targets, [], removalKeys);
 
   const applyRunId = await prisma.$transaction(async (tx) => {
