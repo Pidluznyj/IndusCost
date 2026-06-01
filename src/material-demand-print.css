@@ -1,7 +1,10 @@
 /**
- * Impressão — relatório de estimativa de uso de matéria-prima.
+ * Impressão — estimativa de uso de matéria-prima.
  *
- * reports-print.css: `body * { visibility: hidden }` — só #material-demand-print-root fica visível.
+ * Padrão alinhado a proposal-print.css e new-product-report (reports-print.css):
+ * - print-root em document.body (portal), position: static, height: auto
+ * - body.material-demand-printing esconde #root
+ * - Não usar position:absolute no print-root (corta em 1 página no Chrome)
  */
 
 .material-demand-print-only {
@@ -24,27 +27,35 @@
   body {
     width: 100% !important;
     height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
     background: white !important;
   }
 
-  #material-demand-print-root,
-  #material-demand-print-root * {
+  body.material-demand-printing #material-demand-print-root,
+  body.material-demand-printing #material-demand-print-root * {
     visibility: visible !important;
   }
 
   #material-demand-print-root {
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     max-width: none !important;
     min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
     padding: 0 !important;
     margin: 0 !important;
     background: white !important;
     color: #111 !important;
     box-sizing: border-box;
+    transform: none !important;
   }
 
   .material-demand-no-print,
@@ -61,16 +72,28 @@
     max-width: none !important;
     margin: 0 !important;
     padding: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     font-size: 9pt;
     line-height: 1.35;
     color: #111;
   }
 
+  /* --- Página 1: resumo --- */
+  .md-print-page-summary {
+    break-after: page;
+    page-break-after: always;
+  }
+
   .md-print-header {
-    margin-bottom: 6mm;
+    margin-bottom: 4mm;
     border-bottom: 1px solid #333;
     padding-bottom: 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .md-print-title {
@@ -88,7 +111,8 @@
   .md-print-context {
     font-size: 8.5pt;
     margin: 0 0 2mm;
-    word-break: break-word;
+    word-break: normal;
+    overflow-wrap: break-word;
   }
 
   .md-print-disclaimer {
@@ -97,15 +121,9 @@
     color: #333;
   }
 
-  .md-print-section {
-    margin-bottom: 5mm;
-    break-inside: avoid-page;
+  .md-print-section-summary {
+    break-inside: avoid;
     page-break-inside: avoid;
-  }
-
-  .md-print-section-break {
-    break-before: auto;
-    page-break-before: auto;
   }
 
   .md-print-section-title {
@@ -120,15 +138,14 @@
     font-size: 8pt;
     color: #444;
     margin: 0 0 2mm;
+    word-break: normal;
   }
 
-  .md-print-table,
-  .md-print-kpi-table,
-  .md-print-data-table {
+  .md-print-kpi-table {
     width: 100% !important;
     border-collapse: collapse;
     table-layout: fixed;
-    font-size: 8pt;
+    font-size: 8.5pt;
   }
 
   .md-print-kpi-table th,
@@ -137,7 +154,7 @@
     padding: 1.5mm 2mm;
     text-align: left;
     vertical-align: top;
-    word-break: break-word;
+    word-break: normal;
   }
 
   .md-print-kpi-table th {
@@ -146,80 +163,163 @@
     width: 11%;
   }
 
-  .md-print-data-table thead {
+  /* --- Páginas 2+: detalhe MPs (pode quebrar) --- */
+  .md-print-page-detail {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .md-print-page-detail .md-print-section-title,
+  .md-print-page-detail .md-print-note {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .md-print-materials-table {
+    width: 100% !important;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8.5pt;
+    line-height: 1.2;
+  }
+
+  .md-print-materials-table thead {
     display: table-header-group;
   }
 
-  .md-print-data-table th,
-  .md-print-data-table td {
+  .md-print-materials-table th,
+  .md-print-materials-table td {
     border: 1px solid #bbb;
     padding: 1.2mm 1.5mm;
-    vertical-align: top;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    vertical-align: middle;
   }
 
-  .md-print-data-table th {
+  .md-print-materials-table th {
     font-weight: 700;
     background: #e8e8e8;
-    font-size: 7.5pt;
+    font-size: 8pt;
+    line-height: 1.1;
   }
 
-  .md-print-data-table tbody tr {
+  tbody.md-print-material-item {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
+  .md-print-cell-code {
+    width: 14mm;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+    font-size: 8pt;
+  }
+
+  .md-print-cell-unit {
+    width: 10mm;
+    text-align: center !important;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+  }
+
+  .md-print-cell-qty {
+    width: 16mm;
+  }
+
+  .md-print-cell-money {
+    width: 18mm;
+  }
+
+  .md-print-cell-count {
+    width: 8mm;
+  }
+
+  .md-print-cell-description {
+    width: auto !important;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
+    hyphens: auto;
+  }
+
   .md-print-num {
     text-align: right !important;
-    white-space: nowrap;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
     font-variant-numeric: tabular-nums;
   }
 
-  .md-print-desc {
-    word-break: break-word;
-    overflow-wrap: anywhere;
+  .md-print-material-extra {
+    font-size: 7.5pt;
+    color: #333;
+    background: #fafafa;
+    padding: 1mm 1.5mm !important;
+    word-break: normal;
+    overflow-wrap: break-word;
   }
 
-  .md-print-desc-sm {
-    font-size: 7pt;
-    word-break: break-word;
+  .md-print-material-extra-label {
+    font-weight: 600;
+    margin-right: 1mm;
   }
 
-  /* Larguras relativas — tabela principal MPs */
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(1),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(1) {
-    width: 7%;
+  .md-print-material-extra-sep {
+    display: inline-block;
+    margin: 0 3mm;
+    color: #999;
   }
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(2),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(2) {
-    width: 18%;
+
+  /* --- Necessidade por período --- */
+  .md-print-page-period {
+    break-before: page;
+    page-break-before: always;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
   }
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(3),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(3) {
-    width: 5%;
+
+  .md-print-period-table {
+    width: 100% !important;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8.5pt;
   }
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(4),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(4),
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(5),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(5),
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(6),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(6) {
-    width: 8%;
+
+  .md-print-period-table thead {
+    display: table-header-group;
   }
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(7),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(7),
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(8),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(8),
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(9),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(9) {
-    width: 5%;
+
+  .md-print-period-table th,
+  .md-print-period-table td {
+    border: 1px solid #bbb;
+    padding: 1.2mm 1.5mm;
+    vertical-align: middle;
   }
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(10),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(10),
-  .md-print-data-table:not(.md-print-period-table) th:nth-child(11),
-  .md-print-data-table:not(.md-print-period-table) td:nth-child(11) {
-    width: 14%;
+
+  .md-print-period-table th {
+    font-weight: 700;
+    background: #e8e8e8;
+    font-size: 8pt;
+  }
+
+  .md-print-period-table .md-print-col-period {
+    width: 22mm;
+    white-space: nowrap;
+  }
+
+  .md-print-period-table .md-print-col-code {
+    width: 14mm;
+    white-space: nowrap !important;
+  }
+
+  .md-print-period-table .md-print-col-unit {
+    width: 10mm;
+    text-align: center !important;
+    white-space: nowrap !important;
+  }
+
+  .md-print-period-table tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .md-print-footer {
@@ -228,6 +328,8 @@
     border-top: 1px solid #999;
     font-size: 7.5pt;
     color: #444;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .md-print-footer p {

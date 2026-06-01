@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Download, Info, Loader2, Printer, RefreshCw, Search } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -1093,9 +1094,12 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       backPath={ctx.backPath}
       backLabel={ctx.backLabel}
     >
-      <div id="material-demand-print-root" className="material-demand-print-only" aria-hidden>
-        {printReportData ? <MaterialDemandPrintReport data={printReportData} /> : null}
-      </div>
+      {createPortal(
+        <div id="material-demand-print-root" className="material-demand-print-only" aria-hidden>
+          {printReportData ? <MaterialDemandPrintReport data={printReportData} /> : null}
+        </div>,
+        document.body
+      )}
 
       <div className="material-demand-screen-only space-y-6">
       <header className="space-y-4">

@@ -79,17 +79,51 @@ function formatGeneratedAt(iso: string): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
 }
 
-function PrintTable({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function renderMaterialRowGroup(row: MaterialDemandPrintRow) {
+  const unit = row.unit ?? row.unitLabel ?? "—";
+  const leadingProduct = row.leadingProduct
+    ? productLabel(row.leadingProduct.sku, row.leadingProduct.name)
+    : null;
+  const leadingCustomer = row.leadingCustomer?.customerName?.trim() || null;
+  const hasExtra = leadingProduct != null || leadingCustomer != null;
+
   return (
-    <table className={className ?? "md-print-table"}>
-      {children}
-    </table>
+    <tbody key={row.materialId} className="md-print-material-item">
+      <tr>
+        <td className="md-print-cell-code">{row.code ?? "—"}</td>
+        <td className="md-print-cell-description">{row.description}</td>
+        <td className="md-print-cell-unit">{unit}</td>
+        <td className="md-print-cell-qty md-print-num">{fmtNum(row.quantityTotal)}</td>
+        <td className="md-print-cell-money md-print-num">{fmtMoney(row.estimatedValueTotal)}</td>
+        <td className="md-print-cell-money md-print-num">{fmtMoney(row.unitCostReference)}</td>
+        <td className="md-print-cell-count md-print-num">{row.orderCount}</td>
+        <td className="md-print-cell-count md-print-num">{row.productCount}</td>
+        <td className="md-print-cell-count md-print-num">{row.customerCount ?? "—"}</td>
+      </tr>
+      {hasExtra ? (
+        <tr>
+          <td colSpan={9} className="md-print-material-extra">
+            {leadingProduct ? (
+              <>
+                <span className="md-print-material-extra-label">Principal produto:</span>
+                {leadingProduct}
+              </>
+            ) : null}
+            {leadingProduct && leadingCustomer ? (
+              <span className="md-print-material-extra-sep" aria-hidden>
+                |
+              </span>
+            ) : null}
+            {leadingCustomer ? (
+              <>
+                <span className="md-print-material-extra-label">Principal cliente:</span>
+                {leadingCustomer}
+              </>
+            ) : null}
+          </td>
+        </tr>
+      ) : null}
+    </tbody>
   );
 }
 
@@ -107,60 +141,63 @@ export function MaterialDemandPrintReport({ data }: { data: MaterialDemandPrintR
 
   return (
     <div className="material-demand-print-report">
-      <header className="md-print-header">
-        <h1 className="md-print-title">Estimativa de uso de matéria-prima</h1>
-        <p className="md-print-subtitle">Base: pedidos de venda</p>
-        <p className="md-print-context">{contextLine}</p>
-        <p className="md-print-disclaimer">
-          Estimativa calculada com base nos pedidos de venda filtrados e na composição atual dos produtos. Não
-          considera estoque disponível, compras em aberto ou consumo real de fábrica.
-        </p>
-      </header>
-
-      <section className="md-print-section">
-        <h2 className="md-print-section-title">Resumo executivo</h2>
-        <PrintTable className="md-print-kpi-table">
-          <tbody>
-            <tr>
-              <th>Pedidos no filtro</th>
-              <td>{fmtNum(data.coverage?.ordersMatched ?? data.summary.orderCount)}</td>
-              <th>Itens processados</th>
-              <td>{fmtNum(data.coverage?.orderItemsProcessed)}</td>
-              <th>MPs únicas</th>
-              <td>{fmtNum(data.summary.uniqueMaterials)}</td>
-              <th>Valor estimado total</th>
-              <td>{fmtMoney(data.summary.totalEstimatedValue)}</td>
-            </tr>
-            <tr>
-              <th>Pedidos considerados</th>
-              <td>{fmtNum(data.summary.orderCount)}</td>
-              <th>Produtos impactados</th>
-              <td>{fmtNum(data.summary.productCount)}</td>
-              <th>Clientes impactados</th>
-              <td>{fmtNum(data.summary.customerCount)}</td>
-              <th>Qtd. estimada total</th>
-              <td>
-                {data.summary.quantityTotalsComparable
-                  ? fmtNum(data.summary.totalEstimatedQuantity)
-                  : "Várias unidades"}
-              </td>
-            </tr>
-          </tbody>
-        </PrintTable>
-        {data.coverage &&
-        (data.coverage.orderItemsSkippedInvalidQty > 0 ||
-          data.coverage.orderItemsSkippedAnalysisFailure > 0 ||
-          data.coverage.orderItemsSkippedExplosionError > 0 ||
-          data.coverage.orderItemsSkippedNoMaterials > 0) ? (
-          <p className="md-print-note">
-            Itens ignorados: inválidos {data.coverage.orderItemsSkippedInvalidQty}, análise{" "}
-            {data.coverage.orderItemsSkippedAnalysisFailure}, explosão {data.coverage.orderItemsSkippedExplosionError},
-            sem MP {data.coverage.orderItemsSkippedNoMaterials}.
+      <section className="md-print-page-summary">
+        <header className="md-print-header">
+          <h1 className="md-print-title">Estimativa de uso de matéria-prima</h1>
+          <p className="md-print-subtitle">Base: pedidos de venda</p>
+          <p className="md-print-context">{contextLine}</p>
+          <p className="md-print-disclaimer">
+            Estimativa calculada com base nos pedidos de venda filtrados e na composição atual dos produtos. Não
+            considera estoque disponível, compras em aberto ou consumo real de fábrica.
           </p>
-        ) : null}
+        </header>
+
+        <div className="md-print-section-summary">
+          <h2 className="md-print-section-title">Resumo executivo</h2>
+          <table className="md-print-kpi-table">
+            <tbody>
+              <tr>
+                <th>Pedidos no filtro</th>
+                <td>{fmtNum(data.coverage?.ordersMatched ?? data.summary.orderCount)}</td>
+                <th>Itens processados</th>
+                <td>{fmtNum(data.coverage?.orderItemsProcessed)}</td>
+                <th>MPs únicas</th>
+                <td>{fmtNum(data.summary.uniqueMaterials)}</td>
+                <th>Valor estimado total</th>
+                <td>{fmtMoney(data.summary.totalEstimatedValue)}</td>
+              </tr>
+              <tr>
+                <th>Pedidos considerados</th>
+                <td>{fmtNum(data.summary.orderCount)}</td>
+                <th>Produtos impactados</th>
+                <td>{fmtNum(data.summary.productCount)}</td>
+                <th>Clientes impactados</th>
+                <td>{fmtNum(data.summary.customerCount)}</td>
+                <th>Qtd. estimada total</th>
+                <td>
+                  {data.summary.quantityTotalsComparable
+                    ? fmtNum(data.summary.totalEstimatedQuantity)
+                    : "Várias unidades"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          {data.coverage &&
+          (data.coverage.orderItemsSkippedInvalidQty > 0 ||
+            data.coverage.orderItemsSkippedAnalysisFailure > 0 ||
+            data.coverage.orderItemsSkippedExplosionError > 0 ||
+            data.coverage.orderItemsSkippedNoMaterials > 0) ? (
+            <p className="md-print-note">
+              Itens ignorados: inválidos {data.coverage.orderItemsSkippedInvalidQty}, análise{" "}
+              {data.coverage.orderItemsSkippedAnalysisFailure}, explosão{" "}
+              {data.coverage.orderItemsSkippedExplosionError}, sem MP{" "}
+              {data.coverage.orderItemsSkippedNoMaterials}.
+            </p>
+          ) : null}
+        </div>
       </section>
 
-      <section className="md-print-section md-print-section-break">
+      <section className="md-print-page-detail">
         <h2 className="md-print-section-title">Matérias-primas — estimativa de uso</h2>
         <p className="md-print-note">
           Ordenação: {data.sortLabel} (decrescente).
@@ -168,54 +205,34 @@ export function MaterialDemandPrintReport({ data }: { data: MaterialDemandPrintR
             ? ` Relatório impresso com as primeiras ${data.rows.length} de ${data.rowsTotalItems} matérias-primas conforme ordenação atual.`
             : ` Total: ${data.rowsTotalItems} matérias-primas.`}
         </p>
-        <PrintTable className="md-print-data-table">
+        <table className="md-print-materials-table">
           <thead>
             <tr>
-              <th>Código</th>
-              <th>Descrição</th>
-              <th>Un.</th>
-              <th className="md-print-num">Qtd. est.</th>
-              <th className="md-print-num">Valor est.</th>
-              <th className="md-print-num">Custo unit.</th>
-              <th className="md-print-num">Ped.</th>
-              <th className="md-print-num">Prod.</th>
-              <th className="md-print-num">Cli.</th>
-              <th>Principal produto</th>
-              <th>Principal cliente</th>
+              <th className="md-print-cell-code">Código</th>
+              <th className="md-print-cell-description">Descrição</th>
+              <th className="md-print-cell-unit">Un.</th>
+              <th className="md-print-cell-qty md-print-num">Qtd. est.</th>
+              <th className="md-print-cell-money md-print-num">Valor est.</th>
+              <th className="md-print-cell-money md-print-num">Custo unit.</th>
+              <th className="md-print-cell-count md-print-num">Ped.</th>
+              <th className="md-print-cell-count md-print-num">Prod.</th>
+              <th className="md-print-cell-count md-print-num">Cli.</th>
             </tr>
           </thead>
-          <tbody>
-            {data.rows.length === 0 ? (
+          {data.rows.length === 0 ? (
+            <tbody>
               <tr>
-                <td colSpan={11}>Nenhuma matéria-prima para os filtros selecionados.</td>
+                <td colSpan={9}>Nenhuma matéria-prima para os filtros selecionados.</td>
               </tr>
-            ) : (
-              data.rows.map((row) => (
-                <tr key={row.materialId}>
-                  <td>{row.code ?? "—"}</td>
-                  <td className="md-print-desc">{row.description}</td>
-                  <td>{row.unit ?? row.unitLabel ?? "—"}</td>
-                  <td className="md-print-num">{fmtNum(row.quantityTotal)}</td>
-                  <td className="md-print-num">{fmtMoney(row.estimatedValueTotal)}</td>
-                  <td className="md-print-num">{fmtMoney(row.unitCostReference)}</td>
-                  <td className="md-print-num">{row.orderCount}</td>
-                  <td className="md-print-num">{row.productCount}</td>
-                  <td className="md-print-num">{row.customerCount ?? "—"}</td>
-                  <td className="md-print-desc-sm">
-                    {row.leadingProduct
-                      ? productLabel(row.leadingProduct.sku, row.leadingProduct.name)
-                      : "—"}
-                  </td>
-                  <td className="md-print-desc-sm">{row.leadingCustomer?.customerName ?? "—"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </PrintTable>
+            </tbody>
+          ) : (
+            data.rows.map((row) => renderMaterialRowGroup(row))
+          )}
+        </table>
       </section>
 
       {periodRows.length > 0 ? (
-        <section className="md-print-section md-print-section-break">
+        <section className="md-print-page-period">
           <h2 className="md-print-section-title">Necessidade por período</h2>
           {periodTruncated ? (
             <p className="md-print-note">
@@ -223,30 +240,30 @@ export function MaterialDemandPrintReport({ data }: { data: MaterialDemandPrintR
               matéria-prima.
             </p>
           ) : null}
-          <PrintTable className="md-print-data-table md-print-period-table">
+          <table className="md-print-period-table">
             <thead>
               <tr>
-                <th>Período</th>
-                <th>Código</th>
-                <th>Descrição</th>
-                <th>Un.</th>
-                <th className="md-print-num">Qtd. est.</th>
-                <th className="md-print-num">Valor est.</th>
+                <th className="md-print-col-period">Período</th>
+                <th className="md-print-col-code">Código</th>
+                <th className="md-print-cell-description">Descrição</th>
+                <th className="md-print-col-unit">Un.</th>
+                <th className="md-print-cell-qty md-print-num">Qtd. est.</th>
+                <th className="md-print-cell-money md-print-num">Valor est.</th>
               </tr>
             </thead>
             <tbody>
               {periodRows.map((row) => (
                 <tr key={`${row.period}-${row.materialId}-${row.unitLabel}`}>
-                  <td>{row.periodLabel}</td>
-                  <td>{row.code ?? "—"}</td>
-                  <td className="md-print-desc">{row.description}</td>
-                  <td>{row.unitLabel}</td>
-                  <td className="md-print-num">{fmtNum(row.quantity)}</td>
-                  <td className="md-print-num">{fmtMoney(row.estimatedValue)}</td>
+                  <td className="md-print-col-period">{row.periodLabel}</td>
+                  <td className="md-print-col-code">{row.code ?? "—"}</td>
+                  <td className="md-print-cell-description">{row.description}</td>
+                  <td className="md-print-col-unit">{row.unitLabel}</td>
+                  <td className="md-print-cell-qty md-print-num">{fmtNum(row.quantity)}</td>
+                  <td className="md-print-cell-money md-print-num">{fmtMoney(row.estimatedValue)}</td>
                 </tr>
               ))}
             </tbody>
-          </PrintTable>
+          </table>
         </section>
       ) : null}
 
