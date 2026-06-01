@@ -17,6 +17,7 @@ import {
   type ParsedAutoApplyReport,
 } from "@/src/lib/nomusAutoApplyBomReportParser";
 import { prisma } from "@/src/lib/prisma";
+import { revalidateAutoApplyDashboardProducts } from "@/src/lib/nomusAutoApplyDashboardRevalidation";
 
 const DEFAULT_REPORT_JSON = join(process.cwd(), "docs/generated/nomus-auto-sync-bom-apply-report.json");
 export const NOMUS_AUTO_APPLY_REGENERATE_COMMAND = "npm run sync:nomus:all:apply";
@@ -334,9 +335,12 @@ export async function buildNomusAutoApplyBomDashboard(input: {
   search?: string;
   /** Caminho explícito: lê só esse arquivo (sem varrer docs/generated nem DB). */
   reportPath?: string;
+  /** Reavalia bloqueados/ignorados com preview read-only (não altera ProductBOM). */
+  revalidateBlocked?: boolean;
 } = {}): Promise<AutoApplyBomDashboardResult> {
   const filter = input.filter ?? "ALL";
   const search = input.search?.trim() || null;
+  const revalidateBlocked = input.revalidateBlocked !== false;
   const explicitReportPath = input.reportPath?.trim() || null;
   const reportPath = explicitReportPath ?? DEFAULT_REPORT_JSON;
 
@@ -387,11 +391,28 @@ export async function buildNomusAutoApplyBomDashboard(input: {
       filter,
       search,
       matchedCount: 0,
+      statusRevalidatedAt: null,
+      revalidatedProductCount: 0,
+      revalidationErrorCount: 0,
+      batchTotalsNote: null,
     };
   }
 
   const report = parsed.report;
-  const allRows = mapProductRows(parsed.products);
+  let statusRevalidatedAt: string | null = null;
+  let revalidatedProductCount = 0;
+  let revalidationErrorCount = 0;
+  let productsForRows = parsed.products;
+
+  if (revalidateBlocked && parsed.hasProductList && parsed.products.length > 0) {
+    const revalidated = await revalidateAutoApplyDashboardProducts(parsed.products);
+    productsForRows = revalidated.products;
+    revalidatedProductCount = revalidated.revalidatedCount;
+    revalidationErrorCount = revalidated.revalidationErrors;
+    statusRevalidatedAt = new Date().toISOString();
+  }
+
+  const allRows = mapProductRows(productsForRows);
   const hasProductList = parsed.hasProductList && allRows.length > 0;
   const needsReportRegeneration = !hasProductList && Boolean(parsed.totals);
   const partialReportWarning = needsReportRegeneration
@@ -432,12 +453,21 @@ export async function buildNomusAutoApplyBomDashboard(input: {
       reportMdPath: report.reportMdPath,
     },
     totals: parsed.totals,
-    blockingReasonBuckets: bucketBlockingReasons(parsed.products),
+    blockingReasonBuckets: bucketBlockingReasons(productsForRows),
     products: allRows,
     filterCounts,
     totalProducts: allRows.length,
     filter,
     search,
     matchedCount: allRows.length,
+    statusRevalidatedAt,
+    revalidatedProductCount,
+    revalidationErrorCount,
+    batchTotalsNote:
+      statusRevalidatedAt != null
+        ? "Totais do batch (última execução APPLY) podem diferir da lista: status dos bloqueados foi revalidado em read-only com as decisões atuais (opcionais, revisão local, BOM efetiva)."
+        : parsed.totals
+          ? "Status da lista conforme o último relatório batch salvo. Clique em Atualizar para revalidar bloqueados com preview read-only."
+          : null,
   };
 }

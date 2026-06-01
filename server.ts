@@ -4683,7 +4683,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             ? String(req.query.search).trim()
             : undefined;
 
-        const result = await buildNomusAutoApplyBomDashboard({ filter, search });
+        const revalidate =
+          req.query.revalidate == null || String(req.query.revalidate).trim() !== "0";
+        const result = await buildNomusAutoApplyBomDashboard({ filter, search, revalidateBlocked: revalidate });
         return res.json(result);
       } catch (error) {
         const message =

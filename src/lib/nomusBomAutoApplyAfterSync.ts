@@ -11,6 +11,10 @@ import {
   applyEffectiveBomToProductBom,
   buildControlledApplyPreview,
 } from "@/src/lib/nomusBomControlledApply";
+import {
+  mapControlledApplyPreviewToAutoApplyProduct,
+  previewActionsSummary,
+} from "@/src/lib/nomusAutoApplyPreviewProductStatus";
 import { buildNomusUniverseCodeSet } from "@/src/lib/nomusBomUniverse";
 import { prisma } from "@/src/lib/prisma";
 import type {
@@ -158,17 +162,6 @@ export function buildAutoApplyReportMarkdown(report: NomusBomAutoApplyReport): s
   return `${lines.join("\n")}\n`;
 }
 
-function previewActionsSummary(
-  preview: Awaited<ReturnType<typeof buildControlledApplyPreview>>
-): NomusBomAutoApplyProductResult["actionsPreview"] {
-  return preview.actions.map((a) => ({
-    actionType: a.actionType,
-    componentCode: a.componentCode,
-    currentQuantity: a.currentQuantity ?? null,
-    effectiveQuantity: a.effectiveQuantity ?? null,
-  }));
-}
-
 function statusFromApplyResult(
   resultStatus: "APPLIED" | "NO_CHANGES"
 ): NomusBomAutoApplyProductStatus {
@@ -198,30 +191,7 @@ async function processOneProduct(
 ): Promise<NomusBomAutoApplyProductResult> {
   try {
     const preview = await buildControlledApplyPreview(parentCode, { nomusUniverse });
-
-    const base: NomusBomAutoApplyProductResult = {
-      parentCode: preview.parentCode,
-      productId: preview.productId,
-      status: "SKIPPED",
-      canApply: preview.canApply,
-      blockingReasons: preview.blockingReasons,
-      actionsPreview: previewActionsSummary(preview),
-    };
-
-    if (!preview.productId) {
-      return {
-        ...base,
-        status: "SKIPPED",
-        blockingReasons: ["Produto não cadastrado no IndusCost."],
-      };
-    }
-
-    if (!preview.canApply) {
-      return {
-        ...base,
-        status: "BLOCKED",
-      };
-    }
+    const mapped = mapControlledApplyPreviewToAutoApplyProduct(preview);
 
     const hasMutations = preview.actions.some((a) =>
       [
@@ -235,9 +205,8 @@ async function processOneProduct(
 
     if (mode === "DRY") {
       return {
-        ...base,
-        status: hasMutations ? "APPLIED" : "NO_CHANGES",
-        resultStatus: hasMutations ? "APPLIED" : "NO_CHANGES",
+        ...mapped,
+        actionsPreview: previewActionsSummary(preview),
         summary: {
           created: preview.actions.filter((a) => a.actionType === "CREATE_PRODUCT_BOM_LINE").length,
           updated: preview.actions.filter((a) =>
@@ -267,7 +236,8 @@ async function processOneProduct(
       result.resultStatus === "NO_CHANGES" ? ("NO_CHANGES" as const) : ("APPLIED" as const);
 
     return {
-      ...base,
+      ...mapped,
+      actionsPreview: previewActionsSummary(preview),
       status: statusFromApplyResult(resultStatus),
       resultStatus,
       summary: result.summary,

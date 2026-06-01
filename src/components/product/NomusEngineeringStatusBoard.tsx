@@ -158,7 +158,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
       const [masterData, equalize, autoApply, runs] = await Promise.all([
         fetchMasterDataImportDiagnostic({ limit: 1, includeExisting: true }).catch(() => null),
         fetchMasterDataEqualizePreview({ limit: 1, scope: "ACTIONABLE" }).catch(() => null),
-        fetchNomusAutoApplyBomDashboard().catch(() => null),
+        fetchNomusAutoApplyBomDashboard({ revalidate: true }).catch(() => null),
         fetchEngineeringRunsRecent(30).catch(() => ({
           mode: "READ_ONLY" as const,
           generatedAt: new Date().toISOString(),
@@ -311,10 +311,10 @@ export const NomusEngineeringStatusBoard: React.FC<{
             Central Engenharia Nomus — fila operacional principal
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Comece pelos <strong>bloqueados</strong> abaixo. Read-only: os números de{" "}
-            <strong>BOM / auto apply</strong> vêm do relatório{" "}
-            <code className="font-mono">sync:nomus:all:apply</code>. Cadastro mestre (Carga Mestre /
-            Igualar bases) é outro assunto — não confundir com bloqueios de BOM.
+            Comece pelos <strong>bloqueados</strong> abaixo. Ao atualizar, a <strong>lista</strong>{" "}
+            revalida bloqueados/ignorados com preview read-only (decisões atuais). Os{" "}
+            <strong>totais do batch</strong> (cards superiores) vêm do último relatório{" "}
+            <code className="font-mono">sync:nomus:all:apply</code>.
           </p>
         </div>
       </div>
@@ -393,7 +393,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
               <>
                 {autoApply.lastRun ? (
                   <p className="text-[11px] text-muted-foreground">
-                    Última execução: {formatDateShort(autoApply.lastRun.finishedAt)} · modo{" "}
+                    Última execução batch: {formatDateShort(autoApply.lastRun.finishedAt)} · modo{" "}
                     <code className="font-mono">{autoApply.lastRun.mode}</code> · por{" "}
                     {autoApply.lastRun.approvedBy}
                     {autoApply.lastRun.batchRunId ? (
@@ -404,6 +404,17 @@ export const NomusEngineeringStatusBoard: React.FC<{
                       <> · lista em <code className="font-mono">{autoApply.productListSource}</code></>
                     ) : null}
                   </p>
+                ) : null}
+
+                {autoApply.statusRevalidatedAt ? (
+                  <p className="text-[11px] text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    Lista revalidada em {formatDateShort(autoApply.statusRevalidatedAt)} (preview read-only,{" "}
+                    {autoApply.revalidatedProductCount} produto(s)). Não altera ProductBOM.
+                  </p>
+                ) : null}
+
+                {autoApply.batchTotalsNote ? (
+                  <p className="text-[11px] text-muted-foreground">{autoApply.batchTotalsNote}</p>
                 ) : null}
 
                 {autoApply.partialReportWarning ? (

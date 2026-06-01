@@ -260,7 +260,10 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
       items: [SAMPLE_308],
     });
 
-    const result = await buildNomusAutoApplyBomDashboard({ reportPath: path });
+    const result = await buildNomusAutoApplyBomDashboard({
+      reportPath: path,
+      revalidateBlocked: false,
+    });
     assert.equal(result.hasProductList, true);
     assert.equal(result.needsReportRegeneration, false);
     assert.equal(result.products.length, 1);
@@ -275,7 +278,10 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
       summary: SAMPLE_TOTALS,
     });
 
-    const result = await buildNomusAutoApplyBomDashboard({ reportPath: path });
+    const result = await buildNomusAutoApplyBomDashboard({
+      reportPath: path,
+      revalidateBlocked: false,
+    });
     assert.equal(result.hasReport, true);
     assert.equal(result.hasProductList, false);
     assert.equal(result.needsReportRegeneration, true);
@@ -291,7 +297,10 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
       items: [SAMPLE_308],
     });
 
-    const result = await buildNomusAutoApplyBomDashboard({ reportPath: path });
+    const result = await buildNomusAutoApplyBomDashboard({
+      reportPath: path,
+      revalidateBlocked: false,
+    });
     assert.equal(result.products.length, 1);
     assert.equal(result.totals?.parentsEvaluated, 1);
     assert.notEqual(result.products.length, SAMPLE_TOTALS.parentsEvaluated);

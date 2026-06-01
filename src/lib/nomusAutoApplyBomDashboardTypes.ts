@@ -91,4 +91,15 @@ export type AutoApplyBomDashboardResult = {
   search: string | null;
   /** @deprecated Igual a totalProducts quando sem filtro server-side. */
   matchedCount: number;
+  /** ISO — preview read-only dos produtos bloqueados/ignorados após carregar o relatório batch. */
+  statusRevalidatedAt: string | null;
+  /** Quantos produtos tiveram status reavaliado via preview (read-only). */
+  revalidatedProductCount: number;
+  /** Produtos cuja revalidação falhou e permanecem com snapshot batch. */
+  revalidationErrorCount: number;
+  /**
+   * Totais do card superior (avaliados/aplicados/bloqueados batch) vêm do último relatório APPLY.
+   * A lista e filterCounts refletem revalidação read-only quando statusRevalidatedAt está preenchido.
+   */
+  batchTotalsNote: string | null;
 };
