@@ -58,6 +58,11 @@ import {
   type MaterialDemandMode,
 } from "./src/lib/materialDemandFilters.js";
 import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
+import {
+  getNomusDailySyncStatus,
+  NomusDailySyncConflictError,
+  startNomusDailySyncApply,
+} from "./src/lib/nomusDailySyncRunner.js";
 import { resolveProductBomUsage, type BomUsageSearchKind } from "./src/lib/productBomUsage.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
@@ -7405,6 +7410,45 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       return res.status(500).json({ error: "Erro ao carregar detalhe do log Nomus." });
     }
   });
+
+  const nomusDailySyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+
+  app.get(
+    "/api/settings/nomus-sync/daily-status",
+    requireBootstrapOrAnyPermission([...nomusDailySyncManagePermissions]),
+    async (_req, res) => {
+      try {
+        const status = await getNomusDailySyncStatus();
+        return res.json(status);
+      } catch (error) {
+        console.error("GET /api/settings/nomus-sync/daily-status:", error);
+        return res.status(500).json({ error: "Erro ao consultar status da rotina diária Nomus." });
+      }
+    }
+  );
+
+  app.post(
+    "/api/settings/nomus-sync/daily-run",
+    requireBootstrapOrAnyPermission([...nomusDailySyncManagePermissions]),
+    async (_req, res) => {
+      try {
+        const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
+        const result = await startNomusDailySyncApply(projectRoot);
+        return res.status(202).json(result);
+      } catch (error) {
+        if (error instanceof NomusDailySyncConflictError) {
+          return res.status(409).json({
+            error: error.message,
+            message: "Já existe uma rotina Nomus em andamento. Aguarde finalizar antes de iniciar outra.",
+          });
+        }
+        console.error("POST /api/settings/nomus-sync/daily-run:", error);
+        return res.status(500).json({
+          error: "Não foi possível iniciar a rotina diária Nomus. Verifique logs do servidor.",
+        });
+      }
+    }
+  );
 
   function parseFiniteNumberFromUnknown(value: unknown, fallback = 0): number {
     const n = Number(value);

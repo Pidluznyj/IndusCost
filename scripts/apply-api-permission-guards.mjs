@@ -119,6 +119,8 @@ const rules = [
   ["get", '"/api/integrations/nomus/health"', "requireBootstrapOrAnyPermission([\"settings.nomus.view\", \"settings.view\"]), "],
   ["get", '"/api/settings/nomus-sync/logs"', "requireBootstrapOrAnyPermission([\"settings.nomus.view\", \"settings.view\"]), "],
   ["get", '"/api/settings/nomus-sync/logs/:fileName"', "requireBootstrapOrAnyPermission([\"settings.nomus.view\", \"settings.view\"]), "],
+  ["get", '"/api/settings/nomus-sync/daily-status"', "requireBootstrapOrAnyPermission([\"settings.nomus.sync\", \"settings.view\"]), "],
+  ["post", '"/api/settings/nomus-sync/daily-run"', "requireBootstrapOrAnyPermission([\"settings.nomus.sync\", \"settings.view\"]), "],
   ["get", '"/api/settings/production-hour-cost-simulations"', "requireBootstrapOrAnyPermission([\"settings.global_params.view\", \"settings.view\"]), "],
   ["get", '"/api/settings/production-hour-cost-simulations/:id"', "requireBootstrapOrAnyPermission([\"settings.global_params.view\", \"settings.view\"]), "],
   ["post", '"/api/settings/production-hour-cost-simulations"', "requireBootstrapOrAnyPermission([\"settings.global_params.edit\", \"users.manage\"]), "],

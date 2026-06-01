@@ -24,6 +24,7 @@ import { SETTINGS_TOUR_STEPS } from "@/src/tours/settingsTourSteps";
 import { AppAlert } from "@/src/components/shared/AppAlert";
 import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 import { AdminUsersModule } from "@/src/components/AdminUsersModule";
+import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canAccessSettingsSection, canManageUsers } from "@/src/lib/modulePermissions";
 
@@ -320,6 +321,7 @@ export const SettingsModule = () => {
   const auth = useAuth();
   const canManageUsersPerm = canManageUsers(auth);
   const canViewSettings = auth.hasPermission("settings.view");
+  const canRunNomusDailySync = auth.hasPermission("settings.nomus.sync");
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
@@ -2014,6 +2016,11 @@ export const SettingsModule = () => {
                   Atualizar lista
                 </button>
               </div>
+
+              <NomusDailySyncCard
+                canRun={canRunNomusDailySync}
+                onLogsRefresh={() => setNomusReloadSeq((prev) => prev + 1)}
+              />
 
               {nomusHealthError && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
