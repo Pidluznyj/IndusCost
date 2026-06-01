@@ -283,6 +283,19 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
     assert.equal(result.regenerateReportCommand, "npm run sync:nomus:all:apply");
     assert.equal(result.products.length, 0);
   });
+
+  it("reportPath explícito não mistura com docs/generated do servidor", async () => {
+    const path = writeTempReport("nomus-auto-sync-bom-apply-report.json", {
+      generatedAt: "2026-05-26T10:00:00.000Z",
+      summary: { ...SAMPLE_TOTALS, parentsEvaluated: 1, parentsBlocked: 0 },
+      items: [SAMPLE_308],
+    });
+
+    const result = await buildNomusAutoApplyBomDashboard({ reportPath: path });
+    assert.equal(result.products.length, 1);
+    assert.equal(result.totals?.parentsEvaluated, 1);
+    assert.notEqual(result.products.length, SAMPLE_TOTALS.parentsEvaluated);
+  });
 });
 
 describe("nomusEngineeringValidationChecklist", () => {

@@ -332,20 +332,28 @@ function mapProductRows(products: NomusBomAutoApplyProductResult[]): AutoApplyBo
 export async function buildNomusAutoApplyBomDashboard(input: {
   filter?: AutoApplyDashboardFilter;
   search?: string;
+  /** Caminho explícito: lê só esse arquivo (sem varrer docs/generated nem DB). */
   reportPath?: string;
 } = {}): Promise<AutoApplyBomDashboardResult> {
   const filter = input.filter ?? "ALL";
   const search = input.search?.trim() || null;
-  const reportPath = input.reportPath ?? DEFAULT_REPORT_JSON;
+  const explicitReportPath = input.reportPath?.trim() || null;
+  const reportPath = explicitReportPath ?? DEFAULT_REPORT_JSON;
 
-  const fileReport = readLatestReportFile(reportPath);
+  const fileReport = explicitReportPath
+    ? tryParseReportFile(explicitReportPath)
+    : readLatestReportFile(reportPath);
   const runFallback =
-    fileReport == null ? await readLatestBatchRunReport().catch(() => null) : null;
-  const parsed = fileReport?.hasProductList
+    explicitReportPath == null && fileReport == null
+      ? await readLatestBatchRunReport().catch(() => null)
+      : null;
+  const parsed = explicitReportPath
     ? fileReport
-    : runFallback?.hasProductList
-      ? runFallback
-      : fileReport ?? runFallback;
+    : fileReport?.hasProductList
+      ? fileReport
+      : runFallback?.hasProductList
+        ? runFallback
+        : fileReport ?? runFallback;
 
   if (!parsed) {
     return {
