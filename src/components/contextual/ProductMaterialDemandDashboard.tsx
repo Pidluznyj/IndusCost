@@ -907,6 +907,13 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   }, [apiBase, appliedFilters, appliedFiltersPanel.status, rowsSort, summaryData?.facets]);
 
   const handlePrint = useCallback(() => {
+    const bodyClass = "material-demand-printing";
+    document.body.classList.add(bodyClass);
+    const cleanup = () => {
+      document.body.classList.remove(bodyClass);
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
     window.print();
   }, []);
 
@@ -943,7 +950,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
           <p className="text-xs text-muted-foreground mt-1">{description}</p>
         </div>
         {variant === "usage" ? (
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <div className="material-demand-no-print flex flex-col items-end gap-1.5 shrink-0">
             <div className="flex flex-wrap gap-1.5 justify-end">
               <button
                 type="button"
@@ -1014,7 +1021,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             />
           ) : null}
           {loadingRows && rowsData != null ? (
-            <div className="absolute bottom-3 right-4 flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="material-demand-no-print absolute bottom-3 right-4 flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
               Atualizando tabela…
             </div>
@@ -1035,14 +1042,8 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       backPath={ctx.backPath}
       backLabel={ctx.backLabel}
     >
-      <style>{`
-        @media print {
-          .material-demand-no-print { display: none !important; }
-          .material-demand-print-root { padding: 0; }
-        }
-      `}</style>
-      <div className="material-demand-print-root space-y-6">
-      <header className="space-y-4">
+      <div id="material-demand-print-root" className="material-demand-printable material-demand-print-root space-y-6">
+      <header className="space-y-4 material-demand-print-break">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -1076,7 +1077,9 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             </button>
           </div>
         </div>
-        <MaterialDemandInfoBanner context={context} />
+        <div className="material-demand-no-print">
+          <MaterialDemandInfoBanner context={context} />
+        </div>
       </header>
 
       <section className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-5 material-demand-no-print">
@@ -1398,7 +1401,10 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       ) : summaryData ? (
         <div className="relative space-y-6">
           {showSummaryLoadingOverlay ? (
-            <div className="pointer-events-none absolute inset-0 z-10 rounded-xl bg-background/40 backdrop-blur-[1px]" aria-hidden />
+            <div
+              className="material-demand-no-print pointer-events-none absolute inset-0 z-10 rounded-xl bg-background/40 backdrop-blur-[1px]"
+              aria-hidden
+            />
           ) : null}
 
           {!hasData ? (
@@ -1406,7 +1412,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
           ) : (
             <>
               <nav
-                className="space-y-2 border-b border-border pb-3"
+                className="material-demand-no-print space-y-2 border-b border-border pb-3"
                 aria-label="Abas da análise de matéria-prima"
               >
                 <div className="flex flex-wrap gap-2">
@@ -1430,7 +1436,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               </nav>
 
               {activeTab === "usage-estimate" ? (
-                <div className="space-y-6">
+                <div className="material-demand-printable space-y-6">
                   <MaterialDemandUsageEstimateHeader
                     appliedFilters={appliedFiltersPanel}
                     facets={summaryData.facets}
@@ -1461,7 +1467,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ) : null}
 
               {activeTab === "summary" ? (
-                <div className="space-y-6">
+                <div className="material-demand-printable space-y-6">
                   {summaryData.coverage ? (
                     <MaterialDemandCoveragePanel coverage={summaryData.coverage} />
                   ) : null}
@@ -1494,7 +1500,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ) : null}
 
               {activeTab === "by-material" ? (
-                <div className="space-y-6">
+                <div className="material-demand-printable space-y-6">
                   {renderMaterialsTableCard(
                     "detail",
                     "Matérias-primas (detalhe)",
@@ -1504,7 +1510,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
               ) : null}
 
               {activeTab === "by-period" ? (
-                <div className="space-y-6">
+                <div className="material-demand-printable space-y-6">
                   <MaterialDemandTopMaterialsByPeriod rows={summaryData.charts.needByDeliveryPeriod} />
                   <MaterialDemandNeedByPeriodSection
                     rows={summaryData.charts.needByDeliveryPeriod}

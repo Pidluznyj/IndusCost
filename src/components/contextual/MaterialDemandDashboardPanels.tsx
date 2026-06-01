@@ -225,7 +225,7 @@ export function MaterialDemandMixedUnitsBlock({
         Não é possível somar KG com UN. Selecione uma unidade no filtro para comparar quantidades ou use valor
         estimado (R$) para ranking global.
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className="material-demand-no-print flex flex-wrap gap-2">
         {summaryData.summary.quantityByUnit.map((u) => (
           <button
             key={u.unitKey}
@@ -648,7 +648,7 @@ export function MaterialDemandExpandedDetail({
               e.stopPropagation();
               onLoadMoreOrigins();
             }}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+            className="material-demand-no-print inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
           >
             {loadingMoreOrigins ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             Carregar mais origens
@@ -1022,7 +1022,7 @@ export function MaterialDemandTablePagination({
 }) {
   if (pagination.totalPages <= 1) return null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-sm">
+    <div className="material-demand-no-print flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-sm">
       <p className="text-muted-foreground">
         Página {pagination.page} de {pagination.totalPages} · {pagination.totalItems} itens
       </p>

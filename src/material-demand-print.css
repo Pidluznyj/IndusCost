@@ -1,0 +1,49 @@
+/**
+ * Impressão — Estimativa de uso / demanda de matéria-prima.
+ *
+ * reports-print.css define `body * { visibility: hidden }` no @media print.
+ * Este arquivo restaura visibilidade em #material-demand-print-root (mesmo padrão de #reports-print-root).
+ */
+@media print {
+  #material-demand-print-root,
+  #material-demand-print-root * {
+    visibility: visible !important;
+  }
+
+  #material-demand-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    background: white !important;
+    color: black !important;
+  }
+
+  .material-demand-no-print {
+    display: none !important;
+  }
+
+  .material-demand-printable,
+  .material-demand-printable * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  #material-demand-print-root .overflow-x-auto,
+  #material-demand-print-root .overflow-y-auto,
+  #material-demand-print-root [class*="max-h-"] {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  #material-demand-print-root table {
+    font-size: 9pt !important;
+  }
+
+  .material-demand-print-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

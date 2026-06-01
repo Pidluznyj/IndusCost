@@ -5,6 +5,7 @@ import App from "./App.tsx";
 import { AuthProvider } from "./contexts/AuthContext.tsx";
 import "./index.css";
 import "./reports-print.css";
+import "./material-demand-print.css";
 import "./proposal-print.css";
 
 createRoot(document.getElementById("root")!).render(
