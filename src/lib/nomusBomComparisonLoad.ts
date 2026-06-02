@@ -13,6 +13,11 @@ import {
   filterStageRowsToCurrentParentSnapshot,
   getParentStageSnapshotMeta,
 } from "@/src/lib/nomusBomComponentStageSnapshot";
+import {
+  isRegistryActiveStatus,
+  pickRegistryRecordForAutoResolve,
+  resolveRegistryPairForComponentCode,
+} from "@/src/lib/nomusComponentRegistryResolve";
 import { parseLinkedPreferredExternalLineId } from "@/src/lib/nomusPreferredAlternativeLink";
 
 export function stageRowToNomusLine(row: {
@@ -259,39 +264,64 @@ export async function resolveNomusComponentCodes(
   const [products, materials] = await Promise.all([
     prisma.product.findMany({
       where: { sku: { in: lookupValues } },
-      select: { id: true, sku: true },
+      select: { id: true, sku: true, status: true },
     }),
     prisma.material.findMany({
       where: { code: { in: lookupValues } },
-      select: { id: true, code: true },
+      select: { id: true, code: true, status: true },
     }),
   ]);
 
-  const productBySku = new Map<string, { id: string; sku: string }>();
+  const productsBySku = new Map<string, typeof products>();
   for (const product of products) {
-    productBySku.set(normalizeSku(product.sku), product);
+    const key = normalizeSku(product.sku);
+    const list = productsBySku.get(key) ?? [];
+    list.push(product);
+    productsBySku.set(key, list);
   }
 
-  const materialByCode = new Map<string, { id: string; code: string }>();
+  const materialsByCode = new Map<string, typeof materials>();
   for (const material of materials) {
-    materialByCode.set(normalizeSku(material.code), material);
+    const key = normalizeSku(material.code);
+    const list = materialsByCode.get(key) ?? [];
+    list.push(material);
+    materialsByCode.set(key, list);
   }
 
   return uniqueCodes.map((componentCode) => {
     const key = normalizeSku(componentCode);
-    const product = productBySku.get(key);
-    const material = materialByCode.get(key);
+    const productCandidates = productsBySku.get(key) ?? [];
+    const materialCandidates = materialsByCode.get(key) ?? [];
 
-    let resolvedKind: ResolvedNomusComponentRow["resolvedKind"] = "NONE";
-    if (product && material) resolvedKind = "BOTH";
-    else if (product) resolvedKind = "PRODUCT";
-    else if (material) resolvedKind = "MATERIAL";
+    const product = pickRegistryRecordForAutoResolve({
+      records: productCandidates,
+      isActive: (r) => isRegistryActiveStatus(r.status),
+    });
+    const material = pickRegistryRecordForAutoResolve({
+      records: materialCandidates,
+      isActive: (r) => isRegistryActiveStatus(r.status),
+    });
+
+    const inactiveProductIds = productCandidates
+      .filter((r) => !isRegistryActiveStatus(r.status))
+      .map((r) => r.id);
+    const inactiveMaterialIds = materialCandidates
+      .filter((r) => !isRegistryActiveStatus(r.status))
+      .map((r) => r.id);
+
+    const resolved = resolveRegistryPairForComponentCode({
+      componentCode,
+      product,
+      material,
+      inactiveProductIds,
+      inactiveMaterialIds,
+    });
 
     return {
       componentCode,
-      productId: product?.id ?? null,
-      materialId: material?.id ?? null,
-      resolvedKind,
+      productId: resolved.productId,
+      materialId: resolved.materialId,
+      resolvedKind: resolved.resolvedKind,
     };
   });
 }
