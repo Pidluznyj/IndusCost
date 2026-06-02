@@ -160,19 +160,44 @@ export function resolveGroupStatus(
   }
 ): OptionalPricingGroupStatus {
   const activeChoices = group.choices.filter((c) => c.isActive);
-  if (activeChoices.some((c) => c.isStale)) return "STALE";
-
   const selected = activeChoices.filter((c) => c.isSelectedForPricing);
+
+  if (group.selectedNone) {
+    switch (group.selectionMode) {
+      case "EXACTLY_ONE":
+      case "OPTIONAL_ONE":
+      case "MULTIPLE":
+        return "RESOLVED";
+      default:
+        return "PENDING";
+    }
+  }
+
+  const selectedStale = selected.filter((c) => c.isStale);
+  const selectedValid = selected.filter((c) => !c.isStale);
+
+  if (selectedStale.length > 0) return "STALE";
+
+  if (selectedValid.length > 0) {
+    switch (group.selectionMode) {
+      case "EXACTLY_ONE":
+      case "OPTIONAL_ONE":
+        return selectedValid.length === 1 ? "RESOLVED" : "PENDING";
+      case "MULTIPLE":
+        return selectedValid.length >= 1 ? "RESOLVED" : "PENDING";
+      default:
+        return "PENDING";
+    }
+  }
+
+  if (activeChoices.length > 0 && activeChoices.every((c) => c.isStale)) return "STALE";
 
   switch (group.selectionMode) {
     case "EXACTLY_ONE":
-      if (group.selectedNone) return "RESOLVED";
       return selected.length === 1 ? "RESOLVED" : "PENDING";
     case "OPTIONAL_ONE":
-      if (group.selectedNone) return "RESOLVED";
       return selected.length === 1 ? "RESOLVED" : "PENDING";
     case "MULTIPLE":
-      if (group.selectedNone) return "RESOLVED";
       return selected.length >= 1 ? "RESOLVED" : "PENDING";
     default:
       return "PENDING";
@@ -223,6 +248,7 @@ function groupBlocksOptionalPricing(
     return group.choices.some(
       (c) =>
         c.isActive &&
+        c.isSelectedForPricing &&
         c.isStale &&
         optionalByCode.has(normalizeComponentCode(c.componentCode))
     );

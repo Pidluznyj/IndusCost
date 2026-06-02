@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildOptionalSelectionStatus,
   computeUnassignedOptionalItems,
+  resolveGroupStatus,
   resolveGroupStatusForCurrentOptionalPool,
   type AggregatedOptionalItem,
   type OptionalPricingGroupView,
@@ -159,6 +160,49 @@ describe("grupos/choices obsoletos", () => {
       optionalByCode
     );
     assert.equal(status, "RESOLVED");
+  });
+
+  it("309.71AA — sibling stale + seleção válida → RESOLVED (não bloqueia grupo)", () => {
+    const optionalItems = [
+      optionalItem("114.03", [101]),
+      optionalItem("114.02", [102]),
+    ];
+    const optionalByCode = new Map(
+      optionalItems.map((i) => [i.componentCode.toUpperCase().replace(/\s+/g, " ").trim(), i])
+    );
+    const status = resolveGroupStatusForCurrentOptionalPool(
+      {
+        selectionMode: "OPTIONAL_ONE",
+        selectedNone: false,
+        choices: [
+          {
+            componentCode: "114.03",
+            isActive: true,
+            isSelectedForPricing: false,
+            isStale: true,
+          },
+          {
+            componentCode: "114.02",
+            isActive: true,
+            isSelectedForPricing: true,
+            isStale: false,
+          },
+        ],
+      },
+      optionalByCode
+    );
+    assert.equal(status, "RESOLVED");
+    assert.equal(
+      resolveGroupStatus({
+        selectionMode: "OPTIONAL_ONE",
+        selectedNone: false,
+        choices: [
+          { isActive: true, isSelectedForPricing: false, isStale: true },
+          { isActive: true, isSelectedForPricing: true, isStale: false },
+        ],
+      }),
+      "RESOLVED"
+    );
   });
 
   it("grupo STALE com componente ainda no pool → STALE bloqueante", () => {

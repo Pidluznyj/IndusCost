@@ -338,7 +338,10 @@ export const ProductNomusMaintenanceSection: React.FC<ProductNomusMaintenanceSec
           />
         ) : null}
         {activeNomusMaintenanceTab === "pending" ? (
-          <NomusMaintenancePendingPanel {...workspaceProps} />
+          <NomusMaintenancePendingPanel
+            {...workspaceProps}
+            onWorkspaceRefresh={handleRefreshAnalyses}
+          />
         ) : null}
         {activeNomusMaintenanceTab === "effective-pricing-bom" ? (
           <NomusEffectivePricingBomPanel

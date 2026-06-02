@@ -148,6 +148,8 @@ type NomusOptionalPricingSelectionPanelProps = NomusMaintenanceWorkspaceProps & 
   productFocusMode?: boolean;
   /** Remove borda/título externos (uso dentro de Pendências). */
   embedded?: boolean;
+  /** Recarrega BOM efetiva, impacto e demais análises do workspace após salvar seleção. */
+  onSelectionSaved?: () => void;
 };
 
 export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSelectionPanelProps> = ({
@@ -158,6 +160,7 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
   onWorkspaceParentChange,
   productFocusMode = false,
   embedded = false,
+  onSelectionSaved,
 }) => {
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -365,6 +368,7 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
       });
       await loadDetail(detail.parentCode);
       await loadList();
+      onSelectionSaved?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar seleção.");
     } finally {

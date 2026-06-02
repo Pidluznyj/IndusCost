@@ -78,7 +78,7 @@ function flagsForItem(
   return aggregateNomusLineFlags(raw);
 }
 
-function buildComponentResolutionMap(
+export function buildComponentResolutionMap(
   optionalItems: AggregatedOptionalItem[],
   groups: OptionalPricingGroupView[],
   unassigned: AggregatedOptionalItem[]
@@ -94,16 +94,35 @@ function buildComponentResolutionMap(
     for (const choice of group.choices) {
       if (!choice.isActive) continue;
       const key = normalizeComponentCode(choice.componentCode);
-      if (group.status === "STALE") {
+      const selectedNone = group.selectedNone;
+
+      if (selectedNone) {
+        map.set(key, {
+          kind: "optional_resolved",
+          group,
+          choiceId: choice.id,
+          selected: false,
+          selectedNone: true,
+        });
+        continue;
+      }
+
+      if (choice.isStale && choice.isSelectedForPricing) {
         map.set(key, { kind: "group_stale", group });
         continue;
       }
+
       if (group.status === "PENDING") {
         map.set(key, { kind: "group_pending", group });
         continue;
       }
+
+      if (group.status === "STALE" && choice.isSelectedForPricing) {
+        map.set(key, { kind: "group_stale", group });
+        continue;
+      }
+
       const selected = choice.isSelectedForPricing;
-      const selectedNone = group.selectedNone;
       map.set(key, {
         kind: "optional_resolved",
         group,

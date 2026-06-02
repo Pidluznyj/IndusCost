@@ -16,6 +16,8 @@ import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingB
 
 type NomusMaintenancePendingPanelProps = NomusMaintenanceWorkspaceProps & {
   disabled?: boolean;
+  /** Propaga refresh do workspace (BOM efetiva, impacto, overview). */
+  onWorkspaceRefresh?: () => void;
 };
 
 export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanelProps> = ({
@@ -25,6 +27,7 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
   onWorkspaceParentChange,
   refreshToken = 0,
   disabled = false,
+  onWorkspaceRefresh,
 }) => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -123,6 +126,10 @@ export const NomusMaintenancePendingPanel: React.FC<NomusMaintenancePendingPanel
           onWorkspaceParentChange={onWorkspaceParentChange}
           productFocusMode
           embedded
+          onSelectionSaved={() => {
+            void loadBom(selectedParentCode);
+            onWorkspaceRefresh?.();
+          }}
         />
       </section>
 
