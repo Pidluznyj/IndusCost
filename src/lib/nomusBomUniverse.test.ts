@@ -59,6 +59,17 @@ describe("nomusBomUniverse — universo Nomus", () => {
     );
   });
 
+  it("subproduto (PRODUCT) no universo → não auto-removível", () => {
+    assert.equal(
+      isAutoRemovableObsoleteLocalLine({
+        componentCode: "307.07A",
+        indusComponentKind: "PRODUCT",
+        nomusUniverse: new Set(["307.07A", "610.04AA"]),
+      }),
+      false
+    );
+  });
+
   it("item operacional (montagem por descrição) → não removível", () => {
     assert.equal(
       isAutoRemovableObsoleteLocalLine({

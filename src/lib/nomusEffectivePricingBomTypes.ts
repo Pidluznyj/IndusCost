@@ -132,6 +132,8 @@ export type LocalReviewCatalogItem = {
   componentDescription: string | null;
   quantity: number | null;
   productBomLineId: string;
+  /** Origem na ProductBOM (subproduto vs matéria-prima). */
+  indusComponentKind?: "PRODUCT" | "MATERIAL" | "UNKNOWN";
   savedDecision: ReviewDecisionView | null;
   placement: "pending_review" | "included" | "excluded" | "engineering_review";
 };
@@ -154,12 +156,15 @@ export type EffectivePricingBomResult = {
 };
 
 export const REVIEW_DECISION_OPTIONS = [
-  { value: "PENDING" as const, label: "Pendente" },
+  { value: "PENDING" as const, label: "Pendente — aguardando decisão" },
   {
     value: "INCLUDE_AS_LOCAL_EXCEPTION" as const,
-    label: "Incluir como exceção local na precificação",
+    label: "Manter na BOM / incluir como exceção local (decisão de engenharia)",
   },
-  { value: "EXCLUDE_FROM_PRICING" as const, label: "Não considerar na precificação" },
+  {
+    value: "EXCLUDE_FROM_PRICING" as const,
+    label: "Não considerar na precificação / remover do alvo de custo",
+  },
   {
     value: "DUPLICATED_BY_NOMUS_COMPONENT" as const,
     label: "Duplicado/absorvido por componente Nomus",
@@ -175,8 +180,8 @@ export const REVIEW_DECISION_OPTIONS = [
 ];
 
 export const REVIEW_DECISION_LABELS: Record<NomusBomReviewDecisionType, string> = {
-  PENDING: "Pendente",
-  INCLUDE_AS_LOCAL_EXCEPTION: "Incluir como exceção local na precificação",
+  PENDING: "Pendente — aguardando decisão",
+  INCLUDE_AS_LOCAL_EXCEPTION: "Manter na BOM / exceção local",
   EXCLUDE_FROM_PRICING: "Não considerar na precificação",
   DUPLICATED_BY_NOMUS_COMPONENT: "Duplicado/absorvido por componente Nomus",
   OPERATIONAL_ROUTING_COST: "Tratar como custo de roteiro/processo (não padrão para montagem 800.xx)",
@@ -185,7 +190,7 @@ export const REVIEW_DECISION_LABELS: Record<NomusBomReviewDecisionType, string> 
 
 export const REVIEW_DECISION_BADGE: Record<NomusBomReviewDecisionType, string> = {
   PENDING: "Pendente",
-  INCLUDE_AS_LOCAL_EXCEPTION: "Incluído localmente",
+  INCLUDE_AS_LOCAL_EXCEPTION: "Mantido na BOM",
   EXCLUDE_FROM_PRICING: "Excluído",
   DUPLICATED_BY_NOMUS_COMPONENT: "Resolvido",
   OPERATIONAL_ROUTING_COST: "Processo/roteiro",

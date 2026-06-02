@@ -462,7 +462,7 @@ function buildLocalOnlyReviewLine(
     decision: "REVIEW",
     includedForPricing: false,
     reason:
-      "Linha presente apenas no IndusCost (ProductBOM). Montagens 800.xx entram como componente local quando incluídas; não são roteiro Nomus nesta fase.",
+      "Item na ProductBOM do IndusCost, não encontrado na BOM Nomus efetiva atual deste produto. Defina a decisão (manter, excluir, duplicado, etc.).",
     flags: {
       hasOptionalNomusLines: false,
       hasAlternativeNomusLines: false,
@@ -746,10 +746,16 @@ export async function buildEffectivePricingBomForParentCode(
 
   const comparison = await buildBomComparisonForParentCode(ctx.parentCode);
   const rawLocalReviewLines: EffectivePricingBomLine[] = [];
+  const lineComponentKinds = new Map<string, "PRODUCT" | "MATERIAL" | "UNKNOWN">();
   for (const cmpLine of comparison.lines) {
     if (cmpLine.status !== "ONLY_IN_INDUSCOST") continue;
     const indusQty = cmpLine.indusQuantity ?? null;
     const bomLineId = cmpLine.indusBomLineIds[0] ?? "unknown";
+    const indusKind =
+      cmpLine.indusLines.find((l) => l.componentKind)?.componentKind ?? "UNKNOWN";
+    if (bomLineId !== "unknown") {
+      lineComponentKinds.set(bomLineId, indusKind);
+    }
     rawLocalReviewLines.push(
       buildLocalOnlyReviewLine(
         cmpLine.componentCode,
@@ -859,6 +865,7 @@ export async function buildEffectivePricingBomForParentCode(
   result = applyReviewDecisionsToEffectiveBom(result, decisions, rawLocalReviewLines, {
     nomusUniverse,
     localRowFlags,
+    lineComponentKinds,
   });
 
   return result;

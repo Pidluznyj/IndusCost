@@ -1059,6 +1059,19 @@ function collectApplyGates(input: {
   }
 
   for (const item of input.effectiveBom.localReviewCatalog ?? []) {
+    if (item.savedDecision?.decision === "NEEDS_ENGINEERING_REVIEW") {
+      pushBlockingDetail(details, {
+        code: "NEEDS_ENGINEERING_REVIEW",
+        componentCode: item.componentCode,
+        componentDescription: item.componentDescription,
+        source: "LOCAL_ONLY_ENGINEERING_REVIEW",
+        decisionType: "NEEDS_ENGINEERING_REVIEW",
+        reason: `${item.componentCode} aguarda revisão de engenharia antes do apply.`,
+        suggestedFix:
+          "Pendências → Itens locais: altere a decisão ou conclua a revisão de engenharia.",
+      });
+      continue;
+    }
     if (item.placement !== "engineering_review") continue;
     if (!includedCodes.has(normalizeComponentCode(item.componentCode))) {
       warnings.push(

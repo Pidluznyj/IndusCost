@@ -83,6 +83,8 @@ export function inferDefaultLocalReviewDecision(
 export type AutoObsoleteLocalContext = {
   nomusUniverse: NomusUniverseCodeSet;
   localRowFlags?: ReadonlyMap<string, { localException: boolean }>;
+  /** ProductBOM line id → tipo de componente IndusCost (subproduto vs MP). */
+  lineComponentKinds?: ReadonlyMap<string, "PRODUCT" | "MATERIAL" | "UNKNOWN">;
 };
 
 function syntheticReviewDecision(
@@ -140,11 +142,13 @@ function effectiveReviewDecision(
 
   if (autoObsoleteContext) {
     const localException = autoObsoleteContext.localRowFlags?.get(bomLineId)?.localException;
+    const indusComponentKind = autoObsoleteContext.lineComponentKinds?.get(bomLineId);
     if (
       isAutoRemovableObsoleteLocalLine({
         componentCode: base.componentCode,
         componentDescription: base.componentDescription,
         localException,
+        indusComponentKind,
         nomusUniverse: autoObsoleteContext.nomusUniverse,
       })
     ) {
@@ -466,11 +470,14 @@ export function applyReviewDecisionsToEffectiveBom(
     else if (bucket === "engineering_review") placement = "engineering_review";
     else placement = "pending_review";
 
+    const indusComponentKind = autoObsoleteContext?.lineComponentKinds?.get(bomLineId);
+
     catalog.push({
       componentCode: base.componentCode,
       componentDescription: base.componentDescription ?? null,
       quantity: base.quantity,
       productBomLineId: bomLineId,
+      indusComponentKind,
       savedDecision: effective,
       placement,
     });

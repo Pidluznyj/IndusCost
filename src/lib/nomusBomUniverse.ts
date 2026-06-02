@@ -72,9 +72,12 @@ export function isAutoRemovableObsoleteLocalLine(input: {
   componentCode: string;
   componentDescription?: string | null;
   localException?: boolean;
+  /** Subproduto (childProduct) na ProductBOM — exige decisão humana, não auto-exclusão. */
+  indusComponentKind?: "PRODUCT" | "MATERIAL" | "UNKNOWN";
   nomusUniverse: NomusUniverseCodeSet;
 }): boolean {
   if (input.localException === true) return false;
+  if (input.indusComponentKind === "PRODUCT") return false;
   if (isLocalAssemblyComponentCode(input.componentCode)) return false;
   if (detectOperationalItem(input.componentCode, input.componentDescription)) return false;
   return isCodeKnownInNomusUniverse(input.componentCode, input.nomusUniverse);

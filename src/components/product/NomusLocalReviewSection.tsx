@@ -36,6 +36,16 @@ function placementBadgeClass(placement: LocalReviewCatalogItem["placement"]): st
   }
 }
 
+function localItemContextHint(item: LocalReviewCatalogItem): string {
+  if (item.indusComponentKind === "PRODUCT") {
+    return "Subproduto na ProductBOM, ausente na BOM Nomus efetiva atual deste pai.";
+  }
+  if (item.indusComponentKind === "MATERIAL") {
+    return "Matéria-prima na ProductBOM, ausente na BOM Nomus efetiva atual deste pai.";
+  }
+  return "Item na ProductBOM do IndusCost, não encontrado na BOM Nomus efetiva atual deste pai.";
+}
+
 function placementLabel(placement: LocalReviewCatalogItem["placement"]): string {
   switch (placement) {
     case "included":
@@ -145,8 +155,10 @@ export const NomusLocalReviewSection: React.FC<NomusLocalReviewSectionProps> = (
         <div>
           <p className="text-xs font-bold">Itens locais para revisão</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Linhas presentes no ProductBOM e não na BOM Nomus efetiva. Montagens 800.xx entram como
-            componente local por padrão (não roteiro). A decisão altera apenas o preview.
+            Itens na ProductBOM do IndusCost que não constam na BOM Nomus efetiva atual do produto.
+            Use &quot;Manter na BOM&quot; para incluir na precificação e preservar a linha no apply.
+            Matérias-primas conhecidas no Nomus mas fora desta BOM podem ser sugeridas para exclusão
+            automática; subprodutos exigem decisão explícita.
           </p>
         </div>
       ) : null}
@@ -163,6 +175,10 @@ export const NomusLocalReviewSection: React.FC<NomusLocalReviewSectionProps> = (
           const savedType = item.savedDecision?.decision ?? "PENDING";
           const badgeLabel =
             savedType === "PENDING" ? "Pendente" : REVIEW_DECISION_BADGE[savedType] ?? "Resolvido";
+          const isAutoObsoleteSuggestion =
+            savedType === "EXCLUDE_FROM_PRICING" &&
+            !item.savedDecision?.id &&
+            (item.savedDecision?.reason?.startsWith("Item existe no universo Nomus") ?? false);
 
           return (
             <div
@@ -182,6 +198,9 @@ export const NomusLocalReviewSection: React.FC<NomusLocalReviewSectionProps> = (
                   </p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
                     Qtd IndusCost: {formatQty(item.quantity)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {localItemContextHint(item)}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -205,6 +224,14 @@ export const NomusLocalReviewSection: React.FC<NomusLocalReviewSectionProps> = (
                   </span>
                 </div>
               </div>
+
+              {isAutoObsoleteSuggestion ? (
+                <p className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  Sugestão automática: não considerar na precificação (código no ecossistema Nomus,
+                  ausente nesta BOM). Salve &quot;Manter na BOM&quot; para preservar na estrutura e
+                  no apply.
+                </p>
+              ) : null}
 
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="sm:col-span-2">
