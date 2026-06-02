@@ -6,6 +6,12 @@ import {
   isRegistryActiveStatus,
   prefersMaterialForNomusComponent,
 } from "@/src/lib/nomusComponentRegistryResolve";
+import type { RegistryCleanupParentDetail } from "@/src/lib/nomusComponentRegistryCleanup";
+import {
+  codeBaseLikeCore,
+  componentCodeMatchesBasePrefix,
+  expandCodeVariants,
+} from "@/src/lib/nomusComponentRegistryConflictShared";
 
 export type ComponentRegistryConflictPreview = {
   generatedAt: string;
@@ -77,7 +83,10 @@ export type ComponentRegistryConflictPreview = {
       nomusQuantity: number | null;
       indusQuantity: number | null;
     }>;
+    /** Vazio quando o código não é componente direto do pai na comparação (ex. só em outros pais). */
+    note?: string | null;
   };
+  parentDetail?: RegistryCleanupParentDetail;
   risks: string[];
   recommendations: string[];
   wouldNomusRecreateAfterCleanup: boolean;
@@ -88,23 +97,13 @@ export type ComponentRegistryConflictPreview = {
   };
 };
 
-function expandCodeVariants(base: string): string[] {
-  const core = base.trim().replace(/%+$/g, "");
-  const variants = new Set<string>([core, normalizeSku(core)]);
-  if (!core.endsWith("%")) {
-    variants.add(`${core}%`);
-    variants.add(`${normalizeSku(core)}%`);
-  }
-  return [...variants];
-}
-
 export async function buildComponentRegistryConflictPreview(input: {
   codeBase: string;
   parentCode?: string | null;
 }): Promise<ComponentRegistryConflictPreview> {
   const codeBase = input.codeBase.trim();
   const parentCode = input.parentCode?.trim() || null;
-  const likeCore = codeBase.replace(/%+$/g, "");
+  const likeCore = codeBaseLikeCore(codeBase);
   const materials = await prisma.material.findMany({
     where: { code: { startsWith: likeCore, mode: "insensitive" } },
     select: {
@@ -169,7 +168,7 @@ export async function buildComponentRegistryConflictPreview(input: {
     { componentCode: string; componentDescription: string | null; qty: number; count: number }
   >();
   for (const row of nomusStageRows) {
-    if (!normalizeComponentCode(row.componentCode).startsWith(normalizeComponentCode(likeCore))) {
+    if (!componentCodeMatchesBasePrefix(codeBase, row.componentCode)) {
       if (!parentCode) continue;
     }
     const key = `${normalizeSku(row.parentCode)}::${normalizeComponentCode(row.componentCode)}`;
@@ -227,20 +226,28 @@ export async function buildComponentRegistryConflictPreview(input: {
         );
 
   let parentComparison: ComponentRegistryConflictPreview["parentComparison"];
+  let parentDetail: ComponentRegistryConflictPreview["parentDetail"];
   if (parentCode) {
+    const { buildParentDetail } = await import("@/src/lib/nomusComponentRegistryCleanup");
+    parentDetail = await buildParentDetail(parentCode, codeBase);
     const cmp = await buildBomComparisonForParentCode(parentCode);
-    const baseKey = normalizeComponentCode(likeCore);
-    const linesForBase = cmp.lines.filter((l) =>
-      normalizeComponentCode(l.componentCode).startsWith(baseKey)
-    );
-    parentComparison = {
-      parentCode: cmp.parentCode,
-      linesForBase: linesForBase.map((l) => ({
+    const linesForBase = cmp.lines
+      .filter((l) => componentCodeMatchesBasePrefix(codeBase, l.componentCode))
+      .map((l) => ({
         componentCode: l.componentCode,
         status: l.status,
         nomusQuantity: l.nomusQuantity ?? null,
         indusQuantity: l.indusQuantity ?? null,
-      })),
+      }));
+    parentComparison = {
+      parentCode: cmp.parentCode,
+      linesForBase,
+      note:
+        linesForBase.length === 0 && (parentDetail.productBomLines.length > 0 || parentDetail.nomusStageLines.length > 0)
+          ? "Comparação agregada vazia para o prefixo, mas há linhas Nomus/ProductBOM no parentDetail — verifique sufixo exato (ex. 420.01A vs 420.01A-)."
+          : linesForBase.length === 0
+            ? "Nenhuma linha direta 420.01* na comparação deste pai (componente pode estar só em subestruturas ou outros pais)."
+            : null,
     };
   }
 
@@ -398,6 +405,7 @@ export async function buildComponentRegistryConflictPreview(input: {
       prefersMaterialRule: prefersMaterialForNomusComponent(r.componentCode),
     })),
     parentComparison,
+    parentDetail,
     risks,
     recommendations,
     wouldNomusRecreateAfterCleanup,
