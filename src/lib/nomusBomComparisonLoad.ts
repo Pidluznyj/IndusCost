@@ -13,6 +13,7 @@ import {
   filterStageRowsToCurrentParentSnapshot,
   getParentStageSnapshotMeta,
 } from "@/src/lib/nomusBomComponentStageSnapshot";
+import { parseLinkedPreferredExternalLineId } from "@/src/lib/nomusPreferredAlternativeLink";
 
 export function stageRowToNomusLine(row: {
   externalLineId: number;
@@ -31,6 +32,7 @@ export function stageRowToNomusLine(row: {
   preferencial: boolean | null;
   itemDeEmbarque: boolean | null;
   posicao: number | null;
+  rawPayload?: unknown;
 }): NomusEffectiveBomLine {
   const requiredQuantity = toNumberSafe(row.qtdeNecessaria);
   const lossQuantity = toNumberSafe(row.qtdePerdaNormal);
@@ -54,6 +56,10 @@ export function stageRowToNomusLine(row: {
     preferencial: row.preferencial,
     itemDeEmbarque: row.itemDeEmbarque,
     posicao: row.posicao,
+    linkedPreferredExternalLineId:
+      row.alternativo === true
+        ? parseLinkedPreferredExternalLineId(row.rawPayload)
+        : null,
   };
 }
 
@@ -90,6 +96,7 @@ export async function loadNomusStageLinesForParent(parentCode: string): Promise<
       preferencial: row.preferencial,
       itemDeEmbarque: row.itemDeEmbarque,
       posicao: row.posicao,
+      rawPayload: row.rawPayload,
     })
   );
 }

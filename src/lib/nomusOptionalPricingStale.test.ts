@@ -20,6 +20,7 @@ function optionalItem(
     nomusSourceLineIds: lineIds,
     isOptional: true,
     isAlternative: false,
+    isPreferred: false,
   };
 }
 

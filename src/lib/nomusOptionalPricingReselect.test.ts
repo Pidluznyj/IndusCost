@@ -21,6 +21,7 @@ function optionalItem(
     nomusSourceLineIds: lineIds,
     isOptional: true,
     isAlternative: false,
+    isPreferred: false,
     ...overrides,
   };
 }
@@ -41,8 +42,8 @@ function groupView(
 
 describe("309.71AA — re-seleção com sibling stale", () => {
   const optionalItems = [
-    optionalItem("114.03", [101], { isOptional: true, isAlternative: false }),
-    optionalItem("114.02", [102], { isOptional: true, isAlternative: true }),
+    optionalItem("114.03", [101], { isOptional: true, isAlternative: false, isPreferred: false }),
+    optionalItem("114.02", [102], { isOptional: true, isAlternative: true, isPreferred: false }),
   ];
 
   const group = groupView({

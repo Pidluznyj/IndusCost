@@ -58,6 +58,8 @@ export type NomusEffectiveBomLine = {
   preferencial?: boolean | null;
   itemDeEmbarque?: boolean | null;
   posicao?: number | null;
+  /** `rawPayload.idComponentePreferencialVinculadoAlternativo` quando `alternativo=true`. */
+  linkedPreferredExternalLineId?: number | null;
 };
 
 export type IndusBomLine = {

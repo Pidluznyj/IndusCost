@@ -22,6 +22,7 @@ import {
   type OptionalPricingGroupView,
   type PricingOptionalStatus,
 } from "@/src/lib/nomusOptionalPricingSelection";
+import type { PreferredAlternativeSet } from "@/src/lib/nomusPreferredAlternativeLink";
 import {
   applyReviewDecisionsToEffectiveBom,
   listReviewDecisionsForParentCode,
@@ -66,7 +67,131 @@ type ComponentResolution =
       choiceId: string;
       selected: boolean;
       selectedNone: boolean;
+    }
+  | {
+      kind: "exclusive_set_resolved";
+      set: PreferredAlternativeSet;
+      selected: boolean;
+      brokenLink?: boolean;
     };
+
+function applyPreferredAlternativeExclusiveResolution(
+  map: Map<string, ComponentResolution>,
+  sets: PreferredAlternativeSet[],
+  groups: OptionalPricingGroupView[]
+): void {
+  for (const set of sets) {
+    const prefKey = set.preferredComponentCode
+      ? normalizeComponentCode(set.preferredComponentCode)
+      : "";
+    const allKeys = [
+      prefKey,
+      ...set.alternativeComponentCodes.map((c) => normalizeComponentCode(c)),
+    ].filter(Boolean);
+
+    const coveringGroup = groups.find(
+      (g) =>
+        g.isActive &&
+        g.choices.some(
+          (c) => c.isActive && allKeys.includes(normalizeComponentCode(c.componentCode))
+        )
+    );
+
+    if (coveringGroup) {
+      if (coveringGroup.selectedNone) {
+        for (const key of allKeys) {
+          const choice = coveringGroup.choices.find(
+            (c) => c.isActive && normalizeComponentCode(c.componentCode) === key
+          );
+          map.set(key, {
+            kind: "optional_resolved",
+            group: coveringGroup,
+            choiceId: choice?.id ?? "",
+            selected: false,
+            selectedNone: true,
+          });
+        }
+        continue;
+      }
+
+      const selectedChoices = coveringGroup.choices.filter(
+        (c) => c.isActive && c.isSelectedForPricing
+      );
+      const selectedKey =
+        selectedChoices.length === 1
+          ? normalizeComponentCode(selectedChoices[0]!.componentCode)
+          : null;
+
+      if (selectedKey && selectedChoices[0]?.isStale) {
+        map.set(selectedKey, { kind: "group_stale", group: coveringGroup });
+        for (const key of allKeys) {
+          if (key !== selectedKey) {
+            map.set(key, {
+              kind: "optional_resolved",
+              group: coveringGroup,
+              choiceId: "",
+              selected: false,
+              selectedNone: false,
+            });
+          }
+        }
+        continue;
+      }
+
+      if (selectedKey && !set.preferredInSnapshot && selectedKey !== prefKey) {
+        map.set(selectedKey, { kind: "group_stale", group: coveringGroup });
+        for (const key of allKeys) {
+          if (key !== selectedKey) {
+            map.set(key, {
+              kind: "optional_resolved",
+              group: coveringGroup,
+              choiceId: "",
+              selected: false,
+              selectedNone: false,
+            });
+          }
+        }
+        continue;
+      }
+
+      if (selectedKey) {
+        for (const key of allKeys) {
+          const choice = coveringGroup.choices.find(
+            (c) => c.isActive && normalizeComponentCode(c.componentCode) === key
+          );
+          map.set(key, {
+            kind: "optional_resolved",
+            group: coveringGroup,
+            choiceId: choice?.id ?? "",
+            selected: key === selectedKey,
+            selectedNone: false,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (!set.preferredInSnapshot) {
+      for (const key of allKeys) {
+        map.set(key, {
+          kind: "exclusive_set_resolved",
+          set,
+          selected: false,
+          brokenLink: true,
+        });
+      }
+      continue;
+    }
+
+    for (const key of allKeys) {
+      map.set(key, {
+        kind: "exclusive_set_resolved",
+        set,
+        selected: key === prefKey,
+      });
+    }
+  }
+}
 
 function flagsForItem(
   item: AggregatedOptionalItem,
@@ -81,7 +206,8 @@ function flagsForItem(
 export function buildComponentResolutionMap(
   optionalItems: AggregatedOptionalItem[],
   groups: OptionalPricingGroupView[],
-  unassigned: AggregatedOptionalItem[]
+  unassigned: AggregatedOptionalItem[],
+  preferredAlternativeSets: PreferredAlternativeSet[] = []
 ): Map<string, ComponentResolution> {
   const map = new Map<string, ComponentResolution>();
 
@@ -139,6 +265,8 @@ export function buildComponentResolutionMap(
       map.set(key, { kind: "unassigned" });
     }
   }
+
+  applyPreferredAlternativeExclusiveResolution(map, preferredAlternativeSets, groups);
 
   return map;
 }
@@ -266,6 +394,46 @@ function buildLineFromOptional(
         groupId: group.id,
         groupName: group.groupName,
         selectedChoiceId: choiceId,
+        resolution: "EXCLUDED_OPTIONAL_NOT_SELECTED",
+      };
+    }
+    case "exclusive_set_resolved": {
+      const { selected, set, brokenLink } = resolution;
+      if (brokenLink) {
+        return {
+          ...base,
+          source: "NOMUS_OPTIONAL_NOT_SELECTED",
+          decision: "BLOCKED",
+          includedForPricing: false,
+          reason: `Alternativa vinculada ao preferencial ${set.preferredComponentCode || set.preferredExternalLineId}, mas o preferencial não está na lista Nomus atual.`,
+        };
+      }
+      if (selected) {
+        return {
+          ...base,
+          source: item.isAlternative
+            ? "NOMUS_ALTERNATIVE_SELECTED"
+            : item.isPreferred
+              ? "NOMUS_REQUIRED"
+              : selectedSource(item, true),
+          decision: "INCLUDE",
+          includedForPricing: true,
+          reason: item.isPreferred
+            ? "Preferencial Nomus (padrão) do conjunto alternativo/preferencial."
+            : "Selecionado no conjunto alternativo/preferencial vinculado.",
+          resolution: "selected",
+        };
+      }
+      return {
+        ...base,
+        source: item.isAlternative
+          ? "NOMUS_ALTERNATIVE_NOT_SELECTED"
+          : "NOMUS_OPTIONAL_NOT_SELECTED",
+        decision: "EXCLUDE",
+        includedForPricing: false,
+        reason: item.isPreferred
+          ? "Preferencial suprimido — outra opção do conjunto vinculado está ativa."
+          : "Alternativa não selecionada no conjunto vinculado.",
         resolution: "EXCLUDED_OPTIONAL_NOT_SELECTED",
       };
     }
@@ -517,6 +685,7 @@ export async function buildEffectivePricingBomForParentCode(
     optionalItems: ctx.optionalItems,
     unassignedOptionalItems: unassigned,
     groups,
+    preferredAlternativeSets: ctx.preferredAlternativeSets,
   });
 
   const listSelection = chooseEffectiveNomusList(stageLines);
@@ -525,7 +694,12 @@ export async function buildEffectivePricingBomForParentCode(
     lineByExternalId.set(line.externalLineId, line);
   }
 
-  const resolutionMap = buildComponentResolutionMap(ctx.optionalItems, groups, unassigned);
+  const resolutionMap = buildComponentResolutionMap(
+    ctx.optionalItems,
+    groups,
+    unassigned,
+    ctx.preferredAlternativeSets
+  );
 
   const directLines: EffectivePricingBomLine[] = [];
   const excludedLines: EffectivePricingBomLine[] = [];

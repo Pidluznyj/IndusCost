@@ -66,6 +66,12 @@ type DetailResponse = {
   }>;
   status: PricingOptionalStatus;
   warnings: string[];
+  preferredAlternativeSets?: Array<{
+    preferredExternalLineId: number;
+    preferredComponentCode: string;
+    alternativeComponentCodes: string[];
+    preferredInSnapshot: boolean;
+  }>;
 };
 
 const STATUS_LABEL: Record<PricingOptionalStatus, string> = {
@@ -616,6 +622,36 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
                 </div>
               ) : null}
 
+              {(detail.preferredAlternativeSets ?? []).length > 0 ? (
+                <div className="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                  <p className="text-xs font-bold text-indigo-950">
+                    Conjuntos preferencial / alternativo (Nomus)
+                  </p>
+                  <p className="text-[11px] text-indigo-900/90">
+                    Itens vinculados por{" "}
+                    <code className="text-[10px]">idComponentePreferencialVinculadoAlternativo</code>.
+                    Só um entra na BOM efetiva. Sem grupo manual, o preferencial é o padrão.
+                  </p>
+                  <ul className="space-y-2 text-[11px] text-indigo-950">
+                    {(detail.preferredAlternativeSets ?? []).map((set) => (
+                      <li
+                        key={set.preferredExternalLineId}
+                        className="rounded border border-indigo-200/80 bg-white/60 px-2 py-1.5"
+                      >
+                        <span className="font-semibold">Preferencial (padrão):</span>{" "}
+                        {set.preferredComponentCode || `linha #${set.preferredExternalLineId}`}
+                        {!set.preferredInSnapshot ? (
+                          <span className="text-orange-700 font-semibold"> — ausente no snapshot</span>
+                        ) : null}
+                        <br />
+                        <span className="font-semibold">Alternativas:</span>{" "}
+                        {set.alternativeComponentCodes.join(", ") || "—"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
               {detail.unassignedOptionalItems.length > 0 ? (
                 <div className="space-y-2 rounded-lg border border-fuchsia-200 bg-fuchsia-50/40 p-3">
                   <div>
@@ -631,24 +667,41 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
                     </p>
                   </div>
                   <div className="space-y-1">
-                    {detail.unassignedOptionalItems.map((item) => (
-                      <label
-                        key={item.componentCode}
-                        className="flex items-start gap-2 text-xs cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedForNewGroup.has(item.componentCode)}
-                          onChange={() => toggleNewGroupCode(item.componentCode)}
-                          className="mt-0.5"
-                        />
-                        <span>
-                          <span className="font-semibold">{item.componentCode}</span>
-                          {item.componentDescription ? ` — ${item.componentDescription}` : ""}
-                          <span className="text-muted-foreground"> — qtd {formatQty(item.plannedQuantity)}</span>
-                        </span>
-                      </label>
-                    ))}
+                    {detail.unassignedOptionalItems.map((item) => {
+                      const inLinkedSet = (detail.preferredAlternativeSets ?? []).find(
+                        (set) =>
+                          set.preferredComponentCode === item.componentCode ||
+                          set.alternativeComponentCodes.includes(item.componentCode)
+                      );
+                      const isPreferredInSet =
+                        inLinkedSet?.preferredComponentCode === item.componentCode;
+                      return (
+                        <label
+                          key={item.componentCode}
+                          className="flex items-start gap-2 text-xs cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedForNewGroup.has(item.componentCode)}
+                            onChange={() => toggleNewGroupCode(item.componentCode)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-semibold">{item.componentCode}</span>
+                            {isPreferredInSet ? (
+                              <span className="text-indigo-800 font-semibold"> (preferencial padrão)</span>
+                            ) : inLinkedSet ? (
+                              <span className="text-indigo-700 font-semibold"> (alternativa vinculada)</span>
+                            ) : null}
+                            {item.componentDescription ? ` — ${item.componentDescription}` : ""}
+                            <span className="text-muted-foreground">
+                              {" "}
+                              — qtd {formatQty(item.plannedQuantity)}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
                   <div className="flex flex-wrap gap-2 items-end pt-2">
                     <div className="flex-1 min-w-[140px]">
@@ -742,51 +795,67 @@ export const NomusOptionalPricingSelectionPanel: React.FC<NomusOptionalPricingSe
                       </button>
                     </div>
                     <div className="space-y-1">
-                      {group.choices.map((choice) => (
-                        <label
-                          key={choice.id}
-                          className={cn(
-                            "flex items-start gap-2 text-xs cursor-pointer rounded px-1 py-0.5",
-                            choice.isStale && "bg-orange-50"
-                          )}
-                        >
-                          <input
-                            type={isRadio ? "radio" : "checkbox"}
-                            name={isRadio ? `group-${group.id}` : undefined}
-                            checked={draft.choiceIds.has(choice.id)}
-                            onChange={() => {
-                              setGroupSelectionDraft((prev) => {
-                                const current = prev[group.id] ?? {
-                                  choiceIds: new Set<string>(),
-                                  selectedNone: false,
-                                };
-                                const nextIds = new Set(current.choiceIds);
-                                if (isRadio) {
-                                  nextIds.clear();
-                                  nextIds.add(choice.id);
-                                } else if (nextIds.has(choice.id)) nextIds.delete(choice.id);
-                                else nextIds.add(choice.id);
-                                return {
-                                  ...prev,
-                                  [group.id]: { choiceIds: nextIds, selectedNone: false },
-                                };
-                              });
-                            }}
-                            className="mt-0.5"
-                          />
-                          <span>
-                            {choice.componentCode}
-                            {choice.componentDescription ? ` — ${choice.componentDescription}` : ""}
-                            <span className="text-muted-foreground">
-                              {" "}
-                              — qtd {formatQty(choice.plannedQuantity)}
+                      {group.choices.map((choice) => {
+                        const linkedSet = (detail.preferredAlternativeSets ?? []).find(
+                          (set) =>
+                            set.preferredComponentCode === choice.componentCode ||
+                            set.alternativeComponentCodes.includes(choice.componentCode)
+                        );
+                        const roleLabel =
+                          linkedSet?.preferredComponentCode === choice.componentCode
+                            ? "preferencial"
+                            : linkedSet
+                              ? "alternativa vinculada"
+                              : null;
+                        return (
+                          <label
+                            key={choice.id}
+                            className={cn(
+                              "flex items-start gap-2 text-xs cursor-pointer rounded px-1 py-0.5",
+                              choice.isStale && "bg-orange-50"
+                            )}
+                          >
+                            <input
+                              type={isRadio ? "radio" : "checkbox"}
+                              name={isRadio ? `group-${group.id}` : undefined}
+                              checked={draft.choiceIds.has(choice.id)}
+                              onChange={() => {
+                                setGroupSelectionDraft((prev) => {
+                                  const current = prev[group.id] ?? {
+                                    choiceIds: new Set<string>(),
+                                    selectedNone: false,
+                                  };
+                                  const nextIds = new Set(current.choiceIds);
+                                  if (isRadio) {
+                                    nextIds.clear();
+                                    nextIds.add(choice.id);
+                                  } else if (nextIds.has(choice.id)) nextIds.delete(choice.id);
+                                  else nextIds.add(choice.id);
+                                  return {
+                                    ...prev,
+                                    [group.id]: { choiceIds: nextIds, selectedNone: false },
+                                  };
+                                });
+                              }}
+                              className="mt-0.5"
+                            />
+                            <span>
+                              {choice.componentCode}
+                              {roleLabel ? (
+                                <span className="text-indigo-800 font-semibold"> ({roleLabel})</span>
+                              ) : null}
+                              {choice.componentDescription ? ` — ${choice.componentDescription}` : ""}
+                              <span className="text-muted-foreground">
+                                {" "}
+                                — qtd {formatQty(choice.plannedQuantity)}
+                              </span>
+                              {choice.isStale ? (
+                                <span className="text-orange-700 font-semibold"> (desatualizado)</span>
+                              ) : null}
                             </span>
-                            {choice.isStale ? (
-                              <span className="text-orange-700 font-semibold"> (desatualizado)</span>
-                            ) : null}
-                          </span>
-                        </label>
-                      ))}
+                          </label>
+                        );
+                      })}
                       {group.selectionMode !== "EXACTLY_ONE" ? (
                         <label className="flex items-center gap-2 text-xs cursor-pointer font-medium">
                           <input

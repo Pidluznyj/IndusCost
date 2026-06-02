@@ -14,6 +14,15 @@ import {
   listDistinctParentCodesFromStage,
   loadNomusStageLinesForParent,
 } from "@/src/lib/nomusBomComparisonLoad";
+import {
+  buildPreferredAlternativeSets,
+  componentCodesInPreferredAlternativeSets,
+  findPreferredAlternativeSetForComponent,
+  isLinkedPreferredPricingComponent,
+  type PreferredAlternativeSet,
+} from "@/src/lib/nomusPreferredAlternativeLink";
+
+export type { PreferredAlternativeSet } from "@/src/lib/nomusPreferredAlternativeLink";
 
 export type PricingOptionalStatus = "PENDING" | "RESOLVED" | "NO_OPTIONALS" | "STALE";
 
@@ -24,6 +33,8 @@ export type AggregatedOptionalItem = {
   nomusSourceLineIds: number[];
   isOptional: boolean;
   isAlternative: boolean;
+  isPreferred: boolean;
+  linkedPreferredExternalLineId?: number | null;
 };
 
 export type OptionalPricingGroupStatus = "PENDING" | "RESOLVED" | "STALE";
@@ -59,10 +70,15 @@ export type EffectiveNomusContext = {
   listaMateriaisNome?: string | null;
   requiredItems: AggregatedOptionalItem[];
   optionalItems: AggregatedOptionalItem[];
+  preferredAlternativeSets: PreferredAlternativeSet[];
 };
 
-function isOptionalOrAlternative(line: NomusEffectiveBomLine): boolean {
-  return line.opcional === true || line.alternativo === true;
+function isPricingPoolLine(
+  line: NomusEffectiveBomLine,
+  linkedPreferredCodes: Set<string>
+): boolean {
+  if (line.opcional === true || line.alternativo === true) return true;
+  return isLinkedPreferredPricingComponent(line, linkedPreferredCodes);
 }
 
 function aggregateLinesByComponent(
@@ -80,6 +96,10 @@ function aggregateLinesByComponent(
       existing.nomusSourceLineIds.push(line.externalLineId);
       existing.isOptional = existing.isOptional || line.opcional === true;
       existing.isAlternative = existing.isAlternative || line.alternativo === true;
+      existing.isPreferred = existing.isPreferred || line.preferencial === true;
+      if (line.linkedPreferredExternalLineId != null) {
+        existing.linkedPreferredExternalLineId = line.linkedPreferredExternalLineId;
+      }
     } else {
       map.set(key, {
         componentCode: line.componentCode,
@@ -88,6 +108,8 @@ function aggregateLinesByComponent(
         nomusSourceLineIds: [line.externalLineId],
         isOptional: line.opcional === true,
         isAlternative: line.alternativo === true,
+        isPreferred: line.preferencial === true,
+        linkedPreferredExternalLineId: line.linkedPreferredExternalLineId ?? null,
       });
     }
   }
@@ -121,10 +143,17 @@ export async function getEffectiveNomusContext(parentCode: string): Promise<Effe
 
   const listSelection = chooseEffectiveNomusList(stageLines);
   const effective = listSelection.selectedLines;
+  const preferredAlternativeSets = buildPreferredAlternativeSets(effective);
+  const linkedPreferredCodes = componentCodesInPreferredAlternativeSets(preferredAlternativeSets);
   const comparison = await buildBomComparisonForParentCode(trimmed);
 
-  const optionalItems = aggregateLinesByComponent(effective, isOptionalOrAlternative);
-  const requiredItems = aggregateLinesByComponent(effective, (l) => !isOptionalOrAlternative(l));
+  const optionalItems = aggregateLinesByComponent(effective, (l) =>
+    isPricingPoolLine(l, linkedPreferredCodes)
+  );
+  const requiredItems = aggregateLinesByComponent(
+    effective,
+    (l) => !isPricingPoolLine(l, linkedPreferredCodes)
+  );
 
   const parentDescription =
     comparison.parentDescription ??
@@ -145,6 +174,7 @@ export async function getEffectiveNomusContext(parentCode: string): Promise<Effe
     listaMateriaisNome: listSelection.selectedList?.listaMateriaisNome ?? null,
     requiredItems,
     optionalItems,
+    preferredAlternativeSets,
   };
 }
 
@@ -256,25 +286,53 @@ function groupBlocksOptionalPricing(
   return false;
 }
 
+function groupCoversPreferredAlternativeSet(
+  group: OptionalPricingGroupView,
+  set: PreferredAlternativeSet
+): boolean {
+  if (!group.isActive) return false;
+  const codes = componentCodesInPreferredAlternativeSets([set]);
+  return group.choices.some(
+    (c) => c.isActive && codes.has(normalizeComponentCode(c.componentCode))
+  );
+}
+
+/** Conjunto preferencial/alternativo sem grupo manual: preferencial no snapshot cobre via default. */
+export function isCoveredByPreferredAlternativeDefault(
+  item: AggregatedOptionalItem,
+  sets: PreferredAlternativeSet[],
+  groups: OptionalPricingGroupView[]
+): boolean {
+  const set = findPreferredAlternativeSetForComponent(sets, item.componentCode);
+  if (!set?.preferredInSnapshot) return false;
+  return !groups.some((g) => groupCoversPreferredAlternativeSet(g, set));
+}
+
 export function buildOptionalSelectionStatus(input: {
   optionalItems: AggregatedOptionalItem[];
   unassignedOptionalItems: AggregatedOptionalItem[];
   groups: OptionalPricingGroupView[];
+  preferredAlternativeSets?: PreferredAlternativeSet[];
 }): PricingOptionalStatus {
   if (input.optionalItems.length === 0) return "NO_OPTIONALS";
 
   const optionalByCode = new Map(
     input.optionalItems.map((i) => [normalizeComponentCode(i.componentCode), i])
   );
+  const sets = input.preferredAlternativeSets ?? [];
 
   const blockingStale = input.groups.some(
     (g) => g.isActive && g.status === "STALE" && groupBlocksOptionalPricing(g, optionalByCode)
   );
   if (blockingStale) return "STALE";
 
-  const blockingUnassigned = input.unassignedOptionalItems.filter((i) =>
-    optionalByCode.has(normalizeComponentCode(i.componentCode))
-  );
+  const blockingUnassigned = input.unassignedOptionalItems.filter((i) => {
+    if (!optionalByCode.has(normalizeComponentCode(i.componentCode))) return false;
+    if (sets.length > 0 && isCoveredByPreferredAlternativeDefault(i, sets, input.groups)) {
+      return false;
+    }
+    return true;
+  });
   if (blockingUnassigned.length > 0) return "PENDING";
 
   const activeGroups = input.groups.filter((g) => g.isActive);
@@ -404,6 +462,7 @@ export async function listProductsWithOptionalNomusItems(filters: {
       optionalItems: ctx.optionalItems,
       unassignedOptionalItems: unassigned,
       groups,
+      preferredAlternativeSets: ctx.preferredAlternativeSets,
     });
 
     if (filters.status && filters.status !== status) continue;
@@ -441,6 +500,7 @@ export async function getOptionalPricingSelectionDetail(parentCode: string) {
     optionalItems: ctx.optionalItems,
     unassignedOptionalItems,
     groups,
+    preferredAlternativeSets: ctx.preferredAlternativeSets,
   });
 
   const warnings: string[] = [];
@@ -461,6 +521,7 @@ export async function getOptionalPricingSelectionDetail(parentCode: string) {
     requiredNomusItems: ctx.requiredItems,
     unassignedOptionalItems,
     groups,
+    preferredAlternativeSets: ctx.preferredAlternativeSets,
     status,
     warnings,
   };
@@ -482,7 +543,9 @@ function validateComponentCodesInOptionalPool(
   for (const code of componentCodes) {
     const item = pool.get(normalizeComponentCode(code));
     if (!item) {
-      throw new Error(`Componente ${code} não é opcional/alternativo na lista Nomus efetiva.`);
+      throw new Error(
+        `Componente ${code} não está no pool de precificação (opcional, alternativo ou preferencial vinculado).`
+      );
     }
     resolved.push(item);
   }
