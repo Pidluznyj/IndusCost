@@ -173,6 +173,8 @@ npm run fleet:import -- vehicles apply --file=./arquivo.csv --confirm="APLICAR_I
 
 **Smoke HTTP (`test:fleet:smoke`):** exige `--confirm="RODAR SMOKE FROTA"`, servidor em execução (`npm run dev`) e dados prefixados `TESTE_FROTA_*` (cleanup automático). Autenticação: `FLEET_SMOKE_EMAIL` + `FLEET_SMOKE_PASSWORD`, ou bootstrap de sessão para usuário com `fleet.manage` / `SUPER_ADMIN`. Opcional: `FLEET_SMOKE_BASE_URL` (padrão `http://127.0.0.1:3000`), `FLEET_SMOKE_SKIP_CLEANUP=1`.
 
+Passos cobertos: (1) veículo, (2) motorista, (3–4) reserva e conflito, (5) aprovação, (6–8) checkout/checkin/km, (9–11) manutenção bloqueante e liberação, (12) documento vencendo + alerta, (13) custo + dashboard financeiro, (14) auditoria do veículo.
+
 Testes ficam em `src/lib/fleetValidation.test.ts` (runner `tsx --test`).
 
 ---

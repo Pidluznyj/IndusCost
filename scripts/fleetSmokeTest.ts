@@ -434,12 +434,71 @@ async function main(): Promise<void> {
     }
     log("11", `manutenção concluída, veículo=${freeStatus}`);
 
-    // 12. Dashboard
+    // 12. Documento vencendo → alerta
+    const expiring = new Date();
+    expiring.setDate(expiring.getDate() + 5);
+    await api.request(
+      "POST",
+      `/api/fleet/vehicles/${ids.vehicleId}/documents`,
+      {
+        documentType: "LICENCIAMENTO",
+        expirationDate: expiring.toISOString().slice(0, 10),
+        notes: `${PREFIX}doc ${tag}`,
+      },
+      201
+    );
+    const alertsRes = await api.request("GET", "/api/fleet/alerts", undefined, 200);
+    const alerts = (alertsRes.json.alerts as unknown[]) ?? [];
+    const hasDocAlert = alerts.some((a) => {
+      const row = a as Json;
+      const code = String(row.code ?? "");
+      const msg = String(row.message ?? "");
+      return (
+        (code === "DOCUMENT_EXPIRING" || code === "DOCUMENT_EXPIRED") &&
+        msg.includes("LICENCIAMENTO")
+      );
+    });
+    if (!hasDocAlert) fail("Alerta de documento vencendo não encontrado após cadastro.");
+    log("12", "documento vencendo e alerta confirmados");
+
+    // 13. Custo + dashboard financeiro
+    const now = new Date();
+    const competence = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    await api.request(
+      "POST",
+      "/api/fleet/costs",
+      {
+        vehicleId: ids.vehicleId,
+        costType: "OUTRO",
+        competence,
+        costDate: now.toISOString().slice(0, 10),
+        amount: 150.5,
+        notes: `${PREFIX}custo ${tag}`,
+      },
+      201
+    );
     const dash = await api.request("GET", "/api/fleet/dashboard", undefined, 200);
     const cards = dash.json.cards as Json | undefined;
     const totalVehicles = Number(cards?.totalVehicles ?? 0);
     if (totalVehicles < 1) fail("Dashboard sem veículos.");
-    log("12", `dashboard totalVehicles=${totalVehicles}`);
+    const fin = dash.json.financial as Json | undefined;
+    if (fin?.totalMonth == null || Number(fin.totalMonth) < 150) {
+      fail(`Dashboard financeiro não refletiu custo (totalMonth=${String(fin?.totalMonth)})`);
+    }
+    log("13", `dashboard totalVehicles=${totalVehicles} totalMonth=${String(fin?.totalMonth)}`);
+
+    // 14. Auditoria
+    const audit = await api.request(
+      "GET",
+      `/api/fleet/vehicles/${ids.vehicleId}/audit`,
+      undefined,
+      200
+    );
+    const logs = (audit.json.auditLogs as unknown[]) ?? [];
+    if (!Array.isArray(logs) || logs.length < 1) {
+      fail("Auditoria do veículo vazia após operações do smoke.");
+    }
+    log("14", `auditoria registros=${logs.length}`);
 
     console.warn(`[fleet-smoke] OK — ${tag} placa ${plate}`);
   } finally {

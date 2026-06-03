@@ -283,7 +283,7 @@ export function FleetModule() {
         </p>
       )}
       {tab === "costs" && <FleetFinancialTab initialSubTab="costs" />}
-      {tab === "incidents" && <FleetFinancialTab initialSubTab="fines" />}
+      {tab === "incidents" && <FleetFinancialTab initialSubTab="incidents" />}
 
       {tab === "settings" && (
         <div className="space-y-6 max-w-3xl">
