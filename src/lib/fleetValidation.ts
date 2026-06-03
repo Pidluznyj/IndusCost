@@ -1,8 +1,10 @@
 import type {
+  FleetDocumentStatus,
   FleetDriver,
   FleetDriverStatus,
   FleetReservationStatus,
   FleetVehicle,
+  FleetVehicleOrigin,
   FleetVehicleStatus,
 } from "@prisma/client";
 
@@ -14,7 +16,16 @@ export const FLEET_NON_RESERVABLE_VEHICLE_STATUSES: FleetVehicleStatus[] = [
   "RETURNED",
   "SOLD",
   "CLAIMED",
+  "RESERVED",
 ];
+
+export const ORIGINS_REQUIRING_CONTRACT: FleetVehicleOrigin[] = [
+  "RENTED",
+  "LEASING",
+  "COMODATO",
+];
+
+export const FLEET_DISPOSAL_BLOCKED_STATUSES: FleetVehicleStatus[] = ["IN_USE"];
 
 export const FLEET_ACTIVE_RESERVATION_STATUSES: FleetReservationStatus[] = [
   "REQUESTED",
@@ -132,6 +143,67 @@ export function isActiveVehicleStatus(status: FleetVehicleStatus): boolean {
 
 export function isActiveDriverStatus(status: FleetDriverStatus): boolean {
   return status !== "INACTIVE";
+}
+
+export function assertBlockReason(reason: unknown): string {
+  const r = typeof reason === "string" ? reason.trim() : "";
+  if (!r) throw new FleetValidationError("Motivo é obrigatório para bloqueio/desbloqueio.");
+  return r;
+}
+
+export function assertVehicleCanDispose(status: FleetVehicleStatus): void {
+  if (FLEET_DISPOSAL_BLOCKED_STATUSES.includes(status)) {
+    throw new FleetValidationError("Veículo em uso não pode ser inativado, vendido ou devolvido.");
+  }
+}
+
+export function originRequiresContract(origin: FleetVehicleOrigin): boolean {
+  return ORIGINS_REQUIRING_CONTRACT.includes(origin);
+}
+
+/** Calcula status do documento com base no vencimento e dias de alerta. */
+export function computeDocumentStatus(
+  expirationDate: Date | string | null | undefined,
+  alertDays: number,
+  now: Date = new Date()
+): FleetDocumentStatus {
+  if (!expirationDate) return "VALID";
+  const exp = new Date(expirationDate);
+  if (Number.isNaN(exp.getTime())) return "VALID";
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const expDay = new Date(exp);
+  expDay.setHours(23, 59, 59, 999);
+  if (expDay.getTime() < today.getTime()) return "EXPIRED";
+  const threshold = new Date(today);
+  threshold.setDate(threshold.getDate() + alertDays);
+  if (expDay.getTime() <= threshold.getTime()) return "EXPIRING";
+  return "VALID";
+}
+
+export function isContractExpired(endDate: Date | string | null | undefined, now: Date = new Date()): boolean {
+  if (!endDate) return false;
+  const end = new Date(endDate);
+  if (Number.isNaN(end.getTime())) return false;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  return end.getTime() < today.getTime();
+}
+
+export function isContractExpiringSoon(
+  endDate: Date | string | null | undefined,
+  alertDays: number,
+  now: Date = new Date()
+): boolean {
+  if (!endDate) return false;
+  const end = new Date(endDate);
+  if (Number.isNaN(end.getTime())) return false;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  if (end.getTime() < today.getTime()) return false;
+  const threshold = new Date(today);
+  threshold.setDate(threshold.getDate() + alertDays);
+  return end.getTime() <= threshold.getTime();
 }
 
 export class FleetValidationError extends Error {

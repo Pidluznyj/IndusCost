@@ -1,8 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  assertBlockReason,
+  assertContractDateRange,
   assertKmRange,
+  assertVehicleCanDispose,
   assertVehicleReservable,
+  computeDocumentStatus,
   findReservationConflict,
   isCnhValid,
   isVehicleReservable,
@@ -69,5 +73,49 @@ describe("fleetValidation", () => {
   it("assertKmRange rejects checkin below checkout", () => {
     assert.throws(() => assertKmRange(100, 90), (e: unknown) => e instanceof FleetValidationError);
     assert.doesNotThrow(() => assertKmRange(100, 150));
+  });
+
+  it("isVehicleReservable blocks sold returned inactive and reserved", () => {
+    assert.equal(isVehicleReservable("SOLD"), false);
+    assert.equal(isVehicleReservable("RETURNED"), false);
+    assert.equal(isVehicleReservable("INACTIVE"), false);
+    assert.equal(isVehicleReservable("RESERVED"), false);
+  });
+
+  it("assertVehicleCanDispose blocks in use", () => {
+    assert.throws(
+      () => assertVehicleCanDispose("IN_USE"),
+      (e: unknown) => e instanceof FleetValidationError
+    );
+  });
+
+  it("assertBlockReason requires non-empty reason", () => {
+    assert.throws(() => assertBlockReason(""), (e: unknown) => e instanceof FleetValidationError);
+    assert.equal(assertBlockReason("  falha no freio  "), "falha no freio");
+  });
+
+  it("assertContractDateRange rejects end before start", () => {
+    const start = new Date("2026-01-01");
+    const end = new Date("2025-12-01");
+    assert.throws(
+      () => assertContractDateRange(start, end),
+      (e: unknown) => e instanceof FleetValidationError
+    );
+  });
+
+  it("computeDocumentStatus marks expired and expiring", () => {
+    const now = new Date("2026-06-01");
+    assert.equal(
+      computeDocumentStatus("2020-01-01", 30, now),
+      "EXPIRED"
+    );
+    assert.equal(
+      computeDocumentStatus("2026-06-15", 30, now),
+      "EXPIRING"
+    );
+    assert.equal(
+      computeDocumentStatus("2027-01-01", 30, now),
+      "VALID"
+    );
   });
 });

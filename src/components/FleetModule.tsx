@@ -2,11 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Calendar,
-  Car,
   Loader2,
   Plus,
   RefreshCw,
-  Search,
   Settings,
   User,
   Wrench,
@@ -15,13 +13,11 @@ import {
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { FleetVehiclesTab } from "@/src/components/fleet/FleetVehiclesTab";
 import type {
   FleetDashboardResponse,
   FleetDriverStatus,
   FleetReservationStatus,
-  FleetVehicleOrigin,
-  FleetVehicleRow,
-  FleetVehicleStatus,
 } from "@/src/types/fleet";
 
 const TABS = [
@@ -38,26 +34,6 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
-
-const VEHICLE_STATUS_LABEL: Record<FleetVehicleStatus, string> = {
-  AVAILABLE: "Disponível",
-  RESERVED: "Reservado",
-  IN_USE: "Em uso",
-  MAINTENANCE: "Manutenção",
-  BLOCKED: "Bloqueado",
-  CLAIMED: "Sinistrado",
-  INACTIVE: "Inativo",
-  RETURNED: "Devolvido",
-  SOLD: "Vendido",
-};
-
-const ORIGIN_LABEL: Record<FleetVehicleOrigin, string> = {
-  OWNED: "Próprio",
-  RENTED: "Alugado",
-  LEASING: "Leasing",
-  COMODATO: "Comodato",
-  THIRD_PARTY: "Terceiro",
-};
 
 const RES_STATUS_LABEL: Record<FleetReservationStatus, string> = {
   REQUESTED: "Solicitada",
@@ -90,8 +66,6 @@ export function FleetModule() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canEditVehicles =
-    auth.hasPermission("fleet.vehicles.edit") || auth.hasPermission("fleet.manage");
   const canManage = auth.hasPermission("fleet.manage");
   const canReservations =
     auth.hasPermission("fleet.reservations.create") || auth.hasPermission("fleet.manage");
@@ -102,7 +76,7 @@ export function FleetModule() {
   const canSettings = auth.hasPermission("fleet.settings.manage");
 
   const [dashboard, setDashboard] = useState<FleetDashboardResponse | null>(null);
-  const [vehicles, setVehicles] = useState<FleetVehicleRow[]>([]);
+  const [vehicles, setVehicles] = useState<{ id: string; plate: string | null; brand: string; model: string }[]>([]);
   const [drivers, setDrivers] = useState<
     {
       id: string;
@@ -126,26 +100,6 @@ export function FleetModule() {
     { id: string; description: string; status: string; vehicle?: { plate: string | null; brand: string; model: string } }[]
   >([]);
   const [settings, setSettings] = useState<{ key: string; value: string; description: string | null }[]>([]);
-
-  const [vFilterStatus, setVFilterStatus] = useState("");
-  const [vFilterOrigin, setVFilterOrigin] = useState("");
-  const [vSearch, setVSearch] = useState("");
-
-  const [vehicleModal, setVehicleModal] = useState(false);
-  const [vehicleDetailId, setVehicleDetailId] = useState<string | null>(null);
-  const [vehicleDetail, setVehicleDetail] = useState<Record<string, unknown> | null>(null);
-  const [vehicleForm, setVehicleForm] = useState({
-    plate: "",
-    brand: "",
-    model: "",
-    origin: "OWNED" as FleetVehicleOrigin,
-    currentKm: "0",
-    unit: "",
-    costCenter: "",
-    fuelType: "",
-    vehicleType: "",
-    notes: "",
-  });
 
   const [driverModal, setDriverModal] = useState(false);
   const [driverForm, setDriverForm] = useState({
@@ -180,13 +134,11 @@ export function FleetModule() {
   }, []);
 
   const loadVehicles = useCallback(async () => {
-    const q = new URLSearchParams();
-    if (vFilterStatus) q.set("status", vFilterStatus);
-    if (vFilterOrigin) q.set("origin", vFilterOrigin);
-    if (vSearch) q.set("search", vSearch);
-    const data = await fetchJsonOk<{ vehicles: FleetVehicleRow[] }>(`/api/fleet/vehicles?${q}`);
+    const data = await fetchJsonOk<{ vehicles: { id: string; plate: string | null; brand: string; model: string }[] }>(
+      "/api/fleet/vehicles"
+    );
     setVehicles(data.vehicles);
-  }, [vFilterStatus, vFilterOrigin, vSearch]);
+  }, []);
 
   const loadDrivers = useCallback(async () => {
     const data = await fetchJsonOk<{ drivers: typeof drivers }>("/api/fleet/drivers");
@@ -213,7 +165,6 @@ export function FleetModule() {
     setError(null);
     try {
       if (tab === "dashboard") await loadDashboard();
-      else if (tab === "vehicles") await loadVehicles();
       else if (tab === "drivers") await loadDrivers();
       else if (tab === "reservations") {
         await loadReservations();
@@ -228,57 +179,11 @@ export function FleetModule() {
     } finally {
       setLoading(false);
     }
-  }, [tab, loadDashboard, loadVehicles, loadDrivers, loadReservations, loadMaintenances, loadSettings, vehicles.length, drivers.length]);
+  }, [tab, loadDashboard, loadDrivers, loadReservations, loadMaintenances, loadSettings, vehicles.length, drivers.length]);
 
   useEffect(() => {
     void refresh();
   }, [tab, refresh]);
-
-  const openVehicleDetail = async (id: string) => {
-    setVehicleDetailId(id);
-    setError(null);
-    try {
-      const data = await fetchJsonOk<{ vehicle: Record<string, unknown> }>(`/api/fleet/vehicles/${id}`);
-      setVehicleDetail(data.vehicle);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar veículo.");
-    }
-  };
-
-  const saveVehicle = async () => {
-    if (!canEditVehicles) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await fetchJsonOk("/api/fleet/vehicles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...vehicleForm,
-          currentKm: Number(vehicleForm.currentKm) || 0,
-        }),
-      });
-      setVehicleModal(false);
-      setVehicleForm({
-        plate: "",
-        brand: "",
-        model: "",
-        origin: "OWNED",
-        currentKm: "0",
-        unit: "",
-        costCenter: "",
-        fuelType: "",
-        vehicleType: "",
-        notes: "",
-      });
-      await loadVehicles();
-      setTab("vehicles");
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar veículo.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const saveDriver = async () => {
     if (!canManage) return;
@@ -468,89 +373,7 @@ export function FleetModule() {
         </div>
       )}
 
-      {tab === "vehicles" && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-sm"
-                placeholder="Buscar placa, marca..."
-                value={vSearch}
-                onChange={(e) => setVSearch(e.target.value)}
-              />
-            </div>
-            <select
-              className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-              value={vFilterStatus}
-              onChange={(e) => setVFilterStatus(e.target.value)}
-            >
-              <option value="">Status</option>
-              {Object.entries(VEHICLE_STATUS_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            <select
-              className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-              value={vFilterOrigin}
-              onChange={(e) => setVFilterOrigin(e.target.value)}
-            >
-              <option value="">Origem</option>
-              {Object.entries(ORIGIN_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            {canEditVehicles && (
-              <button
-                type="button"
-                onClick={() => setVehicleModal(true)}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
-              >
-                <Plus className="h-4 w-4" />
-                Novo veículo
-              </button>
-            )}
-          </div>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">Placa</th>
-                  <th className="px-3 py-2">Modelo</th>
-                  <th className="px-3 py-2">Origem</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Km</th>
-                  <th className="px-3 py-2">Unidade</th>
-                  <th className="px-3 py-2">CC</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vehicles.map((v) => (
-                  <tr
-                    key={v.id}
-                    className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
-                    onClick={() => void openVehicleDetail(v.id)}
-                  >
-                    <td className="px-3 py-2 font-medium">{v.plate ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      {v.brand} {v.model}
-                    </td>
-                    <td className="px-3 py-2">{ORIGIN_LABEL[v.origin]}</td>
-                    <td className="px-3 py-2">{VEHICLE_STATUS_LABEL[v.status]}</td>
-                    <td className="px-3 py-2">{v.currentKm}</td>
-                    <td className="px-3 py-2">{v.unit ?? "—"}</td>
-                    <td className="px-3 py-2">{v.costCenter ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {tab === "vehicles" && <FleetVehiclesTab />}
 
       {tab === "drivers" && (
         <div className="space-y-3">
@@ -714,9 +537,19 @@ export function FleetModule() {
         </div>
       )}
 
-      {["contracts", "documents", "costs", "incidents"].includes(tab) && (
+      {tab === "contracts" && (
         <p className="text-sm text-slate-600">
-          Consulte e gerencie pelo ficha do veículo (aba correspondente) ou na Fase 2 com telas dedicadas.
+          Contratos são gerenciados na ficha de cada veículo (aba Veículos → abrir veículo → Contratos).
+        </p>
+      )}
+      {tab === "documents" && (
+        <p className="text-sm text-slate-600">
+          Documentos são gerenciados na ficha de cada veículo (aba Veículos → abrir veículo → Documentos).
+        </p>
+      )}
+      {["costs", "incidents"].includes(tab) && (
+        <p className="text-sm text-slate-600">
+          Em breve na próxima fase. Custos e ocorrências serão detalhados em telas dedicadas.
           {tab === "costs" && !auth.hasPermission("fleet.financial.view") && (
             <span className="block mt-1 text-amber-700">
               Permissão fleet.financial.view necessária para relatórios financeiros.
@@ -752,104 +585,6 @@ export function FleetModule() {
               Salvar parâmetros
             </button>
           )}
-        </div>
-      )}
-
-      {vehicleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-4 shadow-xl">
-            <h3 className="font-semibold">Novo veículo</h3>
-            <div className="mt-3 grid gap-2 text-sm">
-              {(
-                [
-                  ["plate", "Placa"],
-                  ["brand", "Marca *"],
-                  ["model", "Modelo *"],
-                  ["currentKm", "Km atual"],
-                  ["unit", "Unidade"],
-                  ["costCenter", "Centro de custo"],
-                ] as const
-              ).map(([k, label]) => (
-                <label key={k} className="block">
-                  {label}
-                  <input
-                    className="mt-1 w-full rounded border px-2 py-1.5"
-                    value={vehicleForm[k]}
-                    onChange={(e) => setVehicleForm((f) => ({ ...f, [k]: e.target.value }))}
-                  />
-                </label>
-              ))}
-              <label className="block">
-                Origem
-                <select
-                  className="mt-1 w-full rounded border px-2 py-1.5"
-                  value={vehicleForm.origin}
-                  onChange={(e) =>
-                    setVehicleForm((f) => ({ ...f, origin: e.target.value as FleetVehicleOrigin }))
-                  }
-                >
-                  {Object.entries(ORIGIN_LABEL).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setVehicleModal(false)} className="rounded border px-3 py-1.5 text-sm">
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void saveVehicle()}
-                className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white"
-              >
-                Salvar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {vehicleDetailId && vehicleDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-4 shadow-xl">
-            <div className="flex justify-between">
-              <h3 className="font-semibold flex items-center gap-2">
-                <Car className="h-5 w-5" />
-                {(vehicleDetail.plate as string) ?? "Veículo"} — {String(vehicleDetail.brand)}{" "}
-                {String(vehicleDetail.model)}
-              </h3>
-              <button type="button" onClick={() => setVehicleDetailId(null)}>
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="mt-2 text-sm text-slate-600">
-              Status: {VEHICLE_STATUS_LABEL[(vehicleDetail.status as FleetVehicleStatus) ?? "AVAILABLE"]} · Km:{" "}
-              {String(vehicleDetail.currentKm)}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-1 text-xs">
-              {["Informações", "Contrato", "Documentos", "Reservas", "Manutenções", "Custos", "Ocorrências", "Anexos", "Histórico"].map(
-                (l) => (
-                  <span key={l} className="rounded bg-slate-100 px-2 py-1">
-                    {l}
-                  </span>
-                )
-              )}
-            </div>
-            <pre className="mt-3 max-h-48 overflow-auto rounded bg-slate-50 p-2 text-xs">
-              {JSON.stringify(
-                {
-                  contracts: (vehicleDetail.contracts as unknown[])?.length ?? 0,
-                  documents: (vehicleDetail.documents as unknown[])?.length ?? 0,
-                  reservations: (vehicleDetail.reservations as unknown[])?.length ?? 0,
-                },
-                null,
-                2
-              )}
-            </pre>
-          </div>
         </div>
       )}
 

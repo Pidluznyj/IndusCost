@@ -9,10 +9,13 @@ import {
   assertNonNegativeAmount,
   assertNonNegativeKm,
   assertVehicleReservable,
+  computeDocumentStatus,
   findReservationConflict,
   isActiveDriverStatus,
   isActiveVehicleStatus,
   isCnhValid,
+  isContractExpired,
+  isContractExpiringSoon,
   normalizePlate,
   FLEET_ACTIVE_RESERVATION_STATUSES,
   parseDecimalKm,
@@ -167,8 +170,8 @@ export async function buildFleetDashboard() {
     prisma.fleetVehicle.count({ where: { status: "BLOCKED" } }),
     prisma.fleetVehicleDocument.count({
       where: {
-        status: { in: ["VALID", "EXPIRING"] },
-        expirationDate: { lte: docThreshold, gte: now },
+        status: { in: ["EXPIRING", "EXPIRED"] },
+        expirationDate: { not: null },
       },
     }),
     prisma.fleetDriver.count({
@@ -233,6 +236,23 @@ export async function buildFleetDashboard() {
       entityType: "FleetVehicleContract",
       entityId: c.id,
     });
+  }
+
+  const expiredDocs = await prisma.fleetVehicleDocument.findMany({
+    where: { status: { not: "REPLACED" }, expirationDate: { not: null } },
+    select: { id: true, documentType: true, vehicleId: true, expirationDate: true },
+    take: 20,
+  });
+  for (const d of expiredDocs) {
+    const st = computeDocumentStatus(d.expirationDate, docAlertDays, now);
+    if (st === "EXPIRED") {
+      alerts.push({
+        level: "critical",
+        message: `Documento vencido: ${d.documentType}`,
+        entityType: "FleetVehicleDocument",
+        entityId: d.id,
+      });
+    }
   }
 
   return {

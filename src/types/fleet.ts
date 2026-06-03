@@ -13,6 +13,8 @@ export type FleetVehicleStatus =
 
 export type FleetDriverStatus = "AUTHORIZED" | "PENDING" | "BLOCKED" | "INACTIVE";
 
+export type FleetDocumentStatus = "VALID" | "EXPIRING" | "EXPIRED" | "REPLACED";
+
 export type FleetReservationStatus =
   | "REQUESTED"
   | "PENDING_APPROVAL"
@@ -34,6 +36,12 @@ export type FleetMaintenanceStatus =
   | "COMPLETED"
   | "CANCELED";
 
+export type FleetVehicleAlert = {
+  level: "critical" | "warning" | "info";
+  code: string;
+  message: string;
+};
+
 export type FleetVehicleRow = {
   id: string;
   plate: string | null;
@@ -47,6 +55,63 @@ export type FleetVehicleRow = {
   vehicleType?: string | null;
   fuelType?: string | null;
   notes?: string | null;
+  renavam?: string | null;
+  chassis?: string | null;
+  modelYear?: number | null;
+  manufactureYear?: number | null;
+  color?: string | null;
+  ownershipType?: string | null;
+  initialKm?: number;
+  alerts?: FleetVehicleAlert[];
+};
+
+export type FleetContractRow = {
+  id: string;
+  vehicleId: string;
+  supplierName: string;
+  supplierDocument: string | null;
+  contractNumber: string | null;
+  contractType: string;
+  startDate: string;
+  endDate: string | null;
+  monthlyValue: number | null;
+  billingDay: number | null;
+  kmFranchise: number | null;
+  excessKmValue: number | null;
+  status: string;
+  notes: string | null;
+  financialMasked?: boolean;
+};
+
+export type FleetDocumentRow = {
+  id: string;
+  vehicleId: string;
+  documentType: string;
+  documentNumber: string | null;
+  issueDate: string | null;
+  expirationDate: string | null;
+  status: FleetDocumentStatus;
+  responsible: string | null;
+  attachmentUrl: string | null;
+  notes: string | null;
+};
+
+export type FleetAuditLogRow = {
+  id: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  oldValue: string | null;
+  newValue: string | null;
+  reason: string | null;
+  userId: string | null;
+  createdAt: string;
+};
+
+export type FleetVehicleDetail = FleetVehicleRow & {
+  alerts: FleetVehicleAlert[];
+  contracts?: FleetContractRow[];
+  documents?: FleetDocumentRow[];
 };
 
 export type FleetDashboardResponse = {
@@ -63,3 +128,21 @@ export type FleetDashboardResponse = {
   };
   alerts: { level: "critical" | "warning"; message: string; entityType?: string; entityId?: string }[];
 };
+
+export const CONTRACT_TYPE_OPTIONS = [
+  { value: "LOCACAO", label: "Locação" },
+  { value: "LEASING", label: "Leasing" },
+  { value: "COMODATO", label: "Comodato" },
+  { value: "TERCEIRO", label: "Terceiro" },
+  { value: "PROPRIO", label: "Próprio" },
+] as const;
+
+export const DOCUMENT_TYPE_OPTIONS = [
+  "CRLV",
+  "IPVA",
+  "SEGURO",
+  "LICENCIAMENTO",
+  "INSPECAO",
+  "RASTREADOR",
+  "OUTRO",
+] as const;

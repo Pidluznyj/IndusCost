@@ -22,12 +22,23 @@ import {
   validateReservationCreate,
   writeFleetAuditLog,
 } from "@/src/lib/fleetService.js";
+import {
+  enrichVehiclesWithAlerts,
+  registerFleetVehicleExtendedRoutes,
+  buildVehicleFormData,
+} from "@/src/lib/fleetVehicleRoutes.js";
+import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
+import {
+  refreshDocumentStatuses,
+  serializeContract,
+  buildVehicleAlerts,
+} from "@/src/lib/fleetVehicleOps.js";
 
 type AuthGuards = {
   requireAppAuth: express.RequestHandler;
   requirePermission: (p: string) => express.RequestHandler;
   requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<{ id: string; email: string; name: string } | null>;
+  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
 function isUuid(value: unknown): value is string {
@@ -84,8 +95,8 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       const where: Prisma.FleetVehicleWhereInput = {};
       if (status) where.status = status as Prisma.EnumFleetVehicleStatusFilter["equals"];
       if (origin) where.origin = origin as Prisma.EnumFleetVehicleOriginFilter["equals"];
-      if (unit) where.unit = unit;
-      if (costCenter) where.costCenter = costCenter;
+      if (unit) where.unit = { contains: unit, mode: "insensitive" };
+      if (costCenter) where.costCenter = { contains: costCenter, mode: "insensitive" };
       if (search) {
         where.OR = [
           { plate: { contains: search, mode: "insensitive" } },
@@ -98,7 +109,15 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
         where,
         orderBy: [{ plate: "asc" }, { brand: "asc" }],
       });
-      res.json({ vehicles: vehicles.map(serializeFleetVehicle) });
+      const withAlerts = await enrichVehiclesWithAlerts(
+        vehicles.map((v) => ({
+          ...serializeFleetVehicle(v),
+          id: v.id,
+          origin: v.origin,
+          status: v.status,
+        }))
+      );
+      res.json({ vehicles: withAlerts });
     } catch (e) {
       fleetError(res, e, "GET /api/fleet/vehicles");
     }
@@ -121,11 +140,20 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
         },
       });
       if (!vehicle) return res.status(404).json({ error: "Veículo não encontrado." });
+      await refreshDocumentStatuses(id);
+      const authUser = await getCurrentAppUser(req);
+      const financial = authUser ? hasPermission(authUser, "fleet.financial.view") : false;
+      const docs = await prisma.fleetVehicleDocument.findMany({
+        where: { vehicleId: id },
+        orderBy: [{ expirationDate: "asc" }],
+      });
+      const alerts = await buildVehicleAlerts(vehicle);
       res.json({
         vehicle: {
           ...serializeFleetVehicle(vehicle),
-          contracts: vehicle.contracts,
-          documents: vehicle.documents,
+          alerts,
+          contracts: vehicle.contracts.map((c) => serializeContract(c, financial)),
+          documents: docs,
           reservations: vehicle.reservations,
           maintenances: vehicle.maintenances,
           costs: vehicle.costs.map((c) => ({ ...c, amount: Number(c.amount) })),
@@ -141,42 +169,36 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   app.post("/api/fleet/vehicles", ...fleetVehiclesEdit, async (req, res) => {
     try {
       const body = req.body ?? {};
-      const brand = typeof body.brand === "string" ? body.brand.trim() : "";
-      const model = typeof body.model === "string" ? body.model.trim() : "";
-      if (!brand || !model) return res.status(400).json({ error: "Marca e modelo são obrigatórios." });
-
-      const plate = normalizePlate(body.plate);
-      const currentKm = parseDecimalKm(body.currentKm) ?? 0;
-      const initialKm = parseDecimalKm(body.initialKm) ?? currentKm;
-      assertNonNegativeKm(currentKm);
-      assertNonNegativeKm(initialKm);
-
-      await assertUniqueActivePlate(plate);
+      const form = buildVehicleFormData(body);
+      await assertUniqueActivePlate(form.plate ?? null);
 
       const userId = await actorId(req, getCurrentAppUser);
-      const status = body.status === "BLOCKED" ? "BLOCKED" : plate ? "AVAILABLE" : "AVAILABLE";
+      const status = body.status === "BLOCKED" ? "BLOCKED" : "AVAILABLE";
 
       const created = await prisma.fleetVehicle.create({
         data: {
-          plate,
-          renavam: body.renavam?.trim?.() ?? null,
-          chassis: body.chassis?.trim?.() ?? null,
-          brand,
-          model,
-          modelYear: body.modelYear != null ? Number(body.modelYear) : null,
-          manufactureYear: body.manufactureYear != null ? Number(body.manufactureYear) : null,
-          color: body.color?.trim?.() ?? null,
-          vehicleType: body.vehicleType?.trim?.() ?? null,
-          fuelType: body.fuelType?.trim?.() ?? null,
-          origin: body.origin ?? "OWNED",
+          plate: form.plate,
+          renavam: form.renavam ?? null,
+          chassis: form.chassis ?? null,
+          brand: form.brand,
+          model: form.model,
+          modelYear: form.modelYear ?? null,
+          manufactureYear: form.manufactureYear ?? null,
+          color: form.color ?? null,
+          vehicleType: form.vehicleType ?? null,
+          fuelType: form.fuelType ?? null,
+          origin: form.origin ?? "OWNED",
           status,
-          ownershipType: body.ownershipType?.trim?.() ?? null,
-          currentKm,
-          initialKm,
-          unit: body.unit?.trim?.() ?? null,
-          costCenter: body.costCenter?.trim?.() ?? null,
-          responsibleUserId: isUuid(body.responsibleUserId) ? body.responsibleUserId : null,
-          notes: body.notes?.trim?.() ?? null,
+          ownershipType: form.ownershipType ?? null,
+          currentKm: form.currentKm,
+          initialKm: form.initialKm,
+          unit: form.unit ?? null,
+          costCenter: form.costCenter ?? null,
+          responsibleUserId:
+            form.responsibleUserId && isUuid(form.responsibleUserId)
+              ? form.responsibleUserId
+              : null,
+          notes: form.notes ?? null,
           createdBy: userId,
           updatedBy: userId,
         },
@@ -203,44 +225,36 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       const existing = await prisma.fleetVehicle.findUnique({ where: { id } });
       if (!existing) return res.status(404).json({ error: "Veículo não encontrado." });
 
-      const body = req.body ?? {};
-      const plate = body.plate !== undefined ? normalizePlate(body.plate) : existing.plate;
-      if (plate !== existing.plate) await assertUniqueActivePlate(plate, id);
-
-      const currentKm =
-        body.currentKm !== undefined ? (parseDecimalKm(body.currentKm) ?? 0) : Number(existing.currentKm);
-      const initialKm =
-        body.initialKm !== undefined ? (parseDecimalKm(body.initialKm) ?? 0) : Number(existing.initialKm);
-      assertNonNegativeKm(currentKm);
-      assertNonNegativeKm(initialKm);
+      const form = buildVehicleFormData(req.body ?? {}, existing);
+      if (form.plate !== existing.plate) await assertUniqueActivePlate(form.plate ?? null, id);
 
       const userId = await actorId(req, getCurrentAppUser);
       const updated = await prisma.fleetVehicle.update({
         where: { id },
         data: {
-          plate,
-          renavam: body.renavam !== undefined ? (body.renavam?.trim?.() ?? null) : undefined,
-          chassis: body.chassis !== undefined ? (body.chassis?.trim?.() ?? null) : undefined,
-          brand: body.brand?.trim?.() ?? undefined,
-          model: body.model?.trim?.() ?? undefined,
-          modelYear: body.modelYear !== undefined ? Number(body.modelYear) : undefined,
-          manufactureYear: body.manufactureYear !== undefined ? Number(body.manufactureYear) : undefined,
-          color: body.color !== undefined ? (body.color?.trim?.() ?? null) : undefined,
-          vehicleType: body.vehicleType !== undefined ? (body.vehicleType?.trim?.() ?? null) : undefined,
-          fuelType: body.fuelType !== undefined ? (body.fuelType?.trim?.() ?? null) : undefined,
-          origin: body.origin ?? undefined,
-          ownershipType: body.ownershipType !== undefined ? (body.ownershipType?.trim?.() ?? null) : undefined,
-          currentKm,
-          initialKm,
-          unit: body.unit !== undefined ? (body.unit?.trim?.() ?? null) : undefined,
-          costCenter: body.costCenter !== undefined ? (body.costCenter?.trim?.() ?? null) : undefined,
+          plate: form.plate,
+          renavam: form.renavam,
+          chassis: form.chassis,
+          brand: form.brand,
+          model: form.model,
+          modelYear: form.modelYear,
+          manufactureYear: form.manufactureYear,
+          color: form.color,
+          vehicleType: form.vehicleType,
+          fuelType: form.fuelType,
+          origin: form.origin,
+          ownershipType: form.ownershipType,
+          currentKm: form.currentKm,
+          initialKm: form.initialKm,
+          unit: form.unit,
+          costCenter: form.costCenter,
           responsibleUserId:
-            body.responsibleUserId !== undefined
-              ? isUuid(body.responsibleUserId)
-                ? body.responsibleUserId
+            form.responsibleUserId !== undefined
+              ? form.responsibleUserId && isUuid(form.responsibleUserId)
+                ? form.responsibleUserId
                 : null
               : undefined,
-          notes: body.notes !== undefined ? (body.notes?.trim?.() ?? null) : undefined,
+          notes: form.notes,
           updatedBy: userId,
         },
       });
@@ -293,6 +307,8 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       fleetError(res, e, "PATCH /api/fleet/vehicles/:id/status");
     }
   });
+
+  registerFleetVehicleExtendedRoutes(app, auth);
 
   // --- Drivers ---
   app.get("/api/fleet/drivers", ...fleetView, async (req, res) => {
