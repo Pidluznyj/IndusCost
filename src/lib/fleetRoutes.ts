@@ -29,6 +29,7 @@ import {
   registerFleetManagementRoutes,
   saveFleetSettingsWithAudit,
 } from "@/src/lib/fleetManagementRoutes.js";
+import { registerFleetImportRoutes } from "@/src/lib/fleetImportRoutes.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import { parseFleetListLimit } from "@/src/lib/fleetUxShared.js";
 import {
@@ -323,6 +324,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   registerFleetMaintenanceRoutes(app, auth);
   registerFleetFinancialRoutes(app, auth);
   registerFleetManagementRoutes(app, auth);
+  registerFleetImportRoutes(app, auth);
 
   // --- Settings ---
   app.get("/api/fleet/settings", ...fleetView, async (req, res) => {

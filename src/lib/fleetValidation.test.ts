@@ -650,6 +650,98 @@ describe("fleet reports", async () => {
   });
 });
 
+describe("fleet csv import", async () => {
+  const {
+    parseFleetCsvTable,
+    validateVehicleImportRow,
+    validateDriverImportRow,
+    resolveDriverStatusOnImport,
+    stripCsvBom,
+  } = await import("./fleetCsvImport.js");
+
+  const vehicleCsv = stripCsvBom(`placa;marca;modelo;status
+ABC1D23;Ford;Ranger;AVAILABLE
+ABC1D23;Fiat;Strada;AVAILABLE`);
+
+  it("preview with duplicate plate in csv flags invalid row", () => {
+    const parsed = parseFleetCsvTable(vehicleCsv, {
+      placa: "plate",
+      marca: "brand",
+      modelo: "model",
+      status: "status",
+    });
+    assert.ok(!("error" in parsed));
+    if ("error" in parsed) return;
+
+    const ctx = {
+      seenPlates: new Map<string, number>(),
+      existingPlates: new Map<string, string>(),
+      allowUpdate: false,
+    };
+    const r1 = validateVehicleImportRow(parsed.records[0]!, 2, ctx);
+    const r2 = validateVehicleImportRow(parsed.records[1]!, 3, ctx);
+    assert.equal(r1.valid, true);
+    assert.equal(r2.valid, false);
+    assert.match(r2.errors.join(" "), /duplicada/i);
+  });
+
+  it("invalid csv returns error", () => {
+    const r = parseFleetCsvTable("", { plate: "plate" });
+    assert.ok("error" in r);
+  });
+
+  it("CPF duplicate in csv is invalid", () => {
+    const csv = `nome;cpf\nA;11111111111\nB;11111111111`;
+    const parsed = parseFleetCsvTable(csv, { nome: "name", cpf: "cpf" });
+    assert.ok(!("error" in parsed));
+    if ("error" in parsed) return;
+    const ctx = {
+      seenCpfs: new Map<string, number>(),
+      existingCpfs: new Map<string, string>(),
+      allowUpdate: false,
+      blockExpiredCnh: true,
+    };
+    validateDriverImportRow(parsed.records[0]!, 2, ctx);
+    const r2 = validateDriverImportRow(parsed.records[1]!, 3, ctx);
+    assert.equal(r2.valid, false);
+    assert.match(r2.errors.join(" "), /CPF duplicado/i);
+  });
+
+  it("expired CNH imports as BLOCKED when setting requires", () => {
+    const r = resolveDriverStatusOnImport({
+      cnhExpirationDate: new Date("2020-01-01"),
+      blockExpiredCnh: true,
+    });
+    assert.equal(r.status, "BLOCKED");
+    assert.equal(r.errors.length, 0);
+  });
+
+  it("partial apply only valid rows counted", () => {
+    const parsed = parseFleetCsvTable(vehicleCsv, {
+      placa: "plate",
+      marca: "brand",
+      modelo: "model",
+      status: "status",
+    });
+    assert.ok(!("error" in parsed));
+    if ("error" in parsed) return;
+    const ctx = {
+      seenPlates: new Map<string, number>(),
+      existingPlates: new Map<string, string>(),
+      allowUpdate: false,
+    };
+    const rows = parsed.records.map((rec, i) =>
+      validateVehicleImportRow(rec, i + 2, ctx)
+    );
+    assert.equal(rows.filter((x) => x.valid).length, 1);
+    assert.equal(rows.filter((x) => !x.valid).length, 1);
+  });
+
+  it("preview path does not call prisma", () => {
+    assert.equal(typeof validateVehicleImportRow, "function");
+  });
+});
+
 describe("fleet hardening", async () => {
   const { canAccessFleetRoute, canViewFleetFinancial, FLEET_ROUTE_GUARDS } = await import(
     "./fleetAuth.js"

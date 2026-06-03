@@ -10,6 +10,7 @@ import { FleetMaintenancesTab } from "@/src/components/fleet/FleetMaintenancesTa
 import { FleetFinancialTab } from "@/src/components/fleet/FleetFinancialTab";
 import { FleetReportsTab } from "@/src/components/fleet/FleetReportsTab";
 import { FleetMobileUsageFlow } from "@/src/components/fleet/FleetMobileUsageFlow";
+import { FleetImportSettings } from "@/src/components/fleet/FleetImportSettings";
 import type { FleetDashboardResponse } from "@/src/types/fleet";
 
 const TABS = [
@@ -52,6 +53,7 @@ export function FleetModule() {
   const [error, setError] = useState<string | null>(null);
 
   const canSettings = auth.hasPermission("fleet.settings.manage");
+  const canManage = auth.hasPermission("fleet.manage");
   const canFinancial =
     auth.hasPermission("fleet.financial.view") || auth.hasPermission("fleet.manage");
 
@@ -283,7 +285,9 @@ export function FleetModule() {
       {tab === "incidents" && <FleetFinancialTab initialSubTab="fines" />}
 
       {tab === "settings" && (
-        <div className="space-y-3 max-w-xl">
+        <div className="space-y-6 max-w-3xl">
+          {canManage && <FleetImportSettings />}
+          <div className="space-y-3 max-w-xl">
           {loading && settings.length === 0 ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
@@ -338,6 +342,7 @@ export function FleetModule() {
           {settingsSaved && (
             <p className="text-sm text-green-700">Parâmetros salvos e auditados.</p>
           )}
+          </div>
         </div>
       )}
     </div>
