@@ -165,10 +165,13 @@ npx prisma migrate deploy
 # Scripts operacionais
 npm run fleet:seed-demo          # dados de demonstração
 npm run fleet:db-validate        # validação estrutural no banco
-npm run test:fleet:e2e           # smoke E2E (requer API + banco)
+npm run test:fleet:e2e           # smoke domínio/Prisma (sem HTTP)
+npm run test:fleet:smoke         # smoke HTTP do fluxo principal (servidor + DATABASE_URL)
 npm run fleet:import -- vehicles preview --file=./arquivo.csv
 npm run fleet:import -- vehicles apply --file=./arquivo.csv --confirm="APLICAR_IMPORTACAO_FROTA"
 ```
+
+**Smoke HTTP (`test:fleet:smoke`):** exige `--confirm="RODAR SMOKE FROTA"`, servidor em execução (`npm run dev`) e dados prefixados `TESTE_FROTA_*` (cleanup automático). Autenticação: `FLEET_SMOKE_EMAIL` + `FLEET_SMOKE_PASSWORD`, ou bootstrap de sessão para usuário com `fleet.manage` / `SUPER_ADMIN`. Opcional: `FLEET_SMOKE_BASE_URL` (padrão `http://127.0.0.1:3000`), `FLEET_SMOKE_SKIP_CLEANUP=1`.
 
 Testes ficam em `src/lib/fleetValidation.test.ts` (runner `tsx --test`).
 
