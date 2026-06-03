@@ -1,0 +1,144 @@
+import type {
+  FleetDriver,
+  FleetDriverStatus,
+  FleetReservationStatus,
+  FleetVehicle,
+  FleetVehicleStatus,
+} from "@prisma/client";
+
+export const FLEET_NON_RESERVABLE_VEHICLE_STATUSES: FleetVehicleStatus[] = [
+  "BLOCKED",
+  "MAINTENANCE",
+  "IN_USE",
+  "INACTIVE",
+  "RETURNED",
+  "SOLD",
+  "CLAIMED",
+];
+
+export const FLEET_ACTIVE_RESERVATION_STATUSES: FleetReservationStatus[] = [
+  "REQUESTED",
+  "PENDING_APPROVAL",
+  "APPROVED",
+  "IN_USE",
+];
+
+export function parseDecimalKm(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+export function assertNonNegativeKm(km: number, label = "Quilometragem"): void {
+  if (km < 0) throw new FleetValidationError(`${label} não pode ser negativa.`);
+}
+
+export function assertKmRange(checkoutKm: number, checkinKm: number): void {
+  assertNonNegativeKm(checkoutKm, "Km de retirada");
+  assertNonNegativeKm(checkinKm, "Km de devolução");
+  if (checkinKm < checkoutKm) {
+    throw new FleetValidationError("Km final não pode ser menor que km inicial.");
+  }
+}
+
+export function assertDateRange(start: Date, end: Date, label = "Período"): void {
+  if (end.getTime() <= start.getTime()) {
+    throw new FleetValidationError(`${label}: data final deve ser maior que a inicial.`);
+  }
+}
+
+export function assertContractDateRange(start: Date, end: Date | null | undefined): void {
+  if (end && end.getTime() < start.getTime()) {
+    throw new FleetValidationError("Data final do contrato não pode ser menor que a inicial.");
+  }
+}
+
+export function assertNonNegativeAmount(amount: number, label = "Valor"): void {
+  if (amount < 0) throw new FleetValidationError(`${label} não pode ser negativo.`);
+}
+
+export function isVehicleReservable(status: FleetVehicleStatus): boolean {
+  return !FLEET_NON_RESERVABLE_VEHICLE_STATUSES.includes(status);
+}
+
+export function assertVehicleReservable(vehicle: Pick<FleetVehicle, "status" | "plate">): void {
+  if (!isVehicleReservable(vehicle.status)) {
+    throw new FleetValidationError(
+      `Veículo não disponível para reserva (status: ${vehicle.status}).`
+    );
+  }
+}
+
+export function isCnhValid(
+  driver: Pick<FleetDriver, "cnhExpirationDate" | "status">,
+  at: Date = new Date()
+): boolean {
+  if (driver.status !== "AUTHORIZED") return false;
+  if (!driver.cnhExpirationDate) return false;
+  const exp = new Date(driver.cnhExpirationDate);
+  exp.setHours(23, 59, 59, 999);
+  return exp.getTime() >= at.getTime();
+}
+
+export function assertDriverAuthorizedForReservation(
+  driver: Pick<FleetDriver, "cnhExpirationDate" | "status" | "name">,
+  options?: { blockExpiredCnh?: boolean; at?: Date }
+): void {
+  const at = options?.at ?? new Date();
+  if (driver.status === "BLOCKED" || driver.status === "INACTIVE") {
+    throw new FleetValidationError("Motorista bloqueado ou inativo não pode ser vinculado à reserva.");
+  }
+  if (driver.status !== "AUTHORIZED") {
+    throw new FleetValidationError("Motorista precisa estar autorizado para reserva.");
+  }
+  const blockExpired = options?.blockExpiredCnh ?? true;
+  if (blockExpired && !isCnhValid(driver, at)) {
+    throw new FleetValidationError("CNH vencida: motorista não pode ser vinculado à reserva/retirada.");
+  }
+}
+
+/** Interval overlap: [aStart, aEnd) overlaps [bStart, bEnd) when aStart < bEnd && bStart < aEnd */
+export function reservationPeriodsOverlap(
+  aStart: Date,
+  aEnd: Date,
+  bStart: Date,
+  bEnd: Date
+): boolean {
+  return aStart.getTime() < bEnd.getTime() && bStart.getTime() < aEnd.getTime();
+}
+
+export function findReservationConflict<T extends { id: string; startDateTime: Date; endDateTime: Date }>(
+  existing: T[],
+  start: Date,
+  end: Date,
+  excludeId?: string
+): T | undefined {
+  return existing.find((r) => {
+    if (excludeId && r.id === excludeId) return false;
+    return reservationPeriodsOverlap(start, end, r.startDateTime, r.endDateTime);
+  });
+}
+
+export function normalizePlate(plate: string | null | undefined): string | null {
+  if (!plate) return null;
+  const p = plate.trim().toUpperCase().replace(/\s+/g, "");
+  return p || null;
+}
+
+export function isActiveVehicleStatus(status: FleetVehicleStatus): boolean {
+  return status !== "INACTIVE" && status !== "SOLD" && status !== "RETURNED";
+}
+
+export function isActiveDriverStatus(status: FleetDriverStatus): boolean {
+  return status !== "INACTIVE";
+}
+
+export class FleetValidationError extends Error {
+  readonly code = "FLEET_VALIDATION";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "FleetValidationError";
+  }
+}

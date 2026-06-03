@@ -36,6 +36,7 @@ const PRC = "Precificação / Impostos";
 const OPS = "Custos / Operação";
 const SYS = "Configurações / Sistema";
 const MNT = "Manutenção";
+const FLT = "Gestão de Frota";
 
 export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // —— Geral ——
@@ -645,6 +646,88 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "maintenance.view",
     requires: ["maintenance.view"],
   }),
+
+  // —— Gestão de Frota ——
+  perm({
+    key: "fleet.view",
+    label: "Gestão de Frota",
+    group: FLT,
+    module: "fleet",
+    description: "Acessar o módulo de gestão de frota.",
+    type: "menu",
+  }),
+  perm({
+    key: "fleet.manage",
+    label: "Frota — Gerenciar",
+    group: FLT,
+    module: "fleet",
+    description: "Operações gerais de frota (motoristas, cadastros).",
+    type: "action",
+    parentKey: "fleet.view",
+    requires: ["fleet.view"],
+  }),
+  perm({
+    key: "fleet.vehicles.edit",
+    label: "Frota — Editar veículos",
+    group: FLT,
+    module: "fleet",
+    description: "Cadastrar e editar veículos.",
+    type: "action",
+    parentKey: "fleet.view",
+    requires: ["fleet.view"],
+  }),
+  perm({
+    key: "fleet.reservations.create",
+    label: "Frota — Criar reservas",
+    group: FLT,
+    module: "fleet",
+    description: "Criar reservas e registrar retirada/devolução.",
+    type: "action",
+    parentKey: "fleet.view",
+    requires: ["fleet.view"],
+  }),
+  perm({
+    key: "fleet.reservations.approve",
+    label: "Frota — Aprovar reservas",
+    group: FLT,
+    module: "fleet",
+    description: "Aprovar ou rejeitar reservas.",
+    type: "action",
+    parentKey: "fleet.view",
+    requires: ["fleet.view"],
+    risk: "sensitive",
+  }),
+  perm({
+    key: "fleet.maintenance.manage",
+    label: "Frota — Manutenções",
+    group: FLT,
+    module: "fleet",
+    description: "Abrir e gerenciar manutenções de veículos.",
+    type: "action",
+    parentKey: "fleet.view",
+    requires: ["fleet.view"],
+  }),
+  perm({
+    key: "fleet.financial.view",
+    label: "Frota — Custos",
+    group: FLT,
+    module: "fleet",
+    description: "Visualizar custos da frota.",
+    type: "action",
+    parentKey: "fleet.view",
+    requires: ["fleet.view"],
+  }),
+  perm({
+    key: "fleet.settings.manage",
+    label: "Frota — Configurações",
+    group: FLT,
+    module: "fleet",
+    description: "Alterar parâmetros do módulo de frota.",
+    type: "action",
+    parentKey: "fleet.view",
+    requires: ["fleet.view"],
+    risk: "sensitive",
+  }),
 ];
 
 export const ALL_PERMISSION_KEYS = PERMISSION_CATALOG.map((p) => p.key);
@@ -661,4 +744,5 @@ export const PERMISSION_GROUP_ORDER = [
   OPS,
   SYS,
   MNT,
+  FLT,
 ] as const;

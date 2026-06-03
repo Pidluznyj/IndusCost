@@ -58,6 +58,7 @@ import {
   type MaterialDemandMode,
 } from "./src/lib/materialDemandFilters.js";
 import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
+import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
 import {
   getNomusDailySyncStatus,
   NomusDailySyncConflictError,
@@ -14289,6 +14290,14 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       console.error("PATCH /api/maintenance-requests/:id/status", e);
       res.status(500).json({ error: e?.message || "Erro ao alterar status." });
     }
+  });
+
+  // --- API: Gestão de Frota ---
+  registerFleetRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+    requireAnyPermission,
+    getCurrentAppUser,
   });
 
   // API fallback: garante resposta JSON para rotas /api não registradas

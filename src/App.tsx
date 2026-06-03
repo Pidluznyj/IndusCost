@@ -18,6 +18,7 @@ import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
+import { FleetModule } from "./components/FleetModule";
 import { SystemGuideModule } from "./components/SystemGuideModule";
 import { PublicLandingRoute } from "./components/PublicLandingRoute";
 import { PublicLoginRoute } from "./components/PublicLoginRoute";
@@ -335,6 +336,17 @@ export default function App() {
               description="Controle de solicitações de manutenção predial/facilities, responsáveis, status e materiais."
             >
               <MaintenanceModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="fleet"
+          element={
+            <ModulePageShell
+              title="Gestão de Frota"
+              description="Cadastro de veículos, motoristas, reservas, manutenções, documentos e custos operacionais da frota."
+            >
+              <FleetModule />
             </ModulePageShell>
           }
         />

@@ -21,6 +21,7 @@ import {
   ClipboardList,
   Wrench,
   Contact,
+  Car,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
@@ -43,6 +44,7 @@ const ALL_MENU_ITEMS: {
   { id: "materials", icon: Truck, label: MODULE_LABELS.materials },
   { id: "purchases", icon: ShoppingCart, label: MODULE_LABELS.purchases },
   { id: "maintenance", icon: Wrench, label: MODULE_LABELS.maintenance },
+  { id: "fleet", icon: Car, label: MODULE_LABELS.fleet },
   { id: "products", icon: Package, label: MODULE_LABELS.products },
   { id: "opex", icon: PieChart, label: MODULE_LABELS.opex },
   { id: "taxes", icon: Scale, label: MODULE_LABELS.taxes },

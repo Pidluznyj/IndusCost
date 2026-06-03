@@ -1475,3 +1475,516 @@ model EngineeringChangeLog {
   @@index([changedAt])
   @@index([runId])
 }
+
+// —— Gestão de Frota (Fase 1) ——
+
+enum FleetVehicleOrigin {
+  OWNED
+  RENTED
+  LEASING
+  COMODATO
+  THIRD_PARTY
+}
+
+enum FleetVehicleStatus {
+  AVAILABLE
+  RESERVED
+  IN_USE
+  MAINTENANCE
+  BLOCKED
+  CLAIMED
+  INACTIVE
+  RETURNED
+  SOLD
+}
+
+enum FleetDriverStatus {
+  AUTHORIZED
+  PENDING
+  BLOCKED
+  INACTIVE
+}
+
+enum FleetDocumentStatus {
+  VALID
+  EXPIRING
+  EXPIRED
+  REPLACED
+}
+
+enum FleetReservationStatus {
+  REQUESTED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELED
+  IN_USE
+  FINISHED
+  FINISHED_WITH_PENDING
+  NO_SHOW
+}
+
+enum FleetMaintenanceStatus {
+  OPEN
+  SCHEDULED
+  QUOTING
+  PENDING_APPROVAL
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum FleetCostStatus {
+  ACTIVE
+  CANCELED
+}
+
+enum FleetChecklistResult {
+  OK
+  NOT_OK
+  NOT_APPLICABLE
+}
+
+enum FleetIncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELED
+}
+
+enum FleetFineStatus {
+  RECEIVED
+  IDENTIFYING_DRIVER
+  PENDING_PAYMENT
+  PAID
+  CONTESTED
+  CANCELED
+}
+
+enum FleetUsageStatus {
+  CHECKED_OUT
+  CHECKED_IN
+  CANCELED
+}
+
+enum FleetChecklistType {
+  CHECKOUT
+  CHECKIN
+  INSPECTION
+  MAINTENANCE
+}
+
+enum FleetChecklistStatus {
+  DRAFT
+  COMPLETED
+  CANCELED
+}
+
+model FleetVehicle {
+  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  plate             String?
+  renavam           String?
+  chassis           String?
+  brand             String
+  model             String
+  modelYear         Int?
+  manufactureYear   Int?
+  color             String?
+  vehicleType       String?
+  fuelType          String?
+  origin            FleetVehicleOrigin   @default(OWNED)
+  status            FleetVehicleStatus   @default(AVAILABLE)
+  ownershipType     String?
+  currentKm         Decimal              @default(0) @db.Decimal(20, 6)
+  initialKm         Decimal              @default(0) @db.Decimal(20, 6)
+  unit              String?
+  costCenter        String?
+  responsibleUserId String?              @db.Uuid
+  notes             String?
+  createdAt         DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+  createdBy         String?
+  updatedBy         String?
+
+  contracts     FleetVehicleContract[]
+  documents     FleetVehicleDocument[]
+  reservations  FleetReservation[]
+  usages        FleetUsage[]
+  checklists    FleetChecklist[]
+  maintenances  FleetMaintenance[]
+  costs         FleetCost[]
+  fuelings      FleetFueling[]
+  fines         FleetFine[]
+  incidents     FleetIncident[]
+  attachments   FleetAttachment[]
+
+  @@index([status])
+  @@index([origin])
+  @@index([unit])
+  @@index([costCenter])
+  @@index([plate])
+}
+
+model FleetVehicleContract {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId        String    @db.Uuid
+  supplierName     String
+  supplierDocument String?
+  contractNumber   String?
+  contractType     String
+  startDate        DateTime  @db.Date
+  endDate          DateTime? @db.Date
+  monthlyValue     Decimal?  @db.Decimal(20, 6)
+  billingDay       Int?
+  kmFranchise      Decimal?  @db.Decimal(20, 6)
+  excessKmValue    Decimal?  @db.Decimal(20, 6)
+  status           String    @default("ACTIVE")
+  notes            String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle     FleetVehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  costs       FleetCost[]
+  attachments FleetAttachment[]
+
+  @@index([vehicleId])
+  @@index([status])
+  @@index([endDate])
+}
+
+model FleetVehicleDocument {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId      String              @db.Uuid
+  documentType   String
+  documentNumber String?
+  issueDate      DateTime?           @db.Date
+  expirationDate DateTime?           @db.Date
+  status         FleetDocumentStatus @default(VALID)
+  responsible    String?
+  attachmentUrl  String?
+  notes          String?
+  createdAt      DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle     FleetVehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attachments FleetAttachment[]
+
+  @@index([vehicleId])
+  @@index([expirationDate])
+  @@index([status])
+}
+
+model FleetDriver {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  cpf                String
+  cnhNumber          String?
+  cnhCategory        String?
+  cnhExpirationDate  DateTime?         @db.Date
+  phone              String?
+  email              String?
+  unit               String?
+  costCenter         String?
+  status             FleetDriverStatus @default(PENDING)
+  notes              String?
+  createdAt          DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+
+  reservations FleetReservation[]
+  usages       FleetUsage[]
+  fuelings     FleetFueling[]
+  fines        FleetFine[]
+  incidents    FleetIncident[]
+
+  @@index([status])
+  @@index([cpf])
+}
+
+model FleetReservation {
+  id               String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId        String                 @db.Uuid
+  requesterUserId  String?                @db.Uuid
+  driverId         String?                @db.Uuid
+  startDateTime    DateTime               @db.Timestamptz(6)
+  endDateTime      DateTime               @db.Timestamptz(6)
+  destination      String?
+  reason           String?
+  costCenter       String?
+  status           FleetReservationStatus @default(REQUESTED)
+  approvalStatus   String?
+  approvedBy       String?
+  approvedAt       DateTime?              @db.Timestamptz(6)
+  rejectionReason  String?
+  cancelReason     String?
+  notes            String?
+  createdAt        DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle      FleetVehicle       @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  driver       FleetDriver?       @relation(fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usage        FleetUsage?
+  checklists   FleetChecklist[]
+  maintenances FleetMaintenance[]
+  costs        FleetCost[]
+  fines        FleetFine[]
+  incidents    FleetIncident[]
+  attachments  FleetAttachment[]
+
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([status])
+  @@index([startDateTime, endDateTime])
+}
+
+model FleetUsage {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reservationId     String           @unique @db.Uuid
+  vehicleId         String           @db.Uuid
+  driverId          String?          @db.Uuid
+  checkoutAt        DateTime?        @db.Timestamptz(6)
+  checkoutKm        Decimal?         @db.Decimal(20, 6)
+  checkoutFuelLevel String?
+  checkinAt         DateTime?        @db.Timestamptz(6)
+  checkinKm         Decimal?         @db.Decimal(20, 6)
+  checkinFuelLevel  String?
+  kmDriven          Decimal?         @db.Decimal(20, 6)
+  checkoutNotes     String?
+  checkinNotes      String?
+  status            FleetUsageStatus @default(CHECKED_OUT)
+  createdAt         DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  reservation FleetReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  vehicle     FleetVehicle     @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  driver      FleetDriver?     @relation(fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  checklists  FleetChecklist[]
+
+  @@index([vehicleId])
+  @@index([driverId])
+}
+
+model FleetChecklist {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId     String               @db.Uuid
+  reservationId String?              @db.Uuid
+  usageId       String?              @db.Uuid
+  checklistType FleetChecklistType
+  status        FleetChecklistStatus @default(DRAFT)
+  performedBy   String?
+  performedAt   DateTime?            @db.Timestamptz(6)
+  notes         String?
+  createdAt     DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle     FleetVehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reservation FleetReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  usage       FleetUsage?       @relation(fields: [usageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items       FleetChecklistItem[]
+
+  @@index([vehicleId])
+  @@index([reservationId])
+}
+
+model FleetChecklistItem {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  checklistId   String               @db.Uuid
+  itemName      String
+  result        FleetChecklistResult?
+  isCritical    Boolean              @default(false)
+  notes         String?
+  attachmentUrl String?
+  createdAt     DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+
+  checklist FleetChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([checklistId])
+}
+
+model FleetMaintenance {
+  id             String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId      String                 @db.Uuid
+  reservationId  String?                @db.Uuid
+  maintenanceType String
+  status         FleetMaintenanceStatus @default(OPEN)
+  priority       String                 @default("MEDIA")
+  description    String
+  openedAt       DateTime               @default(now()) @db.Timestamptz(6)
+  scheduledAt    DateTime?              @db.Timestamptz(6)
+  startedAt      DateTime?              @db.Timestamptz(6)
+  completedAt    DateTime?              @db.Timestamptz(6)
+  supplierName   String?
+  estimatedValue Decimal?               @db.Decimal(20, 6)
+  finalValue     Decimal?               @db.Decimal(20, 6)
+  currentKm      Decimal?               @db.Decimal(20, 6)
+  blocksVehicle  Boolean                @default(false)
+  notes          String?
+  createdAt      DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle     FleetVehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reservation FleetReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  costs       FleetCost[]
+  attachments FleetAttachment[]
+
+  @@index([vehicleId])
+  @@index([status])
+}
+
+model FleetCost {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId      String          @db.Uuid
+  contractId     String?         @db.Uuid
+  maintenanceId  String?         @db.Uuid
+  reservationId  String?         @db.Uuid
+  costType       String
+  costDate       DateTime        @db.Date
+  competence     String
+  amount         Decimal         @db.Decimal(20, 6)
+  supplierName   String?
+  documentNumber String?
+  costCenter     String?
+  status         FleetCostStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle     FleetVehicle          @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract    FleetVehicleContract? @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  maintenance FleetMaintenance?     @relation(fields: [maintenanceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  reservation FleetReservation?     @relation(fields: [reservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([vehicleId])
+  @@index([costDate])
+  @@index([status])
+}
+
+model FleetFueling {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId   String    @db.Uuid
+  driverId    String?   @db.Uuid
+  fuelingDate DateTime  @db.Timestamptz(6)
+  km          Decimal   @db.Decimal(20, 6)
+  fuelType    String?
+  liters      Decimal   @db.Decimal(20, 6)
+  unitPrice   Decimal?  @db.Decimal(20, 6)
+  totalValue  Decimal   @db.Decimal(20, 6)
+  stationName String?
+  receiptUrl  String?
+  notes       String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle FleetVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  driver  FleetDriver? @relation(fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([vehicleId])
+  @@index([fuelingDate])
+}
+
+model FleetFine {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId       String          @db.Uuid
+  driverId        String?         @db.Uuid
+  reservationId   String?         @db.Uuid
+  infractionDate  DateTime        @db.Timestamptz(6)
+  location        String?
+  noticeNumber    String?
+  agency          String?
+  amount          Decimal         @db.Decimal(20, 6)
+  points          Int?
+  status          FleetFineStatus @default(RECEIVED)
+  paidAt          DateTime?       @db.Timestamptz(6)
+  contestReason   String?
+  attachmentUrl   String?
+  notes           String?
+  createdAt       DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle     FleetVehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  driver      FleetDriver?      @relation(fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reservation FleetReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  attachments FleetAttachment[]
+
+  @@index([vehicleId])
+  @@index([status])
+}
+
+model FleetIncident {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId           String             @db.Uuid
+  driverId            String?            @db.Uuid
+  reservationId       String?            @db.Uuid
+  incidentType        String
+  incidentDate        DateTime           @db.Timestamptz(6)
+  location            String?
+  description         String
+  severity            String             @default("MEDIA")
+  status              FleetIncidentStatus @default(OPEN)
+  insuranceClaimNumber String?
+  deductibleValue     Decimal?           @db.Decimal(20, 6)
+  blocksVehicle       Boolean            @default(false)
+  notes               String?
+  createdAt           DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle     FleetVehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  driver      FleetDriver?      @relation(fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reservation FleetReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  attachments FleetAttachment[]
+
+  @@index([vehicleId])
+  @@index([status])
+}
+
+model FleetAttachment {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId      String?   @db.Uuid
+  contractId     String?   @db.Uuid
+  documentId     String?   @db.Uuid
+  maintenanceId  String?   @db.Uuid
+  fineId         String?   @db.Uuid
+  incidentId     String?   @db.Uuid
+  reservationId  String?   @db.Uuid
+  attachmentType String
+  fileName       String
+  fileUrl        String
+  uploadedBy     String?
+  uploadedAt     DateTime  @default(now()) @db.Timestamptz(6)
+  notes          String?
+
+  vehicle     FleetVehicle?         @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract    FleetVehicleContract? @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  document    FleetVehicleDocument? @relation(fields: [documentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  maintenance FleetMaintenance?     @relation(fields: [maintenanceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  fine        FleetFine?            @relation(fields: [fineId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  incident    FleetIncident?        @relation(fields: [incidentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reservation FleetReservation?     @relation(fields: [reservationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([vehicleId])
+}
+
+model FleetAuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType String
+  entityId   String   @db.Uuid
+  action     String
+  oldValue   String?
+  newValue   String?
+  reason     String?
+  userId     String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model FleetSettings {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String   @unique
+  value       String
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}

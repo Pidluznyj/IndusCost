@@ -327,6 +327,7 @@ export function summarizePermissionSelection(
     "materials",
     "purchases",
     "maintenance",
+    "fleet",
     "products",
     "opex",
     "taxes",
