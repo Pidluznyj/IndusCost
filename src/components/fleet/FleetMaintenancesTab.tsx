@@ -9,7 +9,14 @@ import {
   MAINTENANCE_STATUS_LABEL,
   MAINTENANCE_TYPE_OPTIONS,
 } from "@/src/types/fleet";
-import { confirmFleetCriticalAction, FleetStatusBadge } from "@/src/components/fleet/fleetUi";
+import {
+  confirmFleetCriticalAction,
+  FleetListPagination,
+  FleetStatusBadge,
+  pickFleetListItems,
+  pickFleetPagination,
+  type FleetPaginatedMeta,
+} from "@/src/components/fleet/fleetUi";
 
 const EMPTY_FORM = {
   vehicleId: "",
@@ -62,33 +69,42 @@ export function FleetMaintenancesTab() {
   });
   const [cancelReason, setCancelReason] = useState("");
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<FleetPaginatedMeta | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const q = new URLSearchParams();
+      q.set("page", String(page));
+      q.set("limit", "50");
       if (filterStatus) q.set("status", filterStatus);
       if (filterVehicle) q.set("vehicleId", filterVehicle);
       if (filterPriority) q.set("priority", filterPriority);
       if (filterType) q.set("maintenanceType", filterType);
-      if (filterStart) q.set("start", new Date(filterStart).toISOString());
-      if (filterEnd) q.set("end", new Date(filterEnd + "T23:59:59").toISOString());
-      const data = await fetchJsonOk<{ maintenances: FleetMaintenanceRow[] }>(
-        `/api/fleet/maintenances?${q}`
-      );
-      setRows(data.maintenances);
+      if (filterStart) q.set("startDate", filterStart);
+      if (filterEnd) q.set("endDate", filterEnd);
+      const data = await fetchJsonOk<Record<string, unknown>>(`/api/fleet/maintenances?${q}`);
+      setRows(pickFleetListItems<FleetMaintenanceRow>(data, "maintenances"));
+      setPagination(pickFleetPagination(data));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar manutenções.");
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterVehicle, filterPriority, filterType, filterStart, filterEnd]);
+  }, [filterStatus, filterVehicle, filterPriority, filterType, filterStart, filterEnd, page]);
 
   const loadVehicles = useCallback(async () => {
-    const data = await fetchJsonOk<{ vehicles: typeof vehicles }>("/api/fleet/vehicles");
-    setVehicles(data.vehicles);
+    const data = await fetchJsonOk<Record<string, unknown>>(
+      "/api/fleet/vehicles?limit=200&page=1&includeAlerts=false"
+    );
+    setVehicles(pickFleetListItems(data, "vehicles"));
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus, filterVehicle, filterPriority, filterType, filterStart, filterEnd]);
 
   useEffect(() => {
     void load();
@@ -338,6 +354,9 @@ export function FleetMaintenancesTab() {
               )}
             </tbody>
           </table>
+          <div className="px-4 pb-3">
+            <FleetListPagination meta={pagination} loading={loading} onPageChange={setPage} />
+          </div>
         </div>
       )}
 

@@ -9,13 +9,19 @@ import {
 } from "@/src/lib/fleetService.js";
 import {
   buildDriverAlerts,
+  buildDriverAlertsSync,
+  buildDriverCnhWhere,
   buildDriverListWhere,
   changeDriverStatus,
-  filterDriversByCnh,
   getDriverOrThrow,
   parseDriverInput,
   serializeDriver,
 } from "@/src/lib/fleetDriverOps.js";
+import {
+  buildFleetListResponse,
+  fleetListMeta,
+  parseFleetListQuery,
+} from "@/src/lib/fleetListQuery.js";
 
 type AuthGuards = {
   requireAppAuth: express.RequestHandler;
@@ -52,23 +58,40 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
 
   app.get("/api/fleet/drivers", ...fleetView, async (req, res) => {
     try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
+      const cnhFilter = String(req.query.cnhFilter ?? "").trim();
       const settings = await loadFleetSettings();
       const alertDays = Number(settings.diasAlertaCnh ?? "30") || 30;
+
       const where = buildDriverListWhere({
-        status: String(req.query.status ?? "").trim(),
-        unit: String(req.query.unit ?? "").trim(),
-        costCenter: String(req.query.costCenter ?? "").trim(),
-        search: String(req.query.search ?? "").trim(),
+        status: list.status,
+        unit: list.unit,
+        costCenter: list.costCenter,
+        search: list.search,
       });
-      let drivers = await prisma.fleetDriver.findMany({ where, orderBy: { name: "asc" } });
-      drivers = await filterDriversByCnh(drivers, String(req.query.cnhFilter ?? "").trim());
-      const enriched = await Promise.all(
-        drivers.map(async (d) => ({
-          ...serializeDriver(d, alertDays),
-          alerts: await buildDriverAlerts(d),
-        }))
-      );
-      res.json({ drivers: enriched });
+      const cnhWhere = buildDriverCnhWhere(cnhFilter, alertDays);
+      if (cnhWhere) Object.assign(where, cnhWhere);
+
+      const orderBy =
+        list.sortBy === "cpf"
+          ? { cpf: list.sortOrder }
+          : { name: list.sortOrder };
+
+      const [total, drivers] = await Promise.all([
+        prisma.fleetDriver.count({ where }),
+        prisma.fleetDriver.findMany({
+          where,
+          orderBy,
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
+
+      const enriched = drivers.map((d) => ({
+        ...serializeDriver(d, alertDays),
+        alerts: buildDriverAlertsSync(d, alertDays),
+      }));
+      res.json(buildFleetListResponse("drivers", enriched, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
       fleetError(res, e, "GET /api/fleet/drivers");
     }

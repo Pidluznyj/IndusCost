@@ -1,12 +1,8 @@
-export const FLEET_LIST_DEFAULT_LIMIT = 500;
-export const FLEET_LIST_MAX_LIMIT = 2000;
-
-export function parseFleetListLimit(raw: unknown, fallback = FLEET_LIST_DEFAULT_LIMIT): number {
-  const n = typeof raw === "string" ? Number(raw) : typeof raw === "number" ? raw : NaN;
-  if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.min(Math.floor(n), FLEET_LIST_MAX_LIMIT);
-}
-
+export {
+  FLEET_LIST_DEFAULT_LIMIT,
+  FLEET_LIST_MAX_LIMIT,
+  parseFleetListLimit,
+} from "@/src/lib/fleetListQuery.js";
 export type FleetCriticalActionId =
   | "vehicle.deactivate"
   | "vehicle.sell"

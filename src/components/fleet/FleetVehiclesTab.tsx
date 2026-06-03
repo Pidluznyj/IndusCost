@@ -5,7 +5,14 @@ import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import type { FleetVehicleOrigin, FleetVehicleRow, FleetVehicleStatus } from "@/src/types/fleet";
 import { FleetVehicleDetailSheet } from "@/src/components/fleet/FleetVehicleDetailSheet";
-import { FleetStatusBadge, formatFleetKm, normalizeFleetList } from "@/src/components/fleet/fleetUi";
+import {
+  FleetListPagination,
+  FleetStatusBadge,
+  formatFleetKm,
+  pickFleetListItems,
+  pickFleetPagination,
+  type FleetPaginatedMeta,
+} from "@/src/components/fleet/fleetUi";
 
 const STATUS_LABEL: Record<FleetVehicleStatus, string> = {
   AVAILABLE: "Disponível",
@@ -63,26 +70,33 @@ export function FleetVehiclesTab() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<FleetPaginatedMeta | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const q = new URLSearchParams();
+      q.set("page", String(page));
+      q.set("limit", "50");
       if (filterStatus) q.set("status", filterStatus);
       if (filterOrigin) q.set("origin", filterOrigin);
       if (filterUnit) q.set("unit", filterUnit);
       if (filterCostCenter) q.set("costCenter", filterCostCenter);
       if (search) q.set("search", search);
-      const data = await fetchJsonOk<{ vehicles: FleetVehicleRow[] }>(
-        `/api/fleet/vehicles?${q}`
-      );
-      setVehicles(normalizeFleetList(data.vehicles));
+      const data = await fetchJsonOk<Record<string, unknown>>(`/api/fleet/vehicles?${q}`);
+      setVehicles(pickFleetListItems<FleetVehicleRow>(data, "vehicles"));
+      setPagination(pickFleetPagination(data));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar veículos.");
     } finally {
       setLoading(false);
     }
+  }, [filterStatus, filterOrigin, filterUnit, filterCostCenter, search, page]);
+
+  useEffect(() => {
+    setPage(1);
   }, [filterStatus, filterOrigin, filterUnit, filterCostCenter, search]);
 
   useEffect(() => {
@@ -252,6 +266,13 @@ export function FleetVehiclesTab() {
           {vehicles.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-slate-500">Nenhum veículo encontrado.</p>
           )}
+          <div className="px-4 pb-3">
+            <FleetListPagination
+              meta={pagination}
+              loading={loading}
+              onPageChange={setPage}
+            />
+          </div>
         </div>
       )}
 

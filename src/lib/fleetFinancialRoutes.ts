@@ -21,6 +21,12 @@ import {
   incidentBlocksVehicle,
 } from "@/src/lib/fleetFinancialOps.js";
 import { parseDecimalKm, resolveMaintenanceVehicleStatus } from "@/src/lib/fleetValidation.js";
+import {
+  applyDateRangeToField,
+  buildFleetListResponse,
+  fleetListMeta,
+  parseFleetListQuery,
+} from "@/src/lib/fleetListQuery.js";
 
 type AuthGuards = {
   requireAppAuth: express.RequestHandler;
@@ -82,26 +88,37 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   // --- Costs ---
   app.get("/api/fleet/costs", ...fleetView, async (req, res) => {
     try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetCostWhereInput = {};
-      const vehicleId = String(req.query.vehicleId ?? "").trim();
       const competence = String(req.query.competence ?? "").trim();
-      const status = String(req.query.status ?? "").trim();
-      if (vehicleId && isUuid(vehicleId)) where.vehicleId = vehicleId;
+      if (list.vehicleId && isUuid(list.vehicleId)) where.vehicleId = list.vehicleId;
       if (competence) where.competence = competence;
-      if (status && status !== "all") {
-        where.status = status as Prisma.EnumFleetCostStatusFilter["equals"];
-      } else if (!status) {
+      if (list.status && list.status !== "all") {
+        where.status = list.status as Prisma.EnumFleetCostStatusFilter["equals"];
+      } else if (!list.status) {
         where.status = "ACTIVE";
       }
+      const costDateRange = applyDateRangeToField("costDate", list.startDate, list.endDate);
+      if (costDateRange) where.costDate = costDateRange;
 
-      const rows = await prisma.fleetCost.findMany({
-        where,
-        include: COST_INCLUDE,
-        orderBy: { costDate: "desc" },
-        take: 500,
-      });
+      const orderBy =
+        list.sortBy === "amount"
+          ? { amount: list.sortOrder }
+          : { costDate: list.sortOrder };
+
+      const [total, rows] = await Promise.all([
+        prisma.fleetCost.count({ where }),
+        prisma.fleetCost.findMany({
+          where,
+          include: COST_INCLUDE,
+          orderBy,
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
       const fin = await showFinancial(req, getCurrentAppUser);
-      res.json({ costs: maskFinancialData(rows.map(serializeCostRow), fin) });
+      const items = maskFinancialData(rows.map(serializeCostRow), fin);
+      res.json(buildFleetListResponse("costs", items, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
       fleetError(res, e, "GET costs");
     }
@@ -228,15 +245,23 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   // --- Fuelings ---
   app.get("/api/fleet/fuelings", ...fleetView, async (req, res) => {
     try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetFuelingWhereInput = {};
-      const vehicleId = String(req.query.vehicleId ?? "").trim();
-      if (vehicleId && isUuid(vehicleId)) where.vehicleId = vehicleId;
-      const rows = await prisma.fleetFueling.findMany({
-        where,
-        include: FUELING_INCLUDE,
-        orderBy: { fuelingDate: "desc" },
-        take: 300,
-      });
+      if (list.vehicleId && isUuid(list.vehicleId)) where.vehicleId = list.vehicleId;
+      if (list.driverId && isUuid(list.driverId)) where.driverId = list.driverId;
+      const fuelingRange = applyDateRangeToField("fuelingDate", list.startDate, list.endDate);
+      if (fuelingRange) where.fuelingDate = fuelingRange;
+
+      const [total, rows] = await Promise.all([
+        prisma.fleetFueling.count({ where }),
+        prisma.fleetFueling.findMany({
+          where,
+          include: FUELING_INCLUDE,
+          orderBy: { fuelingDate: list.sortOrder },
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
       const fin = await showFinancial(req, getCurrentAppUser);
       const mapped = rows.map((f) => ({
         ...f,
@@ -246,7 +271,9 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
         totalValue: Number(f.totalValue),
         fuelingDate: f.fuelingDate.toISOString(),
       }));
-      res.json({ fuelings: maskFinancialData(mapped, fin) });
+      res.json(
+        buildFleetListResponse("fuelings", maskFinancialData(mapped, fin), fleetListMeta(total, list.page, list.limit))
+      );
     } catch (e) {
       fleetError(res, e, "GET fuelings");
     }
@@ -359,27 +386,39 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   // --- Fines ---
   app.get("/api/fleet/fines", ...fleetView, async (req, res) => {
     try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetFineWhereInput = {};
-      const vehicleId = String(req.query.vehicleId ?? "").trim();
-      const status = String(req.query.status ?? "").trim();
-      if (vehicleId && isUuid(vehicleId)) where.vehicleId = vehicleId;
-      if (status) where.status = status as FleetFineStatus;
-      const rows = await prisma.fleetFine.findMany({
-        where,
-        include: {
-          vehicle: { select: { plate: true, brand: true, model: true } },
-          driver: { select: { name: true } },
-        },
-        orderBy: { infractionDate: "desc" },
-        take: 300,
-      });
+      if (list.vehicleId && isUuid(list.vehicleId)) where.vehicleId = list.vehicleId;
+      if (list.driverId && isUuid(list.driverId)) where.driverId = list.driverId;
+      if (list.status) where.status = list.status as FleetFineStatus;
+      const infractionRange = applyDateRangeToField("infractionDate", list.startDate, list.endDate);
+      if (infractionRange) where.infractionDate = infractionRange;
+
+      const fineInclude = {
+        vehicle: { select: { plate: true, brand: true, model: true } },
+        driver: { select: { name: true } },
+      } as const;
+
+      const [total, rows] = await Promise.all([
+        prisma.fleetFine.count({ where }),
+        prisma.fleetFine.findMany({
+          where,
+          include: fineInclude,
+          orderBy: { infractionDate: list.sortOrder },
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
       const fin = await showFinancial(req, getCurrentAppUser);
-      res.json({
-        fines: maskFinancialData(
-          rows.map((f) => ({ ...f, amount: Number(f.amount), infractionDate: f.infractionDate.toISOString() })),
-          fin
-        ),
-      });
+      const items = maskFinancialData(
+        rows.map((f) => ({
+          ...f,
+          amount: Number(f.amount),
+          infractionDate: f.infractionDate.toISOString(),
+        })),
+        fin
+      );
+      res.json(buildFleetListResponse("fines", items, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
       fleetError(res, e, "GET fines");
     }
@@ -497,31 +536,39 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   // --- Incidents ---
   app.get("/api/fleet/incidents", ...fleetView, async (req, res) => {
     try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetIncidentWhereInput = {};
-      const vehicleId = String(req.query.vehicleId ?? "").trim();
-      const status = String(req.query.status ?? "").trim();
-      if (vehicleId && isUuid(vehicleId)) where.vehicleId = vehicleId;
-      if (status) where.status = status as FleetIncidentStatus;
-      const rows = await prisma.fleetIncident.findMany({
-        where,
-        include: {
-          vehicle: { select: { plate: true, brand: true, model: true } },
-          driver: { select: { name: true } },
-        },
-        orderBy: { incidentDate: "desc" },
-        take: 300,
-      });
+      if (list.vehicleId && isUuid(list.vehicleId)) where.vehicleId = list.vehicleId;
+      if (list.driverId && isUuid(list.driverId)) where.driverId = list.driverId;
+      if (list.status) where.status = list.status as FleetIncidentStatus;
+      const incidentRange = applyDateRangeToField("incidentDate", list.startDate, list.endDate);
+      if (incidentRange) where.incidentDate = incidentRange;
+
+      const incidentInclude = {
+        vehicle: { select: { plate: true, brand: true, model: true } },
+        driver: { select: { name: true } },
+      } as const;
+
+      const [total, rows] = await Promise.all([
+        prisma.fleetIncident.count({ where }),
+        prisma.fleetIncident.findMany({
+          where,
+          include: incidentInclude,
+          orderBy: { incidentDate: list.sortOrder },
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
       const fin = await showFinancial(req, getCurrentAppUser);
-      res.json({
-        incidents: maskFinancialData(
-          rows.map((i) => ({
-            ...i,
-            deductibleValue: i.deductibleValue != null ? Number(i.deductibleValue) : null,
-            incidentDate: i.incidentDate.toISOString(),
-          })),
-          fin
-        ),
-      });
+      const items = maskFinancialData(
+        rows.map((i) => ({
+          ...i,
+          deductibleValue: i.deductibleValue != null ? Number(i.deductibleValue) : null,
+          incidentDate: i.incidentDate.toISOString(),
+        })),
+        fin
+      );
+      res.json(buildFleetListResponse("incidents", items, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
       fleetError(res, e, "GET incidents");
     }
@@ -649,6 +696,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   // --- Attachments (metadata + fileUrl) ---
   app.get("/api/fleet/attachments", ...fleetView, async (req, res) => {
     try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetAttachmentWhereInput = {};
       for (const key of [
         "vehicleId",
@@ -662,12 +710,18 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
         const v = String(req.query[key] ?? "").trim();
         if (v && isUuid(v)) where[key] = v;
       }
-      const rows = await prisma.fleetAttachment.findMany({
-        where,
-        orderBy: { uploadedAt: "desc" },
-        take: 200,
-      });
-      res.json({ attachments: rows });
+      const [total, rows] = await Promise.all([
+        prisma.fleetAttachment.count({ where }),
+        prisma.fleetAttachment.findMany({
+          where,
+          orderBy: { uploadedAt: list.sortOrder },
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
+      res.json(
+        buildFleetListResponse("attachments", rows, fleetListMeta(total, list.page, list.limit))
+      );
     } catch (e) {
       fleetError(res, e, "GET attachments");
     }

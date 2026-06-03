@@ -8,6 +8,12 @@ import {
   CNH_CATEGORY_OPTIONS,
   DRIVER_STATUS_OPTIONS,
 } from "@/src/types/fleet";
+import {
+  FleetListPagination,
+  pickFleetListItems,
+  pickFleetPagination,
+  type FleetPaginatedMeta,
+} from "@/src/components/fleet/fleetUi";
 
 const CNH_LABEL: Record<CnhComputedStatus, string> = {
   VALID: "Válida",
@@ -57,26 +63,33 @@ export function FleetDriversTab() {
   );
   const [blockReason, setBlockReason] = useState("");
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<FleetPaginatedMeta | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const q = new URLSearchParams();
+      q.set("page", String(page));
+      q.set("limit", "50");
       if (filterStatus) q.set("status", filterStatus);
       if (filterUnit) q.set("unit", filterUnit);
       if (filterCostCenter) q.set("costCenter", filterCostCenter);
       if (filterCnh) q.set("cnhFilter", filterCnh);
       if (search) q.set("search", search);
-      const data = await fetchJsonOk<{ drivers: FleetDriverRow[] }>(
-        `/api/fleet/drivers?${q}`
-      );
-      setDrivers(data.drivers);
+      const data = await fetchJsonOk<Record<string, unknown>>(`/api/fleet/drivers?${q}`);
+      setDrivers(pickFleetListItems<FleetDriverRow>(data, "drivers"));
+      setPagination(pickFleetPagination(data));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar motoristas.");
     } finally {
       setLoading(false);
     }
+  }, [filterStatus, filterUnit, filterCostCenter, filterCnh, search, page]);
+
+  useEffect(() => {
+    setPage(1);
   }, [filterStatus, filterUnit, filterCostCenter, filterCnh, search]);
 
   useEffect(() => {
@@ -335,6 +348,13 @@ export function FleetDriversTab() {
               )}
             </tbody>
           </table>
+          <div className="px-4 pb-3">
+            <FleetListPagination
+              meta={pagination}
+              loading={loading}
+              onPageChange={setPage}
+            />
+          </div>
         </div>
       )}
 

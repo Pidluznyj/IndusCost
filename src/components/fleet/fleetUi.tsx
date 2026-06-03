@@ -67,4 +67,44 @@ export {
   formatFleetMoney,
   fleetSafeCell,
   normalizeFleetList,
+  pickFleetListItems,
+  pickFleetPagination,
+  type FleetPaginatedMeta,
 } from "@/src/lib/fleetFormat";
+
+export function FleetListPagination({
+  meta,
+  loading,
+  onPageChange,
+}: {
+  meta: import("@/src/lib/fleetFormat").FleetPaginatedMeta | null;
+  loading?: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  if (!meta || meta.totalPages <= 1) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-sm text-slate-600">
+      <span>
+        Página {meta.page} de {meta.totalPages} · {meta.total} registros
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="rounded-lg border border-slate-200 px-3 py-1 disabled:opacity-50"
+          disabled={loading || meta.page <= 1}
+          onClick={() => onPageChange(meta.page - 1)}
+        >
+          Anterior
+        </button>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-200 px-3 py-1 disabled:opacity-50"
+          disabled={loading || meta.page >= meta.totalPages}
+          onClick={() => onPageChange(meta.page + 1)}
+        >
+          Próxima
+        </button>
+      </div>
+    </div>
+  );
+}

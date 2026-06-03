@@ -780,7 +780,7 @@ describe("fleet hardening", async () => {
   });
 
   it("parseFleetListLimit caps excessive requests", () => {
-    assert.equal(parseFleetListLimit("99999"), 2000);
+    assert.equal(parseFleetListLimit("99999"), 200);
     assert.equal(parseFleetListLimit("abc", 100), 100);
   });
 
@@ -794,5 +794,86 @@ describe("fleet hardening", async () => {
     assert.equal(validateFleetCriticalReason("cost.cancel", "  "), false);
     assert.equal(validateFleetCriticalReason("cost.cancel", "motivo"), true);
     assert.equal(validateFleetCriticalReason("maintenance.complete", null), true);
+  });
+});
+
+describe("fleet list query", async () => {
+  const {
+    buildFleetListResponse,
+    fleetListMeta,
+    parseFleetListLimit,
+    parseFleetListQuery,
+    parseFleetListDateRange,
+    FLEET_LIST_DEFAULT_LIMIT,
+    FLEET_LIST_MAX_LIMIT,
+  } = await import("./fleetListQuery.js");
+  const { buildDriverListWhere, buildDriverCnhWhere } = await import("./fleetDriverOps.js");
+  const { buildReservationWhere } = await import("./fleetReservationOps.js");
+
+  it("default limit is 50 and max is 200", () => {
+    assert.equal(FLEET_LIST_DEFAULT_LIMIT, 50);
+    assert.equal(FLEET_LIST_MAX_LIMIT, 200);
+    assert.equal(parseFleetListLimit(undefined), 50);
+    assert.equal(parseFleetListLimit("99999"), 200);
+  });
+
+  it("fleetListMeta returns correct totalPages", () => {
+    assert.deepEqual(fleetListMeta(120, 2, 50), {
+      page: 2,
+      limit: 50,
+      total: 120,
+      totalPages: 3,
+    });
+  });
+
+  it("parseFleetListQuery maps page limit search and status", () => {
+    const q = parseFleetListQuery({
+      page: "2",
+      limit: "25",
+      search: "ABC1D23",
+      status: "AVAILABLE",
+    });
+    assert.equal(q.page, 2);
+    assert.equal(q.limit, 25);
+    assert.equal(q.skip, 25);
+    assert.equal(q.search, "ABC1D23");
+    assert.equal(q.status, "AVAILABLE");
+  });
+
+  it("parseFleetListDateRange applies end of day for YYYY-MM-DD", () => {
+    const { startDate, endDate } = parseFleetListDateRange({
+      startDate: "2026-05-01",
+      endDate: "2026-05-31",
+    });
+    assert.ok(startDate);
+    assert.ok(endDate && endDate.getHours() === 23);
+  });
+
+  it("buildDriverListWhere filters by name search", () => {
+    const where = buildDriverListWhere({ search: "João" });
+    assert.ok(where.OR);
+  });
+
+  it("buildDriverCnhWhere supports expired filter", () => {
+    const where = buildDriverCnhWhere("expired", 30, new Date("2026-06-01"));
+    assert.ok(where?.cnhExpirationDate);
+  });
+
+  it("buildReservationWhere filters by status and period", () => {
+    const where = buildReservationWhere({
+      status: "APPROVED",
+      start: "2026-05-01T00:00:00.000Z",
+      end: "2026-05-31T23:59:59.999Z",
+    });
+    assert.equal(where.status, "APPROVED");
+    assert.ok(where.AND);
+  });
+
+  it("buildFleetListResponse keeps legacy key and items", () => {
+    const body = buildFleetListResponse("vehicles", [{ id: "x" }], fleetListMeta(1, 1, 50));
+    assert.equal((body.vehicles as unknown[]).length, 1);
+    assert.equal((body.items as unknown[]).length, 1);
+    assert.equal(body.total, 1);
+    assert.equal(body.totalPages, 1);
   });
 });

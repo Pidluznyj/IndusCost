@@ -1,6 +1,11 @@
 import type express from "express";
-import type { FleetVehicle } from "@prisma/client";
+import type { FleetVehicle, Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
+import {
+  buildFleetListResponse,
+  fleetListMeta,
+  parseFleetListQuery,
+} from "@/src/lib/fleetListQuery.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   FleetValidationError,
@@ -76,6 +81,41 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
     requireAnyPermission(["fleet.vehicles.edit", "fleet.manage"]),
   ] as express.RequestHandler[];
   const fleetManageOnly = [requireAppAuth, requirePermission("fleet.manage")] as express.RequestHandler[];
+
+  app.get("/api/fleet/documents", ...fleetView, async (req, res) => {
+    try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
+      const where: Prisma.FleetVehicleDocumentWhereInput = {};
+      if (list.vehicleId) where.vehicleId = list.vehicleId;
+      if (list.status) {
+        where.status = list.status as Prisma.EnumFleetDocumentStatusFilter["equals"];
+      }
+      if (list.startDate || list.endDate) {
+        const range: Prisma.DateTimeFilter = {};
+        if (list.startDate) range.gte = list.startDate;
+        if (list.endDate) range.lte = list.endDate;
+        where.expirationDate = range;
+      }
+
+      const [total, documents] = await Promise.all([
+        prisma.fleetVehicleDocument.count({ where }),
+        prisma.fleetVehicleDocument.findMany({
+          where,
+          include: {
+            vehicle: { select: { plate: true, brand: true, model: true, unit: true } },
+          },
+          orderBy: { expirationDate: list.sortOrder },
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
+      res.json(
+        buildFleetListResponse("documents", documents, fleetListMeta(total, list.page, list.limit))
+      );
+    } catch (e) {
+      fleetError(res, e, "GET /api/fleet/documents");
+    }
+  });
 
   const lifecycleHandler =
     (
@@ -409,20 +449,23 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
   });
 }
 
-/** Enriquece resposta da listagem de veículos com alertas. */
+/** Enriquece resposta da listagem de veículos com alertas (batch, sem N+1). */
 export async function enrichVehiclesWithAlerts<
   T extends {
     id: string;
     origin: import("@prisma/client").FleetVehicleOrigin;
     status: import("@prisma/client").FleetVehicleStatus;
   },
->(vehicles: T[]) {
-  return Promise.all(
-    vehicles.map(async (v) => ({
-      ...v,
-      alerts: await buildVehicleAlerts(v),
-    }))
-  );
+>(vehicles: T[], options?: { includeAlerts?: boolean }) {
+  if (options?.includeAlerts === false) {
+    return vehicles.map((v) => ({ ...v, alerts: [] as import("@/src/lib/fleetVehicleOps.js").FleetVehicleAlert[] }));
+  }
+  const { buildVehicleAlertsBatch } = await import("@/src/lib/fleetVehicleOps.js");
+  const alertMap = await buildVehicleAlertsBatch(vehicles);
+  return vehicles.map((v) => ({
+    ...v,
+    alerts: alertMap.get(v.id) ?? [],
+  }));
 }
 
 export { buildVehicleAlerts, buildVehicleFormData, assertUniqueActivePlate, normalizePlate };

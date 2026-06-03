@@ -14,6 +14,11 @@ import {
   syncVehicleStatusAfterReservationChange,
   validateReservationFull,
 } from "@/src/lib/fleetReservationOps.js";
+import {
+  buildFleetListResponse,
+  fleetListMeta,
+  parseFleetListQuery,
+} from "@/src/lib/fleetListQuery.js";
 
 type AuthGuards = {
   requireAppAuth: express.RequestHandler;
@@ -70,20 +75,32 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
 
   app.get("/api/fleet/reservations", ...fleetView, async (req, res) => {
     try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where = buildReservationWhere({
-        vehicleId: String(req.query.vehicleId ?? "").trim() || undefined,
-        driverId: String(req.query.driverId ?? "").trim() || undefined,
-        status: String(req.query.status ?? "").trim() || undefined,
-        start: String(req.query.start ?? "").trim() || undefined,
-        end: String(req.query.end ?? "").trim() || undefined,
+        vehicleId: list.vehicleId || undefined,
+        driverId: list.driverId || undefined,
+        status: list.status || undefined,
+        start: list.startDate?.toISOString(),
+        end: list.endDate?.toISOString(),
       });
-      const reservations = await prisma.fleetReservation.findMany({
-        where,
-        include: RESERVATION_INCLUDE,
-        orderBy: { startDateTime: "asc" },
-        take: 500,
-      });
-      res.json({ reservations });
+      const orderBy =
+        list.sortBy === "endDateTime"
+          ? { endDateTime: list.sortOrder }
+          : { startDateTime: list.sortOrder };
+
+      const [total, reservations] = await Promise.all([
+        prisma.fleetReservation.count({ where }),
+        prisma.fleetReservation.findMany({
+          where,
+          include: RESERVATION_INCLUDE,
+          orderBy,
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
+      res.json(
+        buildFleetListResponse("reservations", reservations, fleetListMeta(total, list.page, list.limit))
+      );
     } catch (e) {
       fleetError(res, e, "GET reservations");
     }

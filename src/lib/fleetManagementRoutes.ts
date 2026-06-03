@@ -5,7 +5,7 @@ import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { buildFleetFinancialDashboard, maskFinancialData } from "@/src/lib/fleetFinancialOps.js";
 import { getFleetAlerts } from "@/src/lib/fleetAlertsService.js";
 import {
-  buildFleetManagementDashboard,
+  buildFleetDashboardCards,
   FLEET_EDITABLE_SETTINGS_KEYS,
   fleetReportToCsv,
   parseFleetReportFilters,
@@ -15,7 +15,14 @@ import {
   reportMaintenance,
   reportUsage,
 } from "@/src/lib/fleetManagementOps.js";
+import { loadFleetSettings } from "@/src/lib/fleetService.js";
 import { prisma } from "@/src/lib/prisma.js";
+import {
+  buildFleetListResponse,
+  fleetListMeta,
+  paginateInMemory,
+  parseFleetListQuery,
+} from "@/src/lib/fleetListQuery.js";
 
 type AuthGuards = {
   requireAppAuth: express.RequestHandler;
@@ -39,7 +46,8 @@ function sendReport(
   res: express.Response,
   name: string,
   rows: Record<string, unknown>[],
-  format: string
+  format: string,
+  list?: ReturnType<typeof parseFleetListQuery>
 ) {
   if (format === "csv") {
     const csv = fleetReportToCsv(name, rows);
@@ -47,7 +55,14 @@ function sendReport(
     res.setHeader("Content-Disposition", `attachment; filename=${name}-${Date.now()}.csv`);
     return res.send(csv);
   }
-  return res.json({ rows, count: rows.length });
+  if (list) {
+    const { items, meta } = paginateInMemory(rows, list.page, list.limit);
+    return res.json({
+      ...buildFleetListResponse("rows", items, meta),
+      count: meta.total,
+    });
+  }
+  return res.json({ rows, items: rows, count: rows.length });
 }
 
 export function registerFleetManagementRoutes(app: express.Express, auth: AuthGuards) {
@@ -78,9 +93,10 @@ export function registerFleetManagementRoutes(app: express.Express, auth: AuthGu
       try {
         const filters = parseFleetReportFilters(req.query as Record<string, unknown>);
         const format = String(req.query.format ?? "").trim().toLowerCase();
+        const list = parseFleetListQuery(req.query as Record<string, unknown>);
         const fin = await showFinancial(req, getCurrentAppUser);
         const rows = await load(filters, fin);
-        sendReport(res, name, rows, format);
+        sendReport(res, name, rows, format, format === "csv" ? undefined : list);
       } catch (e) {
         fleetError(res, e, `GET /api/fleet/reports/${name}`);
       }
@@ -138,9 +154,12 @@ export async function saveFleetSettingsWithAudit(
 }
 
 export async function getFleetDashboardPayload(showFinancial: boolean) {
-  const { cards } = await buildFleetManagementDashboard();
-  const { alerts } = await getFleetAlerts({ showFinancial });
-  const financial = await buildFleetFinancialDashboard();
+  const settings = await loadFleetSettings();
+  const [cards, { alerts }, financial] = await Promise.all([
+    buildFleetDashboardCards(settings),
+    getFleetAlerts({ showFinancial, settings }),
+    buildFleetFinancialDashboard(),
+  ]);
   return {
     cards,
     alerts,

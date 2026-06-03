@@ -1699,6 +1699,8 @@ model FleetDriver {
 
   @@index([status])
   @@index([cpf])
+  @@index([cnhExpirationDate])
+  @@index([unit])
 }
 
 model FleetReservation {
@@ -1830,6 +1832,7 @@ model FleetMaintenance {
 
   @@index([vehicleId])
   @@index([status])
+  @@index([openedAt])
 }
 
 model FleetCost {
@@ -1858,6 +1861,7 @@ model FleetCost {
   @@index([vehicleId])
   @@index([costDate])
   @@index([status])
+  @@index([competence])
 }
 
 model FleetFueling {
@@ -1909,6 +1913,7 @@ model FleetFine {
 
   @@index([vehicleId])
   @@index([status])
+  @@index([infractionDate])
 }
 
 model FleetIncident {
@@ -1936,6 +1941,7 @@ model FleetIncident {
 
   @@index([vehicleId])
   @@index([status])
+  @@index([incidentDate])
 }
 
 model FleetAttachment {

@@ -36,3 +36,34 @@ export function formatFleetKm(value: number | null | undefined): string {
 export function normalizeFleetList<T>(data: T[] | null | undefined): T[] {
   return Array.isArray(data) ? data : [];
 }
+
+export type FleetPaginatedMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+/** Lê items da resposta paginada ou chave legada (vehicles, drivers, …). */
+export function pickFleetListItems<T>(
+  data: Record<string, unknown> | null | undefined,
+  legacyKey: string
+): T[] {
+  if (!data) return [];
+  if (Array.isArray(data.items)) return data.items as T[];
+  const legacy = data[legacyKey];
+  if (Array.isArray(legacy)) return legacy as T[];
+  return [];
+}
+
+export function pickFleetPagination(
+  data: Record<string, unknown> | null | undefined
+): FleetPaginatedMeta | null {
+  if (!data || typeof data.total !== "number" || typeof data.page !== "number") return null;
+  return {
+    page: Number(data.page),
+    limit: Number(data.limit ?? 50),
+    total: Number(data.total),
+    totalPages: Number(data.totalPages ?? 1),
+  };
+}

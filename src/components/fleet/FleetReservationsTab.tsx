@@ -21,6 +21,12 @@ import type {
 import { RESERVATION_STATUS_OPTIONS } from "@/src/types/fleet";
 import { FleetCheckoutCheckinModal } from "@/src/components/fleet/FleetCheckoutCheckinModal";
 import { FleetMobileUsageFlow } from "@/src/components/fleet/FleetMobileUsageFlow";
+import {
+  FleetListPagination,
+  pickFleetListItems,
+  pickFleetPagination,
+  type FleetPaginatedMeta,
+} from "@/src/components/fleet/fleetUi";
 
 const STATUS_LABEL: Record<FleetReservationStatus, string> = {
   REQUESTED: "Solicitada",
@@ -106,11 +112,14 @@ export function FleetReservationsTab() {
   const [checkinModal, setCheckinModal] = useState<FleetReservationRow | null>(null);
   const [mobileFlowId, setMobileFlowId] = useState<string | null>(null);
 
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<FleetPaginatedMeta | null>(null);
+
   const loadDrivers = useCallback(async () => {
-    const data = await fetchJsonOk<{ drivers: FleetDriverRow[] }>(
-      "/api/fleet/drivers?status=AUTHORIZED"
+    const data = await fetchJsonOk<Record<string, unknown>>(
+      "/api/fleet/drivers?status=AUTHORIZED&limit=200&page=1"
     );
-    setDrivers(data.drivers);
+    setDrivers(pickFleetListItems<FleetDriverRow>(data, "drivers"));
   }, []);
 
   const loadReservations = useCallback(async () => {
@@ -118,20 +127,25 @@ export function FleetReservationsTab() {
     setError(null);
     try {
       const q = new URLSearchParams();
+      q.set("page", String(page));
+      q.set("limit", "50");
       if (filterStatus) q.set("status", filterStatus);
       if (filterVehicle) q.set("vehicleId", filterVehicle);
       if (filterDriver) q.set("driverId", filterDriver);
-      if (filterStart) q.set("start", new Date(filterStart).toISOString());
-      if (filterEnd) q.set("end", new Date(filterEnd + "T23:59:59").toISOString());
-      const data = await fetchJsonOk<{ reservations: FleetReservationRow[] }>(
-        `/api/fleet/reservations?${q}`
-      );
-      setReservations(data.reservations);
+      if (filterStart) q.set("startDate", filterStart);
+      if (filterEnd) q.set("endDate", filterEnd);
+      const data = await fetchJsonOk<Record<string, unknown>>(`/api/fleet/reservations?${q}`);
+      setReservations(pickFleetListItems<FleetReservationRow>(data, "reservations"));
+      setPagination(pickFleetPagination(data));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar reservas.");
     } finally {
       setLoading(false);
     }
+  }, [filterStatus, filterVehicle, filterDriver, filterStart, filterEnd, page]);
+
+  useEffect(() => {
+    setPage(1);
   }, [filterStatus, filterVehicle, filterDriver, filterStart, filterEnd]);
 
   useEffect(() => {
@@ -516,6 +530,7 @@ export function FleetReservationsTab() {
               </div>
             ))
           )}
+          <FleetListPagination meta={pagination} loading={loading} onPageChange={setPage} />
         </div>
       ) : (
         <div className="grid gap-2 md:grid-cols-7">

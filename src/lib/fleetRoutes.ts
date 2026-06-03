@@ -31,7 +31,11 @@ import {
 } from "@/src/lib/fleetManagementRoutes.js";
 import { registerFleetImportRoutes } from "@/src/lib/fleetImportRoutes.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
-import { parseFleetListLimit } from "@/src/lib/fleetUxShared.js";
+import {
+  buildFleetListResponse,
+  fleetListMeta,
+  parseFleetListQuery,
+} from "@/src/lib/fleetListQuery.js";
 import {
   refreshDocumentStatuses,
   serializeContract,
@@ -90,40 +94,46 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   // --- Vehicles ---
   app.get("/api/fleet/vehicles", ...fleetView, async (req, res) => {
     try {
-      const status = String(req.query.status ?? "").trim();
-      const origin = String(req.query.origin ?? "").trim();
-      const unit = String(req.query.unit ?? "").trim();
-      const costCenter = String(req.query.costCenter ?? "").trim();
-      const search = String(req.query.search ?? "").trim();
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
+      const includeAlerts =
+        String(req.query.includeAlerts ?? "true").trim().toLowerCase() !== "false";
 
       const where: Prisma.FleetVehicleWhereInput = {};
-      if (status) where.status = status as Prisma.EnumFleetVehicleStatusFilter["equals"];
-      if (origin) where.origin = origin as Prisma.EnumFleetVehicleOriginFilter["equals"];
-      if (unit) where.unit = { contains: unit, mode: "insensitive" };
-      if (costCenter) where.costCenter = { contains: costCenter, mode: "insensitive" };
-      if (search) {
+      if (list.status) where.status = list.status as Prisma.EnumFleetVehicleStatusFilter["equals"];
+      if (list.origin) where.origin = list.origin as Prisma.EnumFleetVehicleOriginFilter["equals"];
+      if (list.unit) where.unit = { contains: list.unit, mode: "insensitive" };
+      if (list.costCenter) where.costCenter = { contains: list.costCenter, mode: "insensitive" };
+      if (list.search) {
         where.OR = [
-          { plate: { contains: search, mode: "insensitive" } },
-          { brand: { contains: search, mode: "insensitive" } },
-          { model: { contains: search, mode: "insensitive" } },
+          { plate: { contains: list.search, mode: "insensitive" } },
+          { brand: { contains: list.search, mode: "insensitive" } },
+          { model: { contains: list.search, mode: "insensitive" } },
         ];
       }
 
-      const take = parseFleetListLimit(req.query.limit);
-      const vehicles = await prisma.fleetVehicle.findMany({
-        where,
-        orderBy: [{ plate: "asc" }, { brand: "asc" }],
-        take,
-      });
-      const withAlerts = await enrichVehiclesWithAlerts(
-        vehicles.map((v) => ({
-          ...serializeFleetVehicle(v),
-          id: v.id,
-          origin: v.origin,
-          status: v.status,
-        }))
-      );
-      res.json({ vehicles: withAlerts });
+      const orderBy: Prisma.FleetVehicleOrderByWithRelationInput[] =
+        list.sortBy === "brand"
+          ? [{ brand: list.sortOrder }, { model: list.sortOrder }]
+          : [{ plate: list.sortOrder }, { brand: "asc" }];
+
+      const [total, vehicles] = await Promise.all([
+        prisma.fleetVehicle.count({ where }),
+        prisma.fleetVehicle.findMany({
+          where,
+          orderBy,
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
+
+      const serialized = vehicles.map((v) => ({
+        ...serializeFleetVehicle(v),
+        id: v.id,
+        origin: v.origin,
+        status: v.status,
+      }));
+      const withAlerts = await enrichVehiclesWithAlerts(serialized, { includeAlerts });
+      res.json(buildFleetListResponse("vehicles", withAlerts, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
       fleetError(res, e, "GET /api/fleet/vehicles");
     }

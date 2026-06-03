@@ -26,11 +26,10 @@ export function serializeDriver(driver: FleetDriver, alertDays?: number) {
   };
 }
 
-export async function buildDriverAlerts(
-  driver: Pick<FleetDriver, "cnhExpirationDate" | "status">
-): Promise<FleetDriverAlert[]> {
-  const settings = await loadFleetSettings();
-  const alertDays = Number(settings.diasAlertaCnh ?? "30") || 30;
+export function buildDriverAlertsSync(
+  driver: Pick<FleetDriver, "cnhExpirationDate" | "status">,
+  alertDays: number
+): FleetDriverAlert[] {
   const alerts: FleetDriverAlert[] = [];
   const cnh = computeCnhStatus(driver.cnhExpirationDate, alertDays);
   if (driver.status === "BLOCKED") {
@@ -44,6 +43,16 @@ export async function buildDriverAlerts(
     alerts.push({ level: "warning", code: "CNH_MISSING", message: "CNH sem data de validade." });
   }
   return alerts;
+}
+
+export async function buildDriverAlerts(
+  driver: Pick<FleetDriver, "cnhExpirationDate" | "status">,
+  alertDays?: number
+): Promise<FleetDriverAlert[]> {
+  const days =
+    alertDays ??
+    (Number((await loadFleetSettings()).diasAlertaCnh ?? "30") || 30);
+  return buildDriverAlertsSync(driver, days);
 }
 
 export function parseDriverInput(body: Record<string, unknown>, existing?: FleetDriver) {
@@ -157,6 +166,34 @@ export function buildDriverListWhere(query: {
     ];
   }
   return where;
+}
+
+/** Filtro CNH no banco (evita carregar todos os motoristas para filtrar em memória). */
+export function buildDriverCnhWhere(
+  cnhFilter: string,
+  alertDays: number,
+  now: Date = new Date()
+): Prisma.FleetDriverWhereInput | null {
+  const f = cnhFilter.trim().toLowerCase();
+  if (!f) return null;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  if (f === "expired") {
+    return { cnhExpirationDate: { lt: today } };
+  }
+  if (f === "expiring") {
+    const threshold = new Date(today);
+    threshold.setDate(threshold.getDate() + alertDays);
+    return {
+      cnhExpirationDate: { gte: today, lte: threshold },
+    };
+  }
+  if (f === "valid") {
+    const threshold = new Date(today);
+    threshold.setDate(threshold.getDate() + alertDays);
+    return { cnhExpirationDate: { gt: threshold } };
+  }
+  return null;
 }
 
 export async function filterDriversByCnh(

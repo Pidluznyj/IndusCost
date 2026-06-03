@@ -17,6 +17,11 @@ import {
   startMaintenance,
   updateMaintenance,
 } from "@/src/lib/fleetMaintenanceOps.js";
+import {
+  buildFleetListResponse,
+  fleetListMeta,
+  parseFleetListQuery,
+} from "@/src/lib/fleetListQuery.js";
 
 type AuthGuards = {
   requireAppAuth: express.RequestHandler;
@@ -48,21 +53,37 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
 
   app.get("/api/fleet/maintenances", ...fleetView, async (req, res) => {
     try {
+      const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where = buildMaintenanceWhere({
-        vehicleId: String(req.query.vehicleId ?? "").trim() || undefined,
-        status: String(req.query.status ?? "").trim() || undefined,
+        vehicleId: list.vehicleId || undefined,
+        status: list.status || undefined,
         priority: String(req.query.priority ?? "").trim() || undefined,
         maintenanceType: String(req.query.maintenanceType ?? "").trim() || undefined,
-        start: String(req.query.start ?? "").trim() || undefined,
-        end: String(req.query.end ?? "").trim() || undefined,
+        start: list.startDate?.toISOString(),
+        end: list.endDate?.toISOString(),
       });
-      const rows = await prisma.fleetMaintenance.findMany({
-        where,
-        include: MAINTENANCE_INCLUDE,
-        orderBy: { openedAt: "desc" },
-        take: 300,
-      });
-      res.json({ maintenances: rows.map(serializeMaintenance) });
+      const orderBy =
+        list.sortBy === "scheduledAt"
+          ? { scheduledAt: list.sortOrder }
+          : { openedAt: list.sortOrder };
+
+      const [total, rows] = await Promise.all([
+        prisma.fleetMaintenance.count({ where }),
+        prisma.fleetMaintenance.findMany({
+          where,
+          include: MAINTENANCE_INCLUDE,
+          orderBy,
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
+      res.json(
+        buildFleetListResponse(
+          "maintenances",
+          rows.map(serializeMaintenance),
+          fleetListMeta(total, list.page, list.limit)
+        )
+      );
     } catch (e) {
       fleetError(res, e, "GET maintenances");
     }

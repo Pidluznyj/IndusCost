@@ -18,7 +18,10 @@ import {
   confirmFleetCriticalAction,
   FleetLoading,
   formatFleetMoney,
-  normalizeFleetList,
+  FleetListPagination,
+  pickFleetListItems,
+  pickFleetPagination,
+  type FleetPaginatedMeta,
 } from "@/src/components/fleet/fleetUi";
 
 const SUB_TABS = [
@@ -106,37 +109,52 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
     deductibleValue: "",
   });
 
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<FleetPaginatedMeta | null>(null);
+
   const loadRefs = useCallback(async () => {
     const [v, d] = await Promise.all([
-      fetchJsonOk<{ vehicles: typeof vehicles }>("/api/fleet/vehicles"),
-      fetchJsonOk<{ drivers: typeof drivers }>("/api/fleet/drivers"),
+      fetchJsonOk<Record<string, unknown>>(
+        "/api/fleet/vehicles?limit=200&page=1&includeAlerts=false"
+      ),
+      fetchJsonOk<Record<string, unknown>>("/api/fleet/drivers?limit=200&page=1"),
     ]);
-    setVehicles(v.vehicles);
-    setDrivers(d.drivers);
+    setVehicles(pickFleetListItems(v, "vehicles"));
+    setDrivers(pickFleetListItems(d, "drivers"));
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      if (subTab === "costs") {
-        const data = await fetchJsonOk<{ costs: FleetCostRow[] }>("/api/fleet/costs?status=all");
-        setCosts(normalizeFleetList(data.costs));
-      } else if (subTab === "fuelings") {
-        const data = await fetchJsonOk<{ fuelings: FleetFuelingRow[] }>("/api/fleet/fuelings");
-        setFuelings(data.fuelings);
-      } else if (subTab === "fines") {
-        const data = await fetchJsonOk<{ fines: FleetFineRow[] }>("/api/fleet/fines");
-        setFines(data.fines);
-      } else {
-        const data = await fetchJsonOk<{ incidents: FleetIncidentRow[] }>("/api/fleet/incidents");
-        setIncidents(data.incidents);
-      }
+      const q = new URLSearchParams();
+      q.set("page", String(page));
+      q.set("limit", "50");
+      const path =
+        subTab === "costs"
+          ? "costs"
+          : subTab === "fuelings"
+            ? "fuelings"
+            : subTab === "fines"
+              ? "fines"
+              : "incidents";
+      if (subTab === "costs") q.set("status", "all");
+      const data = await fetchJsonOk<Record<string, unknown>>(`/api/fleet/${path}?${q}`);
+      const items = pickFleetListItems(data, path);
+      setPagination(pickFleetPagination(data));
+      if (subTab === "costs") setCosts(items as FleetCostRow[]);
+      else if (subTab === "fuelings") setFuelings(items as FleetFuelingRow[]);
+      else if (subTab === "fines") setFines(items as FleetFineRow[]);
+      else setIncidents(items as FleetIncidentRow[]);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar.");
     } finally {
       setLoading(false);
     }
+  }, [subTab, page]);
+
+  useEffect(() => {
+    setPage(1);
   }, [subTab]);
 
   useEffect(() => {
@@ -659,6 +677,7 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
               </div>
             </div>
           )}
+          <FleetListPagination meta={pagination} loading={loading} onPageChange={setPage} />
         </>
       )}
     </div>

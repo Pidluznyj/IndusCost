@@ -128,6 +128,119 @@ export async function buildVehicleAlerts(
   return alerts;
 }
 
+/** Alertas em lote para listagem (1 leitura de settings + queries agrupadas). */
+export async function buildVehicleAlertsBatch(
+  vehicles: Pick<FleetVehicle, "id" | "origin" | "status">[]
+): Promise<Map<string, FleetVehicleAlert[]>> {
+  const result = new Map<string, FleetVehicleAlert[]>();
+  if (vehicles.length === 0) return result;
+
+  const settings = await loadFleetSettings();
+  const docDays = Number(settings.diasAlertaDocumento ?? "30") || 30;
+  const contractDays = docDays;
+  const now = new Date();
+  const ids = vehicles.map((v) => v.id);
+
+  const [contracts, documents, reservationGroups] = await Promise.all([
+    prisma.fleetVehicleContract.findMany({
+      where: { vehicleId: { in: ids }, status: "ACTIVE" },
+      orderBy: { endDate: "desc" },
+      select: { vehicleId: true, endDate: true },
+    }),
+    prisma.fleetVehicleDocument.findMany({
+      where: { vehicleId: { in: ids }, status: { not: "REPLACED" } },
+      select: { vehicleId: true, documentType: true, expirationDate: true, status: true },
+    }),
+    prisma.fleetReservation.groupBy({
+      by: ["vehicleId"],
+      where: {
+        vehicleId: { in: ids },
+        status: { in: FLEET_ACTIVE_RESERVATION_STATUSES },
+        endDateTime: { gt: now },
+      },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const contractByVehicle = new Map<string, { endDate: Date }>();
+  for (const c of contracts) {
+    if (!contractByVehicle.has(c.vehicleId)) {
+      contractByVehicle.set(c.vehicleId, { endDate: c.endDate });
+    }
+  }
+
+  const docsByVehicle = new Map<string, typeof documents>();
+  for (const doc of documents) {
+    const list = docsByVehicle.get(doc.vehicleId) ?? [];
+    list.push(doc);
+    docsByVehicle.set(doc.vehicleId, list);
+  }
+
+  const resCountByVehicle = new Map(
+    reservationGroups.map((g) => [g.vehicleId, g._count._all])
+  );
+
+  for (const vehicle of vehicles) {
+    const alerts: FleetVehicleAlert[] = [];
+
+    if (originRequiresContract(vehicle.origin)) {
+      const activeContract = contractByVehicle.get(vehicle.id);
+      if (!activeContract) {
+        alerts.push({
+          level: "critical",
+          code: "CONTRACT_MISSING",
+          message: "Contrato ativo obrigatório para esta origem do veículo.",
+        });
+      } else if (isContractExpired(activeContract.endDate, now)) {
+        alerts.push({
+          level: "critical",
+          code: "CONTRACT_EXPIRED",
+          message: "Contrato vencido.",
+        });
+      } else if (isContractExpiringSoon(activeContract.endDate, contractDays, now)) {
+        alerts.push({
+          level: "warning",
+          code: "CONTRACT_EXPIRING",
+          message: "Contrato próximo do vencimento.",
+        });
+      }
+    }
+
+    for (const doc of docsByVehicle.get(vehicle.id) ?? []) {
+      const computed = computeDocumentStatus(doc.expirationDate, docDays, now);
+      if (computed === "EXPIRED" || doc.status === "EXPIRED") {
+        alerts.push({
+          level: "critical",
+          code: "DOCUMENT_EXPIRED",
+          message: `Documento vencido: ${doc.documentType}`,
+        });
+      } else if (computed === "EXPIRING" || doc.status === "EXPIRING") {
+        alerts.push({
+          level: "warning",
+          code: "DOCUMENT_EXPIRING",
+          message: `Documento vencendo: ${doc.documentType}`,
+        });
+      }
+    }
+
+    const futureRes = resCountByVehicle.get(vehicle.id) ?? 0;
+    if (
+      futureRes > 0 &&
+      !["INACTIVE", "SOLD", "RETURNED"].includes(vehicle.status)
+    ) {
+      alerts.push({
+        level: "info",
+        code: "RESERVATION_SCHEDULED",
+        message: "Reserva futura ou ativa vinculada ao veículo.",
+      });
+    }
+
+    result.set(vehicle.id, alerts);
+  }
+
+  return result;
+}
+
 export function serializeContract(
   c: {
     monthlyValue: Prisma.Decimal | null;
