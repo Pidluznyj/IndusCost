@@ -32,7 +32,8 @@ import {
 } from "@/src/lib/fleetManagementRoutes.js";
 import { registerFleetImportRoutes } from "@/src/lib/fleetImportRoutes.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
-import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { canViewFleetFinancial } from "@/src/lib/fleetPermissionResolve.js";
 import {
   buildFleetListResponse,
   fleetListMeta,
@@ -75,9 +76,8 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   app.get("/api/fleet/dashboard", ...g.view, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
-      const showFinancial =
-        user != null &&
-        (hasPermission(user, "fleet.financial.view") || hasPermission(user, "fleet.manage"));
+      const perms = user ? user.effectivePermissions ?? getEffectivePermissions(user) : [];
+      const showFinancial = user != null && canViewFleetFinancial(perms);
       res.json(await getFleetDashboardPayload(showFinancial));
     } catch (e) {
       fleetError(res, e, "GET /api/fleet/dashboard");
@@ -151,9 +151,8 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       if (!vehicle) return res.status(404).json({ error: "Veículo não encontrado." });
       await refreshDocumentStatuses(id);
       const authUser = await getCurrentAppUser(req);
-      const financial =
-        authUser != null &&
-        (hasPermission(authUser, "fleet.financial.view") || hasPermission(authUser, "fleet.manage"));
+      const authPerms = authUser ? authUser.effectivePermissions ?? getEffectivePermissions(authUser) : [];
+      const financial = authUser != null && canViewFleetFinancial(authPerms);
       const docs = await prisma.fleetVehicleDocument.findMany({
         where: { vehicleId: id },
         orderBy: [{ expirationDate: "asc" }],

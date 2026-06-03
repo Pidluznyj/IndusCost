@@ -4,17 +4,51 @@ Todas as rotas `/api/fleet/*` exigem autenticação (`requireAppAuth`). Sem sess
 
 Sem a permissão exigida: **403** (`FORBIDDEN`, mensagem amigável).
 
-Valores financeiros em respostas de leitura são mascarados (`maskFinancialData`) quando o usuário não tem `fleet.financial.view` nem `fleet.manage`.
+Valores financeiros em respostas de leitura são mascarados (`maskFinancialData`) quando o usuário não tem permissão financeira (`canViewFleetFinancial`).
 
-| Permissão | O que permite | Rotas / escopo API | Ações UI |
-|-----------|---------------|-------------------|----------|
-| `fleet.view` | Consultar frota (listagens, fichas, dashboard, relatórios, alertas) | `GET /api/fleet/*` de leitura (exceto import) | Abas de visualização; valores financeiros mascarados |
-| `fleet.manage` | Administração completa da frota | Todas as rotas mutáveis; import CSV; ciclo de vida de veículos | Botões administrativos; importação; financeiro sem máscara |
-| `fleet.vehicles.edit` | Cadastro e edição de veículos, contratos e documentos | `POST/PUT/PATCH` veículos, contratos, documentos | Novo veículo; ficha do veículo (edição) |
-| `fleet.reservations.create` | Criar/editar reservas, checkout/checkin, checklists | Reservas, checklists, uso em campo | Agenda; uso em campo |
-| `fleet.reservations.approve` | Aprovar/rejeitar reservas | `PATCH .../approve`, `PATCH .../reject` | Botões Aprovar / Rejeitar |
-| `fleet.maintenance.manage` | Manutenções (CRUD e fluxo) | `/api/fleet/maintenances*` mutáveis | Aba Manutenções (edição) |
-| `fleet.financial.view` | Ver e lançar custos, multas, abastecimentos, ocorrências | `/api/fleet/costs`, `fuelings`, `fines`, `incidents` (leitura sem máscara; escrita) | Abas Custos / Ocorrências; valores visíveis |
-| `fleet.settings.manage` | Parâmetros operacionais da frota | `PUT /api/fleet/settings` | Salvar configurações na aba Configurações |
+## Permissões legadas (mantidas)
 
-Implementação: `src/lib/fleetRouteGuards.ts`, `src/lib/fleetAuth.ts`, middleware `createAuthGuards` em `src/lib/appAuthMiddleware.ts`.
+| Permissão | O que permite |
+|-----------|---------------|
+| `fleet.view` | Visualização geral (dashboard, listagens, relatórios) — **sem** valores financeiros |
+| `fleet.manage` | Administração ampla — **exceto** `fleet.settings.manage` |
+| `fleet.vehicles.edit` | Veículos, contratos e documentos (cadastro/edição) |
+| `fleet.reservations.create` | Reservas + checkout/check-in |
+| `fleet.reservations.approve` | Aprovar/rejeitar reservas |
+| `fleet.maintenance.manage` | Manutenções (CRUD) |
+| `fleet.financial.view` | Valores monetários e custos |
+| `fleet.settings.manage` | Parâmetros e importações |
+
+## Permissões granulares (catálogo Admin)
+
+Agrupadas no catálogo `Gestão de Frota` (`permissionCatalog.ts`). Exemplos:
+
+- **Leitura:** `fleet.dashboard.view`, `fleet.vehicles.view`, `fleet.reservations.view`, …
+- **Operação:** `fleet.usage.checkout`, `fleet.usage.checkin`
+- **Aprovação:** `fleet.reservations.approve` (crítica)
+- **Financeiro:** `fleet.costs.view`, `fleet.costs.manage`, `fleet.financial.view` (crítica)
+- **Configuração:** `fleet.settings.manage` (crítica)
+
+A expansão legado → granular está em `src/lib/fleetPermissionResolve.ts` (`expandFleetPermissions`, `canFleet`).
+
+## Presets (Admin → Usuários)
+
+| Template | Uso |
+|----------|-----|
+| Frota — Administrador | `fleet.view` + `fleet.manage` + `fleet.settings.manage` + financeiro |
+| Frota — Operador | Visualização + reservas + checkout/check-in |
+| Frota — Financeiro | Visualização + `fleet.financial.view` |
+| Frota — Manutenção | Visualização + `fleet.maintenance.manage` |
+| Frota — Solicitante | Visualização + criar reservas |
+| Frota — Visualizador | Somente `fleet.view` |
+
+## Implementação
+
+- Resolução: `src/lib/fleetPermissionResolve.ts`, reexport `src/lib/fleetAuth.ts`
+- Guards HTTP: `src/lib/fleetRouteGuards.ts` (`createFleetRouteGuards`)
+- UI: `src/components/fleet/fleetPermissions.ts` (`useFleetPermissions`)
+- Catálogo + presets: `src/lib/permissionCatalog.ts`, `src/lib/permissionCatalogUtils.ts`
+
+## Auditoria de alteração de permissões
+
+Alterações em usuários passam por guardrails em `PATCH /api/users/:id` (anti auto-bloqueio). **Log dedicado de diff de permissões** está planejado na fase `INDUSCOST-ACCESS-PERMISSIONS-AUDIT-LOG-B` — pendência documentada, sem migration nesta entrega.

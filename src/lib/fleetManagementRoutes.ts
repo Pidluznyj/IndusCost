@@ -1,5 +1,6 @@
 import type express from "express";
-import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { canViewFleetFinancial } from "@/src/lib/fleetPermissionResolve.js";
 import { FleetValidationError, fleetValidationHttpStatus } from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { buildFleetFinancialDashboard, maskFinancialData } from "@/src/lib/fleetFinancialOps.js";
@@ -37,7 +38,9 @@ function fleetError(res: express.Response, e: unknown, label: string) {
 
 async function showFinancial(req: express.Request, getUser: AuthGuards["getCurrentAppUser"]) {
   const u = await getUser(req);
-  return u ? hasPermission(u, "fleet.financial.view") || hasPermission(u, "fleet.manage") : false;
+  if (!u) return false;
+  const perms = u.effectivePermissions ?? getEffectivePermissions(u);
+  return canViewFleetFinancial(perms);
 }
 
 function sendReport(
@@ -70,9 +73,8 @@ export function registerFleetManagementRoutes(app: express.Express, auth: AuthGu
   app.get("/api/fleet/alerts", ...g.view, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
-      const showFinancial =
-        user != null &&
-        (hasPermission(user, "fleet.financial.view") || hasPermission(user, "fleet.manage"));
+      const perms = user ? user.effectivePermissions ?? getEffectivePermissions(user) : [];
+      const showFinancial = user != null && canViewFleetFinancial(perms);
       const level = String(req.query.level ?? "").trim();
       const result = await getFleetAlerts({ showFinancial, level: level || undefined });
       res.json(result);

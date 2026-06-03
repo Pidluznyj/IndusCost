@@ -774,6 +774,11 @@ describe("fleet permissions enforcement", async () => {
     assert.equal(FLEET_API_FORBIDDEN_STATUS, 403);
   });
 
+  it("user with fleet.view can access view routes but not edit", () => {
+    assert.equal(evaluateFleetRouteAccess(["fleet.view"], "view"), true);
+    assert.equal(evaluateFleetRouteAccess(["fleet.view"], "vehiclesEdit"), false);
+  });
+
   it("user with fleet.view cannot edit vehicles", () => {
     assert.equal(evaluateFleetRouteAccess(["fleet.view"], "vehiclesEdit"), false);
     assert.equal(evaluateFleetRouteAccess(["fleet.view"], "manage"), false);
@@ -817,9 +822,7 @@ describe("fleet permissions enforcement", async () => {
 });
 
 describe("fleet hardening", async () => {
-  const { canAccessFleetRoute, canViewFleetFinancial, FLEET_ROUTE_GUARDS } = await import(
-    "./fleetAuth.js"
-  );
+  const { canAccessFleetRoute, canViewFleetFinancial } = await import("./fleetAuth.js");
   const {
     fleetSafeCell,
     formatFleetMoney,
@@ -833,10 +836,10 @@ describe("fleet hardening", async () => {
   } = await import("./fleetUxShared.js");
 
   it("user without permission cannot access guarded route (403 rule)", () => {
-    assert.equal(canAccessFleetRoute([], FLEET_ROUTE_GUARDS.view), false);
-    assert.equal(canAccessFleetRoute(["fleet.view"], FLEET_ROUTE_GUARDS.vehiclesEdit), false);
-    assert.equal(canAccessFleetRoute(["fleet.vehicles.edit"], FLEET_ROUTE_GUARDS.vehiclesEdit), true);
-    assert.equal(canAccessFleetRoute(["fleet.manage"], FLEET_ROUTE_GUARDS.settingsManage), false);
+    assert.equal(canAccessFleetRoute([], "view"), false);
+    assert.equal(canAccessFleetRoute(["fleet.view"], "vehiclesEdit"), false);
+    assert.equal(canAccessFleetRoute(["fleet.vehicles.edit"], "vehiclesEdit"), true);
+    assert.equal(canAccessFleetRoute(["fleet.manage"], "settingsManage"), false);
   });
 
   it("financial view requires fleet.financial.view or fleet.manage", () => {

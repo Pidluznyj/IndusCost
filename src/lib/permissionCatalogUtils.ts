@@ -12,7 +12,13 @@ export type PermissionTemplateId =
   | "purchases"
   | "engineering"
   | "system_admin"
-  | "read_only";
+  | "read_only"
+  | "fleet_admin"
+  | "fleet_operator"
+  | "fleet_financial"
+  | "fleet_maintenance"
+  | "fleet_requester"
+  | "fleet_viewer";
 
 export const PERMISSION_TEMPLATES: Record<
   PermissionTemplateId,
@@ -148,6 +154,46 @@ export const PERMISSION_TEMPLATES: Record<
       "reports.view",
       "guide.view",
     ],
+  },
+  fleet_admin: {
+    label: "Frota — Administrador",
+    description: "Operação ampla da frota, incluindo configurações e financeiro.",
+    permissions: [
+      "fleet.view",
+      "fleet.manage",
+      "fleet.settings.manage",
+      "fleet.financial.view",
+    ],
+  },
+  fleet_operator: {
+    label: "Frota — Operador",
+    description: "Reservas, retirada/devolução e consulta operacional.",
+    permissions: [
+      "fleet.view",
+      "fleet.reservations.create",
+      "fleet.usage.checkout",
+      "fleet.usage.checkin",
+    ],
+  },
+  fleet_financial: {
+    label: "Frota — Financeiro",
+    description: "Visualização geral e valores financeiros da frota.",
+    permissions: ["fleet.view", "fleet.financial.view"],
+  },
+  fleet_maintenance: {
+    label: "Frota — Manutenção",
+    description: "Consulta do módulo e gestão de manutenções.",
+    permissions: ["fleet.view", "fleet.maintenance.manage"],
+  },
+  fleet_requester: {
+    label: "Frota — Solicitante",
+    description: "Solicitar reservas sem aprovar ou administrar frota.",
+    permissions: ["fleet.view", "fleet.reservations.create"],
+  },
+  fleet_viewer: {
+    label: "Frota — Visualizador",
+    description: "Somente leitura operacional (sem valores financeiros).",
+    permissions: ["fleet.view"],
   },
 };
 

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Plus } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import type {
   FleetCostRow,
   FleetFineRow,
@@ -46,9 +46,7 @@ const currentCompetence = () => {
 };
 
 export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
-  const auth = useAuth();
-  const canFinancial =
-    auth.hasPermission("fleet.financial.view") || auth.hasPermission("fleet.manage");
+  const { canFinancial } = useFleetPermissions();
   const canWrite = canFinancial;
 
   const [subTab, setSubTab] = useState<SubTab>(initialSubTab);

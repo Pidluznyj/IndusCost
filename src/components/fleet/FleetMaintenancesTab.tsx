@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Pencil, Plus, Wrench } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import type { FleetMaintenanceRow, FleetMaintenanceStatus } from "@/src/types/fleet";
 import {
   MAINTENANCE_PRIORITY_OPTIONS,
@@ -40,9 +40,7 @@ function formatDt(v: string | null | undefined) {
 }
 
 export function FleetMaintenancesTab() {
-  const auth = useAuth();
-  const canManage =
-    auth.hasPermission("fleet.maintenance.manage") || auth.hasPermission("fleet.manage");
+  const { canManageMaintenance: canManage } = useFleetPermissions();
 
   const [rows, setRows] = useState<FleetMaintenanceRow[]>([]);
   const [vehicles, setVehicles] = useState<

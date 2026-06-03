@@ -1,7 +1,7 @@
 import type express from "express";
 import { prisma } from "@/src/lib/prisma.js";
-import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { hasPermission } from "@/src/lib/appAuth.js";
+import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { canFleet } from "@/src/lib/fleetPermissionResolve.js";
 import {
   FleetValidationError,
   assertReasonRequired,
@@ -318,7 +318,10 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
       }
 
       const user = await getCurrentAppUser(req);
-      const canManage = user ? hasPermission(user, "fleet.manage") : false;
+      const perms = user ? user.effectivePermissions ?? getEffectivePermissions(user) : [];
+      const canManage = user
+        ? canFleet(perms, ["fleet.manage", "fleet.reservations.manage"])
+        : false;
       if (!canUserCancelReservation(existing, user?.id ?? null, canManage)) {
         return res.status(403).json({ error: "Sem permissão para cancelar esta reserva." });
       }
@@ -347,7 +350,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.patch("/api/fleet/reservations/:id/replace-vehicle", ...g.manage, async (req, res) => {
+  app.patch("/api/fleet/reservations/:id/replace-vehicle", ...g.reservationsManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });

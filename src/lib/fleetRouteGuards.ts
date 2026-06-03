@@ -1,24 +1,30 @@
 import type express from "express";
-import type { AppAuthContext } from "@/src/lib/appAuth.js";
+import {
+  getEffectivePermissions,
+  type AppAuthContext,
+} from "@/src/lib/appAuth.js";
+import {
+  canFleet,
+  FLEET_FORBIDDEN_MESSAGE,
+  FLEET_ROUTE_GUARDS,
+  type FleetRouteGuardKey,
+} from "@/src/lib/fleetPermissionResolve.js";
 
 /** Guards reutilizáveis para todas as rotas /api/fleet/*. */
 export type FleetAuthGuards = {
   requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
 export type FleetRouteGuardSet = {
-  /** Leitura geral: exige fleet.view + autenticação. */
   view: express.RequestHandler[];
   vehiclesEdit: express.RequestHandler[];
   manage: express.RequestHandler[];
   driversManage: express.RequestHandler[];
   reservationsCreate: express.RequestHandler[];
   reservationsApprove: express.RequestHandler[];
+  reservationsManage: express.RequestHandler[];
   maintenanceManage: express.RequestHandler[];
-  /** Escrita financeira (custos, multas, abastecimentos, etc.). */
   financialWrite: express.RequestHandler[];
   settingsManage: express.RequestHandler[];
   checklistOps: express.RequestHandler[];
@@ -26,50 +32,55 @@ export type FleetRouteGuardSet = {
   importManage: express.RequestHandler[];
 };
 
-export function createFleetRouteGuards(auth: FleetAuthGuards): FleetRouteGuardSet {
-  const { requireAppAuth, requirePermission, requireAnyPermission } = auth;
+function fleetPermissionDenied(res: express.Response): void {
+  res.status(403).json({ error: FLEET_FORBIDDEN_MESSAGE });
+}
 
-  const withAuth = (handlers: express.RequestHandler[]) =>
-    handlers as express.RequestHandler[];
+function createRequireFleetAny(
+  getCurrentAppUser: FleetAuthGuards["getCurrentAppUser"],
+  guard: FleetRouteGuardKey
+): express.RequestHandler {
+  const required = FLEET_ROUTE_GUARDS[guard];
+  return async (req, res, next) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        fleetPermissionDenied(res);
+        return;
+      }
+      const perms = user.effectivePermissions ?? getEffectivePermissions(user);
+      if (!canFleet(perms, required)) {
+        fleetPermissionDenied(res);
+        return;
+      }
+      next();
+    } catch (e) {
+      next(e);
+    }
+  };
+}
+
+export function createFleetRouteGuards(auth: FleetAuthGuards): FleetRouteGuardSet {
+  const { requireAppAuth, getCurrentAppUser } = auth;
+
+  const chain = (guard: FleetRouteGuardKey): express.RequestHandler[] => [
+    requireAppAuth,
+    createRequireFleetAny(getCurrentAppUser, guard),
+  ];
 
   return {
-    view: withAuth([requireAppAuth, requirePermission("fleet.view")]),
-    vehiclesEdit: withAuth([
-      requireAppAuth,
-      requireAnyPermission(["fleet.vehicles.edit", "fleet.manage"]),
-    ]),
-    manage: withAuth([requireAppAuth, requirePermission("fleet.manage")]),
-    driversManage: withAuth([requireAppAuth, requirePermission("fleet.manage")]),
-    reservationsCreate: withAuth([
-      requireAppAuth,
-      requireAnyPermission(["fleet.reservations.create", "fleet.manage"]),
-    ]),
-    reservationsApprove: withAuth([
-      requireAppAuth,
-      requireAnyPermission(["fleet.reservations.approve", "fleet.manage"]),
-    ]),
-    maintenanceManage: withAuth([
-      requireAppAuth,
-      requireAnyPermission(["fleet.maintenance.manage", "fleet.manage"]),
-    ]),
-    financialWrite: withAuth([
-      requireAppAuth,
-      requireAnyPermission(["fleet.financial.view", "fleet.manage"]),
-    ]),
-    settingsManage: withAuth([requireAppAuth, requirePermission("fleet.settings.manage")]),
-    checklistOps: withAuth([
-      requireAppAuth,
-      requireAnyPermission(["fleet.reservations.create", "fleet.manage"]),
-    ]),
-    attachmentWrite: withAuth([
-      requireAppAuth,
-      requireAnyPermission([
-        "fleet.manage",
-        "fleet.financial.view",
-        "fleet.reservations.create",
-        "fleet.maintenance.manage",
-      ]),
-    ]),
-    importManage: withAuth([requireAppAuth, requirePermission("fleet.manage")]),
+    view: chain("view"),
+    vehiclesEdit: chain("vehiclesEdit"),
+    manage: chain("manage"),
+    driversManage: chain("driversManage"),
+    reservationsCreate: chain("reservationsCreate"),
+    reservationsApprove: chain("reservationsApprove"),
+    reservationsManage: chain("reservationsManage"),
+    maintenanceManage: chain("maintenanceManage"),
+    financialWrite: chain("financialWrite"),
+    settingsManage: chain("settingsManage"),
+    checklistOps: chain("checklistOps"),
+    attachmentWrite: chain("attachmentWrite"),
+    importManage: chain("importManage"),
   };
 }

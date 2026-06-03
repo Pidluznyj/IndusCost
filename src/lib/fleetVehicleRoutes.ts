@@ -7,7 +7,8 @@ import {
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
-import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { canViewFleetFinancial } from "@/src/lib/fleetPermissionResolve.js";
 import {
   FleetValidationError,
   fleetValidationHttpStatus,
@@ -64,9 +65,9 @@ async function canViewFinancial(
   getCurrentAppUser: AuthGuards["getCurrentAppUser"]
 ) {
   const u = await getCurrentAppUser(req);
-  return u
-    ? hasPermission(u, "fleet.financial.view") || hasPermission(u, "fleet.manage")
-    : false;
+  if (!u) return false;
+  const perms = u.effectivePermissions ?? getEffectivePermissions(u);
+  return canViewFleetFinancial(perms);
 }
 
 export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: AuthGuards) {

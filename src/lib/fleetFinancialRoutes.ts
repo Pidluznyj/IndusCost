@@ -1,7 +1,8 @@
 import type express from "express";
 import type { FleetFineStatus, FleetIncidentStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
-import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { canViewFleetFinancial } from "@/src/lib/fleetPermissionResolve.js";
 import {
   FleetValidationError,
   assertNonNegativeAmount,
@@ -53,7 +54,9 @@ function fleetError(res: express.Response, e: unknown, label: string) {
 
 async function showFinancial(req: express.Request, getUser: AuthGuards["getCurrentAppUser"]) {
   const u = await getUser(req);
-  return u ? hasPermission(u, "fleet.financial.view") || hasPermission(u, "fleet.manage") : false;
+  if (!u) return false;
+  const perms = u.effectivePermissions ?? getEffectivePermissions(u);
+  return canViewFleetFinancial(perms);
 }
 
 const COST_INCLUDE = {

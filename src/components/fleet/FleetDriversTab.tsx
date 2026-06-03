@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Ban, Loader2, Pencil, Plus, Search, ShieldCheck } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import type { CnhComputedStatus, FleetDriverRow, FleetDriverStatus } from "@/src/types/fleet";
 import {
   CNH_CATEGORY_OPTIONS,
@@ -44,8 +44,7 @@ const EMPTY_FORM = {
 };
 
 export function FleetDriversTab() {
-  const auth = useAuth();
-  const canManage = auth.hasPermission("fleet.manage");
+  const { canManageDrivers: canManage } = useFleetPermissions();
 
   const [drivers, setDrivers] = useState<FleetDriverRow[]>([]);
   const [loading, setLoading] = useState(true);

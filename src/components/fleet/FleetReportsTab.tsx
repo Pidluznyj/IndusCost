@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { AlertTriangle, Download, Loader2, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import { FLEET_REPORT_TYPES } from "@/src/types/fleet";
 
 type ReportId = (typeof FLEET_REPORT_TYPES)[number]["id"];
@@ -71,9 +71,7 @@ const COLUMN_LABELS: Record<string, string> = {
 };
 
 export function FleetReportsTab() {
-  const auth = useAuth();
-  const canFinancial =
-    auth.hasPermission("fleet.financial.view") || auth.hasPermission("fleet.manage");
+  const { canFinancial } = useFleetPermissions();
 
   const [reportId, setReportId] = useState<ReportId>("fleet");
   const [filters, setFilters] = useState(EMPTY_FILTERS);

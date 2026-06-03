@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import {
   isFleetChecklistRequiredForMode,
   isMobileChecklistStepComplete,
@@ -63,9 +63,7 @@ export function FleetMobileUsageFlow({
   fullscreen = false,
   onExit,
 }: Props) {
-  const auth = useAuth();
-  const canOperate =
-    auth.hasPermission("fleet.reservations.create") || auth.hasPermission("fleet.manage");
+  const { canCreateReservations: canOperate } = useFleetPermissions();
 
   const [pickList, setPickList] = useState<FleetReservationRow[]>([]);
   const [reservation, setReservation] = useState<FleetReservationRow | null>(null);

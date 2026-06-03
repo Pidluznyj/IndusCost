@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Eye, Loader2, Plus, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import type { FleetVehicleOrigin, FleetVehicleRow, FleetVehicleStatus } from "@/src/types/fleet";
 import { FleetVehicleDetailSheet } from "@/src/components/fleet/FleetVehicleDetailSheet";
 import {
@@ -52,12 +52,7 @@ const EMPTY_FORM = {
 };
 
 export function FleetVehiclesTab() {
-  const auth = useAuth();
-  const canEdit =
-    auth.hasPermission("fleet.vehicles.edit") || auth.hasPermission("fleet.manage");
-  const canManage = auth.hasPermission("fleet.manage");
-  const canFinancial =
-    auth.hasPermission("fleet.financial.view") || auth.hasPermission("fleet.manage");
+  const { canEditVehicles: canEdit, canManage, canFinancial } = useFleetPermissions();
 
   const [vehicles, setVehicles] = useState<FleetVehicleRow[]>([]);
   const [loading, setLoading] = useState(true);

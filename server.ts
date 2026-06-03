@@ -14295,8 +14295,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   // --- API: Gestão de Frota ---
   registerFleetRoutes(app, {
     requireAppAuth,
-    requirePermission,
-    requireAnyPermission,
     getCurrentAppUser,
   });
 

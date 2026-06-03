@@ -1,5 +1,7 @@
 /** Mapa módulo → permissões (Fase 1K-D / 1K-D.2). Usa ids reais do Sidebar/App.tsx. */
 
+import { evaluateFleetRouteAccess } from "./fleetPermissionResolve.js";
+
 export type AppModuleId =
   | "dashboard"
   | "employees"
@@ -24,6 +26,7 @@ export type AppModuleId =
 export type PermissionChecker = {
   hasPermission: (permission: string) => boolean;
   hasAnyPermission: (permissions: string[]) => boolean;
+  authUser?: { effectivePermissions?: string[] } | null;
 };
 
 /** Ordem do menu lateral (Sidebar). */
@@ -99,8 +102,11 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("maintenance.view") ||
         check.hasPermission("settings.view")
       );
-    case "fleet":
-      return check.hasPermission("fleet.view");
+    case "fleet": {
+      const held = check.authUser?.effectivePermissions;
+      if (held?.length) return evaluateFleetRouteAccess(held, "view");
+      return check.hasPermission("fleet.view") || check.hasPermission("fleet.manage");
+    }
     case "reports":
       return check.hasPermission("reports.view") || check.hasPermission("dashboard.view");
     case "guide":

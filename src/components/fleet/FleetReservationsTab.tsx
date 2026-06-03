@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import type {
   FleetAvailabilityVehicle,
   FleetDriverRow,
@@ -79,12 +79,11 @@ const EMPTY_RES = {
 };
 
 export function FleetReservationsTab() {
-  const auth = useAuth();
-  const canCreate =
-    auth.hasPermission("fleet.reservations.create") || auth.hasPermission("fleet.manage");
-  const canApprove =
-    auth.hasPermission("fleet.reservations.approve") || auth.hasPermission("fleet.manage");
-  const canManage = auth.hasPermission("fleet.manage");
+  const {
+    canCreateReservations: canCreate,
+    canApproveReservations: canApprove,
+    canManageReservations: canManage,
+  } = useFleetPermissions();
 
   const [reservations, setReservations] = useState<FleetReservationRow[]>([]);
   const [drivers, setDrivers] = useState<FleetDriverRow[]>([]);
