@@ -80,4 +80,63 @@ export async function applyMasterDataImportSafe(
   );
 }
 
+export type AmbiguityBatchPreviewResult = {
+  generatedAt: string;
+  planHash: string;
+  confirmationRequiredText: string;
+  totals: {
+    scannedBothRegistry: number;
+    realBlocked: number;
+    resolvedDisplay: number;
+    autoApplicable: number;
+    keepBlocked: number;
+  };
+  items: Array<{
+    code: string;
+    description: string | null;
+    ambiguityStatus: string;
+    suggestedDecision: string;
+    justification: string;
+    risks: string[];
+    plannedActions: string[];
+    nomusControlledBomAsProductCount: number;
+    nomusControlledBomAsMaterialCount: number;
+    canApplyThisCode: boolean;
+    applyBlockedReason: string | null;
+  }>;
+};
+
+export type AmbiguityBatchApplyResult = {
+  resultStatus: string;
+  planHash: string;
+  appliedCodes: string[];
+  skippedCodes: string[];
+  failedCodes: Array<{ code: string; message: string }>;
+  message: string;
+};
+
+export async function fetchAmbiguityBatchPreview(
+  init?: { signal?: AbortSignal }
+): Promise<AmbiguityBatchPreviewResult> {
+  return fetchJsonOk<AmbiguityBatchPreviewResult>(
+    "/api/nomus/master-data-import/ambiguity-batch/preview",
+    { signal: init?.signal }
+  );
+}
+
+export async function applyAmbiguityBatch(input: {
+  planHash: string;
+  confirmationText: string;
+  codes?: string[];
+}): Promise<AmbiguityBatchApplyResult> {
+  return fetchJsonOk<AmbiguityBatchApplyResult>(
+    "/api/nomus/master-data-import/ambiguity-batch/apply",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }
+  );
+}
+
 export { MASTER_DATA_CONFIRMATION_TEXT };

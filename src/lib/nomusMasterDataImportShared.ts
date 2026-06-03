@@ -9,7 +9,9 @@ import type { MasterDataClassification } from "@/src/lib/nomusMasterDataImportTy
 export const CLASSIFICATION_LABEL: Record<MasterDataClassification, string> = {
   EXISTING_PRODUCT: "Já existe como Produto",
   EXISTING_MATERIAL: "Já existe como Material",
-  EXISTING_BOTH_AMBIGUOUS: "Já existe como Produto E Material (ambíguo)",
+  EXISTING_BOTH_AMBIGUOUS: "Ambíguo bloqueado (Product + Material)",
+  RESOLVED_AS_MATERIAL: "Ambíguo resolvido — Material",
+  RESOLVED_AS_PRODUCT: "Ambíguo resolvido — Product",
   SAFE_PRODUCT_CANDIDATE: "Produto/componente seguro para cadastro",
   SAFE_MATERIAL_CANDIDATE: "Material seguro para cadastro",
   AMBIGUOUS_REVIEW: "Precisa revisão",
@@ -36,8 +38,23 @@ const EXISTING_SET: MasterDataClassification[] = [
   "EXISTING_PRODUCT",
   "EXISTING_MATERIAL",
   "EXISTING_BOTH_AMBIGUOUS",
+  "RESOLVED_AS_MATERIAL",
+  "RESOLVED_AS_PRODUCT",
   "SKIPPED_OPTIONAL_MASTER_ALREADY_EXISTS",
 ];
+
+const RESOLVED_AMBIGUITY_SET: MasterDataClassification[] = [
+  "RESOLVED_AS_MATERIAL",
+  "RESOLVED_AS_PRODUCT",
+];
+
+export function isResolvedAmbiguityClassification(cls: MasterDataClassification): boolean {
+  return RESOLVED_AMBIGUITY_SET.includes(cls);
+}
+
+export function isRealAmbiguousBlockedClassification(cls: MasterDataClassification): boolean {
+  return cls === "EXISTING_BOTH_AMBIGUOUS";
+}
 
 export function classificationLabelFor(cls: MasterDataClassification): string {
   return CLASSIFICATION_LABEL[cls] ?? "—";

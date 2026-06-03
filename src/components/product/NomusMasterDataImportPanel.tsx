@@ -21,9 +21,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import {
+  applyAmbiguityBatch,
   applyMasterDataImportSafe,
+  fetchAmbiguityBatchPreview,
   fetchMasterDataImportDiagnostic,
   MASTER_DATA_CONFIRMATION_TEXT,
+  type AmbiguityBatchPreviewResult,
 } from "@/src/lib/nomusMasterDataImportClient";
 import type {
   MasterDataClassification,
@@ -51,14 +54,16 @@ type RowFilter =
   | "SAFE_MATERIAL_CANDIDATE"
   | "AMBIGUOUS_REVIEW"
   | "ALL_BLOCKED"
+  | "RESOLVED_ALL"
   | "EXISTING_ALL";
 
 const FILTER_OPTIONS: Array<{ value: RowFilter; label: string }> = [
   { value: "ALL_MISSING", label: "Todos faltantes" },
   { value: "SAFE_PRODUCT_CANDIDATE", label: "Produtos seguros" },
   { value: "SAFE_MATERIAL_CANDIDATE", label: "Materiais seguros" },
+  { value: "RESOLVED_ALL", label: "Ambíguos resolvidos" },
   { value: "AMBIGUOUS_REVIEW", label: "Precisa revisão" },
-  { value: "ALL_BLOCKED", label: "Bloqueados" },
+  { value: "ALL_BLOCKED", label: "Bloqueados / ambíguos reais" },
   { value: "EXISTING_ALL", label: "Já existentes (auditoria)" },
 ];
 
@@ -68,6 +73,10 @@ function classificationTone(cls: MasterDataClassification): string {
       return "bg-sky-100 text-sky-900";
     case "SAFE_MATERIAL_CANDIDATE":
       return "bg-emerald-100 text-emerald-900";
+    case "RESOLVED_AS_MATERIAL":
+      return "bg-teal-100 text-teal-900";
+    case "RESOLVED_AS_PRODUCT":
+      return "bg-cyan-100 text-cyan-900";
     case "AMBIGUOUS_REVIEW":
     case "EXISTING_BOTH_AMBIGUOUS":
       return "bg-amber-100 text-amber-900";
@@ -104,6 +113,14 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
   const [equalizeShowConfirm, setEqualizeShowConfirm] = useState(false);
   const [equalizeConfirmText, setEqualizeConfirmText] = useState("");
 
+  const [ambiguityPreview, setAmbiguityPreview] =
+    useState<AmbiguityBatchPreviewResult | null>(null);
+  const [ambiguityLoading, setAmbiguityLoading] = useState(false);
+  const [ambiguityApplying, setAmbiguityApplying] = useState(false);
+  const [ambiguityShowConfirm, setAmbiguityShowConfirm] = useState(false);
+  const [ambiguityConfirmText, setAmbiguityConfirmText] = useState("");
+  const [ambiguityMessage, setAmbiguityMessage] = useState<string | null>(null);
+
   const filterParams = useMemo(() => {
     let classification: string | undefined;
     let includeExisting = false;
@@ -113,6 +130,9 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
       classification = "MISSING";
     } else if (filter === "ALL_BLOCKED") {
       classification = "ALL_BLOCKED";
+    } else if (filter === "RESOLVED_ALL") {
+      classification = "RESOLVED_ALL";
+      includeExisting = true;
     } else {
       classification = filter;
     }
@@ -252,7 +272,59 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
     }
   }, [confirmText, loadDiagnostic]);
 
+  const loadAmbiguityPreview = useCallback(async () => {
+    setAmbiguityLoading(true);
+    setAmbiguityMessage(null);
+    try {
+      const data = await fetchAmbiguityBatchPreview();
+      setAmbiguityPreview(data);
+    } catch (e) {
+      setAmbiguityPreview(null);
+      setAmbiguityMessage(
+        e instanceof Error ? e.message : "Erro ao gerar preview de ambiguidades."
+      );
+    } finally {
+      setAmbiguityLoading(false);
+    }
+  }, []);
+
+  const onApplyAmbiguityBatch = useCallback(async () => {
+    if (!ambiguityPreview || ambiguityApplying) return;
+    if (ambiguityConfirmText !== ambiguityPreview.confirmationRequiredText) return;
+    setAmbiguityApplying(true);
+    setAmbiguityMessage(null);
+    try {
+      const result = await applyAmbiguityBatch({
+        planHash: ambiguityPreview.planHash,
+        confirmationText: ambiguityConfirmText,
+      });
+      setAmbiguityMessage(result.message);
+      setAmbiguityShowConfirm(false);
+      setAmbiguityConfirmText("");
+      await loadDiagnostic(0);
+      await loadAmbiguityPreview();
+    } catch (e) {
+      setAmbiguityMessage(
+        e instanceof Error ? e.message : "Erro ao aplicar resolução de ambiguidades."
+      );
+    } finally {
+      setAmbiguityApplying(false);
+    }
+  }, [
+    ambiguityApplying,
+    ambiguityConfirmText,
+    ambiguityPreview,
+    loadAmbiguityPreview,
+    loadDiagnostic,
+  ]);
+
   const totals = diagnostic?.totals;
+  const realBlockedCount =
+    (totals?.blocked ?? 0) +
+    (totals?.ambiguousReview ?? 0) +
+    (totals?.existingBothAmbiguous ?? 0);
+  const resolvedCount =
+    (totals?.resolvedAsMaterial ?? 0) + (totals?.resolvedAsProduct ?? 0);
 
   return (
     <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-3">
@@ -408,7 +480,7 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
       ) : null}
 
       {totals ? (
-        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard label="Códigos distintos Nomus" value={totals.distinctNomusCodes} tone="neutral" />
           <StatCard label="Faltam no IndusCost" value={totals.missingTotal} tone="warn" />
           <StatCard
@@ -421,7 +493,65 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
             value={totals.safeMaterialCandidates}
             tone="success"
           />
-          <StatCard label="Bloqueados / ambíguos" value={totals.blocked + totals.ambiguousReview + totals.existingBothAmbiguous} tone="danger" />
+          <StatCard
+            label="Ambíguos resolvidos"
+            value={resolvedCount}
+            tone="success"
+          />
+          <StatCard label="Bloqueados / ambíguos reais" value={realBlockedCount} tone="danger" />
+        </div>
+      ) : null}
+
+      {ambiguityMessage ? (
+        <p className="text-[11px] text-muted-foreground rounded-lg border border-border px-3 py-2">
+          {ambiguityMessage}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={disabled || ambiguityLoading}
+          onClick={() => void loadAmbiguityPreview()}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+        >
+          {ambiguityLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          Preview: resolver ambiguidades
+        </button>
+        {ambiguityPreview && ambiguityPreview.totals.autoApplicable > 0 ? (
+          <button
+            type="button"
+            disabled={disabled || ambiguityApplying}
+            onClick={() => {
+              setAmbiguityShowConfirm(true);
+              setAmbiguityConfirmText("");
+            }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 text-xs font-bold text-teal-950 hover:bg-teal-100 disabled:opacity-50"
+          >
+            Resolver automaticamente ({ambiguityPreview.totals.autoApplicable})
+          </button>
+        ) : null}
+      </div>
+
+      {ambiguityPreview ? (
+        <div className="rounded-lg border border-border bg-background/80 p-3 text-[11px] space-y-2 max-h-48 overflow-y-auto">
+          <p className="font-bold">
+            Preview lote · aplicáveis={ambiguityPreview.totals.autoApplicable} · bloqueados=
+            {ambiguityPreview.totals.keepBlocked} · resolvidos (exibição)=
+            {ambiguityPreview.totals.resolvedDisplay}
+          </p>
+          <ul className="space-y-1">
+            {ambiguityPreview.items.slice(0, 12).map((item) => (
+              <li key={item.code}>
+                <span className="font-mono">{item.code}</span> — {item.suggestedDecision}:{" "}
+                {item.justification.slice(0, 120)}
+                {item.justification.length > 120 ? "…" : ""}
+              </li>
+            ))}
+          </ul>
+          {ambiguityPreview.items.length > 12 ? (
+            <p className="text-muted-foreground">+ {ambiguityPreview.items.length - 12} código(s)</p>
+          ) : null}
         </div>
       ) : null}
 
@@ -525,6 +655,56 @@ export const NomusMasterDataImportPanel: React.FC<{ disabled?: boolean }> = ({
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             Carregar mais
           </button>
+        </div>
+      ) : null}
+
+      {ambiguityShowConfirm && ambiguityPreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-background p-4 space-y-3 shadow-lg">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-bold">Resolver ambiguidades automaticamente</h4>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Aplica relink/reativação apenas para códigos com evidência Material (preview
+                  aprovado). Não remove Product nem Material. Digite a frase exata.
+                </p>
+              </div>
+            </div>
+            <input
+              type="text"
+              value={ambiguityConfirmText}
+              onChange={(e) => setAmbiguityConfirmText(e.target.value)}
+              placeholder={ambiguityPreview.confirmationRequiredText}
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs font-mono"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAmbiguityShowConfirm(false);
+                  setAmbiguityConfirmText("");
+                }}
+                disabled={ambiguityApplying}
+                className="inline-flex h-8 items-center rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void onApplyAmbiguityBatch()}
+                disabled={
+                  ambiguityApplying ||
+                  ambiguityConfirmText !== ambiguityPreview.confirmationRequiredText
+                }
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {ambiguityApplying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                Confirmar resolução
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

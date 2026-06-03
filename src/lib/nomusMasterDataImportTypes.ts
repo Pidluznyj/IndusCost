@@ -13,6 +13,8 @@ export type MasterDataClassification =
   | "EXISTING_PRODUCT"
   | "EXISTING_MATERIAL"
   | "EXISTING_BOTH_AMBIGUOUS"
+  | "RESOLVED_AS_MATERIAL"
+  | "RESOLVED_AS_PRODUCT"
   | "SAFE_PRODUCT_CANDIDATE"
   | "SAFE_MATERIAL_CANDIDATE"
   | "AMBIGUOUS_REVIEW"
@@ -86,7 +88,10 @@ export type MasterDataTotals = {
   distinctNomusCodes: number;
   existingProducts: number;
   existingMaterials: number;
+  /** Ambiguidade real (Product+Material sem evidência de resolução). */
   existingBothAmbiguous: number;
+  resolvedAsMaterial: number;
+  resolvedAsProduct: number;
   missingTotal: number;
   safeProductCandidates: number;
   safeMaterialCandidates: number;

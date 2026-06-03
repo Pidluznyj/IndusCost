@@ -147,6 +147,11 @@ import {
   buildNomusMasterDataImportDiagnostic,
   buildNomusMasterDataImportPreview,
 } from "./src/lib/nomusMasterDataImport.js";
+import {
+  applyAmbiguityBatch,
+  buildAmbiguityBatchPreview,
+  AMBIGUITY_BATCH_CONFIRMATION_TEXT,
+} from "./src/lib/nomusRegistryAmbiguityBatch.js";
 import { MASTER_DATA_CONFIRMATION_TEXT } from "./src/lib/nomusMasterDataImportTypes.js";
 import {
   applyNomusMasterDataEqualize,
@@ -4461,6 +4466,96 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         console.error("POST /api/nomus/master-data-import/apply-safe", error);
         return res.status(500).json({
           error: "MASTER_DATA_APPLY_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/master-data-import/ambiguity-batch/preview",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.edit",
+      "materials.view",
+      "materials.edit",
+    ]),
+    async (_req, res) => {
+      try {
+        const result = await buildAmbiguityBatchPreview();
+        return res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao montar preview de ambiguidades.";
+        console.error(
+          "GET /api/nomus/master-data-import/ambiguity-batch/preview",
+          error
+        );
+        return res.status(500).json({
+          error: "AMBIGUITY_BATCH_PREVIEW_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/master-data-import/ambiguity-batch/apply",
+    requireAppAuth,
+    requireAnyPermission(["products.edit", "materials.edit"]),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const planHash =
+          typeof body.planHash === "string" ? body.planHash.trim() : "";
+        const confirmationText =
+          typeof body.confirmationText === "string" ? body.confirmationText : "";
+        if (!planHash) {
+          return res.status(400).json({
+            error: "AMBIGUITY_BATCH_PLAN_HASH_REQUIRED",
+            message: "Envie planHash do preview do lote.",
+          });
+        }
+        if (confirmationText !== AMBIGUITY_BATCH_CONFIRMATION_TEXT) {
+          return res.status(400).json({
+            error: "AMBIGUITY_BATCH_INVALID_CONFIRMATION",
+            message: `Confirmação inválida — use: "${AMBIGUITY_BATCH_CONFIRMATION_TEXT}".`,
+          });
+        }
+        let codes: string[] | undefined;
+        if (Array.isArray(body.codes)) {
+          codes = body.codes
+            .filter((c: unknown): c is string => typeof c === "string")
+            .map((c: string) => c.trim())
+            .filter(Boolean);
+          if (codes.length === 0) codes = undefined;
+        }
+        const result = await applyAmbiguityBatch({
+          planHash,
+          confirmationText,
+          codes,
+          approvedBy:
+            typeof body.approvedBy === "string" ? body.approvedBy : "master-data-ui",
+        });
+        const httpStatus =
+          result.resultStatus === "APPLIED" || result.resultStatus === "PARTIAL"
+            ? 200
+            : 400;
+        return res.status(httpStatus).json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao aplicar resolução de ambiguidades.";
+        console.error(
+          "POST /api/nomus/master-data-import/ambiguity-batch/apply",
+          error
+        );
+        return res.status(500).json({
+          error: "AMBIGUITY_BATCH_APPLY_FAILED",
           message,
         });
       }

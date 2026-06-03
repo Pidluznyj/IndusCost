@@ -20,9 +20,16 @@ import {
   classificationLabelFor,
   isAssemblyLocalCode,
   isBlockedClassification,
+  isResolvedAmbiguityClassification,
   isSafeClassification,
   isValidCode,
 } from "@/src/lib/nomusMasterDataImportShared";
+import { loadProductMaterialRegistrySnapshots } from "@/src/lib/nomusProductMaterialAmbiguityEvidence";
+import {
+  classifyProductMaterialAmbiguity,
+  masterDataClassificationFromAmbiguityStatus,
+} from "@/src/lib/nomusProductMaterialAmbiguityClassify";
+import type { ProductMaterialRegistrySnapshot } from "@/src/lib/nomusProductMaterialAmbiguityClassify";
 import type {
   MasterDataClassification,
   MasterDataConfidence,
@@ -179,7 +186,8 @@ async function resolveExistingByCodes(
 
 function classifyAggregate(
   aggCode: CodeAggregate,
-  existing: { productId: string | null; materialId: string | null }
+  existing: { productId: string | null; materialId: string | null },
+  registrySnapshot: ProductMaterialRegistrySnapshot | null
 ): {
   classification: MasterDataClassification;
   recommendedTarget: MasterDataRecommendedTarget;
@@ -193,14 +201,27 @@ function classifyAggregate(
   const warnings: string[] = [];
   const cleanDescription = cleanNomusDescription(aggCode.description);
 
-  if (existing.productId && existing.materialId) {
+  if (existing.productId && existing.materialId && registrySnapshot) {
+    const amb = classifyProductMaterialAmbiguity(registrySnapshot);
+    const mapped = masterDataClassificationFromAmbiguityStatus(amb.status);
+    if (mapped === "RESOLVED_AS_MATERIAL" || mapped === "RESOLVED_AS_PRODUCT") {
+      return {
+        classification: mapped,
+        recommendedTarget: mapped === "RESOLVED_AS_MATERIAL" ? "MATERIAL" : "PRODUCT",
+        confidence: "HIGH",
+        reason: amb.reason,
+        blockers: [],
+        warnings: amb.risks,
+        payload: null,
+      };
+    }
     return {
       classification: "EXISTING_BOTH_AMBIGUOUS",
       recommendedTarget: "NONE",
       confidence: "LOW",
-      reason: "Código existe simultaneamente como Product e Material no IndusCost — exige decisão humana.",
-      blockers: ["Duplicidade Product/Material — decidir manualmente."],
-      warnings: [],
+      reason: amb.reason,
+      blockers: ["Duplicidade Product/Material — decisão humana ou resolução controlada."],
+      warnings: amb.risks,
       payload: null,
     };
   }
@@ -350,10 +371,11 @@ function classifyAggregate(
 
 function buildRow(
   aggCode: CodeAggregate,
-  existing: { productId: string | null; materialId: string | null }
+  existing: { productId: string | null; materialId: string | null },
+  registrySnapshot: ProductMaterialRegistrySnapshot | null
 ): MasterDataRow {
   const cleanDescription = cleanNomusDescription(aggCode.description);
-  const result = classifyAggregate(aggCode, existing);
+  const result = classifyAggregate(aggCode, existing, registrySnapshot);
 
   const canImportSafely = isSafeClassification(result.classification) && result.payload != null;
 
@@ -386,6 +408,8 @@ function aggregateTotals(rowsAll: MasterDataRow[]): MasterDataTotals {
   let existingProducts = 0;
   let existingMaterials = 0;
   let existingBothAmbiguous = 0;
+  let resolvedAsMaterial = 0;
+  let resolvedAsProduct = 0;
   let safeProductCandidates = 0;
   let safeMaterialCandidates = 0;
   let ambiguousReview = 0;
@@ -401,6 +425,12 @@ function aggregateTotals(rowsAll: MasterDataRow[]): MasterDataTotals {
         break;
       case "EXISTING_BOTH_AMBIGUOUS":
         existingBothAmbiguous += 1;
+        break;
+      case "RESOLVED_AS_MATERIAL":
+        resolvedAsMaterial += 1;
+        break;
+      case "RESOLVED_AS_PRODUCT":
+        resolvedAsProduct += 1;
         break;
       case "SAFE_PRODUCT_CANDIDATE":
         safeProductCandidates += 1;
@@ -429,6 +459,8 @@ function aggregateTotals(rowsAll: MasterDataRow[]): MasterDataTotals {
     existingProducts,
     existingMaterials,
     existingBothAmbiguous,
+    resolvedAsMaterial,
+    resolvedAsProduct,
     missingTotal,
     safeProductCandidates,
     safeMaterialCandidates,
@@ -450,13 +482,23 @@ async function buildAllRows(): Promise<MasterDataRow[]> {
   const allCodes = [...agg.values()].map((c) => c.code);
   const { productByKey, materialByKey } = await resolveExistingByCodes(allCodes);
 
+  const bothCodes = allCodes.filter(
+    (c) =>
+      productByKey.has(normalizeSku(c)) && materialByKey.has(normalizeSku(c))
+  );
+  const registrySnapshots = await loadProductMaterialRegistrySnapshots(bothCodes);
+
   const rows: MasterDataRow[] = [];
   for (const aggCode of agg.values()) {
     const existing = {
       productId: productByKey.get(aggCode.normalized)?.id ?? null,
       materialId: materialByKey.get(aggCode.normalized)?.id ?? null,
     };
-    rows.push(buildRow(aggCode, existing));
+    const registrySnapshot =
+      existing.productId && existing.materialId
+        ? (registrySnapshots.get(aggCode.normalized) ?? null)
+        : null;
+    rows.push(buildRow(aggCode, existing, registrySnapshot));
   }
 
   // Ordena: bloqueios e ambíguos primeiro, depois seguros, depois existentes.
@@ -467,6 +509,8 @@ async function buildAllRows(): Promise<MasterDataRow[]> {
     BLOCKED_UNSUPPORTED_REQUIRED_FIELDS: 0,
     AMBIGUOUS_REVIEW: 1,
     EXISTING_BOTH_AMBIGUOUS: 1,
+    RESOLVED_AS_MATERIAL: 4,
+    RESOLVED_AS_PRODUCT: 4,
     SAFE_PRODUCT_CANDIDATE: 2,
     SAFE_MATERIAL_CANDIDATE: 2,
     EXISTING_PRODUCT: 3,
@@ -494,7 +538,8 @@ function filterRows(
     if (!includeExisting) {
       if (
         r.classification === "EXISTING_PRODUCT" ||
-        r.classification === "EXISTING_MATERIAL"
+        r.classification === "EXISTING_MATERIAL" ||
+        isResolvedAmbiguityClassification(r.classification)
       ) {
         return false;
       }
@@ -503,14 +548,23 @@ function filterRows(
       if (wantedClass === "MISSING") {
         if (
           r.classification === "EXISTING_PRODUCT" ||
-          r.classification === "EXISTING_MATERIAL"
+          r.classification === "EXISTING_MATERIAL" ||
+          isResolvedAmbiguityClassification(r.classification)
         ) {
           return false;
         }
       } else if (wantedClass === "ALL_SAFE") {
         if (!isSafeClassification(r.classification)) return false;
       } else if (wantedClass === "ALL_BLOCKED") {
-        if (!isBlockedClassification(r.classification)) return false;
+        if (
+          !isBlockedClassification(r.classification) &&
+          r.classification !== "EXISTING_BOTH_AMBIGUOUS" &&
+          r.classification !== "AMBIGUOUS_REVIEW"
+        ) {
+          return false;
+        }
+      } else if (wantedClass === "RESOLVED_ALL") {
+        if (!isResolvedAmbiguityClassification(r.classification)) return false;
       } else if (r.classification !== wantedClass) {
         return false;
       }
@@ -602,6 +656,8 @@ export async function buildNomusMasterDataImportPreview(
       row.classification === "EXISTING_PRODUCT" ||
       row.classification === "EXISTING_MATERIAL" ||
       row.classification === "EXISTING_BOTH_AMBIGUOUS" ||
+      row.classification === "RESOLVED_AS_MATERIAL" ||
+      row.classification === "RESOLVED_AS_PRODUCT" ||
       row.classification === "SKIPPED_OPTIONAL_MASTER_ALREADY_EXISTS"
     ) {
       skippedExisting.push(toPreviewItem(row));
