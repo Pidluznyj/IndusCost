@@ -165,6 +165,7 @@ npx prisma migrate deploy
 # Scripts operacionais
 npm run fleet:seed-demo          # dados de demonstração
 npm run fleet:db-validate        # validação estrutural no banco
+npm run fleet:integrity:diagnostic  # integridade de dados (read-only, JSON + resumo)
 npm run test:fleet:e2e           # smoke domínio/Prisma (sem HTTP)
 npm run test:fleet:smoke         # smoke HTTP do fluxo principal (servidor + DATABASE_URL)
 npm run fleet:import -- vehicles preview --file=./arquivo.csv
@@ -180,6 +181,8 @@ Testes ficam em `src/lib/fleetValidation.test.ts` (runner `tsx --test`).
 ---
 
 ## Deploy e migrations
+
+**Servidor (`/opt/induscost`):** roteiro passo a passo em [deploy-servidor.md](./deploy-servidor.md) e script `scripts/fleetServerDeployValidate.sh` (`--validate-only` ou `--with-restart`).
 
 1. Aplicar migrations Prisma do repositório (inclui módulo frota e índices de listagem):
    - `prisma/migrations/20260603120000_add_fleet_management_module/`
