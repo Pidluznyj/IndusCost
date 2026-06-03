@@ -62,7 +62,9 @@ async function canViewFinancial(
   getCurrentAppUser: AuthGuards["getCurrentAppUser"]
 ) {
   const u = await getCurrentAppUser(req);
-  return u ? hasPermission(u, "fleet.financial.view") : false;
+  return u
+    ? hasPermission(u, "fleet.financial.view") || hasPermission(u, "fleet.manage")
+    : false;
 }
 
 export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: AuthGuards) {

@@ -371,3 +371,58 @@ describe("fleet management helpers", async () => {
     assert.equal(computeCnhStatus(soon, 10, now), "VALID");
   });
 });
+
+describe("fleet hardening", async () => {
+  const { canAccessFleetRoute, canViewFleetFinancial, FLEET_ROUTE_GUARDS } = await import(
+    "./fleetAuth.js"
+  );
+  const {
+    fleetSafeCell,
+    formatFleetMoney,
+    formatFleetKm,
+    normalizeFleetList,
+  } = await import("./fleetFormat.js");
+  const {
+    getFleetCriticalActionConfig,
+    parseFleetListLimit,
+    validateFleetCriticalReason,
+  } = await import("./fleetUxShared.js");
+
+  it("user without permission cannot access guarded route (403 rule)", () => {
+    assert.equal(canAccessFleetRoute([], FLEET_ROUTE_GUARDS.view), false);
+    assert.equal(canAccessFleetRoute(["fleet.view"], FLEET_ROUTE_GUARDS.vehiclesEdit), false);
+    assert.equal(canAccessFleetRoute(["fleet.vehicles.edit"], FLEET_ROUTE_GUARDS.vehiclesEdit), true);
+    assert.equal(canAccessFleetRoute(["fleet.manage"], FLEET_ROUTE_GUARDS.settingsManage), false);
+  });
+
+  it("financial view requires fleet.financial.view or fleet.manage", () => {
+    assert.equal(canViewFleetFinancial([]), false);
+    assert.equal(canViewFleetFinancial(["fleet.financial.view"]), true);
+    assert.equal(canViewFleetFinancial(["fleet.manage"]), true);
+  });
+
+  it("empty and invalid values do not render as NaN/undefined", () => {
+    assert.equal(fleetSafeCell(undefined), "—");
+    assert.equal(fleetSafeCell(Number.NaN), "—");
+    assert.equal(formatFleetMoney(undefined), "—");
+    assert.equal(formatFleetKm(undefined), "—");
+    assert.deepEqual(normalizeFleetList(null), []);
+  });
+
+  it("parseFleetListLimit caps excessive requests", () => {
+    assert.equal(parseFleetListLimit("99999"), 2000);
+    assert.equal(parseFleetListLimit("abc", 100), 100);
+  });
+
+  it("critical actions require reason in config", () => {
+    assert.equal(getFleetCriticalActionConfig("cost.cancel").requireReason, true);
+    assert.equal(getFleetCriticalActionConfig("vehicle.sell").requireReason, true);
+    assert.equal(getFleetCriticalActionConfig("maintenance.complete").requireReason, false);
+  });
+
+  it("validateFleetCriticalReason rejects empty reason when required", () => {
+    assert.equal(validateFleetCriticalReason("cost.cancel", "  "), false);
+    assert.equal(validateFleetCriticalReason("cost.cancel", "motivo"), true);
+    assert.equal(validateFleetCriticalReason("maintenance.complete", null), true);
+  });
+});

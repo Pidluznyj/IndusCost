@@ -397,24 +397,57 @@ export async function listVehicleAudit(vehicleId: string, limit = 100) {
   });
 }
 
-export async function listRelatedVehicleAudit(vehicleId: string, limit = 100) {
-  const [contracts, documents] = await Promise.all([
-    prisma.fleetVehicleContract.findMany({
-      where: { vehicleId },
-      select: { id: true },
-    }),
-    prisma.fleetVehicleDocument.findMany({
-      where: { vehicleId },
-      select: { id: true },
-    }),
+export async function listRelatedVehicleAudit(vehicleId: string, limit = 150) {
+  const [
+    contracts,
+    documents,
+    reservations,
+    maintenances,
+    costs,
+    incidents,
+    fines,
+    fuelings,
+    checklists,
+    attachments,
+  ] = await Promise.all([
+    prisma.fleetVehicleContract.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetVehicleDocument.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetReservation.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetMaintenance.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetCost.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetIncident.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetFine.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetFueling.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetChecklist.findMany({ where: { vehicleId }, select: { id: true } }),
+    prisma.fleetAttachment.findMany({ where: { vehicleId }, select: { id: true } }),
   ]);
-  const ids = [
+
+  const reservationIds = reservations.map((r) => r.id);
+  const usages =
+    reservationIds.length > 0
+      ? await prisma.fleetUsage.findMany({
+          where: { reservationId: { in: reservationIds } },
+          select: { id: true },
+        })
+      : [];
+
+  const entityIds = [
     vehicleId,
     ...contracts.map((c) => c.id),
     ...documents.map((d) => d.id),
+    ...reservationIds,
+    ...maintenances.map((m) => m.id),
+    ...costs.map((c) => c.id),
+    ...incidents.map((i) => i.id),
+    ...fines.map((f) => f.id),
+    ...fuelings.map((f) => f.id),
+    ...checklists.map((c) => c.id),
+    ...attachments.map((a) => a.id),
+    ...usages.map((u) => u.id),
   ];
+
   return prisma.fleetAuditLog.findMany({
-    where: { entityId: { in: ids } },
+    where: { entityId: { in: entityIds } },
     orderBy: { createdAt: "desc" },
     take: limit,
   });

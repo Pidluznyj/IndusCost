@@ -9,6 +9,7 @@ import {
   MAINTENANCE_STATUS_LABEL,
   MAINTENANCE_TYPE_OPTIONS,
 } from "@/src/types/fleet";
+import { confirmFleetCriticalAction, FleetStatusBadge } from "@/src/components/fleet/fleetUi";
 
 const EMPTY_FORM = {
   vehicleId: "",
@@ -193,6 +194,8 @@ export function FleetMaintenancesTab() {
 
   const submitComplete = async () => {
     if (!detailId) return;
+    const { confirmed } = confirmFleetCriticalAction("maintenance.complete");
+    if (!confirmed) return;
     await action(detailId, "complete", {
       finalValue: completeForm.finalValue ? Number(completeForm.finalValue) : null,
       currentKm: completeForm.currentKm ? Number(completeForm.currentKm) : null,
@@ -566,7 +569,11 @@ export function FleetMaintenancesTab() {
                       type="button"
                       className="rounded border border-red-200 px-2 py-1 text-xs text-red-700"
                       disabled={saving || !cancelReason.trim()}
-                      onClick={() => void action(detailId, "cancel", { reason: cancelReason })}
+                      onClick={() => {
+                        const { confirmed } = confirmFleetCriticalAction("maintenance.cancel");
+                        if (!confirmed || !cancelReason.trim()) return;
+                        void action(detailId, "cancel", { reason: cancelReason });
+                      }}
                     >
                       Cancelar OS
                     </button>

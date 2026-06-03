@@ -172,6 +172,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       const body = req.body ?? {};
       const amount = body.amount != null ? Number(body.amount) : Number(existing.amount);
       assertNonNegativeAmount(amount);
+      const user = await getCurrentAppUser(req);
       const updated = await prisma.fleetCost.update({
         where: { id },
         data: {
@@ -185,6 +186,14 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
           notes: body.notes !== undefined ? body.notes?.trim?.() ?? null : undefined,
         },
         include: COST_INCLUDE,
+      });
+      await writeFleetAuditLog({
+        entityType: "FleetCost",
+        entityId: id,
+        action: "UPDATE",
+        oldValue: String(existing.amount),
+        newValue: String(updated.amount),
+        userId: user?.id ?? null,
       });
       res.json({ cost: serializeCostRow(updated) });
     } catch (e) {
@@ -293,6 +302,14 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
           });
         }
         return f;
+      });
+
+      await writeFleetAuditLog({
+        entityType: "FleetFueling",
+        entityId: fueling.id,
+        action: "CREATE",
+        newValue: String(fueling.liters),
+        userId: user?.id ?? null,
       });
 
       const fin = await showFinancial(req, getCurrentAppUser);

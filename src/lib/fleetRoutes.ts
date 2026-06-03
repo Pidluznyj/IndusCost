@@ -30,6 +30,7 @@ import {
   saveFleetSettingsWithAudit,
 } from "@/src/lib/fleetManagementRoutes.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
+import { parseFleetListLimit } from "@/src/lib/fleetUxShared.js";
 import {
   refreshDocumentStatuses,
   serializeContract,
@@ -107,9 +108,11 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
         ];
       }
 
+      const take = parseFleetListLimit(req.query.limit);
       const vehicles = await prisma.fleetVehicle.findMany({
         where,
         orderBy: [{ plate: "asc" }, { brand: "asc" }],
+        take,
       });
       const withAlerts = await enrichVehiclesWithAlerts(
         vehicles.map((v) => ({
@@ -144,7 +147,9 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       if (!vehicle) return res.status(404).json({ error: "Veículo não encontrado." });
       await refreshDocumentStatuses(id);
       const authUser = await getCurrentAppUser(req);
-      const financial = authUser ? hasPermission(authUser, "fleet.financial.view") : false;
+      const financial =
+        authUser != null &&
+        (hasPermission(authUser, "fleet.financial.view") || hasPermission(authUser, "fleet.manage"));
       const docs = await prisma.fleetVehicleDocument.findMany({
         where: { vehicleId: id },
         orderBy: [{ expirationDate: "asc" }],

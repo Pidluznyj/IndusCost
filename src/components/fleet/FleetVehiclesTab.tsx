@@ -5,6 +5,7 @@ import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import type { FleetVehicleOrigin, FleetVehicleRow, FleetVehicleStatus } from "@/src/types/fleet";
 import { FleetVehicleDetailSheet } from "@/src/components/fleet/FleetVehicleDetailSheet";
+import { FleetStatusBadge, formatFleetKm, normalizeFleetList } from "@/src/components/fleet/fleetUi";
 
 const STATUS_LABEL: Record<FleetVehicleStatus, string> = {
   AVAILABLE: "Disponível",
@@ -76,7 +77,7 @@ export function FleetVehiclesTab() {
       const data = await fetchJsonOk<{ vehicles: FleetVehicleRow[] }>(
         `/api/fleet/vehicles?${q}`
       );
-      setVehicles(data.vehicles);
+      setVehicles(normalizeFleetList(data.vehicles));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar veículos.");
     } finally {
@@ -216,19 +217,9 @@ export function FleetVehiclesTab() {
                     </td>
                     <td className="px-3 py-2">{ORIGIN_LABEL[v.origin]}</td>
                     <td className="px-3 py-2">
-                      <span
-                        className={cn(
-                          "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
-                          v.status === "AVAILABLE" && "bg-green-100 text-green-800",
-                          v.status === "IN_USE" && "bg-blue-100 text-blue-800",
-                          v.status === "BLOCKED" && "bg-red-100 text-red-800",
-                          v.status === "MAINTENANCE" && "bg-amber-100 text-amber-800"
-                        )}
-                      >
-                        {STATUS_LABEL[v.status]}
-                      </span>
+                      <FleetStatusBadge status={v.status} label={STATUS_LABEL[v.status]} />
                     </td>
-                    <td className="px-3 py-2">{v.currentKm.toLocaleString("pt-BR")}</td>
+                    <td className="px-3 py-2">{formatFleetKm(v.currentKm)}</td>
                     <td className="px-3 py-2">{v.unit ?? "—"}</td>
                     <td className="px-3 py-2">{v.costCenter ?? "—"}</td>
                     <td className="px-3 py-2">

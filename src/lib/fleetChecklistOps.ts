@@ -173,6 +173,16 @@ export async function completeChecklist(
     userId,
   });
 
+  if (hasCriticalNotOk(existing.items)) {
+    await writeFleetAuditLog({
+      entityType: "FleetChecklist",
+      entityId: checklistId,
+      action: "CRITICAL_CHECKLIST",
+      reason: "Item crítico marcado como não conforme",
+      userId,
+    });
+  }
+
   return serializeChecklist(updated);
 }
 

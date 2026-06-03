@@ -15,6 +15,13 @@ import type {
 } from "@/src/types/fleet";
 import { MAINTENANCE_STATUS_LABEL } from "@/src/types/fleet";
 import { CONTRACT_TYPE_OPTIONS, DOCUMENT_TYPE_OPTIONS } from "@/src/types/fleet";
+import {
+  confirmFleetCriticalAction,
+  formatFleetDateTime,
+  formatFleetKm,
+  formatFleetMoney,
+} from "@/src/components/fleet/fleetUi";
+import { FLEET_AUDIT_ACTION_LABEL } from "@/src/lib/fleetUxShared";
 
 const STATUS_LABEL: Record<FleetVehicleStatus, string> = {
   AVAILABLE: "Disponível",
@@ -60,16 +67,9 @@ function dateInput(v: string | null | undefined) {
 }
 
 function formatDt(v: string | null | undefined) {
-  if (!v) return "—";
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
+  return formatFleetDateTime(v);
 }
 
-function money(v: number | null, masked?: boolean) {
-  if (masked) return "••••••";
-  if (v == null) return "—";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
 
 type Props = {
   vehicleId: string;
@@ -210,12 +210,18 @@ export function FleetVehicleDetailSheet({
   };
 
   const lifecycle = (action: string) => {
-    const reason = prompt(
-      action === "block" || action === "unblock"
-        ? "Informe o motivo (obrigatório):"
-        : "Motivo (opcional):"
-    );
-    if ((action === "block" || action === "unblock") && !reason?.trim()) return;
+    const actionMap: Record<string, Parameters<typeof confirmFleetCriticalAction>[0]> = {
+      block: "vehicle.block",
+      unblock: "vehicle.unblock",
+      deactivate: "vehicle.deactivate",
+      sell: "vehicle.sell",
+      return: "vehicle.return",
+    };
+    const critical = actionMap[action];
+    const { confirmed, reason } = critical
+      ? confirmFleetCriticalAction(critical)
+      : { confirmed: window.confirm("Confirma esta ação?"), reason: null };
+    if (!confirmed) return;
     const paths: Record<string, string> = {
       block: `/api/fleet/vehicles/${vehicleId}/block`,
       unblock: `/api/fleet/vehicles/${vehicleId}/unblock`,
@@ -682,7 +688,10 @@ export function FleetVehicleDetailSheet({
                         </div>
                         <p className="text-slate-600 mt-1">
                           {dateInput(c.startDate)} → {c.endDate ? dateInput(c.endDate) : "—"} ·{" "}
-                          {money(c.monthlyValue, c.financialMasked)}
+                          {formatFleetMoney(c.monthlyValue, {
+                            masked: c.financialMasked,
+                            canView: canFinancial,
+                          })}
                         </p>
                         {canEdit && (
                           <div className="mt-2 flex gap-2">
@@ -1045,22 +1054,23 @@ export function FleetVehicleDetailSheet({
                 <ul className="space-y-2 text-sm">
                   {auditLogs.map((log) => (
                     <li key={log.id} className="rounded border px-3 py-2">
-                      <div className="font-medium">
-                        {log.action} · {log.entityType}
+                      <div className="font-medium flex flex-wrap items-center gap-2">
+                        <span>{FLEET_AUDIT_ACTION_LABEL[log.action] ?? log.action}</span>
+                        <span className="text-xs text-slate-500">{log.entityType}</span>
                       </div>
                       <div className="text-slate-600">
                         {formatDt(log.createdAt)}
                         {log.reason ? ` · ${log.reason}` : ""}
                       </div>
                       {(log.oldValue || log.newValue) && (
-                        <div className="mt-1 text-xs text-slate-500 font-mono">
-                          {log.oldValue} → {log.newValue}
+                        <div className="mt-1 text-xs text-slate-500 font-mono break-all">
+                          {log.oldValue ?? "—"} → {log.newValue ?? "—"}
                         </div>
                       )}
                     </li>
                   ))}
                   {auditLogs.length === 0 && (
-                    <p className="text-slate-500">Sem registros de auditoria.</p>
+                    <p className="text-slate-500 py-6 text-center">Nenhum evento registrado para este veículo.</p>
                   )}
                 </ul>
               )}

@@ -14,6 +14,12 @@ import {
   FLEET_COST_TYPE_OPTIONS,
   INCIDENT_STATUS_OPTIONS,
 } from "@/src/types/fleet";
+import {
+  confirmFleetCriticalAction,
+  FleetLoading,
+  formatFleetMoney,
+  normalizeFleetList,
+} from "@/src/components/fleet/fleetUi";
 
 const SUB_TABS = [
   { id: "costs", label: "Custos" },
@@ -24,10 +30,6 @@ const SUB_TABS = [
 
 type SubTab = (typeof SUB_TABS)[number]["id"];
 
-function money(v: number | null | undefined, canFinancial: boolean, masked?: boolean) {
-  if (!canFinancial || masked || v == null) return "••••••";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
 
 function formatDt(v: string | null | undefined) {
   if (!v) return "—";
@@ -119,7 +121,7 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
     try {
       if (subTab === "costs") {
         const data = await fetchJsonOk<{ costs: FleetCostRow[] }>("/api/fleet/costs?status=all");
-        setCosts(data.costs);
+        setCosts(normalizeFleetList(data.costs));
       } else if (subTab === "fuelings") {
         const data = await fetchJsonOk<{ fuelings: FleetFuelingRow[] }>("/api/fleet/fuelings");
         setFuelings(data.fuelings);
@@ -146,8 +148,8 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
   }, [load]);
 
   const cancelCost = async (id: string) => {
-    const reason = window.prompt("Motivo do cancelamento:");
-    if (!reason?.trim()) return;
+    const { confirmed, reason } = confirmFleetCriticalAction("cost.cancel");
+    if (!confirmed || !reason) return;
     await fetchJsonOk(`/api/fleet/costs/${id}/cancel`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -268,9 +270,7 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-        </div>
+        <FleetLoading />
       ) : (
         <>
           {subTab === "costs" && (
@@ -357,7 +357,7 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
                         <td className="px-3 py-2">{c.costType}</td>
                         <td className="px-3 py-2">{c.competence}</td>
                         <td className="px-3 py-2 font-mono">
-                          {money(c.amount, canFinancial, c.amountMasked)}
+                          {formatFleetMoney(c.amount, { canView: canFinancial, masked: c.amountMasked })}
                         </td>
                         <td className="px-3 py-2">{c.status}</td>
                         <td className="px-3 py-2">
@@ -472,7 +472,7 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
                         <td className="px-3 py-2">{f.vehicle?.plate}</td>
                         <td className="px-3 py-2">{f.liters}</td>
                         <td className="px-3 py-2 font-mono">
-                          {money(f.totalValue, canFinancial, f.totalValueMasked)}
+                          {formatFleetMoney(f.totalValue, { canView: canFinancial, masked: f.totalValueMasked })}
                         </td>
                         <td className="px-3 py-2">{f.km}</td>
                       </tr>
@@ -545,7 +545,7 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
                         <td className="px-3 py-2">{f.vehicle?.plate}</td>
                         <td className="px-3 py-2">{f.noticeNumber ?? "—"}</td>
                         <td className="px-3 py-2 font-mono">
-                          {money(f.amount, canFinancial, f.amountMasked)}
+                          {formatFleetMoney(f.amount, { canView: canFinancial, masked: f.amountMasked })}
                         </td>
                         <td className="px-3 py-2">{f.status}</td>
                         <td className="px-3 py-2">
