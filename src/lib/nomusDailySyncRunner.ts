@@ -5,14 +5,35 @@ import {
   NOMUS_DAILY_SYNC_MODE,
   NOMUS_DAILY_SYNC_SCRIPT_NAME,
 } from "./nomusDailySyncConstants.js";
+import {
+  buildRecommendedAction,
+  computeNomusDailyOverallStatus,
+  parseDailyRunnerLogContent,
+  parseDurationMs,
+} from "./nomusDailySyncLogParse.js";
+import type { NomusDailySyncStatusPayload } from "./nomusDailySyncStatusTypes.js";
 
 export { NOMUS_DAILY_SYNC_CONFIRM_PHRASE, NOMUS_DAILY_SYNC_MODE, NOMUS_DAILY_SYNC_SCRIPT_NAME } from "./nomusDailySyncConstants.js";
+export type {
+  NomusDailyOverallStatus,
+  NomusDailySyncStatusPayload,
+} from "./nomusDailySyncStatusTypes.js";
+export { parseDailyRunnerLogContent, parseDailyRunnerSteps } from "./nomusDailySyncLogParse.js";
+export {
+  DAILY_LOG_STALE_RUNNING_MS,
+  isDailyRunnerLogFileName,
+  isGlobalNomusSyncLockHeldFromFlockProbe,
+  isProcessActiveFromPgrepStatus,
+  shouldInferDailyRunningFromLog,
+} from "./nomusDailySyncRunnerShared.js";
 
-const DAILY_LOG_RE = /^runner-daily-(apply|dry)_.+\.log$/i;
+import {
+  isDailyRunnerLogFileName,
+  isGlobalNomusSyncLockHeldFromFlockProbe,
+  isProcessActiveFromPgrepStatus,
+} from "./nomusDailySyncRunnerShared.js";
+
 const LOCK_FILE = process.env.NOMUS_SYNC_LOCK_FILE || "/tmp/induscost-nomus-sync-global.lock";
-
-/** Idade máxima de um log runner-daily sem FINISHED_AT para inferir execução em andamento. */
-export const DAILY_LOG_STALE_RUNNING_MS = 12 * 60 * 60 * 1000;
 
 let trackedChild: ChildProcess | null = null;
 
@@ -22,25 +43,6 @@ export class NomusDailySyncConflictError extends Error {
     this.name = "NomusDailySyncConflictError";
   }
 }
-
-export type NomusDailySyncRunStatus = "idle" | "running" | "success" | "failed" | "skipped";
-
-export type NomusDailySyncStatusPayload = {
-  isRunning: boolean;
-  lastRun: {
-    fileName: string;
-    status: NomusDailySyncRunStatus;
-    startedAt: string | null;
-    finishedAt: string | null;
-    exitCode: number | null;
-    logFile: string;
-  } | null;
-  lastSuccess: { finishedAt: string; fileName: string } | null;
-  lastFailure: { finishedAt: string; fileName: string; exitCode: number | null } | null;
-  lastLogFile: string | null;
-  lastRunnerLogFile: string | null;
-  runnerLogDir: string;
-};
 
 export type NomusDailySyncStartResult = {
   started: true;
@@ -57,44 +59,6 @@ export function resolveNomusDailySyncScriptPath(projectRoot: string): string {
 
 export function resolveNomusSyncLogDir(): string {
   return path.resolve(process.env.NOMUS_SYNC_LOG_DIR || "/tmp/induscost-nomus-sync");
-}
-
-export function isDailyRunnerLogFileName(fileName: string): boolean {
-  return DAILY_LOG_RE.test(fileName);
-}
-
-export function parseDailyRunnerLogContent(content: string): {
-  startedAt: string | null;
-  finishedAt: string | null;
-  exitCode: number | null;
-  skipped: boolean;
-  status: NomusDailySyncRunStatus;
-} {
-  const startedMatch = content.match(/^\s*STARTED_AT=(.+)$/m);
-  const finishedMatch = content.match(/^\s*FINISHED_AT=(.+)$/m);
-  const exitMatch = content.match(/^\s*EXIT_CODE=(\d+)/m);
-  const skipped = /SKIPPED:\s*outra execução diária/i.test(content);
-  const startedAt = startedMatch?.[1]?.trim() ?? null;
-  const finishedAt = finishedMatch?.[1]?.trim() ?? null;
-  const exitCode = exitMatch ? Number(exitMatch[1]) : null;
-
-  if (skipped) {
-    return { startedAt, finishedAt, exitCode: 0, skipped: true, status: "skipped" };
-  }
-  if (finishedAt) {
-    const failed = exitCode !== null && exitCode !== 0;
-    return {
-      startedAt,
-      finishedAt,
-      exitCode,
-      skipped: false,
-      status: failed ? "failed" : "success",
-    };
-  }
-  if (startedAt) {
-    return { startedAt, finishedAt, exitCode, skipped: false, status: "running" };
-  }
-  return { startedAt, finishedAt, exitCode, skipped: false, status: "idle" };
 }
 
 async function listDailyRunnerLogs(logDir: string): Promise<
@@ -115,31 +79,6 @@ async function listDailyRunnerLogs(logDir: string): Promise<
   } catch {
     return [];
   }
-}
-
-/** pgrep exit 0 = processo encontrado; qualquer outro código = ausente. */
-export function isProcessActiveFromPgrepStatus(status: number | null | undefined): boolean {
-  return status === 0;
-}
-
-/**
- * flock -n: exit 0 = lock adquirido (livre); exit ≠ 0 = ocupado por outro processo.
- * Arquivo de lock no disco sem lock ativo não deve ser tratado como "rodando".
- */
-export function isGlobalNomusSyncLockHeldFromFlockProbe(
-  flockExitStatus: number | null | undefined
-): boolean {
-  if (flockExitStatus == null) return false;
-  return flockExitStatus !== 0;
-}
-
-export function shouldInferDailyRunningFromLog(
-  parsed: ReturnType<typeof parseDailyRunnerLogContent>,
-  logAgeMs: number,
-  maxAgeMs: number = DAILY_LOG_STALE_RUNNING_MS
-): boolean {
-  if (logAgeMs > maxAgeMs) return false;
-  return parsed.status === "running";
 }
 
 function isNomusDailySyncProcessActive(): boolean {
@@ -171,43 +110,22 @@ export async function probeGlobalNomusSyncLockHeld(
   }
 }
 
-async function isLockHeld(): Promise<boolean> {
-  return probeGlobalNomusSyncLockHeld(LOCK_FILE);
-}
-
-async function inferRunningFromLatestLog(
-  logs: Array<{ fileName: string; absolutePath: string; modifiedAtMs: number }>
-): Promise<boolean> {
-  const latest = logs[0];
-  if (!latest) return false;
-  const ageMs = Date.now() - latest.modifiedAtMs;
-  try {
-    const content = await fs.readFile(latest.absolutePath, "utf8");
-    const parsed = parseDailyRunnerLogContent(content);
-    return shouldInferDailyRunningFromLog(parsed, ageMs);
-  } catch {
-    return false;
-  }
-}
-
 export async function isNomusDailySyncRunning(): Promise<boolean> {
-  if (isNomusDailySyncProcessActive()) return true;
-  if (await isLockHeld()) return true;
-  const logs = await listDailyRunnerLogs(resolveNomusSyncLogDir());
-  return inferRunningFromLatestLog(logs);
+  return isNomusDailySyncProcessActive() || (await probeGlobalNomusSyncLockHeld(LOCK_FILE));
 }
 
 export async function getNomusDailySyncStatus(): Promise<NomusDailySyncStatusPayload> {
   const runnerLogDir = resolveNomusSyncLogDir();
   const logs = await listDailyRunnerLogs(runnerLogDir);
-  const isRunning =
-    (await isNomusDailySyncProcessActive()) ||
-    (await isLockHeld()) ||
-    (await inferRunningFromLatestLog(logs));
+  const hasLiveProcess = isNomusDailySyncProcessActive();
+  const hasActiveLock = await probeGlobalNomusSyncLockHeld(LOCK_FILE);
 
   let lastRun: NomusDailySyncStatusPayload["lastRun"] = null;
   let lastSuccess: NomusDailySyncStatusPayload["lastSuccess"] = null;
   let lastFailure: NomusDailySyncStatusPayload["lastFailure"] = null;
+
+  let latestParsed = parseDailyRunnerLogContent("");
+  let latestContent = "";
 
   for (const entry of logs) {
     let content = "";
@@ -218,9 +136,17 @@ export async function getNomusDailySyncStatus(): Promise<NomusDailySyncStatusPay
     }
     const parsed = parseDailyRunnerLogContent(content);
     if (!lastRun) {
+      latestParsed = parsed;
+      latestContent = content;
+      const displayStatus =
+        hasLiveProcess || hasActiveLock
+          ? ("running" as const)
+          : parsed.status === "running" && parsed.terminalFailure
+            ? ("failed" as const)
+            : parsed.status;
       lastRun = {
         fileName: entry.fileName,
-        status: isRunning && parsed.status === "running" ? "running" : parsed.status,
+        status: displayStatus,
         startedAt: parsed.startedAt,
         finishedAt: parsed.finishedAt,
         exitCode: parsed.exitCode,
@@ -230,28 +156,61 @@ export async function getNomusDailySyncStatus(): Promise<NomusDailySyncStatusPay
     if (!lastSuccess && parsed.status === "success" && parsed.finishedAt) {
       lastSuccess = { finishedAt: parsed.finishedAt, fileName: entry.fileName };
     }
-    if (!lastFailure && parsed.status === "failed" && parsed.finishedAt) {
+    if (!lastFailure && parsed.status === "failed" && (parsed.finishedAt || parsed.terminalFailure)) {
       lastFailure = {
-        finishedAt: parsed.finishedAt,
+        finishedAt: parsed.finishedAt ?? parsed.steps.find((s) => s.finishedAt)?.finishedAt ?? parsed.startedAt ?? "",
         fileName: entry.fileName,
-        exitCode: parsed.exitCode,
+        exitCode: parsed.exitCode ?? parsed.steps.find((s) => s.exitCode != null && s.exitCode !== 0)?.exitCode ?? null,
       };
     }
     if (lastRun && lastSuccess && lastFailure) break;
   }
 
-  if (lastRun && isRunning) {
+  const { overallStatus, isActuallyRunning, staleReason, ranToday } =
+    computeNomusDailyOverallStatus({
+      hasLiveProcess,
+      hasActiveLock,
+      parsed: latestParsed,
+    });
+
+  const failedSteps = latestParsed.steps.filter(
+    (s) => s.exitCode != null && s.exitCode !== 0
+  );
+
+  const recommendedAction = buildRecommendedAction({
+    overallStatus,
+    failedSteps,
+    lastErrorLine: latestParsed.lastErrorLine,
+  });
+
+  if (lastRun && isActuallyRunning) {
     lastRun = { ...lastRun, status: "running" };
+  } else if (lastRun && overallStatus === "PARTIAL_FAILED") {
+    lastRun = { ...lastRun, status: "failed", finishedAt: lastRun.finishedAt ?? latestParsed.steps.find((s) => s.finishedAt)?.finishedAt ?? null };
+  } else if (lastRun && overallStatus === "STALE") {
+    lastRun = { ...lastRun, status: "failed" };
   }
 
   return {
-    isRunning,
+    overallStatus,
+    isRunning: isActuallyRunning,
+    isActuallyRunning,
+    hasLiveProcess,
+    hasActiveLock,
+    staleReason,
+    startedAt: latestParsed.startedAt,
+    finishedAt: latestParsed.finishedAt,
+    durationMs: parseDurationMs(latestParsed.startedAt, latestParsed.finishedAt),
+    currentOrLastStep: latestParsed.lastStep,
+    failedSteps,
+    recommendedAction,
     lastRun,
     lastSuccess,
     lastFailure,
     lastLogFile: lastRun?.logFile ?? null,
     lastRunnerLogFile: lastRun?.fileName ?? null,
     runnerLogDir,
+    ranToday,
   };
 }
 

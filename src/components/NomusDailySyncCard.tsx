@@ -1,25 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Loader2, Play, RefreshCw } from "lucide-react";
+import { AlertTriangle, CircleCheck, Loader2, Play, RefreshCw } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { NOMUS_DAILY_SYNC_CONFIRM_PHRASE } from "@/src/lib/nomusDailySyncConstants";
-
-type NomusDailySyncStatusPayload = {
-  isRunning: boolean;
-  lastRun: {
-    fileName: string;
-    status: "idle" | "running" | "success" | "failed" | "skipped";
-    startedAt: string | null;
-    finishedAt: string | null;
-    exitCode: number | null;
-    logFile: string;
-  } | null;
-  lastSuccess: { finishedAt: string; fileName: string } | null;
-  lastFailure: { finishedAt: string; fileName: string; exitCode: number | null } | null;
-  lastLogFile: string | null;
-  lastRunnerLogFile: string | null;
-  runnerLogDir: string;
-};
+import type { NomusDailySyncStatusPayload } from "@/src/lib/nomusDailySyncStatusTypes";
+import {
+  overallStatusBadgeClass,
+  overallStatusLabel,
+  primaryButtonLabel,
+} from "@/src/lib/nomusDailySyncStatusTypes";
 
 function formatDateTimeSafe(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -27,27 +16,29 @@ function formatDateTimeSafe(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
 }
 
-function statusLabel(status: NomusDailySyncStatusPayload["lastRun"] extends null ? never : NonNullable<NomusDailySyncStatusPayload["lastRun"]>["status"]): string {
-  switch (status) {
-    case "running":
-      return "Em execução";
-    case "success":
-      return "Sucesso";
-    case "failed":
-      return "Falha";
-    case "skipped":
-      return "Ignorada (já em andamento)";
-    default:
-      return "—";
-  }
+function formatDurationMs(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
+  const totalSec = Math.floor(ms / 1000);
+  const hh = Math.floor(totalSec / 3600);
+  const mm = Math.floor((totalSec % 3600) / 60);
+  const ss = totalSec % 60;
+  if (hh > 0) return `${hh}h ${mm}m`;
+  return `${mm}m ${ss}s`;
 }
 
-function statusBadgeClass(status: string): string {
-  if (status === "running") return "bg-sky-100 text-sky-900 border-sky-200";
-  if (status === "success" || status === "Sucesso") return "bg-green-100 text-green-900 border-green-200";
-  if (status === "failed" || status === "Falha") return "bg-red-100 text-red-900 border-red-200";
-  if (status === "skipped") return "bg-amber-100 text-amber-900 border-amber-200";
-  return "bg-muted text-muted-foreground border-border";
+function targetLabel(target: string): string {
+  switch (target) {
+    case "customers":
+      return "Clientes";
+    case "products":
+      return "Produtos";
+    case "bom-components":
+      return "Componentes da BOM";
+    case "proposals":
+      return "Propostas";
+    default:
+      return target;
+  }
 }
 
 export function NomusDailySyncCard({
@@ -69,7 +60,9 @@ export function NomusDailySyncCard({
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchJsonOk<NomusDailySyncStatusPayload>("/api/settings/nomus-sync/daily-status");
+      const data = await fetchJsonOk<NomusDailySyncStatusPayload>(
+        "/api/settings/nomus-sync/daily-status"
+      );
       setStatus(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar o status da rotina diária.");
@@ -84,12 +77,12 @@ export function NomusDailySyncCard({
   }, [loadStatus]);
 
   useEffect(() => {
-    if (!status?.isRunning) return;
+    if (!status?.isActuallyRunning) return;
     const id = window.setInterval(() => {
       void loadStatus();
     }, 15000);
     return () => window.clearInterval(id);
-  }, [status?.isRunning, loadStatus]);
+  }, [status?.isActuallyRunning, loadStatus]);
 
   const handleRefresh = () => {
     void loadStatus();
@@ -129,15 +122,20 @@ export function NomusDailySyncCard({
       onLogsRefresh();
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : "Não foi possível iniciar a rotina diária Nomus. Verifique logs do servidor."
+        e instanceof Error
+          ? e.message
+          : "Não foi possível iniciar a rotina diária Nomus. Verifique logs do servidor."
       );
     } finally {
       setStarting(false);
     }
   };
 
-  const isRunning = status?.isRunning === true;
+  const overall = status?.overallStatus ?? "IDLE";
+  const isActuallyRunning = status?.isActuallyRunning === true;
   const confirmOk = confirmText.trim() === NOMUS_DAILY_SYNC_CONFIRM_PHRASE;
+  const buttonLabel = primaryButtonLabel(overall, isActuallyRunning);
+  const showSpinnerOnMainButton = isActuallyRunning || starting;
 
   return (
     <>
@@ -146,12 +144,12 @@ export function NomusDailySyncCard({
           <div className="min-w-0 space-y-1">
             <h4 className="text-base font-bold text-foreground">Rotina diária Nomus</h4>
             <p className="text-sm text-muted-foreground">
-              Executa clientes, produtos, BOM/components e propostas, igual à rotina automática da madrugada
-              (modo apply).
+              Executa clientes, produtos, BOM/components e propostas, igual à rotina automática da
+              madrugada (modo apply).
             </p>
             <p className="text-xs text-muted-foreground">
-              Não inclui a rotina horária de pedidos de venda. A etapa BOM/components pode acionar auto-apply
-              controlado de ProductBOM, respeitando os gates existentes.
+              Não inclui a rotina horária de pedidos de venda. Status «rodando» só com processo vivo
+              ou lock ativo — não fica preso por log incompleto.
             </p>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
@@ -161,8 +159,12 @@ export function NomusDailySyncCard({
               disabled={loading}
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
             >
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Atualizar
+              {loading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Atualizar status
             </button>
             {canRun ? (
               <button
@@ -171,25 +173,91 @@ export function NomusDailySyncCard({
                   setConfirmText("");
                   setModalOpen(true);
                 }}
-                disabled={isRunning || starting}
+                disabled={isActuallyRunning || starting}
                 title="Executa manualmente a mesma rotina automática diária que roda de madrugada em modo apply."
                 className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
               >
-                {isRunning || starting ? (
+                {showSpinnerOnMainButton ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <Play className="h-3.5 w-3.5" />
                 )}
-                Rodar rotina diária Nomus agora
+                {buttonLabel}
               </button>
             ) : null}
           </div>
         </div>
 
-        {isRunning ? (
-          <div className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-            Rotina diária em execução. Acompanhe o andamento nos logs abaixo.
+        {status ? (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2.5 space-y-2",
+              overallStatusBadgeClass(overall)
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {isActuallyRunning ? (
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              ) : overall === "SUCCESS" ? (
+                <CircleCheck className="h-4 w-4 shrink-0" />
+              ) : overall === "PARTIAL_FAILED" || overall === "FAILED" || overall === "STALE" ? (
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+              ) : null}
+              <p className="font-bold text-sm">{overallStatusLabel(overall)}</p>
+              {status.ranToday ? (
+                <span className="text-[10px] rounded-full border border-current/30 px-2 py-0.5 opacity-80">
+                  Houve execução hoje
+                </span>
+              ) : (
+                <span className="text-[10px] rounded-full border border-current/30 px-2 py-0.5 opacity-80">
+                  Sem execução hoje
+                </span>
+              )}
+            </div>
+            {status.staleReason ? (
+              <p className="text-xs leading-snug">{status.staleReason}</p>
+            ) : null}
+            {status.recommendedAction ? (
+              <p className="text-xs leading-snug font-medium">{status.recommendedAction}</p>
+            ) : null}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-1">
+              <div>
+                <span className="opacity-70">Início</span>
+                <p className="font-semibold">{formatDateTimeSafe(status.startedAt)}</p>
+              </div>
+              <div>
+                <span className="opacity-70">Etapa (últ./atual)</span>
+                <p className="font-semibold">
+                  {status.currentOrLastStep ? targetLabel(status.currentOrLastStep) : "—"}
+                </p>
+              </div>
+              <div>
+                <span className="opacity-70">Fim</span>
+                <p className="font-semibold">{formatDateTimeSafe(status.finishedAt)}</p>
+              </div>
+              <div>
+                <span className="opacity-70">Duração</span>
+                <p className="font-semibold">{formatDurationMs(status.durationMs)}</p>
+              </div>
+            </div>
+            <p className="text-[10px] opacity-80">
+              Processo vivo: {status.hasLiveProcess ? "sim" : "não"} · Lock ativo:{" "}
+              {status.hasActiveLock ? "sim" : "não"}
+            </p>
+          </div>
+        ) : null}
+
+        {status?.failedSteps && status.failedSteps.length > 0 ? (
+          <div className="rounded-lg border border-orange-200 bg-orange-50/90 px-3 py-2 text-sm text-orange-950 space-y-1">
+            <p className="font-semibold">Etapas com falha</p>
+            {status.failedSteps.map((s) => (
+              <p key={s.target} className="text-xs">
+                <span className="font-bold">{targetLabel(s.target)}</span>
+                {s.exitCode != null ? ` · exit ${s.exitCode}` : ""}
+                {s.finishedAt ? ` · ${formatDateTimeSafe(s.finishedAt)}` : ""}
+                {s.message ? ` — ${s.message}` : ""}
+              </p>
+            ))}
           </div>
         ) : null}
 
@@ -200,44 +268,26 @@ export function NomusDailySyncCard({
         ) : null}
 
         {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
-        ) : null}
-
-        {status?.lastFailure ? (
-          <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50/80 px-3 py-2 text-sm text-red-900">
-            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold">Última falha registrada</p>
-              <p className="text-xs mt-0.5">
-                {formatDateTimeSafe(status.lastFailure.finishedAt)} · {status.lastFailure.fileName}
-                {status.lastFailure.exitCode != null ? ` · exit ${status.lastFailure.exitCode}` : ""}
-              </p>
-            </div>
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {error}
           </div>
         ) : null}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
           <div className="rounded-lg border border-border bg-background px-3 py-2">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Status atual</p>
-            <p className="mt-1 font-semibold">{isRunning ? "Rodando" : "Parada"}</p>
+            <p className="text-[10px] font-bold uppercase text-muted-foreground">Resultado geral</p>
+            <p className="mt-1 font-semibold">{overallStatusLabel(overall)}</p>
           </div>
           <div className="rounded-lg border border-border bg-background px-3 py-2">
             <p className="text-[10px] font-bold uppercase text-muted-foreground">Última execução</p>
             {status?.lastRun ? (
               <>
-                <p className="mt-1 font-semibold">
-                  <span
-                    className={cn(
-                      "inline-flex rounded-full border px-2 py-0.5 text-xs",
-                      statusBadgeClass(status.lastRun.status)
-                    )}
-                  >
-                    {statusLabel(status.lastRun.status)}
-                  </span>
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {formatDateTimeSafe(status.lastRun.finishedAt ?? status.lastRun.startedAt)}
                 </p>
+                {status.lastRun.exitCode != null ? (
+                  <p className="text-xs font-mono">exit {status.lastRun.exitCode}</p>
+                ) : null}
               </>
             ) : (
               <p className="mt-1 text-sm text-muted-foreground">Nenhuma execução diária encontrada</p>
@@ -245,9 +295,7 @@ export function NomusDailySyncCard({
           </div>
           <div className="rounded-lg border border-border bg-background px-3 py-2">
             <p className="text-[10px] font-bold uppercase text-muted-foreground">Último sucesso</p>
-            <p className="mt-1 text-xs font-mono break-all">
-              {status?.lastSuccess?.fileName ?? "—"}
-            </p>
+            <p className="mt-1 text-xs font-mono break-all">{status?.lastSuccess?.fileName ?? "—"}</p>
             <p className="text-xs text-muted-foreground">
               {formatDateTimeSafe(status?.lastSuccess?.finishedAt)}
             </p>
@@ -284,9 +332,8 @@ export function NomusDailySyncCard({
                 Confirmar rotina diária Nomus
               </h3>
               <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-                A rotina roda em modo <strong>apply</strong>. Pode atualizar clientes, produtos, BOM/components e
-                propostas conforme a integração Nomus. Pode acionar auto-apply controlado de BOM, respeitando os
-                gates existentes. Não execute se já houver rotina Nomus em andamento.
+                A rotina roda em modo <strong>apply</strong>. Pode atualizar clientes, produtos,
+                BOM/components e propostas conforme a integração Nomus.
               </p>
             </div>
             <div className="space-y-2">

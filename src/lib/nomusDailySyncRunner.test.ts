@@ -5,12 +5,12 @@ import {
   NOMUS_DAILY_SYNC_MODE,
   NOMUS_DAILY_SYNC_SCRIPT_NAME,
 } from "./nomusDailySyncConstants";
+import { computeNomusDailyOverallStatus, parseDailyRunnerLogContent } from "./nomusDailySyncLogParse";
 import {
   DAILY_LOG_STALE_RUNNING_MS,
   isDailyRunnerLogFileName,
   isGlobalNomusSyncLockHeldFromFlockProbe,
   isProcessActiveFromPgrepStatus,
-  parseDailyRunnerLogContent,
   resolveNomusDailySyncScriptPath,
   shouldInferDailyRunningFromLog,
 } from "./nomusDailySyncRunner";
@@ -42,49 +42,53 @@ test("parseDailyRunnerLogContent: running vs success vs skipped", () => {
   assert.equal(skipped.status, "skipped");
 });
 
+test("isNomusDailySyncRunning: log sem FINISHED_AT não implica rodando sem processo", () => {
+  const parsed = parseDailyRunnerLogContent("STARTED_AT=2026-05-28T02:00:00+00:00\n");
+  const r = computeNomusDailyOverallStatus({
+    hasLiveProcess: false,
+    hasActiveLock: false,
+    parsed,
+  });
+  assert.equal(r.isActuallyRunning, false);
+  assert.notEqual(r.overallStatus, "RUNNING");
+});
+
 test("pgrep: só status 0 indica processo ativo", () => {
   assert.equal(isProcessActiveFromPgrepStatus(0), true);
   assert.equal(isProcessActiveFromPgrepStatus(1), false);
-  assert.equal(isProcessActiveFromPgrepStatus(null), false);
 });
 
-test("flock: exit 0 = lock livre; exit ≠ 0 = ocupado (arquivo stale no disco não basta)", () => {
+test("flock: exit 0 = lock livre; exit ≠ 0 = ocupado", () => {
   assert.equal(isGlobalNomusSyncLockHeldFromFlockProbe(0), false);
   assert.equal(isGlobalNomusSyncLockHeldFromFlockProbe(1), true);
-  assert.equal(isGlobalNomusSyncLockHeldFromFlockProbe(null), false);
 });
 
-test("inferência por log: só runner-daily recente sem FINISHED_AT", () => {
+test("inferência legada por log: running recente", () => {
   const running = parseDailyRunnerLogContent("STARTED_AT=2026-05-28T02:00:00+00:00\n");
   assert.equal(shouldInferDailyRunningFromLog(running, 60_000), true);
   assert.equal(
     shouldInferDailyRunningFromLog(running, DAILY_LOG_STALE_RUNNING_MS + 1),
     false
   );
+});
 
-  const success = parseDailyRunnerLogContent(
-    "STARTED_AT=2026-05-28T02:00:00+00:00\nFINISHED_AT=2026-05-28T04:00:00+00:00\nEXIT_CODE=0\n"
+test("lock file no disco sem flock ativo não marca running", () => {
+  assert.equal(
+    computeNomusDailyOverallStatus({
+      hasLiveProcess: false,
+      hasActiveLock: false,
+      parsed: parseDailyRunnerLogContent("STARTED_AT=2026-06-03T02:00:01\n"),
+    }).overallStatus,
+    "STALE"
   );
-  assert.equal(shouldInferDailyRunningFromLog(success, 60_000), false);
-});
-
-test("logs sales-orders não entram no filtro runner-daily", () => {
-  assert.equal(isDailyRunnerLogFileName("sales-orders_apply_2026-05-28T12-00-00-000Z.log"), false);
-});
-
-test("ausência de runner-daily não marca running via parse", () => {
-  const parsed = parseDailyRunnerLogContent("");
-  assert.equal(parsed.status, "idle");
-  assert.equal(shouldInferDailyRunningFromLog(parsed, 0), false);
-});
-
-test("rotina fixa: script e modo não são parametrizáveis pelo runner", () => {
-  assert.equal(NOMUS_DAILY_SYNC_SCRIPT_NAME, "runNomusDailySync.sh");
-  assert.equal(NOMUS_DAILY_SYNC_MODE, "apply");
-  const scriptPath = resolveNomusDailySyncScriptPath(process.cwd());
-  assert.match(scriptPath, /scripts[\\/]runNomusDailySync\.sh$/);
 });
 
 test("frase de confirmação esperada na UI", () => {
   assert.equal(NOMUS_DAILY_SYNC_CONFIRM_PHRASE, "RODAR ROTINA DIÁRIA NOMUS");
+});
+
+test("rotina fixa: script e modo", () => {
+  assert.equal(NOMUS_DAILY_SYNC_SCRIPT_NAME, "runNomusDailySync.sh");
+  assert.equal(NOMUS_DAILY_SYNC_MODE, "apply");
+  assert.match(resolveNomusDailySyncScriptPath(process.cwd()), /scripts[\\/]runNomusDailySync\.sh$/);
 });

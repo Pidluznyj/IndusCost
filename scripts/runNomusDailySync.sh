@@ -29,6 +29,15 @@ echo "LOG_DIR=$LOG_DIR"
 echo "RUN_LOG=$RUN_LOG"
 echo "STARTED_AT=$(date -Iseconds)"
 
+finalize_run() {
+  local ec="${1:-$?}"
+  if ! grep -q '^FINISHED_AT=' "$RUN_LOG" 2>/dev/null; then
+    echo "EXIT_CODE=$ec"
+    echo "FINISHED_AT=$(date -Iseconds)"
+  fi
+}
+trap 'finalize_run $?' EXIT
+
 cd "$APP_DIR"
 
 echo
