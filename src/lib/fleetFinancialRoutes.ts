@@ -2,7 +2,12 @@ import type express from "express";
 import type { FleetFineStatus, FleetIncidentStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
-import { FleetValidationError, assertNonNegativeAmount, assertReasonRequired } from "@/src/lib/fleetValidation.js";
+import {
+  FleetValidationError,
+  assertNonNegativeAmount,
+  assertReasonRequired,
+  fleetValidationHttpStatus,
+} from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { createMaintenance } from "@/src/lib/fleetMaintenanceOps.js";
 import { syncVehicleStatusAfterMaintenance } from "@/src/lib/fleetMaintenanceOps.js";
@@ -39,7 +44,9 @@ function isUuid(v: unknown): v is string {
 }
 
 function fleetError(res: express.Response, e: unknown, label: string) {
-  if (e instanceof FleetValidationError) return res.status(400).json({ error: e.message });
+  if (e instanceof FleetValidationError) {
+    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
+  }
   console.error(label, e);
   return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
 }
@@ -660,10 +667,25 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       if (!status) return res.status(400).json({ error: "Status obrigatório." });
       const existing = await prisma.fleetIncident.findUnique({ where: { id } });
       if (!existing) return res.status(404).json({ error: "Incidente não encontrado." });
+      let closureNotes: string | null = null;
+      if (status === "RESOLVED") {
+        closureNotes = assertReasonRequired(
+          req.body?.notes ?? req.body?.resolutionNotes ?? req.body?.outcome,
+          "Desfecho do encerramento"
+        );
+      }
       const user = await getCurrentAppUser(req);
       const updated = await prisma.fleetIncident.update({
         where: { id },
-        data: { status },
+        data: {
+          status,
+          notes:
+            closureNotes != null
+              ? closureNotes
+              : req.body?.notes !== undefined
+                ? String(req.body.notes).trim() || null
+                : undefined,
+        },
       });
       if (["RESOLVED", "CANCELED"].includes(status) && existing.blocksVehicle) {
         await syncVehicleStatusAfterMaintenance(existing.vehicleId);

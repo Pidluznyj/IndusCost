@@ -2,7 +2,11 @@ import type express from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { FleetValidationError } from "@/src/lib/fleetValidation.js";
+import {
+  FleetValidationError,
+  assertChecklistEditable,
+  fleetValidationHttpStatus,
+} from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import {
   CHECKLIST_INCLUDE,
@@ -26,7 +30,9 @@ function isUuid(value: unknown): value is string {
 }
 
 function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) return res.status(400).json({ error: e.message });
+  if (e instanceof FleetValidationError) {
+    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
+  }
   console.error(logLabel, e);
   return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
 }
@@ -157,6 +163,9 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
         return res.json({ checklist });
       }
 
+      const existing = await getChecklistOrThrow(id);
+      assertChecklistEditable(existing.status);
+
       const updated = await prisma.fleetChecklist.update({
         where: { id },
         data: {
@@ -179,7 +188,8 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
-      await getChecklistOrThrow(id);
+      const checklist = await getChecklistOrThrow(id);
+      assertChecklistEditable(checklist.status);
       const parsed = parseChecklistItemBody(req.body ?? {});
       const item = await prisma.fleetChecklistItem.create({
         data: { checklistId: id, ...parsed },
@@ -194,6 +204,13 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const itemExisting = await prisma.fleetChecklistItem.findUnique({
+        where: { id },
+        include: { checklist: { select: { status: true } } },
+      });
+      if (!itemExisting) return res.status(404).json({ error: "Item não encontrado." });
+      assertChecklistEditable(itemExisting.checklist.status);
+
       const body = req.body ?? {};
       const data: Record<string, unknown> = {};
       if (body.itemName !== undefined) {

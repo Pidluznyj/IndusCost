@@ -6,6 +6,7 @@ import {
   assertContractDateRange,
   assertDateRange,
   assertNonNegativeKm,
+  fleetValidationHttpStatus,
   normalizePlate,
 } from "@/src/lib/fleetValidation.js";
 import {
@@ -54,7 +55,7 @@ function isUuid(value: unknown): value is string {
 
 function fleetError(res: express.Response, e: unknown, logLabel: string) {
   if (e instanceof FleetValidationError) {
-    return res.status(400).json({ error: e.message });
+    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
   }
   console.error(logLabel, e);
   const msg = e instanceof Error ? e.message : "Erro interno.";

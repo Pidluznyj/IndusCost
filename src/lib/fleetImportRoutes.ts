@@ -1,6 +1,6 @@
 import type express from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { FleetValidationError } from "@/src/lib/fleetValidation.js";
+import { FleetValidationError, fleetValidationHttpStatus } from "@/src/lib/fleetValidation.js";
 import {
   FLEET_IMPORT_CONFIRM_TOKEN,
   applyDriverCsvImport,
@@ -13,7 +13,9 @@ import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRou
 type AuthGuards = FleetAuthGuards;
 
 function fleetError(res: express.Response, e: unknown, label: string) {
-  if (e instanceof FleetValidationError) return res.status(400).json({ error: e.message });
+  if (e instanceof FleetValidationError) {
+    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
+  }
   console.error(label, e);
   return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
 }

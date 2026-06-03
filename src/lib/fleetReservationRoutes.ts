@@ -2,7 +2,11 @@ import type express from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { hasPermission } from "@/src/lib/appAuth.js";
-import { FleetValidationError, assertReasonRequired } from "@/src/lib/fleetValidation.js";
+import {
+  FleetValidationError,
+  assertReasonRequired,
+  fleetValidationHttpStatus,
+} from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { performCheckin, performCheckout } from "@/src/lib/fleetUsageOps.js";
 import {
@@ -31,7 +35,9 @@ function isUuid(value: unknown): value is string {
 }
 
 function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) return res.status(400).json({ error: e.message });
+  if (e instanceof FleetValidationError) {
+    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
+  }
   console.error(logLabel, e);
   return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
 }

@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   assertBlockReason,
+  assertChecklistEditable,
   assertChecklistItemsComplete,
   assertCnhCategoryForVehicle,
   assertContractDateRange,
@@ -24,6 +25,7 @@ import {
   computeCnhStatus,
   computeDocumentStatus,
   findReservationConflict,
+  fleetValidationHttpStatus,
   isCnhValid,
   reservationPeriodsOverlap,
   FleetValidationError,
@@ -146,6 +148,23 @@ describe("fleetValidation", () => {
   it("assertReasonRequired blocks empty reject/cancel reason", () => {
     assert.throws(() => assertReasonRequired("", "Motivo da rejeição"));
     assert.equal(assertReasonRequired("  conflito de agenda  "), "conflito de agenda");
+  });
+
+  it("assertChecklistEditable blocks changes on completed checklist", () => {
+    assert.throws(
+      () => assertChecklistEditable("COMPLETED"),
+      (e: unknown) => e instanceof FleetValidationError
+    );
+    assert.doesNotThrow(() => assertChecklistEditable("DRAFT"));
+  });
+
+  it("fleetValidationHttpStatus maps conflicts to 409", () => {
+    assert.equal(
+      fleetValidationHttpStatus("Conflito de reserva: veículo já reservado neste período."),
+      409
+    );
+    assert.equal(fleetValidationHttpStatus("Já existe veículo ativo com esta placa."), 409);
+    assert.equal(fleetValidationHttpStatus("Km final não pode ser menor que km inicial."), 400);
   });
 
   it("assertDateRange rejects end before start", () => {

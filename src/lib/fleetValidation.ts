@@ -1,5 +1,6 @@
 import type {
   FleetChecklistResult,
+  FleetChecklistStatus,
   FleetDocumentStatus,
   FleetDriver,
   FleetDriverStatus,
@@ -64,6 +65,14 @@ export type ChecklistItemLike = {
   result: FleetChecklistResult | null;
   isCritical?: boolean;
 };
+
+export function assertChecklistEditable(status: FleetChecklistStatus): void {
+  if (status === "COMPLETED") {
+    throw new FleetValidationError(
+      "Checklist concluído não pode ser alterado. Crie um novo checklist se necessário."
+    );
+  }
+}
 
 export function assertChecklistItemsComplete(items: ChecklistItemLike[]): void {
   if (items.length === 0) {
@@ -378,4 +387,16 @@ export class FleetValidationError extends Error {
     super(message);
     this.name = "FleetValidationError";
   }
+}
+
+/** HTTP status para erros de negócio previsíveis (evita 500 e diferencia conflito). */
+export function fleetValidationHttpStatus(message: string): number {
+  if (message.includes("Conflito de reserva")) return 409;
+  if (
+    message.includes("Já existe veículo ativo") ||
+    message.includes("Já existe motorista ativo")
+  ) {
+    return 409;
+  }
+  return 400;
 }
