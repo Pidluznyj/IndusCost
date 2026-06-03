@@ -55,6 +55,8 @@ export type NomusBomAutoApplyReport = {
   batchRunId: string | null;
   reportMdPath: string | null;
   reportJsonPath: string | null;
+  /** SUCCESS | SUCCESS_WITH_BLOCKED | FAILED — severidade do lote. */
+  batchOutcome?: "SUCCESS" | "SUCCESS_WITH_BLOCKED" | "FAILED";
   totals: NomusBomAutoApplyTotals;
   products: NomusBomAutoApplyProductResult[];
 };

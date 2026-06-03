@@ -181,6 +181,7 @@ export async function getNomusDailySyncStatus(): Promise<NomusDailySyncStatusPay
     overallStatus,
     failedSteps,
     lastErrorLine: latestParsed.lastErrorLine,
+    runnerLogSnippet: latestContent,
   });
 
   if (lastRun && isActuallyRunning) {

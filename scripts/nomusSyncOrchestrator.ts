@@ -3,7 +3,11 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { runNomusBomAutoApplyAfterSync } from "../src/lib/nomusBomAutoApplyAfterSync.ts";
+import {
+  orchestratorPipelineSuccess,
+  resolveAutoApplyBatchOutcome,
+  runNomusBomAutoApplyAfterSync,
+} from "../src/lib/nomusBomAutoApplyAfterSync.ts";
 import type { NomusBomAutoApplyReport } from "../src/lib/nomusBomAutoApplyAfterSyncTypes.ts";
 
 type SyncMode = "dry" | "apply";
@@ -11,7 +15,7 @@ type SyncTarget = "customers" | "products" | "bom-components" | "proposals" | "s
 
 type StepResult = {
   target: SyncTarget;
-  status: "SUCCESS" | "FAILED" | "SKIPPED";
+  status: "SUCCESS" | "SUCCESS_WITH_BLOCKED" | "FAILED" | "SKIPPED";
   command: string | null;
   startedAt: string;
   finishedAt: string;
@@ -28,7 +32,7 @@ type StepExecution = {
 };
 
 type BomAutoApplyStep = {
-  status: "SUCCESS" | "FAILED" | "SKIPPED";
+  status: "SUCCESS" | "SUCCESS_WITH_BLOCKED" | "FAILED" | "SKIPPED";
   startedAt: string;
   finishedAt: string;
   durationMs: number;
@@ -365,12 +369,18 @@ async function runBomAutoApplyStep(mode: SyncMode): Promise<BomAutoApplyStep> {
 
   try {
     const report = await runNomusBomAutoApplyAfterSync({ mode: "APPLY" });
+    const outcome = report.batchOutcome ?? resolveAutoApplyBatchOutcome(report.totals);
+    const blockedNote =
+      outcome === "SUCCESS_WITH_BLOCKED"
+        ? `${report.totals.parentsBlocked} produto(s) bloqueado(s) por revisão de engenharia/opcionais — sync BOM ok.`
+        : undefined;
     return {
-      status: report.totals.parentsErrored > 0 ? "FAILED" : "SUCCESS",
+      status: outcome,
       startedAt,
       finishedAt: nowStamp(),
       durationMs: Date.now() - started,
       report,
+      reason: blockedNote,
     };
   } catch (err) {
     return {
@@ -439,11 +449,17 @@ async function main() {
       if (
         target === "bom-components" &&
         execution.step.status === "SUCCESS" &&
-        only.includes("bom-components")
+        mode === "apply"
       ) {
         bomAutoApply = await runBomAutoApplyStep(mode);
         if (bomAutoApply.status === "FAILED") {
           stopAfterFailure = true;
+        } else if (bomAutoApply.status === "SUCCESS_WITH_BLOCKED") {
+          execution.step = {
+            ...execution.step,
+            status: "SUCCESS_WITH_BLOCKED",
+            reason: bomAutoApply.reason,
+          };
         }
       }
     }
@@ -456,11 +472,10 @@ async function main() {
       logDir,
       results,
       bomAutoApply,
-      success:
-        results.every((r) => r.status === "SUCCESS" || r.status === "SKIPPED") &&
-        (bomAutoApply == null ||
-          bomAutoApply.status === "SUCCESS" ||
-          bomAutoApply.status === "SKIPPED"),
+      success: orchestratorPipelineSuccess({
+        results,
+        bomAutoApplyStatus: bomAutoApply?.status ?? null,
+      }),
     };
 
     console.log(JSON.stringify(summary, null, 2));

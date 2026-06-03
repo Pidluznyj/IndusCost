@@ -17,6 +17,10 @@ import {
 } from "@/src/lib/nomusAutoApplyPreviewProductStatus";
 import { buildNomusUniverseCodeSet } from "@/src/lib/nomusBomUniverse";
 import { prisma } from "@/src/lib/prisma";
+import {
+  isOperationalAutoApplyBlockMessage,
+  resolveAutoApplyBatchOutcome,
+} from "@/src/lib/nomusBomAutoApplyOutcome";
 import type {
   NomusBomAutoApplyMode,
   NomusBomAutoApplyProductResult,
@@ -24,6 +28,15 @@ import type {
   NomusBomAutoApplyReport,
   NomusBomAutoApplyTotals,
 } from "@/src/lib/nomusBomAutoApplyAfterSyncTypes";
+
+export {
+  buildAutoApplyBlockingBreakdown,
+  isOperationalAutoApplyBlockMessage,
+  orchestratorBomAutoApplyCountsAsSuccess,
+  orchestratorPipelineSuccess,
+  resolveAutoApplyBatchOutcome,
+} from "@/src/lib/nomusBomAutoApplyOutcome";
+export type { NomusBomAutoApplyBatchOutcome } from "@/src/lib/nomusBomAutoApplyOutcome";
 
 export const NOMUS_AUTO_SYNC_APPROVED_BY = "nomus-auto-sync";
 export const NOMUS_AUTO_SYNC_AUDIT_ORIGIN = "NOMUS_AUTO_SYNC_BOM_APPLY";
@@ -189,8 +202,9 @@ async function processOneProduct(
   approvedBy: string,
   nomusUniverse: ReadonlySet<string>
 ): Promise<NomusBomAutoApplyProductResult> {
+  let preview: Awaited<ReturnType<typeof buildControlledApplyPreview>> | null = null;
   try {
-    const preview = await buildControlledApplyPreview(parentCode, { nomusUniverse });
+    preview = await buildControlledApplyPreview(parentCode, { nomusUniverse });
     const mapped = mapControlledApplyPreviewToAutoApplyProduct(preview);
 
     const hasMutations = preview.actions.some((a) =>
@@ -224,6 +238,19 @@ async function processOneProduct(
       };
     }
 
+    if (!preview.canApply) {
+      return {
+        ...mapped,
+        status: "BLOCKED",
+        canApply: false,
+        blockingReasons:
+          mapped.blockingReasons.length > 0
+            ? mapped.blockingReasons
+            : preview.blockingReasons,
+        actionsPreview: previewActionsSummary(preview),
+      };
+    }
+
     const result = await applyEffectiveBomToProductBom({
       parentCode: preview.parentCode,
       planHash: preview.planHash,
@@ -244,13 +271,25 @@ async function processOneProduct(
       applyRunId: result.applyRunId,
     };
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (isOperationalAutoApplyBlockMessage(errorMessage)) {
+      return {
+        parentCode,
+        productId: preview?.productId ?? null,
+        status: "BLOCKED",
+        canApply: false,
+        blockingReasons: [errorMessage],
+        errorMessage,
+        actionsPreview: preview ? previewActionsSummary(preview) : undefined,
+      };
+    }
     return {
       parentCode,
       productId: null,
       status: "ERROR",
       canApply: false,
       blockingReasons: [],
-      errorMessage: err instanceof Error ? err.message : String(err),
+      errorMessage,
     };
   }
 }
@@ -331,6 +370,8 @@ export async function runNomusBomAutoApplyAfterSync(
   let reportMdPath: string | null = null;
   let reportJsonPath: string | null = null;
 
+  const batchOutcome = resolveAutoApplyBatchOutcome(totals);
+
   const report: NomusBomAutoApplyReport = {
     generatedAt: finishedAt,
     mode: options.mode,
@@ -340,6 +381,7 @@ export async function runNomusBomAutoApplyAfterSync(
     batchRunId,
     reportMdPath: null,
     reportJsonPath: null,
+    batchOutcome,
     totals,
     products,
   };
@@ -351,11 +393,14 @@ export async function runNomusBomAutoApplyAfterSync(
   report.reportJsonPath = reportJsonPath;
 
   if (batchRunId) {
+    const batchOutcome = resolveAutoApplyBatchOutcome(totals);
     const batchStatus =
-      totals.parentsErrored > 0 && totals.parentsApplied + totals.parentsNoChanges > 0
-        ? "PARTIAL"
-        : totals.parentsErrored > 0
-          ? "FAILED"
+      batchOutcome === "FAILED"
+        ? totals.parentsApplied + totals.parentsNoChanges > 0
+          ? "PARTIAL"
+          : "FAILED"
+        : batchOutcome === "SUCCESS_WITH_BLOCKED"
+          ? "PARTIAL"
           : "APPLIED";
 
     await prisma.engineeringSyncRun.update({

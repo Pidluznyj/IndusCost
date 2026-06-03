@@ -135,7 +135,18 @@ export function buildRecommendedAction(input: {
   overallStatus: NomusDailyOverallStatus;
   failedSteps: NomusDailyFailedStep[];
   lastErrorLine: string | null;
+  runnerLogSnippet?: string | null;
 }): string | null {
+  if (
+    input.runnerLogSnippet &&
+    /SUCCESS_WITH_BLOCKED|"parentsBlocked"\s*:\s*[1-9]/i.test(input.runnerLogSnippet)
+  ) {
+    return (
+      "BOM/components concluído com bloqueios no auto-apply (produtos com opcionais/engenharia pendentes). " +
+      "Revise na Manutenção Nomus → Pendências; a rotina diária pode seguir para propostas."
+    );
+  }
+
   const failed = input.failedSteps.filter((s) => s.exitCode != null && s.exitCode !== 0);
   const failedTarget = failed[0]?.target;
 

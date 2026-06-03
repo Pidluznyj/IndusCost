@@ -9,7 +9,10 @@
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { runNomusBomAutoApplyAfterSync } from "../src/lib/nomusBomAutoApplyAfterSync.ts";
+import {
+  resolveAutoApplyBatchOutcome,
+  runNomusBomAutoApplyAfterSync,
+} from "../src/lib/nomusBomAutoApplyAfterSync.ts";
 
 const prisma = new PrismaClient();
 
@@ -49,8 +52,14 @@ async function main(): Promise<void> {
   if (report.reportMdPath) log(`relatório MD: ${report.reportMdPath}`);
   if (report.reportJsonPath) log(`relatório JSON: ${report.reportJsonPath}`);
 
-  if (report.totals.parentsErrored > 0) {
+  const outcome = report.batchOutcome ?? resolveAutoApplyBatchOutcome(report.totals);
+  if (outcome === "FAILED") {
     process.exitCode = 1;
+  }
+  if (outcome === "SUCCESS_WITH_BLOCKED") {
+    log(
+      `concluído com bloqueios: ${report.totals.parentsBlocked} produto(s) — resolva na Manutenção Nomus (opcionais/engenharia).`
+    );
   }
 }
 
