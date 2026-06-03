@@ -560,6 +560,96 @@ describe("fleet alerts engine", async () => {
   });
 });
 
+describe("fleet reports", async () => {
+  const {
+    buildVehicleReportWhere,
+    filterRowsByReportFilters,
+    fleetReportToCsv,
+    formatCostPerKmLabel,
+    parseFleetReportFilters,
+  } = await import("./fleetReportsService.js");
+  const { maskFinancialData } = await import("./fleetFinancialOps.js");
+
+  it("parseFleetReportFilters maps period and historical flag", () => {
+    const f = parseFleetReportFilters({
+      start: "2026-01-01",
+      end: "2026-01-31",
+      unit: "SP",
+      includeInactive: "true",
+      onlyExpiring: "true",
+    });
+    assert.ok(f.start);
+    assert.ok(f.end);
+    assert.equal(f.unit, "SP");
+    assert.equal(f.includeInactive, true);
+    assert.equal(f.onlyExpiring, true);
+  });
+
+  it("buildVehicleReportWhere excludes inactive by default", () => {
+    const where = buildVehicleReportWhere({});
+    assert.deepEqual(where.status, { notIn: ["INACTIVE", "SOLD", "RETURNED"] });
+  });
+
+  it("buildVehicleReportWhere includes inactive when historical", () => {
+    const where = buildVehicleReportWhere({ includeInactive: true });
+    assert.equal(where.status, undefined);
+  });
+
+  it("filterRowsByReportFilters respects unit filter", () => {
+    const rows = [
+      { unit: "SP", costCenter: "A" },
+      { unit: "RJ", costCenter: "A" },
+    ];
+    const out = filterRowsByReportFilters(rows, { unit: "SP" }, { unit: "unit" });
+    assert.equal(out.length, 1);
+    assert.equal(out[0]?.unit, "SP");
+  });
+
+  it("fleetReportToCsv respects empty data", () => {
+    const csv = fleetReportToCsv("fleet", []);
+    assert.match(csv, /Nenhum registro/);
+  });
+
+  it("fleetReportToCsv includes filtered row values", () => {
+    const csv = fleetReportToCsv("usage", [{ vehicle: "ABC1", kmDriven: 100 }]);
+    assert.match(csv, /ABC1/);
+    assert.match(csv, /kmDriven/);
+  });
+
+  it("maskFinancialData hides cost report amounts", () => {
+    const row = maskFinancialData(
+      [{ totalAmount: 500, costPerKm: 2.5, vehicle: "X" }],
+      false
+    ) as { totalAmount: number | null; costPerKm: number | null }[];
+    assert.equal(row[0]?.totalAmount, null);
+    assert.equal(row[0]?.costPerKm, null);
+  });
+
+  it("cost per km without km returns não calculável", () => {
+    assert.equal(formatCostPerKmLabel(1000, 0), "não calculável");
+    assert.equal(formatCostPerKmLabel(1000, -1), "não calculável");
+  });
+
+  it("cost per km with km is numeric", () => {
+    assert.equal(formatCostPerKmLabel(1000, 250), "4.0000");
+  });
+
+  it("documento vencendo entra em filtro onlyExpiring", async () => {
+    const { computeDocumentStatus } = await import("./fleetValidation.js");
+    const now = new Date("2026-06-01");
+    const exp = new Date("2026-06-15");
+    assert.equal(computeDocumentStatus(exp, 30, now), "EXPIRING");
+    const valid = new Date("2027-06-01");
+    assert.equal(computeDocumentStatus(valid, 30, now), "VALID");
+    const rows = [
+      { complianceStatus: "EXPIRING" },
+      { complianceStatus: "VALID" },
+    ];
+    const filtered = rows.filter((r) => ["EXPIRED", "EXPIRING"].includes(r.complianceStatus));
+    assert.equal(filtered.length, 1);
+  });
+});
+
 describe("fleet hardening", async () => {
   const { canAccessFleetRoute, canViewFleetFinancial, FLEET_ROUTE_GUARDS } = await import(
     "./fleetAuth.js"

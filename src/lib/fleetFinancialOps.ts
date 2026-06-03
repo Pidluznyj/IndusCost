@@ -23,6 +23,7 @@ export type FleetCostType = (typeof FLEET_COST_TYPES)[number];
 
 const MONEY_KEYS = new Set([
   "amount",
+  "totalAmount",
   "estimatedValue",
   "finalValue",
   "totalValue",
@@ -30,6 +31,7 @@ const MONEY_KEYS = new Set([
   "deductibleValue",
   "monthlyValue",
   "excessKmValue",
+  "costPerKm",
 ]);
 
 export function maskFinancialData<T>(data: T, showFinancial: boolean): T {

@@ -11,8 +11,6 @@ import {
 } from "@/src/lib/fleetValidation.js";
 import { buildMaintenanceDashboardAlerts } from "@/src/lib/fleetMaintenanceOps.js";
 import { buildMaintenanceWhere } from "@/src/lib/fleetMaintenanceOps.js";
-import { maskFinancialData } from "@/src/lib/fleetFinancialOps.js";
-import { fleetRowsToCsv } from "@/src/lib/fleetCsv.js";
 import {
   buildFleetOperationalAlerts,
   type FleetAlertItem,
@@ -23,58 +21,17 @@ export const FLEET_NON_OPERATIONAL_STATUSES = ["INACTIVE", "SOLD", "RETURNED"] a
 export type { FleetAlertItem } from "@/src/lib/fleetAlertsService.js";
 export { buildFleetOperationalAlerts as buildFleetAlerts } from "@/src/lib/fleetAlertsService.js";
 
-export type FleetReportFilters = {
-  start?: Date;
-  end?: Date;
-  status?: string;
-  unit?: string;
-  costCenter?: string;
-  origin?: string;
-  vehicleId?: string;
-  driverId?: string;
-  competence?: string;
-};
-
-export function parseFleetReportFilters(query: Record<string, unknown>): FleetReportFilters {
-  const startRaw = String(query.start ?? query.startDate ?? "").trim();
-  const endRaw = String(query.end ?? query.endDate ?? "").trim();
-  const filters: FleetReportFilters = {};
-  if (startRaw) {
-    const d = new Date(startRaw);
-    if (!Number.isNaN(d.getTime())) filters.start = d;
-  }
-  if (endRaw) {
-    const d = new Date(endRaw);
-    if (!Number.isNaN(d.getTime())) filters.end = d;
-  }
-  const status = String(query.status ?? "").trim();
-  const unit = String(query.unit ?? "").trim();
-  const costCenter = String(query.costCenter ?? "").trim();
-  const origin = String(query.origin ?? "").trim();
-  const vehicleId = String(query.vehicleId ?? "").trim();
-  const driverId = String(query.driverId ?? "").trim();
-  const competence = String(query.competence ?? "").trim();
-  if (status) filters.status = status;
-  if (unit) filters.unit = unit;
-  if (costCenter) filters.costCenter = costCenter;
-  if (origin) filters.origin = origin;
-  if (vehicleId) filters.vehicleId = vehicleId;
-  if (driverId) filters.driverId = driverId;
-  if (competence) filters.competence = competence;
-  return filters;
-}
-
-export function buildVehicleReportWhere(filters: FleetReportFilters): Prisma.FleetVehicleWhereInput {
-  const where: Prisma.FleetVehicleWhereInput = {};
-  if (filters.status) where.status = filters.status as Prisma.EnumFleetVehicleStatusFilter["equals"];
-  if (filters.unit) where.unit = filters.unit;
-  if (filters.costCenter) where.costCenter = filters.costCenter;
-  if (filters.origin) {
-    where.origin = filters.origin as Prisma.EnumFleetVehicleOriginFilter["equals"];
-  }
-  if (filters.vehicleId) where.id = filters.vehicleId;
-  return where;
-}
+export type { FleetReportFilters } from "@/src/lib/fleetReportsService.js";
+export {
+  parseFleetReportFilters,
+  buildVehicleReportWhere,
+  reportFleet,
+  reportUsage,
+  reportCosts,
+  reportMaintenance,
+  reportDocuments,
+  fleetReportToCsv,
+} from "@/src/lib/fleetReportsService.js";
 
 export function summarizeVehicleStatusCounts(
   rows: { status: string }[]
@@ -237,207 +194,6 @@ export async function buildFleetManagementDashboard() {
     buildFleetOperationalAlerts(settings),
   ]);
   return { cards, alerts };
-}
-
-export async function reportFleet(filters: FleetReportFilters) {
-  const rows = await prisma.fleetVehicle.findMany({
-    where: buildVehicleReportWhere(filters),
-    orderBy: { plate: "asc" },
-    take: 2000,
-  });
-  return rows.map((v) => ({
-    plate: v.plate,
-    brand: v.brand,
-    model: v.model,
-    status: v.status,
-    origin: v.origin,
-    unit: v.unit,
-    costCenter: v.costCenter,
-    currentKm: Number(v.currentKm),
-  }));
-}
-
-export async function reportUsage(filters: FleetReportFilters) {
-  const where: Prisma.FleetReservationWhereInput = {
-    status: {
-      in: [
-        ...FLEET_ACTIVE_RESERVATION_STATUSES,
-        "FINISHED",
-        "FINISHED_WITH_PENDING",
-        "NO_SHOW",
-        "IN_USE",
-      ],
-    },
-  };
-  if (filters.start || filters.end) {
-    const start = filters.start ?? new Date(0);
-    const end = filters.end ?? new Date("2099-12-31");
-    where.AND = [{ startDateTime: { lte: end } }, { endDateTime: { gte: start } }];
-  }
-  if (filters.vehicleId) where.vehicleId = filters.vehicleId;
-  if (filters.driverId) where.driverId = filters.driverId;
-  if (filters.status) where.status = filters.status as Prisma.EnumFleetReservationStatusFilter["equals"];
-
-  const vehicleWhere = buildVehicleReportWhere(filters);
-  if (Object.keys(vehicleWhere).length > 0) {
-    where.vehicle = vehicleWhere;
-  }
-
-  const rows = await prisma.fleetReservation.findMany({
-    where,
-    include: {
-      vehicle: { select: { plate: true, brand: true, model: true, unit: true, costCenter: true } },
-      driver: { select: { name: true } },
-    },
-    orderBy: { startDateTime: "desc" },
-    take: 2000,
-  });
-
-  return rows.map((r) => ({
-    id: r.id,
-    vehicle: r.vehicle.plate ?? `${r.vehicle.brand} ${r.vehicle.model}`,
-    driver: r.driver?.name ?? "—",
-    start: r.startDateTime.toISOString(),
-    end: r.endDateTime.toISOString(),
-    status: r.status,
-    destination: r.destination,
-    costCenter: r.costCenter ?? r.vehicle.costCenter,
-    unit: r.vehicle.unit,
-  }));
-}
-
-export async function reportCosts(filters: FleetReportFilters, showFinancial: boolean) {
-  const where: Prisma.FleetCostWhereInput = { status: "ACTIVE" };
-  if (filters.competence) where.competence = filters.competence;
-  if (filters.start || filters.end) {
-    where.costDate = {};
-    if (filters.start) where.costDate.gte = filters.start;
-    if (filters.end) where.costDate.lte = filters.end;
-  }
-  const vehicleWhere = buildVehicleReportWhere(filters);
-  if (Object.keys(vehicleWhere).length > 0) where.vehicle = vehicleWhere;
-
-  const rows = await prisma.fleetCost.findMany({
-    where,
-    include: { vehicle: { select: { plate: true, brand: true, unit: true, costCenter: true } } },
-    orderBy: { costDate: "desc" },
-    take: 5000,
-  });
-
-  const mapped = rows.map((c) => ({
-    costDate: c.costDate.toISOString().slice(0, 10),
-    competence: c.competence,
-    vehicle: c.vehicle.plate ?? c.vehicle.brand,
-    costType: c.costType,
-    amount: Number(c.amount),
-    unit: c.vehicle.unit,
-    costCenter: c.vehicle.costCenter,
-    supplierName: c.supplierName,
-  }));
-
-  return maskFinancialData(mapped, showFinancial);
-}
-
-export async function reportMaintenance(filters: FleetReportFilters) {
-  const where = buildMaintenanceWhere({
-    vehicleId: filters.vehicleId,
-    status: filters.status,
-    start: filters.start?.toISOString(),
-    end: filters.end?.toISOString(),
-  });
-  if (filters.unit || filters.costCenter) {
-    where.vehicle = buildVehicleReportWhere(filters);
-  }
-
-  const rows = await prisma.fleetMaintenance.findMany({
-    where,
-    include: { vehicle: { select: { plate: true, brand: true, unit: true, costCenter: true } } },
-    orderBy: { openedAt: "desc" },
-    take: 2000,
-  });
-
-  return rows.map((m) => ({
-    openedAt: m.openedAt.toISOString(),
-    vehicle: m.vehicle.plate ?? m.vehicle.brand,
-    type: m.maintenanceType,
-    status: m.status,
-    priority: m.priority,
-    description: m.description,
-    unit: m.vehicle.unit,
-    costCenter: m.vehicle.costCenter,
-    estimatedValue: m.estimatedValue != null ? Number(m.estimatedValue) : null,
-    finalValue: m.finalValue != null ? Number(m.finalValue) : null,
-  }));
-}
-
-export async function reportDocuments(filters: FleetReportFilters) {
-  const cfg = await loadFleetSettings();
-  const days = alertDays(cfg);
-  const now = new Date();
-
-  const vehicleWhere = buildVehicleReportWhere(filters);
-  const docs = await prisma.fleetVehicleDocument.findMany({
-    where: {
-      status: { not: "REPLACED" },
-      ...(Object.keys(vehicleWhere).length ? { vehicle: vehicleWhere } : {}),
-    },
-    include: { vehicle: { select: { plate: true, brand: true, unit: true, costCenter: true } } },
-    take: 2000,
-  });
-
-  const drivers = await prisma.fleetDriver.findMany({
-    where: {
-      status: { not: "INACTIVE" },
-      ...(filters.unit ? { unit: filters.unit } : {}),
-      ...(filters.costCenter ? { costCenter: filters.costCenter } : {}),
-      ...(filters.driverId ? { id: filters.driverId } : {}),
-    },
-    take: 2000,
-  });
-
-  const docRows = docs.map((d) => {
-    const st = computeDocumentStatus(d.expirationDate, days.doc, now);
-    return {
-      kind: "DOCUMENT",
-      vehicle: d.vehicle.plate ?? d.vehicle.brand,
-      type: d.documentType,
-      expirationDate: d.expirationDate?.toISOString().slice(0, 10) ?? "",
-      status: st,
-      unit: d.vehicle.unit,
-      costCenter: d.vehicle.costCenter,
-    };
-  });
-
-  const driverRows = drivers.map((d) => {
-    const st = computeCnhStatus(d.cnhExpirationDate, days.cnh, now);
-    return {
-      kind: "CNH",
-      vehicle: "—",
-      type: d.name,
-      expirationDate: d.cnhExpirationDate?.toISOString().slice(0, 10) ?? "",
-      status: st,
-      unit: d.unit,
-      costCenter: d.costCenter,
-    };
-  });
-
-  let combined = [...docRows, ...driverRows];
-  if (filters.status) {
-    combined = combined.filter((r) => r.status === filters.status);
-  }
-  return combined;
-}
-
-export function fleetReportToCsv(
-  report: string,
-  rows: Record<string, unknown>[]
-): string {
-  if (rows.length === 0) {
-    return fleetRowsToCsv(["info"], [["Nenhum registro no período/filtros selecionados"]]);
-  }
-  const headers = Object.keys(rows[0]);
-  const data = rows.map((r) => headers.map((h) => r[h] as string | number | null));
-  return fleetRowsToCsv(headers, data);
 }
 
 export const FLEET_EDITABLE_SETTINGS_KEYS = [

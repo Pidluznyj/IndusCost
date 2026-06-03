@@ -96,7 +96,7 @@ export function registerFleetManagementRoutes(app: express.Express, auth: AuthGu
   app.get(
     "/api/fleet/reports/maintenance",
     ...fleetView,
-    reportHandler("maintenance", async (f) => reportMaintenance(f))
+    reportHandler("maintenance", async (f, fin) => reportMaintenance(f, fin))
   );
   app.get(
     "/api/fleet/reports/documents",
