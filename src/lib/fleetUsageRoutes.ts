@@ -5,11 +5,9 @@ import { loadFleetSettings } from "@/src/lib/fleetService.js";
 import { getReservationOrThrow } from "@/src/lib/fleetReservationOps.js";
 import { resolveMobileUsageMode } from "@/src/lib/fleetMobileUsage.js";
 import { getUsageByReservationId, serializeUsage, USAGE_INCLUDE } from "@/src/lib/fleetUsageOps.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-};
+type AuthGuards = FleetAuthGuards;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -25,10 +23,9 @@ function fleetError(res: express.Response, e: unknown, logLabel: string) {
 }
 
 export function registerFleetUsageRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission } = auth;
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
+  const g = createFleetRouteGuards(auth);
 
-  app.get("/api/fleet/reservations/:id/usage-context", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/reservations/:id/usage-context", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -77,7 +74,7 @@ export function registerFleetUsageRoutes(app: express.Express, auth: AuthGuards)
     }
   });
 
-  app.get("/api/fleet/reservations/:id/usage", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/reservations/:id/usage", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -91,7 +88,7 @@ export function registerFleetUsageRoutes(app: express.Express, auth: AuthGuards)
     }
   });
 
-  app.get("/api/fleet/vehicles/:id/usages", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/vehicles/:id/usages", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });

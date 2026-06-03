@@ -46,6 +46,24 @@ export function FleetEmptyState({ message }: { message: string }) {
   );
 }
 
+export function FleetPermissionDenied({
+  title = "Sem permissão",
+  message,
+}: {
+  title?: string;
+  message?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-8 text-center">
+      <p className="text-base font-semibold text-amber-900">{title}</p>
+      <p className="mt-2 text-sm text-amber-800">
+        {message ??
+          "Você não tem permissão para acessar o módulo Gestão de Frota. Solicite a permissão fleet.view ao administrador."}
+      </p>
+    </div>
+  );
+}
+
 export function FleetLoading({ label = "Carregando…" }: { label?: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-12 text-slate-500">
@@ -60,6 +78,7 @@ export function FleetRequiredMark() {
 }
 
 export { confirmFleetCriticalAction } from "@/src/lib/fleetUxShared";
+export { useFleetPermissions, FLEET_UI_FORBIDDEN_MESSAGE } from "@/src/components/fleet/fleetPermissions";
 export {
   formatFleetDate,
   formatFleetDateTime,

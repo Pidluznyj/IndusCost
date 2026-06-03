@@ -30,6 +30,7 @@ import {
   saveFleetSettingsWithAudit,
 } from "@/src/lib/fleetManagementRoutes.js";
 import { registerFleetImportRoutes } from "@/src/lib/fleetImportRoutes.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   buildFleetListResponse,
@@ -42,12 +43,7 @@ import {
   buildVehicleAlerts,
 } from "@/src/lib/fleetVehicleOps.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -71,15 +67,11 @@ async function actorId(req: express.Request, getCurrentAppUser: AuthGuards["getC
 }
 
 export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = auth;
-
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
-  const fleetManage = [requireAppAuth, requireAnyPermission(["fleet.manage", "fleet.vehicles.edit"])] as express.RequestHandler[];
-  const fleetVehiclesEdit = [requireAppAuth, requireAnyPermission(["fleet.vehicles.edit", "fleet.manage"])] as express.RequestHandler[];
-  const fleetSettingsManage = [requireAppAuth, requirePermission("fleet.settings.manage")] as express.RequestHandler[];
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
   // --- Dashboard ---
-  app.get("/api/fleet/dashboard", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/dashboard", ...g.view, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       const showFinancial =
@@ -92,7 +84,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   });
 
   // --- Vehicles ---
-  app.get("/api/fleet/vehicles", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/vehicles", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const includeAlerts =
@@ -139,7 +131,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
-  app.get("/api/fleet/vehicles/:id", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/vehicles/:id", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -184,7 +176,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
-  app.post("/api/fleet/vehicles", ...fleetVehiclesEdit, async (req, res) => {
+  app.post("/api/fleet/vehicles", ...g.vehiclesEdit, async (req, res) => {
     try {
       const body = req.body ?? {};
       const form = buildVehicleFormData(body);
@@ -236,7 +228,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
-  app.put("/api/fleet/vehicles/:id", ...fleetVehiclesEdit, async (req, res) => {
+  app.put("/api/fleet/vehicles/:id", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -292,7 +284,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
-  app.patch("/api/fleet/vehicles/:id/status", ...fleetVehiclesEdit, async (req, res) => {
+  app.patch("/api/fleet/vehicles/:id/status", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -337,7 +329,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   registerFleetImportRoutes(app, auth);
 
   // --- Settings ---
-  app.get("/api/fleet/settings", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/settings", ...g.view, async (req, res) => {
     try {
       const settings = await prisma.fleetSettings.findMany({ orderBy: { key: "asc" } });
       res.json({ settings });
@@ -346,7 +338,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
-  app.put("/api/fleet/settings", ...fleetSettingsManage, async (req, res) => {
+  app.put("/api/fleet/settings", ...g.settingsManage, async (req, res) => {
     try {
       const items = Array.isArray(req.body?.settings) ? req.body.settings : [];
       const userId = await actorId(req, getCurrentAppUser);

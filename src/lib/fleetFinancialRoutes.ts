@@ -27,13 +27,9 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function isUuid(v: unknown): v is string {
   return (
@@ -63,18 +59,10 @@ const FUELING_INCLUDE = {
 } as const;
 
 export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = auth;
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
-  const fleetFinancial = [
-    requireAppAuth,
-    requireAnyPermission(["fleet.financial.view", "fleet.manage"]),
-  ] as express.RequestHandler[];
-  const fleetWrite = [
-    requireAppAuth,
-    requireAnyPermission(["fleet.manage", "fleet.financial.view"]),
-  ] as express.RequestHandler[];
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
-  app.get("/api/fleet/financial/dashboard", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/financial/dashboard", ...g.view, async (req, res) => {
     try {
       const competence = String(req.query.competence ?? "").trim() || undefined;
       const data = await buildFleetFinancialDashboard(competence);
@@ -86,7 +74,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   });
 
   // --- Costs ---
-  app.get("/api/fleet/costs", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/costs", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetCostWhereInput = {};
@@ -124,7 +112,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.get("/api/fleet/costs/:id", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/costs/:id", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -137,7 +125,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.post("/api/fleet/costs", ...fleetWrite, async (req, res) => {
+  app.post("/api/fleet/costs", ...g.financialWrite, async (req, res) => {
     try {
       const body = req.body ?? {};
       const vehicleId = body.vehicleId;
@@ -177,7 +165,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.put("/api/fleet/costs/:id", ...fleetWrite, async (req, res) => {
+  app.put("/api/fleet/costs/:id", ...g.financialWrite, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -218,7 +206,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.patch("/api/fleet/costs/:id/cancel", ...fleetWrite, async (req, res) => {
+  app.patch("/api/fleet/costs/:id/cancel", ...g.financialWrite, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -243,7 +231,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   });
 
   // --- Fuelings ---
-  app.get("/api/fleet/fuelings", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/fuelings", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetFuelingWhereInput = {};
@@ -279,7 +267,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.post("/api/fleet/fuelings", ...fleetWrite, async (req, res) => {
+  app.post("/api/fleet/fuelings", ...g.financialWrite, async (req, res) => {
     try {
       const body = req.body ?? {};
       const vehicleId = body.vehicleId;
@@ -356,7 +344,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.put("/api/fleet/fuelings/:id", ...fleetWrite, async (req, res) => {
+  app.put("/api/fleet/fuelings/:id", ...g.financialWrite, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -384,7 +372,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   });
 
   // --- Fines ---
-  app.get("/api/fleet/fines", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/fines", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetFineWhereInput = {};
@@ -424,7 +412,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.post("/api/fleet/fines", ...fleetWrite, async (req, res) => {
+  app.post("/api/fleet/fines", ...g.financialWrite, async (req, res) => {
     try {
       const body = req.body ?? {};
       const vehicleId = body.vehicleId;
@@ -466,7 +454,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.put("/api/fleet/fines/:id", ...fleetWrite, async (req, res) => {
+  app.put("/api/fleet/fines/:id", ...g.financialWrite, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -486,7 +474,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.patch("/api/fleet/fines/:id/status", ...fleetWrite, async (req, res) => {
+  app.patch("/api/fleet/fines/:id/status", ...g.financialWrite, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -534,7 +522,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   });
 
   // --- Incidents ---
-  app.get("/api/fleet/incidents", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/incidents", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetIncidentWhereInput = {};
@@ -574,7 +562,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.post("/api/fleet/incidents", ...fleetWrite, async (req, res) => {
+  app.post("/api/fleet/incidents", ...g.financialWrite, async (req, res) => {
     try {
       const body = req.body ?? {};
       const vehicleId = body.vehicleId;
@@ -640,7 +628,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.put("/api/fleet/incidents/:id", ...fleetWrite, async (req, res) => {
+  app.put("/api/fleet/incidents/:id", ...g.financialWrite, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -664,7 +652,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.patch("/api/fleet/incidents/:id/status", ...fleetWrite, async (req, res) => {
+  app.patch("/api/fleet/incidents/:id/status", ...g.financialWrite, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -694,7 +682,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
   });
 
   // --- Attachments (metadata + fileUrl) ---
-  app.get("/api/fleet/attachments", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/attachments", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetAttachmentWhereInput = {};
@@ -727,16 +715,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  const fleetAttachmentWrite = [
-    requireAppAuth,
-    requireAnyPermission([
-      "fleet.manage",
-      "fleet.financial.view",
-      "fleet.reservations.create",
-    ]),
-  ] as express.RequestHandler[];
-
-  app.post("/api/fleet/attachments", ...fleetAttachmentWrite, async (req, res) => {
+  app.post("/api/fleet/attachments", ...g.attachmentWrite, async (req, res) => {
     try {
       const body = req.body ?? {};
       const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
@@ -776,7 +755,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.patch("/api/fleet/attachments/:id/remove", ...fleetWrite, async (req, res) => {
+  app.patch("/api/fleet/attachments/:id/remove", ...g.financialWrite, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });

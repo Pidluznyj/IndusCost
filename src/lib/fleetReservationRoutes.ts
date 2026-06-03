@@ -19,13 +19,9 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -41,19 +37,10 @@ function fleetError(res: express.Response, e: unknown, logLabel: string) {
 }
 
 export function registerFleetReservationRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = auth;
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
-  const fleetResCreate = [
-    requireAppAuth,
-    requireAnyPermission(["fleet.reservations.create", "fleet.manage"]),
-  ] as express.RequestHandler[];
-  const fleetResApprove = [
-    requireAppAuth,
-    requireAnyPermission(["fleet.reservations.approve", "fleet.manage"]),
-  ] as express.RequestHandler[];
-  const fleetManage = [requireAppAuth, requirePermission("fleet.manage")] as express.RequestHandler[];
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
-  app.get("/api/fleet/availability", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/availability", ...g.view, async (req, res) => {
     try {
       const start = new Date(String(req.query.start ?? ""));
       const end = new Date(String(req.query.end ?? ""));
@@ -73,7 +60,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.get("/api/fleet/reservations", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/reservations", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where = buildReservationWhere({
@@ -106,7 +93,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.get("/api/fleet/reservations/:id", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/reservations/:id", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -122,7 +109,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/reservations", ...fleetResCreate, async (req, res) => {
+  app.post("/api/fleet/reservations", ...g.reservationsCreate, async (req, res) => {
     try {
       const body = req.body ?? {};
       const vehicleId = body.vehicleId;
@@ -168,7 +155,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.put("/api/fleet/reservations/:id", ...fleetResCreate, async (req, res) => {
+  app.put("/api/fleet/reservations/:id", ...g.reservationsCreate, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -224,7 +211,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.patch("/api/fleet/reservations/:id/approve", ...fleetResApprove, async (req, res) => {
+  app.patch("/api/fleet/reservations/:id/approve", ...g.reservationsApprove, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -275,7 +262,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.patch("/api/fleet/reservations/:id/reject", ...fleetResApprove, async (req, res) => {
+  app.patch("/api/fleet/reservations/:id/reject", ...g.reservationsApprove, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -314,7 +301,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.patch("/api/fleet/reservations/:id/cancel", ...fleetResCreate, async (req, res) => {
+  app.patch("/api/fleet/reservations/:id/cancel", ...g.reservationsCreate, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -354,7 +341,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.patch("/api/fleet/reservations/:id/replace-vehicle", ...fleetManage, async (req, res) => {
+  app.patch("/api/fleet/reservations/:id/replace-vehicle", ...g.manage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -406,7 +393,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/reservations/:id/checkout", ...fleetResCreate, async (req, res) => {
+  app.post("/api/fleet/reservations/:id/checkout", ...g.reservationsCreate, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -423,7 +410,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/reservations/:id/checkin", ...fleetResCreate, async (req, res) => {
+  app.post("/api/fleet/reservations/:id/checkin", ...g.reservationsCreate, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });

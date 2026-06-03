@@ -22,13 +22,9 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -44,14 +40,10 @@ function fleetError(res: express.Response, e: unknown, logLabel: string) {
 }
 
 export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = auth;
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
-  const fleetMaintManage = [
-    requireAppAuth,
-    requireAnyPermission(["fleet.maintenance.manage", "fleet.manage"]),
-  ] as express.RequestHandler[];
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
-  app.get("/api/fleet/maintenances", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/maintenances", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where = buildMaintenanceWhere({
@@ -89,7 +81,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.get("/api/fleet/vehicles/:id/maintenances", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/vehicles/:id/maintenances", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -109,7 +101,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.get("/api/fleet/maintenances/:id", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/maintenances/:id", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -125,7 +117,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/maintenances", ...fleetMaintManage, async (req, res) => {
+  app.post("/api/fleet/maintenances", ...g.maintenanceManage, async (req, res) => {
     try {
       const body = req.body ?? {};
       const vehicleId = body.vehicleId;
@@ -143,7 +135,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.put("/api/fleet/maintenances/:id", ...fleetMaintManage, async (req, res) => {
+  app.put("/api/fleet/maintenances/:id", ...g.maintenanceManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -155,7 +147,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.patch("/api/fleet/maintenances/:id/status", ...fleetMaintManage, async (req, res) => {
+  app.patch("/api/fleet/maintenances/:id/status", ...g.maintenanceManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -177,7 +169,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/maintenances/:id/approve", ...fleetMaintManage, async (req, res) => {
+  app.post("/api/fleet/maintenances/:id/approve", ...g.maintenanceManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -193,7 +185,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/maintenances/:id/start", ...fleetMaintManage, async (req, res) => {
+  app.post("/api/fleet/maintenances/:id/start", ...g.maintenanceManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -205,7 +197,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/maintenances/:id/complete", ...fleetMaintManage, async (req, res) => {
+  app.post("/api/fleet/maintenances/:id/complete", ...g.maintenanceManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -217,7 +209,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/maintenances/:id/cancel", ...fleetMaintManage, async (req, res) => {
+  app.post("/api/fleet/maintenances/:id/cancel", ...g.maintenanceManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -230,7 +222,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     }
   });
 
-  app.post("/api/fleet/maintenances/:id/generate-cost", ...fleetMaintManage, async (req, res) => {
+  app.post("/api/fleet/maintenances/:id/generate-cost", ...g.maintenanceManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });

@@ -6,6 +6,7 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   FleetValidationError,
@@ -31,12 +32,7 @@ import {
   serializeFleetVehicle,
 } from "@/src/lib/fleetVehicleOps.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -73,16 +69,10 @@ async function canViewFinancial(
 }
 
 export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = auth;
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
-  const fleetVehiclesEdit = [
-    requireAppAuth,
-    requireAnyPermission(["fleet.vehicles.edit", "fleet.manage"]),
-  ] as express.RequestHandler[];
-  const fleetManageOnly = [requireAppAuth, requirePermission("fleet.manage")] as express.RequestHandler[];
-
-  app.get("/api/fleet/documents", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/documents", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const where: Prisma.FleetVehicleDocumentWhereInput = {};
@@ -151,29 +141,29 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       }
     };
 
-  app.post("/api/fleet/vehicles/:id/block", ...fleetManageOnly, lifecycleHandler("BLOCK", "BLOCKED"));
+  app.post("/api/fleet/vehicles/:id/block", ...g.manage, lifecycleHandler("BLOCK", "BLOCKED"));
   app.post(
     "/api/fleet/vehicles/:id/unblock",
-    ...fleetManageOnly,
+    ...g.manage,
     lifecycleHandler("UNBLOCK", "AVAILABLE")
   );
   app.post(
     "/api/fleet/vehicles/:id/deactivate",
-    ...fleetManageOnly,
+    ...g.manage,
     lifecycleHandler("DEACTIVATE", "INACTIVE", { dispose: true })
   );
   app.post(
     "/api/fleet/vehicles/:id/sell",
-    ...fleetManageOnly,
+    ...g.manage,
     lifecycleHandler("SELL", "SOLD", { dispose: true })
   );
   app.post(
     "/api/fleet/vehicles/:id/return-to-lessor",
-    ...fleetManageOnly,
+    ...g.manage,
     lifecycleHandler("RETURN_TO_LESSOR", "RETURNED", { dispose: true })
   );
 
-  app.get("/api/fleet/vehicles/:id/audit", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/vehicles/:id/audit", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -186,7 +176,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
   });
 
   // --- Contracts ---
-  app.get("/api/fleet/vehicles/:id/contracts", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/vehicles/:id/contracts", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -204,7 +194,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
     }
   });
 
-  app.post("/api/fleet/vehicles/:id/contracts", ...fleetVehiclesEdit, async (req, res) => {
+  app.post("/api/fleet/vehicles/:id/contracts", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -228,7 +218,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
     }
   });
 
-  app.put("/api/fleet/contracts/:id", ...fleetVehiclesEdit, async (req, res) => {
+  app.put("/api/fleet/contracts/:id", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -269,7 +259,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
     }
   });
 
-  app.patch("/api/fleet/contracts/:id/cancel", ...fleetVehiclesEdit, async (req, res) => {
+  app.patch("/api/fleet/contracts/:id/cancel", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -297,7 +287,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
   });
 
   // --- Documents ---
-  app.get("/api/fleet/vehicles/:id/documents", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/vehicles/:id/documents", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -313,7 +303,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
     }
   });
 
-  app.post("/api/fleet/vehicles/:id/documents", ...fleetVehiclesEdit, async (req, res) => {
+  app.post("/api/fleet/vehicles/:id/documents", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -339,7 +329,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
     }
   });
 
-  app.put("/api/fleet/documents/:id", ...fleetVehiclesEdit, async (req, res) => {
+  app.put("/api/fleet/documents/:id", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -371,7 +361,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
     }
   });
 
-  app.patch("/api/fleet/documents/:id/replace", ...fleetVehiclesEdit, async (req, res) => {
+  app.patch("/api/fleet/documents/:id/replace", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -423,7 +413,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
     }
   });
 
-  app.patch("/api/fleet/documents/:id/inactivate", ...fleetVehiclesEdit, async (req, res) => {
+  app.patch("/api/fleet/documents/:id/inactivate", ...g.vehiclesEdit, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });

@@ -56,7 +56,8 @@ export function FleetVehiclesTab() {
   const canEdit =
     auth.hasPermission("fleet.vehicles.edit") || auth.hasPermission("fleet.manage");
   const canManage = auth.hasPermission("fleet.manage");
-  const canFinancial = auth.hasPermission("fleet.financial.view");
+  const canFinancial =
+    auth.hasPermission("fleet.financial.view") || auth.hasPermission("fleet.manage");
 
   const [vehicles, setVehicles] = useState<FleetVehicleRow[]>([]);
   const [loading, setLoading] = useState(true);

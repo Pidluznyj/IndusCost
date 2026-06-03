@@ -23,13 +23,9 @@ import {
   paginateInMemory,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function fleetError(res: express.Response, e: unknown, label: string) {
   if (e instanceof FleetValidationError) return res.status(400).json({ error: e.message });
@@ -66,11 +62,10 @@ function sendReport(
 }
 
 export function registerFleetManagementRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, getCurrentAppUser } = auth;
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
-  const fleetSettingsManage = [requireAppAuth, requirePermission("fleet.settings.manage")] as express.RequestHandler[];
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
-  app.get("/api/fleet/alerts", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/alerts", ...g.view, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       const showFinancial =
@@ -102,21 +97,21 @@ export function registerFleetManagementRoutes(app: express.Express, auth: AuthGu
       }
     };
 
-  app.get("/api/fleet/reports/fleet", ...fleetView, reportHandler("fleet", async (f) => reportFleet(f)));
-  app.get("/api/fleet/reports/usage", ...fleetView, reportHandler("usage", async (f) => reportUsage(f)));
+  app.get("/api/fleet/reports/fleet", ...g.view, reportHandler("fleet", async (f) => reportFleet(f)));
+  app.get("/api/fleet/reports/usage", ...g.view, reportHandler("usage", async (f) => reportUsage(f)));
   app.get(
     "/api/fleet/reports/costs",
-    ...fleetView,
+    ...g.view,
     reportHandler("costs", async (f, fin) => reportCosts(f, fin) as Promise<Record<string, unknown>[]>)
   );
   app.get(
     "/api/fleet/reports/maintenance",
-    ...fleetView,
+    ...g.view,
     reportHandler("maintenance", async (f, fin) => reportMaintenance(f, fin))
   );
   app.get(
     "/api/fleet/reports/documents",
-    ...fleetView,
+    ...g.view,
     reportHandler("documents", async (f) => reportDocuments(f))
   );
 }

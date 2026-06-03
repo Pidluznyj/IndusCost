@@ -8,12 +8,9 @@ import {
   previewDriverCsvImport,
   previewVehicleCsvImport,
 } from "@/src/lib/fleetCsvImport.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function fleetError(res: express.Response, e: unknown, label: string) {
   if (e instanceof FleetValidationError) return res.status(400).json({ error: e.message });
@@ -41,10 +38,10 @@ function assertApplyConfirm(body: Record<string, unknown>) {
 }
 
 export function registerFleetImportRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, getCurrentAppUser } = auth;
-  const fleetManage = [requireAppAuth, requirePermission("fleet.manage")] as express.RequestHandler[];
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
-  app.post("/api/fleet/import/vehicles/preview", ...fleetManage, async (req, res) => {
+  app.post("/api/fleet/import/vehicles/preview", ...g.importManage, async (req, res) => {
     try {
       const csv = readCsvBody(req.body ?? {});
       const result = await previewVehicleCsvImport(csv, {
@@ -57,7 +54,7 @@ export function registerFleetImportRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.post("/api/fleet/import/vehicles/apply", ...fleetManage, async (req, res) => {
+  app.post("/api/fleet/import/vehicles/apply", ...g.importManage, async (req, res) => {
     try {
       const body = req.body ?? {};
       assertApplyConfirm(body);
@@ -74,7 +71,7 @@ export function registerFleetImportRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.post("/api/fleet/import/drivers/preview", ...fleetManage, async (req, res) => {
+  app.post("/api/fleet/import/drivers/preview", ...g.importManage, async (req, res) => {
     try {
       const csv = readCsvBody(req.body ?? {});
       const result = await previewDriverCsvImport(csv, {
@@ -87,7 +84,7 @@ export function registerFleetImportRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.post("/api/fleet/import/drivers/apply", ...fleetManage, async (req, res) => {
+  app.post("/api/fleet/import/drivers/apply", ...g.importManage, async (req, res) => {
     try {
       const body = req.body ?? {};
       assertApplyConfirm(body);

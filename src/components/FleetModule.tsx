@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, RefreshCw, Settings, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
 import { FleetVehiclesTab } from "@/src/components/fleet/FleetVehiclesTab";
 import { FleetDriversTab } from "@/src/components/fleet/FleetDriversTab";
 import { FleetReservationsTab } from "@/src/components/fleet/FleetReservationsTab";
@@ -11,6 +10,7 @@ import { FleetFinancialTab } from "@/src/components/fleet/FleetFinancialTab";
 import { FleetReportsTab } from "@/src/components/fleet/FleetReportsTab";
 import { FleetMobileUsageFlow } from "@/src/components/fleet/FleetMobileUsageFlow";
 import { FleetImportSettings } from "@/src/components/fleet/FleetImportSettings";
+import { FleetPermissionDenied, useFleetPermissions } from "@/src/components/fleet/fleetUi";
 import type { FleetDashboardResponse } from "@/src/types/fleet";
 
 const TABS = [
@@ -47,15 +47,16 @@ function Card({ label, value }: { label: string; value: number | string }) {
 }
 
 export function FleetModule() {
-  const auth = useAuth();
+  const fleet = useFleetPermissions();
   const [tab, setTab] = useState<TabId>("dashboard");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSettings = auth.hasPermission("fleet.settings.manage");
-  const canManage = auth.hasPermission("fleet.manage");
-  const canFinancial =
-    auth.hasPermission("fleet.financial.view") || auth.hasPermission("fleet.manage");
+  const { canView, canSettings, canManage, canFinancial } = fleet;
+
+  if (!canView) {
+    return <FleetPermissionDenied />;
+  }
 
   const [dashboard, setDashboard] = useState<FleetDashboardResponse | null>(null);
   const [settings, setSettings] = useState<{ key: string; value: string; description: string | null }[]>([]);

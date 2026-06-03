@@ -742,6 +742,61 @@ ABC1D23;Fiat;Strada;AVAILABLE`);
   });
 });
 
+describe("fleet permissions enforcement", async () => {
+  const {
+    evaluateFleetRouteAccess,
+    canViewFleetFinancial,
+    FLEET_API_FORBIDDEN_STATUS,
+  } = await import("./fleetAuth.js");
+  const { maskFinancialData } = await import("./fleetFinancialOps.js");
+
+  it("user without fleet.view is denied view routes (403 rule)", () => {
+    assert.equal(evaluateFleetRouteAccess([], "view"), false);
+    assert.equal(FLEET_API_FORBIDDEN_STATUS, 403);
+  });
+
+  it("user with fleet.view cannot edit vehicles", () => {
+    assert.equal(evaluateFleetRouteAccess(["fleet.view"], "vehiclesEdit"), false);
+    assert.equal(evaluateFleetRouteAccess(["fleet.view"], "manage"), false);
+  });
+
+  it("user without fleet.financial.view does not receive money values", () => {
+    assert.equal(canViewFleetFinancial(["fleet.view"]), false);
+    const masked = maskFinancialData({ amount: 1500, totalValue: 200 }, false) as {
+      amount: number | null;
+      amountMasked?: boolean;
+    };
+    assert.equal(masked.amount, null);
+    assert.equal(masked.amountMasked, true);
+  });
+
+  it("user without fleet.settings.manage cannot change settings", () => {
+    assert.equal(evaluateFleetRouteAccess(["fleet.view"], "settingsManage"), false);
+    assert.equal(evaluateFleetRouteAccess(["fleet.manage"], "settingsManage"), false);
+    assert.equal(evaluateFleetRouteAccess(["fleet.settings.manage"], "settingsManage"), true);
+  });
+
+  it("user without approve permission cannot approve reservations", () => {
+    assert.equal(
+      evaluateFleetRouteAccess(["fleet.view", "fleet.reservations.create"], "reservationsApprove"),
+      false
+    );
+    assert.equal(
+      evaluateFleetRouteAccess(["fleet.reservations.approve"], "reservationsApprove"),
+      true
+    );
+    assert.equal(
+      evaluateFleetRouteAccess(["fleet.manage"], "reservationsApprove"),
+      true
+    );
+  });
+
+  it("maintenance mutations require fleet.maintenance.manage or fleet.manage", () => {
+    assert.equal(evaluateFleetRouteAccess(["fleet.view"], "maintenanceManage"), false);
+    assert.equal(evaluateFleetRouteAccess(["fleet.maintenance.manage"], "maintenanceManage"), true);
+  });
+});
+
 describe("fleet hardening", async () => {
   const { canAccessFleetRoute, canViewFleetFinancial, FLEET_ROUTE_GUARDS } = await import(
     "./fleetAuth.js"

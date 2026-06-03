@@ -14,13 +14,9 @@ import {
   serializeChecklist,
 } from "@/src/lib/fleetChecklistOps.js";
 import type { FleetChecklistType } from "@prisma/client";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -36,14 +32,10 @@ function fleetError(res: express.Response, e: unknown, logLabel: string) {
 }
 
 export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = auth;
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
-  const fleetOps = [
-    requireAppAuth,
-    requireAnyPermission(["fleet.reservations.create", "fleet.manage"]),
-  ] as express.RequestHandler[];
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
-  app.get("/api/fleet/checklists", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/checklists", ...g.view, async (req, res) => {
     try {
       const vehicleId = String(req.query.vehicleId ?? "").trim();
       const reservationId = String(req.query.reservationId ?? "").trim();
@@ -65,7 +57,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.get("/api/fleet/checklists/:id", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/checklists/:id", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -76,7 +68,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.post("/api/fleet/checklists", ...fleetOps, async (req, res) => {
+  app.post("/api/fleet/checklists", ...g.checklistOps, async (req, res) => {
     try {
       const body = req.body ?? {};
       const vehicleId = body.vehicleId;
@@ -149,7 +141,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.put("/api/fleet/checklists/:id", ...fleetOps, async (req, res) => {
+  app.put("/api/fleet/checklists/:id", ...g.checklistOps, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -183,7 +175,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.post("/api/fleet/checklists/:id/items", ...fleetOps, async (req, res) => {
+  app.post("/api/fleet/checklists/:id/items", ...g.checklistOps, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -198,7 +190,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.put("/api/fleet/checklist-items/:id", ...fleetOps, async (req, res) => {
+  app.put("/api/fleet/checklist-items/:id", ...g.checklistOps, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });

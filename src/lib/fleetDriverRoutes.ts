@@ -22,13 +22,9 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
-type AuthGuards = {
-  requireAppAuth: express.RequestHandler;
-  requirePermission: (p: string) => express.RequestHandler;
-  requireAnyPermission: (ps: string[]) => express.RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
-};
+type AuthGuards = FleetAuthGuards;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -49,14 +45,10 @@ async function actorId(req: express.Request, getCurrentAppUser: AuthGuards["getC
 }
 
 export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = auth;
-  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
-  const fleetDriverManage = [
-    requireAppAuth,
-    requireAnyPermission(["fleet.manage"]),
-  ] as express.RequestHandler[];
+  const { getCurrentAppUser } = auth;
+  const g = createFleetRouteGuards(auth);
 
-  app.get("/api/fleet/drivers", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/drivers", ...g.view, async (req, res) => {
     try {
       const list = parseFleetListQuery(req.query as Record<string, unknown>);
       const cnhFilter = String(req.query.cnhFilter ?? "").trim();
@@ -97,7 +89,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/fleet/drivers/:id", ...fleetView, async (req, res) => {
+  app.get("/api/fleet/drivers/:id", ...g.view, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -118,7 +110,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.post("/api/fleet/drivers", ...fleetDriverManage, async (req, res) => {
+  app.post("/api/fleet/drivers", ...g.driversManage, async (req, res) => {
     try {
       const data = parseDriverInput(req.body ?? {});
       await assertUniqueActiveDriverCpf(data.cpf);
@@ -152,7 +144,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.put("/api/fleet/drivers/:id", ...fleetDriverManage, async (req, res) => {
+  app.put("/api/fleet/drivers/:id", ...g.driversManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -190,7 +182,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.post("/api/fleet/drivers/:id/block", ...fleetDriverManage, async (req, res) => {
+  app.post("/api/fleet/drivers/:id/block", ...g.driversManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -203,7 +195,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.post("/api/fleet/drivers/:id/unblock", ...fleetDriverManage, async (req, res) => {
+  app.post("/api/fleet/drivers/:id/unblock", ...g.driversManage, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
