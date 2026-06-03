@@ -250,6 +250,8 @@ export type ResolvedNomusComponentRow = {
   productId?: string | null;
   materialId?: string | null;
   resolvedKind: "PRODUCT" | "MATERIAL" | "BOTH" | "NONE";
+  inactiveProductIds?: string[];
+  inactiveMaterialIds?: string[];
 };
 
 export async function resolveNomusComponentCodes(
@@ -322,6 +324,8 @@ export async function resolveNomusComponentCodes(
       productId: resolved.productId,
       materialId: resolved.materialId,
       resolvedKind: resolved.resolvedKind,
+      inactiveProductIds,
+      inactiveMaterialIds,
     };
   });
 }

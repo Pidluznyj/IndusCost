@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { normalizeComponentCode, normalizeSku, toNumberSafe } from "@/src/lib/nomusBomComparison";
+import { pickNomusApplyRegistryLink } from "@/src/lib/nomusComponentRegistryResolve";
 import type { BomComparisonResult } from "@/src/lib/nomusBomComparison";
 import { buildBomComparisonForParentCode } from "@/src/lib/nomusBomComparisonLoad";
 import { buildNomusBomApplyPlansReport } from "@/src/lib/nomusBomApplyPlanLoad";
@@ -575,26 +576,23 @@ async function buildDesiredTargets(
       continue;
     }
 
-    let materialId: string | null = null;
-    let childProductId: string | null = null;
-    let resolvedKind: "PRODUCT" | "MATERIAL" | "BOTH" | "NONE" = res.resolvedKind;
+    const link = pickNomusApplyRegistryLink({
+      componentCode: line.componentCode,
+      resolvedKind: res.resolvedKind,
+      productId: res.productId ?? null,
+      materialId: res.materialId ?? null,
+      inactiveMaterialIds: res.inactiveMaterialIds,
+      inactiveProductIds: res.inactiveProductIds,
+    });
 
-    if (res.resolvedKind === "BOTH") {
-      if (res.materialId) {
-        materialId = res.materialId;
-        resolvedKind = "MATERIAL";
-      } else if (res.productId) {
-        childProductId = res.productId;
-        resolvedKind = "PRODUCT";
-      } else {
-        unresolved.push(line);
-        continue;
-      }
-    } else if (res.resolvedKind === "MATERIAL") {
-      materialId = res.materialId ?? null;
-    } else if (res.resolvedKind === "PRODUCT") {
-      childProductId = res.productId ?? null;
+    if (!link.ok) {
+      unresolved.push(line);
+      continue;
     }
+
+    const materialId = link.materialId;
+    const childProductId = link.childProductId;
+    const resolvedKind = link.resolvedKind;
 
     targets.push({
       componentCode: line.componentCode,

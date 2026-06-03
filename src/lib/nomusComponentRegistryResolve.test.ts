@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isRegistryActiveStatus,
+  pickNomusApplyRegistryLink,
   pickRegistryRecordForAutoResolve,
   prefersMaterialForNomusComponent,
   resolveRegistryPairForComponentCode,
@@ -59,5 +60,15 @@ describe("nomusComponentRegistryResolve", () => {
   it("420.01A- está na allowlist PREFER_MATERIAL", () => {
     assert.equal(prefersMaterialForNomusComponent("420.01A-"), true);
     assert.equal(prefersMaterialForNomusComponent("420.01A"), false);
+  });
+
+  it("pickNomusApplyRegistryLink — BOTH ambíguo sem allowlist bloqueia", () => {
+    const r = pickNomusApplyRegistryLink({
+      componentCode: "X.00",
+      resolvedKind: "BOTH",
+      productId: "p",
+      materialId: "m",
+    });
+    assert.equal(r.ok, false);
   });
 });
