@@ -255,6 +255,26 @@ export async function buildFleetDashboard() {
     }
   }
 
+  const { buildMaintenanceDashboardAlerts } = await import("@/src/lib/fleetMaintenanceOps.js");
+  const maintAlerts = await buildMaintenanceDashboardAlerts();
+  alerts.push(...maintAlerts.alerts);
+
+  const vehiclesInMaintenance = await prisma.fleetVehicle.findMany({
+    where: { status: "MAINTENANCE" },
+    select: { id: true, plate: true, brand: true, model: true },
+    take: 10,
+  });
+  for (const v of vehiclesInMaintenance) {
+    if (!alerts.some((a) => a.entityId === v.id && a.message.includes("Manutenção"))) {
+      alerts.push({
+        level: "warning",
+        message: `Veículo em manutenção: ${v.plate ?? v.brand} ${v.model}`,
+        entityType: "FleetVehicle",
+        entityId: v.id,
+      });
+    }
+  }
+
   return {
     cards: {
       totalVehicles,
@@ -266,6 +286,8 @@ export async function buildFleetDashboard() {
       cnhsExpiring,
       reservationsToday,
       openMaintenances,
+      preventiveOverdue: maintAlerts.overdue.length,
+      preventiveUpcoming: maintAlerts.upcoming.length,
     },
     alerts,
   };

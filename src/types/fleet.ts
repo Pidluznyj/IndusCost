@@ -36,6 +36,60 @@ export type FleetMaintenanceStatus =
   | "COMPLETED"
   | "CANCELED";
 
+export type FleetMaintenanceRow = {
+  id: string;
+  vehicleId: string;
+  reservationId: string | null;
+  maintenanceType: string;
+  status: FleetMaintenanceStatus;
+  priority: string;
+  description: string;
+  openedAt: string;
+  scheduledAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  supplierName: string | null;
+  estimatedValue: number | null;
+  finalValue: number | null;
+  currentKm: number | null;
+  blocksVehicle: boolean;
+  notes: string | null;
+  preventiveMeta?: { nextScheduledAt: string | null; nextMaintenanceKm: number | null } | null;
+  vehicle?: {
+    id: string;
+    plate: string | null;
+    brand: string;
+    model: string;
+    status?: FleetVehicleStatus;
+    currentKm?: number;
+    costCenter?: string | null;
+  };
+  costs?: { id: string; amount: number; status: string; costType: string }[];
+};
+
+export const MAINTENANCE_STATUS_LABEL: Record<FleetMaintenanceStatus, string> = {
+  OPEN: "Aberta",
+  SCHEDULED: "Agendada",
+  QUOTING: "Orçamento",
+  PENDING_APPROVAL: "Aguardando aprovação",
+  APPROVED: "Aprovada",
+  IN_PROGRESS: "Em execução",
+  COMPLETED: "Concluída",
+  CANCELED: "Cancelada",
+};
+
+export const MAINTENANCE_TYPE_OPTIONS = [
+  { value: "CORRETIVA", label: "Corretiva" },
+  { value: "PREVENTIVA", label: "Preventiva" },
+] as const;
+
+export const MAINTENANCE_PRIORITY_OPTIONS = [
+  { value: "BAIXA", label: "Baixa" },
+  { value: "MEDIA", label: "Média" },
+  { value: "ALTA", label: "Alta" },
+  { value: "CRITICA", label: "Crítica" },
+] as const;
+
 export type FleetVehicleAlert = {
   level: "critical" | "warning" | "info";
   code: string;
@@ -269,6 +323,121 @@ export const RESERVATION_STATUS_OPTIONS: { value: FleetReservationStatus; label:
   { value: "FINISHED", label: "Finalizada" },
 ];
 
+export type FleetFinancialDashboard = {
+  competence: string;
+  totalMonth: number | null;
+  totalMonthMasked?: boolean;
+  byType: Record<string, number | null>;
+  pendingFines: number;
+  openIncidents: number;
+  recentFuelings: {
+    id: string;
+    fuelingDate: string;
+    liters: number;
+    totalValue: number | null;
+    totalValueMasked?: boolean;
+    vehicle?: { plate: string | null; brand: string; model: string };
+    driver?: { name: string } | null;
+    avgConsumption: number | null;
+  }[];
+  kmMonth: number;
+  costPerKm: number | null;
+  costPerKmMasked?: boolean;
+};
+
+export type FleetCostRow = {
+  id: string;
+  vehicleId: string;
+  costType: string;
+  costDate: string;
+  competence: string;
+  amount: number | null;
+  amountMasked?: boolean;
+  status: string;
+  supplierName: string | null;
+  notes: string | null;
+  vehicle?: { plate: string | null; brand: string; model: string };
+};
+
+export type FleetFuelingRow = {
+  id: string;
+  vehicleId: string;
+  driverId: string | null;
+  fuelingDate: string;
+  km: number;
+  liters: number;
+  unitPrice: number | null;
+  totalValue: number | null;
+  totalValueMasked?: boolean;
+  stationName: string | null;
+  receiptUrl: string | null;
+  vehicle?: { plate: string | null; brand: string; model: string };
+  driver?: { name: string } | null;
+};
+
+export type FleetFineRow = {
+  id: string;
+  vehicleId: string;
+  driverId: string | null;
+  infractionDate: string;
+  noticeNumber: string | null;
+  amount: number | null;
+  amountMasked?: boolean;
+  status: string;
+  vehicle?: { plate: string | null; brand: string; model: string };
+  driver?: { name: string } | null;
+};
+
+export type FleetIncidentRow = {
+  id: string;
+  vehicleId: string;
+  incidentType: string;
+  incidentDate: string;
+  description: string;
+  severity: string;
+  status: string;
+  blocksVehicle: boolean;
+  vehicle?: { plate: string | null; brand: string; model: string };
+};
+
+export type FleetAttachmentRow = {
+  id: string;
+  vehicleId: string | null;
+  attachmentType: string;
+  fileName: string;
+  fileUrl: string;
+  uploadedAt: string;
+  notes: string | null;
+};
+
+export const FLEET_COST_TYPE_OPTIONS = [
+  { value: "LOCACAO", label: "Locação" },
+  { value: "MANUTENCAO", label: "Manutenção" },
+  { value: "COMBUSTIVEL", label: "Combustível" },
+  { value: "MULTA", label: "Multa" },
+  { value: "SINISTRO", label: "Sinistro" },
+  { value: "AVARIA", label: "Avaria" },
+  { value: "SEGURO", label: "Seguro" },
+  { value: "TAXA", label: "Taxa" },
+  { value: "OUTRO", label: "Outros" },
+] as const;
+
+export const FINE_STATUS_OPTIONS = [
+  { value: "RECEIVED", label: "Recebida" },
+  { value: "IDENTIFYING_DRIVER", label: "Identificar motorista" },
+  { value: "PENDING_PAYMENT", label: "Pagamento pendente" },
+  { value: "PAID", label: "Paga" },
+  { value: "CONTESTED", label: "Contestada" },
+  { value: "CANCELED", label: "Cancelada" },
+] as const;
+
+export const INCIDENT_STATUS_OPTIONS = [
+  { value: "OPEN", label: "Aberta" },
+  { value: "IN_PROGRESS", label: "Em andamento" },
+  { value: "RESOLVED", label: "Resolvida" },
+  { value: "CANCELED", label: "Cancelada" },
+] as const;
+
 export type FleetDashboardResponse = {
   cards: {
     totalVehicles: number;
@@ -280,8 +449,11 @@ export type FleetDashboardResponse = {
     cnhsExpiring: number;
     reservationsToday: number;
     openMaintenances: number;
+    preventiveOverdue?: number;
+    preventiveUpcoming?: number;
   };
   alerts: { level: "critical" | "warning"; message: string; entityType?: string; entityId?: string }[];
+  financial?: FleetFinancialDashboard;
 };
 
 export const CONTRACT_TYPE_OPTIONS = [

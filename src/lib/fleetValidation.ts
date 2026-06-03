@@ -3,6 +3,7 @@ import type {
   FleetDocumentStatus,
   FleetDriver,
   FleetDriverStatus,
+  FleetMaintenanceStatus,
   FleetReservationStatus,
   FleetVehicle,
   FleetVehicleOrigin,
@@ -309,6 +310,65 @@ export function isContractExpiringSoon(
   const threshold = new Date(today);
   threshold.setDate(threshold.getDate() + alertDays);
   return end.getTime() <= threshold.getTime();
+}
+
+export const FLEET_MAINTENANCE_TERMINAL_STATUSES: FleetMaintenanceStatus[] = [
+  "COMPLETED",
+  "CANCELED",
+];
+
+export const FLEET_MAINTENANCE_TRANSITIONS: Record<
+  FleetMaintenanceStatus,
+  FleetMaintenanceStatus[]
+> = {
+  OPEN: ["SCHEDULED", "QUOTING", "PENDING_APPROVAL", "APPROVED", "IN_PROGRESS", "CANCELED"],
+  SCHEDULED: ["QUOTING", "PENDING_APPROVAL", "APPROVED", "IN_PROGRESS", "CANCELED"],
+  QUOTING: ["PENDING_APPROVAL", "CANCELED"],
+  PENDING_APPROVAL: ["APPROVED", "CANCELED"],
+  APPROVED: ["IN_PROGRESS", "CANCELED"],
+  IN_PROGRESS: ["COMPLETED", "CANCELED"],
+  COMPLETED: [],
+  CANCELED: [],
+};
+
+export function assertMaintenanceEditable(status: FleetMaintenanceStatus): void {
+  if (FLEET_MAINTENANCE_TERMINAL_STATUSES.includes(status)) {
+    throw new FleetValidationError("Manutenção finalizada ou cancelada não pode ser alterada.");
+  }
+}
+
+export function assertMaintenanceTransition(
+  from: FleetMaintenanceStatus,
+  to: FleetMaintenanceStatus
+): void {
+  const allowed = FLEET_MAINTENANCE_TRANSITIONS[from] ?? [];
+  if (!allowed.includes(to)) {
+    throw new FleetValidationError(`Transição de status inválida: ${from} → ${to}.`);
+  }
+}
+
+export function resolveMaintenanceVehicleStatus(
+  priority: string,
+  blocksVehicle: boolean
+): FleetVehicleStatus | null {
+  if (!blocksVehicle) return null;
+  const p = priority.trim().toUpperCase();
+  if (p === "CRITICA" || p === "CRÍTICA" || p === "ALTA") return "BLOCKED";
+  return "MAINTENANCE";
+}
+
+export function assertMaintenanceCompletionDate(openedAt: Date, completedAt: Date): void {
+  if (completedAt.getTime() < openedAt.getTime()) {
+    throw new FleetValidationError("Data de conclusão não pode ser anterior à abertura.");
+  }
+}
+
+export function maintenanceNeedsApproval(
+  estimatedValue: number | null | undefined,
+  threshold: number
+): boolean {
+  if (estimatedValue == null || !Number.isFinite(estimatedValue)) return false;
+  return estimatedValue >= threshold;
 }
 
 export class FleetValidationError extends Error {

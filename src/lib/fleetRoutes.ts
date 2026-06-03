@@ -5,10 +5,8 @@ import {
   FleetValidationError,
   assertContractDateRange,
   assertDateRange,
-  assertNonNegativeAmount,
   assertNonNegativeKm,
   normalizePlate,
-  parseDecimalKm,
 } from "@/src/lib/fleetValidation.js";
 import {
   assertUniqueActivePlate,
@@ -26,6 +24,9 @@ import { registerFleetDriverRoutes } from "@/src/lib/fleetDriverRoutes.js";
 import { registerFleetReservationRoutes } from "@/src/lib/fleetReservationRoutes.js";
 import { registerFleetChecklistRoutes } from "@/src/lib/fleetChecklistRoutes.js";
 import { registerFleetUsageRoutes } from "@/src/lib/fleetUsageRoutes.js";
+import { registerFleetMaintenanceRoutes } from "@/src/lib/fleetMaintenanceRoutes.js";
+import { registerFleetFinancialRoutes } from "@/src/lib/fleetFinancialRoutes.js";
+import { buildFleetFinancialDashboard, maskFinancialData } from "@/src/lib/fleetFinancialOps.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   refreshDocumentStatuses,
@@ -67,14 +68,21 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
   const fleetManage = [requireAppAuth, requireAnyPermission(["fleet.manage", "fleet.vehicles.edit"])] as express.RequestHandler[];
   const fleetVehiclesEdit = [requireAppAuth, requireAnyPermission(["fleet.vehicles.edit", "fleet.manage"])] as express.RequestHandler[];
-  const fleetMaintManage = [requireAppAuth, requireAnyPermission(["fleet.maintenance.manage", "fleet.manage"])] as express.RequestHandler[];
   const fleetSettingsManage = [requireAppAuth, requirePermission("fleet.settings.manage")] as express.RequestHandler[];
 
   // --- Dashboard ---
   app.get("/api/fleet/dashboard", ...fleetView, async (req, res) => {
     try {
       const dashboard = await buildFleetDashboard();
-      res.json(dashboard);
+      const financial = await buildFleetFinancialDashboard();
+      const user = await getCurrentAppUser(req);
+      const showFinancial =
+        user != null &&
+        (hasPermission(user, "fleet.financial.view") || hasPermission(user, "fleet.manage"));
+      res.json({
+        ...dashboard,
+        financial: maskFinancialData(financial, showFinancial),
+      });
     } catch (e) {
       fleetError(res, e, "GET /api/fleet/dashboard");
     }
@@ -310,86 +318,8 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   registerFleetReservationRoutes(app, auth);
   registerFleetChecklistRoutes(app, auth);
   registerFleetUsageRoutes(app, auth);
-
-  // --- Maintenances ---
-  app.get("/api/fleet/maintenances", ...fleetView, async (req, res) => {
-    try {
-      const vehicleId = String(req.query.vehicleId ?? "").trim();
-      const where: Prisma.FleetMaintenanceWhereInput = {};
-      if (vehicleId && isUuid(vehicleId)) where.vehicleId = vehicleId;
-      const maintenances = await prisma.fleetMaintenance.findMany({
-        where,
-        include: { vehicle: { select: { plate: true, brand: true, model: true } } },
-        orderBy: { openedAt: "desc" },
-        take: 200,
-      });
-      res.json({
-        maintenances: maintenances.map((m) => ({
-          ...m,
-          estimatedValue: m.estimatedValue != null ? Number(m.estimatedValue) : null,
-          finalValue: m.finalValue != null ? Number(m.finalValue) : null,
-          currentKm: m.currentKm != null ? Number(m.currentKm) : null,
-        })),
-      });
-    } catch (e) {
-      fleetError(res, e, "GET /api/fleet/maintenances");
-    }
-  });
-
-  app.post("/api/fleet/maintenances", ...fleetMaintManage, async (req, res) => {
-    try {
-      const body = req.body ?? {};
-      const vehicleId = body.vehicleId;
-      if (!isUuid(vehicleId)) return res.status(400).json({ error: "Veículo inválido." });
-      const description = typeof body.description === "string" ? body.description.trim() : "";
-      if (!description) return res.status(400).json({ error: "Descrição é obrigatória." });
-
-      const estimatedValue = body.estimatedValue != null ? Number(body.estimatedValue) : null;
-      const finalValue = body.finalValue != null ? Number(body.finalValue) : null;
-      if (estimatedValue != null) assertNonNegativeAmount(estimatedValue);
-      if (finalValue != null) assertNonNegativeAmount(finalValue);
-
-      const blocksVehicle = Boolean(body.blocksVehicle);
-      const userId = await actorId(req, getCurrentAppUser);
-
-      const created = await prisma.$transaction(async (tx) => {
-        const m = await tx.fleetMaintenance.create({
-          data: {
-            vehicleId,
-            reservationId: isUuid(body.reservationId) ? body.reservationId : null,
-            maintenanceType: body.maintenanceType?.trim?.() || "CORRETIVA",
-            priority: body.priority?.trim?.() || "MEDIA",
-            description,
-            scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
-            supplierName: body.supplierName?.trim?.() ?? null,
-            estimatedValue,
-            finalValue,
-            currentKm: body.currentKm != null ? parseDecimalKm(body.currentKm) : null,
-            blocksVehicle,
-            notes: body.notes?.trim?.() ?? null,
-          },
-        });
-        if (blocksVehicle) {
-          await tx.fleetVehicle.update({
-            where: { id: vehicleId },
-            data: { status: "MAINTENANCE" },
-          });
-        }
-        return m;
-      });
-
-      await writeFleetAuditLog({
-        entityType: "FleetMaintenance",
-        entityId: created.id,
-        action: "CREATE",
-        userId,
-      });
-
-      res.status(201).json({ maintenance: created });
-    } catch (e) {
-      fleetError(res, e, "POST /api/fleet/maintenances");
-    }
-  });
+  registerFleetMaintenanceRoutes(app, auth);
+  registerFleetFinancialRoutes(app, auth);
 
   // --- Settings ---
   app.get("/api/fleet/settings", ...fleetView, async (req, res) => {

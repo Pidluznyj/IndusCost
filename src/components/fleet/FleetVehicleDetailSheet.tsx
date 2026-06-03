@@ -6,11 +6,14 @@ import type {
   FleetAuditLogRow,
   FleetContractRow,
   FleetDocumentRow,
+  FleetMaintenanceRow,
+  FleetAttachmentRow,
   FleetUsageRow,
   FleetVehicleDetail,
   FleetVehicleOrigin,
   FleetVehicleStatus,
 } from "@/src/types/fleet";
+import { MAINTENANCE_STATUS_LABEL } from "@/src/types/fleet";
 import { CONTRACT_TYPE_OPTIONS, DOCUMENT_TYPE_OPTIONS } from "@/src/types/fleet";
 
 const STATUS_LABEL: Record<FleetVehicleStatus, string> = {
@@ -40,7 +43,14 @@ const DOC_STATUS_LABEL = {
   REPLACED: "Substituído",
 };
 
-type SheetTab = "info" | "contracts" | "documents" | "usage" | "history";
+type SheetTab =
+  | "info"
+  | "contracts"
+  | "documents"
+  | "usage"
+  | "maintenances"
+  | "attachments"
+  | "history";
 
 function dateInput(v: string | null | undefined) {
   if (!v) return "";
@@ -87,6 +97,14 @@ export function FleetVehicleDetailSheet({
   const [documents, setDocuments] = useState<FleetDocumentRow[]>([]);
   const [auditLogs, setAuditLogs] = useState<FleetAuditLogRow[]>([]);
   const [usages, setUsages] = useState<FleetUsageRow[]>([]);
+  const [maintenances, setMaintenances] = useState<FleetMaintenanceRow[]>([]);
+  const [attachments, setAttachments] = useState<FleetAttachmentRow[]>([]);
+  const [attachmentForm, setAttachmentForm] = useState({
+    fileName: "",
+    fileUrl: "",
+    attachmentType: "OUTRO",
+    notes: "",
+  });
 
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [contractForm, setContractForm] = useState<Record<string, string>>({});
@@ -100,12 +118,19 @@ export function FleetVehicleDetailSheet({
     setLoading(true);
     setError(null);
     try {
-      const [detail, contractsRes, documentsRes, auditRes, usagesRes] = await Promise.all([
+      const [detail, contractsRes, documentsRes, auditRes, usagesRes, maintRes, attachRes] =
+        await Promise.all([
         fetchJsonOk<{ vehicle: FleetVehicleDetail }>(`/api/fleet/vehicles/${vehicleId}`),
         fetchJsonOk<{ contracts: FleetContractRow[] }>(`/api/fleet/vehicles/${vehicleId}/contracts`),
         fetchJsonOk<{ documents: FleetDocumentRow[] }>(`/api/fleet/vehicles/${vehicleId}/documents`),
         fetchJsonOk<{ auditLogs: FleetAuditLogRow[] }>(`/api/fleet/vehicles/${vehicleId}/audit`),
         fetchJsonOk<{ usages: FleetUsageRow[] }>(`/api/fleet/vehicles/${vehicleId}/usages`),
+        fetchJsonOk<{ maintenances: FleetMaintenanceRow[] }>(
+          `/api/fleet/vehicles/${vehicleId}/maintenances`
+        ),
+        fetchJsonOk<{ attachments: FleetAttachmentRow[] }>(
+          `/api/fleet/attachments?vehicleId=${vehicleId}`
+        ),
       ]);
       const v = detail.vehicle;
       setVehicle(v);
@@ -113,6 +138,8 @@ export function FleetVehicleDetailSheet({
       setDocuments(documentsRes.documents);
       setAuditLogs(auditRes.auditLogs);
       setUsages(usagesRes.usages);
+      setMaintenances(maintRes.maintenances);
+      setAttachments(attachRes.attachments);
       setEditForm({
         plate: v.plate ?? "",
         brand: v.brand,
@@ -348,6 +375,8 @@ export function FleetVehicleDetailSheet({
               ["contracts", "Contratos"],
               ["documents", "Documentos"],
               ["usage", "Reservas / Uso"],
+              ["maintenances", "Manutenções"],
+              ["attachments", "Anexos"],
               ["history", "Histórico"],
             ] as const
           ).map(([id, label]) => (
@@ -868,6 +897,147 @@ export function FleetVehicleDetailSheet({
                       </div>
                     ))
                   )}
+                </div>
+              )}
+
+              {tab === "maintenances" && (
+                <div className="space-y-3">
+                  {(canEdit || canManage) && (
+                    <button
+                      type="button"
+                      className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
+                      disabled={saving}
+                      onClick={() =>
+                        void runAction("/api/fleet/maintenances", {
+                          vehicleId,
+                          maintenanceType: "CORRETIVA",
+                          priority: "MEDIA",
+                          description: "Manutenção aberta pela ficha do veículo",
+                          blocksVehicle: true,
+                          currentKm: vehicle?.currentKm,
+                        })
+                      }
+                    >
+                      Abrir manutenção corretiva
+                    </button>
+                  )}
+                  {maintenances.length === 0 ? (
+                    <p className="text-sm text-slate-500">Nenhuma manutenção registrada.</p>
+                  ) : (
+                    maintenances.map((m) => (
+                      <div key={m.id} className="rounded-lg border p-3 text-sm">
+                        <div className="font-medium">
+                          {MAINTENANCE_STATUS_LABEL[m.status]} · {m.maintenanceType} · {m.priority}
+                          {m.blocksVehicle && (
+                            <span className="ml-2 text-amber-700 text-xs">bloqueia veículo</span>
+                          )}
+                        </div>
+                        <p className="mt-1">{m.description}</p>
+                        <p className="text-slate-600 text-xs mt-1">
+                          Aberta: {formatDt(m.openedAt)}
+                          {m.scheduledAt ? ` · Agendada: ${formatDt(m.scheduledAt)}` : ""}
+                          {m.completedAt ? ` · Concluída: ${formatDt(m.completedAt)}` : ""}
+                        </p>
+                        {m.estimatedValue != null && (
+                          <p className="text-xs text-slate-500">
+                            Estimado: {m.estimatedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            {m.finalValue != null
+                              ? ` · Final: ${m.finalValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+                              : ""}
+                          </p>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {tab === "attachments" && (
+                <div className="space-y-3">
+                  {canManage && (
+                    <div className="rounded border bg-slate-50 p-3 grid gap-2 sm:grid-cols-2">
+                      <input
+                        className="rounded border px-2 py-1.5 text-sm"
+                        placeholder="Nome do arquivo"
+                        value={attachmentForm.fileName}
+                        onChange={(e) =>
+                          setAttachmentForm({ ...attachmentForm, fileName: e.target.value })
+                        }
+                      />
+                      <input
+                        className="rounded border px-2 py-1.5 text-sm"
+                        placeholder="URL do arquivo (sem base64)"
+                        value={attachmentForm.fileUrl}
+                        onChange={(e) =>
+                          setAttachmentForm({ ...attachmentForm, fileUrl: e.target.value })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white sm:col-span-2"
+                        disabled={saving}
+                        onClick={() =>
+                          void runAction("/api/fleet/attachments", {
+                            vehicleId,
+                            fileName: attachmentForm.fileName,
+                            fileUrl: attachmentForm.fileUrl,
+                            attachmentType: attachmentForm.attachmentType,
+                            notes: attachmentForm.notes || null,
+                          })
+                        }
+                      >
+                        Adicionar anexo (metadados)
+                      </button>
+                      <p className="text-xs text-slate-500 sm:col-span-2">
+                        Upload físico pendente — informe apenas URL pública do arquivo.
+                      </p>
+                    </div>
+                  )}
+                  <ul className="space-y-2 text-sm">
+                    {attachments.map((a) => (
+                      <li key={a.id} className="flex items-center justify-between rounded border px-3 py-2">
+                        <div>
+                          <a
+                            href={a.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium text-blue-700 underline"
+                          >
+                            {a.fileName}
+                          </a>
+                          <p className="text-xs text-slate-500">
+                            {a.attachmentType} · {formatDt(a.uploadedAt)}
+                          </p>
+                        </div>
+                        {canManage && (
+                          <button
+                            type="button"
+                            className="text-xs text-red-600"
+                            disabled={saving}
+                            onClick={async () => {
+                              if (!confirm("Remover anexo?")) return;
+                              setSaving(true);
+                              try {
+                                await fetchJsonOk(`/api/fleet/attachments/${a.id}/remove`, {
+                                  method: "PATCH",
+                                });
+                                await load();
+                              } catch (e: unknown) {
+                                setError(e instanceof Error ? e.message : "Erro ao remover.");
+                              } finally {
+                                setSaving(false);
+                              }
+                            }}
+                          >
+                            Remover
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                    {attachments.length === 0 && (
+                      <p className="text-slate-500">Nenhum anexo neste veículo.</p>
+                    )}
+                  </ul>
                 </div>
               )}
 

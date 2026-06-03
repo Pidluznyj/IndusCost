@@ -10,15 +10,21 @@ import {
   assertKmRange,
   assertReasonRequired,
   assertVehicleCanCheckout,
+  assertMaintenanceCompletionDate,
+  assertMaintenanceEditable,
+  assertMaintenanceTransition,
+  assertNonNegativeAmount,
   computeKmDriven,
   hasCriticalNotOk,
+  isVehicleReservable,
+  maintenanceNeedsApproval,
+  resolveMaintenanceVehicleStatus,
   assertVehicleCanDispose,
   assertVehicleReservable,
   computeCnhStatus,
   computeDocumentStatus,
   findReservationConflict,
   isCnhValid,
-  isVehicleReservable,
   reservationPeriodsOverlap,
   FleetValidationError,
 } from "./fleetValidation.js";
@@ -206,11 +212,103 @@ describe("fleetValidation", () => {
     assert.doesNotThrow(() => assertVehicleCanCheckout("AVAILABLE"));
   });
 
+  it("resolveMaintenanceVehicleStatus blocks critical priority as BLOCKED", () => {
+    assert.equal(resolveMaintenanceVehicleStatus("CRITICA", true), "BLOCKED");
+    assert.equal(resolveMaintenanceVehicleStatus("MEDIA", true), "MAINTENANCE");
+    assert.equal(resolveMaintenanceVehicleStatus("MEDIA", false), null);
+  });
+
+  it("isVehicleReservable blocks vehicle in maintenance", () => {
+    assert.equal(isVehicleReservable("MAINTENANCE"), false);
+  });
+
+  it("assertMaintenanceEditable blocks changes on completed", () => {
+    assert.throws(() => assertMaintenanceEditable("COMPLETED"));
+    assert.throws(() => assertMaintenanceEditable("CANCELED"));
+  });
+
+  it("assertMaintenanceCompletionDate rejects end before open", () => {
+    const opened = new Date("2026-06-01");
+    const completed = new Date("2026-05-01");
+    assert.throws(() => assertMaintenanceCompletionDate(opened, completed));
+  });
+
+  it("maintenanceNeedsApproval uses threshold", () => {
+    assert.equal(maintenanceNeedsApproval(6000, 5000), true);
+    assert.equal(maintenanceNeedsApproval(100, 5000), false);
+  });
+
+  it("assertMaintenanceTransition validates workflow", () => {
+    assert.doesNotThrow(() => assertMaintenanceTransition("OPEN", "PENDING_APPROVAL"));
+    assert.throws(() => assertMaintenanceTransition("COMPLETED", "OPEN"));
+  });
+
   it("canUserCancelReservation respects manage vs own reservation", () => {
     const pending = { requesterUserId: "u1", status: "PENDING_APPROVAL" as const };
     assert.equal(canUserCancelReservation(pending, "u1", false), true);
     assert.equal(canUserCancelReservation(pending, "u2", false), false);
     assert.equal(canUserCancelReservation(pending, "u2", true), true);
     assert.equal(canUserCancelReservation({ ...pending, status: "IN_USE" }, "u1", true), false);
+  });
+});
+
+describe("fleet financial helpers", async () => {
+  const {
+    assertCompetence,
+    maskFinancialData,
+    sumActiveCostAmounts,
+    resolveFineInitialStatus,
+    incidentBlocksVehicle,
+    shouldCreateFuelingCost,
+    computeAvgConsumption,
+  } = await import("./fleetFinancialOps.js");
+
+  it("assertCompetence requires YYYY-MM", () => {
+    assert.equal(assertCompetence("2026-05"), "2026-05");
+    assert.throws(() => assertCompetence("05/2026"));
+  });
+
+  it("negative cost amount is blocked", () => {
+    assert.throws(() => assertNonNegativeAmount(-1));
+  });
+
+  it("canceled costs excluded from dashboard sum", () => {
+    assert.equal(
+      sumActiveCostAmounts([
+        { status: "ACTIVE", amount: 100 },
+        { status: "CANCELED", amount: 50 },
+      ]),
+      100
+    );
+  });
+
+  it("maskFinancialData hides amounts without permission", () => {
+    const masked = maskFinancialData({ amount: 99, label: "x" }, false) as {
+      amount: number | null;
+      amountMasked?: boolean;
+      label: string;
+    };
+    assert.equal(masked.amount, null);
+    assert.equal(masked.amountMasked, true);
+    assert.equal(masked.label, "x");
+  });
+
+  it("fueling creates cost by default", () => {
+    assert.equal(shouldCreateFuelingCost(undefined), true);
+    assert.equal(shouldCreateFuelingCost(false), false);
+  });
+
+  it("fine without driver stays identifying", () => {
+    assert.equal(resolveFineInitialStatus(null), "IDENTIFYING_DRIVER");
+    assert.equal(resolveFineInitialStatus("driver-1"), "RECEIVED");
+  });
+
+  it("grave incident blocks vehicle", () => {
+    assert.equal(incidentBlocksVehicle("GRAVE", false), true);
+    assert.equal(incidentBlocksVehicle("BAIXA", false), false);
+  });
+
+  it("computeAvgConsumption returns L/100km when km > 0", () => {
+    assert.equal(computeAvgConsumption(10, 100), 10);
   });
 });
