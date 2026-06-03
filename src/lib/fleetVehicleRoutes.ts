@@ -6,12 +6,12 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
 import { canViewFleetFinancial } from "@/src/lib/fleetPermissionResolve.js";
 import {
   FleetValidationError,
-  fleetValidationHttpStatus,
   assertBlockReason,
   normalizePlate,
 } from "@/src/lib/fleetValidation.js";
@@ -41,15 +41,6 @@ function isUuid(value: unknown): value is string {
     typeof value === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
   );
-}
-
-function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(logLabel, e);
-  const msg = e instanceof Error ? e.message : "Erro interno.";
-  return res.status(500).json({ error: msg });
 }
 
 async function actorId(
@@ -105,7 +96,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
         buildFleetListResponse("documents", documents, fleetListMeta(total, list.page, list.limit))
       );
     } catch (e) {
-      fleetError(res, e, "GET /api/fleet/documents");
+      handleFleetRouteError(res, e, "GET /api/fleet/documents", req);
     }
   });
 
@@ -139,7 +130,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
 
         res.json({ vehicle: serializeFleetVehicle(updated) });
       } catch (e) {
-        fleetError(res, e, `POST vehicle ${action}`);
+        handleFleetRouteError(res, e, `POST vehicle ${action}`, req);
       }
     };
 
@@ -173,7 +164,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       const logs = await listRelatedVehicleAudit(id);
       res.json({ auditLogs: logs });
     } catch (e) {
-      fleetError(res, e, "GET vehicle audit");
+      handleFleetRouteError(res, e, "GET vehicle audit", req);
     }
   });
 
@@ -192,7 +183,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
         contracts: contracts.map((c) => serializeContract(c, financial)),
       });
     } catch (e) {
-      fleetError(res, e, "GET contracts");
+      handleFleetRouteError(res, e, "GET contracts", req);
     }
   });
 
@@ -216,7 +207,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       const financial = await canViewFinancial(req, getCurrentAppUser);
       res.status(201).json({ contract: serializeContract(created, financial) });
     } catch (e) {
-      fleetError(res, e, "POST contract");
+      handleFleetRouteError(res, e, "POST contract", req);
     }
   });
 
@@ -257,7 +248,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       const financial = await canViewFinancial(req, getCurrentAppUser);
       res.json({ contract: serializeContract(updated, financial) });
     } catch (e) {
-      fleetError(res, e, "PUT contract");
+      handleFleetRouteError(res, e, "PUT contract", req);
     }
   });
 
@@ -284,7 +275,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       const financial = await canViewFinancial(req, getCurrentAppUser);
       res.json({ contract: serializeContract(updated, financial) });
     } catch (e) {
-      fleetError(res, e, "PATCH contract cancel");
+      handleFleetRouteError(res, e, "PATCH contract cancel", req);
     }
   });
 
@@ -301,7 +292,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       });
       res.json({ documents });
     } catch (e) {
-      fleetError(res, e, "GET documents");
+      handleFleetRouteError(res, e, "GET documents", req);
     }
   });
 
@@ -327,7 +318,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       });
       res.status(201).json({ document: created });
     } catch (e) {
-      fleetError(res, e, "POST document");
+      handleFleetRouteError(res, e, "POST document", req);
     }
   });
 
@@ -359,7 +350,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       });
       res.json({ document: updated });
     } catch (e) {
-      fleetError(res, e, "PUT document");
+      handleFleetRouteError(res, e, "PUT document", req);
     }
   });
 
@@ -411,7 +402,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
 
       res.json({ replacedDocument: replaced, document: created });
     } catch (e) {
-      fleetError(res, e, "PATCH document replace");
+      handleFleetRouteError(res, e, "PATCH document replace", req);
     }
   });
 
@@ -436,7 +427,7 @@ export function registerFleetVehicleExtendedRoutes(app: express.Express, auth: A
       });
       res.json({ document: updated });
     } catch (e) {
-      fleetError(res, e, "PATCH document inactivate");
+      handleFleetRouteError(res, e, "PATCH document inactivate", req);
     }
   });
 }

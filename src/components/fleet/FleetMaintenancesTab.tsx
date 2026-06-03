@@ -15,8 +15,7 @@ import {
   FleetStatusBadge,
   pickFleetListItems,
   pickFleetPagination,
-  type FleetPaginatedMeta,
-} from "@/src/components/fleet/fleetUi";
+  type FleetPaginatedMeta, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 
 const EMPTY_FORM = {
   vehicleId: "",
@@ -87,7 +86,7 @@ export function FleetMaintenancesTab() {
       setRows(pickFleetListItems<FleetMaintenanceRow>(data, "maintenances"));
       setPagination(pickFleetPagination(data));
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar manutenções.");
+      setError(formatFleetApiError(e, "Erro ao carregar manutenções."));
     } finally {
       setLoading(false);
     }
@@ -177,7 +176,7 @@ export function FleetMaintenancesTab() {
       setModalOpen(false);
       await load();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar.");
+      setError(formatFleetApiError(e, "Erro ao salvar."));
     } finally {
       setSaving(false);
     }
@@ -200,7 +199,7 @@ export function FleetMaintenancesTab() {
         openEdit(refreshed.maintenance);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro na operação.");
+      setError(formatFleetApiError(e, "Erro na operação."));
     } finally {
       setSaving(false);
     }

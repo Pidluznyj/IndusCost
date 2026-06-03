@@ -5,8 +5,7 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   FleetValidationError,
   assertChecklistEditable,
-  fleetValidationHttpStatus,
-} from "@/src/lib/fleetValidation.js";
+  } from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import {
   CHECKLIST_INCLUDE,
@@ -18,6 +17,7 @@ import {
   serializeChecklist,
 } from "@/src/lib/fleetChecklistOps.js";
 import type { FleetChecklistType } from "@prisma/client";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
 type AuthGuards = FleetAuthGuards;
@@ -29,13 +29,6 @@ function isUuid(value: unknown): value is string {
   );
 }
 
-function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(logLabel, e);
-  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
-}
 
 export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGuards) {
   const { getCurrentAppUser } = auth;
@@ -59,7 +52,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ checklists: rows.map(serializeChecklist) });
     } catch (e) {
-      fleetError(res, e, "GET checklists");
+      handleFleetRouteError(res, e, "GET checklists", req);
     }
   });
 
@@ -70,7 +63,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
       const checklist = await getChecklistOrThrow(id);
       res.json({ checklist: serializeChecklist(checklist) });
     } catch (e) {
-      fleetError(res, e, "GET checklist");
+      handleFleetRouteError(res, e, "GET checklist", req);
     }
   });
 
@@ -143,7 +136,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
 
       res.status(201).json({ checklist: serializeChecklist(created) });
     } catch (e) {
-      fleetError(res, e, "POST checklist");
+      handleFleetRouteError(res, e, "POST checklist", req);
     }
   });
 
@@ -180,7 +173,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ checklist: serializeChecklist(updated) });
     } catch (e) {
-      fleetError(res, e, "PUT checklist");
+      handleFleetRouteError(res, e, "PUT checklist", req);
     }
   });
 
@@ -196,7 +189,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
       });
       res.status(201).json({ item });
     } catch (e) {
-      fleetError(res, e, "POST checklist item");
+      handleFleetRouteError(res, e, "POST checklist item", req);
     }
   });
 
@@ -233,7 +226,7 @@ export function registerFleetChecklistRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ item });
     } catch (e) {
-      fleetError(res, e, "PUT checklist item");
+      handleFleetRouteError(res, e, "PUT checklist item", req);
     }
   });
 }

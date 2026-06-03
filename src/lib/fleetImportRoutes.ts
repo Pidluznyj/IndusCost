@@ -1,6 +1,6 @@
 import type express from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { FleetValidationError, fleetValidationHttpStatus } from "@/src/lib/fleetValidation.js";
+import { FleetValidationError } from "@/src/lib/fleetValidation.js";
 import {
   FLEET_IMPORT_CONFIRM_TOKEN,
   applyDriverCsvImport,
@@ -8,17 +8,10 @@ import {
   previewDriverCsvImport,
   previewVehicleCsvImport,
 } from "@/src/lib/fleetCsvImport.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
 type AuthGuards = FleetAuthGuards;
-
-function fleetError(res: express.Response, e: unknown, label: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(label, e);
-  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
-}
 
 function readCsvBody(body: Record<string, unknown>): string {
   const csv = typeof body.csv === "string" ? body.csv.trim() : "";
@@ -52,7 +45,7 @@ export function registerFleetImportRoutes(app: express.Express, auth: AuthGuards
       if ("error" in result) return res.status(400).json({ error: result.error });
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "POST import vehicles preview");
+      handleFleetRouteError(res, e, "POST import vehicles preview", req);
     }
   });
 
@@ -69,7 +62,7 @@ export function registerFleetImportRoutes(app: express.Express, auth: AuthGuards
       if ("error" in result) return res.status(400).json({ error: result.error });
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "POST import vehicles apply");
+      handleFleetRouteError(res, e, "POST import vehicles apply", req);
     }
   });
 
@@ -82,7 +75,7 @@ export function registerFleetImportRoutes(app: express.Express, auth: AuthGuards
       if ("error" in result) return res.status(400).json({ error: result.error });
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "POST import drivers preview");
+      handleFleetRouteError(res, e, "POST import drivers preview", req);
     }
   });
 
@@ -99,7 +92,7 @@ export function registerFleetImportRoutes(app: express.Express, auth: AuthGuards
       if ("error" in result) return res.status(400).json({ error: result.error });
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "POST import drivers apply");
+      handleFleetRouteError(res, e, "POST import drivers apply", req);
     }
   });
 }

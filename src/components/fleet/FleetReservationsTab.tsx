@@ -25,8 +25,7 @@ import {
   FleetListPagination,
   pickFleetListItems,
   pickFleetPagination,
-  type FleetPaginatedMeta,
-} from "@/src/components/fleet/fleetUi";
+  type FleetPaginatedMeta, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 
 const STATUS_LABEL: Record<FleetReservationStatus, string> = {
   REQUESTED: "Solicitada",
@@ -137,7 +136,7 @@ export function FleetReservationsTab() {
       setReservations(pickFleetListItems<FleetReservationRow>(data, "reservations"));
       setPagination(pickFleetPagination(data));
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar reservas.");
+      setError(formatFleetApiError(e, "Erro ao carregar reservas."));
     } finally {
       setLoading(false);
     }
@@ -231,7 +230,7 @@ export function FleetReservationsTab() {
       setForm(EMPTY_RES);
       await loadReservations();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao criar reserva.");
+      setError(formatFleetApiError(e, "Erro ao criar reserva."));
     } finally {
       setSaving(false);
     }
@@ -253,7 +252,7 @@ export function FleetReservationsTab() {
       });
       await loadReservations();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro na operação.");
+      setError(formatFleetApiError(e, "Erro na operação."));
     } finally {
       setSaving(false);
     }

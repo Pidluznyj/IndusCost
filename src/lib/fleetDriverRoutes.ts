@@ -4,8 +4,7 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   FleetValidationError,
   assertBlockReason,
-  fleetValidationHttpStatus,
-} from "@/src/lib/fleetValidation.js";
+  } from "@/src/lib/fleetValidation.js";
 import {
   assertUniqueActiveDriverCpf,
   loadFleetSettings,
@@ -26,6 +25,7 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
 type AuthGuards = FleetAuthGuards;
@@ -37,13 +37,6 @@ function isUuid(value: unknown): value is string {
   );
 }
 
-function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(logLabel, e);
-  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
-}
 
 async function actorId(req: express.Request, getCurrentAppUser: AuthGuards["getCurrentAppUser"]) {
   const u = await getCurrentAppUser(req);
@@ -91,7 +84,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
       }));
       res.json(buildFleetListResponse("drivers", enriched, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
-      fleetError(res, e, "GET /api/fleet/drivers");
+      handleFleetRouteError(res, e, "GET /api/fleet/drivers", req);
     }
   });
 
@@ -112,7 +105,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
         auditLogs: logs,
       });
     } catch (e) {
-      fleetError(res, e, "GET /api/fleet/drivers/:id");
+      handleFleetRouteError(res, e, "GET /api/fleet/drivers/:id", req);
     }
   });
 
@@ -146,7 +139,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
       });
       res.status(201).json({ driver: created });
     } catch (e) {
-      fleetError(res, e, "POST /api/fleet/drivers");
+      handleFleetRouteError(res, e, "POST /api/fleet/drivers", req);
     }
   });
 
@@ -184,7 +177,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
       });
       res.json({ driver: updated });
     } catch (e) {
-      fleetError(res, e, "PUT /api/fleet/drivers/:id");
+      handleFleetRouteError(res, e, "PUT /api/fleet/drivers/:id", req);
     }
   });
 
@@ -197,7 +190,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
       const updated = await changeDriverStatus(id, "BLOCKED", userId, "BLOCK", reason);
       res.json({ driver: updated });
     } catch (e) {
-      fleetError(res, e, "POST block driver");
+      handleFleetRouteError(res, e, "POST block driver", req);
     }
   });
 
@@ -210,7 +203,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
       const updated = await changeDriverStatus(id, "AUTHORIZED", userId, "UNBLOCK", reason);
       res.json({ driver: updated });
     } catch (e) {
-      fleetError(res, e, "POST unblock driver");
+      handleFleetRouteError(res, e, "POST unblock driver", req);
     }
   });
 }

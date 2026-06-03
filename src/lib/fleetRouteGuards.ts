@@ -9,6 +9,7 @@ import {
   FLEET_ROUTE_GUARDS,
   type FleetRouteGuardKey,
 } from "@/src/lib/fleetPermissionResolve.js";
+import { FLEET_FORBIDDEN_CODE } from "@/src/lib/fleetErrors.js";
 
 /** Guards reutilizáveis para todas as rotas /api/fleet/*. */
 export type FleetAuthGuards = {
@@ -33,7 +34,11 @@ export type FleetRouteGuardSet = {
 };
 
 function fleetPermissionDenied(res: express.Response): void {
-  res.status(403).json({ error: FLEET_FORBIDDEN_MESSAGE });
+  res.status(403).json({
+    error: FLEET_FORBIDDEN_MESSAGE,
+    code: FLEET_FORBIDDEN_CODE,
+    retryable: false,
+  });
 }
 
 function createRequireFleetAny(

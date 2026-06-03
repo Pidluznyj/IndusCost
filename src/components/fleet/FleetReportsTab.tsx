@@ -1,3 +1,4 @@
+import { formatFleetApiError } from "@/src/lib/fleetApiError";
 import React, { useCallback, useState } from "react";
 import { AlertTriangle, Download, Loader2, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -105,7 +106,7 @@ export function FleetReportsTab() {
       setRows(data.rows ?? []);
       setLoaded(true);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao gerar relatório.");
+      setError(formatFleetApiError(e, "Erro ao gerar relatório."));
       setRows([]);
       setLoaded(true);
     } finally {

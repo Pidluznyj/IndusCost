@@ -389,14 +389,5 @@ export class FleetValidationError extends Error {
   }
 }
 
-/** HTTP status para erros de negócio previsíveis (evita 500 e diferencia conflito). */
-export function fleetValidationHttpStatus(message: string): number {
-  if (message.includes("Conflito de reserva")) return 409;
-  if (
-    message.includes("Já existe veículo ativo") ||
-    message.includes("Já existe motorista ativo")
-  ) {
-    return 409;
-  }
-  return 400;
-}
+/** HTTP status para erros de negócio previsíveis — ver fleetErrors.ts. */
+export { fleetValidationHttpStatus } from "@/src/lib/fleetErrors.js";

@@ -1,3 +1,4 @@
+import { formatFleetApiError } from "@/src/lib/fleetApiError";
 import React, { useState } from "react";
 import { AlertTriangle, FileUp, Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -53,7 +54,7 @@ export function FleetImportSettings() {
       });
       setSummary(result);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro na pré-visualização.");
+      setError(formatFleetApiError(e, "Erro na pré-visualização."));
     } finally {
       setLoading(false);
     }
@@ -80,7 +81,7 @@ export function FleetImportSettings() {
       setSummary(result);
       setApplyConfirm(true);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao aplicar importação.");
+      setError(formatFleetApiError(e, "Erro ao aplicar importação."));
     } finally {
       setLoading(false);
     }

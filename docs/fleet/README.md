@@ -166,6 +166,8 @@ npx prisma migrate deploy
 npm run fleet:seed-demo          # dados de demonstração
 npm run fleet:db-validate        # validação estrutural no banco
 npm run fleet:integrity:diagnostic  # integridade de dados (read-only, JSON + resumo)
+
+Erros de API da frota retornam JSON `{ error, code, retryable? }` com status 400/403/404/409/422 (negócio) ou 500 (técnico, mensagem segura). Logs: `[fleet:action]` (crítico OK) e `[fleet:error]` (falhas técnicas).
 npm run test:fleet:e2e           # smoke domínio/Prisma (sem HTTP)
 npm run test:fleet:smoke         # smoke HTTP do fluxo principal (servidor + DATABASE_URL)
 npm run fleet:import -- vehicles preview --file=./arquivo.csv

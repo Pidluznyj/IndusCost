@@ -2,11 +2,9 @@ import type express from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import {
-  FleetValidationError,
   assertContractDateRange,
   assertDateRange,
   assertNonNegativeKm,
-  fleetValidationHttpStatus,
   normalizePlate,
 } from "@/src/lib/fleetValidation.js";
 import {
@@ -32,6 +30,7 @@ import {
 } from "@/src/lib/fleetManagementRoutes.js";
 import { registerFleetImportRoutes } from "@/src/lib/fleetImportRoutes.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
 import { canViewFleetFinancial } from "@/src/lib/fleetPermissionResolve.js";
 import {
@@ -54,15 +53,6 @@ function isUuid(value: unknown): value is string {
   );
 }
 
-function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(logLabel, e);
-  const msg = e instanceof Error ? e.message : "Erro interno.";
-  return res.status(500).json({ error: msg });
-}
-
 async function actorId(req: express.Request, getCurrentAppUser: AuthGuards["getCurrentAppUser"]) {
   const u = await getCurrentAppUser(req);
   return u?.id ?? u?.email ?? null;
@@ -80,7 +70,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       const showFinancial = user != null && canViewFleetFinancial(perms);
       res.json(await getFleetDashboardPayload(showFinancial));
     } catch (e) {
-      fleetError(res, e, "GET /api/fleet/dashboard");
+      handleFleetRouteError(res, e, "GET /api/fleet/dashboard", req);
     }
   });
 
@@ -128,7 +118,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       const withAlerts = await enrichVehiclesWithAlerts(serialized, { includeAlerts });
       res.json(buildFleetListResponse("vehicles", withAlerts, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
-      fleetError(res, e, "GET /api/fleet/vehicles");
+      handleFleetRouteError(res, e, "GET /api/fleet/vehicles", req);
     }
   });
 
@@ -172,7 +162,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
         },
       });
     } catch (e) {
-      fleetError(res, e, "GET /api/fleet/vehicles/:id");
+      handleFleetRouteError(res, e, "GET /api/fleet/vehicles/:id", req);
     }
   });
 
@@ -224,7 +214,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
 
       res.status(201).json({ vehicle: serializeFleetVehicle(created) });
     } catch (e) {
-      fleetError(res, e, "POST /api/fleet/vehicles");
+      handleFleetRouteError(res, e, "POST /api/fleet/vehicles", req);
     }
   });
 
@@ -280,7 +270,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
 
       res.json({ vehicle: serializeFleetVehicle(updated) });
     } catch (e) {
-      fleetError(res, e, "PUT /api/fleet/vehicles/:id");
+      handleFleetRouteError(res, e, "PUT /api/fleet/vehicles/:id", req);
     }
   });
 
@@ -314,7 +304,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
 
       res.json({ vehicle: serializeFleetVehicle(updated) });
     } catch (e) {
-      fleetError(res, e, "PATCH /api/fleet/vehicles/:id/status");
+      handleFleetRouteError(res, e, "PATCH /api/fleet/vehicles/:id/status", req);
     }
   });
 
@@ -334,7 +324,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       const settings = await prisma.fleetSettings.findMany({ orderBy: { key: "asc" } });
       res.json({ settings });
     } catch (e) {
-      fleetError(res, e, "GET /api/fleet/settings");
+      handleFleetRouteError(res, e, "GET /api/fleet/settings", req);
     }
   });
 
@@ -345,7 +335,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
       const settings = await saveFleetSettingsWithAudit(items, userId);
       res.json({ settings });
     } catch (e) {
-      fleetError(res, e, "PUT /api/fleet/settings");
+      handleFleetRouteError(res, e, "PUT /api/fleet/settings", req);
     }
   });
 }

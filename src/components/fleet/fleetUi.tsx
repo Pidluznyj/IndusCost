@@ -79,6 +79,7 @@ export function FleetRequiredMark() {
 
 export { confirmFleetCriticalAction } from "@/src/lib/fleetUxShared";
 export { useFleetPermissions, FLEET_UI_FORBIDDEN_MESSAGE } from "@/src/components/fleet/fleetPermissions";
+export { formatFleetApiError, isFleetRetryableMessage } from "@/src/lib/fleetApiError";
 export {
   formatFleetDate,
   formatFleetDateTime,

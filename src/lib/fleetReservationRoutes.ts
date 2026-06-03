@@ -5,7 +5,6 @@ import { canFleet } from "@/src/lib/fleetPermissionResolve.js";
 import {
   FleetValidationError,
   assertReasonRequired,
-  fleetValidationHttpStatus,
 } from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { performCheckin, performCheckout } from "@/src/lib/fleetUsageOps.js";
@@ -23,6 +22,7 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
 type AuthGuards = FleetAuthGuards;
@@ -34,13 +34,6 @@ function isUuid(value: unknown): value is string {
   );
 }
 
-function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(logLabel, e);
-  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
-}
 
 export function registerFleetReservationRoutes(app: express.Express, auth: AuthGuards) {
   const { getCurrentAppUser } = auth;
@@ -62,7 +55,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
       });
       res.json({ vehicles });
     } catch (e) {
-      fleetError(res, e, "GET availability");
+      handleFleetRouteError(res, e, "GET availability", req);
     }
   });
 
@@ -95,7 +88,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
         buildFleetListResponse("reservations", reservations, fleetListMeta(total, list.page, list.limit))
       );
     } catch (e) {
-      fleetError(res, e, "GET reservations");
+      handleFleetRouteError(res, e, "GET reservations", req);
     }
   });
 
@@ -111,7 +104,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
       });
       res.json({ reservation, auditLogs: logs });
     } catch (e) {
-      fleetError(res, e, "GET reservation");
+      handleFleetRouteError(res, e, "GET reservation", req);
     }
   });
 
@@ -157,7 +150,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
 
       res.status(201).json({ reservation: created });
     } catch (e) {
-      fleetError(res, e, "POST reservation");
+      handleFleetRouteError(res, e, "POST reservation", req);
     }
   });
 
@@ -213,7 +206,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
 
       res.json({ reservation: updated });
     } catch (e) {
-      fleetError(res, e, "PUT reservation");
+      handleFleetRouteError(res, e, "PUT reservation", req);
     }
   });
 
@@ -264,7 +257,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
 
       res.json({ reservation: updated });
     } catch (e) {
-      fleetError(res, e, "PATCH approve");
+      handleFleetRouteError(res, e, "PATCH approve", req);
     }
   });
 
@@ -303,7 +296,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
 
       res.json({ reservation: updated });
     } catch (e) {
-      fleetError(res, e, "PATCH reject");
+      handleFleetRouteError(res, e, "PATCH reject", req);
     }
   });
 
@@ -346,7 +339,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
 
       res.json({ reservation: updated });
     } catch (e) {
-      fleetError(res, e, "PATCH cancel");
+      handleFleetRouteError(res, e, "PATCH cancel", req);
     }
   });
 
@@ -398,7 +391,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
 
       res.json({ reservation: updated });
     } catch (e) {
-      fleetError(res, e, "PATCH replace-vehicle");
+      handleFleetRouteError(res, e, "PATCH replace-vehicle", req);
     }
   });
 
@@ -415,7 +408,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
       });
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "POST checkout");
+      handleFleetRouteError(res, e, "POST checkout", req);
     }
   });
 
@@ -431,7 +424,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
       });
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "POST checkin");
+      handleFleetRouteError(res, e, "POST checkin", req);
     }
   });
 }

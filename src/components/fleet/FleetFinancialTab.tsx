@@ -21,8 +21,7 @@ import {
   FleetListPagination,
   pickFleetListItems,
   pickFleetPagination,
-  type FleetPaginatedMeta,
-} from "@/src/components/fleet/fleetUi";
+  type FleetPaginatedMeta, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 
 const SUB_TABS = [
   { id: "costs", label: "Custos" },
@@ -145,7 +144,7 @@ export function FleetFinancialTab({ initialSubTab = "costs" as SubTab }) {
       else if (subTab === "fines") setFines(items as FleetFineRow[]);
       else setIncidents(items as FleetIncidentRow[]);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar.");
+      setError(formatFleetApiError(e, "Erro ao carregar."));
     } finally {
       setLoading(false);
     }

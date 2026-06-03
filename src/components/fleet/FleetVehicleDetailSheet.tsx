@@ -20,6 +20,7 @@ import {
   formatFleetDateTime,
   formatFleetKm,
   formatFleetMoney,
+  formatFleetApiError,
 } from "@/src/components/fleet/fleetUi";
 import { FLEET_AUDIT_ACTION_LABEL } from "@/src/lib/fleetUxShared";
 
@@ -157,7 +158,7 @@ export function FleetVehicleDetailSheet({
         notes: v.notes ?? "",
       });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar veículo.");
+      setError(formatFleetApiError(e, "Erro ao carregar veículo."));
     } finally {
       setLoading(false);
     }
@@ -179,7 +180,7 @@ export function FleetVehicleDetailSheet({
       await load();
       onUpdated();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro na operação.");
+      setError(formatFleetApiError(e, "Erro na operação."));
     } finally {
       setSaving(false);
     }
@@ -203,7 +204,7 @@ export function FleetVehicleDetailSheet({
       await load();
       onUpdated();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar.");
+      setError(formatFleetApiError(e, "Erro ao salvar."));
     } finally {
       setSaving(false);
     }
@@ -262,7 +263,7 @@ export function FleetVehicleDetailSheet({
       await load();
       onUpdated();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar contrato.");
+      setError(formatFleetApiError(e, "Erro ao salvar contrato."));
     } finally {
       setSaving(false);
     }
@@ -297,7 +298,7 @@ export function FleetVehicleDetailSheet({
       await load();
       onUpdated();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar documento.");
+      setError(formatFleetApiError(e, "Erro ao salvar documento."));
     } finally {
       setSaving(false);
     }
@@ -1032,7 +1033,7 @@ export function FleetVehicleDetailSheet({
                                 });
                                 await load();
                               } catch (e: unknown) {
-                                setError(e instanceof Error ? e.message : "Erro ao remover.");
+                                setError(formatFleetApiError(e, "Erro ao remover."));
                               } finally {
                                 setSaving(false);
                               }

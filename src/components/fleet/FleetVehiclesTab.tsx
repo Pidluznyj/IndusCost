@@ -11,8 +11,7 @@ import {
   formatFleetKm,
   pickFleetListItems,
   pickFleetPagination,
-  type FleetPaginatedMeta,
-} from "@/src/components/fleet/fleetUi";
+  type FleetPaginatedMeta, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 
 const STATUS_LABEL: Record<FleetVehicleStatus, string> = {
   AVAILABLE: "Disponível",
@@ -85,7 +84,7 @@ export function FleetVehiclesTab() {
       setVehicles(pickFleetListItems<FleetVehicleRow>(data, "vehicles"));
       setPagination(pickFleetPagination(data));
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar veículos.");
+      setError(formatFleetApiError(e, "Erro ao carregar veículos."));
     } finally {
       setLoading(false);
     }
@@ -117,7 +116,7 @@ export function FleetVehiclesTab() {
       setForm(EMPTY_FORM);
       await load();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao criar veículo.");
+      setError(formatFleetApiError(e, "Erro ao criar veículo."));
     } finally {
       setSaving(false);
     }

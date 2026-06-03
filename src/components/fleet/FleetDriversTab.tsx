@@ -12,8 +12,7 @@ import {
   FleetListPagination,
   pickFleetListItems,
   pickFleetPagination,
-  type FleetPaginatedMeta,
-} from "@/src/components/fleet/fleetUi";
+  type FleetPaginatedMeta, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 
 const CNH_LABEL: Record<CnhComputedStatus, string> = {
   VALID: "Válida",
@@ -81,7 +80,7 @@ export function FleetDriversTab() {
       setDrivers(pickFleetListItems<FleetDriverRow>(data, "drivers"));
       setPagination(pickFleetPagination(data));
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar motoristas.");
+      setError(formatFleetApiError(e, "Erro ao carregar motoristas."));
     } finally {
       setLoading(false);
     }
@@ -146,7 +145,7 @@ export function FleetDriversTab() {
       setModalOpen(false);
       await load();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar motorista.");
+      setError(formatFleetApiError(e, "Erro ao salvar motorista."));
     } finally {
       setSaving(false);
     }
@@ -170,7 +169,7 @@ export function FleetDriversTab() {
       setBlockReason("");
       await load();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao alterar status.");
+      setError(formatFleetApiError(e, "Erro ao alterar status."));
     } finally {
       setSaving(false);
     }

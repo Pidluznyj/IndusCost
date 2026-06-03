@@ -7,7 +7,6 @@ import {
   FleetValidationError,
   assertNonNegativeAmount,
   assertReasonRequired,
-  fleetValidationHttpStatus,
 } from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { createMaintenance } from "@/src/lib/fleetMaintenanceOps.js";
@@ -33,6 +32,7 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
 type AuthGuards = FleetAuthGuards;
@@ -42,14 +42,6 @@ function isUuid(v: unknown): v is string {
     typeof v === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)
   );
-}
-
-function fleetError(res: express.Response, e: unknown, label: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(label, e);
-  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
 }
 
 async function showFinancial(req: express.Request, getUser: AuthGuards["getCurrentAppUser"]) {
@@ -79,7 +71,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       const fin = await showFinancial(req, getCurrentAppUser);
       res.json(maskFinancialData(data, fin));
     } catch (e) {
-      fleetError(res, e, "GET financial dashboard");
+      handleFleetRouteError(res, e, "GET financial dashboard", req);
     }
   });
 
@@ -118,7 +110,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       const items = maskFinancialData(rows.map(serializeCostRow), fin);
       res.json(buildFleetListResponse("costs", items, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
-      fleetError(res, e, "GET costs");
+      handleFleetRouteError(res, e, "GET costs", req);
     }
   });
 
@@ -131,7 +123,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       const fin = await showFinancial(req, getCurrentAppUser);
       res.json({ cost: maskFinancialData(serializeCostRow(row), fin) });
     } catch (e) {
-      fleetError(res, e, "GET cost");
+      handleFleetRouteError(res, e, "GET cost", req);
     }
   });
 
@@ -171,7 +163,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
         cost: maskFinancialData(full ? serializeCostRow(full) : serializeCostRow(created as never), fin),
       });
     } catch (e) {
-      fleetError(res, e, "POST cost");
+      handleFleetRouteError(res, e, "POST cost", req);
     }
   });
 
@@ -212,7 +204,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ cost: serializeCostRow(updated) });
     } catch (e) {
-      fleetError(res, e, "PUT cost");
+      handleFleetRouteError(res, e, "PUT cost", req);
     }
   });
 
@@ -236,7 +228,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ cost: serializeCostRow(updated) });
     } catch (e) {
-      fleetError(res, e, "PATCH cancel cost");
+      handleFleetRouteError(res, e, "PATCH cancel cost", req);
     }
   });
 
@@ -273,7 +265,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
         buildFleetListResponse("fuelings", maskFinancialData(mapped, fin), fleetListMeta(total, list.page, list.limit))
       );
     } catch (e) {
-      fleetError(res, e, "GET fuelings");
+      handleFleetRouteError(res, e, "GET fuelings", req);
     }
   });
 
@@ -350,7 +342,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
         ),
       });
     } catch (e) {
-      fleetError(res, e, "POST fueling");
+      handleFleetRouteError(res, e, "POST fueling", req);
     }
   });
 
@@ -377,7 +369,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ fueling: updated });
     } catch (e) {
-      fleetError(res, e, "PUT fueling");
+      handleFleetRouteError(res, e, "PUT fueling", req);
     }
   });
 
@@ -418,7 +410,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       );
       res.json(buildFleetListResponse("fines", items, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
-      fleetError(res, e, "GET fines");
+      handleFleetRouteError(res, e, "GET fines", req);
     }
   });
 
@@ -460,7 +452,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.status(201).json({ fine: created, duplicateWarning });
     } catch (e) {
-      fleetError(res, e, "POST fine");
+      handleFleetRouteError(res, e, "POST fine", req);
     }
   });
 
@@ -480,7 +472,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ fine: updated });
     } catch (e) {
-      fleetError(res, e, "PUT fine");
+      handleFleetRouteError(res, e, "PUT fine", req);
     }
   });
 
@@ -527,7 +519,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
 
       res.json({ fine: updated });
     } catch (e) {
-      fleetError(res, e, "PATCH fine status");
+      handleFleetRouteError(res, e, "PATCH fine status", req);
     }
   });
 
@@ -568,7 +560,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       );
       res.json(buildFleetListResponse("incidents", items, fleetListMeta(total, list.page, list.limit)));
     } catch (e) {
-      fleetError(res, e, "GET incidents");
+      handleFleetRouteError(res, e, "GET incidents", req);
     }
   });
 
@@ -634,7 +626,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
 
       res.status(201).json({ incident, maintenanceId });
     } catch (e) {
-      fleetError(res, e, "POST incident");
+      handleFleetRouteError(res, e, "POST incident", req);
     }
   });
 
@@ -658,7 +650,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ incident: updated });
     } catch (e) {
-      fleetError(res, e, "PUT incident");
+      handleFleetRouteError(res, e, "PUT incident", req);
     }
   });
 
@@ -702,7 +694,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ incident: updated });
     } catch (e) {
-      fleetError(res, e, "PATCH incident status");
+      handleFleetRouteError(res, e, "PATCH incident status", req);
     }
   });
 
@@ -736,7 +728,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
         buildFleetListResponse("attachments", rows, fleetListMeta(total, list.page, list.limit))
       );
     } catch (e) {
-      fleetError(res, e, "GET attachments");
+      handleFleetRouteError(res, e, "GET attachments", req);
     }
   });
 
@@ -776,7 +768,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.status(201).json({ attachment: created });
     } catch (e) {
-      fleetError(res, e, "POST attachment");
+      handleFleetRouteError(res, e, "POST attachment", req);
     }
   });
 
@@ -794,7 +786,7 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
       });
       res.json({ ok: true });
     } catch (e) {
-      fleetError(res, e, "PATCH remove attachment");
+      handleFleetRouteError(res, e, "PATCH remove attachment", req);
     }
   });
 }

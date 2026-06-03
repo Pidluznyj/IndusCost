@@ -1,4 +1,5 @@
 import { Prisma, type FleetReservationStatus, type FleetVehicleStatus } from "@prisma/client";
+import { logFleetCriticalAction } from "@/src/lib/fleetErrors.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
   FleetValidationError,
@@ -36,6 +37,12 @@ export async function writeFleetAuditLog(input: {
   reason?: string | null;
   userId?: string | null;
 }) {
+  logFleetCriticalAction({
+    action: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    userId: input.userId,
+  });
   await prisma.fleetAuditLog.create({
     data: {
       entityType: input.entityType,

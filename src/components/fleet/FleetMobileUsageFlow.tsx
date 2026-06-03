@@ -29,7 +29,7 @@ import type {
   FleetReservationRow,
 } from "@/src/types/fleet";
 import { CHECKLIST_RESULT_OPTIONS } from "@/src/types/fleet";
-import { FleetLoading } from "@/src/components/fleet/fleetUi";
+import { FleetLoading, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 
 type PhotoDraft = { fileName: string; fileUrl: string; notes: string };
 
@@ -172,7 +172,7 @@ export function FleetMobileUsageFlow({
         setChecklist(created.checklist);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar reserva.");
+      setError(formatFleetApiError(e, "Erro ao carregar reserva."));
       setReservation(null);
       setMode(null);
     } finally {
@@ -218,7 +218,7 @@ export function FleetMobileUsageFlow({
           : prev
       );
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao atualizar checklist.");
+      setError(formatFleetApiError(e, "Erro ao atualizar checklist."));
     } finally {
       setSaving(false);
     }
@@ -387,7 +387,7 @@ export function FleetMobileUsageFlow({
       }
       setStep("confirm");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao finalizar operação.");
+      setError(formatFleetApiError(e, "Erro ao finalizar operação."));
     } finally {
       setSaving(false);
     }

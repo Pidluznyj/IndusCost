@@ -1,10 +1,10 @@
 import type express from "express";
 import { prisma } from "@/src/lib/prisma.js";
-import { FleetValidationError, fleetValidationHttpStatus } from "@/src/lib/fleetValidation.js";
 import { loadFleetSettings } from "@/src/lib/fleetService.js";
 import { getReservationOrThrow } from "@/src/lib/fleetReservationOps.js";
 import { resolveMobileUsageMode } from "@/src/lib/fleetMobileUsage.js";
 import { getUsageByReservationId, serializeUsage, USAGE_INCLUDE } from "@/src/lib/fleetUsageOps.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
 type AuthGuards = FleetAuthGuards;
@@ -16,13 +16,6 @@ function isUuid(value: unknown): value is string {
   );
 }
 
-function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(logLabel, e);
-  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
-}
 
 export function registerFleetUsageRoutes(app: express.Express, auth: AuthGuards) {
   const g = createFleetRouteGuards(auth);
@@ -69,10 +62,7 @@ export function registerFleetUsageRoutes(app: express.Express, auth: AuthGuards)
         },
       });
     } catch (e) {
-      if (e instanceof FleetValidationError && e.message.includes("não encontrada")) {
-        return res.status(404).json({ error: e.message });
-      }
-      fleetError(res, e, "GET usage-context");
+      handleFleetRouteError(res, e, "GET usage-context", req);
     }
   });
 
@@ -83,10 +73,7 @@ export function registerFleetUsageRoutes(app: express.Express, auth: AuthGuards)
       const usage = await getUsageByReservationId(id);
       res.json({ usage });
     } catch (e) {
-      if (e instanceof FleetValidationError && e.message.includes("não encontrado")) {
-        return res.status(404).json({ error: e.message });
-      }
-      fleetError(res, e, "GET reservation usage");
+      handleFleetRouteError(res, e, "GET reservation usage", req);
     }
   });
 
@@ -102,7 +89,7 @@ export function registerFleetUsageRoutes(app: express.Express, auth: AuthGuards)
       });
       res.json({ usages: usages.map(serializeUsage) });
     } catch (e) {
-      fleetError(res, e, "GET vehicle usages");
+      handleFleetRouteError(res, e, "GET vehicle usages", req);
     }
   });
 }

@@ -1,7 +1,6 @@
 import type express from "express";
 import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
 import { canViewFleetFinancial } from "@/src/lib/fleetPermissionResolve.js";
-import { FleetValidationError, fleetValidationHttpStatus } from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { buildFleetFinancialDashboard, maskFinancialData } from "@/src/lib/fleetFinancialOps.js";
 import { getFleetAlerts } from "@/src/lib/fleetAlertsService.js";
@@ -24,17 +23,10 @@ import {
   paginateInMemory,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
 type AuthGuards = FleetAuthGuards;
-
-function fleetError(res: express.Response, e: unknown, label: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(label, e);
-  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
-}
 
 async function showFinancial(req: express.Request, getUser: AuthGuards["getCurrentAppUser"]) {
   const u = await getUser(req);
@@ -79,7 +71,7 @@ export function registerFleetManagementRoutes(app: express.Express, auth: AuthGu
       const result = await getFleetAlerts({ showFinancial, level: level || undefined });
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "GET /api/fleet/alerts");
+      handleFleetRouteError(res, e, "GET /api/fleet/alerts", req);
     }
   });
 
@@ -97,7 +89,7 @@ export function registerFleetManagementRoutes(app: express.Express, auth: AuthGu
         const rows = await load(filters, fin);
         sendReport(res, name, rows, format, format === "csv" ? undefined : list);
       } catch (e) {
-        fleetError(res, e, `GET /api/fleet/reports/${name}`);
+        handleFleetRouteError(res, e, `GET /api/fleet/reports/${name}`, req);
       }
     };
 

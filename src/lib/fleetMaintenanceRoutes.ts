@@ -5,8 +5,7 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   FleetValidationError,
   assertReasonRequired,
-  fleetValidationHttpStatus,
-} from "@/src/lib/fleetValidation.js";
+  } from "@/src/lib/fleetValidation.js";
 import {
   MAINTENANCE_INCLUDE,
   approveMaintenance,
@@ -26,6 +25,7 @@ import {
   fleetListMeta,
   parseFleetListQuery,
 } from "@/src/lib/fleetListQuery.js";
+import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 
 type AuthGuards = FleetAuthGuards;
@@ -37,13 +37,6 @@ function isUuid(value: unknown): value is string {
   );
 }
 
-function fleetError(res: express.Response, e: unknown, logLabel: string) {
-  if (e instanceof FleetValidationError) {
-    return res.status(fleetValidationHttpStatus(e.message)).json({ error: e.message });
-  }
-  console.error(logLabel, e);
-  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
-}
 
 export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthGuards) {
   const { getCurrentAppUser } = auth;
@@ -83,7 +76,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
         )
       );
     } catch (e) {
-      fleetError(res, e, "GET maintenances");
+      handleFleetRouteError(res, e, "GET maintenances", req);
     }
   });
 
@@ -103,7 +96,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       });
       res.json({ maintenances: rows.map(serialize) });
     } catch (e) {
-      fleetError(res, e, "GET vehicle maintenances");
+      handleFleetRouteError(res, e, "GET vehicle maintenances", req);
     }
   });
 
@@ -119,7 +112,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       });
       res.json({ maintenance: serializeMaintenance(m), auditLogs: logs });
     } catch (e) {
-      fleetError(res, e, "GET maintenance");
+      handleFleetRouteError(res, e, "GET maintenance", req);
     }
   });
 
@@ -137,7 +130,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       });
       res.status(201).json({ maintenance });
     } catch (e) {
-      fleetError(res, e, "POST maintenance");
+      handleFleetRouteError(res, e, "POST maintenance", req);
     }
   });
 
@@ -149,7 +142,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       const maintenance = await updateMaintenance(id, req.body ?? {}, user?.id ?? null);
       res.json({ maintenance });
     } catch (e) {
-      fleetError(res, e, "PUT maintenance");
+      handleFleetRouteError(res, e, "PUT maintenance", req);
     }
   });
 
@@ -171,7 +164,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       const maintenance = await changeMaintenanceStatus(id, status, user?.id ?? null, reason);
       res.json({ maintenance });
     } catch (e) {
-      fleetError(res, e, "PATCH maintenance status");
+      handleFleetRouteError(res, e, "PATCH maintenance status", req);
     }
   });
 
@@ -187,7 +180,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       );
       res.json({ maintenance });
     } catch (e) {
-      fleetError(res, e, "POST approve maintenance");
+      handleFleetRouteError(res, e, "POST approve maintenance", req);
     }
   });
 
@@ -199,7 +192,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       const maintenance = await startMaintenance(id, user?.id ?? null);
       res.json({ maintenance });
     } catch (e) {
-      fleetError(res, e, "POST start maintenance");
+      handleFleetRouteError(res, e, "POST start maintenance", req);
     }
   });
 
@@ -211,7 +204,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       const result = await completeMaintenance(id, req.body ?? {}, user?.id ?? null);
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "POST complete maintenance");
+      handleFleetRouteError(res, e, "POST complete maintenance", req);
     }
   });
 
@@ -224,7 +217,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       const maintenance = await cancelMaintenance(id, reason, user?.id ?? null);
       res.json({ maintenance });
     } catch (e) {
-      fleetError(res, e, "POST cancel maintenance");
+      handleFleetRouteError(res, e, "POST cancel maintenance", req);
     }
   });
 
@@ -236,7 +229,7 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       const result = await generateMaintenanceCost(id, user?.id ?? null);
       res.json(result);
     } catch (e) {
-      fleetError(res, e, "POST generate-cost");
+      handleFleetRouteError(res, e, "POST generate-cost", req);
     }
   });
 }

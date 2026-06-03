@@ -1,3 +1,4 @@
+import { formatFleetApiError } from "@/src/lib/fleetApiError";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -105,7 +106,7 @@ export function FleetCheckoutCheckinModal({ mode, reservation, onClose, onDone }
         setChecklist(list.checklists[0] ?? null);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar dados.");
+      setError(formatFleetApiError(e, "Erro ao carregar dados."));
     } finally {
       setLoading(false);
     }
@@ -136,7 +137,7 @@ export function FleetCheckoutCheckinModal({ mode, reservation, onClose, onDone }
           : prev
       );
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao atualizar item.");
+      setError(formatFleetApiError(e, "Erro ao atualizar item."));
     } finally {
       setSaving(false);
     }
@@ -209,7 +210,7 @@ export function FleetCheckoutCheckinModal({ mode, reservation, onClose, onDone }
       onDone();
       onClose();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao registrar operação.");
+      setError(formatFleetApiError(e, "Erro ao registrar operação."));
     } finally {
       setSaving(false);
     }

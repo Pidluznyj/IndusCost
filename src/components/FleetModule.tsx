@@ -10,7 +10,7 @@ import { FleetFinancialTab } from "@/src/components/fleet/FleetFinancialTab";
 import { FleetReportsTab } from "@/src/components/fleet/FleetReportsTab";
 import { FleetMobileUsageFlow } from "@/src/components/fleet/FleetMobileUsageFlow";
 import { FleetImportSettings } from "@/src/components/fleet/FleetImportSettings";
-import { FleetPermissionDenied, useFleetPermissions } from "@/src/components/fleet/fleetUi";
+import { FleetPermissionDenied, useFleetPermissions, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 import type { FleetDashboardResponse } from "@/src/types/fleet";
 
 const TABS = [
@@ -85,7 +85,7 @@ export function FleetModule() {
       if (tab === "dashboard") await loadDashboard();
       else if (tab === "settings") await loadSettings();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar dados.");
+      setError(formatFleetApiError(e, "Erro ao carregar dados."));
     } finally {
       setLoading(false);
     }
@@ -116,7 +116,7 @@ export function FleetModule() {
       setSettingsSaved(true);
       await loadSettings();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar configurações.");
+      setError(formatFleetApiError(e, "Erro ao salvar configurações."));
     } finally {
       setLoading(false);
     }
