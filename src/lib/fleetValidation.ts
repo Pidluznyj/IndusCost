@@ -92,20 +92,88 @@ export function isCnhValid(
   return exp.getTime() >= at.getTime();
 }
 
+export type CnhComputedStatus = "VALID" | "EXPIRING" | "EXPIRED" | "MISSING";
+
+export function computeCnhStatus(
+  cnhExpirationDate: Date | string | null | undefined,
+  alertDays: number,
+  now: Date = new Date()
+): CnhComputedStatus {
+  if (!cnhExpirationDate) return "MISSING";
+  const exp = new Date(cnhExpirationDate);
+  if (Number.isNaN(exp.getTime())) return "MISSING";
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const expDay = new Date(exp);
+  expDay.setHours(23, 59, 59, 999);
+  if (expDay.getTime() < today.getTime()) return "EXPIRED";
+  const threshold = new Date(today);
+  threshold.setDate(threshold.getDate() + alertDays);
+  if (expDay.getTime() <= threshold.getTime()) return "EXPIRING";
+  return "VALID";
+}
+
+/** Matriz mínima categoria CNH × tipo veículo (expansível via settings no futuro). */
+export const VEHICLE_TYPE_MIN_CNH_CATEGORY: Record<string, string> = {
+  CARRO: "B",
+  VAN: "B",
+  CAMINHAO: "C",
+  MOTO: "A",
+  UTILITARIO: "B",
+};
+
+const CNH_CATEGORY_RANK: Record<string, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };
+
+export function parseCnhCategoryRank(category: string | null | undefined): number {
+  if (!category) return 0;
+  const letter = category.toUpperCase().replace(/[^A-E]/g, "").charAt(0);
+  return CNH_CATEGORY_RANK[letter] ?? 0;
+}
+
+export function assertCnhCategoryForVehicle(
+  cnhCategory: string | null | undefined,
+  vehicleType: string | null | undefined
+): void {
+  if (!cnhCategory?.trim() || !vehicleType?.trim()) return;
+  const minCat = VEHICLE_TYPE_MIN_CNH_CATEGORY[vehicleType.trim().toUpperCase()];
+  if (!minCat) return;
+  const driverRank = parseCnhCategoryRank(cnhCategory);
+  const minRank = parseCnhCategoryRank(minCat);
+  if (driverRank < minRank) {
+    throw new FleetValidationError(
+      `Categoria CNH (${cnhCategory}) incompatível com tipo de veículo (${vehicleType}); mínimo exigido: ${minCat}.`
+    );
+  }
+}
+
+export function assertReasonRequired(reason: unknown, label = "Motivo"): string {
+  const r = typeof reason === "string" ? reason.trim() : "";
+  if (!r) throw new FleetValidationError(`${label} é obrigatório.`);
+  return r;
+}
+
 export function assertDriverAuthorizedForReservation(
-  driver: Pick<FleetDriver, "cnhExpirationDate" | "status" | "name">,
-  options?: { blockExpiredCnh?: boolean; at?: Date }
+  driver: Pick<FleetDriver, "cnhExpirationDate" | "cnhCategory" | "status" | "name">,
+  options?: {
+    blockExpiredCnh?: boolean;
+    at?: Date;
+    vehicleType?: string | null;
+    requireAuthorized?: boolean;
+  }
 ): void {
   const at = options?.at ?? new Date();
   if (driver.status === "BLOCKED" || driver.status === "INACTIVE") {
     throw new FleetValidationError("Motorista bloqueado ou inativo não pode ser vinculado à reserva.");
   }
-  if (driver.status !== "AUTHORIZED") {
+  if (options?.requireAuthorized !== false && driver.status !== "AUTHORIZED") {
     throw new FleetValidationError("Motorista precisa estar autorizado para reserva.");
   }
   const blockExpired = options?.blockExpiredCnh ?? true;
   if (blockExpired && !isCnhValid(driver, at)) {
     throw new FleetValidationError("CNH vencida: motorista não pode ser vinculado à reserva/retirada.");
+  }
+  if (options?.vehicleType) {
+    assertCnhCategoryForVehicle(driver.cnhCategory, options.vehicleType);
   }
 }
 

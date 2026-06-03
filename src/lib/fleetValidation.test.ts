@@ -2,10 +2,15 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   assertBlockReason,
+  assertCnhCategoryForVehicle,
   assertContractDateRange,
+  assertDateRange,
+  assertDriverAuthorizedForReservation,
   assertKmRange,
+  assertReasonRequired,
   assertVehicleCanDispose,
   assertVehicleReservable,
+  computeCnhStatus,
   computeDocumentStatus,
   findReservationConflict,
   isCnhValid,
@@ -13,6 +18,7 @@ import {
   reservationPeriodsOverlap,
   FleetValidationError,
 } from "./fleetValidation.js";
+import { canUserCancelReservation } from "./fleetReservationOps.js";
 
 describe("fleetValidation", () => {
   it("reservationPeriodsOverlap detects overlap", () => {
@@ -117,5 +123,55 @@ describe("fleetValidation", () => {
       computeDocumentStatus("2027-01-01", 30, now),
       "VALID"
     );
+  });
+
+  it("computeCnhStatus detects expired and expiring", () => {
+    const now = new Date("2026-06-01");
+    assert.equal(computeCnhStatus("2020-01-01", 30, now), "EXPIRED");
+    assert.equal(computeCnhStatus("2026-06-20", 30, now), "EXPIRING");
+    assert.equal(computeCnhStatus("2027-01-01", 30, now), "VALID");
+    assert.equal(computeCnhStatus(null, 30, now), "MISSING");
+  });
+
+  it("assertReasonRequired blocks empty reject/cancel reason", () => {
+    assert.throws(() => assertReasonRequired("", "Motivo da rejeição"));
+    assert.equal(assertReasonRequired("  conflito de agenda  "), "conflito de agenda");
+  });
+
+  it("assertDateRange rejects end before start", () => {
+    const start = new Date("2026-06-02T10:00:00Z");
+    const end = new Date("2026-06-02T08:00:00Z");
+    assert.throws(
+      () => assertDateRange(start, end, "Reserva"),
+      (e: unknown) => e instanceof FleetValidationError
+    );
+  });
+
+  it("assertDriverAuthorizedForReservation blocks blocked driver and expired CNH", () => {
+    assert.throws(() =>
+      assertDriverAuthorizedForReservation(
+        { name: "A", status: "BLOCKED", cnhExpirationDate: new Date("2027-01-01"), cnhCategory: "B" },
+        { blockExpiredCnh: true }
+      )
+    );
+    assert.throws(() =>
+      assertDriverAuthorizedForReservation(
+        { name: "B", status: "AUTHORIZED", cnhExpirationDate: new Date("2020-01-01"), cnhCategory: "B" },
+        { blockExpiredCnh: true, at: new Date("2026-06-01") }
+      )
+    );
+  });
+
+  it("assertCnhCategoryForVehicle enforces minimum category", () => {
+    assert.throws(() => assertCnhCategoryForVehicle("A", "CAMINHAO"));
+    assert.doesNotThrow(() => assertCnhCategoryForVehicle("C", "CAMINHAO"));
+  });
+
+  it("canUserCancelReservation respects manage vs own reservation", () => {
+    const pending = { requesterUserId: "u1", status: "PENDING_APPROVAL" as const };
+    assert.equal(canUserCancelReservation(pending, "u1", false), true);
+    assert.equal(canUserCancelReservation(pending, "u2", false), false);
+    assert.equal(canUserCancelReservation(pending, "u2", true), true);
+    assert.equal(canUserCancelReservation({ ...pending, status: "IN_USE" }, "u1", true), false);
   });
 });

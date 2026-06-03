@@ -114,6 +114,95 @@ export type FleetVehicleDetail = FleetVehicleRow & {
   documents?: FleetDocumentRow[];
 };
 
+export type FleetDriverAlert = {
+  level: "critical" | "warning";
+  code: string;
+  message: string;
+};
+
+export type CnhComputedStatus = "VALID" | "EXPIRING" | "EXPIRED" | "MISSING";
+
+export type FleetDriverRow = {
+  id: string;
+  name: string;
+  cpf: string;
+  cnhNumber: string | null;
+  cnhCategory: string | null;
+  cnhExpirationDate: string | null;
+  cnhStatus?: CnhComputedStatus;
+  phone: string | null;
+  email: string | null;
+  unit: string | null;
+  costCenter: string | null;
+  status: FleetDriverStatus;
+  notes: string | null;
+  alerts?: FleetDriverAlert[];
+};
+
+export type FleetReservationRow = {
+  id: string;
+  vehicleId: string;
+  driverId: string | null;
+  requesterUserId: string | null;
+  startDateTime: string;
+  endDateTime: string;
+  destination: string | null;
+  reason: string | null;
+  costCenter: string | null;
+  status: FleetReservationStatus;
+  approvalStatus: string | null;
+  rejectionReason: string | null;
+  cancelReason: string | null;
+  notes: string | null;
+  vehicle?: {
+    id: string;
+    plate: string | null;
+    brand: string;
+    model: string;
+    vehicleType?: string | null;
+    status?: FleetVehicleStatus;
+    unit?: string | null;
+    costCenter?: string | null;
+  };
+  driver?: {
+    id: string;
+    name: string;
+    status: FleetDriverStatus;
+    cnhExpirationDate: string | null;
+    cnhCategory?: string | null;
+  } | null;
+};
+
+export type FleetAvailabilityVehicle = {
+  id: string;
+  plate: string | null;
+  brand: string;
+  model: string;
+  vehicleType: string | null;
+  status: FleetVehicleStatus;
+  unit: string | null;
+  costCenter: string | null;
+  currentKm: number;
+};
+
+export const CNH_CATEGORY_OPTIONS = ["A", "B", "C", "D", "E", "AB", "AC", "AD", "AE"] as const;
+
+export const DRIVER_STATUS_OPTIONS: { value: FleetDriverStatus; label: string }[] = [
+  { value: "AUTHORIZED", label: "Autorizado" },
+  { value: "PENDING", label: "Pendente" },
+  { value: "BLOCKED", label: "Bloqueado" },
+  { value: "INACTIVE", label: "Inativo" },
+];
+
+export const RESERVATION_STATUS_OPTIONS: { value: FleetReservationStatus; label: string }[] = [
+  { value: "PENDING_APPROVAL", label: "Aguardando aprovação" },
+  { value: "APPROVED", label: "Aprovada" },
+  { value: "REJECTED", label: "Rejeitada" },
+  { value: "CANCELED", label: "Cancelada" },
+  { value: "IN_USE", label: "Em uso" },
+  { value: "FINISHED", label: "Finalizada" },
+];
+
 export type FleetDashboardResponse = {
   cards: {
     totalVehicles: number;

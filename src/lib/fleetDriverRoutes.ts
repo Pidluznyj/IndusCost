@@ -1,0 +1,195 @@
+import type express from "express";
+import { prisma } from "@/src/lib/prisma.js";
+import type { AppAuthContext } from "@/src/lib/appAuth.js";
+import { FleetValidationError, assertBlockReason } from "@/src/lib/fleetValidation.js";
+import {
+  assertUniqueActiveDriverCpf,
+  loadFleetSettings,
+  writeFleetAuditLog,
+} from "@/src/lib/fleetService.js";
+import {
+  buildDriverAlerts,
+  buildDriverListWhere,
+  changeDriverStatus,
+  filterDriversByCnh,
+  getDriverOrThrow,
+  parseDriverInput,
+  serializeDriver,
+} from "@/src/lib/fleetDriverOps.js";
+
+type AuthGuards = {
+  requireAppAuth: express.RequestHandler;
+  requirePermission: (p: string) => express.RequestHandler;
+  requireAnyPermission: (ps: string[]) => express.RequestHandler;
+  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
+};
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
+function fleetError(res: express.Response, e: unknown, logLabel: string) {
+  if (e instanceof FleetValidationError) return res.status(400).json({ error: e.message });
+  console.error(logLabel, e);
+  return res.status(500).json({ error: e instanceof Error ? e.message : "Erro interno." });
+}
+
+async function actorId(req: express.Request, getCurrentAppUser: AuthGuards["getCurrentAppUser"]) {
+  const u = await getCurrentAppUser(req);
+  return u?.id ?? u?.email ?? null;
+}
+
+export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards) {
+  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = auth;
+  const fleetView = [requireAppAuth, requirePermission("fleet.view")] as express.RequestHandler[];
+  const fleetDriverManage = [
+    requireAppAuth,
+    requireAnyPermission(["fleet.manage"]),
+  ] as express.RequestHandler[];
+
+  app.get("/api/fleet/drivers", ...fleetView, async (req, res) => {
+    try {
+      const settings = await loadFleetSettings();
+      const alertDays = Number(settings.diasAlertaCnh ?? "30") || 30;
+      const where = buildDriverListWhere({
+        status: String(req.query.status ?? "").trim(),
+        unit: String(req.query.unit ?? "").trim(),
+        costCenter: String(req.query.costCenter ?? "").trim(),
+        search: String(req.query.search ?? "").trim(),
+      });
+      let drivers = await prisma.fleetDriver.findMany({ where, orderBy: { name: "asc" } });
+      drivers = await filterDriversByCnh(drivers, String(req.query.cnhFilter ?? "").trim());
+      const enriched = await Promise.all(
+        drivers.map(async (d) => ({
+          ...serializeDriver(d, alertDays),
+          alerts: await buildDriverAlerts(d),
+        }))
+      );
+      res.json({ drivers: enriched });
+    } catch (e) {
+      fleetError(res, e, "GET /api/fleet/drivers");
+    }
+  });
+
+  app.get("/api/fleet/drivers/:id", ...fleetView, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const driver = await getDriverOrThrow(id);
+      const settings = await loadFleetSettings();
+      const alertDays = Number(settings.diasAlertaCnh ?? "30") || 30;
+      const logs = await prisma.fleetAuditLog.findMany({
+        where: { entityType: "FleetDriver", entityId: id },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      });
+      res.json({
+        driver: { ...serializeDriver(driver, alertDays), alerts: await buildDriverAlerts(driver) },
+        auditLogs: logs,
+      });
+    } catch (e) {
+      fleetError(res, e, "GET /api/fleet/drivers/:id");
+    }
+  });
+
+  app.post("/api/fleet/drivers", ...fleetDriverManage, async (req, res) => {
+    try {
+      const data = parseDriverInput(req.body ?? {});
+      await assertUniqueActiveDriverCpf(data.cpf);
+      const userId = await actorId(req, getCurrentAppUser);
+      const created = await prisma.fleetDriver.create({
+        data: {
+          name: data.name,
+          cpf: data.cpf,
+          cnhNumber: data.cnhNumber ?? null,
+          cnhCategory: data.cnhCategory ?? null,
+          cnhExpirationDate:
+            data.cnhExpirationDate !== undefined ? data.cnhExpirationDate : null,
+          phone: data.phone ?? null,
+          email: data.email ?? null,
+          unit: data.unit ?? null,
+          costCenter: data.costCenter ?? null,
+          status: data.status ?? "PENDING",
+          notes: data.notes ?? null,
+        },
+      });
+      await writeFleetAuditLog({
+        entityType: "FleetDriver",
+        entityId: created.id,
+        action: "CREATE",
+        newValue: JSON.stringify({ name: created.name, status: created.status }),
+        userId,
+      });
+      res.status(201).json({ driver: created });
+    } catch (e) {
+      fleetError(res, e, "POST /api/fleet/drivers");
+    }
+  });
+
+  app.put("/api/fleet/drivers/:id", ...fleetDriverManage, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const existing = await getDriverOrThrow(id);
+      const data = parseDriverInput(req.body ?? {}, existing);
+      if (data.cpf !== existing.cpf) await assertUniqueActiveDriverCpf(data.cpf, id);
+      const userId = await actorId(req, getCurrentAppUser);
+      const updated = await prisma.fleetDriver.update({
+        where: { id },
+        data: {
+          name: data.name,
+          cpf: data.cpf,
+          cnhNumber: data.cnhNumber,
+          cnhCategory: data.cnhCategory,
+          cnhExpirationDate: data.cnhExpirationDate,
+          phone: data.phone,
+          email: data.email,
+          unit: data.unit,
+          costCenter: data.costCenter,
+          status: data.status,
+          notes: data.notes,
+        },
+      });
+      await writeFleetAuditLog({
+        entityType: "FleetDriver",
+        entityId: id,
+        action: "UPDATE",
+        oldValue: JSON.stringify({ status: existing.status }),
+        newValue: JSON.stringify({ status: updated.status }),
+        userId,
+      });
+      res.json({ driver: updated });
+    } catch (e) {
+      fleetError(res, e, "PUT /api/fleet/drivers/:id");
+    }
+  });
+
+  app.post("/api/fleet/drivers/:id/block", ...fleetDriverManage, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const reason = assertBlockReason(req.body?.reason);
+      const userId = await actorId(req, getCurrentAppUser);
+      const updated = await changeDriverStatus(id, "BLOCKED", userId, "BLOCK", reason);
+      res.json({ driver: updated });
+    } catch (e) {
+      fleetError(res, e, "POST block driver");
+    }
+  });
+
+  app.post("/api/fleet/drivers/:id/unblock", ...fleetDriverManage, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const reason = assertBlockReason(req.body?.reason);
+      const userId = await actorId(req, getCurrentAppUser);
+      const updated = await changeDriverStatus(id, "AUTHORIZED", userId, "UNBLOCK", reason);
+      res.json({ driver: updated });
+    } catch (e) {
+      fleetError(res, e, "POST unblock driver");
+    }
+  });
+}
