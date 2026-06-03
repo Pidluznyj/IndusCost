@@ -12,6 +12,7 @@ import {
   componentCodeMatchesBasePrefix,
   expandCodeVariants,
 } from "@/src/lib/nomusComponentRegistryConflictShared";
+import { loadEffectiveNomusStageSummaryByCode } from "@/src/lib/nomusRegistryStageSnapshotView";
 
 export type ComponentRegistryConflictPreview = {
   generatedAt: string;
@@ -53,6 +54,17 @@ export type ComponentRegistryConflictPreview = {
     componentDescription: string | null;
     quantity: number | null;
     lineCount: number;
+    latestSyncedAt: string | null;
+    latestRunId: string | null;
+  }>;
+  historicalNomusStageByParent: Array<{
+    parentCode: string;
+    componentCode: string;
+    componentDescription: string | null;
+    quantity: number | null;
+    syncedAt: string;
+    runId: string | null;
+    note: string;
   }>;
   productBomLinks: Array<{
     productBomLineId: string;
@@ -146,45 +158,35 @@ export async function buildComponentRegistryConflictPreview(input: {
     orderBy: { code: "asc" },
   });
 
-  const nomusStageRows = await prisma.nomusBomComponentStage.findMany({
-    where: {
-      OR: [
-        { componentCode: { startsWith: likeCore, mode: "insensitive" } },
-        ...(parentCode
-          ? [{ parentCode: { in: [parentCode, normalizeSku(parentCode)] } }]
-          : []),
-      ],
-    },
-    select: {
-      parentCode: true,
-      componentCode: true,
-      componentDescription: true,
-      qtdeNecessaria: true,
-    },
+  const effectiveStageSummary = await loadEffectiveNomusStageSummaryByCode(codeBase, {
+    parentCode,
   });
 
-  const stageByParentMap = new Map<
-    string,
-    { componentCode: string; componentDescription: string | null; qty: number; count: number }
-  >();
-  for (const row of nomusStageRows) {
-    if (!componentCodeMatchesBasePrefix(codeBase, row.componentCode)) {
-      if (!parentCode) continue;
-    }
-    const key = `${normalizeSku(row.parentCode)}::${normalizeComponentCode(row.componentCode)}`;
-    const qty = row.qtdeNecessaria != null ? Number(row.qtdeNecessaria.toString()) : null;
-    const prev = stageByParentMap.get(key);
-    if (prev) {
-      prev.count += 1;
-      if (qty != null) prev.qty = (prev.qty ?? 0) + qty;
-    } else {
-      stageByParentMap.set(key, {
-        componentCode: row.componentCode,
-        componentDescription: row.componentDescription,
-        qty: qty ?? 0,
-        count: 1,
-      });
-    }
+  const nomusStageByParent = effectiveStageSummary.map((row) => ({
+    parentCode: row.parentCode,
+    componentCode: row.componentCode,
+    componentDescription: row.componentDescription,
+    quantity: row.quantity,
+    lineCount: 1,
+    latestSyncedAt: row.latestSyncedAt,
+    latestRunId: row.latestRunId,
+  }));
+
+  let parentDetail: RegistryCleanupParentDetail | undefined;
+  let historicalNomusStageByParent: ComponentRegistryConflictPreview["historicalNomusStageByParent"] =
+    [];
+  if (parentCode) {
+    const { buildParentDetail } = await import("@/src/lib/nomusComponentRegistryCleanup");
+    parentDetail = await buildParentDetail(parentCode, codeBase);
+    historicalNomusStageByParent = parentDetail.historicalNomusStageLines.map((h) => ({
+      parentCode: parentDetail!.parentCode,
+      componentCode: h.componentCode,
+      componentDescription: h.componentDescription,
+      quantity: h.quantity,
+      syncedAt: h.syncedAt,
+      runId: h.runId,
+      note: h.note,
+    }));
   }
 
   const bomLinks =
@@ -212,24 +214,20 @@ export async function buildComponentRegistryConflictPreview(input: {
     orderBy: [{ ParentProduct: { sku: "asc" } }, { id: "asc" }],
   });
 
-  const stageCodesForParent = parentCode
-    ? nomusStageRows
-        .filter((r) => normalizeSku(r.parentCode) === normalizeSku(parentCode))
-        .map((r) => r.componentCode)
-    : [...new Set(nomusStageRows.map((r) => r.componentCode))];
+  const stageCodesForResolver =
+    parentDetail && parentDetail.nomusStageLines.length > 0
+      ? parentDetail.nomusStageLines.map((l) => l.componentCode)
+      : [...new Set(effectiveStageSummary.map((r) => r.componentCode))];
 
   const resolver =
-    stageCodesForParent.length > 0
-      ? await resolveNomusComponentCodes(stageCodesForParent)
+    stageCodesForResolver.length > 0
+      ? await resolveNomusComponentCodes(stageCodesForResolver)
       : await resolveNomusComponentCodes(
           [...new Set([...materials.map((m) => m.code), ...products.map((p) => p.sku)])]
         );
 
   let parentComparison: ComponentRegistryConflictPreview["parentComparison"];
-  let parentDetail: ComponentRegistryConflictPreview["parentDetail"];
-  if (parentCode) {
-    const { buildParentDetail } = await import("@/src/lib/nomusComponentRegistryCleanup");
-    parentDetail = await buildParentDetail(parentCode, codeBase);
+  if (parentCode && parentDetail) {
     const cmp = await buildBomComparisonForParentCode(parentCode);
     const linesForBase = cmp.lines
       .filter((l) => componentCodeMatchesBasePrefix(codeBase, l.componentCode))
@@ -276,16 +274,18 @@ export async function buildComponentRegistryConflictPreview(input: {
     risks.push("Múltiplos cadastros com prefixo semelhante (sufixo/hífen diferentes).");
   }
 
-  const nomusCodes = new Set(
-    nomusStageRows.map((r) => normalizeComponentCode(r.componentCode))
+  const nomusCodesEffective = new Set(
+    (parentDetail?.nomusStageLines ?? effectiveStageSummary).map((r) =>
+      normalizeComponentCode(r.componentCode)
+    )
   );
   const indusOnlyCodes = new Set(
     (parentComparison?.linesForBase ?? [])
       .filter((l) => l.status === "ONLY_IN_INDUSCOST")
       .map((l) => normalizeComponentCode(l.componentCode))
   );
-  if (indusOnlyCodes.size > 0 && nomusCodes.size > 0) {
-    const overlap = [...indusOnlyCodes].some((c) => nomusCodes.has(c));
+  if (indusOnlyCodes.size > 0 && nomusCodesEffective.size > 0) {
+    const overlap = [...indusOnlyCodes].some((c) => nomusCodesEffective.has(c));
     if (!overlap) {
       risks.push(
         "Códigos ONLY_IN_INDUSCOST não batem exatamente com componentCode Nomus (ex.: 420.01A vs 420.01A-) — gera revisão local."
@@ -324,9 +324,19 @@ export async function buildComponentRegistryConflictPreview(input: {
     }
   }
 
-  const wouldNomusRecreateAfterCleanup =
-    nomusStageRows.length > 0 &&
-    activeMaterials.length + activeProducts.length > 0;
+  const wouldNomusRecreateAfterCleanup = parentCode
+    ? (parentDetail?.nomusStageLines.length ?? 0) > 0
+    : effectiveStageSummary.length > 0;
+
+  if (
+    parentDetail &&
+    parentDetail.historicalNomusStageLines.length > 0 &&
+    parentDetail.nomusStageLines.length === 0
+  ) {
+    risks.push(
+      "420.01* só em snapshot Nomus antigo (historicalNomusStageLines) — wouldNomusRecreateAfterCleanup=false para este pai."
+    );
+  }
 
   if (prefersMaterialForNomusComponent("420.01A-")) {
     recommendations.push(
@@ -368,16 +378,8 @@ export async function buildComponentRegistryConflictPreview(input: {
       typeName: c.typeName,
       syncedAt: c.syncedAt.toISOString(),
     })),
-    nomusStageByParent: [...stageByParentMap.entries()].map(([key, v]) => {
-      const pCode = key.split("::")[0] ?? "";
-      return {
-        parentCode: pCode,
-        componentCode: v.componentCode,
-        componentDescription: v.componentDescription,
-        quantity: v.qty,
-        lineCount: v.count,
-      };
-    }),
+    nomusStageByParent,
+    historicalNomusStageByParent,
     productBomLinks: bomLinks.map((row) => {
       const linkKind = row.materialId ? ("MATERIAL" as const) : row.childProductId ? ("PRODUCT" as const) : ("UNKNOWN" as const);
       const linkedCode = row.Material?.code ?? row.ChildProduct?.sku ?? "?";

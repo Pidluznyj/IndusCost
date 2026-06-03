@@ -7,6 +7,10 @@ import {
   componentCodeMatchesBasePrefix,
   confirmationTextForRegistryCleanup,
 } from "@/src/lib/nomusComponentRegistryConflictShared";
+import {
+  loadEffectiveNomusCodesByParent,
+  loadParentNomusStageSnapshotForCode,
+} from "@/src/lib/nomusRegistryStageSnapshotView";
 
 export type RegistryCleanupScope = "ONE_PARENT" | "ALL_PARENTS";
 
@@ -32,10 +36,22 @@ export type RegistryCleanupPlanLine = {
 export type RegistryCleanupParentDetail = {
   parentCode: string;
   parentProductId: string | null;
+  latestSyncedAt: string | null;
+  latestRunId: string | null;
+  /** Snapshot Nomus efetivo atual (mesmo critério do apply). */
   nomusStageLines: Array<{
     componentCode: string;
     componentDescription: string | null;
     quantity: number | null;
+  }>;
+  /** Apenas diagnóstico — não usado para wouldNomusRecreate nem expectedNomusComponentCodes. */
+  historicalNomusStageLines: Array<{
+    componentCode: string;
+    componentDescription: string | null;
+    quantity: number | null;
+    syncedAt: string;
+    runId: string | null;
+    note: string;
   }>;
   productBomLines: Array<{
     productBomLineId: string;
@@ -334,32 +350,26 @@ async function loadExpectedNomusCodesByParent(input: {
   codeBase: string;
   scope: RegistryCleanupScope;
   parentCode: string | null;
+  parentSkusFromPlan?: string[];
 }): Promise<{ global: string[]; byParent: Map<string, string[]> }> {
-  const likeCore = codeBaseLikeCore(input.codeBase);
-  const stageWhere =
-    input.scope === "ONE_PARENT" && input.parentCode
-      ? {
-          parentCode: { in: [input.parentCode, normalizeSku(input.parentCode)] },
-          componentCode: { startsWith: likeCore, mode: "insensitive" as const },
-        }
-      : { componentCode: { startsWith: likeCore, mode: "insensitive" as const } };
-
-  const rows = await prisma.nomusBomComponentStage.findMany({
-    where: stageWhere,
-    select: { parentCode: true, componentCode: true },
-  });
-
-  const byParent = new Map<string, string[]>();
-  const globalSet = new Set<string>();
-  for (const row of rows) {
-    if (!componentCodeMatchesBasePrefix(input.codeBase, row.componentCode)) continue;
-    globalSet.add(row.componentCode);
-    const pKey = normalizeSku(row.parentCode);
-    const list = byParent.get(pKey) ?? [];
-    if (!list.includes(row.componentCode)) list.push(row.componentCode);
-    byParent.set(pKey, list);
+  if (input.scope === "ONE_PARENT" && input.parentCode) {
+    const pKey = normalizeSku(input.parentCode);
+    const view = await loadParentNomusStageSnapshotForCode({
+      parentCode: input.parentCode,
+      codeBase: input.codeBase,
+    });
+    const codes = [...new Set(view.effectiveLines.map((l) => l.componentCode))];
+    return { global: codes, byParent: new Map([[pKey, codes]]) };
   }
 
+  const parentKeys = [
+    ...new Set((input.parentSkusFromPlan ?? []).map((p) => normalizeSku(p)).filter(Boolean)),
+  ];
+  const byParent = await loadEffectiveNomusCodesByParent(input.codeBase, parentKeys);
+  const globalSet = new Set<string>();
+  for (const codes of byParent.values()) {
+    for (const c of codes) globalSet.add(c);
+  }
   return { global: [...globalSet], byParent };
 }
 
@@ -367,30 +377,9 @@ export async function buildParentDetail(
   parentCode: string,
   codeBase: string
 ): Promise<RegistryCleanupParentDetail> {
-  const likeCore = codeBaseLikeCore(codeBase);
   const parent = await loadParentProduct(parentCode);
 
-  const nomusStageLines = parent
-    ? (
-        await prisma.nomusBomComponentStage.findMany({
-          where: {
-            parentCode: { in: [parentCode, parent.sku, normalizeSku(parentCode)] },
-          },
-          select: {
-            componentCode: true,
-            componentDescription: true,
-            qtdeNecessaria: true,
-          },
-        })
-      )
-        .filter((r) => componentCodeMatchesBasePrefix(codeBase, r.componentCode))
-        .map((r) => ({
-          componentCode: r.componentCode,
-          componentDescription: r.componentDescription,
-          quantity:
-            r.qtdeNecessaria != null ? Number(r.qtdeNecessaria.toString()) : null,
-        }))
-    : [];
+  const stageView = await loadParentNomusStageSnapshotForCode({ parentCode, codeBase });
 
   const productBomRows = parent
     ? await prisma.productBOM.findMany({
@@ -451,7 +440,10 @@ export async function buildParentDetail(
   return {
     parentCode: parent?.sku ?? parentCode,
     parentProductId: parent?.id ?? null,
-    nomusStageLines,
+    latestSyncedAt: stageView.latestSyncedAt,
+    latestRunId: stageView.latestRunId,
+    nomusStageLines: stageView.effectiveLines,
+    historicalNomusStageLines: stageView.historicalLines,
     productBomLines,
     comparisonLines,
   };
@@ -477,14 +469,16 @@ export async function buildRegistryCleanupPlan(input: {
   }
 
   const scope: RegistryCleanupScope = allParents ? "ALL_PARENTS" : "ONE_PARENT";
+  const { bomRows } = await loadScopedBomRows({ codeBase: code, scope, parentCode });
+
+  const parentSkusFromBom = [...new Set(bomRows.map((r) => r.ParentProduct.sku))];
   const { global: expectedNomusGlobal, byParent: expectedByParent } =
     await loadExpectedNomusCodesByParent({
       codeBase: code,
       scope,
       parentCode,
+      parentSkusFromPlan: parentSkusFromBom,
     });
-
-  const { bomRows } = await loadScopedBomRows({ codeBase: code, scope, parentCode });
 
   const linesAllowed: RegistryCleanupPlanLine[] = [];
   const linesBlocked: RegistryCleanupPlanLine[] = [];
@@ -572,11 +566,31 @@ export async function buildRegistryCleanupPlan(input: {
     risks.push("Linhas não controladas pelo Nomus exigem revisão manual.");
   }
 
-  const wouldNomusRecreateAfterCleanup = expectedNomusGlobal.length > 0;
+  const wouldNomusRecreateAfterCleanup =
+    scope === "ONE_PARENT" && parentCode
+      ? (expectedByParent.get(normalizeSku(parentCode)) ?? []).length > 0
+      : [...expectedByParent.values()].some((codes) => codes.length > 0);
 
   if (parentDetail && parentDetail.comparisonLines.length === 0 && parentDetail.productBomLines.length > 0) {
     recommendations.push(
       "comparisonLines vazio mas há ProductBOM no pai: possível divergência de código (ex. 420.01A vs 420.01A-) — use nomusStageLines e productBomLines do parentDetail.",
+    );
+  }
+  if (
+    parentDetail &&
+    parentDetail.historicalNomusStageLines.length > 0 &&
+    parentDetail.nomusStageLines.length === 0
+  ) {
+    risks.push(
+      "Componente presente apenas em snapshot Nomus antigo (historicalNomusStageLines) — apply Nomus não recriará após limpeza."
+    );
+    recommendations.push(
+      `${code}: existiu em snapshot antigo (${parentDetail.historicalNomusStageLines.map((h) => `${h.componentCode} @ ${h.syncedAt}`).join("; ")}) mas não na BOM efetiva atual (latestSyncedAt=${parentDetail.latestSyncedAt ?? "—"}). wouldNomusRecreateAfterCleanup=false para este pai.`
+    );
+  }
+  if (!wouldNomusRecreateAfterCleanup && parentDetail?.productBomLines.length) {
+    recommendations.push(
+      "Após limpeza, a linha 420.01* não voltará automaticamente neste pai até o Nomus incluir o componente no snapshot efetivo e você rodar apply BOM separadamente."
     );
   }
 
