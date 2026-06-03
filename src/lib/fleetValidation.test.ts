@@ -442,6 +442,124 @@ describe("fleet mobile usage flow", async () => {
   });
 });
 
+describe("fleet alerts engine", async () => {
+  const {
+    contractToFleetAlert,
+    dedupeFleetAlerts,
+    documentToFleetAlert,
+    driverCnhToFleetAlert,
+    filterFleetAlertsByPermission,
+    reservationOverdueToFleetAlert,
+  } = await import("./fleetAlertsService.js");
+
+  it("documento vencendo gera alerta", () => {
+    const now = new Date("2026-06-01");
+    const exp = new Date("2026-06-15");
+    const alert = documentToFleetAlert(
+      {
+        id: "doc-1",
+        documentType: "SEGURO",
+        expirationDate: exp,
+        vehicle: { plate: "ABC1D23", brand: "Ford" },
+      },
+      30,
+      now
+    );
+    assert.ok(alert);
+    assert.equal(alert?.code, "DOCUMENT_EXPIRING");
+    assert.equal(alert?.level, "warning");
+  });
+
+  it("documento renovado remove alerta", () => {
+    const now = new Date("2026-06-01");
+    const exp = new Date("2027-01-01");
+    const alert = documentToFleetAlert(
+      {
+        id: "doc-1",
+        documentType: "SEGURO",
+        expirationDate: exp,
+        vehicle: { plate: "ABC1D23", brand: "Ford" },
+      },
+      30,
+      now
+    );
+    assert.equal(alert, null);
+  });
+
+  it("CNH vencida gera alerta", () => {
+    const alert = driverCnhToFleetAlert(
+      {
+        id: "drv-1",
+        name: "João",
+        cnhExpirationDate: new Date("2020-01-01"),
+        status: "AUTHORIZED",
+      },
+      30,
+      new Date("2026-06-01")
+    );
+    assert.ok(alert);
+    assert.equal(alert?.code, "CNH_EXPIRED");
+  });
+
+  it("contrato vencido gera alerta", () => {
+    const alert = contractToFleetAlert(
+      {
+        id: "ctr-1",
+        contractNumber: "C-1",
+        endDate: new Date("2025-01-01"),
+        vehicle: { plate: "XYZ9Z99", brand: "VW" },
+      },
+      30,
+      new Date("2026-06-01")
+    );
+    assert.ok(alert);
+    assert.equal(alert?.code, "CONTRACT_EXPIRED");
+  });
+
+  it("reserva atrasada gera alerta", () => {
+    const alert = reservationOverdueToFleetAlert({
+      id: "res-1",
+      vehicle: { plate: "AAA1A11", brand: "Fiat" },
+    });
+    assert.equal(alert.code, "RESERVATION_OVERDUE");
+    assert.equal(alert.level, "critical");
+  });
+
+  it("sem dados retorna vazio após dedupe", () => {
+    assert.deepEqual(dedupeFleetAlerts([]), []);
+  });
+
+  it("dedupe evita alertas duplicados", () => {
+    const a = {
+      level: "warning" as const,
+      code: "DOCUMENT_EXPIRING",
+      message: "x",
+      entityType: "FleetVehicleDocument",
+      entityId: "same-id",
+    };
+    const out = dedupeFleetAlerts([a, { ...a }]);
+    assert.equal(out.length, 1);
+  });
+
+  it("usuário sem permissão financeira não vê alerta de pagamento", () => {
+    const alerts = [
+      {
+        level: "warning" as const,
+        code: "FINE_NO_DRIVER",
+        message: "multa",
+      },
+      {
+        level: "warning" as const,
+        code: "FINE_PENDING_PAYMENT",
+        message: "pagamento",
+      },
+    ];
+    const filtered = filterFleetAlertsByPermission(alerts, false);
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0]?.code, "FINE_NO_DRIVER");
+  });
+});
+
 describe("fleet hardening", async () => {
   const { canAccessFleetRoute, canViewFleetFinancial, FLEET_ROUTE_GUARDS } = await import(
     "./fleetAuth.js"

@@ -1,10 +1,10 @@
 import type express from "express";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import { FleetValidationError } from "@/src/lib/fleetValidation.js";
-import { loadFleetSettings, writeFleetAuditLog } from "@/src/lib/fleetService.js";
+import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { buildFleetFinancialDashboard, maskFinancialData } from "@/src/lib/fleetFinancialOps.js";
+import { getFleetAlerts } from "@/src/lib/fleetAlertsService.js";
 import {
-  buildFleetAlerts,
   buildFleetManagementDashboard,
   FLEET_EDITABLE_SETTINGS_KEYS,
   fleetReportToCsv,
@@ -57,11 +57,13 @@ export function registerFleetManagementRoutes(app: express.Express, auth: AuthGu
 
   app.get("/api/fleet/alerts", ...fleetView, async (req, res) => {
     try {
-      const settings = await loadFleetSettings();
-      const alerts = await buildFleetAlerts(settings);
+      const user = await getCurrentAppUser(req);
+      const showFinancial =
+        user != null &&
+        (hasPermission(user, "fleet.financial.view") || hasPermission(user, "fleet.manage"));
       const level = String(req.query.level ?? "").trim();
-      const filtered = level ? alerts.filter((a) => a.level === level) : alerts;
-      res.json({ alerts: filtered, count: filtered.length });
+      const result = await getFleetAlerts({ showFinancial, level: level || undefined });
+      res.json(result);
     } catch (e) {
       fleetError(res, e, "GET /api/fleet/alerts");
     }
@@ -136,7 +138,8 @@ export async function saveFleetSettingsWithAudit(
 }
 
 export async function getFleetDashboardPayload(showFinancial: boolean) {
-  const { cards, alerts } = await buildFleetManagementDashboard();
+  const { cards } = await buildFleetManagementDashboard();
+  const { alerts } = await getFleetAlerts({ showFinancial });
   const financial = await buildFleetFinancialDashboard();
   return {
     cards,

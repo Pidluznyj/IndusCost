@@ -13,16 +13,15 @@ import { buildMaintenanceDashboardAlerts } from "@/src/lib/fleetMaintenanceOps.j
 import { buildMaintenanceWhere } from "@/src/lib/fleetMaintenanceOps.js";
 import { maskFinancialData } from "@/src/lib/fleetFinancialOps.js";
 import { fleetRowsToCsv } from "@/src/lib/fleetCsv.js";
+import {
+  buildFleetOperationalAlerts,
+  type FleetAlertItem,
+} from "@/src/lib/fleetAlertsService.js";
 
 export const FLEET_NON_OPERATIONAL_STATUSES = ["INACTIVE", "SOLD", "RETURNED"] as const;
 
-export type FleetAlertItem = {
-  level: "critical" | "warning" | "info";
-  code: string;
-  message: string;
-  entityType?: string;
-  entityId?: string;
-};
+export type { FleetAlertItem } from "@/src/lib/fleetAlertsService.js";
+export { buildFleetOperationalAlerts as buildFleetAlerts } from "@/src/lib/fleetAlertsService.js";
 
 export type FleetReportFilters = {
   start?: Date;
@@ -121,174 +120,6 @@ function alertDays(settings: FleetSettingsMap) {
     cnh: Number(settings.diasAlertaCnh ?? "30") || 30,
     contract: Number(settings.diasAlertaDocumento ?? "30") || 30,
   };
-}
-
-export async function buildFleetAlerts(settings?: FleetSettingsMap): Promise<FleetAlertItem[]> {
-  const cfg = settings ?? (await loadFleetSettings());
-  const days = alertDays(cfg);
-  const now = new Date();
-  const alerts: FleetAlertItem[] = [];
-
-  const documents = await prisma.fleetVehicleDocument.findMany({
-    where: { status: { not: "REPLACED" }, expirationDate: { not: null } },
-    include: { vehicle: { select: { plate: true, brand: true, model: true } } },
-    take: 200,
-  });
-  for (const d of documents) {
-    const st = computeDocumentStatus(d.expirationDate, days.doc, now);
-    if (st === "EXPIRED") {
-      alerts.push({
-        level: "critical",
-        code: "DOCUMENT_EXPIRED",
-        message: `Documento vencido (${d.documentType}): ${d.vehicle.plate ?? d.vehicle.brand}`,
-        entityType: "FleetVehicleDocument",
-        entityId: d.id,
-      });
-    } else if (st === "EXPIRING") {
-      alerts.push({
-        level: "warning",
-        code: "DOCUMENT_EXPIRING",
-        message: `Documento vencendo (${d.documentType}): ${d.vehicle.plate ?? d.vehicle.brand}`,
-        entityType: "FleetVehicleDocument",
-        entityId: d.id,
-      });
-    }
-  }
-
-  const drivers = await prisma.fleetDriver.findMany({
-    where: { status: { not: "INACTIVE" } },
-    select: { id: true, name: true, cnhExpirationDate: true, status: true },
-    take: 200,
-  });
-  for (const d of drivers) {
-    const st = computeCnhStatus(d.cnhExpirationDate, days.cnh, now);
-    if (st === "EXPIRED") {
-      alerts.push({
-        level: "critical",
-        code: "CNH_EXPIRED",
-        message: `CNH vencida: ${d.name}`,
-        entityType: "FleetDriver",
-        entityId: d.id,
-      });
-    } else if (st === "EXPIRING") {
-      alerts.push({
-        level: "warning",
-        code: "CNH_EXPIRING",
-        message: `CNH vencendo: ${d.name}`,
-        entityType: "FleetDriver",
-        entityId: d.id,
-      });
-    }
-  }
-
-  const contracts = await prisma.fleetVehicleContract.findMany({
-    where: { status: "ACTIVE" },
-    include: { vehicle: { select: { plate: true, brand: true } } },
-    take: 200,
-  });
-  for (const c of contracts) {
-    if (isContractExpired(c.endDate, now)) {
-      alerts.push({
-        level: "critical",
-        code: "CONTRACT_EXPIRED",
-        message: `Contrato vencido: ${c.vehicle.plate ?? c.vehicle.brand}${c.contractNumber ? ` (${c.contractNumber})` : ""}`,
-        entityType: "FleetVehicleContract",
-        entityId: c.id,
-      });
-    } else if (isContractExpiringSoon(c.endDate, days.contract, now)) {
-      alerts.push({
-        level: "warning",
-        code: "CONTRACT_EXPIRING",
-        message: `Contrato vencendo: ${c.vehicle.plate ?? c.vehicle.brand}`,
-        entityType: "FleetVehicleContract",
-        entityId: c.id,
-      });
-    }
-  }
-
-  const maint = await buildMaintenanceDashboardAlerts();
-  alerts.push(...maint.alerts.map((a) => ({ ...a, code: a.message.includes("vencida") ? "MAINTENANCE_OVERDUE" : "MAINTENANCE_UPCOMING" })));
-
-  const overdueReservations = await prisma.fleetReservation.findMany({
-    where: {
-      endDateTime: { lt: now },
-      status: { in: ["APPROVED", "IN_USE", "PENDING_APPROVAL"] },
-    },
-    include: { vehicle: { select: { plate: true, brand: true } } },
-    take: 30,
-  });
-  for (const r of overdueReservations) {
-    alerts.push({
-      level: "critical",
-      code: "RESERVATION_OVERDUE",
-      message: `Reserva atrasada: ${r.vehicle.plate ?? r.vehicle.brand}`,
-      entityType: "FleetReservation",
-      entityId: r.id,
-    });
-  }
-
-  const noShows = await prisma.fleetReservation.findMany({
-    where: { status: "NO_SHOW" },
-    include: { vehicle: { select: { plate: true } } },
-    orderBy: { endDateTime: "desc" },
-    take: 10,
-  });
-  for (const r of noShows) {
-    alerts.push({
-      level: "warning",
-      code: "RESERVATION_NO_SHOW",
-      message: `No-show: ${r.vehicle.plate ?? "veículo"}`,
-      entityType: "FleetReservation",
-      entityId: r.id,
-    });
-  }
-
-  const blockedVehicles = await prisma.fleetVehicle.findMany({
-    where: { status: "BLOCKED" },
-    select: { id: true, plate: true, brand: true, model: true },
-    take: 20,
-  });
-  for (const v of blockedVehicles) {
-    alerts.push({
-      level: "critical",
-      code: "VEHICLE_BLOCKED",
-      message: `Veículo bloqueado: ${v.plate ?? v.brand} ${v.model}`,
-      entityType: "FleetVehicle",
-      entityId: v.id,
-    });
-  }
-
-  const finesNoDriver = await prisma.fleetFine.findMany({
-    where: { status: "IDENTIFYING_DRIVER" },
-    include: { vehicle: { select: { plate: true } } },
-    take: 20,
-  });
-  for (const f of finesNoDriver) {
-    alerts.push({
-      level: "warning",
-      code: "FINE_NO_DRIVER",
-      message: `Multa sem motorista: ${f.vehicle.plate ?? "veículo"}`,
-      entityType: "FleetFine",
-      entityId: f.id,
-    });
-  }
-
-  const openIncidents = await prisma.fleetIncident.findMany({
-    where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
-    include: { vehicle: { select: { plate: true, brand: true } } },
-    take: 20,
-  });
-  for (const i of openIncidents) {
-    alerts.push({
-      level: i.severity === "GRAVE" || i.severity === "ALTA" ? "critical" : "warning",
-      code: "INCIDENT_OPEN",
-      message: `Sinistro/avaria aberto (${i.incidentType}): ${i.vehicle.plate ?? i.vehicle.brand}`,
-      entityType: "FleetIncident",
-      entityId: i.id,
-    });
-  }
-
-  return alerts;
 }
 
 export async function buildFleetDashboardCards(settings?: FleetSettingsMap) {
@@ -403,7 +234,7 @@ export async function buildFleetManagementDashboard() {
   const settings = await loadFleetSettings();
   const [cards, alerts] = await Promise.all([
     buildFleetDashboardCards(settings),
-    buildFleetAlerts(settings),
+    buildFleetOperationalAlerts(settings),
   ]);
   return { cards, alerts };
 }

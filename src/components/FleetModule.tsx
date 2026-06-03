@@ -60,8 +60,13 @@ export function FleetModule() {
   const [settingsSaved, setSettingsSaved] = useState(false);
 
   const loadDashboard = useCallback(async () => {
-    const data = await fetchJsonOk<FleetDashboardResponse>("/api/fleet/dashboard");
-    setDashboard(data);
+    const [data, alertsRes] = await Promise.all([
+      fetchJsonOk<FleetDashboardResponse>("/api/fleet/dashboard"),
+      fetchJsonOk<{ alerts: FleetDashboardResponse["alerts"]; count: number }>(
+        "/api/fleet/alerts"
+      ),
+    ]);
+    setDashboard({ ...data, alerts: alertsRes.alerts });
   }, []);
 
   const loadSettings = useCallback(async () => {
@@ -86,6 +91,14 @@ export function FleetModule() {
   useEffect(() => {
     void refresh();
   }, [tab, refresh]);
+
+  useEffect(() => {
+    if (tab !== "dashboard") return;
+    const timer = window.setInterval(() => {
+      void loadDashboard();
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [tab, loadDashboard]);
 
   const saveSettings = async () => {
     if (!canSettings) return;
