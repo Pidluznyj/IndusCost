@@ -932,3 +932,16 @@ describe("fleet list query", async () => {
     assert.equal(body.totalPages, 1);
   });
 });
+
+describe("fleet schema migrations", () => {
+  it("fix migration sorts after fleet module migration", () => {
+    const moduleMigration = "20260603120000_add_fleet_management_module";
+    const fixMigration = "20260604120000_fix_fleet_schema_alignment";
+    assert.ok(moduleMigration < fixMigration);
+  });
+
+  it("editable settings includes maintenance approval threshold", async () => {
+    const { FLEET_EDITABLE_SETTINGS_KEYS } = await import("./fleetManagementOps.js");
+    assert.ok(FLEET_EDITABLE_SETTINGS_KEYS.includes("manutencaoValorAprovacao"));
+  });
+});

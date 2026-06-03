@@ -17,6 +17,7 @@ export const MAIN_MODULE_PATH_SEGMENTS = [
   "customers",
   "simulations",
   "reports",
+  "fleet",
   "guide",
   "settings",
 ] as const;

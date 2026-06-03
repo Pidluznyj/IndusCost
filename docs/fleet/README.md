@@ -181,7 +181,8 @@ Testes ficam em `src/lib/fleetValidation.test.ts` (runner `tsx --test`).
 
 1. Aplicar migrations Prisma do repositório (inclui módulo frota e índices de listagem):
    - `prisma/migrations/20260603120000_add_fleet_management_module/`
-   - `prisma/migrations/20260528180000_fleet_list_query_indexes/`
+   - `prisma/migrations/20260604120000_fix_fleet_schema_alignment/` (índices idempotentes + seed FleetSettings)
+   - `prisma/migrations/20260528180000_fleet_list_query_indexes/` (no-op; histórico)
 2. `npx prisma migrate deploy` no ambiente alvo.
 3. `npx prisma generate` no build/deploy.
 4. Garantir perfis RBAC com permissões `fleet.*` conforme [../FLEET_PERMISSIONS.md](../FLEET_PERMISSIONS.md).

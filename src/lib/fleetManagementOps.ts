@@ -204,4 +204,5 @@ export const FLEET_EDITABLE_SETTINGS_KEYS = [
   "diasAlertaDocumento",
   "diasAlertaCnh",
   "percentualAlertaFranquiaKm",
+  "manutencaoValorAprovacao",
 ] as const;
