@@ -312,3 +312,62 @@ describe("fleet financial helpers", async () => {
     assert.equal(computeAvgConsumption(10, 100), 10);
   });
 });
+
+describe("fleet management helpers", async () => {
+  const {
+    summarizeVehicleStatusCounts,
+    parseFleetReportFilters,
+  } = await import("./fleetManagementOps.js");
+  const { computeCostPerKm } = await import("./fleetFinancialOps.js");
+  const { computeDocumentStatus, computeCnhStatus } = await import("./fleetValidation.js");
+
+  it("summarizeVehicleStatusCounts separates operational vs inactive", () => {
+    const s = summarizeVehicleStatusCounts([
+      { status: "AVAILABLE" },
+      { status: "RESERVED" },
+      { status: "IN_USE" },
+      { status: "INACTIVE" },
+      { status: "SOLD" },
+    ]);
+    assert.equal(s.totalOperational, 3);
+    assert.equal(s.available, 1);
+    assert.equal(s.reserved, 1);
+    assert.equal(s.inUse, 1);
+    assert.equal(s.inactiveReturnedSold, 2);
+  });
+
+  it("computeCostPerKm avoids division by zero", () => {
+    assert.equal(computeCostPerKm(1000, 0), null);
+    assert.equal(computeCostPerKm(1000, -5), null);
+    assert.equal(computeCostPerKm(1000, 250), 4);
+  });
+
+  it("document alert respects configured days", () => {
+    const now = new Date("2026-06-01T12:00:00");
+    const expiring = new Date("2026-06-15");
+    const expired = new Date("2026-05-01");
+    assert.equal(computeDocumentStatus(expiring, 30, now), "EXPIRING");
+    assert.equal(computeDocumentStatus(expired, 30, now), "EXPIRED");
+    assert.equal(computeDocumentStatus(expiring, 5, now), "VALID");
+  });
+
+  it("parseFleetReportFilters maps query params", () => {
+    const f = parseFleetReportFilters({
+      start: "2026-01-01",
+      end: "2026-01-31",
+      unit: "SP",
+      vehicleId: "abc",
+    });
+    assert.ok(f.start);
+    assert.ok(f.end);
+    assert.equal(f.unit, "SP");
+    assert.equal(f.vehicleId, "abc");
+  });
+
+  it("cnh expiring uses alert days threshold", () => {
+    const now = new Date("2026-06-01");
+    const soon = new Date("2026-06-20");
+    assert.equal(computeCnhStatus(soon, 30, now), "EXPIRING");
+    assert.equal(computeCnhStatus(soon, 10, now), "VALID");
+  });
+});

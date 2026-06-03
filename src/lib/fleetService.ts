@@ -9,13 +9,10 @@ import {
   assertNonNegativeAmount,
   assertNonNegativeKm,
   assertVehicleReservable,
-  computeDocumentStatus,
   findReservationConflict,
   isActiveDriverStatus,
   isActiveVehicleStatus,
   isCnhValid,
-  isContractExpired,
-  isContractExpiringSoon,
   normalizePlate,
   FLEET_ACTIVE_RESERVATION_STATUSES,
   parseDecimalKm,
@@ -135,162 +132,8 @@ export async function validateReservationCreate(input: {
 }
 
 export async function buildFleetDashboard() {
-  const now = new Date();
-  const startOfDay = new Date(now);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(now);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  const settings = await loadFleetSettings();
-  const docAlertDays = Number(settings.diasAlertaDocumento ?? "30") || 30;
-  const cnhAlertDays = Number(settings.diasAlertaCnh ?? "30") || 30;
-  const docThreshold = new Date(now);
-  docThreshold.setDate(docThreshold.getDate() + docAlertDays);
-  const cnhThreshold = new Date(now);
-  cnhThreshold.setDate(cnhThreshold.getDate() + cnhAlertDays);
-
-  const [
-    totalVehicles,
-    available,
-    inUse,
-    maintenance,
-    blocked,
-    documentsExpiring,
-    cnhsExpiring,
-    reservationsToday,
-    openMaintenances,
-    vehicles,
-    drivers,
-    contracts,
-  ] = await Promise.all([
-    prisma.fleetVehicle.count({ where: { status: { notIn: ["INACTIVE", "SOLD"] } } }),
-    prisma.fleetVehicle.count({ where: { status: "AVAILABLE" } }),
-    prisma.fleetVehicle.count({ where: { status: "IN_USE" } }),
-    prisma.fleetVehicle.count({ where: { status: "MAINTENANCE" } }),
-    prisma.fleetVehicle.count({ where: { status: "BLOCKED" } }),
-    prisma.fleetVehicleDocument.count({
-      where: {
-        status: { in: ["EXPIRING", "EXPIRED"] },
-        expirationDate: { not: null },
-      },
-    }),
-    prisma.fleetDriver.count({
-      where: {
-        status: "AUTHORIZED",
-        cnhExpirationDate: { lte: cnhThreshold, gte: now },
-      },
-    }),
-    prisma.fleetReservation.count({
-      where: {
-        startDateTime: { lte: endOfDay },
-        endDateTime: { gte: startOfDay },
-        status: { in: ["APPROVED", "IN_USE", "PENDING_APPROVAL", "REQUESTED"] },
-      },
-    }),
-    prisma.fleetMaintenance.count({
-      where: { status: { notIn: ["COMPLETED", "CANCELED"] } },
-    }),
-    prisma.fleetVehicle.findMany({
-      where: { status: { in: ["BLOCKED", "MAINTENANCE", "CLAIMED"] } },
-      select: { id: true, plate: true, brand: true, model: true, status: true },
-      take: 20,
-    }),
-    prisma.fleetDriver.findMany({
-      where: {
-        status: "AUTHORIZED",
-        cnhExpirationDate: { lt: now },
-      },
-      select: { id: true, name: true, cnhExpirationDate: true },
-      take: 20,
-    }),
-    prisma.fleetVehicleContract.findMany({
-      where: { endDate: { lt: now }, status: "ACTIVE" },
-      select: { id: true, vehicleId: true, contractNumber: true, endDate: true },
-      take: 20,
-    }),
-  ]);
-
-  const alerts: { level: "critical" | "warning"; message: string; entityType?: string; entityId?: string }[] =
-    [];
-
-  for (const v of vehicles) {
-    alerts.push({
-      level: "critical",
-      message: `Veículo ${v.plate ?? v.brand} — status ${v.status}`,
-      entityType: "FleetVehicle",
-      entityId: v.id,
-    });
-  }
-  for (const d of drivers) {
-    alerts.push({
-      level: "critical",
-      message: `CNH vencida: ${d.name}`,
-      entityType: "FleetDriver",
-      entityId: d.id,
-    });
-  }
-  for (const c of contracts) {
-    alerts.push({
-      level: "warning",
-      message: `Contrato vencido${c.contractNumber ? ` ${c.contractNumber}` : ""}`,
-      entityType: "FleetVehicleContract",
-      entityId: c.id,
-    });
-  }
-
-  const expiredDocs = await prisma.fleetVehicleDocument.findMany({
-    where: { status: { not: "REPLACED" }, expirationDate: { not: null } },
-    select: { id: true, documentType: true, vehicleId: true, expirationDate: true },
-    take: 20,
-  });
-  for (const d of expiredDocs) {
-    const st = computeDocumentStatus(d.expirationDate, docAlertDays, now);
-    if (st === "EXPIRED") {
-      alerts.push({
-        level: "critical",
-        message: `Documento vencido: ${d.documentType}`,
-        entityType: "FleetVehicleDocument",
-        entityId: d.id,
-      });
-    }
-  }
-
-  const { buildMaintenanceDashboardAlerts } = await import("@/src/lib/fleetMaintenanceOps.js");
-  const maintAlerts = await buildMaintenanceDashboardAlerts();
-  alerts.push(...maintAlerts.alerts);
-
-  const vehiclesInMaintenance = await prisma.fleetVehicle.findMany({
-    where: { status: "MAINTENANCE" },
-    select: { id: true, plate: true, brand: true, model: true },
-    take: 10,
-  });
-  for (const v of vehiclesInMaintenance) {
-    if (!alerts.some((a) => a.entityId === v.id && a.message.includes("Manutenção"))) {
-      alerts.push({
-        level: "warning",
-        message: `Veículo em manutenção: ${v.plate ?? v.brand} ${v.model}`,
-        entityType: "FleetVehicle",
-        entityId: v.id,
-      });
-    }
-  }
-
-  return {
-    cards: {
-      totalVehicles,
-      available,
-      inUse,
-      maintenance,
-      blocked,
-      documentsExpiring,
-      cnhsExpiring,
-      reservationsToday,
-      openMaintenances,
-      preventiveOverdue: maintAlerts.overdue.length,
-      preventiveUpcoming: maintAlerts.upcoming.length,
-    },
-    alerts,
-  };
+  const { buildFleetManagementDashboard } = await import("@/src/lib/fleetManagementOps.js");
+  return buildFleetManagementDashboard();
 }
 
 export function serializeFleetVehicle(v: {

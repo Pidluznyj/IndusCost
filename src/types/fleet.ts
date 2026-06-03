@@ -438,23 +438,52 @@ export const INCIDENT_STATUS_OPTIONS = [
   { value: "CANCELED", label: "Cancelada" },
 ] as const;
 
+export type FleetAlertDto = {
+  level: "critical" | "warning" | "info";
+  code?: string;
+  message: string;
+  entityType?: string;
+  entityId?: string;
+};
+
+export type FleetDashboardCards = {
+  totalVehicles: number;
+  totalOperational: number;
+  available: number;
+  reserved: number;
+  inUse: number;
+  maintenance: number;
+  blocked: number;
+  claimed: number;
+  inactiveReturnedSold: number;
+  reservationsToday: number;
+  reservationsOverdue: number;
+  documentsExpired: number;
+  documentsExpiring: number;
+  cnhsExpired: number;
+  cnhsExpiring: number;
+  contractsExpired: number;
+  contractsExpiring: number;
+  openMaintenances: number;
+  maintenanceOverdue: number;
+  maintenanceUpcoming: number;
+  pendingFines: number;
+  openIncidents: number;
+};
+
 export type FleetDashboardResponse = {
-  cards: {
-    totalVehicles: number;
-    available: number;
-    inUse: number;
-    maintenance: number;
-    blocked: number;
-    documentsExpiring: number;
-    cnhsExpiring: number;
-    reservationsToday: number;
-    openMaintenances: number;
-    preventiveOverdue?: number;
-    preventiveUpcoming?: number;
-  };
-  alerts: { level: "critical" | "warning"; message: string; entityType?: string; entityId?: string }[];
+  cards: FleetDashboardCards;
+  alerts: FleetAlertDto[];
   financial?: FleetFinancialDashboard;
 };
+
+export const FLEET_REPORT_TYPES = [
+  { id: "fleet", label: "Frota", path: "/api/fleet/reports/fleet" },
+  { id: "usage", label: "Utilização", path: "/api/fleet/reports/usage" },
+  { id: "costs", label: "Custos", path: "/api/fleet/reports/costs" },
+  { id: "maintenance", label: "Manutenção", path: "/api/fleet/reports/maintenance" },
+  { id: "documents", label: "Documentos / CNH", path: "/api/fleet/reports/documents" },
+] as const;
 
 export const CONTRACT_TYPE_OPTIONS = [
   { value: "LOCACAO", label: "Locação" },

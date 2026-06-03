@@ -10,8 +10,6 @@ import {
 } from "@/src/lib/fleetValidation.js";
 import {
   assertUniqueActivePlate,
-  buildFleetDashboard,
-  loadFleetSettings,
   serializeFleetVehicle,
   writeFleetAuditLog,
 } from "@/src/lib/fleetService.js";
@@ -26,7 +24,11 @@ import { registerFleetChecklistRoutes } from "@/src/lib/fleetChecklistRoutes.js"
 import { registerFleetUsageRoutes } from "@/src/lib/fleetUsageRoutes.js";
 import { registerFleetMaintenanceRoutes } from "@/src/lib/fleetMaintenanceRoutes.js";
 import { registerFleetFinancialRoutes } from "@/src/lib/fleetFinancialRoutes.js";
-import { buildFleetFinancialDashboard, maskFinancialData } from "@/src/lib/fleetFinancialOps.js";
+import {
+  getFleetDashboardPayload,
+  registerFleetManagementRoutes,
+  saveFleetSettingsWithAudit,
+} from "@/src/lib/fleetManagementRoutes.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   refreshDocumentStatuses,
@@ -73,16 +75,11 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   // --- Dashboard ---
   app.get("/api/fleet/dashboard", ...fleetView, async (req, res) => {
     try {
-      const dashboard = await buildFleetDashboard();
-      const financial = await buildFleetFinancialDashboard();
       const user = await getCurrentAppUser(req);
       const showFinancial =
         user != null &&
         (hasPermission(user, "fleet.financial.view") || hasPermission(user, "fleet.manage"));
-      res.json({
-        ...dashboard,
-        financial: maskFinancialData(financial, showFinancial),
-      });
+      res.json(await getFleetDashboardPayload(showFinancial));
     } catch (e) {
       fleetError(res, e, "GET /api/fleet/dashboard");
     }
@@ -320,6 +317,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   registerFleetUsageRoutes(app, auth);
   registerFleetMaintenanceRoutes(app, auth);
   registerFleetFinancialRoutes(app, auth);
+  registerFleetManagementRoutes(app, auth);
 
   // --- Settings ---
   app.get("/api/fleet/settings", ...fleetView, async (req, res) => {
@@ -335,19 +333,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
     try {
       const items = Array.isArray(req.body?.settings) ? req.body.settings : [];
       const userId = await actorId(req, getCurrentAppUser);
-
-      for (const item of items) {
-        const key = typeof item.key === "string" ? item.key.trim() : "";
-        const value = typeof item.value === "string" ? item.value : String(item.value ?? "");
-        if (!key) continue;
-        await prisma.fleetSettings.upsert({
-          where: { key },
-          create: { key, value, description: item.description ?? null, updatedBy: userId },
-          update: { value, updatedBy: userId },
-        });
-      }
-
-      const settings = await prisma.fleetSettings.findMany({ orderBy: { key: "asc" } });
+      const settings = await saveFleetSettingsWithAudit(items, userId);
       res.json({ settings });
     } catch (e) {
       fleetError(res, e, "PUT /api/fleet/settings");

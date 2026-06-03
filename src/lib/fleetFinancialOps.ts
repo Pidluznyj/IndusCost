@@ -160,7 +160,7 @@ export async function buildFleetFinancialDashboard(competence?: string) {
     select: { kmDriven: true },
   });
   const kmMonth = usages.reduce((s, u) => s + Number(u.kmDriven ?? 0), 0);
-  const costPerKm = kmMonth > 0 ? totalMonth / kmMonth : null;
+  const costPerKm = computeCostPerKm(totalMonth, kmMonth);
 
   return {
     competence: comp,
@@ -193,6 +193,12 @@ export function incidentBlocksVehicle(severity: string, blocksVehicle?: boolean)
 
 export function shouldCreateFuelingCost(createCost: unknown): boolean {
   return createCost !== false;
+}
+
+export function computeCostPerKm(totalCost: number, km: number): number | null {
+  if (!Number.isFinite(km) || km <= 0) return null;
+  if (!Number.isFinite(totalCost)) return null;
+  return totalCost / km;
 }
 
 export function sumActiveCostAmounts(
