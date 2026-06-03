@@ -271,16 +271,32 @@ export function FleetModule() {
           {settings.map((s, idx) => (
             <label key={s.key} className="block text-sm">
               <span className="font-medium text-slate-700">{s.description ?? s.key}</span>
-              <input
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-                value={s.value}
-                disabled={!canSettings}
-                onChange={(e) => {
-                  const next = [...settings];
-                  next[idx] = { ...s, value: e.target.value };
-                  setSettings(next);
-                }}
-              />
+              {["checklistRetiradaObrigatorio", "checklistDevolucaoObrigatorio"].includes(s.key) ? (
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                  value={s.value === "true" ? "true" : "false"}
+                  disabled={!canSettings}
+                  onChange={(e) => {
+                    const next = [...settings];
+                    next[idx] = { ...s, value: e.target.value };
+                    setSettings(next);
+                  }}
+                >
+                  <option value="false">Não obrigatório</option>
+                  <option value="true">Obrigatório</option>
+                </select>
+              ) : (
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                  value={s.value}
+                  disabled={!canSettings}
+                  onChange={(e) => {
+                    const next = [...settings];
+                    next[idx] = { ...s, value: e.target.value };
+                    setSettings(next);
+                  }}
+                />
+              )}
             </label>
           ))}
           {canSettings && (

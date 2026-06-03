@@ -163,6 +163,7 @@ export type FleetReservationRow = {
     status?: FleetVehicleStatus;
     unit?: string | null;
     costCenter?: string | null;
+    currentKm?: number;
   };
   driver?: {
     id: string;
@@ -192,6 +193,71 @@ export const DRIVER_STATUS_OPTIONS: { value: FleetDriverStatus; label: string }[
   { value: "PENDING", label: "Pendente" },
   { value: "BLOCKED", label: "Bloqueado" },
   { value: "INACTIVE", label: "Inativo" },
+];
+
+export type FleetChecklistResult = "OK" | "NOT_OK" | "NOT_APPLICABLE";
+export type FleetChecklistType = "CHECKOUT" | "CHECKIN" | "INSPECTION" | "MAINTENANCE";
+export type FleetChecklistStatus = "DRAFT" | "COMPLETED" | "CANCELED";
+
+export type FleetChecklistItemRow = {
+  id: string;
+  checklistId: string;
+  itemName: string;
+  result: FleetChecklistResult | null;
+  isCritical: boolean;
+  notes: string | null;
+  attachmentUrl: string | null;
+};
+
+export type FleetChecklistRow = {
+  id: string;
+  vehicleId: string;
+  reservationId: string | null;
+  usageId: string | null;
+  checklistType: FleetChecklistType;
+  status: FleetChecklistStatus;
+  performedBy: string | null;
+  performedAt: string | null;
+  notes: string | null;
+  items: FleetChecklistItemRow[];
+};
+
+export type FleetUsageRow = {
+  id: string;
+  reservationId: string;
+  vehicleId: string;
+  driverId: string | null;
+  checkoutAt: string | null;
+  checkoutKm: number | null;
+  checkoutFuelLevel: string | null;
+  checkoutNotes: string | null;
+  checkinAt: string | null;
+  checkinKm: number | null;
+  checkinFuelLevel: string | null;
+  checkinNotes: string | null;
+  kmDriven: number | null;
+  status: string;
+  driver?: { id: string; name: string } | null;
+  vehicle?: {
+    id: string;
+    plate: string | null;
+    brand: string;
+    model: string;
+    currentKm?: number;
+  };
+  reservation?: {
+    id: string;
+    status: FleetReservationStatus;
+    startDateTime: string;
+    endDateTime: string;
+    destination: string | null;
+  };
+};
+
+export const CHECKLIST_RESULT_OPTIONS: { value: FleetChecklistResult; label: string }[] = [
+  { value: "OK", label: "OK" },
+  { value: "NOT_OK", label: "Não OK" },
+  { value: "NOT_APPLICABLE", label: "N/A" },
 ];
 
 export const RESERVATION_STATUS_OPTIONS: { value: FleetReservationStatus; label: string }[] = [

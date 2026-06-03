@@ -24,6 +24,8 @@ import {
 } from "@/src/lib/fleetVehicleRoutes.js";
 import { registerFleetDriverRoutes } from "@/src/lib/fleetDriverRoutes.js";
 import { registerFleetReservationRoutes } from "@/src/lib/fleetReservationRoutes.js";
+import { registerFleetChecklistRoutes } from "@/src/lib/fleetChecklistRoutes.js";
+import { registerFleetUsageRoutes } from "@/src/lib/fleetUsageRoutes.js";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   refreshDocumentStatuses,
@@ -306,6 +308,8 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   registerFleetVehicleExtendedRoutes(app, auth);
   registerFleetDriverRoutes(app, auth);
   registerFleetReservationRoutes(app, auth);
+  registerFleetChecklistRoutes(app, auth);
+  registerFleetUsageRoutes(app, auth);
 
   // --- Maintenances ---
   app.get("/api/fleet/maintenances", ...fleetView, async (req, res) => {

@@ -2,12 +2,16 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   assertBlockReason,
+  assertChecklistItemsComplete,
   assertCnhCategoryForVehicle,
   assertContractDateRange,
   assertDateRange,
   assertDriverAuthorizedForReservation,
   assertKmRange,
   assertReasonRequired,
+  assertVehicleCanCheckout,
+  computeKmDriven,
+  hasCriticalNotOk,
   assertVehicleCanDispose,
   assertVehicleReservable,
   computeCnhStatus,
@@ -165,6 +169,41 @@ describe("fleetValidation", () => {
   it("assertCnhCategoryForVehicle enforces minimum category", () => {
     assert.throws(() => assertCnhCategoryForVehicle("A", "CAMINHAO"));
     assert.doesNotThrow(() => assertCnhCategoryForVehicle("C", "CAMINHAO"));
+  });
+
+  it("computeKmDriven subtracts checkout from checkin", () => {
+    assert.equal(computeKmDriven(1000, 1250), 250);
+    assert.throws(() => computeKmDriven(1000, 900));
+  });
+
+  it("assertChecklistItemsComplete requires all results", () => {
+    assert.throws(() => assertChecklistItemsComplete([]));
+    assert.throws(() =>
+      assertChecklistItemsComplete([{ result: "OK" }, { result: null }])
+    );
+    assert.doesNotThrow(() =>
+      assertChecklistItemsComplete([
+        { result: "OK" },
+        { result: "NOT_APPLICABLE" },
+      ])
+    );
+  });
+
+  it("hasCriticalNotOk detects critical failures", () => {
+    assert.equal(
+      hasCriticalNotOk([
+        { isCritical: true, result: "NOT_OK" },
+        { isCritical: false, result: "NOT_OK" },
+      ]),
+      true
+    );
+    assert.equal(hasCriticalNotOk([{ isCritical: true, result: "OK" }]), false);
+  });
+
+  it("assertVehicleCanCheckout blocks maintenance and blocked", () => {
+    assert.throws(() => assertVehicleCanCheckout("MAINTENANCE"));
+    assert.throws(() => assertVehicleCanCheckout("BLOCKED"));
+    assert.doesNotThrow(() => assertVehicleCanCheckout("AVAILABLE"));
   });
 
   it("canUserCancelReservation respects manage vs own reservation", () => {

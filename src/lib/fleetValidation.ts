@@ -1,4 +1,5 @@
 import type {
+  FleetChecklistResult,
   FleetDocumentStatus,
   FleetDriver,
   FleetDriverStatus,
@@ -50,6 +51,42 @@ export function assertKmRange(checkoutKm: number, checkinKm: number): void {
   assertNonNegativeKm(checkinKm, "Km de devolução");
   if (checkinKm < checkoutKm) {
     throw new FleetValidationError("Km final não pode ser menor que km inicial.");
+  }
+}
+
+export function computeKmDriven(checkoutKm: number, checkinKm: number): number {
+  assertKmRange(checkoutKm, checkinKm);
+  return checkinKm - checkoutKm;
+}
+
+export type ChecklistItemLike = {
+  result: FleetChecklistResult | null;
+  isCritical?: boolean;
+};
+
+export function assertChecklistItemsComplete(items: ChecklistItemLike[]): void {
+  if (items.length === 0) {
+    throw new FleetValidationError("Checklist deve conter ao menos um item.");
+  }
+  for (const item of items) {
+    if (!item.result) {
+      throw new FleetValidationError("Todos os itens do checklist devem ser preenchidos.");
+    }
+  }
+}
+
+export function hasCriticalNotOk(
+  items: Pick<ChecklistItemLike, "result" | "isCritical">[]
+): boolean {
+  return items.some((i) => Boolean(i.isCritical) && i.result === "NOT_OK");
+}
+
+export function assertVehicleCanCheckout(status: FleetVehicleStatus): void {
+  if (["BLOCKED", "MAINTENANCE", "INACTIVE", "SOLD", "RETURNED"].includes(status)) {
+    throw new FleetValidationError("Veículo bloqueado, em manutenção ou indisponível para retirada.");
+  }
+  if (status === "IN_USE") {
+    throw new FleetValidationError("Veículo já está em uso.");
   }
 }
 

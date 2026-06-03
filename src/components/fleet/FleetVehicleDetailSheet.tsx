@@ -6,6 +6,7 @@ import type {
   FleetAuditLogRow,
   FleetContractRow,
   FleetDocumentRow,
+  FleetUsageRow,
   FleetVehicleDetail,
   FleetVehicleOrigin,
   FleetVehicleStatus,
@@ -39,7 +40,7 @@ const DOC_STATUS_LABEL = {
   REPLACED: "Substituído",
 };
 
-type SheetTab = "info" | "contracts" | "documents" | "history";
+type SheetTab = "info" | "contracts" | "documents" | "usage" | "history";
 
 function dateInput(v: string | null | undefined) {
   if (!v) return "";
@@ -85,6 +86,7 @@ export function FleetVehicleDetailSheet({
   const [contracts, setContracts] = useState<FleetContractRow[]>([]);
   const [documents, setDocuments] = useState<FleetDocumentRow[]>([]);
   const [auditLogs, setAuditLogs] = useState<FleetAuditLogRow[]>([]);
+  const [usages, setUsages] = useState<FleetUsageRow[]>([]);
 
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [contractForm, setContractForm] = useState<Record<string, string>>({});
@@ -98,17 +100,19 @@ export function FleetVehicleDetailSheet({
     setLoading(true);
     setError(null);
     try {
-      const [detail, contractsRes, documentsRes, auditRes] = await Promise.all([
+      const [detail, contractsRes, documentsRes, auditRes, usagesRes] = await Promise.all([
         fetchJsonOk<{ vehicle: FleetVehicleDetail }>(`/api/fleet/vehicles/${vehicleId}`),
         fetchJsonOk<{ contracts: FleetContractRow[] }>(`/api/fleet/vehicles/${vehicleId}/contracts`),
         fetchJsonOk<{ documents: FleetDocumentRow[] }>(`/api/fleet/vehicles/${vehicleId}/documents`),
         fetchJsonOk<{ auditLogs: FleetAuditLogRow[] }>(`/api/fleet/vehicles/${vehicleId}/audit`),
+        fetchJsonOk<{ usages: FleetUsageRow[] }>(`/api/fleet/vehicles/${vehicleId}/usages`),
       ]);
       const v = detail.vehicle;
       setVehicle(v);
       setContracts(contractsRes.contracts);
       setDocuments(documentsRes.documents);
       setAuditLogs(auditRes.auditLogs);
+      setUsages(usagesRes.usages);
       setEditForm({
         plate: v.plate ?? "",
         brand: v.brand,
@@ -343,6 +347,7 @@ export function FleetVehicleDetailSheet({
               ["info", "Informações"],
               ["contracts", "Contratos"],
               ["documents", "Documentos"],
+              ["usage", "Reservas / Uso"],
               ["history", "Histórico"],
             ] as const
           ).map(([id, label]) => (
@@ -823,6 +828,46 @@ export function FleetVehicleDetailSheet({
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {tab === "usage" && (
+                <div className="space-y-2">
+                  {usages.length === 0 ? (
+                    <p className="text-sm text-slate-500">Nenhum uso registrado para este veículo.</p>
+                  ) : (
+                    usages.map((u) => (
+                      <div key={u.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                        <div className="font-medium">
+                          {u.driver?.name ?? "Sem motorista"} · {u.status}
+                        </div>
+                        <p className="mt-1 text-slate-600">
+                          Retirada: {formatDt(u.checkoutAt)} · {u.checkoutKm?.toLocaleString("pt-BR") ?? "—"} km
+                          {u.checkoutFuelLevel ? ` · ${u.checkoutFuelLevel}` : ""}
+                        </p>
+                        {u.checkinAt && (
+                          <p className="text-slate-600">
+                            Devolução: {formatDt(u.checkinAt)} · {u.checkinKm?.toLocaleString("pt-BR") ?? "—"} km
+                            {u.kmDriven != null
+                              ? ` · Rodados: ${u.kmDriven.toLocaleString("pt-BR")} km`
+                              : ""}
+                          </p>
+                        )}
+                        {u.checkoutNotes && (
+                          <p className="mt-1 text-xs text-slate-500">Obs. retirada: {u.checkoutNotes}</p>
+                        )}
+                        {u.checkinNotes && (
+                          <p className="text-xs text-slate-500">Obs. devolução: {u.checkinNotes}</p>
+                        )}
+                        {u.reservation && (
+                          <p className="mt-1 text-xs text-slate-500">
+                            Reserva: {u.reservation.status} · {formatDt(u.reservation.startDateTime)} →{" "}
+                            {formatDt(u.reservation.endDateTime)}
+                          </p>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 

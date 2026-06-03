@@ -18,6 +18,7 @@ import type {
   FleetReservationStatus,
 } from "@/src/types/fleet";
 import { RESERVATION_STATUS_OPTIONS } from "@/src/types/fleet";
+import { FleetCheckoutCheckinModal } from "@/src/components/fleet/FleetCheckoutCheckinModal";
 
 const STATUS_LABEL: Record<FleetReservationStatus, string> = {
   REQUESTED: "Solicitada",
@@ -99,6 +100,8 @@ export function FleetReservationsTab() {
   const [replaceModal, setReplaceModal] = useState<string | null>(null);
   const [replaceVehicleId, setReplaceVehicleId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [checkoutModal, setCheckoutModal] = useState<FleetReservationRow | null>(null);
+  const [checkinModal, setCheckinModal] = useState<FleetReservationRow | null>(null);
 
   const loadDrivers = useCallback(async () => {
     const data = await fetchJsonOk<{ drivers: FleetDriverRow[] }>(
@@ -240,42 +243,6 @@ export function FleetReservationsTab() {
     }
   };
 
-  const checkout = async (id: string) => {
-    const km = prompt("Km na retirada:");
-    if (!km) return;
-    setSaving(true);
-    try {
-      await fetchJsonOk(`/api/fleet/reservations/${id}/checkout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ checkoutKm: Number(km) }),
-      });
-      await loadReservations();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro na retirada.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const checkin = async (id: string) => {
-    const km = prompt("Km na devolução:");
-    if (!km) return;
-    setSaving(true);
-    try {
-      await fetchJsonOk(`/api/fleet/reservations/${id}/checkin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ checkinKm: Number(km), hasPending: false }),
-      });
-      await loadReservations();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro na devolução.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const cardClass = (status: FleetReservationStatus) =>
     cn(
       "rounded-xl border bg-white p-3 text-sm",
@@ -328,18 +295,18 @@ export function FleetReservationsTab() {
             <button
               type="button"
               className="rounded border px-2 py-1 text-xs"
-              onClick={() => void checkout(r.id)}
+              onClick={() => setCheckoutModal(r)}
             >
-              Retirada
+              Registrar retirada
             </button>
           )}
           {canCreate && r.status === "IN_USE" && (
             <button
               type="button"
               className="rounded border px-2 py-1 text-xs"
-              onClick={() => void checkin(r.id)}
+              onClick={() => setCheckinModal(r)}
             >
-              Devolução
+              Registrar devolução
             </button>
           )}
           {canManage && ["PENDING_APPROVAL", "APPROVED"].includes(r.status) && (
@@ -689,6 +656,24 @@ export function FleetReservationsTab() {
             </div>
           </div>
         </div>
+      )}
+
+      {checkoutModal && (
+        <FleetCheckoutCheckinModal
+          mode="checkout"
+          reservation={checkoutModal}
+          onClose={() => setCheckoutModal(null)}
+          onDone={() => void loadReservations()}
+        />
+      )}
+
+      {checkinModal && (
+        <FleetCheckoutCheckinModal
+          mode="checkin"
+          reservation={checkinModal}
+          onClose={() => setCheckinModal(null)}
+          onDone={() => void loadReservations()}
+        />
       )}
 
       {replaceModal && (

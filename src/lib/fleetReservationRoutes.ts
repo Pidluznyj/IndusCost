@@ -2,15 +2,9 @@ import type express from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { hasPermission } from "@/src/lib/appAuth.js";
-import {
-  FleetValidationError,
-  assertDriverAuthorizedForReservation,
-  assertKmRange,
-  assertNonNegativeKm,
-  assertReasonRequired,
-  parseDecimalKm,
-} from "@/src/lib/fleetValidation.js";
-import { loadFleetSettings, writeFleetAuditLog } from "@/src/lib/fleetService.js";
+import { FleetValidationError, assertReasonRequired } from "@/src/lib/fleetValidation.js";
+import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
+import { performCheckin, performCheckout } from "@/src/lib/fleetUsageOps.js";
 import {
   buildReservationWhere,
   canUserCancelReservation,
@@ -399,63 +393,13 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
-      const reservation = await getReservationOrThrow(id);
-      if (reservation.status !== "APPROVED") {
-        return res.status(400).json({ error: "Somente reserva aprovada pode ser retirada." });
-      }
-
-      const settings = await loadFleetSettings();
-      if (reservation.driver) {
-        assertDriverAuthorizedForReservation(reservation.driver, {
-          blockExpiredCnh: settings.bloquearRetiradaCnhVencida !== "false",
-          vehicleType: reservation.vehicle.vehicleType,
-        });
-      }
-
-      const checkoutKm = parseDecimalKm(req.body?.checkoutKm);
-      if (checkoutKm == null) return res.status(400).json({ error: "Km de retirada é obrigatório." });
-      assertNonNegativeKm(checkoutKm);
-      const vehicleKm = Number(reservation.vehicle.currentKm);
-      if (checkoutKm < vehicleKm) {
-        return res.status(400).json({
-          error: "Km de retirada não pode ser menor que km atual do veículo.",
-        });
-      }
-
       const user = await getCurrentAppUser(req);
-      const result = await prisma.$transaction(async (tx) => {
-        const usage = await tx.fleetUsage.create({
-          data: {
-            reservationId: id,
-            vehicleId: reservation.vehicleId,
-            driverId: reservation.driverId,
-            checkoutAt: new Date(),
-            checkoutKm,
-            checkoutFuelLevel: req.body?.checkoutFuelLevel?.trim?.() ?? null,
-            checkoutNotes: req.body?.checkoutNotes?.trim?.() ?? null,
-            status: "CHECKED_OUT",
-          },
-        });
-        const resUpdated = await tx.fleetReservation.update({
-          where: { id },
-          data: { status: "IN_USE" },
-          include: RESERVATION_INCLUDE,
-        });
-        await tx.fleetVehicle.update({
-          where: { id: reservation.vehicleId },
-          data: { status: "IN_USE", currentKm: checkoutKm },
-        });
-        return { usage, reservation: resUpdated };
-      });
-
-      await writeFleetAuditLog({
-        entityType: "FleetUsage",
-        entityId: result.usage.id,
-        action: "CHECKOUT",
-        newValue: String(checkoutKm),
+      const result = await performCheckout({
+        reservationId: id,
+        body: req.body ?? {},
         userId: user?.id ?? null,
+        userLabel: user?.email ?? user?.name ?? null,
       });
-
       res.json(result);
     } catch (e) {
       fleetError(res, e, "POST checkout");
@@ -466,59 +410,12 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
-      const reservation = await prisma.fleetReservation.findUnique({
-        where: { id },
-        include: { vehicle: true, usage: true, driver: true },
-      });
-      if (!reservation) return res.status(404).json({ error: "Reserva não encontrada." });
-      if (reservation.status !== "IN_USE" || !reservation.usage) {
-        return res.status(400).json({ error: "Reserva não está em uso / sem retirada registrada." });
-      }
-
-      const checkinKm = parseDecimalKm(req.body?.checkinKm);
-      if (checkinKm == null) return res.status(400).json({ error: "Km de devolução é obrigatório." });
-      const checkoutKm = Number(reservation.usage.checkoutKm ?? 0);
-      assertKmRange(checkoutKm, checkinKm);
-      const kmDriven = checkinKm - checkoutKm;
-      const hasPending = Boolean(req.body?.hasPending);
-
       const user = await getCurrentAppUser(req);
-      const result = await prisma.$transaction(async (tx) => {
-        const usage = await tx.fleetUsage.update({
-          where: { id: reservation.usage!.id },
-          data: {
-            checkinAt: new Date(),
-            checkinKm,
-            checkinFuelLevel: req.body?.checkinFuelLevel?.trim?.() ?? null,
-            checkinNotes: req.body?.checkinNotes?.trim?.() ?? null,
-            kmDriven,
-            status: "CHECKED_IN",
-          },
-        });
-        const resStatus = hasPending ? "FINISHED_WITH_PENDING" : "FINISHED";
-        const resUpdated = await tx.fleetReservation.update({
-          where: { id },
-          data: { status: resStatus },
-          include: RESERVATION_INCLUDE,
-        });
-        await tx.fleetVehicle.update({
-          where: { id: reservation.vehicleId },
-          data: {
-            currentKm: checkinKm,
-            status: hasPending ? "BLOCKED" : "AVAILABLE",
-          },
-        });
-        return { usage, reservation: resUpdated };
-      });
-
-      await writeFleetAuditLog({
-        entityType: "FleetUsage",
-        entityId: result.usage.id,
-        action: "CHECKIN",
-        newValue: String(checkinKm),
+      const result = await performCheckin({
+        reservationId: id,
+        body: req.body ?? {},
         userId: user?.id ?? null,
       });
-
       res.json(result);
     } catch (e) {
       fleetError(res, e, "POST checkin");
