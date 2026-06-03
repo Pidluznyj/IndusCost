@@ -19,6 +19,7 @@ import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { FleetModule } from "./components/FleetModule";
+import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
 import { SystemGuideModule } from "./components/SystemGuideModule";
 import { PublicLandingRoute } from "./components/PublicLandingRoute";
 import { PublicLoginRoute } from "./components/PublicLoginRoute";
@@ -347,6 +348,17 @@ export default function App() {
               description="Cadastro de veículos, motoristas, reservas, manutenções, documentos e custos operacionais da frota."
             >
               <FleetModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="fleet/field"
+          element={
+            <ModulePageShell
+              title="Frota — uso em campo"
+              description="Retirada e devolução guiadas para celular ou tablet (sem app nativo)."
+            >
+              <FleetMobileUsageFlow fullscreen />
             </ModulePageShell>
           }
         />

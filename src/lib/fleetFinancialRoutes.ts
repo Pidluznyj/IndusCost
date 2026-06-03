@@ -673,7 +673,16 @@ export function registerFleetFinancialRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.post("/api/fleet/attachments", ...fleetWrite, async (req, res) => {
+  const fleetAttachmentWrite = [
+    requireAppAuth,
+    requireAnyPermission([
+      "fleet.manage",
+      "fleet.financial.view",
+      "fleet.reservations.create",
+    ]),
+  ] as express.RequestHandler[];
+
+  app.post("/api/fleet/attachments", ...fleetAttachmentWrite, async (req, res) => {
     try {
       const body = req.body ?? {};
       const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";

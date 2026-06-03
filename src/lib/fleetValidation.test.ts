@@ -372,6 +372,76 @@ describe("fleet management helpers", async () => {
   });
 });
 
+describe("fleet mobile usage flow", async () => {
+  const {
+    isFleetChecklistRequiredForMode,
+    isMobileChecklistStepComplete,
+    mobileCheckoutBlockedByCritical,
+    resolveCheckinPendingOutcome,
+    resolveMobileUsageMode,
+    validateMobileKmInput,
+  } = await import("./fleetMobileUsage.js");
+
+  it("checkout mobile with checklist OK allows valid km", () => {
+    assert.equal(resolveMobileUsageMode("APPROVED"), "checkout");
+    const km = validateMobileKmInput({
+      mode: "checkout",
+      kmRaw: "15000",
+      vehicleCurrentKm: 14000,
+      checkoutKm: null,
+    });
+    assert.equal(km.valid, true);
+    if (km.valid) assert.equal(km.km, 15000);
+    const items = [
+      { result: "OK" as const, isCritical: true },
+      { result: "OK" as const, isCritical: false },
+    ];
+    assert.equal(mobileCheckoutBlockedByCritical(items), false);
+    assert.equal(isMobileChecklistStepComplete(items, true), true);
+  });
+
+  it("critical checklist blocks checkout", () => {
+    const items = [
+      { result: "NOT_OK" as const, isCritical: true },
+      { result: "OK" as const, isCritical: false },
+    ];
+    assert.equal(mobileCheckoutBlockedByCritical(items), true);
+  });
+
+  it("checkin with damage finishes with pending", () => {
+    assert.equal(resolveMobileUsageMode("IN_USE"), "checkin");
+    const outcome = resolveCheckinPendingOutcome({
+      hasDamage: true,
+      manualPending: false,
+      checklistItems: [{ result: "OK", isCritical: true }],
+    });
+    assert.equal(outcome.hasPending, true);
+    assert.match(outcome.summary, /avaria/);
+  });
+
+  it("invalid km blocks checkin", () => {
+    const low = validateMobileKmInput({
+      mode: "checkin",
+      kmRaw: "100",
+      vehicleCurrentKm: 0,
+      checkoutKm: 5000,
+    });
+    assert.equal(low.valid, false);
+    if (!low.valid) assert.match(low.error, /menor/i);
+  });
+
+  it("respects FleetSettings checklist flags", () => {
+    assert.equal(
+      isFleetChecklistRequiredForMode({ checklistRetiradaObrigatorio: "true" }, "checkout"),
+      true
+    );
+    assert.equal(
+      isFleetChecklistRequiredForMode({ checklistDevolucaoObrigatorio: "false" }, "checkin"),
+      false
+    );
+  });
+});
+
 describe("fleet hardening", async () => {
   const { canAccessFleetRoute, canViewFleetFinancial, FLEET_ROUTE_GUARDS } = await import(
     "./fleetAuth.js"

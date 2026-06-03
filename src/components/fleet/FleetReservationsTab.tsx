@@ -7,6 +7,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Smartphone,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
@@ -19,6 +20,7 @@ import type {
 } from "@/src/types/fleet";
 import { RESERVATION_STATUS_OPTIONS } from "@/src/types/fleet";
 import { FleetCheckoutCheckinModal } from "@/src/components/fleet/FleetCheckoutCheckinModal";
+import { FleetMobileUsageFlow } from "@/src/components/fleet/FleetMobileUsageFlow";
 
 const STATUS_LABEL: Record<FleetReservationStatus, string> = {
   REQUESTED: "Solicitada",
@@ -102,6 +104,7 @@ export function FleetReservationsTab() {
   const [saving, setSaving] = useState(false);
   const [checkoutModal, setCheckoutModal] = useState<FleetReservationRow | null>(null);
   const [checkinModal, setCheckinModal] = useState<FleetReservationRow | null>(null);
+  const [mobileFlowId, setMobileFlowId] = useState<string | null>(null);
 
   const loadDrivers = useCallback(async () => {
     const data = await fetchJsonOk<{ drivers: FleetDriverRow[] }>(
@@ -292,22 +295,44 @@ export function FleetReservationsTab() {
             </>
           )}
           {canCreate && r.status === "APPROVED" && (
-            <button
-              type="button"
-              className="rounded border px-2 py-1 text-xs"
-              onClick={() => setCheckoutModal(r)}
-            >
-              Registrar retirada
-            </button>
+            <>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs inline-flex items-center gap-1"
+                onClick={() => setMobileFlowId(r.id)}
+                title="Fluxo em campo (celular)"
+              >
+                <Smartphone className="h-3 w-3" />
+                Campo
+              </button>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs"
+                onClick={() => setCheckoutModal(r)}
+              >
+                Retirada
+              </button>
+            </>
           )}
           {canCreate && r.status === "IN_USE" && (
-            <button
-              type="button"
-              className="rounded border px-2 py-1 text-xs"
-              onClick={() => setCheckinModal(r)}
-            >
-              Registrar devolução
-            </button>
+            <>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs inline-flex items-center gap-1"
+                onClick={() => setMobileFlowId(r.id)}
+                title="Fluxo em campo (celular)"
+              >
+                <Smartphone className="h-3 w-3" />
+                Campo
+              </button>
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-xs"
+                onClick={() => setCheckinModal(r)}
+              >
+                Devolução
+              </button>
+            </>
           )}
           {canManage && ["PENDING_APPROVAL", "APPROVED"].includes(r.status) && (
             <button
@@ -655,6 +680,19 @@ export function FleetReservationsTab() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {mobileFlowId && (
+        <div className="fixed inset-0 z-[60] bg-white">
+          <FleetMobileUsageFlow
+            initialReservationId={mobileFlowId}
+            fullscreen
+            onExit={() => {
+              setMobileFlowId(null);
+              void loadReservations();
+            }}
+          />
         </div>
       )}
 
