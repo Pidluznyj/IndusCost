@@ -1,5 +1,5 @@
 // src/components/CustomerModule.tsx
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { 
   Plus, 
   Search, 
@@ -28,11 +28,28 @@ import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntellige
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
+import { formatCustomerListRange } from "@/src/lib/customerListQuery";
+
+type CustomerListMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+const CUSTOMER_PAGE_SIZE = 20;
+
+const STICKY_ACTIONS =
+  "sticky right-0 z-10 bg-card group-hover:bg-accent/30 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]";
+const STICKY_ACTIONS_HEAD = "sticky right-0 z-20 bg-accent/80 backdrop-blur-sm shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)]";
 
 export const CustomerModule = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<CustomerListMeta | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -61,22 +78,53 @@ export const CustomerModule = () => {
     status: "ACTIVE"
   });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchJsonOk<Customer[]>("/api/customers");
-      setCustomers(Array.isArray(data) ? data : []);
+      const q = new URLSearchParams();
+      q.set("page", String(page));
+      q.set("limit", String(CUSTOMER_PAGE_SIZE));
+      if (debouncedSearch) q.set("search", debouncedSearch);
+      const data = await fetchJsonOk<{
+        items?: Customer[];
+        customers?: Customer[];
+        page?: number;
+        limit?: number;
+        total?: number;
+        totalPages?: number;
+      }>(`/api/customers?${q}`);
+      const items = Array.isArray(data.items)
+        ? data.items
+        : Array.isArray(data.customers)
+          ? data.customers
+          : [];
+      setCustomers(items);
+      setPagination({
+        page: data.page ?? page,
+        limit: data.limit ?? CUSTOMER_PAGE_SIZE,
+        total: data.total ?? items.length,
+        totalPages: data.totalPages ?? 1,
+      });
     } catch (error) {
       console.error("Erro ao buscar clientes:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar clientes.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, debouncedSearch]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    void fetchData();
+  }, [fetchData]);
 
   const handleOpenModal = (customer?: Customer) => {
     if (customer) {
@@ -141,12 +189,7 @@ export const CustomerModule = () => {
     setIntelligenceOpen(true);
   };
 
-  const filteredCustomers = customers.filter(
-    (c) =>
-    (c.companyName ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.taxId ?? "").includes(searchTerm) ||
-    (c.tradeName?.toLowerCase() || "").includes(searchTerm.toLowerCase())
-  );
+  const listRows = customers;
 
   return (
     <div className="space-y-6" data-tour="customers-root">
@@ -223,108 +266,138 @@ export const CustomerModule = () => {
         onOpenExistingCustomer={(id) => {
           const existing = customers.find((c) => c.id === id);
           if (existing) handleOpenModal(existing);
+          else {
+            setIntelligenceCustomerId(id);
+            setIntelligenceOpen(true);
+          }
         }}
       />
 
       {/* Table */}
       <div
-        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm flex flex-col"
         data-tour="customers-table"
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-accent/50 border-b border-border">
-                <th className="p-4 font-semibold text-sm">Cliente</th>
-                <th className="p-4 font-semibold text-sm">Documento</th>
-                <th className="p-4 font-semibold text-sm">Contato</th>
-                <th className="p-4 font-semibold text-sm">Localização</th>
-                <th className="p-4 font-semibold text-sm">Status</th>
-                <th className="p-4 font-semibold text-sm text-right">Ações</th>
+        <div className="overflow-x-auto overflow-y-auto max-h-[min(70vh,640px)]">
+          <table className="w-full min-w-[880px] text-left border-collapse">
+            <thead className="sticky top-0 z-30">
+              <tr className="bg-accent/80 backdrop-blur-sm border-b border-border">
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Cliente</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Documento</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap max-w-[180px]">Contato</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap max-w-[160px]">Localização</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Status</th>
+                <th className={cn("px-3 py-2 font-semibold text-xs text-right whitespace-nowrap", STICKY_ACTIONS_HEAD)}>
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                    <p className="mt-2 text-sm text-muted-foreground">Carregando clientes...</p>
+                  <td colSpan={6} className="px-3 py-6 text-center">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
+                    <p className="mt-2 text-xs text-muted-foreground">Carregando clientes...</p>
                   </td>
                 </tr>
-              ) : filteredCustomers.length === 0 ? (
+              ) : listRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
                     Nenhum cliente encontrado.
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((c) => (
+                listRows.map((c) => (
                   <tr key={c.id} className="hover:bg-accent/30 transition-colors group">
-                    <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                          <Building2 className="h-5 w-5" />
+                    <td className="px-3 py-1.5 max-w-[220px]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="h-7 w-7 shrink-0 rounded-md bg-primary/10 flex items-center justify-center text-primary">
+                          <Building2 className="h-3.5 w-3.5" />
                         </div>
-                        <div>
-                          <p className="font-medium text-sm">{c.companyName}</p>
-                          <p className="text-xs text-muted-foreground">{c.tradeName || "---"}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-4 text-sm font-mono">{c.taxId}</td>
-                    <td className="p-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Mail className="h-3 w-3" /> {c.email || "---"}
-                        </div>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Phone className="h-3 w-3" /> {c.phone || "---"}
+                        <div className="min-w-0">
+                          <p className="font-medium text-xs truncate" title={c.companyName}>
+                            {c.companyName}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground truncate" title={c.tradeName ?? undefined}>
+                            {c.tradeName || "—"}
+                          </p>
                         </div>
                       </div>
                     </td>
-                    <td className="p-4">
-                      <p className="text-xs font-medium">{c.city} - {c.state}</p>
-                      <p className="text-[10px] text-muted-foreground">{c.segment || "Sem segmento"}</p>
+                    <td className="px-3 py-1.5 text-xs font-mono whitespace-nowrap">{c.taxId}</td>
+                    <td className="px-3 py-1.5 max-w-[180px]">
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
+                          <Mail className="h-3 w-3 shrink-0" />
+                          <span className="truncate" title={c.email ?? undefined}>
+                            {c.email || "—"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
+                          <Phone className="h-3 w-3 shrink-0" />
+                          <span className="truncate" title={c.phone ?? undefined}>
+                            {c.phone || "—"}
+                          </span>
+                        </div>
+                      </div>
                     </td>
-                    <td className="p-4">
-                      <div className={cn(
-                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                        c.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                      )}>
-                        <div className={cn("h-1.5 w-1.5 rounded-full", c.status === "ACTIVE" ? "bg-green-600" : "bg-red-600")} />
+                    <td className="px-3 py-1.5 max-w-[160px]">
+                      <p className="text-[11px] font-medium truncate" title={`${c.city ?? ""} - ${c.state ?? ""}`}>
+                        {c.city || "—"} - {c.state || "—"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground truncate" title={c.segment ?? undefined}>
+                        {c.segment || "Sem segmento"}
+                      </p>
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <div
+                        className={cn(
+                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                          c.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            c.status === "ACTIVE" ? "bg-green-600" : "bg-red-600"
+                          )}
+                        />
                         {c.status === "ACTIVE" ? "Ativo" : "Inativo"}
                       </div>
                     </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className={cn("px-2 py-1.5 text-right whitespace-nowrap", STICKY_ACTIONS)}>
+                      <div className="flex items-center justify-end gap-0.5">
                         <button
                           type="button"
                           title="Consulta CNPJ"
                           onClick={() => openCnpjLookup({ customer: c })}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
                         >
-                          <SearchCheck className="h-4 w-4" />
+                          <SearchCheck className="h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
                           title="Visão comercial do cliente"
                           onClick={() => setCommercial360CustomerId(c.id)}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
                         >
-                          <BarChart3 className="h-4 w-4" />
+                          <BarChart3 className="h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
+                          title="Editar cliente"
                           onClick={() => handleOpenModal(c)}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
                         >
-                          <Edit2 className="h-4 w-4" />
+                          <Edit2 className="h-3.5 w-3.5" />
                         </button>
-                        <button 
+                        <button
+                          type="button"
+                          title="Excluir cliente"
                           onClick={() => handleDelete(c.id)}
-                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-red-500 transition-all"
+                          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-red-500 transition-all"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </td>
@@ -334,6 +407,49 @@ export const CustomerModule = () => {
             </tbody>
           </table>
         </div>
+
+        {pagination && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+            <span>
+              {formatCustomerListRange(pagination)}
+              {pagination.totalPages > 1 ? ` · Página ${pagination.page} de ${pagination.totalPages}` : ""}
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
+                disabled={loading || pagination.page <= 1}
+                onClick={() => setPage(1)}
+              >
+                Primeira
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
+                disabled={loading || pagination.page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
+                disabled={loading || pagination.page >= pagination.totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Próxima
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
+                disabled={loading || pagination.page >= pagination.totalPages}
+                onClick={() => setPage(pagination.totalPages)}
+              >
+                Última
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal: Customer Form */}

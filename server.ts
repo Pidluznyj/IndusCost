@@ -73,6 +73,13 @@ import {
 } from "./src/lib/newProductSimulationSnapshot.js";
 import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/customerIndicators.js";
 import {
+  buildCustomerListResponse,
+  buildCustomerSearchWhere,
+  customerListMeta,
+  parseCustomerListQuery,
+  shouldUseCustomerPagination,
+} from "./src/lib/customerListQuery.js";
+import {
   ALL_PERMISSION_KEYS,
   APP_SESSION_COOKIE_NAME,
   APP_SESSION_TTL_MS,
@@ -10156,10 +10163,33 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   app.get("/api/customers", requireAppAuth, requirePermission("customers.view"), async (req, res) => {
-    const customers = await prisma.customer.findMany({
-      orderBy: { companyName: "asc" },
-    });
-    res.json(customers);
+    try {
+      const query = req.query as Record<string, unknown>;
+      if (!shouldUseCustomerPagination(query)) {
+        const customers = await prisma.customer.findMany({
+          orderBy: { companyName: "asc" },
+        });
+        return res.json(customers);
+      }
+
+      const list = parseCustomerListQuery(query);
+      const where = buildCustomerSearchWhere(list.search);
+      const [total, items] = await Promise.all([
+        prisma.customer.count({ where }),
+        prisma.customer.findMany({
+          where,
+          orderBy: { companyName: "asc" },
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
+
+      const meta = customerListMeta(total, list.page, list.limit);
+      res.json(buildCustomerListResponse(items, meta));
+    } catch (error) {
+      console.error("GET /api/customers", error);
+      res.status(500).json({ error: "Erro ao listar clientes." });
+    }
   });
 
   /** Indicadores agregados do cadastro (somente leitura). */
