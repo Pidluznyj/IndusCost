@@ -59,6 +59,7 @@ import {
 } from "./src/lib/materialDemandFilters.js";
 import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
 import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
+import { registerExecutiveDashboardRoutes } from "./src/lib/executiveDashboardRoutes.js";
 import {
   getNomusDailySyncStatus,
   NomusDailySyncConflictError,
@@ -14328,6 +14329,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   // --- API: Gestão de Frota ---
   registerFleetRoutes(app, {
     requireAppAuth,
+    getCurrentAppUser,
+  });
+
+  registerExecutiveDashboardRoutes(app, {
+    requireAppAuth,
+    requirePermission,
     getCurrentAppUser,
   });
 

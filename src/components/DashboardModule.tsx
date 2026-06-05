@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   GitBranch,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import {
   BarChart,
@@ -28,6 +29,8 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { motion } from "motion/react";
 import { SalesFunnelPanel } from "@/src/components/dashboard/SalesFunnelPanel";
+import { ExecutiveDashboardPanel } from "@/src/components/dashboard/ExecutiveDashboardPanel";
+import type { ExecutiveDashboardSummary } from "@/src/lib/executiveDashboardTypes";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { DASHBOARD_TOUR_STEPS } from "@/src/tours/dashboardTourSteps";
@@ -59,11 +62,34 @@ interface DashboardData {
 }
 
 export const DashboardModule = () => {
-  const [dashboardTab, setDashboardTab] = useState<"operacao" | "funil">("operacao");
+  const [dashboardTab, setDashboardTab] = useState<"executivo" | "operacao" | "funil">("executivo");
   const [data, setData] = useState<DashboardData | null>(null);
+  const [executiveData, setExecutiveData] = useState<ExecutiveDashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [executiveLoading, setExecutiveLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [executiveError, setExecutiveError] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
+
+  const fetchExecutive = useCallback(async () => {
+    setExecutiveLoading(true);
+    setExecutiveError(null);
+    try {
+      const res = await fetch("/api/dashboard/executive-summary");
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const json = (await res.json()) as ExecutiveDashboardSummary;
+      setExecutiveData(json);
+      setExecutiveError(null);
+    } catch (error) {
+      console.error("Erro ao buscar visão executiva:", error);
+      setExecutiveError(error instanceof Error ? error.message : "Falha ao carregar visão executiva.");
+    } finally {
+      setExecutiveLoading(false);
+    }
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -86,16 +112,30 @@ export const DashboardModule = () => {
   }, []);
 
   useEffect(() => {
+    void fetchExecutive();
     void fetchData();
-  }, [fetchData]);
+  }, [fetchExecutive, fetchData]);
 
   return (
     <div data-tour="dashboard-module" className="space-y-6 pb-12">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div
           data-tour="dashboard-tabs"
-          className="flex flex-wrap gap-2 p-1 bg-accent/40 rounded-xl border border-border w-full max-w-xl"
+          className="flex flex-wrap gap-2 p-1 bg-accent/40 rounded-xl border border-border w-full max-w-3xl"
         >
+          <button
+            type="button"
+            onClick={() => setDashboardTab("executivo")}
+            className={cn(
+              "flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all",
+              dashboardTab === "executivo"
+                ? "bg-card text-primary shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Sparkles className="h-4 w-4" />
+            Visão Executiva
+          </button>
           <button
             type="button"
             onClick={() => setDashboardTab("operacao")}
@@ -127,6 +167,15 @@ export const DashboardModule = () => {
       </div>
 
       <div data-tour="dashboard-main-area" className="space-y-6">
+        {dashboardTab === "executivo" && (
+          <ExecutiveDashboardPanel
+            data={executiveData}
+            loading={executiveLoading}
+            error={executiveError}
+            onRefresh={() => void fetchExecutive()}
+          />
+        )}
+
         {dashboardTab === "funil" && <SalesFunnelPanel />}
 
         {dashboardTab === "operacao" && (
