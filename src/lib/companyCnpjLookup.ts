@@ -2,6 +2,8 @@ import { prisma } from "@/src/lib/prisma.js";
 import { isValidCnpj, normalizeCnpj } from "./companyCnpjFormat.js";
 import {
   normalizePublicCnpjPayload,
+  buildStructuredNormalizedSummary,
+  buildPublicContactNote,
   summaryToCustomerDraft,
   type NormalizedCnpjSummary,
 } from "./companyCnpjNormalize.js";
@@ -13,6 +15,7 @@ import { buildCommercialInsightsBundle } from "./companyCommercialInsights.js";
 import {
   buildApplyPatch,
   compareCustomerWithCnpjData,
+  ApplyFieldSelectionError,
   type CustomerCompareResult,
 } from "./companyCnpjCompare.js";
 import { writeCommercialAuditLog } from "./commercialAuditLog.js";
@@ -41,10 +44,13 @@ export type CompanyIntelligencePayload = {
   fromCache: boolean;
   customerId: string | null;
   summary: NormalizedCnpjSummary;
+  structuredSummary: ReturnType<typeof buildStructuredNormalizedSummary>;
   risk: CommercialRiskResult;
   commercial: ReturnType<typeof buildCommercialInsightsBundle>;
   comparison: CustomerCompareResult | null;
+  erpCommercialData: Record<string, string | null> | null;
   customerDraft: Record<string, string> | null;
+  publicContactSuggestion: { phone: string | null; email: string | null; disclaimer: string } | null;
   filledFieldCount: number;
   rawJson: unknown;
 };
@@ -119,7 +125,10 @@ function serializeLookup(row: {
   commercialInsights: unknown;
   fetchedAt: Date;
   expiresAt: Date;
-}): Omit<CompanyIntelligencePayload, "comparison" | "customerDraft" | "filledFieldCount"> & {
+}): Omit<
+  CompanyIntelligencePayload,
+  "comparison" | "customerDraft" | "filledFieldCount" | "erpCommercialData" | "publicContactSuggestion"
+> & {
   summary: NormalizedCnpjSummary;
   risk: CommercialRiskResult;
   commercial: ReturnType<typeof buildCommercialInsightsBundle>;
@@ -127,6 +136,7 @@ function serializeLookup(row: {
   const summary = row.normalizedSummary as NormalizedCnpjSummary;
   const risk = row.riskDetails as CommercialRiskResult;
   const commercial = row.commercialInsights as ReturnType<typeof buildCommercialInsightsBundle>;
+  const structuredSummary = buildStructuredNormalizedSummary(summary);
   return {
     lookupId: row.id,
     cnpj: row.cnpj,
@@ -136,6 +146,7 @@ function serializeLookup(row: {
     fromCache: true,
     customerId: row.customerId,
     summary,
+    structuredSummary,
     risk,
     commercial,
     rawJson: row.rawJson,
@@ -167,6 +178,7 @@ export async function buildCompanyIntelligencePayload(input: {
   if (!row) {
     const rawJson = await fetchPublicCnpj(cnpj, input.fetchImpl);
     const summary = normalizePublicCnpjPayload(rawJson);
+    const structuredSummary = buildStructuredNormalizedSummary(summary);
     const risk = calculateCommercialRiskScore(summary);
     const commercial = buildCommercialInsightsBundle(summary, risk, sellerUfFromEnv());
     const now = new Date();
@@ -178,7 +190,7 @@ export async function buildCompanyIntelligencePayload(input: {
         customerId: input.customerId ?? null,
         source: CNPJ_LOOKUP_SOURCE,
         rawJson: rawJson as object,
-        normalizedSummary: summary as object,
+        normalizedSummary: { ...summary, ...structuredSummary } as object,
         riskScore: risk.score,
         riskVerdict: risk.verdict,
         riskDetails: risk as object,
@@ -209,6 +221,7 @@ export async function buildCompanyIntelligencePayload(input: {
   const base = serializeLookup(row);
   let comparison: CustomerCompareResult | null = null;
   let customerDraft: Record<string, string> | null = null;
+  let erpCommercialData: Record<string, string | null> | null = null;
 
   if (input.customerId) {
     const customer = await prisma.customer.findUnique({ where: { id: input.customerId } });
@@ -223,9 +236,23 @@ export async function buildCompanyIntelligencePayload(input: {
       );
     }
     comparison = compareCustomerWithCnpjData(customer, base.summary);
+    erpCommercialData = {
+      contactName: customer.contactName,
+      phone: customer.phone,
+      email: customer.email,
+      accountOwner: customer.accountOwner,
+      commercialNotes: customer.commercialNotes,
+      relationshipStatus: customer.relationshipStatus,
+    };
   } else {
     customerDraft = summaryToCustomerDraft(base.summary);
   }
+
+  const publicContactSuggestion = {
+    phone: base.summary.phone,
+    email: base.summary.email,
+    disclaimer: base.structuredSummary.publicContactData.disclaimer,
+  };
 
   const { countFilledJsonFields } = await import("./companyCnpjFormat.js");
 
@@ -233,7 +260,9 @@ export async function buildCompanyIntelligencePayload(input: {
     ...base,
     fromCache,
     comparison,
+    erpCommercialData,
     customerDraft,
+    publicContactSuggestion,
     filledFieldCount: countFilledJsonFields(base.rawJson),
   };
 }
@@ -242,6 +271,7 @@ export async function applyCompanyIntelligenceToCustomer(input: {
   customerId: string;
   lookupId: string;
   selectedFields: string[];
+  confirmPublicContactOverwrite?: boolean;
   userId?: string | null;
 }) {
   const customer = await prisma.customer.findUnique({ where: { id: input.customerId } });
@@ -255,40 +285,55 @@ export async function applyCompanyIntelligenceToCustomer(input: {
   }
 
   const summary = lookup.normalizedSummary as NormalizedCnpjSummary;
-  const patch = buildApplyPatch(customer, summary, input.selectedFields);
-  if (Object.keys(patch).length === 0) {
-    throw new CompanyIntelligenceError(
-      "Nenhum campo válido selecionado para atualização.",
-      "NO_FIELDS_SELECTED",
-      422
-    );
-  }
 
-  for (const [field, newValue] of Object.entries(patch)) {
-    if (!newValue.trim()) continue;
-    const oldValue = String((customer as Record<string, unknown>)[field] ?? "");
-    await writeCommercialAuditLog({
-      entityType: "Customer",
-      entityId: customer.id,
-      action: "CNPJ_INTELLIGENCE_APPLY",
-      fieldName: field,
-      oldValue,
-      newValue,
-      performedBy: input.userId ?? null,
+  try {
+    const patch = buildApplyPatch(customer, summary, input.selectedFields, {
+      confirmPublicContactOverwrite: input.confirmPublicContactOverwrite ?? false,
     });
+    if (Object.keys(patch).length === 0) {
+      throw new CompanyIntelligenceError(
+        "Nenhum campo válido selecionado para atualização.",
+        "NO_FIELDS_SELECTED",
+        422
+      );
+    }
+
+    for (const [field, newValue] of Object.entries(patch)) {
+      if (!newValue.trim()) continue;
+      const oldValue = String((customer as Record<string, unknown>)[field] ?? "");
+      const action =
+        field === "phone" || field === "email"
+          ? "CNPJ_PUBLIC_CONTACT_APPLY"
+          : "CNPJ_INTELLIGENCE_APPLY";
+      await writeCommercialAuditLog({
+        entityType: "Customer",
+        entityId: customer.id,
+        action,
+        fieldName: field,
+        oldValue,
+        newValue,
+        performedBy: input.userId ?? null,
+      });
+    }
+
+    const updated = await prisma.customer.update({
+      where: { id: customer.id },
+      data: patch,
+    });
+
+    return { customer: updated, appliedFields: Object.keys(patch) };
+  } catch (e: unknown) {
+    if (e instanceof ApplyFieldSelectionError) {
+      throw new CompanyIntelligenceError(e.message, e.code, 422);
+    }
+    throw e;
   }
-
-  const updated = await prisma.customer.update({
-    where: { id: customer.id },
-    data: patch,
-  });
-
-  return { customer: updated, appliedFields: Object.keys(patch) };
 }
 
 export async function createCustomerFromCompanyIntelligence(input: {
   lookupId: string;
   overrides?: Record<string, unknown>;
+  usePublicContactAsPrimary?: boolean;
   userId?: string | null;
 }) {
   const lookup = await prisma.customerCnpjLookup.findUnique({ where: { id: input.lookupId } });
@@ -297,9 +342,22 @@ export async function createCustomerFromCompanyIntelligence(input: {
   }
 
   const summary = lookup.normalizedSummary as NormalizedCnpjSummary;
-  const draft = summaryToCustomerDraft(summary);
-  const body: Record<string, string> = { ...draft, ...(input.overrides as Record<string, string> | undefined) };
+  const usePublicContact = input.usePublicContactAsPrimary ?? false;
+  const draft = summaryToCustomerDraft(summary, { usePublicContactAsPrimary: usePublicContact });
+  const body: Record<string, string> = {
+    ...draft,
+    ...(input.overrides as Record<string, string> | undefined),
+  };
   body.taxId = normalizeCnpj(String(body.taxId ?? summary.cnpj));
+
+  if (!usePublicContact) {
+    body.phone = "";
+    body.email = "";
+    const note = buildPublicContactNote(summary);
+    if (note) {
+      body.notes = body.notes?.trim() ? `${body.notes.trim()}\n${note}` : note;
+    }
+  }
 
   const existing = await prisma.customer.findUnique({ where: { taxId: body.taxId } });
   if (existing) {
@@ -341,6 +399,24 @@ export async function createCustomerFromCompanyIntelligence(input: {
     newValue: customer.taxId,
     performedBy: input.userId ?? null,
   });
+
+  if (usePublicContact && (summary.phone || summary.email)) {
+    await writeCommercialAuditLog({
+      entityType: "Customer",
+      entityId: customer.id,
+      action: "CNPJ_PUBLIC_CONTACT_APPLY",
+      newValue: [summary.phone, summary.email].filter(Boolean).join(" / "),
+      performedBy: input.userId ?? null,
+    });
+  } else if (buildPublicContactNote(summary)) {
+    await writeCommercialAuditLog({
+      entityType: "Customer",
+      entityId: customer.id,
+      action: "CNPJ_PUBLIC_CONTACT_SUGGESTED",
+      newValue: buildPublicContactNote(summary),
+      performedBy: input.userId ?? null,
+    });
+  }
 
   return { customer };
 }

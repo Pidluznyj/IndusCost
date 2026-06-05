@@ -22,7 +22,13 @@ import {
 import {
   buildApplyPatch,
   compareCustomerWithCnpjData,
+  assertApplyFieldSelectionAllowed,
+  ApplyFieldSelectionError,
 } from "./companyCnpjCompare.js";
+import {
+  buildPublicContactNote,
+  summaryToCustomerDraft,
+} from "./companyCnpjNormalize.js";
 import { assertReasonRequired } from "./fleetValidation.js";
 
 const MOCK_PAYLOAD = {
@@ -123,6 +129,23 @@ describe("company intelligence — risk score", () => {
     assert.equal(classifyCommercialVerdict(70, false).verdict, "VENDA CONDICIONADA");
     assert.equal(classifyCommercialVerdict(90, false).verdict, "VENDA LIBERADA");
   });
+
+  it("score does not depend on phone or email from API", () => {
+    const withContacts = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const withoutContacts = normalizePublicCnpjPayload({
+      ...MOCK_PAYLOAD,
+      estabelecimento: {
+        ...MOCK_PAYLOAD.estabelecimento,
+        telefone1: null,
+        email: null,
+        ddd1: null,
+      },
+    });
+    const a = calculateCommercialRiskScore(withContacts);
+    const b = calculateCommercialRiskScore(withoutContacts);
+    assert.equal(a.score, b.score);
+    assert.equal(a.verdict, b.verdict);
+  });
 });
 
 describe("company intelligence — insights", () => {
@@ -147,20 +170,85 @@ describe("company intelligence — insights", () => {
 });
 
 describe("company intelligence — compare and apply", () => {
-  it("compares ERP vs API and detects differences", () => {
+  const customerBase = {
+    companyName: "OUTRA RAZAO",
+    taxId: "11444777000161",
+    city: "Curitiba",
+    email: "compras@cliente.com",
+    phone: "(41) 99999-0000",
+    contactName: "João Comprador",
+  };
+
+  it("compares ERP vs API and detects differences on official fields", () => {
     const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
     const compare = compareCustomerWithCnpjData(
-      {
-        companyName: "OUTRA RAZAO",
-        taxId: "11444777000161",
-        city: "Curitiba",
-        email: null,
-      },
+      { ...customerBase, email: null },
       summary
     );
     assert.ok(compare.differentCount >= 1);
     assert.ok(compare.fields.some((f) => f.field === "companyName" && f.status === "DIFFERENT"));
-    assert.ok(compare.fields.some((f) => f.field === "email" && f.status === "EMPTY_ERP"));
+    assert.ok(!compare.fields.some((f) => f.field === "phone"));
+    assert.ok(!compare.fields.some((f) => f.field === "email"));
+  });
+
+  it("classifies companyName as OFFICIAL_SAFE_TO_APPLY", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const row = compareCustomerWithCnpjData(customerBase, summary).fields.find(
+      (f) => f.field === "companyName"
+    );
+    assert.equal(row?.kind, "OFFICIAL_SAFE_TO_APPLY");
+  });
+
+  it("classifies address fields as ADDRESS_SAFE_TO_APPLY", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const compare = compareCustomerWithCnpjData(customerBase, summary);
+    assert.equal(
+      compare.fields.find((f) => f.field === "address")?.kind,
+      "ADDRESS_SAFE_TO_APPLY"
+    );
+    assert.equal(compare.fields.find((f) => f.field === "city")?.kind, "ADDRESS_SAFE_TO_APPLY");
+  });
+
+  it("classifies API phone as PUBLIC_CONTACT_REVIEW_ONLY", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const phone = compareCustomerWithCnpjData(customerBase, summary).publicContacts.find(
+      (c) => c.field === "phone"
+    );
+    assert.equal(phone?.kind, "PUBLIC_CONTACT_REVIEW_ONLY");
+    assert.equal(phone?.apiValue, summary.phone);
+  });
+
+  it("classifies API email as PUBLIC_CONTACT_REVIEW_ONLY", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const email = compareCustomerWithCnpjData(customerBase, summary).publicContacts.find(
+      (c) => c.field === "email"
+    );
+    assert.equal(email?.kind, "PUBLIC_CONTACT_REVIEW_ONLY");
+    assert.equal(email?.apiValue, summary.email);
+  });
+
+  it("does not apply commercial phone by default", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    assert.throws(
+      () => buildApplyPatch(customerBase, summary, ["phone"]),
+      (e: unknown) => e instanceof ApplyFieldSelectionError
+    );
+  });
+
+  it("does not apply commercial email by default", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    assert.throws(
+      () => buildApplyPatch(customerBase, summary, ["email"]),
+      (e: unknown) => e instanceof ApplyFieldSelectionError
+    );
+  });
+
+  it("allows public contact apply only with explicit confirmation", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const patch = buildApplyPatch(customerBase, summary, ["email"], {
+      confirmPublicContactOverwrite: true,
+    });
+    assert.equal(patch.email, summary.email);
   });
 
   it("does not apply without selected fields", () => {
@@ -169,15 +257,41 @@ describe("company intelligence — compare and apply", () => {
     assert.deepEqual(patch, {});
   });
 
-  it("apply patch only selected fields", () => {
+  it("apply patch only selected official fields", () => {
     const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
     const patch = buildApplyPatch(
-      { companyName: "OUTRA", email: "" },
+      { companyName: "OUTRA", email: "comercial@erp.com" },
       summary,
-      ["companyName", "email"]
+      ["companyName"]
     );
     assert.equal(patch.companyName, summary.companyName);
-    assert.equal(patch.email, summary.email);
+    assert.equal(patch.email, undefined);
+  });
+
+  it("new customer draft excludes public phone/email by default", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const draft = summaryToCustomerDraft(summary);
+    assert.equal(draft.phone, "");
+    assert.equal(draft.email, "");
+    assert.match(draft.notes, /Contato público retornado pela API CNPJ/);
+  });
+
+  it("new customer draft can use public contact with explicit flag", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const draft = summaryToCustomerDraft(summary, { usePublicContactAsPrimary: true });
+    assert.equal(draft.phone, summary.phone);
+    assert.equal(draft.email, summary.email);
+  });
+
+  it("buildPublicContactNote stores suggestion text", () => {
+    const summary = normalizePublicCnpjPayload(MOCK_PAYLOAD);
+    const note = buildPublicContactNote(summary, new Date("2026-06-05"));
+    assert.match(note, /Validar antes de uso comercial/);
+    assert.match(note, /contato@empresa.com/);
+  });
+
+  it("assertApplyFieldSelectionAllowed blocks protected contacts", () => {
+    assert.throws(() => assertApplyFieldSelectionAllowed(["phone", "companyName"], false));
   });
 
   it("countFilledJsonFields ignores empty values", () => {

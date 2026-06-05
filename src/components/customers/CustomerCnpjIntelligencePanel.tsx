@@ -15,11 +15,28 @@ import type { Customer } from "@/src/types/commercial";
 type CompareField = {
   field: string;
   label: string;
+  kind: string;
+  kindLabel: string;
   erpValue: string | null;
   apiValue: string | null;
   status: string;
   suggestedValue: string | null;
   selectable: boolean;
+};
+
+type PublicContactField = {
+  field: "phone" | "email";
+  label: string;
+  apiValue: string | null;
+  erpValue: string | null;
+  disclaimer: string;
+};
+
+type ErpCommercialField = {
+  field: string;
+  label: string;
+  erpValue: string | null;
+  kindLabel: string;
 };
 
 type IntelligencePayload = {
@@ -65,9 +82,17 @@ type IntelligencePayload = {
   };
   comparison: {
     fields: CompareField[];
+    publicContacts: PublicContactField[];
+    erpCommercialFields: ErpCommercialField[];
     equalCount: number;
     differentCount: number;
     suggestedUpdates: number;
+  } | null;
+  erpCommercialData: Record<string, string | null> | null;
+  publicContactSuggestion: {
+    phone: string | null;
+    email: string | null;
+    disclaimer: string;
   } | null;
   customerDraft: Record<string, string> | null;
   filledFieldCount: number;
@@ -144,6 +169,7 @@ export function CustomerCnpjIntelligencePanel({
   const [data, setData] = useState<IntelligencePayload | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
+  const [usePublicContactAsPrimary, setUsePublicContactAsPrimary] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [simOpen, setSimOpen] = useState(false);
 
@@ -173,6 +199,7 @@ export function CustomerCnpjIntelligencePanel({
         setSelectedFields(
           payload.comparison?.fields.filter((f) => f.selectable).map((f) => f.field) ?? []
         );
+        setUsePublicContactAsPrimary(false);
       } catch (e: unknown) {
         const err = e as { message?: string; existingCustomerId?: string };
         setError(err.message ?? "Erro na consulta.");
@@ -211,9 +238,20 @@ export function CustomerCnpjIntelligencePanel({
     setMessage("JSON copiado.");
   };
 
+  const copyText = async (text: string, label: string) => {
+    await navigator.clipboard.writeText(text);
+    setMessage(`${label} copiado.`);
+  };
+
   const applySelected = async () => {
     if (!customerId || !data) return;
-    if (!confirm("Confirmar atualização dos campos selecionados no cadastro do cliente?")) return;
+    if (
+      !confirm(
+        "Confirmar atualização dos dados oficiais/fiscais selecionados? Contatos comerciais internos não serão alterados."
+      )
+    ) {
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -222,7 +260,7 @@ export function CustomerCnpjIntelligencePanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lookupId: data.lookupId, selectedFields }),
       });
-      setMessage("Cadastro atualizado com os campos selecionados.");
+      setMessage("Dados oficiais atualizados com os campos selecionados.");
       onCustomerUpdated?.();
       await load(false);
     } catch (e: unknown) {
@@ -234,6 +272,21 @@ export function CustomerCnpjIntelligencePanel({
 
   const createFromLookup = async () => {
     if (!data) return;
+    if (
+      !usePublicContactAsPrimary &&
+      (data.publicContactSuggestion?.phone || data.publicContactSuggestion?.email)
+    ) {
+      const ok = confirm(
+        "Telefone/e-mail públicos não serão definidos como contato principal. Eles ficarão apenas como sugestão em observações. Deseja continuar?"
+      );
+      if (!ok) return;
+    }
+    if (usePublicContactAsPrimary) {
+      const ok = confirm(
+        "Usar telefone/e-mail público como contato inicial? Pode ser do contador ou responsável fiscal."
+      );
+      if (!ok) return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -242,7 +295,10 @@ export function CustomerCnpjIntelligencePanel({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lookupId: data.lookupId }),
+          body: JSON.stringify({
+            lookupId: data.lookupId,
+            usePublicContactAsPrimary,
+          }),
         }
       );
       setMessage("Cliente cadastrado com sucesso.");
@@ -381,8 +437,9 @@ export function CustomerCnpjIntelligencePanel({
 
               <section className="grid gap-3 sm:grid-cols-2 text-sm">
                 <div className="rounded-lg border p-3 space-y-1">
-                  <h3 className="font-semibold mb-2">Resumo cadastral</h3>
+                  <h3 className="font-semibold mb-2">Dados oficiais da empresa</h3>
                   <p>Abertura: {data.summary.openedAt ?? "—"}</p>
+                  <p>Situação: {data.summary.registrationStatus ?? "—"}</p>
                   <p>Porte: {data.summary.companySize ?? "—"}</p>
                   <p>Natureza: {data.summary.legalNature ?? "—"}</p>
                   <p>
@@ -396,11 +453,25 @@ export function CustomerCnpjIntelligencePanel({
                   </p>
                   <p>CNAE: {data.summary.mainCnae?.description ?? "—"}</p>
                   <p>
-                    Endereço: {data.summary.address ?? "—"}
+                    Endereço fiscal: {data.summary.address ?? "—"}
                     {data.summary.city ? `, ${data.summary.city}/${data.summary.state}` : ""}
                   </p>
                   <p>CEP: {data.summary.zipCode ?? "—"}</p>
-                  <p>Tel: {data.summary.phone ?? "—"} · E-mail: {data.summary.email ?? "—"}</p>
+                  <p>
+                    IE:{" "}
+                    {data.summary.stateTaxIds[0]?.number
+                      ? `${data.summary.stateTaxIds[0].number} (${data.summary.stateTaxIds[0].status ?? "—"})`
+                      : "—"}
+                  </p>
+                  {data.summary.partners.length > 0 && (
+                    <p className="text-xs text-slate-600">
+                      QSA:{" "}
+                      {data.summary.partners
+                        .slice(0, 3)
+                        .map((p) => p.name)
+                        .join(" · ")}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <h3 className="font-semibold">Inteligência comercial</h3>
@@ -432,16 +503,80 @@ export function CustomerCnpjIntelligencePanel({
                 </div>
               </section>
 
+              {(data.publicContactSuggestion?.phone || data.publicContactSuggestion?.email) && (
+                <section className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 space-y-2">
+                  <h3 className="font-semibold text-sm">Contatos públicos do CNPJ</h3>
+                  <p className="text-xs text-amber-900">
+                    {data.publicContactSuggestion.disclaimer}
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2 text-sm">
+                    {data.publicContactSuggestion.phone && (
+                      <div className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1.5">
+                        <span>Tel: {data.publicContactSuggestion.phone}</span>
+                        <button
+                          type="button"
+                          className="text-xs underline"
+                          onClick={() =>
+                            void copyText(data.publicContactSuggestion!.phone!, "Telefone")
+                          }
+                        >
+                          Copiar
+                        </button>
+                      </div>
+                    )}
+                    {data.publicContactSuggestion.email && (
+                      <div className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1.5">
+                        <span>E-mail: {data.publicContactSuggestion.email}</span>
+                        <button
+                          type="button"
+                          className="text-xs underline"
+                          onClick={() =>
+                            void copyText(data.publicContactSuggestion!.email!, "E-mail")
+                          }
+                        >
+                          Copiar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {data.comparison?.erpCommercialFields && data.comparison.erpCommercialFields.length > 0 && (
+                <section className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+                  <h3 className="font-semibold text-sm">
+                    Dados comerciais do ERP (fonte interna / relacionamento)
+                  </h3>
+                  <p className="text-xs text-slate-600">
+                    Estes dados não devem ser sobrescritos automaticamente pela consulta pública de
+                    CNPJ.
+                  </p>
+                  <div className="grid gap-1 sm:grid-cols-2 text-sm">
+                    {data.comparison.erpCommercialFields.map((f) => (
+                      <p key={f.field}>
+                        <span className="text-slate-500">{f.label}:</span> {f.erpValue ?? "—"}
+                      </p>
+                    ))}
+                  </div>
+                </section>
+              )}
+
               {data.comparison && (
                 <section className="rounded-lg border overflow-hidden">
                   <div className="bg-slate-50 px-3 py-2 font-semibold text-sm">
-                    Comparação ERP × API ({data.comparison.suggestedUpdates} sugestões)
+                    Comparação cadastral segura ({data.comparison.suggestedUpdates} sugestões
+                    oficiais)
                   </div>
+                  <p className="px-3 py-2 text-xs text-slate-600 border-b">
+                    Apenas dados oficiais/fiscais/endereço fiscal podem ser selecionados para
+                    atualização. Contatos públicos e dados comerciais internos ficam protegidos.
+                  </p>
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-xs">
                       <thead>
                         <tr className="border-b bg-white">
                           <th className="px-2 py-2 text-left">Campo</th>
+                          <th className="px-2 py-2 text-left">Tipo</th>
                           <th className="px-2 py-2 text-left">ERP</th>
                           <th className="px-2 py-2 text-left">API</th>
                           <th className="px-2 py-2 text-left">Status</th>
@@ -452,6 +587,7 @@ export function CustomerCnpjIntelligencePanel({
                         {data.comparison.fields.map((f) => (
                           <tr key={f.field} className="border-b">
                             <td className="px-2 py-2">{f.label}</td>
+                            <td className="px-2 py-2">{f.kindLabel}</td>
                             <td className="px-2 py-2">{f.erpValue ?? "—"}</td>
                             <td className="px-2 py-2">{f.apiValue ?? "—"}</td>
                             <td className="px-2 py-2">{COMPARE_STATUS_LABEL[f.status] ?? f.status}</td>
@@ -485,7 +621,7 @@ export function CustomerCnpjIntelligencePanel({
                         onClick={() => void applySelected()}
                         className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-50"
                       >
-                        Atualizar cadastro com campos selecionados
+                        Atualizar dados oficiais selecionados
                       </button>
                     </div>
                   )}
@@ -493,21 +629,48 @@ export function CustomerCnpjIntelligencePanel({
               )}
 
               {!customerId && data.customerDraft && (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white"
-                    onClick={() => {
-                      if (onCreatePrefill) {
-                        onCreatePrefill(data.customerDraft as Partial<Customer>);
-                        onClose();
-                      } else {
-                        void createFromLookup();
-                      }
-                    }}
-                  >
-                    Cadastrar cliente com esses dados
-                  </button>
+                <div className="rounded-lg border p-3 space-y-3">
+                  <p className="text-sm text-slate-600">
+                    Serão preenchidos os dados oficiais/fiscais. Telefone e e-mail públicos não
+                    entram como contato principal, salvo confirmação abaixo.
+                  </p>
+                  {(data.publicContactSuggestion?.phone || data.publicContactSuggestion?.email) && (
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={usePublicContactAsPrimary}
+                        onChange={(e) => setUsePublicContactAsPrimary(e.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>
+                        Usar telefone/e-mail público como contato inicial? Pode ser do contador.
+                      </span>
+                    </label>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white"
+                      onClick={() => {
+                        if (onCreatePrefill) {
+                          onCreatePrefill({
+                            ...(data.customerDraft as Partial<Customer>),
+                            phone: usePublicContactAsPrimary
+                              ? data.publicContactSuggestion?.phone ?? ""
+                              : "",
+                            email: usePublicContactAsPrimary
+                              ? data.publicContactSuggestion?.email ?? ""
+                              : "",
+                          });
+                          onClose();
+                        } else {
+                          void createFromLookup();
+                        }
+                      }}
+                    >
+                      Cadastrar cliente com esses dados
+                    </button>
+                  </div>
                 </div>
               )}
 

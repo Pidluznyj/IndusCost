@@ -132,6 +132,7 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
           customerId: id,
           lookupId,
           selectedFields,
+          confirmPublicContactOverwrite: Boolean(req.body?.confirmPublicContactOverwrite),
           userId: user?.id ?? user?.email ?? null,
         });
         res.json(result);
@@ -155,6 +156,7 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
         const result = await createCustomerFromCompanyIntelligence({
           lookupId,
           overrides: req.body?.customer ?? req.body?.overrides ?? {},
+          usePublicContactAsPrimary: Boolean(req.body?.usePublicContactAsPrimary),
           userId: user?.id ?? user?.email ?? null,
         });
         res.status(201).json(result);

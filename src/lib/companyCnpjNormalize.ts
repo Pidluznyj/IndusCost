@@ -148,22 +148,82 @@ export function normalizePublicCnpjPayload(raw: unknown): NormalizedCnpjSummary 
   };
 }
 
-export function summaryToCustomerDraft(summary: NormalizedCnpjSummary): Record<string, string> {
+export function buildStructuredNormalizedSummary(summary: NormalizedCnpjSummary) {
+  return {
+    officialData: {
+      cnpj: summary.cnpj,
+      cnpjFormatted: summary.cnpjFormatted,
+      companyName: summary.companyName,
+      tradeName: summary.tradeName,
+      registrationStatus: summary.registrationStatus,
+      registrationStatusNormalized: summary.registrationStatusNormalized,
+      openedAt: summary.openedAt,
+      companySize: summary.companySize,
+      legalNature: summary.legalNature,
+      shareCapital: summary.shareCapital,
+      mainCnae: summary.mainCnae,
+      secondaryCnaes: summary.secondaryCnaes,
+      isMei: summary.isMei,
+      hasPartners: summary.hasPartners,
+      sourceUpdatedAt: summary.sourceUpdatedAt,
+    },
+    publicContactData: {
+      phone: summary.phone,
+      email: summary.email,
+      disclaimer:
+        "Estes contatos vêm da base pública do CNPJ e podem pertencer ao contador, escritório fiscal ou responsável cadastral. Valide antes de usar como contato comercial.",
+    },
+    taxData: {
+      stateTaxIds: summary.stateTaxIds,
+    },
+    addressData: {
+      address: summary.address,
+      addressNumber: summary.addressNumber,
+      addressComplement: summary.addressComplement,
+      district: summary.district,
+      city: summary.city,
+      state: summary.state,
+      zipCode: summary.zipCode,
+    },
+    partnersData: {
+      partners: summary.partners,
+    },
+  };
+}
+
+export function buildPublicContactNote(summary: NormalizedCnpjSummary, at = new Date()): string {
+  const parts: string[] = [];
+  if (summary.phone?.trim()) parts.push(`telefone ${summary.phone.trim()}`);
+  if (summary.email?.trim()) parts.push(`e-mail ${summary.email.trim()}`);
+  if (parts.length === 0) return "";
+  const date = at.toLocaleDateString("pt-BR");
+  return `Contato público retornado pela API CNPJ em ${date}: ${parts.join(", ")}. Validar antes de uso comercial.`;
+}
+
+export function summaryToCustomerDraft(
+  summary: NormalizedCnpjSummary,
+  options?: { usePublicContactAsPrimary?: boolean; at?: Date }
+): Record<string, string> {
   const primaryIe = summary.stateTaxIds[0]?.number;
+  const publicContactNote = buildPublicContactNote(summary, options?.at);
+  const usePublic = options?.usePublicContactAsPrimary ?? false;
+  const baseNotes = "Cadastro criado a partir de consulta CNPJ pública.";
+  const notes = publicContactNote && !usePublic ? `${baseNotes}\n${publicContactNote}` : baseNotes;
+
   return {
     companyName: summary.companyName,
     tradeName: summary.tradeName ?? "",
     taxId: summary.cnpj,
     stateTaxId: primaryIe && primaryIe !== "—" ? primaryIe : "",
-    email: summary.email ?? "",
-    phone: summary.phone ?? "",
+    email: usePublic ? summary.email ?? "" : "",
+    phone: usePublic ? summary.phone ?? "" : "",
     address: summary.address ?? "",
     city: summary.city ?? "",
     state: summary.state ?? "",
     zipCode: summary.zipCode?.replace(/\D/g, "") ?? "",
     country: "Brasil",
     segment: summary.mainCnae?.description ?? "",
-    notes: "Cadastro criado a partir de consulta CNPJ pública.",
+    notes,
     status: "ACTIVE",
   };
 }
