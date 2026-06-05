@@ -1,7 +1,7 @@
 # Relatório de Implementação — Dashboard Executivo IndusCost
 
 **Data:** 2026-06-05  
-**Commit:** _(preenchido após commit)_
+**Commit:** `5265018`
 
 ---
 
