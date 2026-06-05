@@ -393,6 +393,9 @@ describe("fleet management helpers", async () => {
 
 describe("fleet mobile usage flow", async () => {
   const {
+    formatMobileChecklistBlockMessage,
+    getMobileChecklistStepStatus,
+    isChecklistItemAnswered,
     isFleetChecklistRequiredForMode,
     isMobileChecklistStepComplete,
     mobileCheckoutBlockedByCritical,
@@ -400,6 +403,7 @@ describe("fleet mobile usage flow", async () => {
     resolveMobileUsageMode,
     validateMobileKmInput,
   } = await import("./fleetMobileUsage.js");
+  const { DEFAULT_CHECKOUT_ITEMS } = await import("./fleetChecklistOps.js");
 
   it("checkout mobile with checklist OK allows valid km", () => {
     assert.equal(resolveMobileUsageMode("APPROVED"), "checkout");
@@ -458,6 +462,82 @@ describe("fleet mobile usage flow", async () => {
       isFleetChecklistRequiredForMode({ checklistDevolucaoObrigatorio: "false" }, "checkin"),
       false
     );
+  });
+
+  it("isChecklistItemAnswered accepts OK, NOT_OK and NOT_APPLICABLE", () => {
+    assert.equal(isChecklistItemAnswered("OK"), true);
+    assert.equal(isChecklistItemAnswered("NOT_OK"), true);
+    assert.equal(isChecklistItemAnswered("NOT_APPLICABLE"), true);
+    assert.equal(isChecklistItemAnswered(null), false);
+    assert.equal(isChecklistItemAnswered(undefined), false);
+  });
+
+  it("all checkout template items OK enables advance", () => {
+    const items = DEFAULT_CHECKOUT_ITEMS.map((t) => ({
+      itemName: t.itemName,
+      isCritical: t.isCritical,
+      result: "OK" as const,
+    }));
+    const status = getMobileChecklistStepStatus(items, { required: true, mode: "checkout" });
+    assert.equal(status.answeredCount, 6);
+    assert.equal(status.totalCount, 6);
+    assert.equal(status.canAdvance, true);
+    assert.equal(status.blockReason, null);
+    assert.equal(formatMobileChecklistBlockMessage(status), null);
+  });
+
+  it("partial checkout checklist shows pending items and blocks advance", () => {
+    const items = DEFAULT_CHECKOUT_ITEMS.map((t, idx) => ({
+      itemName: t.itemName,
+      isCritical: t.isCritical,
+      result: idx < 4 ? ("OK" as const) : null,
+    }));
+    const status = getMobileChecklistStepStatus(items, { required: true, mode: "checkout" });
+    assert.equal(status.answeredCount, 4);
+    assert.equal(status.totalCount, 6);
+    assert.equal(status.canAdvance, false);
+    assert.equal(status.pendingItemNames.length, 2);
+    assert.match(status.pendingItemNames.join(" "), /Lataria/);
+    const msg = formatMobileChecklistBlockMessage(status);
+    assert.ok(msg);
+    assert.match(msg!, /Faltam 2 itens/);
+    assert.match(msg!, /Kit emergência/);
+  });
+
+  it("critical item OK does not block checkout", () => {
+    const items = [
+      { itemName: "Pneus e estepe", result: "OK" as const, isCritical: true },
+      { itemName: "Luzes", result: "OK" as const, isCritical: true },
+    ];
+    const status = getMobileChecklistStepStatus(items, { required: true, mode: "checkout" });
+    assert.equal(status.canAdvance, true);
+    assert.equal(mobileCheckoutBlockedByCritical(items), false);
+  });
+
+  it("critical item NOT_OK blocks checkout with clear reason", () => {
+    const items = [
+      { itemName: "Pneus e estepe", result: "NOT_OK" as const, isCritical: true },
+      { itemName: "Luzes", result: "OK" as const, isCritical: true },
+    ];
+    const status = getMobileChecklistStepStatus(items, { required: true, mode: "checkout" });
+    assert.equal(status.canAdvance, false);
+    assert.match(status.blockReason ?? "", /crítico/i);
+    assert.equal(mobileCheckoutBlockedByCritical(items), true);
+  });
+
+  it("NOT_APPLICABLE counts as answered on checkin", () => {
+    const items = [{ itemName: "Doc", result: "NOT_APPLICABLE" as const, isCritical: false }];
+    const status = getMobileChecklistStepStatus(items, { required: true, mode: "checkin" });
+    assert.equal(status.answeredCount, 1);
+    assert.equal(status.canAdvance, true);
+    assert.equal(isMobileChecklistStepComplete(items, true), true);
+  });
+
+  it("formatMobileChecklistBlockMessage never returns NaN or undefined text", () => {
+    const status = getMobileChecklistStepStatus([], { required: true, mode: "checkout" });
+    const msg = formatMobileChecklistBlockMessage(status);
+    assert.ok(msg);
+    assert.doesNotMatch(msg!, /NaN|undefined|null/i);
   });
 });
 

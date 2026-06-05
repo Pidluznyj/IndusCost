@@ -86,12 +86,91 @@ export function validateMobileKmInput(input: {
   }
 }
 
+export type MobileChecklistItemInput = ChecklistItemLike & {
+  itemName?: string;
+  notes?: string | null;
+  attachmentUrl?: string | null;
+};
+
+export type MobileChecklistStepStatus = {
+  complete: boolean;
+  answeredCount: number;
+  totalCount: number;
+  pendingItemNames: string[];
+  blockReason: string | null;
+  canAdvance: boolean;
+};
+
+const VALID_CHECKLIST_RESULTS = new Set(["OK", "NOT_OK", "NOT_APPLICABLE"]);
+
+export function isChecklistItemAnswered(
+  result: ChecklistItemLike["result"] | undefined
+): boolean {
+  return result != null && VALID_CHECKLIST_RESULTS.has(result);
+}
+
+export function getMobileChecklistStepStatus(
+  items: MobileChecklistItemInput[],
+  options: { required: boolean; mode: MobileUsageMode }
+): MobileChecklistStepStatus {
+  const totalCount = items.length;
+  const answeredCount = items.filter((i) => isChecklistItemAnswered(i.result)).length;
+  const pendingItemNames = items
+    .filter((i) => !isChecklistItemAnswered(i.result))
+    .map((i) => i.itemName?.trim() || "Item sem nome");
+
+  if (totalCount === 0) {
+    const blockReason = options.required ? "Checklist obrigatório sem itens." : null;
+    return {
+      complete: !options.required,
+      answeredCount: 0,
+      totalCount: 0,
+      pendingItemNames: [],
+      blockReason,
+      canAdvance: !options.required,
+    };
+  }
+
+  let blockReason: string | null = null;
+
+  if (pendingItemNames.length > 0) {
+    blockReason =
+      pendingItemNames.length === 1
+        ? "Falta 1 item do checklist"
+        : `Faltam ${pendingItemNames.length} itens do checklist`;
+  } else if (options.mode === "checkout" && hasCriticalNotOk(items)) {
+    blockReason = "Item crítico Não OK bloqueia a retirada";
+  }
+
+  const complete = pendingItemNames.length === 0;
+  const canAdvance = complete && !(options.mode === "checkout" && hasCriticalNotOk(items));
+
+  return {
+    complete,
+    answeredCount,
+    totalCount,
+    pendingItemNames,
+    blockReason,
+    canAdvance,
+  };
+}
+
+export function formatMobileChecklistBlockMessage(status: MobileChecklistStepStatus): string | null {
+  if (status.canAdvance) return null;
+  if (status.pendingItemNames.length > 0) {
+    const pendingList = status.pendingItemNames.join(", ");
+    return status.blockReason
+      ? `${status.blockReason}: ${pendingList}`
+      : `Itens pendentes: ${pendingList}`;
+  }
+  return status.blockReason;
+}
+
 export function isMobileChecklistStepComplete(
   items: ChecklistItemLike[],
   required: boolean
 ): boolean {
-  if (items.length === 0) return !required;
-  return items.every((i) => i.result != null);
+  return getMobileChecklistStepStatus(items, { required, mode: "checkin" }).complete;
 }
 
 export function resolveCheckinPendingOutcome(input: {
