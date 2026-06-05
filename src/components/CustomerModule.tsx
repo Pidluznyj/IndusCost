@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Download,
   BarChart3,
+  SearchCheck,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -23,6 +24,7 @@ import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { CustomerImportConfig } from "../lib/importer/CustomerConfig";
 import { CustomerCommercial360 } from "./customers/CustomerCommercial360";
+import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntelligencePanel";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
@@ -35,6 +37,9 @@ export const CustomerModule = () => {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [commercial360CustomerId, setCommercial360CustomerId] = useState<string | null>(null);
+  const [intelligenceOpen, setIntelligenceOpen] = useState(false);
+  const [intelligenceCustomerId, setIntelligenceCustomerId] = useState<string | null>(null);
+  const [intelligenceCnpj, setIntelligenceCnpj] = useState("");
   const [tourOpen, setTourOpen] = useState(false);
 
   // Form State
@@ -130,7 +135,14 @@ export const CustomerModule = () => {
     }
   };
 
-  const filteredCustomers = customers.filter(c => 
+  const openCnpjLookup = (opts?: { customer?: Customer | null; cnpj?: string }) => {
+    setIntelligenceCustomerId(opts?.customer?.id ?? null);
+    setIntelligenceCnpj(opts?.customer?.taxId ?? opts?.cnpj ?? "");
+    setIntelligenceOpen(true);
+  };
+
+  const filteredCustomers = customers.filter(
+    (c) =>
     (c.companyName ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (c.taxId ?? "").includes(searchTerm) ||
     (c.tradeName?.toLowerCase() || "").includes(searchTerm.toLowerCase())
@@ -155,6 +167,14 @@ export const CustomerModule = () => {
         </div>
         <div className="flex items-center gap-3">
           <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            type="button"
+            onClick={() => openCnpjLookup()}
+            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+          >
+            <SearchCheck className="h-4 w-4" />
+            Consultar CNPJ
+          </button>
           <button 
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -187,6 +207,23 @@ export const CustomerModule = () => {
         open={commercial360CustomerId != null}
         customerId={commercial360CustomerId}
         onClose={() => setCommercial360CustomerId(null)}
+      />
+
+      <CustomerCnpjIntelligencePanel
+        open={intelligenceOpen}
+        onClose={() => setIntelligenceOpen(false)}
+        customerId={intelligenceCustomerId}
+        initialCnpj={intelligenceCnpj}
+        onCustomerUpdated={fetchData}
+        onCreatePrefill={(draft) => {
+          setEditingCustomer(null);
+          setFormData({ ...formData, ...draft, country: draft.country ?? "Brasil", status: draft.status ?? "ACTIVE" });
+          setIsModalOpen(true);
+        }}
+        onOpenExistingCustomer={(id) => {
+          const existing = customers.find((c) => c.id === id);
+          if (existing) handleOpenModal(existing);
+        }}
       />
 
       {/* Table */}
@@ -262,13 +299,22 @@ export const CustomerModule = () => {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
+                          title="Consulta CNPJ"
+                          onClick={() => openCnpjLookup({ customer: c })}
+                          className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                        >
+                          <SearchCheck className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
                           title="Visão comercial do cliente"
                           onClick={() => setCommercial360CustomerId(c.id)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
                         >
                           <BarChart3 className="h-4 w-4" />
                         </button>
-                        <button 
+                        <button
+                          type="button"
                           onClick={() => handleOpenModal(c)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
                         >
@@ -302,14 +348,24 @@ export const CustomerModule = () => {
               <h3 className="text-xl font-bold">{editingCustomer ? "Editar Cliente" : "Novo Cliente"}</h3>
               <div className="flex items-center gap-2 shrink-0">
                 {editingCustomer && (
-                  <button
-                    type="button"
-                    onClick={() => setCommercial360CustomerId(editingCustomer.id)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-border bg-background hover:bg-accent text-foreground transition-colors"
-                  >
-                    <BarChart3 className="h-4 w-4 text-primary" />
-                    Visão comercial
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openCnpjLookup({ customer: editingCustomer })}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-border bg-background hover:bg-accent text-foreground transition-colors"
+                    >
+                      <SearchCheck className="h-4 w-4 text-primary" />
+                      Consulta CNPJ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCommercial360CustomerId(editingCustomer.id)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-border bg-background hover:bg-accent text-foreground transition-colors"
+                    >
+                      <BarChart3 className="h-4 w-4 text-primary" />
+                      Visão comercial
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"

@@ -14298,6 +14298,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     getCurrentAppUser,
   });
 
+  const { registerCompanyIntelligenceRoutes } = await import(
+    "./src/lib/companyIntelligenceRoutes.js"
+  );
+  registerCompanyIntelligenceRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
   // API fallback: garante resposta JSON para rotas /api não registradas
   // e evita cair no fallback HTML da SPA (Vite/index.html).
   app.use("/api", (req, res) => {

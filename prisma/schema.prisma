@@ -315,6 +315,7 @@ model Customer {
   accountOwner       String?
   CommercialActivity CommercialActivity[]
   CrmCustomerProfile CrmCustomerProfile?
+  CustomerCnpjLookup CustomerCnpjLookup[]
   proposals          Proposal[]
   salesOrders        SalesOrder[]
 }
@@ -749,6 +750,30 @@ model CommercialAuditLog {
   @@index([performedAt])
 }
 
+model CustomerCnpjLookup {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cnpj               String
+  customerId         String?   @db.Uuid
+  source             String    @default("publica.cnpj.ws")
+  rawJson            Json
+  normalizedSummary  Json
+  riskScore          Int
+  riskVerdict        String
+  riskDetails        Json
+  commercialInsights Json
+  fetchedAt          DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt          DateTime  @db.Timestamptz(6)
+  fetchedByUserId    String?
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([cnpj])
+  @@index([customerId])
+  @@index([fetchedAt])
+  @@index([expiresAt])
+}
 
 model IntegrationRun {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
