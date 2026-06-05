@@ -5,6 +5,7 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   FleetValidationError,
   assertReasonRequired,
+  assertReasonMinLength,
   } from "@/src/lib/fleetValidation.js";
 import {
   MAINTENANCE_INCLUDE,
@@ -159,7 +160,15 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
           ? assertReasonRequired(req.body?.reason, "Motivo do cancelamento")
           : undefined;
       if (status === "CANCELED") {
-        const result = await cancelMaintenance(id, reason!, user?.id ?? null);
+        const result = await cancelMaintenance(
+          id,
+          {
+            reason: reason!,
+            closedAt: req.body?.closedAt ?? null,
+            notes: req.body?.notes ?? null,
+          },
+          user?.id ?? null
+        );
         return res.json(result);
       }
       const maintenance = await changeMaintenanceStatus(id, status, user?.id ?? null, reason);
@@ -213,9 +222,17 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
-      const reason = assertReasonRequired(req.body?.reason, "Motivo do cancelamento");
+      const reason = assertReasonMinLength(req.body?.reason, 5, "Motivo do cancelamento");
       const user = await getCurrentAppUser(req);
-      const result = await cancelMaintenance(id, reason, user?.id ?? null);
+      const result = await cancelMaintenance(
+        id,
+        {
+          reason,
+          closedAt: req.body?.closedAt ?? null,
+          notes: typeof req.body?.notes === "string" ? req.body.notes : null,
+        },
+        user?.id ?? null
+      );
       res.json(result);
     } catch (e) {
       handleFleetRouteError(res, e, "POST cancel maintenance", req);

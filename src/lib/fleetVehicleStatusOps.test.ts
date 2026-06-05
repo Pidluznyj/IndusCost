@@ -3,8 +3,13 @@ import { describe, it } from "node:test";
 import {
   formatMaintenanceBlockLabel,
   resolveMaintenanceVehicleStatus,
+  canShowMaintenanceCancelAction,
+  formatMaintenanceCancelOutcome,
+  assertReasonMinLength,
+  buildMaintenanceCancelAuditEntry,
 } from "./fleetValidation.js";
 import { resolveOperationalStatusFromContext } from "./fleetVehicleStatusOps.js";
+import { buildMaintenanceCancelUpdate } from "./fleetMaintenanceOps.js";
 
 describe("fleet vehicle operational status", () => {
   it("cancel/complete last blocking maintenance releases vehicle to AVAILABLE", () => {
@@ -83,6 +88,57 @@ describe("fleet maintenance cancel validation", async () => {
 
   it("cancel maintenance without reason throws", () => {
     assert.throws(() => assertReasonRequired("  ", "Motivo do cancelamento"));
+  });
+
+  it("cancel maintenance with short reason throws", () => {
+    assert.throws(() => assertReasonMinLength("abc", 5, "Motivo do cancelamento"));
+  });
+
+  it("cancel button visibility follows maintenance status", () => {
+    assert.equal(canShowMaintenanceCancelAction("OPEN"), true);
+    assert.equal(canShowMaintenanceCancelAction("IN_PROGRESS"), true);
+    assert.equal(canShowMaintenanceCancelAction("COMPLETED"), false);
+    assert.equal(canShowMaintenanceCancelAction("CANCELED"), false);
+  });
+
+  it("open maintenance cancel update sets status CANCELED", () => {
+    const openedAt = new Date("2026-01-01T10:00:00Z");
+    const update = buildMaintenanceCancelUpdate(
+      { status: "OPEN", notes: null, openedAt },
+      { reason: "Serviço desnecessário", closedAt: "2026-06-05T12:00:00" }
+    );
+    assert.equal(update.status, "CANCELED");
+    assert.ok(update.notes.includes("Serviço desnecessário"));
+  });
+
+  it("cancel outcome message when vehicle is released", () => {
+    const msg = formatMaintenanceCancelOutcome({
+      nextStatus: "AVAILABLE",
+      changed: true,
+      blockers: [],
+    });
+    assert.equal(msg, "Manutenção cancelada e veículo liberado.");
+  });
+
+  it("cancel outcome message when blockers remain", () => {
+    const msg = formatMaintenanceCancelOutcome({
+      nextStatus: "MAINTENANCE",
+      changed: false,
+      blockers: [{ label: "Manutenção (OPEN): freios" }],
+    });
+    assert.match(msg, /permanece bloqueado por: Manutenção \(OPEN\): freios/);
+  });
+
+  it("cancel maintenance audit entry uses CANCEL action", () => {
+    const entry = buildMaintenanceCancelAuditEntry({
+      entityId: "00000000-0000-4000-8000-000000000001",
+      oldStatus: "OPEN",
+      reason: "Erro de cadastro",
+      userId: "user-1",
+    });
+    assert.equal(entry.action, "CANCEL");
+    assert.equal(entry.newValue, "CANCELED");
+    assert.equal(entry.entityType, "FleetMaintenance");
   });
 
   it("completed maintenance cannot be canceled again", () => {

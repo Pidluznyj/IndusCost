@@ -8,9 +8,13 @@ import {
   assertMaintenanceEditable,
   assertMaintenanceTransition,
   assertNonNegativeAmount,
+  assertReasonMinLength,
   assertReasonRequired,
+  buildMaintenanceCancelAuditEntry,
+  buildMaintenanceCancelNotes,
   maintenanceNeedsApproval,
   parseDecimalKm,
+  parseMaintenanceClosedAt,
   resolveMaintenanceVehicleStatus,
 } from "@/src/lib/fleetValidation.js";
 import { recalculateVehicleOperationalStatus } from "@/src/lib/fleetVehicleStatusOps.js";
@@ -573,22 +577,44 @@ export async function completeMaintenance(
   };
 }
 
+export type CancelMaintenanceInput = {
+  reason: string;
+  closedAt?: string | Date | null;
+  notes?: string | null;
+};
+
+export function buildMaintenanceCancelUpdate(
+  existing: { status: FleetMaintenanceStatus; notes: string | null; openedAt: Date },
+  input: CancelMaintenanceInput
+) {
+  assertMaintenanceEditable(existing.status);
+  const reason = assertReasonMinLength(input.reason, 5, "Motivo do cancelamento");
+  const closedAt = parseMaintenanceClosedAt(input.closedAt, existing.openedAt);
+  return {
+    status: "CANCELED" as const,
+    completedAt: closedAt,
+    notes: buildMaintenanceCancelNotes(existing.notes, reason, closedAt, input.notes),
+    reason,
+    closedAt,
+  };
+}
+
 export async function cancelMaintenance(
   id: string,
-  reason: string,
+  input: CancelMaintenanceInput | string,
   userId: string | null
 ) {
   const existing = await getMaintenanceOrThrow(id);
-  assertMaintenanceEditable(existing.status);
-  const r = assertReasonRequired(reason, "Motivo do cancelamento");
+  const payload: CancelMaintenanceInput =
+    typeof input === "string" ? { reason: input } : input;
+  const cancelData = buildMaintenanceCancelUpdate(existing, payload);
 
   const updated = await prisma.fleetMaintenance.update({
     where: { id },
     data: {
-      status: "CANCELED",
-      notes: existing.notes
-        ? `${existing.notes}\n[cancelado] ${r}`
-        : `[cancelado] ${r}`,
+      status: cancelData.status,
+      completedAt: cancelData.closedAt,
+      notes: cancelData.notes,
     },
     include: MAINTENANCE_INCLUDE,
   });
@@ -596,18 +622,17 @@ export async function cancelMaintenance(
   const vehicleStatus = await recalculateVehicleOperationalStatus(existing.vehicleId, {
     userId,
     trigger: "MAINTENANCE_CANCEL",
-    reason: r,
+    reason: cancelData.reason,
   });
 
-  await writeFleetAuditLog({
-    entityType: "FleetMaintenance",
-    entityId: id,
-    action: "CANCEL",
-    oldValue: existing.status,
-    newValue: "CANCELED",
-    reason: r,
-    userId,
-  });
+  await writeFleetAuditLog(
+    buildMaintenanceCancelAuditEntry({
+      entityId: id,
+      oldStatus: existing.status,
+      reason: cancelData.reason,
+      userId,
+    })
+  );
 
   return { maintenance: serializeMaintenance(updated), vehicleStatus };
 }

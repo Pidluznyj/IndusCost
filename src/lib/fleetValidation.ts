@@ -199,6 +199,79 @@ export function assertReasonRequired(reason: unknown, label = "Motivo"): string 
   return r;
 }
 
+export function assertReasonMinLength(
+  reason: unknown,
+  minLength: number,
+  label = "Motivo"
+): string {
+  const r = assertReasonRequired(reason, label);
+  if (r.length < minLength) {
+    throw new FleetValidationError(`${label} deve ter pelo menos ${minLength} caracteres.`);
+  }
+  return r;
+}
+
+export function parseMaintenanceClosedAt(raw: unknown, openedAt?: Date | null): Date {
+  const closedAt = raw ? new Date(String(raw)) : new Date();
+  if (Number.isNaN(closedAt.getTime())) {
+    throw new FleetValidationError("Data de fechamento/cancelamento inválida.");
+  }
+  if (openedAt) assertMaintenanceCompletionDate(openedAt, closedAt);
+  return closedAt;
+}
+
+export function canShowMaintenanceCancelAction(status: FleetMaintenanceStatus | string): boolean {
+  return !FLEET_MAINTENANCE_TERMINAL_STATUSES.includes(status as FleetMaintenanceStatus);
+}
+
+export function buildMaintenanceCancelNotes(
+  existingNotes: string | null | undefined,
+  reason: string,
+  closedAt: Date,
+  extraNotes?: string | null
+): string {
+  const stamp = closedAt.toLocaleString("pt-BR");
+  const lines = [`[cancelado ${stamp}] ${reason}`];
+  if (extraNotes?.trim()) lines.push(extraNotes.trim());
+  if (existingNotes?.trim()) return `${existingNotes.trim()}\n${lines.join("\n")}`;
+  return lines.join("\n");
+}
+
+export function formatMaintenanceCancelOutcome(result: {
+  nextStatus: string;
+  changed: boolean;
+  blockers: { label: string }[];
+} | null | undefined): string {
+  if (!result) return "Manutenção cancelada.";
+  if (result.blockers.length > 0) {
+    return `Manutenção cancelada, mas o veículo permanece bloqueado por: ${result.blockers.map((b) => b.label).join("; ")}.`;
+  }
+  if (result.nextStatus === "AVAILABLE") {
+    return "Manutenção cancelada e veículo liberado.";
+  }
+  if (result.changed) {
+    return `Manutenção cancelada. Status do veículo atualizado para ${result.nextStatus}.`;
+  }
+  return "Manutenção cancelada e veículo liberado.";
+}
+
+export function buildMaintenanceCancelAuditEntry(input: {
+  entityId: string;
+  oldStatus: string;
+  reason: string;
+  userId: string | null;
+}) {
+  return {
+    entityType: "FleetMaintenance" as const,
+    entityId: input.entityId,
+    action: "CANCEL" as const,
+    oldValue: input.oldStatus,
+    newValue: "CANCELED",
+    reason: input.reason,
+    userId: input.userId,
+  };
+}
+
 export function assertDriverAuthorizedForReservation(
   driver: Pick<FleetDriver, "cnhExpirationDate" | "cnhCategory" | "status" | "name">,
   options?: {
