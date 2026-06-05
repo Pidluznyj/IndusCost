@@ -126,6 +126,7 @@ import {
   buildNomusEffectiveBomCostImpact,
   type CurrentCostSnapshot,
 } from "./src/lib/nomusEffectiveBomCostImpact.js";
+import { buildCurrentCostSnapshotFromAnalysis } from "./src/lib/productCostSnapshot.js";
 import {
   clearReviewDecision,
   listReviewDecisionsForParentCode,
@@ -3931,23 +3932,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           select: { id: true },
         });
         if (product) {
-          const cache = await initAnalysisCache();
-          const analysis = await getProductCostAnalysis(product.id, cache, true);
-          if (analysis && !isCostAnalysisFailure(analysis)) {
-            const detailsMaterials = (
-              analysis as { details?: { materials?: CurrentCostSnapshot["materials"] } }
-            ).details?.materials;
-            currentSnapshot = {
-              productId: analysis.productId,
-              sku: analysis.sku,
-              totalMaterialCost: Number(analysis.totalMaterialCost),
-              totalHH_Unit: Number(analysis.totalHH_Unit),
-              totalHM_Unit: Number(analysis.totalHM_Unit),
-              totalIndustrialCost: Number(analysis.totalIndustrialCost),
-              costAnalysisPartial: Boolean(analysis.costAnalysisPartial),
-              materials: Array.isArray(detailsMaterials) ? detailsMaterials : undefined,
-            };
-          }
+          currentSnapshot = await loadCurrentCostSnapshotForProductId(product.id);
         }
 
         const result = await buildNomusEffectiveBomCostImpact(
@@ -4056,7 +4041,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         if (!parentCode) {
           return res.status(400).json({ error: "parentCode é obrigatório." });
         }
-        const result = await buildControlledApplyPreview(parentCode);
+        const result = await buildControlledApplyPreview(parentCode, {
+          resolveCurrentCostSnapshot: resolveCurrentCostSnapshotForNomus,
+        });
         return res.json(result);
       } catch (error) {
         console.error("GET /api/nomus/effective-pricing-bom/apply-preview", error);
@@ -4091,6 +4078,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           planHash,
           confirmationText,
           approvedBy,
+          resolveCurrentCostSnapshot: resolveCurrentCostSnapshotForNomus,
         });
         return res.json(result);
       } catch (error) {
@@ -7695,6 +7683,21 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   function isCostAnalysisFailure(x: unknown): x is { error: string; message?: string } {
     return typeof x === "object" && x !== null && "error" in x && typeof (x as { error: unknown }).error === "string";
+  }
+
+  async function loadCurrentCostSnapshotForProductId(
+    productId: string
+  ): Promise<CurrentCostSnapshot | null> {
+    const cache = await initAnalysisCache();
+    const analysis = await getProductCostAnalysis(productId, cache, true);
+    return buildCurrentCostSnapshotFromAnalysis(analysis);
+  }
+
+  async function resolveCurrentCostSnapshotForNomus(
+    productId: string,
+    _sku: string
+  ): Promise<CurrentCostSnapshot | null> {
+    return loadCurrentCostSnapshotForProductId(productId);
   }
 
   /** Texto único para logs/UI quando o custeio recursivo falha (inclui cause aninhado, ex.: filho do filho). */

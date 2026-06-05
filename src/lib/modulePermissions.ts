@@ -94,14 +94,11 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     case "simulations":
       return check.hasPermission("simulations.view") || check.hasPermission(LEGACY_COSTS_VIEW);
     case "taxes":
-      return check.hasPermission("taxes.view") || check.hasPermission("pricing.view");
+      return check.hasPermission("taxes.view");
     case "settings":
       return check.hasAnyPermission([...SETTINGS_MENU_PERMISSIONS]);
     case "maintenance":
-      return (
-        check.hasPermission("maintenance.view") ||
-        check.hasPermission("settings.view")
-      );
+      return check.hasPermission("maintenance.view");
     case "fleet": {
       const held = check.authUser?.effectivePermissions;
       if (held?.length) return evaluateFleetRouteAccess(held, "view");
@@ -251,14 +248,8 @@ export const PRODUCT_TAB_PERMISSIONS: Record<ProductTabId, string> = {
   history: "products.tab.info",
 };
 
-/** Abas visíveis no modal de produto (legado: só products.view → todas as abas). */
+/** Abas visíveis no modal de produto — exige permissão tab explícita. */
 export function getVisibleProductTabs(check: PermissionChecker): ProductTabId[] {
-  const hasAnyTabPerm = PRODUCT_TAB_IDS.some((id) =>
-    check.hasPermission(PRODUCT_TAB_PERMISSIONS[id])
-  );
-  if (!hasAnyTabPerm && check.hasPermission("products.view")) {
-    return [...PRODUCT_TAB_IDS];
-  }
   return PRODUCT_TAB_IDS.filter((id) => check.hasPermission(PRODUCT_TAB_PERMISSIONS[id]));
 }
 

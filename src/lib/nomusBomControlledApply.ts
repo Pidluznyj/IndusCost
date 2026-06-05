@@ -13,6 +13,7 @@ import {
 import { buildEffectivePricingBomForParentCode } from "@/src/lib/nomusEffectivePricingBom";
 import type { EffectivePricingBomLine } from "@/src/lib/nomusEffectivePricingBomTypes";
 import { buildNomusEffectiveBomCostImpact } from "@/src/lib/nomusEffectiveBomCostImpact";
+import type { CurrentCostSnapshot } from "@/src/lib/nomusEffectiveBomCostImpact";
 import { listReviewDecisionsForParentCode } from "@/src/lib/nomusBomReviewDecision";
 import { prisma } from "@/src/lib/prisma";
 import { recordEngineeringChange } from "@/src/lib/productChangeHistory";
@@ -1166,7 +1167,15 @@ function collectApplyGates(input: {
 
 export async function buildControlledApplyPreview(
   parentCode: string,
-  options?: { nomusUniverse?: ReadonlySet<string> }
+  options?: {
+    nomusUniverse?: ReadonlySet<string>;
+    /** Snapshot CIU atual — mesma fonte que cost-impact. Omitir apenas em scripts legados. */
+    currentCostSnapshot?: CurrentCostSnapshot | null;
+    resolveCurrentCostSnapshot?: (
+      productId: string,
+      sku: string
+    ) => Promise<CurrentCostSnapshot | null>;
+  }
 ): Promise<ControlledApplyPreview> {
   const trimmed = parentCode.trim();
   const sku = normalizeSku(trimmed);
@@ -1191,11 +1200,16 @@ export async function buildControlledApplyPreview(
 
   const comparison = await buildBomComparisonForParentCode(trimmed);
 
+  let currentSnapshot = options?.currentCostSnapshot ?? null;
+  if (currentSnapshot === null && product && options?.resolveCurrentCostSnapshot) {
+    currentSnapshot = await options.resolveCurrentCostSnapshot(product.id, product.sku);
+  }
+
   const costImpact = product
     ? await buildNomusEffectiveBomCostImpact(
         trimmed,
         { recursive: false, maxDepth: 10 },
-        null
+        currentSnapshot
       )
     : null;
 
@@ -1329,9 +1343,15 @@ export async function applyEffectiveBomToProductBom(input: {
   approvedBy?: string;
   /** Origem de auditoria em EngineeringSyncRun.summaryJson (ex.: NOMUS_AUTO_SYNC_BOM_APPLY). */
   auditOrigin?: string;
+  resolveCurrentCostSnapshot?: (
+    productId: string,
+    sku: string
+  ) => Promise<CurrentCostSnapshot | null>;
 }): Promise<ControlledApplyResult> {
   const trimmed = input.parentCode.trim();
-  const preview = await buildControlledApplyPreview(trimmed);
+  const preview = await buildControlledApplyPreview(trimmed, {
+    resolveCurrentCostSnapshot: input.resolveCurrentCostSnapshot,
+  });
 
   if (!preview.productId) {
     throw new Error("Produto não encontrado no IndusCost.");

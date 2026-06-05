@@ -80,6 +80,27 @@ describe("fleet vehicle operational status", () => {
     });
     assert.equal(next, "BLOCKED");
   });
+
+  it("blocking maintenance takes precedence over approved reservation (INT-013/038)", () => {
+    const next = resolveOperationalStatusFromContext({
+      currentStatus: "AVAILABLE",
+      blockers: [{ type: "maintenance", id: "m1", label: "Manutenção (OPEN): freios" }],
+      blockingMaintenancePriority: "MEDIA",
+      hasApprovedReservation: true,
+    });
+    assert.equal(next, "MAINTENANCE");
+    assert.notEqual(next, "RESERVED");
+  });
+
+  it("after checkin with active blocking maintenance vehicle must not be AVAILABLE (INT-001)", () => {
+    const next = resolveOperationalStatusFromContext({
+      currentStatus: "IN_USE",
+      blockers: [{ type: "maintenance", id: "m1", label: "Manutenção (IN_PROGRESS): motor" }],
+      blockingMaintenancePriority: "ALTA",
+    });
+    assert.equal(next, "BLOCKED");
+    assert.notEqual(next, "AVAILABLE");
+  });
 });
 
 describe("fleet maintenance cancel validation", async () => {

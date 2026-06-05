@@ -1,157 +1,119 @@
 # Checklist Operacional — Melhorias de Integridade IndusCost
 
-Marcar cada item ao implementar. Ordem: **Fase A → B → C**.
-
-Referência: [`system-integrity-improvement-plan.md`](./system-integrity-improvement-plan.md)
-
----
-
-## Pré-implementação (todas as fases)
-
-- [ ] Ler `docs/generated/system-integrity-audit.md` e este plano
-- [ ] Confirmar decisão humana INT-002 (`costs.view`: remover alias FE vs expandir backend)
-- [ ] Confirmar decisão humana INT-003 (`dashboard.view` vs `reports.view`)
-- [ ] Confirmar decisão humana INT-015 (`test-db`: auth vs 404 prod vs remover)
-- [ ] `git status --short` limpo ou branch dedicada criada
-- [ ] `npm run lint` OK
-- [ ] `npm run build` OK
+Referência: [`system-integrity-improvement-plan.md`](./system-integrity-improvement-plan.md)  
+Relatório: [`system-integrity-implementation-report.md`](./system-integrity-implementation-report.md)
 
 ---
 
-## Fase A — Frota: recalc único (INT-001, INT-004, INT-013, INT-038)
+## Pré-implementação
+
+- [x] Ler auditoria e plano — **implementado**
+- [ ] Confirmar decisão humana INT-002 — **não implementado** (aguardando decisão)
+- [ ] Confirmar decisão humana INT-003 — **não implementado** (aguardando decisão)
+- [ ] Confirmar decisão humana INT-015 — **não implementado** (aguardando decisão)
+- [x] `npm run lint` OK — **teste:** `npm run lint`
+- [x] `npm run build` OK — **teste:** `npm run build`
+
+---
+
+## Fase A — Frota (INT-001, INT-004, INT-013, INT-038)
 
 ### Código
 
-- [ ] `fleetUsageOps.ts`: remover write direto de `status` no checkin (~L277–286)
-- [ ] `fleetUsageOps.ts`: chamar `recalculateVehicleOperationalStatus` após commit do checkin
-- [ ] `fleetUsageOps.ts`: revisar checkout/fechamento uso — recalc no fechamento se aplicável
-- [ ] `fleetReservationRoutes.ts`: approve — remover `status: "RESERVED"` direto (~L242–245)
-- [ ] `fleetReservationRoutes.ts`: approve — recalc após transaction
-- [ ] `fleetReservationOps.ts`: `syncVehicleStatusAfterReservationChange` delega ao recalc
-- [ ] Verificar outros call sites de sync (cancel, reject, change vehicle) usam recalc
-- [ ] Manter update de `currentKm` separado do status no checkin
+- [x] `fleetUsageOps.ts`: remover write direto de `status` no checkin — **implementado**
+- [x] `fleetUsageOps.ts`: recalc após commit do checkin — **implementado** (`trigger: CHECKIN`)
+- [x] `fleetUsageOps.ts`: checkout via recalc — **implementado** (`trigger: CHECKOUT`)
+- [x] `fleetReservationRoutes.ts`: approve sem `RESERVED` direto — **implementado**
+- [x] `fleetReservationRoutes.ts`: recalc após approve — **implementado**
+- [x] `fleetReservationOps.ts`: sync delega ao recalc — **implementado**
+- [x] replace-vehicle usa recalc — **implementado**
+- [x] `currentKm` separado do status — **implementado**
 
 ### Testes
 
-- [ ] Teste: checkin com manutenção `blocksVehicle` ativa → status ≠ AVAILABLE
-- [ ] Teste: approve reserva com manutenção bloqueante → status reflete bloqueio
-- [ ] Teste: cancel reserva → recalc libera veículo quando sem outros bloqueios
-- [ ] `npm run test:fleet` OK
+- [x] Teste manutenção + reserva (INT-013/038) — **implementado** `fleetVehicleStatusOps.test.ts`
+- [x] Teste checkin + manutenção (INT-001) — **implementado** `fleetVehicleStatusOps.test.ts`
+- [x] `npm run test:fleet` OK — **131 pass**
 
 ### Validação manual
 
-- [ ] Veículo em manutenção bloqueante → checkin → grid não mostra Disponível
-- [ ] Aprovar reserva → status coerente com manutenção/uso
-- [ ] Cancelar reserva aprovada → veículo volta conforme regras
-- [ ] (Opcional dev) `npm run test:fleet:smoke`
-
-### Aceite Fase A
-
-- [ ] Nenhum path em usage/reserva escreve `FleetVehicle.status` sem recalc
-- [ ] PR/commit isolado; mensagem sugerida: `fix(fleet): unify vehicle status via recalc`
+- [ ] Veículo manutenção bloqueante → checkin — **pendente validação manual**
+- [ ] Aprovar reserva com manutenção — **pendente validação manual**
+- [ ] Cancelar reserva — **pendente validação manual**
 
 ---
 
-## Fase B — Permissões UI↔API (INT-002, INT-003, INT-008, INT-009, INT-010)
+## Fase B — Permissões (parcial)
 
-### Código — `modulePermissions.ts`
+### Implementado (INT-008, INT-009, INT-010)
 
-- [ ] INT-002: employees — remover `\|\| LEGACY_COSTS_VIEW` (ou expandir backend se decidido)
-- [ ] INT-002: machines — idem
-- [ ] INT-002: materials — idem
-- [ ] INT-002: opex — idem
-- [ ] INT-002: simulations — idem
-- [ ] INT-003: reports — remover `\|\| dashboard.view` (ou OR no backend se decidido)
-- [ ] INT-008: `getVisibleProductTabs` — remover fallback “todas abas com só products.view”
-- [ ] INT-009: maintenance — remover `\|\| settings.view`
-- [ ] INT-010: taxes — remover `\|\| pricing.view`
+- [ ] INT-002 employees — **não implementado** — motivo: exige decisão humana
+- [ ] INT-002 machines — **não implementado** — motivo: exige decisão humana
+- [ ] INT-002 materials — **não implementado** — motivo: exige decisão humana
+- [ ] INT-002 opex — **não implementado** — motivo: exige decisão humana
+- [ ] INT-002 simulations — **não implementado** — motivo: exige decisão humana
+- [ ] INT-003 reports — **não implementado** — motivo: exige decisão humana
+- [x] INT-008 `getVisibleProductTabs` — **implementado** — teste: `modulePermissions.test.ts`
+- [x] INT-009 maintenance — **implementado** — teste: `modulePermissions.test.ts`
+- [x] INT-010 taxes — **implementado** — teste: `modulePermissions.test.ts`
 
 ### Testes
 
-- [ ] Criar/atualizar `modulePermissions.test.ts`
-- [ ] Teste: só `costs.view` → employees/machines ocultos
-- [ ] Teste: só `dashboard.view` → reports oculto
-- [ ] Teste: só `products.view` → abas cost/composition ocultas
-- [ ] Teste: só `settings.view` → maintenance oculto
-- [ ] Teste: só `pricing.view` → taxes oculto
-- [ ] `npm run audit:permissions` OK
-- [ ] Atualizar `docs/generated/permissions-audit-report.md` se script gerar diff
+- [x] `modulePermissions.test.ts` — **6 pass**
+- [ ] `npm run audit:permissions` — **não executado** (sem mudança INT-002/003)
 
 ### Validação manual
 
-- [ ] Perfil legado `costs.view`: menus custo ocultos; sem 403 ao navegar
-- [ ] Perfil `dashboard.view` sem `reports.view`: Relatórios oculto
-- [ ] Produto: aba Custo oculta sem `products.tab.cost`
-- [ ] Manutenção oculta sem `maintenance.view`
-- [ ] Impostos oculto sem `taxes.view`
-
-### Aceite Fase B
-
-- [ ] Sidebar alinhada aos guards API para itens corrigidos
-- [ ] PR/commit isolado; mensagem sugerida: `fix(permissions): align module menu with API guards`
+- [ ] Produto aba Custo sem tab perm — **pendente**
+- [ ] Manutenção oculta sem `maintenance.view` — **pendente**
+- [ ] Impostos oculto sem `taxes.view` — **pendente**
 
 ---
 
-## Fase C — Nomus snapshot + test-db (INT-005, INT-015)
+## Fase C — Nomus + segurança (parcial)
 
-### Código — Nomus
+### Nomus (INT-005)
 
-- [ ] Extrair helper `buildCurrentCostSnapshotForSku` (ou equivalente) de lógica em `server.ts` L3927–3950
-- [ ] Usar helper no handler `GET /api/nomus/effective-pricing-bom/cost-impact`
-- [ ] `nomusBomControlledApply.ts` ~L1194: passar snapshot real em vez de `null`
-- [ ] Não alterar fórmula material (INT-014 fora de escopo)
+- [x] Helper `productCostSnapshot.ts` — **implementado**
+- [x] cost-impact usa helper — **implementado**
+- [x] apply-preview snapshot real — **implementado**
+- [x] apply POST passa resolver — **implementado**
+- [x] Fórmula material intacta (INT-014 fora) — **confirmado**
 
-### Código — Segurança
+### Segurança (INT-015)
 
-- [ ] `server.ts` ~L1620: proteger `GET /api/test-db` (auth ou 404 prod)
+- [ ] Proteger `/api/test-db` — **não implementado** — motivo: exige decisão humana
 
 ### Testes
 
-- [ ] Teste: mesmo `parentCode` → preview gates === cost-impact gates
-- [ ] Teste: `/api/test-db` sem token → 401 ou 404
-- [ ] `npm run test:nomus:auto-sync-bom-apply` (subset relevante) OK
+- [x] `productCostSnapshot.test.ts` — **3 pass**
+- [ ] Teste comparativo preview vs cost-impact integração — **não criado** (requer DB piloto)
+- [ ] test-db auth — **não aplicável** (INT-015 adiado)
 
 ### Validação manual
 
-- [ ] SKU piloto: apply-preview e painel cost-impact — mesmos unresolved/blockers
-- [ ] curl test-db sem auth bloqueado
-
-### Aceite Fase C
-
-- [ ] Preview Nomus alinhado ao cost-impact para SKU com produto
-- [ ] test-db inacessível em produção
-- [ ] PR/commit isolado; mensagem sugerida: `fix(nomus): align apply-preview cost snapshot; secure test-db`
+- [ ] SKU piloto preview vs cost-impact — **pendente**
+- [ ] curl test-db — **adiado**
 
 ---
 
-## Pós-implementação (cada fase)
+## Pós-implementação
 
-- [ ] `npm run lint` OK
-- [ ] `npm run build` OK
-- [ ] `npx prisma validate` OK
-- [ ] Smoke manual do módulo afetado
-- [ ] Commit isolado por fase
-- [ ] Push após revisão
+- [x] `npx prisma validate` OK
+- [x] `npm run lint` OK
+- [x] `npm run build` OK
+- [ ] Smoke manual módulos — **pendente operador**
 
 ---
 
-## Não implementar nesta onda (registrar para backlog)
+## Backlog (não implementado nesta onda)
 
-- [ ] INT-006 — Commercial 360 vs CRM intel (decisão humana)
-- [ ] INT-007 — KPI pedidos endpoint único
-- [ ] INT-011, INT-012 — paginação/typeahead clientes
-- [ ] INT-014 — fórmula material CIU compartilhada
-- [ ] INT-016–046 — média/baixa severidade conforme plano §2.2
-
----
-
-## Rollback rápido
-
-- [ ] Identificar hash do commit da fase
-- [ ] `git revert <hash>` se regressão
-- [ ] Frota: rodar diagnóstico integridade se dados inconsistentes
-- [ ] Redeploy FE apenas se Fase B revertida
+- [ ] INT-006 — decisão humana
+- [ ] INT-007 — KPI pedidos
+- [ ] INT-011, INT-012 — paginação clientes
+- [ ] INT-014 — fórmula CIU
+- [ ] INT-016–046 — conforme plano §2.2
 
 ---
 
-*Checklist operacional — complemento do plano técnico.*
+*Checklist atualizado após implementação 2026-06-05.*
