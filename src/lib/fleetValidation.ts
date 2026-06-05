@@ -366,6 +366,15 @@ export function resolveMaintenanceVehicleStatus(
   return "MAINTENANCE";
 }
 
+export function formatMaintenanceBlockLabel(
+  blocksVehicle: boolean,
+  status: string
+): string {
+  if (!blocksVehicle) return "Não";
+  if (status === "COMPLETED" || status === "CANCELED") return "Era bloqueante";
+  return "Sim — ativo";
+}
+
 export function assertMaintenanceCompletionDate(openedAt: Date, completedAt: Date): void {
   if (completedAt.getTime() < openedAt.getTime()) {
     throw new FleetValidationError("Data de conclusão não pode ser anterior à abertura.");

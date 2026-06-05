@@ -20,6 +20,7 @@ import {
   startMaintenance,
   updateMaintenance,
 } from "@/src/lib/fleetMaintenanceOps.js";
+import { recalculateVehicleOperationalStatus } from "@/src/lib/fleetVehicleStatusOps.js";
 import {
   buildFleetListResponse,
   fleetListMeta,
@@ -158,8 +159,8 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
           ? assertReasonRequired(req.body?.reason, "Motivo do cancelamento")
           : undefined;
       if (status === "CANCELED") {
-        const maintenance = await cancelMaintenance(id, reason!, user?.id ?? null);
-        return res.json({ maintenance });
+        const result = await cancelMaintenance(id, reason!, user?.id ?? null);
+        return res.json(result);
       }
       const maintenance = await changeMaintenanceStatus(id, status, user?.id ?? null, reason);
       res.json({ maintenance });
@@ -214,8 +215,8 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
       const reason = assertReasonRequired(req.body?.reason, "Motivo do cancelamento");
       const user = await getCurrentAppUser(req);
-      const maintenance = await cancelMaintenance(id, reason, user?.id ?? null);
-      res.json({ maintenance });
+      const result = await cancelMaintenance(id, reason, user?.id ?? null);
+      res.json(result);
     } catch (e) {
       handleFleetRouteError(res, e, "POST cancel maintenance", req);
     }
@@ -230,6 +231,25 @@ export function registerFleetMaintenanceRoutes(app: express.Express, auth: AuthG
       res.json(result);
     } catch (e) {
       handleFleetRouteError(res, e, "POST generate-cost", req);
+    }
+  });
+
+  app.post("/api/fleet/vehicles/:id/recalculate-status", ...g.manage, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const user = await getCurrentAppUser(req);
+      const result = await recalculateVehicleOperationalStatus(id, {
+        userId: user?.id ?? null,
+        trigger: "MANUAL_RECALCULATE",
+        reason:
+          typeof req.body?.reason === "string" && req.body.reason.trim()
+            ? req.body.reason.trim()
+            : "Recálculo manual do status operacional",
+      });
+      res.json(result);
+    } catch (e) {
+      handleFleetRouteError(res, e, "POST recalculate-status", req);
     }
   });
 }
