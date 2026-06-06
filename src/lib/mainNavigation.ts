@@ -16,6 +16,7 @@ export const MAIN_MODULE_PATH_SEGMENTS = [
   "proposals",
   "customers",
   "simulations",
+  "finance",
   "reports",
   "fleet",
   "guide",

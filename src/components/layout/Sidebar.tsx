@@ -22,6 +22,7 @@ import {
   Wrench,
   Contact,
   Car,
+  Banknote,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
@@ -54,6 +55,7 @@ const ALL_MENU_ITEMS: {
   { id: "customers", icon: Users, label: MODULE_LABELS.customers },
   { id: "crm-commercial", icon: Contact, label: MODULE_LABELS["crm-commercial"] },
   { id: "simulations", icon: Layers, label: MODULE_LABELS.simulations },
+  { id: "finance", icon: Banknote, label: MODULE_LABELS.finance },
   { id: "reports", icon: FileText, label: MODULE_LABELS.reports },
   { id: "guide", icon: BookOpen, label: MODULE_LABELS.guide },
   { id: "settings", icon: Settings, label: MODULE_LABELS.settings },

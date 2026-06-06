@@ -61,6 +61,7 @@ import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetC
 import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
 import { registerExecutiveDashboardRoutes } from "./src/lib/executiveDashboardRoutes.js";
 import { registerNomusAccountsReceivableRoutes } from "./src/lib/nomusAccountsReceivableRoutes.js";
+import { registerFinanceAccountsReceivableRoutes } from "./src/lib/financeAccountsReceivableRoutes.js";
 import {
   getNomusDailySyncStatus,
   NomusDailySyncConflictError,
@@ -14430,6 +14431,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerNomusAccountsReceivableRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerFinanceAccountsReceivableRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,

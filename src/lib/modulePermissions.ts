@@ -20,6 +20,7 @@ export type AppModuleId =
   | "crm-commercial"
   | "simulations"
   | "reports"
+  | "finance"
   | "guide"
   | "settings";
 
@@ -48,6 +49,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "crm-commercial",
   "simulations",
   "reports",
+  "finance",
   "guide",
   "settings",
 ];
@@ -106,6 +108,14 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     }
     case "reports":
       return check.hasPermission("reports.view") || check.hasPermission("dashboard.view");
+    case "finance":
+      return (
+        check.hasPermission("finance.view") ||
+        check.hasPermission("finance.accountsReceivable.view") ||
+        check.hasPermission("reports.view") ||
+        check.hasPermission("settings.nomus.view") ||
+        check.hasPermission("settings.view")
+      );
     case "guide":
       return check.hasPermission("guide.view") || check.hasPermission("dashboard.view");
     default:
@@ -221,6 +231,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   "crm-commercial": "CRM Comercial",
   simulations: "Simulações",
   reports: "Relatórios",
+  finance: "Financeiro",
   guide: "Guia do Sistema",
   settings: "Configurações",
 };

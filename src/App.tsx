@@ -11,6 +11,7 @@ import { TaxModule } from "./components/TaxModule";
 import { PricingModule } from "./components/PricingModule";
 import { SimulationModule } from "./components/SimulationModule";
 import { SettingsModule } from "./components/SettingsModule";
+import { FinanceModule } from "./components/FinanceModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { CrmModule } from "./components/CrmModule";
@@ -613,6 +614,17 @@ export default function App() {
               headerActions={<ModuleIndicatorsButton to="/simulations/indicators" />}
             >
               <SimulationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="finance/*"
+          element={
+            <ModulePageShell
+              title="Financeiro"
+              description="Domínio financeiro do IndusCost — leitura e indicadores a partir dos dados sincronizados."
+            >
+              <FinanceModule />
             </ModulePageShell>
           }
         />

@@ -132,6 +132,8 @@ export const PERMISSION_TEMPLATES: Record<
       "settings.price_tables.manage",
       "settings.operational.view",
       "settings.operational.manage",
+      "finance.view",
+      "finance.accountsReceivable.view",
     ],
   },
   read_only: {
@@ -152,6 +154,8 @@ export const PERMISSION_TEMPLATES: Record<
       "purchases.view",
       "pricing.view",
       "reports.view",
+      "finance.view",
+      "finance.accountsReceivable.view",
       "guide.view",
     ],
   },

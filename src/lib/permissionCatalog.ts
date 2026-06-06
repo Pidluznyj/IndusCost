@@ -38,11 +38,33 @@ const SYS = "Configurações / Sistema";
 const MNT = "Manutenção";
 const FLT = "Gestão de Frota";
 
+const FIN = "Financeiro";
+
 export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // —— Geral ——
   perm({ key: "dashboard.view", label: "Dashboard", group: G, module: "dashboard", description: "Visualizar painel principal.", type: "menu" }),
   perm({ key: "reports.view", label: "Relatórios", group: G, module: "reports", description: "Acessar relatórios e BI.", type: "menu" }),
   perm({ key: "guide.view", label: "Guia do Sistema", group: G, module: "guide", description: "Acessar o guia funcional do sistema.", type: "menu" }),
+
+  // —— Financeiro ——
+  perm({
+    key: "finance.view",
+    label: "Financeiro",
+    group: FIN,
+    module: "finance",
+    description: "Acessar o domínio Financeiro no menu principal.",
+    type: "menu",
+  }),
+  perm({
+    key: "finance.accountsReceivable.view",
+    label: "Financeiro — Contas a Receber",
+    group: FIN,
+    module: "finance",
+    description: "Consultar dashboard read-only de Contas a Receber (Nomus sync local).",
+    type: "section",
+    parentKey: "finance.view",
+    requires: ["finance.view"],
+  }),
 
   // —— CRM ——
   perm({ key: "crm.view", label: "CRM Comercial", group: CRM, module: "crm-commercial", description: "Acessar o módulo CRM Comercial.", type: "menu" }),
