@@ -35,6 +35,21 @@ export function orderIsInvoicedSql(alias: string) {
   `;
 }
 
+export function orderNotInvoicedSql(alias: string) {
+  return Prisma.sql`NOT (${orderIsInvoicedSql(alias)})`;
+}
+
+/** Data da NF mais recente com dataProcessamento válido. */
+export function orderLatestInvoiceDateSql(alias: string) {
+  return Prisma.sql`
+    (
+      SELECT MAX((${nfeProcessamentoDateSql()}))
+      FROM ${nomusNfesElementsSql(alias)}
+      WHERE (${nfeProcessamentoDateSql()}) IS NOT NULL
+    )
+  `;
+}
+
 /** Pedido faturado com dataProcessamento dentro do intervalo [from, to] (inclusive). */
 export function orderInvoicedInPeriodSql(alias: string, fromYmd: string, toYmd: string) {
   const dateExpr = nfeProcessamentoDateSql();

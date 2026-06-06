@@ -3,6 +3,7 @@ import { hasAnyPermission, hasPermission } from "@/src/lib/appAuth.js";
 import { evaluateFleetRouteAccess } from "@/src/lib/fleetPermissionResolve.js";
 
 export {
+  formatExecutiveCompactCurrency,
   formatExecutiveCurrency,
   formatExecutiveDecimal,
   formatExecutiveInteger,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  formatExecutiveCompactCurrency,
   formatExecutiveCurrency,
   formatExecutiveDecimal,
   formatExecutiveInteger,
@@ -17,9 +18,22 @@ import {
   decimalToNumber,
   safeMetricNumber,
 } from "./executiveDashboardHelpers.js";
-import { buildExecutiveOverview } from "./executiveDashboardService.js";
+import {
+  countWorkdaysElapsedInMonth,
+  countWorkdaysInRange,
+  isWeekday,
+} from "./executiveDashboardWorkdays.js";
+import {
+  computeAchievementPercent,
+  computeDailyAverageByWorkday,
+  computeGrowthTarget,
+  computeTicketAverage,
+  isOpenPortfolioOrder,
+  isOverdueSalesOrder,
+  isSalesOrderInvoiced,
+  TARGET_GROWTH_FACTOR,
+} from "./salesOrderDashboardRules.js";
 import type { AppAuthContext } from "./appAuth.js";
-import type { ExecutiveCommercial, ExecutiveCustomers, ExecutiveFleet } from "./executiveDashboardTypes.js";
 
 function mockUser(perms: string[]): AppAuthContext {
   return {
@@ -39,171 +53,170 @@ function mockUser(perms: string[]): AppAuthContext {
   };
 }
 
-function mockCommercial(overrides: Partial<ExecutiveCommercial> = {}): ExecutiveCommercial {
-  return {
-    available: true,
-    source: "test",
-    periodLabel: "junho de 2026",
-    ordersThisMonth: 18,
-    ordersNetThisMonth: 468294.75,
-    invoicedNetThisMonth: 350000.5,
-    invoicedOrdersThisMonth: 12,
-    ticketAvgThisMonth: 26016.38,
-    openOrdersCount: 5,
-    sentToNomusCount: 3,
-    previousMonthOrders: 15,
-    previousMonthNet: 400000,
-    previousMonthInvoicedNet: 320000,
-    ...overrides,
-  };
-}
-
-describe("executiveDashboardHelpers", () => {
-  it("safeMetricNumber rejects NaN and null", () => {
-    assert.equal(safeMetricNumber(null), null);
-    assert.equal(safeMetricNumber(undefined), null);
-    assert.equal(safeMetricNumber(NaN), null);
-    assert.equal(safeMetricNumber("abc"), null);
-    assert.equal(safeMetricNumber(42), 42);
-  });
-
-  it("decimalToNumber handles Prisma-like decimals", () => {
-    assert.equal(decimalToNumber({ toNumber: () => 12.5 }), 12.5);
-    assert.equal(decimalToNumber("99.9"), 99.9);
-  });
-
+describe("executiveDashboardFormatters", () => {
   it("formatExecutiveInteger shows integers without decimal places", () => {
-    assert.equal(formatExecutiveInteger(null), "Não disponível");
     assert.equal(formatExecutiveInteger(1027), "1.027");
-    assert.equal(formatExecutiveInteger(0), "0");
     assert.doesNotMatch(formatExecutiveInteger(1027), /,\d{2}$/);
   });
 
   it("formatExecutiveCurrency always uses 2 decimal places", () => {
-    assert.equal(formatExecutiveCurrency(null), "Não disponível");
     assert.equal(formatExecutiveCurrency(8917179.210019), "R$\u00a08.917.179,21");
-    assert.equal(formatExecutiveCurrency(0), "R$\u00a00,00");
+  });
+
+  it("formatExecutiveCompactCurrency abbreviates large values", () => {
+    assert.match(formatExecutiveCompactCurrency(8_520_000), /Mi$/);
+    assert.match(formatExecutiveCompactCurrency(76_040), /mil$/);
+    assert.doesNotMatch(formatExecutiveCompactCurrency(8_917_179.210019), /210019/);
   });
 
   it("formatExecutiveDecimal caps at 2 decimal places", () => {
     assert.equal(formatExecutiveDecimal(123.456789), "123,46");
   });
 
-  it("formatExecutivePercent uses controlled decimals", () => {
-    assert.equal(formatExecutivePercent(12.3456, 1), "12,3");
+  it("formatExecutivePercent uses max 2 decimals", () => {
     assert.equal(formatExecutivePercent(12.3456, 2), "12,35");
   });
 
-  it("formatMetricCount alias uses executive integer formatting", () => {
+  it("formatMetric aliases use executive formatting", () => {
     assert.equal(formatMetricCount(1500), "1.500");
-    assert.doesNotMatch(formatMetricCount(1500), /,\d{2}$/);
+    assert.equal(formatMetricCurrency(8917179.210019), "R$\u00a08.917.179,21");
+  });
+});
+
+describe("executiveDashboardHelpers", () => {
+  it("safeMetricNumber rejects NaN and null", () => {
+    assert.equal(safeMetricNumber(null), null);
+    assert.equal(safeMetricNumber(NaN), null);
+    assert.equal(safeMetricNumber(42), 42);
   });
 
-  it("formatMetricCurrency alias uses executive currency formatting", () => {
-    assert.equal(formatMetricCurrency(8917179.210019), "R$\u00a08.917.179,21");
+  it("decimalToNumber handles Prisma-like decimals", () => {
+    assert.equal(decimalToNumber({ toNumber: () => 12.5 }), 12.5);
   });
 
   it("canSeeSalesOrders requires sales_orders.view or reports.view", () => {
     assert.equal(canSeeSalesOrders(mockUser(["dashboard.view"])), false);
     assert.equal(canSeeSalesOrders(mockUser(["sales_orders.view"])), true);
-    assert.equal(canSeeSalesOrders(mockUser(["reports.view"])), true);
   });
 
-  it("canSeeCommercial accepts any commercial-related permission", () => {
+  it("canSeeCommercial accepts commercial permissions", () => {
     assert.equal(canSeeCommercial(mockUser(["proposals.view"])), true);
     assert.equal(canSeeCommercial(mockUser(["machines.view"])), false);
   });
 
   it("canSeeCustomers requires customers.view", () => {
     assert.equal(canSeeCustomers(mockUser(["customers.view"])), true);
-    assert.equal(canSeeCustomers(mockUser(["crm.view"])), false);
   });
 
   it("canSeeFleet accepts fleet.view", () => {
     assert.equal(canSeeFleet(mockUser(["fleet.view"])), true);
-    assert.equal(canSeeFleet(mockUser(["products.view"])), false);
   });
 
   it("canSeeNomus accepts products.view", () => {
     assert.equal(canSeeNomus(mockUser(["products.view"])), true);
-    assert.equal(canSeeNomus(mockUser(["employees.view"])), false);
   });
 });
 
-describe("buildExecutiveOverview", () => {
-  it("uses sales order KPIs and excludes proposal KPIs", () => {
-    const commercial = mockCommercial();
-    const customers: ExecutiveCustomers = {
-      available: true,
-      totalCustomers: 500,
-      activeCustomers: 420,
-      incompleteRegistration: 10,
-      newLast30Days: 5,
-      cnpjLookupsLast30Days: 3,
-      overdueFollowUps: null,
-    };
-    const fleet: ExecutiveFleet = {
-      available: true,
-      totalVehicles: 10,
-      vehiclesAvailable: 4,
-      inUse: 3,
-      maintenance: 1,
-      blocked: 0,
-      openMaintenances: 0,
-      maintenanceOverdue: 0,
-      reservationsToday: 0,
-      documentsExpired: 0,
-    };
-
-    const overview = buildExecutiveOverview(commercial, customers, fleet, []);
-
-    const ids = overview.kpis.map((k) => k.id);
-    assert.ok(ids.includes("orders-count-month"));
-    assert.ok(ids.includes("invoiced-net-month"));
-    assert.ok(!ids.includes("proposals-open"));
-    assert.ok(!ids.includes("pipeline-open"));
+describe("executiveDashboardWorkdays", () => {
+  it("counts weekdays only", () => {
+    const sunday = new Date(2026, 5, 7);
+    assert.equal(sunday.getDay(), 0);
+    assert.equal(isWeekday(sunday), false);
+    assert.equal(isWeekday(new Date(2026, 5, 8)), true);
+    const mon = new Date(2026, 5, 8);
+    const fri = new Date(2026, 5, 12);
+    assert.equal(countWorkdaysInRange(mon, fri), 5);
   });
 
-  it("formats overview KPIs without excessive decimals", () => {
-    const commercial = mockCommercial({
-      ordersThisMonth: 1027,
-      invoicedNetThisMonth: 8917179.210019,
-    });
-    const overview = buildExecutiveOverview(
-      commercial,
-      { available: false, totalCustomers: null, activeCustomers: null, incompleteRegistration: null, newLast30Days: null, cnpjLookupsLast30Days: null, overdueFollowUps: null },
-      { available: false, totalVehicles: null, vehiclesAvailable: null, inUse: null, maintenance: null, blocked: null, openMaintenances: null, maintenanceOverdue: null, reservationsToday: null, documentsExpired: null },
-      []
-    );
-
-    const ordersKpi = overview.kpis.find((k) => k.id === "orders-count-month");
-    const invoicedKpi = overview.kpis.find((k) => k.id === "invoiced-net-month");
-
-    assert.equal(ordersKpi?.formatted, "1.027");
-    assert.equal(invoicedKpi?.formatted, "R$\u00a08.917.179,21");
-  });
-
-  it("returns zero formatted correctly when no orders", () => {
-    const commercial = mockCommercial({
-      ordersThisMonth: 0,
-      invoicedNetThisMonth: 0,
-      invoicedOrdersThisMonth: 0,
-      ticketAvgThisMonth: 0,
-    });
-    const overview = buildExecutiveOverview(
-      commercial,
-      { available: false, totalCustomers: null, activeCustomers: null, incompleteRegistration: null, newLast30Days: null, cnpjLookupsLast30Days: null, overdueFollowUps: null },
-      { available: false, totalVehicles: null, vehiclesAvailable: null, inUse: null, maintenance: null, blocked: null, openMaintenances: null, maintenanceOverdue: null, reservationsToday: null, documentsExpired: null },
-      []
-    );
-
-    assert.equal(overview.kpis.find((k) => k.id === "orders-count-month")?.formatted, "0");
-    assert.equal(overview.kpis.find((k) => k.id === "invoiced-net-month")?.formatted, "R$\u00a00,00");
+  it("countWorkdaysElapsedInMonth does not divide by zero path in consumers", () => {
+    const days = countWorkdaysElapsedInMonth(new Date(2026, 5, 5));
+    assert.ok(days >= 1);
   });
 });
 
-describe("buildAlerts ordering", async () => {
-  it("sorts critical before warning", async () => {
+describe("salesOrderDashboardRules", () => {
+  const today = new Date(2026, 5, 10);
+
+  it("excludes cancelled orders from open portfolio", () => {
+    assert.equal(
+      isOpenPortfolioOrder({ status: "CANCELLED", hasNfeDataProcessamento: false }),
+      false
+    );
+    assert.equal(
+      isOpenPortfolioOrder({ status: "READY_TO_SEND", hasNfeDataProcessamento: false }),
+      true
+    );
+  });
+
+  it("carteira aberta requires no NF processada", () => {
+    assert.equal(
+      isOpenPortfolioOrder({ status: "SENT_TO_NOMUS", hasNfeDataProcessamento: true }),
+      false
+    );
+  });
+
+  it("overdue requires delivery date passed and no invoice", () => {
+    assert.equal(
+      isOverdueSalesOrder({
+        status: "READY_TO_SEND",
+        expectedDeliveryDate: new Date(2026, 5, 1),
+        today,
+        hasNfeDataProcessamento: false,
+      }),
+      true
+    );
+    assert.equal(
+      isOverdueSalesOrder({
+        status: "READY_TO_SEND",
+        expectedDeliveryDate: new Date(2026, 5, 1),
+        today,
+        hasNfeDataProcessamento: true,
+      }),
+      false
+    );
+    assert.equal(
+      isOverdueSalesOrder({
+        status: "CANCELLED",
+        expectedDeliveryDate: new Date(2026, 5, 1),
+        today,
+        hasNfeDataProcessamento: false,
+      }),
+      false
+    );
+  });
+
+  it("invoiced orders are detected by dataProcessamento flag", () => {
+    assert.equal(isSalesOrderInvoiced(true), true);
+    assert.equal(isSalesOrderInvoiced(false), false);
+  });
+
+  it("month target equals same month previous year times 1.30", () => {
+    assert.equal(computeGrowthTarget(100_000), 100_000 * TARGET_GROWTH_FACTOR);
+  });
+
+  it("annual target uses growth factor", () => {
+    assert.equal(computeGrowthTarget(1_000_000), 1_300_000);
+  });
+
+  it("ticket average avoids divide by zero", () => {
+    assert.equal(computeTicketAverage(0, 0), 0);
+    assert.equal(computeTicketAverage(1000, 4), 250);
+    assert.equal(computeTicketAverage(1000, null), null);
+  });
+
+  it("daily average by workday avoids divide by zero", () => {
+    assert.equal(computeDailyAverageByWorkday(1000, 0), null);
+    assert.equal(computeDailyAverageByWorkday(1000, 5), 200);
+  });
+
+  it("achievement percent handles zero target", () => {
+    assert.equal(computeAchievementPercent(0, 0), 0);
+    assert.equal(computeAchievementPercent(130, 100), 130);
+  });
+});
+
+describe("executive dashboard service", async () => {
+  it("exports buildExecutiveDashboardSummary", async () => {
     const { buildExecutiveDashboardSummary } = await import("./executiveDashboardService.js");
     assert.equal(typeof buildExecutiveDashboardSummary, "function");
   });

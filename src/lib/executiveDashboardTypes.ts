@@ -1,4 +1,4 @@
-/** Tipos do dashboard executivo consolidado (GET /api/dashboard/executive-summary). */
+/** Tipos do dashboard gerencial (GET /api/dashboard/executive-summary). */
 
 export type ExecutiveMetricValue = number | null;
 
@@ -8,106 +8,110 @@ export type ExecutiveSectionBase = {
   source?: string;
 };
 
-export type ExecutiveOverview = ExecutiveSectionBase & {
-  alertCount: number;
-  kpis: Array<{
-    id: string;
-    label: string;
-    value: ExecutiveMetricValue;
-    formatted: string;
-    hint?: string;
-    href?: string;
-  }>;
-};
-
-export type ExecutiveCommercial = ExecutiveSectionBase & {
-  periodLabel: string;
-  /** Pedidos emitidos no mês — filtro por SalesOrder.issueDate, exclui CANCELLED. */
-  ordersThisMonth: ExecutiveMetricValue;
-  /** Valor líquido emitido no mês — SUM(totalNetValue) por issueDate. */
-  ordersNetThisMonth: ExecutiveMetricValue;
-  /** Faturamento líquido do mês — SUM(totalNetValue) com NFe dataProcessamento no período. */
-  invoicedNetThisMonth: ExecutiveMetricValue;
-  /** Pedidos faturados no mês — COUNT com NFe dataProcessamento no período. */
-  invoicedOrdersThisMonth: ExecutiveMetricValue;
-  ticketAvgThisMonth: ExecutiveMetricValue;
-  openOrdersCount: ExecutiveMetricValue;
-  sentToNomusCount: ExecutiveMetricValue;
-  previousMonthOrders: ExecutiveMetricValue | null;
-  previousMonthNet: ExecutiveMetricValue | null;
-  previousMonthInvoicedNet: ExecutiveMetricValue | null;
-};
-
-export type ExecutiveCustomers = ExecutiveSectionBase & {
-  totalCustomers: ExecutiveMetricValue;
-  activeCustomers: ExecutiveMetricValue;
-  incompleteRegistration: ExecutiveMetricValue;
-  newLast30Days: ExecutiveMetricValue;
-  cnpjLookupsLast30Days: ExecutiveMetricValue;
-  overdueFollowUps: ExecutiveMetricValue | null;
-};
-
-export type ExecutiveProducts = ExecutiveSectionBase & {
-  activeProducts: ExecutiveMetricValue;
-  withProductBom: ExecutiveMetricValue;
-  withPricing: ExecutiveMetricValue;
-  manufacturedProducts: ExecutiveMetricValue;
-};
-
-export type ExecutiveNomus = ExecutiveSectionBase & {
-  lastSyncAt: string | null;
-  hasReport: boolean;
-  blocked: ExecutiveMetricValue;
-  applied: ExecutiveMetricValue;
-  noChanges: ExecutiveMetricValue;
-  pendingReview: ExecutiveMetricValue;
-  errors: ExecutiveMetricValue;
-  emptyMessage: string | null;
-};
-
-export type ExecutiveFleet = ExecutiveSectionBase & {
-  totalVehicles: ExecutiveMetricValue;
-  vehiclesAvailable: ExecutiveMetricValue;
-  inUse: ExecutiveMetricValue;
-  maintenance: ExecutiveMetricValue;
-  blocked: ExecutiveMetricValue;
-  openMaintenances: ExecutiveMetricValue;
-  maintenanceOverdue: ExecutiveMetricValue;
-  reservationsToday: ExecutiveMetricValue;
-  documentsExpired: ExecutiveMetricValue;
-};
-
-export type ExecutivePeople = ExecutiveSectionBase & {
-  activeEmployees: ExecutiveMetricValue;
-};
-
-export type ExecutiveAlert = {
-  id: string;
-  severity: "critical" | "warning" | "info";
-  title: string;
-  message: string;
-  href?: string;
-  count?: number;
-};
-
-export type ExecutiveQuickLink = {
+export type DashboardMetricCard = {
   id: string;
   label: string;
-  href: string;
-  moduleId: string;
+  value: ExecutiveMetricValue;
+  formatted: string;
+  compactFormatted?: string;
+  hint?: string;
+};
+
+export type DashboardTargetBlock = {
+  actual: ExecutiveMetricValue;
+  previousPeriod: ExecutiveMetricValue;
+  target: ExecutiveMetricValue;
+  gap: ExecutiveMetricValue;
+  achievementPercent: ExecutiveMetricValue;
+  formatted: {
+    actual: string;
+    previousPeriod: string;
+    target: string;
+    gap: string;
+    achievementPercent: string;
+  };
+};
+
+export type DashboardChartPoint = {
+  month: number;
+  label: string;
+  currentYear: ExecutiveMetricValue;
+  previousYear: ExecutiveMetricValue;
+  target?: ExecutiveMetricValue;
+};
+
+export type DashboardStatusBreakdownRow = {
+  status: string;
+  label: string;
+  count: number;
+  value: ExecutiveMetricValue;
+};
+
+export type OverdueOrderRow = {
+  orderId: string;
+  orderCode: string;
+  customerName: string;
+  issueDate: string;
+  expectedDeliveryDate: string;
+  daysOverdue: number;
+  totalNetValue: ExecutiveMetricValue;
+  status: string;
+  statusLabel: string;
+};
+
+export type RecentInvoicedOrderRow = {
+  orderId: string;
+  orderCode: string;
+  customerName: string;
+  invoiceDate: string;
+  totalNetValue: ExecutiveMetricValue;
+};
+
+export type BillingTopCustomerRow = {
+  customerId: string;
+  customerName: string;
+  orderCount: number;
+  totalNetValue: ExecutiveMetricValue;
+};
+
+export type SalesOrdersDashboardTab = ExecutiveSectionBase & {
+  periodLabel: string;
+  yearLabel: number;
+  summaryCards: DashboardMetricCard[];
+  target: DashboardTargetBlock;
+  monthlyEvolution: DashboardChartPoint[];
+  statusBreakdown: DashboardStatusBreakdownRow[];
+  overdueOrders: {
+    count: number;
+    totalValue: ExecutiveMetricValue;
+    formattedTotalValue: string;
+    items: OverdueOrderRow[];
+  };
+  /** Status logístico dedicado não existe no schema — usar statusBreakdown. */
+  logisticsBreakdown: DashboardStatusBreakdownRow[] | null;
+};
+
+export type BillingDashboardTab = ExecutiveSectionBase & {
+  periodLabel: string;
+  yearLabel: number;
+  summaryCards: DashboardMetricCard[];
+  target: DashboardTargetBlock;
+  monthlyBilling: DashboardChartPoint[];
+  recentInvoicedOrders: RecentInvoicedOrderRow[];
+  topCustomers: BillingTopCustomerRow[];
+};
+
+export type ExecutiveDashboardPermissions = {
+  salesOrders: boolean;
+  billing: boolean;
 };
 
 export type ExecutiveDashboardSummary = {
   generatedAt: string;
-  overview: ExecutiveOverview;
-  commercial: ExecutiveCommercial;
-  customers: ExecutiveCustomers;
-  products: ExecutiveProducts;
-  nomus: ExecutiveNomus;
-  fleet: ExecutiveFleet;
-  people: ExecutivePeople;
-  alerts: ExecutiveAlert[];
-  quickLinks: ExecutiveQuickLink[];
-  /** Bloco industrial legado (mesmo motor /api/dashboard) — opcional. */
-  industrialLegacyAvailable: boolean;
+  permissions: ExecutiveDashboardPermissions;
+  tabs: {
+    salesOrders: SalesOrdersDashboardTab | null;
+    billing: BillingDashboardTab | null;
+  };
+  unavailableIndicators: string[];
 };

@@ -35,6 +35,21 @@ export function formatExecutivePercent(value: number | null, decimals: 1 | 2 = 1
   }).format(value);
 }
 
+/** Valores grandes abreviados para cards executivos. */
+export function formatExecutiveCompactCurrency(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "Não disponível";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    const scaled = value / 1_000_000;
+    return `R$ ${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(scaled)} Mi`;
+  }
+  if (abs >= 10_000) {
+    const scaled = value / 1_000;
+    return `R$ ${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(scaled)} mil`;
+  }
+  return formatExecutiveCurrency(value);
+}
+
 export function formatMetricCount(value: number | null): string {
   return formatExecutiveInteger(value);
 }
