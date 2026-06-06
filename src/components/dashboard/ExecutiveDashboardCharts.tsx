@@ -234,9 +234,10 @@ export function ExecutiveRealizedVsProjectedChart({
   data: BillingRealizedVsProjected;
   config: DashboardChartSeriesConfig;
 }) {
+  const projectedFill = config.colors.projectedLine ?? config.colors.targetLine;
   const chartData = [
     { name: "Realizado", valor: data.realized ?? 0, fill: config.colors.currentYearBar },
-    { name: "Projeção", valor: data.projected ?? 0, fill: config.colors.projectedLine ?? "#1565C0" },
+    { name: "Projeção", valor: data.projected ?? 0, fill: projectedFill },
     { name: "Meta", valor: data.target ?? 0, fill: config.colors.targetLine },
   ];
 

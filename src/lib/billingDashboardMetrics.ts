@@ -20,18 +20,21 @@ import {
   formatExecutivePercent,
 } from "@/src/lib/executiveDashboardFormatters.js";
 import {
-  countWorkdaysElapsedInMonth,
+  countWorkdaysElapsedInYear,
   countWorkdaysInMonth,
+  countWorkdaysInYear,
   endOfYear,
   startOfYear,
 } from "@/src/lib/executiveDashboardWorkdays.js";
 import {
   computeAchievementPercent,
-  computeDailyAverageByWorkday,
   computeGrowthTarget,
   computeMonthProjection,
   computeTargetGap,
   computeTicketAverage,
+  computeYearProjection,
+  computeYtdDailyAverageByWorkday,
+  EXECUTIVE_BILLING_YTD_DAILY_AVERAGE_HINT,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import {
   nfeProcessamentoDateSql,
@@ -286,21 +289,27 @@ export async function buildBillingDashboardTab(
   ]);
 
   const ticketAvg = computeTicketAverage(monthAgg.net, monthAgg.count);
-  const monthWorkdaysElapsed = countWorkdaysElapsedInMonth(ref);
+  const yearWorkdaysElapsed = countWorkdaysElapsedInYear(ref);
   const workdaysInMonth = countWorkdaysInMonth(year, ref.getMonth());
-  const dailyAvgMonth = computeDailyAverageByWorkday(monthAgg.net, monthWorkdaysElapsed);
-  const projectedMonth = computeMonthProjection(dailyAvgMonth, workdaysInMonth);
+  const workdaysInYear = countWorkdaysInYear(year);
+  const dailyAvgYtd = computeYtdDailyAverageByWorkday(ytdCurrentAgg.net, yearWorkdaysElapsed);
+  const projectedMonth = computeMonthProjection(dailyAvgYtd, workdaysInMonth);
+  const projectedYear = computeYearProjection(dailyAvgYtd, workdaysInYear);
   const target = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
   const annualTarget = computeGrowthTarget(prevYearTotalAgg.net);
 
   const projection: BillingProjectionBlock = {
-    dailyAverage: dailyAvgMonth,
+    dailyAverage: dailyAvgYtd,
     projectedMonth,
-    workdaysElapsed: monthWorkdaysElapsed,
+    projectedYear,
+    workdaysElapsed: yearWorkdaysElapsed,
     workdaysInMonth,
+    workdaysInYear,
+    ytdDailyAverageHint: EXECUTIVE_BILLING_YTD_DAILY_AVERAGE_HINT,
     formatted: {
-      dailyAverage: formatExecutiveCurrency(dailyAvgMonth),
+      dailyAverage: formatExecutiveCurrency(dailyAvgYtd),
       projectedMonth: formatExecutiveCurrency(projectedMonth),
+      projectedYear: formatExecutiveCurrency(projectedYear),
     },
   };
 
@@ -335,11 +344,14 @@ export async function buildBillingDashboardTab(
       compact: true,
     }),
     metricCard("billing-year", "Faturamento ano atual", yearAgg.net, { asCurrency: true, compact: true }),
-    metricCard("billing-daily-avg", "Média diária faturada", dailyAvgMonth, { asCurrency: true }),
-    metricCard("billing-projected", "Projeção do mês", projectedMonth, {
+    metricCard("billing-daily-avg", "Média faturamento/dia útil YTD", dailyAvgYtd, {
+      asCurrency: true,
+      hint: EXECUTIVE_BILLING_YTD_DAILY_AVERAGE_HINT,
+    }),
+    metricCard("billing-projected", "Projeção do mês (YTD)", projectedMonth, {
       asCurrency: true,
       compact: true,
-      hint: `${workdaysInMonth} dias úteis no mês`,
+      hint: `Média YTD × ${workdaysInMonth} dias úteis no mês`,
     }),
     metricCard("billing-target", "Meta do mês (+30%)", target.target, { asCurrency: true, compact: true }),
     metricCard("billing-achievement", "% atingimento meta", target.achievementPercent, { asPercent: true }),

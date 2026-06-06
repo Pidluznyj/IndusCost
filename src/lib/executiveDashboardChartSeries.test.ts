@@ -34,9 +34,33 @@ describe("buildChartSeriesConfig", () => {
     assert.equal(config.labels.currentYearBar, "Faturamento 2026 YTD");
     assert.equal(config.labels.projectedLine, "Projeção 2026");
     assert.equal(config.colors.previousYearBar, "#D4A017");
-    assert.equal(config.colors.currentYearBar, "#ED7D31");
+    assert.equal(config.colors.currentYearBar, "#2E7D32");
     assert.equal(config.colors.targetLine, "#C62828");
     assert.equal(config.colors.projectedLine, "#1565C0");
+  });
+
+  it("uses distinct colors for each billing series", () => {
+    const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
+    const config = buildChartSeriesConfig("billing", ctx);
+    const values = [
+      config.colors.previousYearBar,
+      config.colors.currentYearBar,
+      config.colors.targetLine,
+      config.colors.projectedLine,
+    ];
+    assert.equal(new Set(values).size, values.length);
+  });
+
+  it("uses distinct colors for each sales orders series", () => {
+    const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
+    const config = buildChartSeriesConfig("salesOrders", ctx);
+    const values = [
+      config.colors.previousYearBar,
+      config.colors.currentYearBar,
+      config.colors.targetLine,
+    ];
+    assert.equal(new Set(values).size, values.length);
+    assert.match(config.labels.currentYearBar, /YTD/);
   });
 });
 

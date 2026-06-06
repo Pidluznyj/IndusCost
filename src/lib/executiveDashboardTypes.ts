@@ -113,11 +113,15 @@ export type RecentInvoicedOrderRow = {
 export type BillingProjectionBlock = {
   dailyAverage: ExecutiveMetricValue;
   projectedMonth: ExecutiveMetricValue;
+  projectedYear: ExecutiveMetricValue;
   workdaysElapsed: number;
   workdaysInMonth: number;
+  workdaysInYear: number;
+  ytdDailyAverageHint: string;
   formatted: {
     dailyAverage: string;
     projectedMonth: string;
+    projectedYear: string;
   };
 };
 

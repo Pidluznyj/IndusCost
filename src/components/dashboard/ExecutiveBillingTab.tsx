@@ -65,17 +65,33 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
           <h3 className="mb-4 text-lg font-bold">Projeção do mês</h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-border bg-accent/20 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Média diária</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Média faturamento/dia útil YTD
+              </p>
               <p className="mt-2 text-xl font-black">{tab.projection.formatted.dailyAverage}</p>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                {tab.projection.workdaysElapsed} dias úteis decorridos
+                {tab.projection.workdaysElapsed} dias úteis decorridos no ano
+              </p>
+              <p className="mt-2 text-[11px] text-muted-foreground" title={tab.projection.ytdDailyAverageHint}>
+                {tab.projection.ytdDailyAverageHint}
               </p>
             </div>
             <div className="rounded-2xl border border-border bg-accent/20 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Projeção</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Projeção do mês (YTD)
+              </p>
               <p className="mt-2 text-xl font-black">{tab.projection.formatted.projectedMonth}</p>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                {tab.projection.workdaysInMonth} dias úteis no mês
+                Média YTD × {tab.projection.workdaysInMonth} dias úteis no mês
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-accent/20 p-4 sm:col-span-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Projeção anual (YTD)
+              </p>
+              <p className="mt-2 text-xl font-black">{tab.projection.formatted.projectedYear}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Média YTD × {tab.projection.workdaysInYear} dias úteis no ano
               </p>
             </div>
           </div>

@@ -20,14 +20,20 @@ import {
 } from "./executiveDashboardHelpers.js";
 import {
   countWorkdaysElapsedInMonth,
+  countWorkdaysElapsedInYear,
   countWorkdaysInRange,
+  countWorkdaysInYear,
   isWeekday,
 } from "./executiveDashboardWorkdays.js";
 import {
   computeAchievementPercent,
   computeDailyAverageByWorkday,
   computeGrowthTarget,
+  computeMonthProjection,
+  computeYearProjection,
+  computeYtdDailyAverageByWorkday,
   computeTicketAverage,
+  EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
   isOpenPortfolioOrder,
   isOverdueSalesOrder,
   isSalesOrderInvoiced,
@@ -132,6 +138,15 @@ describe("executiveDashboardWorkdays", () => {
     const days = countWorkdaysElapsedInMonth(new Date(2026, 5, 5));
     assert.ok(days >= 1);
   });
+
+  it("countWorkdaysElapsedInYear counts Monday to Friday only", () => {
+    const ref = new Date(2026, 0, 9);
+    assert.equal(countWorkdaysElapsedInYear(ref), 7);
+  });
+
+  it("countWorkdaysInYear returns total weekdays in calendar year", () => {
+    assert.ok(countWorkdaysInYear(2026) >= 250);
+  });
 });
 
 describe("salesOrderDashboardRules", () => {
@@ -207,6 +222,31 @@ describe("salesOrderDashboardRules", () => {
   it("daily average by workday avoids divide by zero", () => {
     assert.equal(computeDailyAverageByWorkday(1000, 0), null);
     assert.equal(computeDailyAverageByWorkday(1000, 5), 200);
+  });
+
+  it("YTD daily average uses year total and year workdays elapsed", () => {
+    assert.equal(computeYtdDailyAverageByWorkday(500_000, 100), 5000);
+    assert.equal(computeYtdDailyAverageByWorkday(500_000, 0), null);
+  });
+
+  it("month projection uses YTD daily average not month-only average", () => {
+    const ytdAvg = computeYtdDailyAverageByWorkday(600_000, 100)!;
+    const monthAvg = computeDailyAverageByWorkday(30_000, 10)!;
+    const projectedFromYtd = computeMonthProjection(ytdAvg, 22);
+    const projectedFromMonth = computeMonthProjection(monthAvg, 22);
+    assert.equal(projectedFromYtd, 6000 * 22);
+    assert.equal(projectedFromMonth, 3000 * 22);
+    assert.notEqual(projectedFromYtd, projectedFromMonth);
+  });
+
+  it("year projection equals YTD daily average times workdays in year", () => {
+    const ytdAvg = computeYtdDailyAverageByWorkday(250_000, 50)!;
+    assert.equal(computeYearProjection(ytdAvg, 252), 5000 * 252);
+  });
+
+  it("YTD daily average hint mentions year and workdays", () => {
+    assert.match(EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT, /ano selecionado/i);
+    assert.match(EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT, /dias úteis/i);
   });
 
   it("achievement percent handles zero target", () => {

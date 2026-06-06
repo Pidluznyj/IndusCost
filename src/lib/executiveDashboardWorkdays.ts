@@ -42,3 +42,7 @@ export function countWorkdaysInMonth(year: number, monthIndex: number): number {
   const end = new Date(year, monthIndex + 1, 0);
   return countWorkdaysInRange(start, end);
 }
+
+export function countWorkdaysInYear(year: number): number {
+  return countWorkdaysInRange(startOfYear(new Date(year, 0, 1)), endOfYear(new Date(year, 0, 1)));
+}

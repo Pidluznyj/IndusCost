@@ -74,15 +74,37 @@ export function computeDailyAverageByWorkday(
   return totalValue / workdaysElapsed;
 }
 
-/** Projeção linear do mês = média diária × dias úteis totais do mês. */
+/** Projeção linear do mês = média diária YTD × dias úteis totais do mês. */
 export function computeMonthProjection(
-  dailyAverage: number | null,
+  dailyAverageYtd: number | null,
   workdaysInMonth: number
 ): number | null {
-  if (dailyAverage == null || !Number.isFinite(dailyAverage)) return null;
+  if (dailyAverageYtd == null || !Number.isFinite(dailyAverageYtd)) return null;
   if (workdaysInMonth <= 0) return null;
-  return dailyAverage * workdaysInMonth;
+  return dailyAverageYtd * workdaysInMonth;
 }
+
+/** Projeção anual = média diária YTD × total de dias úteis do ano selecionado. */
+export function computeYearProjection(
+  dailyAverageYtd: number | null,
+  workdaysInYear: number
+): number | null {
+  return computeMonthProjection(dailyAverageYtd, workdaysInYear);
+}
+
+/** Média diária YTD = total YTD ÷ dias úteis decorridos no ano (seg–sex). */
+export function computeYtdDailyAverageByWorkday(
+  totalYtdValue: number | null,
+  workdaysElapsedInYear: number
+): number | null {
+  return computeDailyAverageByWorkday(totalYtdValue, workdaysElapsedInYear);
+}
+
+export const EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT =
+  "Média calculada com pedidos não cancelados do ano selecionado até hoje, divididos pelos dias úteis decorridos no ano.";
+
+export const EXECUTIVE_BILLING_YTD_DAILY_AVERAGE_HINT =
+  "Média calculada com faturamento de mercado do ano selecionado até hoje, divididos pelos dias úteis decorridos no ano.";
 
 export function isOpenPortfolioOrder(input: {
   status: string;

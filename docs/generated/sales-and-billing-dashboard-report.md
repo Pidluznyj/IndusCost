@@ -194,11 +194,57 @@ Não altera `utils.ts` (precisão fina em custo/produto).
 | Série | Pedidos de Venda | Faturamento |
 |-------|------------------|-------------|
 | Ano anterior (barra) | Laranja `#ED7D31` | Dourado `#D4A017` |
-| Ano atual / YTD (barra) | Verde escuro `#1B5E20` | Laranja `#ED7D31` |
+| Ano atual / YTD (barra) | Verde escuro `#1B5E20` | Verde `#2E7D32` |
 | Meta (linha) | Verde `#43A047` | Vermelho `#C62828` |
 | Projeção (linha) | — | Azul `#1565C0` |
 
-Definidas em `executiveDashboardChartTheme.ts`; legendas e tooltips usam os mesmos rótulos/cores.
+Definidas em `executiveDashboardChartTheme.ts` (`EXECUTIVE_DASHBOARD_SERIES_COLORS`); legendas, tooltips e gráficos importam a mesma paleta — sem cores hardcoded nos componentes.
+
+---
+
+## Cores por ano e média diária YTD
+
+### Padrão de cores por série/ano
+
+Todas as séries comparativas usam `EXECUTIVE_DASHBOARD_SERIES_COLORS` (`executiveDashboardChartTheme.ts`):
+
+| Série | Pedidos | Faturamento |
+|-------|---------|-------------|
+| Ano anterior (barra) | Laranja `#ED7D31` | Dourado `#D4A017` |
+| Ano selecionado YTD (barra) | Verde escuro `#1B5E20` | Verde `#2E7D32` |
+| Meta (+30%) | Linha verde `#43A047` | Linha vermelha `#C62828` |
+| Projeção | — | Linha azul `#1565C0` |
+
+Cada ano/série tem cor fixa e distinta. A meta é sempre **linha**, nunca barra.
+
+### Média diária YTD (pedidos e faturamento)
+
+**Não** usa média do mês corrente.
+
+```
+Média YTD = total do ano selecionado até a data de referência ÷ dias úteis decorridos no ano
+```
+
+- **Pedidos:** `SalesOrder.issueDate`, exclui cancelados, seg–sex.
+- **Faturamento:** `nfes.dataProcessamento`, exclui intragrupo, seg–sex.
+
+Labels na UI: `Média venda/dia útil YTD`, `Média faturamento/dia útil YTD`.
+
+Tooltip/hint obrigatório (pedidos):
+> Média calculada com pedidos não cancelados do ano selecionado até hoje, divididos pelos dias úteis decorridos no ano.
+
+### Projeção com média YTD
+
+- **Projeção do mês** = média YTD × dias úteis totais do mês.
+- **Projeção anual** = média YTD × dias úteis totais do ano selecionado.
+
+Funções: `computeYtdDailyAverageByWorkday`, `computeMonthProjection`, `computeYearProjection` em `salesOrderDashboardRules.ts`.
+
+### Limitação: dias úteis
+
+Contagem seg–sex apenas; feriados não entram nesta fase.
+
+---
 
 ### Legendas
 
@@ -221,7 +267,7 @@ Por mês, o tooltip mostra período, valores do ano anterior, YTD atual (quando 
 ### Limitações
 
 - Carteira/atrasados permanecem snapshot operacional (data real), não filtrados pelo ano selecionado.
-- Projeção de faturamento só no mês YTD corrente quando ano selecionado = ano calendário atual.
+- Projeção mensal/anual usa média YTD (não média do mês isolado).
 - Feriados ainda não entram no cálculo de dias úteis.
 
 ---

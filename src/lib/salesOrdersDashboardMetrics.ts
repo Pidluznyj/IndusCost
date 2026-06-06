@@ -13,17 +13,21 @@ import {
   formatExecutivePercent,
 } from "@/src/lib/executiveDashboardFormatters.js";
 import {
-  countWorkdaysElapsedInMonth,
   countWorkdaysElapsedInYear,
+  countWorkdaysInMonth,
+  countWorkdaysInYear,
   endOfYear,
   startOfYear,
 } from "@/src/lib/executiveDashboardWorkdays.js";
 import {
   computeAchievementPercent,
-  computeDailyAverageByWorkday,
   computeGrowthTarget,
+  computeMonthProjection,
   computeTargetGap,
   computeTicketAverage,
+  computeYearProjection,
+  computeYtdDailyAverageByWorkday,
+  EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters.js";
 import {
@@ -258,6 +262,7 @@ export async function buildSalesOrdersDashboardTab(
 
   const [
     yearAgg,
+    ytdAgg,
     monthAgg,
     prevMonthAgg,
     openPortfolio,
@@ -268,6 +273,7 @@ export async function buildSalesOrdersDashboardTab(
     statusBreakdown,
   ] = await Promise.all([
     aggregateByIssueDate(yearStart, yearEnd),
+    aggregateByIssueDate(yearStart, ref),
     aggregateByIssueDate(monthStart, monthEnd),
     aggregateByIssueDate(prevYearSameMonthStart, prevYearSameMonthEnd),
     queryOpenPortfolio(),
@@ -279,10 +285,12 @@ export async function buildSalesOrdersDashboardTab(
   ]);
 
   const ticketAvg = computeTicketAverage(monthAgg.net, monthAgg.count);
-  const monthWorkdays = countWorkdaysElapsedInMonth(ref);
-  const yearWorkdays = countWorkdaysElapsedInYear(ref);
-  const dailyAvgMonth = computeDailyAverageByWorkday(monthAgg.net, monthWorkdays);
-  const dailyAvgYear = computeDailyAverageByWorkday(yearAgg.net, yearWorkdays);
+  const yearWorkdaysElapsed = countWorkdaysElapsedInYear(ref);
+  const workdaysInMonth = countWorkdaysInMonth(year, ref.getMonth());
+  const workdaysInYear = countWorkdaysInYear(year);
+  const dailyAvgYtd = computeYtdDailyAverageByWorkday(ytdAgg.net, yearWorkdaysElapsed);
+  const projectedMonth = computeMonthProjection(dailyAvgYtd, workdaysInMonth);
+  const projectedYear = computeYearProjection(dailyAvgYtd, workdaysInYear);
   const target = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
 
   const summaryCards: DashboardMetricCard[] = [
@@ -294,8 +302,20 @@ export async function buildSalesOrdersDashboardTab(
       compact: true,
       hint: "Não cancelados sem NF processada",
     }),
-    metricCard("daily-avg-month", "Média diária (mês)", dailyAvgMonth, { asCurrency: true }),
-    metricCard("daily-avg-year", "Média diária (ano)", dailyAvgYear, { asCurrency: true }),
+    metricCard("daily-avg-ytd", "Média venda/dia útil YTD", dailyAvgYtd, {
+      asCurrency: true,
+      hint: EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
+    }),
+    metricCard("projected-month", "Projeção do mês (YTD)", projectedMonth, {
+      asCurrency: true,
+      compact: true,
+      hint: `Média YTD × ${workdaysInMonth} dias úteis no mês`,
+    }),
+    metricCard("projected-year", "Projeção anual (YTD)", projectedYear, {
+      asCurrency: true,
+      compact: true,
+      hint: `Média YTD × ${workdaysInYear} dias úteis no ano`,
+    }),
     metricCard("overdue-count", "Pedidos atrasados", overdueSummary.count),
     metricCard("target-achievement", "% meta do mês", target.achievementPercent, {
       asPercent: true,

@@ -7,7 +7,7 @@ import {
   normalizeCnpjDigits,
   normalizeCompanyName,
 } from "./groupCompanyCustomer.js";
-import { computeMonthProjection } from "./salesOrderDashboardRules.js";
+import { computeMonthProjection, computeYtdDailyAverageByWorkday } from "./salesOrderDashboardRules.js";
 
 describe("groupCompanyCustomer", () => {
   it("normalizes CNPJ digits", () => {
@@ -68,9 +68,10 @@ describe("groupCompanyCustomer", () => {
 });
 
 describe("billing projection rules", () => {
-  it("projected month equals daily average times workdays in month", () => {
-    assert.equal(computeMonthProjection(10_000, 22), 220_000);
+  it("projected month equals YTD daily average times workdays in month", () => {
+    const ytdAvg = computeYtdDailyAverageByWorkday(220_000, 22)!;
+    assert.equal(computeMonthProjection(ytdAvg, 22), 220_000);
     assert.equal(computeMonthProjection(null, 22), null);
-    assert.equal(computeMonthProjection(10_000, 0), null);
+    assert.equal(computeMonthProjection(ytdAvg, 0), null);
   });
 });
