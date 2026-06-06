@@ -26,6 +26,7 @@ import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 import { AdminUsersModule } from "@/src/components/AdminUsersModule";
 import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
+import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canAccessSettingsSection, canManageUsers } from "@/src/lib/modulePermissions";
 
@@ -97,7 +98,8 @@ type NomusSyncTarget =
   | "products"
   | "proposals"
   | "sales-orders"
-  | "accounts-receivable";
+  | "accounts-receivable"
+  | "accounts-payable";
 type NomusIntegrationHealthState = "OK" | "FAILED" | "STALE" | "WARNING" | "NO_DATA";
 
 type NomusHealthLastRun = {
@@ -2033,6 +2035,11 @@ export const SettingsModule = () => {
                 onLogsRefresh={() => setNomusReloadSeq((prev) => prev + 1)}
               />
 
+              <NomusAccountsPayableSyncCard
+                canRun={canRunNomusDailySync}
+                onLogsRefresh={() => setNomusReloadSeq((prev) => prev + 1)}
+              />
+
               {nomusHealthError && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   {nomusHealthError}
@@ -2135,6 +2142,7 @@ export const SettingsModule = () => {
                   <option value="proposals">Target: Propostas</option>
                   <option value="sales-orders">Target: Pedidos de venda</option>
                   <option value="accounts-receivable">Target: Contas a receber</option>
+                  <option value="accounts-payable">Target: Contas a pagar</option>
                 </select>
                 <select
                   value={nomusModeFilter}
