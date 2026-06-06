@@ -22,17 +22,20 @@ export type ExecutiveOverview = ExecutiveSectionBase & {
 
 export type ExecutiveCommercial = ExecutiveSectionBase & {
   periodLabel: string;
+  /** Pedidos emitidos no mês — filtro por SalesOrder.issueDate, exclui CANCELLED. */
   ordersThisMonth: ExecutiveMetricValue;
+  /** Valor líquido emitido no mês — SUM(totalNetValue) por issueDate. */
   ordersNetThisMonth: ExecutiveMetricValue;
+  /** Faturamento líquido do mês — SUM(totalNetValue) com NFe dataProcessamento no período. */
+  invoicedNetThisMonth: ExecutiveMetricValue;
+  /** Pedidos faturados no mês — COUNT com NFe dataProcessamento no período. */
+  invoicedOrdersThisMonth: ExecutiveMetricValue;
   ticketAvgThisMonth: ExecutiveMetricValue;
   openOrdersCount: ExecutiveMetricValue;
   sentToNomusCount: ExecutiveMetricValue;
-  proposalsOpen: ExecutiveMetricValue;
-  proposalsApproved: ExecutiveMetricValue;
-  proposalsRejected: ExecutiveMetricValue;
-  pipelineOpenNet: ExecutiveMetricValue;
   previousMonthOrders: ExecutiveMetricValue | null;
   previousMonthNet: ExecutiveMetricValue | null;
+  previousMonthInvoicedNet: ExecutiveMetricValue | null;
 };
 
 export type ExecutiveCustomers = ExecutiveSectionBase & {

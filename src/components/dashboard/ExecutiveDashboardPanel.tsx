@@ -14,7 +14,12 @@ import {
   Truck,
   Users,
 } from "lucide-react";
-import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { cn } from "@/src/lib/utils";
+import {
+  formatExecutiveCurrency,
+  formatExecutiveDecimal,
+  formatExecutiveInteger,
+} from "@/src/lib/executiveDashboardFormatters";
 import type { ExecutiveDashboardSummary } from "@/src/lib/executiveDashboardTypes";
 
 type Props = {
@@ -38,7 +43,12 @@ function MetricTile({
   const inner = (
     <div className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-black text-foreground">{value}</p>
+      <p
+        className="mt-2 truncate text-2xl font-black text-foreground sm:text-xl lg:text-2xl"
+        title={value}
+      >
+        {value}
+      </p>
       {sub ? <p className="mt-1 text-[11px] text-muted-foreground">{sub}</p> : null}
     </div>
   );
@@ -84,9 +94,11 @@ function SectionCard({
   );
 }
 
-function displayMetric(value: number | null | undefined, asCurrency = false): string {
+function displayMetric(value: number | null | undefined, kind: "integer" | "currency" | "decimal" = "integer"): string {
   if (value == null || !Number.isFinite(value)) return "Não disponível";
-  return asCurrency ? formatCurrency(value) : formatNumber(value);
+  if (kind === "currency") return formatExecutiveCurrency(value);
+  if (kind === "decimal") return formatExecutiveDecimal(value);
+  return formatExecutiveInteger(value);
 }
 
 export function ExecutiveDashboardPanel({ data, loading, error, onRefresh }: Props) {
@@ -202,25 +214,36 @@ export function ExecutiveDashboardPanel({ data, loading, error, onRefresh }: Pro
         >
           <div className="grid grid-cols-2 gap-3">
             <MetricTile
-              label="Pedidos no mês"
+              label="Pedidos emitidos no mês"
               value={displayMetric(data.commercial.ordersThisMonth)}
               sub={data.commercial.periodLabel}
               href="/sales-orders"
             />
             <MetricTile
-              label="Faturamento mês (líq.)"
-              value={displayMetric(data.commercial.ordersNetThisMonth, true)}
+              label="Faturamento líquido do mês"
+              value={displayMetric(data.commercial.invoicedNetThisMonth, "currency")}
+              sub="NFe com dataProcessamento"
               href="/sales-orders"
             />
             <MetricTile
-              label="Propostas abertas"
-              value={displayMetric(data.commercial.proposalsOpen)}
-              href="/proposals"
+              label="Ticket médio (pedidos mês)"
+              value={displayMetric(data.commercial.ticketAvgThisMonth, "currency")}
+              href="/sales-orders"
             />
             <MetricTile
-              label="Pipeline aberto"
-              value={displayMetric(data.commercial.pipelineOpenNet, true)}
-              href="/proposals"
+              label="Pedidos em aberto"
+              value={displayMetric(data.commercial.openOrdersCount)}
+              href="/sales-orders"
+            />
+            <MetricTile
+              label="Pedidos faturados no mês"
+              value={displayMetric(data.commercial.invoicedOrdersThisMonth)}
+              href="/sales-orders"
+            />
+            <MetricTile
+              label="Enviados ao Nomus"
+              value={displayMetric(data.commercial.sentToNomusCount)}
+              href="/sales-orders"
             />
           </div>
         </SectionCard>

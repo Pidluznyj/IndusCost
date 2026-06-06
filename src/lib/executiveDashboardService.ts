@@ -4,7 +4,6 @@ import { prisma } from "@/src/lib/prisma.js";
 import { buildFleetDashboardCards } from "@/src/lib/fleetManagementOps.js";
 import { buildNomusAutoApplyBomDashboard } from "@/src/lib/nomusAutoApplyBomDashboard.js";
 import {
-  canSeeCommercial,
   canSeeCrmActivity,
   canSeeCustomers,
   canSeeFleet,
@@ -16,8 +15,9 @@ import {
   decimalToNumber,
   endOfMonth,
   endOfPreviousMonth,
+  formatExecutiveCurrency,
+  formatExecutiveInteger,
   formatMetricCount,
-  formatMetricCurrency,
   safeMetricNumber,
   startOfMonth,
   startOfPreviousMonth,
@@ -35,9 +35,31 @@ import type {
   ExecutiveProducts,
   ExecutiveQuickLink,
 } from "@/src/lib/executiveDashboardTypes.js";
+import {
+  orderInvoicedInPeriodSql,
+  toPgDateYmd,
+} from "@/src/lib/salesOrderInvoicingSql.js";
 
-const OPEN_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] as const;
 const OPEN_ORDER_STATUSES = ["DRAFT", "READY_TO_SEND"] as const;
+
+async function queryInvoicedInPeriod(from: Date, to: Date): Promise<{ count: number | null; net: number | null }> {
+  const fromYmd = toPgDateYmd(from);
+  const toYmd = toPgDateYmd(to);
+  const [row] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
+    Prisma.sql`
+      SELECT
+        COUNT(*)::bigint AS c,
+        COALESCE(SUM(so."totalNetValue"), 0) AS v
+      FROM "SalesOrder" so
+      WHERE so.status != 'CANCELLED'
+        AND ${orderInvoicedInPeriodSql("so", fromYmd, toYmd)}
+    `
+  );
+  return {
+    count: safeMetricNumber(Number(row?.c ?? 0n)),
+    net: decimalToNumber(row?.v),
+  };
+}
 
 async function buildCommercialSection(
   user: AppAuthContext,
@@ -45,23 +67,23 @@ async function buildCommercialSection(
 ): Promise<ExecutiveCommercial> {
   const base: ExecutiveCommercial = {
     available: false,
-    source: "SalesOrder + Proposal (Prisma aggregate)",
+    source:
+      "SalesOrder (issueDate para emissão; nomusRawResponse.nfes.dataProcessamento para faturamento)",
     periodLabel: now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
     ordersThisMonth: null,
     ordersNetThisMonth: null,
+    invoicedNetThisMonth: null,
+    invoicedOrdersThisMonth: null,
     ticketAvgThisMonth: null,
     openOrdersCount: null,
     sentToNomusCount: null,
-    proposalsOpen: null,
-    proposalsApproved: null,
-    proposalsRejected: null,
-    pipelineOpenNet: null,
     previousMonthOrders: null,
     previousMonthNet: null,
+    previousMonthInvoicedNet: null,
   };
 
-  if (!canSeeCommercial(user)) {
-    return unavailableSection(base, "Sem permissão para indicadores comerciais.");
+  if (!canSeeSalesOrders(user)) {
+    return unavailableSection(base, "Sem permissão sales_orders.view para indicadores comerciais.");
   }
 
   base.available = true;
@@ -70,67 +92,42 @@ async function buildCommercialSection(
   const prevStart = startOfPreviousMonth(now);
   const prevEnd = endOfPreviousMonth(now);
 
-  const tasks: Promise<void>[] = [];
+  const notCancelled = { status: { not: "CANCELLED" as const } };
+  const issueInMonth = { issueDate: { gte: monthStart, lte: monthEnd }, ...notCancelled };
+  const issueInPrevMonth = { issueDate: { gte: prevStart, lte: prevEnd }, ...notCancelled };
 
-  if (canSeeSalesOrders(user)) {
-    tasks.push(
-      (async () => {
-        const [monthAgg, openCount, sentCount, prevAgg] = await Promise.all([
-          prisma.salesOrder.aggregate({
-            where: {
-              issueDate: { gte: monthStart, lte: monthEnd },
-              status: { not: "CANCELLED" },
-            },
-            _count: true,
-            _sum: { totalNetValue: true },
-          }),
-          prisma.salesOrder.count({ where: { status: { in: [...OPEN_ORDER_STATUSES] } } }),
-          prisma.salesOrder.count({ where: { status: "SENT_TO_NOMUS" } }),
-          prisma.salesOrder.aggregate({
-            where: {
-              issueDate: { gte: prevStart, lte: prevEnd },
-              status: { not: "CANCELLED" },
-            },
-            _count: true,
-            _sum: { totalNetValue: true },
-          }),
-        ]);
+  const [monthAgg, openCount, sentCount, prevAgg, invoicedMonth, invoicedPrev] = await Promise.all([
+    prisma.salesOrder.aggregate({
+      where: issueInMonth,
+      _count: true,
+      _sum: { totalNetValue: true },
+    }),
+    prisma.salesOrder.count({ where: { status: { in: [...OPEN_ORDER_STATUSES] } } }),
+    prisma.salesOrder.count({ where: { status: "SENT_TO_NOMUS", ...notCancelled } }),
+    prisma.salesOrder.aggregate({
+      where: issueInPrevMonth,
+      _count: true,
+      _sum: { totalNetValue: true },
+    }),
+    queryInvoicedInPeriod(monthStart, monthEnd),
+    queryInvoicedInPeriod(prevStart, prevEnd),
+  ]);
 
-        const count = safeMetricNumber(monthAgg._count);
-        const net = decimalToNumber(monthAgg._sum.totalNetValue);
-        base.ordersThisMonth = count;
-        base.ordersNetThisMonth = net;
-        base.ticketAvgThisMonth =
-          count != null && count > 0 && net != null ? net / count : count === 0 ? 0 : null;
-        base.openOrdersCount = safeMetricNumber(openCount);
-        base.sentToNomusCount = safeMetricNumber(sentCount);
-        base.previousMonthOrders = safeMetricNumber(prevAgg._count);
-        base.previousMonthNet = decimalToNumber(prevAgg._sum.totalNetValue);
-      })()
-    );
-  }
+  const count = safeMetricNumber(monthAgg._count);
+  const net = decimalToNumber(monthAgg._sum.totalNetValue);
 
-  if (canSeeProposals(user)) {
-    tasks.push(
-      (async () => {
-        const [openCount, approvedCount, rejectedCount, pipelineAgg] = await Promise.all([
-          prisma.proposal.count({ where: { status: { in: [...OPEN_PROPOSAL_STATUSES] } } }),
-          prisma.proposal.count({ where: { status: "APPROVED" } }),
-          prisma.proposal.count({ where: { status: { in: ["REJECTED", "EXPIRED", "CANCELED"] } } }),
-          prisma.proposal.aggregate({
-            where: { status: { in: [...OPEN_PROPOSAL_STATUSES] } },
-            _sum: { totalNetValue: true },
-          }),
-        ]);
-        base.proposalsOpen = safeMetricNumber(openCount);
-        base.proposalsApproved = safeMetricNumber(approvedCount);
-        base.proposalsRejected = safeMetricNumber(rejectedCount);
-        base.pipelineOpenNet = decimalToNumber(pipelineAgg._sum.totalNetValue);
-      })()
-    );
-  }
+  base.ordersThisMonth = count;
+  base.ordersNetThisMonth = net;
+  base.invoicedOrdersThisMonth = invoicedMonth.count;
+  base.invoicedNetThisMonth = invoicedMonth.net;
+  base.ticketAvgThisMonth =
+    count != null && count > 0 && net != null ? net / count : count === 0 ? 0 : null;
+  base.openOrdersCount = safeMetricNumber(openCount);
+  base.sentToNomusCount = safeMetricNumber(sentCount);
+  base.previousMonthOrders = safeMetricNumber(prevAgg._count);
+  base.previousMonthNet = decimalToNumber(prevAgg._sum.totalNetValue);
+  base.previousMonthInvoicedNet = invoicedPrev.net;
 
-  await Promise.all(tasks);
   return base;
 }
 
@@ -159,12 +156,7 @@ async function buildCustomersSection(user: AppAuthContext, now: Date): Promise<E
     prisma.customer.count({ where: { status: "ACTIVE" } }),
     prisma.customer.count({
       where: {
-        OR: [
-          { state: null },
-          { state: "" },
-          { email: null },
-          { email: "" },
-        ],
+        OR: [{ state: null }, { state: "" }, { email: null }, { email: "" }],
       },
     }),
     prisma.customer.count({ where: { createdAt: { gte: since30 } } }),
@@ -404,24 +396,14 @@ function buildAlerts(input: {
     });
   }
 
-  if (input.commercial.available && (input.commercial.proposalsOpen ?? 0) > 0) {
-    alerts.push({
-      id: "proposals-open",
-      severity: "info",
-      title: "Propostas em pipeline",
-      message: `${formatMetricCount(input.commercial.proposalsOpen)} proposta(s) abertas (${formatMetricCurrency(input.commercial.pipelineOpenNet)}).`,
-      href: "/proposals",
-      count: input.commercial.proposalsOpen ?? undefined,
-    });
-  }
-
   return alerts.sort((a, b) => {
     const rank = { critical: 0, warning: 1, info: 2 };
     return rank[a.severity] - rank[b.severity];
   });
 }
 
-function buildOverview(
+/** KPIs principais da visão executiva — somente pedidos de venda (sem propostas). */
+export function buildExecutiveOverview(
   commercial: ExecutiveCommercial,
   customers: ExecutiveCustomers,
   fleet: ExecutiveFleet,
@@ -429,51 +411,54 @@ function buildOverview(
 ): ExecutiveOverview {
   const kpis: ExecutiveOverview["kpis"] = [];
 
-  if (commercial.available && commercial.ordersNetThisMonth != null) {
+  if (commercial.available && commercial.ordersThisMonth != null) {
     kpis.push({
-      id: "orders-net-month",
-      label: "Pedidos no mês (líquido)",
-      value: commercial.ordersNetThisMonth,
-      formatted: formatMetricCurrency(commercial.ordersNetThisMonth),
+      id: "orders-count-month",
+      label: "Pedidos do mês",
+      value: commercial.ordersThisMonth,
+      formatted: formatExecutiveInteger(commercial.ordersThisMonth),
       hint: commercial.periodLabel,
       href: "/sales-orders",
     });
-  } else if (commercial.available && commercial.ordersThisMonth != null) {
+  }
+
+  if (commercial.available && commercial.invoicedNetThisMonth != null) {
     kpis.push({
-      id: "orders-count-month",
-      label: "Pedidos no mês",
-      value: commercial.ordersThisMonth,
-      formatted: formatMetricCount(commercial.ordersThisMonth),
+      id: "invoiced-net-month",
+      label: "Faturamento líquido do mês",
+      value: commercial.invoicedNetThisMonth,
+      formatted: formatExecutiveCurrency(commercial.invoicedNetThisMonth),
+      hint: "NFe com dataProcessamento no mês",
       href: "/sales-orders",
     });
   }
 
-  if (commercial.available && commercial.proposalsOpen != null) {
+  if (customers.available && customers.activeCustomers != null) {
     kpis.push({
-      id: "proposals-open",
-      label: "Propostas abertas",
-      value: commercial.proposalsOpen,
-      formatted: formatMetricCount(commercial.proposalsOpen),
-      href: "/proposals",
+      id: "customers-active",
+      label: "Clientes ativos",
+      value: customers.activeCustomers,
+      formatted: formatExecutiveInteger(customers.activeCustomers),
+      href: "/customers",
     });
-  }
-
-  if (customers.available && customers.totalCustomers != null) {
+  } else if (customers.available && customers.totalCustomers != null) {
     kpis.push({
       id: "customers-total",
       label: "Clientes cadastrados",
       value: customers.totalCustomers,
-      formatted: formatMetricCount(customers.totalCustomers),
+      formatted: formatExecutiveInteger(customers.totalCustomers),
       href: "/customers",
     });
   }
 
-  if (fleet.available && fleet.totalVehicles != null) {
+  if (fleet.available && (fleet.inUse != null || fleet.maintenance != null)) {
+    const inUse = fleet.inUse ?? 0;
+    const maint = fleet.maintenance ?? 0;
     kpis.push({
-      id: "fleet-operational",
-      label: "Veículos operacionais",
-      value: fleet.totalVehicles,
-      formatted: formatMetricCount(fleet.totalVehicles),
+      id: "fleet-in-use-maintenance",
+      label: "Veículos em uso / manutenção",
+      value: inUse + maint,
+      formatted: `${formatExecutiveInteger(inUse)} / ${formatExecutiveInteger(maint)}`,
       href: "/fleet",
     });
   }
@@ -482,13 +467,13 @@ function buildOverview(
     id: "alerts-count",
     label: "Alertas ativos",
     value: alerts.length,
-    formatted: formatMetricCount(alerts.length),
+    formatted: formatExecutiveInteger(alerts.length),
     hint: "Consolidado das áreas visíveis",
   });
 
   return {
     available: kpis.length > 0,
-    source: "KPIs derivados das seções disponíveis",
+    source: "SalesOrder + seções disponíveis (sem propostas)",
     alertCount: alerts.length,
     kpis,
   };
@@ -496,6 +481,9 @@ function buildOverview(
 
 function buildQuickLinks(user: AppAuthContext): ExecutiveQuickLink[] {
   const links: ExecutiveQuickLink[] = [];
+  if (canSeeSalesOrders(user)) {
+    links.push({ id: "sales-orders", label: "Pedidos de venda", href: "/sales-orders", moduleId: "sales_orders" });
+  }
   if (canSeeProposals(user)) {
     links.push({ id: "proposals", label: "Propostas", href: "/proposals", moduleId: "proposals" });
   }
@@ -530,7 +518,7 @@ export async function buildExecutiveDashboardSummary(
   ]);
 
   const alerts = buildAlerts({ commercial, customers, nomus, fleet });
-  const overview = buildOverview(commercial, customers, fleet, alerts);
+  const overview = buildExecutiveOverview(commercial, customers, fleet, alerts);
 
   return {
     generatedAt: now.toISOString(),

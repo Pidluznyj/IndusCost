@@ -2,6 +2,15 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { hasAnyPermission, hasPermission } from "@/src/lib/appAuth.js";
 import { evaluateFleetRouteAccess } from "@/src/lib/fleetPermissionResolve.js";
 
+export {
+  formatExecutiveCurrency,
+  formatExecutiveDecimal,
+  formatExecutiveInteger,
+  formatExecutivePercent,
+  formatMetricCount,
+  formatMetricCurrency,
+} from "@/src/lib/executiveDashboardFormatters.js";
+
 export function safeMetricNumber(value: unknown): number | null {
   if (value == null) return null;
   const n = typeof value === "number" ? value : Number(value);
@@ -35,16 +44,6 @@ export function startOfPreviousMonth(date: Date): Date {
 
 export function endOfPreviousMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 0, 23, 59, 59, 999);
-}
-
-export function formatMetricCount(value: number | null): string {
-  if (value == null) return "Não disponível";
-  return new Intl.NumberFormat("pt-BR").format(value);
-}
-
-export function formatMetricCurrency(value: number | null): string {
-  if (value == null) return "Não disponível";
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
 
 export function canSeeCommercial(user: AppAuthContext): boolean {
