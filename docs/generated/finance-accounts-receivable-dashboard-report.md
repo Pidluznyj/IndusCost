@@ -312,4 +312,140 @@ sudo systemctl restart induscost
 - Erros separados: dashboard / export / títulos / sync  
 - Dashboard mantém dados anteriores se refresh falhar  
 - Títulos: paginação server-side (não carrega ~5718 de uma vez)  
-- Permissão de sync alinhada ao Admin (`settings.nomus.sync` apenas)  
+- Permissão de sync alinhada ao Admin (`settings.nomus.sync` apenas)
+
+---
+
+## Auditoria final FINANCE-AR-DASH-Z
+
+**Data da auditoria:** 2026-06-06  
+**Branch analisada:** `main`  
+**Commit analisado:** `f286a7f` (`fix(finance): polish accounts receivable dashboard`)  
+**Resultado:** aprovado — sem correções de código necessárias nesta fase.
+
+### 1. Prisma / banco / models
+
+| Item | Status |
+|---|---|
+| Model `NomusAccountsReceivable` | OK — `prisma/schema.prisma` |
+| `npx prisma validate` | OK |
+| Migration nova nesta fase | Não criada (usa stage existente do sync Nomus AR) |
+| Fonte de dados do dashboard | `prisma.nomusAccountsReceivable.findMany` (read-only) |
+
+**Campos no schema vs uso no dashboard:**
+
+| Campo schema | Usado no select/query | Observação |
+|---|---|---|
+| externalId, companyName, personName, personCnpj | Sim | KPIs, filtros, tabelas |
+| personPhone | Não | Existe no model; não exibido na v1 |
+| dueDate, settlementDate | Sim | Aging, cards, filtros |
+| amountReceivable, amountReceived, balanceReceivable | Sim | Decimal(20,2) → number no service |
+| status | Sim | Mapeado como `nomusStatus` (boolean) |
+| paymentMethodName, bankAccountName | Sim | Filtros e resumos |
+| sourceInvoiceId, sourceInvoiceNumber | Sim | NF origem, alertas |
+| suspendCollection | Sim | Status calculado + alertas |
+| description | Sim | Títulos e export |
+| syncedAt | Sim | Cards e export |
+| rawPayload, payloadHash | Não | Deliberadamente excluídos (segurança) |
+
+### 2. Endpoints backend
+
+| Endpoint | Registrado | Auth | Read-only | Smoke (sem cookie) |
+|---|---|---|---|---|
+| GET `/api/finance/accounts-receivable/dashboard` | `financeAccountsReceivableRoutes.ts` + `server.ts:14439` | Sim | Sim | 401 |
+| GET `/api/finance/accounts-receivable/titles` | Sim | Sim | Sim | 401 |
+| GET `/api/finance/accounts-receivable/export` | Sim | Sim | Sim | 401 |
+| GET `/api/settings/nomus-sync/accounts-receivable-status` | `server.ts:7600` | Sim | Sim | 401 |
+| POST `/api/settings/nomus-sync/accounts-receivable-run` | `server.ts:7616` | Sim | Dispara runner existente | (não testado POST) |
+
+Nenhum endpoint financeiro retorna `rawPayload`, tokens ou segredos.
+
+### 3. Permissões efetivas
+
+| Ação | Permissão |
+|---|---|
+| Ver dashboard / títulos | `finance.accountsReceivable.view` ou fallback: `finance.view`, `reports.view`, `settings.nomus.view`, `settings.view` |
+| Exportar CSV | `finance.accountsReceivable.export` ou fallback view (documentado) |
+| Rodar sync manual | `settings.nomus.sync` (UI e Admin alinhados) |
+
+**Nota:** Não existe `finance.accountsReceivable.sync` — sync reutiliza permissão Nomus existente.
+
+Helpers: `src/lib/financeAccountsReceivablePermissions.ts`
+
+### 4. Regras de cálculo (validadas por testes)
+
+- Em aberto: `balanceReceivable > 0`
+- Baixado: `balanceReceivable <= 0` (inclui saldo zero; negativos geram alerta)
+- Atrasado / vence hoje / a vencer: `startOfLocalDay` local (sem drift UTC)
+- Próximos 7/30 dias: faixa inclusiva por dia local
+- Recebido no mês: `settlementDate` no mês corrente
+- Inadimplência: `overdueAmount / totalOpenAmount` → 0 se denominador 0
+- Cliente: preferência `personCnpj`, fallback `personName`
+- Payload: cards, agingBuckets, topDebtors, monthlyDueSchedule, paymentMethodSummary, companySummary, criticalTitles, dataQualityAlerts, dataQualitySummary, scheduleBuckets, customerRanking
+
+### 5. Frontend / menu
+
+- Menu lateral: **Financeiro** (`mainNavigation.ts`, `Sidebar.tsx`, `modulePermissions.ts`)
+- Rota: `/finance/accounts-receivable` (`App.tsx` → `FinanceModule.tsx`)
+- 7 abas: Visão Geral, Aging, Agenda, Clientes, Títulos, Formas de Pagamento, Empresas
+- Export CSV, alertas de qualidade, painel sync/status integrados
+
+### 6. Filtros
+
+Query params: `companyName`, `personName`, `personCnpj`, `status`, `dueDateFrom`, `dueDateTo`, `paymentMethodName`, `bankAccountName`  
+Debounce 400 ms nos campos textuais. Botão limpar filtros OK.  
+Aba Títulos: `search`, `overdueOnly`, `qualityAlert`, paginação `page`/`limit`.
+
+### 7. Exportação
+
+- CSV com BOM (`;`), nome `contas-a-receber-YYYY-MM-DD.csv`
+- 17 colunas conforme spec; sem `rawPayload`
+- Respeita filtros globais; permissão aplicada
+
+### 8. Performance
+
+- Dashboard: agregação em memória (~5718 registros no servidor real)
+- Títulos: paginação 50/página (máx. 200 no backend)
+- Gráficos: dados agregados do payload dashboard
+- Sem dependências novas pesadas (Recharts já existia)
+
+### 9. Não regressão
+
+Arquivos alterados nas fases A–E (ca18219…f286a7f): somente domínio Financeiro, permissões, menu, `server.ts` (registro de rotas financeiras).  
+**Nenhuma alteração** em ProductBOM, custos, Dashboard Executivo, Pedidos, Faturamento, Frota, Clientes, RH.
+
+### 10. Testes executados (Z)
+
+| Comando | Resultado |
+|---|---|
+| `npx prisma validate` | OK |
+| `npm run test:finance:accounts-receivable` | 47/47 pass |
+| `npm run test:nomus:accounts-receivable` | 23/23 pass |
+| `npm run test:nomus:daily-sync` | 16/16 pass |
+| `npm run lint` | OK |
+| `npm run build` | OK |
+
+### 11. Smoke test local
+
+Servidor dev em `http://0.0.0.0:3000` — rotas financeiras e status AR retornam **401** sem autenticação (não 404/500).
+
+### 12. Limitações conhecidas (v1)
+
+1. Cálculo dashboard/export em memória no Node  
+2. Ranking de clientes completo no payload (sem paginação dedicada)  
+3. `personPhone` não exibido  
+4. Export CSV only (sem XLSX)  
+5. Sync Nomus não alterado neste módulo — apenas consumo + disparo manual via endpoint existente
+
+### 13. Roadmap futuro (não implementado)
+
+1. Conciliação Faturado x Recebido  
+2. Cruzamento com SalesOrder/NF  
+3. Cobrança ativa por cliente  
+4. Histórico de contatos de cobrança  
+5. Baixa manual/automática  
+6. Régua de cobrança  
+7. Previsão de caixa integrada  
+8. Inadimplência por vendedor  
+9. Inadimplência por segmento/cliente  
+10. Filtros incrementais reais da API Nomus, se existirem  
