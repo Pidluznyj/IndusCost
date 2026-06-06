@@ -622,7 +622,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Financeiro"
-              description="Domínio financeiro do IndusCost — leitura e indicadores a partir dos dados sincronizados."
+              description="Contas a receber e indicadores financeiros a partir dos dados sincronizados do Nomus."
             >
               <FinanceModule />
             </ModulePageShell>

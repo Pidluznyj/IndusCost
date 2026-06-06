@@ -48,7 +48,7 @@
     "sync:nomus:sales-orders:dry": "tsx scripts/nomusSalesOrdersSyncV1.ts",
     "test:nomus-sync": "tsx --test scripts/nomusNumberParser.test.ts",
     "test:nomus:accounts-receivable": "tsx --test src/lib/nomusAccountsReceivable.test.ts src/lib/nomusAccountsReceivableSyncLogParse.test.ts",
-    "test:finance:accounts-receivable": "tsx --test src/lib/financeAccountsReceivableDashboard.test.ts",
+    "test:finance:accounts-receivable": "tsx --test src/lib/financeAccountsReceivableDashboard.test.ts src/lib/financeAccountsReceivableFormat.test.ts",
     "test:nomus:maintenance-smoke": "tsx scripts/nomusMaintenanceSmokeTestV1.ts",
     "test:nomus:engineering-cockpit-smoke": "tsx scripts/nomusEngineeringOperationsCockpitSmokeTestV1.ts",
     "test:nomus:engineering-release-check": "tsx scripts/nomusEngineeringReleaseCheckV1.ts",

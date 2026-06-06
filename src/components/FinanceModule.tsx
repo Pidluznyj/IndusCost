@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { FinanceAccountsReceivableFoundationPanel } from "@/src/components/finance/FinanceAccountsReceivableFoundationPanel";
+import { FinanceAccountsReceivablePage } from "@/src/components/finance/FinanceAccountsReceivablePage";
 
 const FINANCE_SECTIONS = [{ id: "accounts-receivable", label: "Contas a Receber", to: "accounts-receivable" }] as const;
 
@@ -56,7 +56,7 @@ export function FinanceModule() {
           path="accounts-receivable"
           element={
             canViewAccountsReceivable ? (
-              <FinanceAccountsReceivableFoundationPanel />
+              <FinanceAccountsReceivablePage />
             ) : (
               <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
                 Sem permissão para Contas a Receber.
