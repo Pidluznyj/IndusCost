@@ -1,6 +1,6 @@
 # Financeiro — Dashboard Contas a Receber
 
-Relatório das fases **FINANCE-AR-DASH-A** (backend), **FINANCE-AR-DASH-B** (UI inicial), **FINANCE-AR-DASH-C** (abas operacionais) e **FINANCE-AR-DASH-D** (exportação, qualidade e sync).
+Relatório das fases **FINANCE-AR-DASH-A** … **FINANCE-AR-DASH-E** (polimento executivo e validação final).
 
 ## Objetivo
 
@@ -18,7 +18,7 @@ Permissões de visualização: `finance.view` + `finance.accountsReceivable.view
 
 Exportação CSV: `finance.accountsReceivable.export` (fallback: mesmas permissões de view — documentado abaixo).
 
-Sync manual: `settings.nomus.sync` (ou `settings.view`).
+Sync manual: `settings.nomus.sync` (mesmo critério do Admin Nomus).
 
 ## Endpoints
 
@@ -65,8 +65,6 @@ Mesmos filtros do dashboard, mais:
 - `sortBy`: `dueDate` | `balanceReceivable` | `externalId`
 - `sortDirection`: `asc` | `desc`
 - `search` — cliente, CNPJ, NF ou ID Nomus
-- `overdueOnly` — `1` / `true`
-
 - `overdueOnly` — `1` / `true`
 - `qualityAlert` — filtro rápido a partir dos alertas de qualidade (FASE D)
 
@@ -219,3 +217,99 @@ Conferir: menu **Financeiro → Contas a Receber**, export CSV, alertas, sync ma
 - Paginação dedicada para ranking de clientes  
 - Otimização SQL  
 - Template `finance_controller` dedicado  
+
+---
+
+## FINANCE-AR-DASH-E — Status do módulo
+
+**Status:** pronto para uso operacional read-only (v1).
+
+### O que foi entregue (fases A–E)
+
+| Área | Entrega |
+|---|---|
+| Backend | Dashboard agregado, títulos paginados, export CSV, alertas de qualidade |
+| UI | 7 abas, 9 KPIs, 4 gráficos, filtros globais com debounce, sync/status Nomus |
+| Operacional | Export CSV filtrado, alertas com drill-down para títulos, ação sugerida por cliente |
+| Qualidade | Testes automatizados, formatadores seguros, permissões documentadas |
+
+### Fora de escopo (não implementado)
+
+- Baixa manual/automática, cobrança ativa, conciliação, régua de cobrança  
+- Alteração de sync Nomus, cron ou runner  
+- Edição de títulos ou clientes  
+
+### Roadmap futuro (somente documentado)
+
+1. Conciliação Faturado x Recebido  
+2. Cruzamento com SalesOrder/NF  
+3. Cobrança ativa por cliente  
+4. Histórico de contatos de cobrança  
+5. Baixa manual/automática  
+6. Régua de cobrança  
+7. Previsão de caixa integrada  
+8. Inadimplência por vendedor  
+9. Inadimplência por segmento/cliente  
+10. Filtros incrementais reais da API Nomus, se existirem  
+
+### Endpoints
+
+| Método | Rota | Uso |
+|---|---|---|
+| GET | `/api/finance/accounts-receivable/dashboard` | KPIs, gráficos, alertas |
+| GET | `/api/finance/accounts-receivable/titles` | Tabela paginada (50/página) |
+| GET | `/api/finance/accounts-receivable/export` | CSV filtrado |
+| GET | `/api/settings/nomus-sync/accounts-receivable-status` | Status sync |
+| POST | `/api/settings/nomus-sync/accounts-receivable-run` | Sync manual |
+
+### Permissões
+
+| Ação | Permissão |
+|---|---|
+| Ver dashboard | `finance.accountsReceivable.view` (+ fallbacks documentados) |
+| Exportar CSV | `finance.accountsReceivable.export` ou fallback view |
+| Rodar sync | `settings.nomus.sync` |
+
+Helpers: `src/lib/financeAccountsReceivablePermissions.ts`
+
+### Comandos úteis
+
+```bash
+npm run test:finance:accounts-receivable
+npm run test:nomus:accounts-receivable
+npm run lint
+npm run build
+npx prisma validate
+```
+
+### Checklist de validação no servidor
+
+```bash
+cd /opt/induscost
+git pull origin main
+npm ci
+npx prisma validate
+npm run test:finance:accounts-receivable
+npm run test:nomus:accounts-receivable
+npm run build
+sudo systemctl restart induscost
+```
+
+**Conferir manualmente:**
+
+1. Menu **Financeiro → Contas a Receber** em desktop e mobile  
+2. KPIs formatados (BRL, %, inteiros) — sem NaN/null  
+3. Filtros com debounce; export CSV respeita filtros  
+4. Aba Títulos paginada (50 linhas), scroll vertical em tabelas  
+5. Alertas de qualidade → link abre títulos filtrados  
+6. Sync: status visível; botão só com `settings.nomus.sync`; 409 se já rodando  
+7. Falha de sync não derruba dashboard; falha de export mostra banner isolado  
+
+### Polimento E (UX/performance)
+
+- Cabeçalho gerencial, abas com scroll horizontal em mobile  
+- Tabelas com altura máxima `min(70vh, 640px)` e cabeçalho sticky  
+- Erros separados: dashboard / export / títulos / sync  
+- Dashboard mantém dados anteriores se refresh falhar  
+- Títulos: paginação server-side (não carrega ~5718 de uma vez)  
+- Permissão de sync alinhada ao Admin (`settings.nomus.sync` apenas)  

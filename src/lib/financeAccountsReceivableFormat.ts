@@ -76,8 +76,11 @@ export function formatFinanceDaysOverdue(days: unknown): string {
   return formatFinanceInteger(n);
 }
 
-export function formatFinanceMonthLabel(year: number, month: number): string {
-  const d = new Date(year, month - 1, 1);
+export function formatFinanceMonthLabel(year: unknown, month: unknown): string {
+  const y = safeFinanceNumber(year, 0);
+  const m = safeFinanceNumber(month, 0);
+  if (y < 1 || m < 1 || m > 12) return "—";
+  const d = new Date(y, m - 1, 1);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
 }

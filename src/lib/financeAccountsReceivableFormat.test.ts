@@ -6,6 +6,7 @@ import {
   formatFinanceCurrencyCompact,
   formatFinanceDate,
   formatFinanceInteger,
+  formatFinanceMonthLabel,
   formatFinancePercent,
   formatFinanceDaysOverdue,
   safeFinanceNumber,
@@ -48,6 +49,11 @@ describe("financeAccountsReceivableFormat", () => {
   it("formatFinanceDaysOverdue", () => {
     assert.equal(formatFinanceDaysOverdue(0), "—");
     assert.equal(formatFinanceDaysOverdue(15), "15");
+  });
+
+  it("formatFinanceMonthLabel rejeita valores inválidos", () => {
+    assert.equal(formatFinanceMonthLabel(2026, 13), "—");
+    assert.match(formatFinanceMonthLabel(2026, 6), /jun/i);
   });
 });
 

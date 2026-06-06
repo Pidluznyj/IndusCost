@@ -19,6 +19,11 @@ import {
   FinanceArTopDebtorsChart,
 } from "@/src/components/finance/FinanceAccountsReceivableCharts";
 import { ContextualDashboardKpiCard } from "@/src/components/contextual/ContextualDashboardKpiCard";
+import {
+  FinanceArLoadingBlock,
+  FinanceArScrollableTable,
+  FinanceArStickyTableHead,
+} from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 
 export function statusBadgeClass(status: string): string {
   switch (status) {
@@ -83,7 +88,7 @@ export function FinanceArOverviewTab({
   data: FinanceArDashboardPayload | null;
   loading: boolean;
 }) {
-  if (!data && loading) return <TabLoading label="Visão geral" />;
+  if (!data && loading) return <FinanceArLoadingBlock label="visão geral" />;
   if (!data) return <TabEmpty message="Sem dados para visão geral." />;
 
   return (
@@ -252,62 +257,62 @@ function CriticalTitlesSection({
   return (
     <div className="space-y-2">
       <h4 className="text-sm font-bold">Títulos críticos</h4>
-      <div className="overflow-x-auto rounded-xl border border-border bg-card/60">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40 text-left text-[10px] font-bold uppercase text-muted-foreground">
-              <th className="p-3">ID</th>
-              <th className="p-3">Cliente</th>
-              <th className="p-3">Vencimento</th>
-              <th className="p-3 text-right">Saldo</th>
-              <th className="p-3">Status</th>
-              <th className="p-3 text-right">Dias</th>
+      <FinanceArScrollableTable>
+        <FinanceArStickyTableHead>
+          <tr className="text-left text-[10px] font-bold uppercase text-muted-foreground">
+            <th className="p-3">ID</th>
+            <th className="p-3 min-w-[140px]">Cliente</th>
+            <th className="p-3 whitespace-nowrap">Vencimento</th>
+            <th className="p-3 text-right whitespace-nowrap">Saldo</th>
+            <th className="p-3">Status</th>
+            <th className="p-3 text-right">Dias</th>
+          </tr>
+        </FinanceArStickyTableHead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.externalId} className="border-b border-border/60 hover:bg-muted/20">
+              <td className="p-3 font-mono text-xs">{row.externalId}</td>
+              <td className="p-3">{displayFinanceText(row.personName)}</td>
+              <td className="p-3 whitespace-nowrap">{formatFinanceDate(row.dueDate)}</td>
+              <td className="p-3 text-right font-semibold tabular-nums whitespace-nowrap">
+                {formatFinanceCurrency(row.balanceReceivable)}
+              </td>
+              <td className="p-3">
+                <StatusBadge status={row.calculatedStatus} />
+              </td>
+              <td className="p-3 text-right tabular-nums">{formatFinanceDaysOverdue(row.daysOverdue)}</td>
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.externalId} className="border-b border-border/60">
-                <td className="p-3 font-mono text-xs">{row.externalId}</td>
-                <td className="p-3">{displayFinanceText(row.personName)}</td>
-                <td className="p-3">{formatFinanceDate(row.dueDate)}</td>
-                <td className="p-3 text-right font-semibold">{formatFinanceCurrency(row.balanceReceivable)}</td>
-                <td className="p-3"><StatusBadge status={row.calculatedStatus} /></td>
-                <td className="p-3 text-right">{formatFinanceDaysOverdue(row.daysOverdue)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </FinanceArScrollableTable>
     </div>
   );
 }
 
 function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-card/60">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border bg-muted/40 text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-            {headers.map((h) => (
-              <th key={h} className="p-3 whitespace-nowrap">
-                {h}
-              </th>
+    <FinanceArScrollableTable tableClassName="min-w-[640px]">
+      <FinanceArStickyTableHead>
+        <tr className="text-left text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+          {headers.map((h) => (
+            <th key={h} className="p-3 whitespace-nowrap">
+              {h}
+            </th>
+          ))}
+        </tr>
+      </FinanceArStickyTableHead>
+      <tbody>
+        {rows.map((row, idx) => (
+          <tr key={idx} className="border-b border-border/60 hover:bg-muted/20">
+            {row.map((cell, cidx) => (
+              <td key={cidx} className="p-3 align-top tabular-nums">
+                {cell}
+              </td>
             ))}
           </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, idx) => (
-            <tr key={idx} className="border-b border-border/60 hover:bg-muted/20">
-              {row.map((cell, cidx) => (
-                <td key={cidx} className="p-3 align-top">
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        ))}
+      </tbody>
+    </FinanceArScrollableTable>
   );
 }
 

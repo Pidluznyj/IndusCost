@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
-import { cn } from "@/src/lib/utils";
 import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
@@ -20,6 +19,10 @@ import {
   formatFinanceInteger,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import {
+  canExportFinanceAccountsReceivable,
+  canRunFinanceAccountsReceivableSync,
+} from "@/src/lib/financeAccountsReceivablePermissions";
+import {
   FinanceArAgingTab,
   FinanceArCompaniesTab,
   FinanceArCustomersTab,
@@ -30,6 +33,12 @@ import {
 import { FinanceAccountsReceivableDataQualityPanel } from "@/src/components/finance/FinanceAccountsReceivableDataQualityPanel";
 import { FinanceAccountsReceivableSyncPanel } from "@/src/components/finance/FinanceAccountsReceivableSyncPanel";
 import { FinanceArTitlesTab } from "@/src/components/finance/FinanceAccountsReceivableTitlesTab";
+import {
+  FinanceArErrorBanner,
+  FinanceArLoadingBlock,
+  FinanceArSuccessBanner,
+  FinanceArTabNav,
+} from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -42,13 +51,8 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 export function FinanceAccountsReceivablePage() {
   const auth = useAuth();
-  const canExport =
-    auth.hasPermission("finance.accountsReceivable.export") ||
-    auth.hasPermission("finance.accountsReceivable.view") ||
-    auth.hasPermission("finance.view") ||
-    auth.hasPermission("reports.view");
-  const canRunSync =
-    auth.hasPermission("settings.nomus.sync") || auth.hasPermission("settings.view");
+  const canExport = canExportFinanceAccountsReceivable(auth);
+  const canRunSync = canRunFinanceAccountsReceivableSync(auth);
 
   const [activeTab, setActiveTab] = useState<FinanceArTabId>("overview");
   const [titlesQualityAlert, setTitlesQualityAlert] = useState<FinanceArDataQualityAlertKey | null>(
@@ -81,11 +85,13 @@ export function FinanceAccountsReceivablePage() {
   const [data, setData] = useState<FinanceArDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setDashboardError(null);
     try {
       const url = queryString
         ? `/api/finance/accounts-receivable/dashboard?${queryString}`
@@ -93,8 +99,7 @@ export function FinanceAccountsReceivablePage() {
       const payload = await fetchJsonOk<FinanceArDashboardPayload>(url);
       setData(payload);
     } catch (e) {
-      setData(null);
-      setError(
+      setDashboardError(
         e instanceof Error
           ? e.message
           : "Não foi possível carregar o dashboard. Tente atualizar em instantes."
@@ -111,6 +116,8 @@ export function FinanceAccountsReceivablePage() {
   const handleExport = async () => {
     if (!canExport) return;
     setExporting(true);
+    setExportError(null);
+    setExportSuccess(null);
     try {
       const qs = buildFinanceArExportQuery(effectiveFilters);
       const res = await fetch(`/api/finance/accounts-receivable/export?${qs}`, {
@@ -127,8 +134,9 @@ export function FinanceAccountsReceivablePage() {
       a.download = financeArExportFilename();
       a.click();
       URL.revokeObjectURL(url);
+      setExportSuccess(`Arquivo ${financeArExportFilename()} gerado com os filtros atuais.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao exportar CSV.");
+      setExportError(e instanceof Error ? e.message : "Erro ao exportar CSV.");
     } finally {
       setExporting(false);
     }
@@ -140,39 +148,56 @@ export function FinanceAccountsReceivablePage() {
   };
 
   const cards = data?.cards;
+  const filtersActive =
+    effectiveFilters.companyName ||
+    effectiveFilters.personName ||
+    effectiveFilters.personCnpj ||
+    effectiveFilters.status !== "all" ||
+    effectiveFilters.dueDateFrom ||
+    effectiveFilters.dueDateTo ||
+    effectiveFilters.paymentMethodName ||
+    effectiveFilters.bankAccountName;
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-card/60 p-5 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 space-y-1">
-            <h3 className="text-xl font-bold tracking-tight">Contas a Receber</h3>
-            <p className="text-sm text-muted-foreground">
-              Carteira de recebíveis importada do Nomus — visualização read-only.
+    <div className="space-y-5 pb-8">
+      <header className="rounded-xl border border-border bg-gradient-to-br from-card/80 to-card/40 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Financeiro · Carteira
             </p>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground pt-1">
-              <span>
-                Última sync (dados):{" "}
-                <strong className="text-foreground">{formatFinanceDateTime(cards?.lastSyncAt)}</strong>
-              </span>
-              <span>
-                Registros filtrados:{" "}
-                <strong className="text-foreground">{formatFinanceInteger(cards?.totalRecords ?? 0)}</strong>
-              </span>
-              {data ? (
-                <span>
-                  Dados atualizados em:{" "}
-                  <strong className="text-foreground">{formatFinanceDateTime(data.generatedAt)}</strong>
-                </span>
-              ) : null}
-            </div>
+            <h3 className="text-2xl font-bold tracking-tight text-foreground">Contas a Receber</h3>
+            <p className="text-sm text-muted-foreground max-w-2xl">
+              Painel gerencial read-only dos recebíveis sincronizados do Nomus.
+            </p>
+            <dl className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground pt-1">
+              <div>
+                <dt className="inline">Última sync: </dt>
+                <dd className="inline font-semibold text-foreground">
+                  {formatFinanceDateTime(cards?.lastSyncAt)}
+                </dd>
+              </div>
+              <div>
+                <dt className="inline">Registros filtrados: </dt>
+                <dd className="inline font-semibold text-foreground tabular-nums">
+                  {loading && !data ? "…" : formatFinanceInteger(cards?.totalRecords ?? 0)}
+                </dd>
+              </div>
+              <div>
+                <dt className="inline">Dados atualizados em: </dt>
+                <dd className="inline font-semibold text-foreground">
+                  {data ? formatFinanceDateTime(data.generatedAt) : loading ? "…" : "—"}
+                </dd>
+              </div>
+            </dl>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
             <button
               type="button"
               onClick={() => void loadDashboard()}
               disabled={loading}
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+              aria-busy={loading}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
             >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Atualizar dashboard
@@ -182,7 +207,8 @@ export function FinanceAccountsReceivablePage() {
                 type="button"
                 onClick={() => void handleExport()}
                 disabled={exporting || loading}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+                aria-busy={exporting}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
               >
                 {exporting ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -194,22 +220,35 @@ export function FinanceAccountsReceivablePage() {
             ) : null}
           </div>
         </div>
-      </div>
+      </header>
 
       <FinanceAccountsReceivableSyncPanel
         canRun={canRunSync}
         onSyncFinished={() => void loadDashboard()}
       />
 
-      {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          {error}
-        </div>
+      {dashboardError ? (
+        <FinanceArErrorBanner message={dashboardError} onDismiss={() => setDashboardError(null)} />
+      ) : null}
+      {exportError ? (
+        <FinanceArErrorBanner message={exportError} onDismiss={() => setExportError(null)} />
+      ) : null}
+      {exportSuccess ? (
+        <FinanceArSuccessBanner message={exportSuccess} onDismiss={() => setExportSuccess(null)} />
       ) : null}
 
-      <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
+      <section className="rounded-xl border border-border bg-card/40 p-4 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Filtros globais</p>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              Filtros globais
+            </p>
+            {filtersActive ? (
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Filtros ativos — afetam KPIs, gráficos, exportação e títulos.
+              </p>
+            ) : null}
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -222,7 +261,7 @@ export function FinanceAccountsReceivablePage() {
             Limpar filtros
           </button>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           <FilterInput label="Empresa" value={filters.companyName} onChange={(v) => setFilters((f) => ({ ...f, companyName: v }))} />
           <FilterInput label="Cliente" value={filters.personName} onChange={(v) => setFilters((f) => ({ ...f, personName: v }))} />
           <FilterInput label="CNPJ" value={filters.personCnpj} onChange={(v) => setFilters((f) => ({ ...f, personCnpj: v }))} />
@@ -232,72 +271,58 @@ export function FinanceAccountsReceivablePage() {
             onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
             options={FINANCE_AR_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           />
-          <FilterInput label="Venc. de" type="date" value={filters.dueDateFrom} onChange={(v) => setFilters((f) => ({ ...f, dueDateFrom: v }))} />
-          <FilterInput label="Venc. até" type="date" value={filters.dueDateTo} onChange={(v) => setFilters((f) => ({ ...f, dueDateTo: v }))} />
-          <FilterInput label="Forma pag." value={filters.paymentMethodName} onChange={(v) => setFilters((f) => ({ ...f, paymentMethodName: v }))} />
-          <FilterInput label="Conta" value={filters.bankAccountName} onChange={(v) => setFilters((f) => ({ ...f, bankAccountName: v }))} />
+          <FilterInput label="Vencimento de" type="date" value={filters.dueDateFrom} onChange={(v) => setFilters((f) => ({ ...f, dueDateFrom: v }))} />
+          <FilterInput label="Vencimento até" type="date" value={filters.dueDateTo} onChange={(v) => setFilters((f) => ({ ...f, dueDateTo: v }))} />
+          <FilterInput label="Forma de pagamento" value={filters.paymentMethodName} onChange={(v) => setFilters((f) => ({ ...f, paymentMethodName: v }))} />
+          <FilterInput label="Conta bancária" value={filters.bankAccountName} onChange={(v) => setFilters((f) => ({ ...f, bankAccountName: v }))} />
         </div>
-      </div>
+      </section>
 
-      <FinanceAccountsReceivableDataQualityPanel
-        alerts={data?.dataQualitySummary ?? []}
-        onViewTitles={handleViewTitlesFromAlert}
+      {loading && !data ? (
+        <FinanceArLoadingBlock label="alertas e indicadores" />
+      ) : (
+        <FinanceAccountsReceivableDataQualityPanel
+          alerts={data?.dataQualitySummary ?? []}
+          onViewTitles={handleViewTitlesFromAlert}
+        />
+      )}
+
+      <FinanceArTabNav
+        tabs={FINANCE_AR_TABS}
+        activeId={activeTab}
+        onChange={(id) => setActiveTab(id as FinanceArTabId)}
       />
 
-      <nav className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {FINANCE_AR_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              "rounded-lg px-3 py-2 text-xs font-semibold transition-colors",
-              activeTab === tab.id
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent"
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-
-      {activeTab === "overview" ? <FinanceArOverviewTab data={data} loading={loading} /> : null}
-      {activeTab === "aging" ? (
-        loading && !data ? (
-          <TabShellLoading label="aging" />
-        ) : (
-          <FinanceArAgingTab data={data} />
-        )
-      ) : null}
-      {activeTab === "schedule" ? (
-        loading && !data ? <TabShellLoading label="agenda" /> : <FinanceArScheduleTab data={data} />
-      ) : null}
-      {activeTab === "customers" ? (
-        loading && !data ? <TabShellLoading label="clientes" /> : <FinanceArCustomersTab data={data} />
-      ) : null}
-      {activeTab === "titles" ? (
-        <FinanceArTitlesTab
-          filters={effectiveFilters}
-          qualityAlert={titlesQualityAlert}
-          onClearQualityAlert={() => setTitlesQualityAlert(null)}
-        />
-      ) : null}
-      {activeTab === "payment-methods" ? (
-        loading && !data ? <TabShellLoading label="formas de pagamento" /> : <FinanceArPaymentTab data={data} />
-      ) : null}
-      {activeTab === "companies" ? (
-        loading && !data ? <TabShellLoading label="empresas" /> : <FinanceArCompaniesTab data={data} />
-      ) : null}
+      <div role="tabpanel" aria-label={FINANCE_AR_TABS.find((t) => t.id === activeTab)?.label}>
+        {activeTab === "overview" ? <FinanceArOverviewTab data={data} loading={loading} /> : null}
+        {activeTab === "aging" ? (
+          loading && !data ? <FinanceArLoadingBlock label="aging" /> : <FinanceArAgingTab data={data} />
+        ) : null}
+        {activeTab === "schedule" ? (
+          loading && !data ? <FinanceArLoadingBlock label="agenda" /> : <FinanceArScheduleTab data={data} />
+        ) : null}
+        {activeTab === "customers" ? (
+          loading && !data ? <FinanceArLoadingBlock label="clientes" /> : <FinanceArCustomersTab data={data} />
+        ) : null}
+        {activeTab === "titles" ? (
+          <FinanceArTitlesTab
+            filters={effectiveFilters}
+            qualityAlert={titlesQualityAlert}
+            onClearQualityAlert={() => setTitlesQualityAlert(null)}
+          />
+        ) : null}
+        {activeTab === "payment-methods" ? (
+          loading && !data ? (
+            <FinanceArLoadingBlock label="formas de pagamento" />
+          ) : (
+            <FinanceArPaymentTab data={data} />
+          )
+        ) : null}
+        {activeTab === "companies" ? (
+          loading && !data ? <FinanceArLoadingBlock label="empresas" /> : <FinanceArCompaniesTab data={data} />
+        ) : null}
+      </div>
     </div>
-  );
-}
-
-function TabShellLoading({ label }: { label: string }) {
-  return (
-    <p className="text-sm text-muted-foreground py-8 text-center">
-      Carregando {label}…
-    </p>
   );
 }
 

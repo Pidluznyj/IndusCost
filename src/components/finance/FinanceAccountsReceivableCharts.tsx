@@ -138,7 +138,7 @@ export function FinanceArTopDebtorsChart({ rows }: { rows: FinanceArTopDebtor[] 
 
 export function FinanceArPaymentMethodChart({ rows }: { rows: FinanceArPaymentSummary[] }) {
   const data = (rows ?? []).slice(0, 8).map((r) => ({
-    label: r.paymentMethodName.slice(0, 20),
+    label: (r.paymentMethodName?.trim() || "Sem forma").slice(0, 20),
     openAmount: r.openAmount,
     overdueAmount: r.overdueAmount,
     titlesCount: r.titlesCount,
