@@ -37,6 +37,7 @@ export type FinanceApTitleListItem = {
   documentNumber: string | null;
   dueDate: string | null;
   settlementDate: string | null;
+  paymentDate: string | null;
   amountPayable: number;
   amountPaid: number;
   balancePayable: number;
@@ -154,6 +155,7 @@ export function mapRowToTitleListItem(
     documentNumber: row.documentNumber,
     dueDate: row.dueDate?.toISOString() ?? null,
     settlementDate: row.settlementDate?.toISOString() ?? null,
+    paymentDate: row.paymentDate?.toISOString() ?? null,
     amountPayable: roundMoney(row.amountPayable),
     amountPaid: roundMoney(row.amountPaid),
     balancePayable: roundMoney(row.balancePayable),

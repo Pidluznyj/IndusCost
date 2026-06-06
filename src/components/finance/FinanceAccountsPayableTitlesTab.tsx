@@ -212,7 +212,9 @@ export function FinanceApTitlesTab({
                     )}
                   </td>
                   <td className="p-2 whitespace-nowrap">{formatFinanceDate(row.dueDate)}</td>
-                  <td className="p-2 whitespace-nowrap">{formatFinanceDate(row.settlementDate)}</td>
+                  <td className="p-2 whitespace-nowrap">
+                    {formatFinanceDate(row.paymentDate ?? row.settlementDate)}
+                  </td>
                   <td className="p-2 text-right tabular-nums">{formatFinanceCurrency(row.amountPayable)}</td>
                   <td className="p-2 text-right tabular-nums">{formatFinanceCurrency(row.amountPaid)}</td>
                   <td className="p-2 text-right tabular-nums font-semibold">

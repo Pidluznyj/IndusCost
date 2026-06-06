@@ -177,3 +177,77 @@ Cobertura: cards, aging, filtros ano/mês, títulos paginados, export, data qual
 5. Conferir permissões de usuários (`finance.accountsPayable.view` / `.export`).
 6. Rodar sync Nomus Contas a Pagar se o stage local estiver vazio.
 7. Acessar `/finance/accounts-payable` e validar KPIs com dados reais.
+
+---
+
+## Auditoria final FINANCE-AP-DASH-Z
+
+**Data:** 2026-06-06  
+**Branch:** `main`  
+**Commit dashboard:** `0a1e0b3` (`feat(finance): add accounts payable dashboard`)  
+**Commits sync (pré-requisito):** `61073e8`, `95d5d45`, `a02d297`
+
+### Checklist de validação
+
+| # | Item | Resultado |
+|---|------|-----------|
+| 1 | Model `NomusAccountsPayable` | OK — `prisma/schema.prisma` L1300–1365 |
+| 2 | Campos usados no dashboard existem no Prisma | OK — select `FINANCE_AP_TITLE_SELECT` alinhado |
+| 3 | Migration | OK — `20260607120000_nomus_accounts_payable/migration.sql` |
+| 4 | Sync preview/apply | OK — `scripts/nomusAccountsPayableSync.ts` (modos dry/apply) |
+| 5 | Runner/status/Admin | OK — `runNomusAccountsPayableSync.sh`, card Admin, endpoints status/run |
+| 6 | Cron recomendado documentado | OK — `docs/generated/nomus-accounts-payable-sync-schedule-report.md` (a cada 2h) |
+| 7 | Dashboard Financeiro > Contas a Pagar | OK — `FinanceModule` + `FinanceAccountsPayablePage` |
+| 8 | Endpoints protegidos | OK — `requireAppAuth` + permissões; smoke 401 sem cookie |
+| 9 | Export respeita filtros | OK — testes `financeAccountsPayableExport.test.ts` |
+| 10 | Ano/Mês funcionam | OK — testes dashboard + titles |
+| 11 | Títulos paginados | OK — `page`/`limit`/`sortBy`, máx. 200 |
+| 12 | Sem NaN/Infinity/null exposto | OK — `safeFinanceNumber`, `roundMoney`, testes dedicados |
+| 13 | Contas a Receber intacto | OK — zero arquivos `*Receivable*` alterados desde `61073e8` |
+| 14 | Outros domínios intactos | OK — escopo limitado a finance AP + wiring |
+
+### Rotas verificadas
+
+| Rota | Registro | Auth smoke (sem cookie) |
+|------|----------|-------------------------|
+| `GET /api/nomus/accounts-payable/summary` | `nomusAccountsPayableRoutes.ts` | (não no smoke desta fase) |
+| `GET /api/settings/nomus-sync/accounts-payable-status` | `server.ts` | **401** |
+| `POST /api/settings/nomus-sync/accounts-payable-run` | `server.ts` | — |
+| `GET /api/finance/accounts-payable/dashboard` | `financeAccountsPayableRoutes.ts` | **401** |
+| `GET /api/finance/accounts-payable/titles` | `financeAccountsPayableRoutes.ts` | **401** |
+| `GET /api/finance/accounts-payable/export` | `financeAccountsPayableRoutes.ts` | **401** |
+
+Smoke local executado em `http://127.0.0.1:3099` (dev server).
+
+### Campos Prisma consumidos pelo dashboard
+
+`externalId`, `companyName`, `personName`, `personCnpj`, `description`, `dueDate`, `settlementDate`, `paymentDate`, `amountPayable`, `amountPaid`, `balancePayable`, `paymentMethodName`, `bankAccountName`, `sourceInvoiceId`, `documentNumber`, `suspendPayment`, `status` (→ `nomusStatus`), `syncedAt`.
+
+Campos do model **não** usados no dashboard read-only: `rawPayload` (não exportado), `payloadHash`, campos de juros/multa, etc.
+
+### Testes executados na auditoria
+
+| Comando | Resultado |
+|---------|-----------|
+| `npx prisma validate` | OK |
+| `npm run test:nomus:accounts-payable` | 27/27 |
+| `npm run test:finance:accounts-payable` | 61/61 |
+| `npm run test:nomus:accounts-receivable` | 23/23 |
+| `npm run test:finance:accounts-receivable` | 72/72 |
+| `npm run test:nomus:daily-sync` | 16/16 |
+| `npm run lint` | OK |
+| `npm run build` | OK |
+
+### Problemas encontrados
+
+1. **Baixa/Pagamento na aba Títulos** — coluna exibia só `settlementDate`, ignorando `paymentDate` (regra de negócio usa `paymentDate ?? settlementDate`).
+2. **Cosmético** — descrições de teste com typo “atrasoência” (não afeta runtime).
+3. **Cosmético** — aba Títulos mantém coluna “NF emitida” herdada do template AR (não bloqueia uso; spec AP prioriza Documento/NF).
+
+### Correções aplicadas nesta auditoria
+
+- Títulos: expor `paymentDate` no payload e exibir `paymentDate ?? settlementDate` na coluna Baixa/Pagamento.
+
+### Conclusão
+
+Módulo **Financeiro > Contas a Pagar v1 read-only** aprovado para deploy. Próximo passo operacional: pull no servidor, permissões e sync inicial se stage vazio.
