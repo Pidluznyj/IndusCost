@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { billingMarketCustomerFilterSql } from "@/src/lib/billingMarketCustomerSql.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
   decimalToNumber,
@@ -14,7 +15,7 @@ import {
 } from "@/src/lib/executiveDashboardFormatters.js";
 import {
   countWorkdaysElapsedInMonth,
-  countWorkdaysElapsedInYear,
+  countWorkdaysInMonth,
   endOfYear,
   startOfYear,
 } from "@/src/lib/executiveDashboardWorkdays.js";
@@ -22,6 +23,7 @@ import {
   computeAchievementPercent,
   computeDailyAverageByWorkday,
   computeGrowthTarget,
+  computeMonthProjection,
   computeTargetGap,
   computeTicketAverage,
 } from "@/src/lib/salesOrderDashboardRules.js";
@@ -34,8 +36,12 @@ import {
 } from "@/src/lib/salesOrderInvoicingSql.js";
 import type {
   BillingDashboardTab,
+  BillingProjectionBlock,
+  BillingRealizedVsProjected,
   BillingTopCustomerRow,
+  BillingYearComparison,
   DashboardChartPoint,
+  DashboardCumulativeChartPoint,
   DashboardMetricCard,
   DashboardTargetBlock,
   RecentInvoicedOrderRow,
@@ -44,8 +50,11 @@ import type {
 const MONTH_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const RECENT_INVOICED_LIMIT = 15;
 const TOP_CUSTOMERS_LIMIT = 10;
+const MARKET_BILLING_NOTE =
+  "Faturamento de mercado: NF com dataProcessamento, pedido não cancelado, clientes do grupo (Lazarios, Koppetel, SM) excluídos. Valor: totalNetValue do pedido.";
 
 const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
+const MARKET_CUSTOMER = billingMarketCustomerFilterSql("c");
 
 function metricCard(
   id: string,
@@ -88,7 +97,7 @@ function buildTargetBlock(actual: number | null, previousPeriod: number | null):
   };
 }
 
-async function queryInvoicedInIssuePeriod(
+async function queryMarketBillingInPeriod(
   from: Date,
   to: Date
 ): Promise<{ count: number | null; net: number | null }> {
@@ -98,14 +107,16 @@ async function queryInvoicedInIssuePeriod(
     Prisma.sql`
       SELECT COUNT(*)::bigint AS c, COALESCE(SUM(so."totalNetValue"), 0) AS v
       FROM "SalesOrder" so
+      INNER JOIN "Customer" c ON c.id = so."customerId"
       WHERE ${NOT_CANCELLED}
+        AND ${MARKET_CUSTOMER}
         AND ${orderInvoicedInPeriodSql("so", fromYmd, toYmd)}
     `
   );
   return { count: safeMetricNumber(Number(row?.c ?? 0n)), net: decimalToNumber(row?.v) };
 }
 
-async function queryMonthlyBilling(year: number): Promise<Map<number, number>> {
+async function queryMonthlyMarketBilling(year: number): Promise<Map<number, number>> {
   const fromYmd = toPgDateYmd(startOfYear(new Date(year, 0, 1)));
   const toYmd = toPgDateYmd(endOfYear(new Date(year, 0, 1)));
   const rows = await prisma.$queryRaw<{ month: number; total: unknown }[]>(
@@ -114,12 +125,14 @@ async function queryMonthlyBilling(year: number): Promise<Map<number, number>> {
         EXTRACT(MONTH FROM inv.invoice_date)::int AS month,
         COALESCE(SUM(so."totalNetValue"), 0) AS total
       FROM "SalesOrder" so
+      INNER JOIN "Customer" c ON c.id = so."customerId"
       INNER JOIN LATERAL (
         SELECT MAX((${nfeProcessamentoDateSql()})) AS invoice_date
         FROM ${nomusNfesElementsSql("so")}
         WHERE (${nfeProcessamentoDateSql()}) IS NOT NULL
       ) inv ON inv.invoice_date IS NOT NULL
       WHERE ${NOT_CANCELLED}
+        AND ${MARKET_CUSTOMER}
         AND inv.invoice_date >= ${fromYmd}::date
         AND inv.invoice_date <= ${toYmd}::date
       GROUP BY 1
@@ -133,7 +146,7 @@ async function queryMonthlyBilling(year: number): Promise<Map<number, number>> {
   return map;
 }
 
-async function queryRecentInvoicedOrders(): Promise<RecentInvoicedOrderRow[]> {
+async function queryRecentMarketInvoicedOrders(): Promise<RecentInvoicedOrderRow[]> {
   const rows = await prisma.$queryRaw<
     {
       id: string;
@@ -141,6 +154,7 @@ async function queryRecentInvoicedOrders(): Promise<RecentInvoicedOrderRow[]> {
       customer_name: string;
       invoice_date: Date;
       total_net_value: unknown;
+      invoice_status: string | null;
     }[]
   >(
     Prisma.sql`
@@ -149,15 +163,19 @@ async function queryRecentInvoicedOrders(): Promise<RecentInvoicedOrderRow[]> {
         so."orderCode" AS order_code,
         COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
         inv.invoice_date,
-        so."totalNetValue" AS total_net_value
+        so."totalNetValue" AS total_net_value,
+        inv.invoice_status
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
       INNER JOIN LATERAL (
-        SELECT MAX((${nfeProcessamentoDateSql()})) AS invoice_date
+        SELECT
+          MAX((${nfeProcessamentoDateSql()})) AS invoice_date,
+          MAX(NULLIF(TRIM(nfe->>'status'), '')) AS invoice_status
         FROM ${nomusNfesElementsSql("so")}
         WHERE (${nfeProcessamentoDateSql()}) IS NOT NULL
       ) inv ON inv.invoice_date IS NOT NULL
       WHERE ${NOT_CANCELLED}
+        AND ${MARKET_CUSTOMER}
         AND ${orderIsInvoicedSql("so")}
       ORDER BY inv.invoice_date DESC, so."issueDate" DESC
       LIMIT ${RECENT_INVOICED_LIMIT}
@@ -169,10 +187,11 @@ async function queryRecentInvoicedOrders(): Promise<RecentInvoicedOrderRow[]> {
     customerName: row.customer_name,
     invoiceDate: row.invoice_date.toISOString(),
     totalNetValue: decimalToNumber(row.total_net_value),
+    invoiceStatus: row.invoice_status,
   }));
 }
 
-async function queryTopCustomersInPeriod(from: Date, to: Date): Promise<BillingTopCustomerRow[]> {
+async function queryTopMarketCustomersInPeriod(from: Date, to: Date): Promise<BillingTopCustomerRow[]> {
   const fromYmd = toPgDateYmd(from);
   const toYmd = toPgDateYmd(to);
   const rows = await prisma.$queryRaw<
@@ -187,6 +206,7 @@ async function queryTopCustomersInPeriod(from: Date, to: Date): Promise<BillingT
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
       WHERE ${NOT_CANCELLED}
+        AND ${MARKET_CUSTOMER}
         AND ${orderInvoicedInPeriodSql("so", fromYmd, toYmd)}
       GROUP BY c.id, customer_name
       ORDER BY total DESC
@@ -204,6 +224,7 @@ async function queryTopCustomersInPeriod(from: Date, to: Date): Promise<BillingT
 function buildMonthlyBillingChart(
   currentYearMap: Map<number, number>,
   previousYearMap: Map<number, number>,
+  twoYearsAgoMap: Map<number, number> | null,
   currentYear: number
 ): DashboardChartPoint[] {
   const currentMonth = new Date().getMonth() + 1;
@@ -215,7 +236,38 @@ function buildMonthlyBillingChart(
       label: `${label}/${String(currentYear).slice(-2)}`,
       currentYear: month <= currentMonth ? (currentYearMap.get(month) ?? 0) : null,
       previousYear,
+      twoYearsAgo: twoYearsAgoMap?.get(month) ?? null,
       target: computeGrowthTarget(previousYear),
+    };
+  });
+}
+
+function buildCumulativeChart(
+  currentYearMap: Map<number, number>,
+  previousYearMap: Map<number, number>,
+  twoYearsAgoMap: Map<number, number> | null,
+  currentYear: number
+): DashboardCumulativeChartPoint[] {
+  const currentMonth = new Date().getMonth() + 1;
+  let cumCurrent = 0;
+  let cumPrevious = 0;
+  let cumTwo = 0;
+
+  return MONTH_SHORT.map((label, idx) => {
+    const month = idx + 1;
+    const prev = previousYearMap.get(month) ?? 0;
+    const two = twoYearsAgoMap?.get(month) ?? 0;
+    cumPrevious += prev;
+    cumTwo += two;
+    if (month <= currentMonth) {
+      cumCurrent += currentYearMap.get(month) ?? 0;
+    }
+    return {
+      month,
+      label: `${label}/${String(currentYear).slice(-2)}`,
+      currentYear: month <= currentMonth ? cumCurrent : null,
+      previousYear: cumPrevious,
+      twoYearsAgo: twoYearsAgoMap ? cumTwo : null,
     };
   });
 }
@@ -228,61 +280,125 @@ export async function buildBillingDashboardTab(now: Date): Promise<BillingDashbo
   const yearEnd = endOfYear(now);
   const prevYearSameMonthStart = startOfMonth(new Date(year - 1, now.getMonth(), 1));
   const prevYearSameMonthEnd = endOfMonth(new Date(year - 1, now.getMonth(), 1));
+  const prevYearStart = startOfYear(new Date(year - 1, 0, 1));
+  const prevYearEnd = endOfYear(new Date(year - 1, 0, 1));
+  const ytdPrevEnd = new Date(year - 1, now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
   const [
     monthAgg,
     yearAgg,
     prevMonthAgg,
+    prevYearTotalAgg,
+    ytdCurrentAgg,
+    ytdPreviousAgg,
     currentYearMonthly,
     previousYearMonthly,
+    twoYearsAgoMonthly,
     recentInvoiced,
     topCustomers,
   ] = await Promise.all([
-    queryInvoicedInIssuePeriod(monthStart, monthEnd),
-    queryInvoicedInIssuePeriod(yearStart, yearEnd),
-    queryInvoicedInIssuePeriod(prevYearSameMonthStart, prevYearSameMonthEnd),
-    queryMonthlyBilling(year),
-    queryMonthlyBilling(year - 1),
-    queryRecentInvoicedOrders(),
-    queryTopCustomersInPeriod(yearStart, yearEnd),
+    queryMarketBillingInPeriod(monthStart, monthEnd),
+    queryMarketBillingInPeriod(yearStart, yearEnd),
+    queryMarketBillingInPeriod(prevYearSameMonthStart, prevYearSameMonthEnd),
+    queryMarketBillingInPeriod(prevYearStart, prevYearEnd),
+    queryMarketBillingInPeriod(yearStart, now),
+    queryMarketBillingInPeriod(prevYearStart, ytdPrevEnd),
+    queryMonthlyMarketBilling(year),
+    queryMonthlyMarketBilling(year - 1),
+    queryMonthlyMarketBilling(year - 2),
+    queryRecentMarketInvoicedOrders(),
+    queryTopMarketCustomersInPeriod(yearStart, yearEnd),
   ]);
 
   const ticketAvg = computeTicketAverage(monthAgg.net, monthAgg.count);
-  const monthWorkdays = countWorkdaysElapsedInMonth(now);
-  const yearWorkdays = countWorkdaysElapsedInYear(now);
-  const dailyAvgMonth = computeDailyAverageByWorkday(monthAgg.net, monthWorkdays);
+  const monthWorkdaysElapsed = countWorkdaysElapsedInMonth(now);
+  const workdaysInMonth = countWorkdaysInMonth(year, now.getMonth());
+  const dailyAvgMonth = computeDailyAverageByWorkday(monthAgg.net, monthWorkdaysElapsed);
+  const projectedMonth = computeMonthProjection(dailyAvgMonth, workdaysInMonth);
   const target = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
+  const annualTarget = computeGrowthTarget(prevYearTotalAgg.net);
+
+  const projection: BillingProjectionBlock = {
+    dailyAverage: dailyAvgMonth,
+    projectedMonth,
+    workdaysElapsed: monthWorkdaysElapsed,
+    workdaysInMonth,
+    formatted: {
+      dailyAverage: formatExecutiveCurrency(dailyAvgMonth),
+      projectedMonth: formatExecutiveCurrency(projectedMonth),
+    },
+  };
+
+  const yearComparison: BillingYearComparison = {
+    yearToDateCurrent: ytdCurrentAgg.net,
+    yearToDatePrevious: ytdPreviousAgg.net,
+    previousYearTotal: prevYearTotalAgg.net,
+    annualTarget,
+    formatted: {
+      yearToDateCurrent: formatExecutiveCurrency(ytdCurrentAgg.net),
+      yearToDatePrevious: formatExecutiveCurrency(ytdPreviousAgg.net),
+      previousYearTotal: formatExecutiveCurrency(prevYearTotalAgg.net),
+      annualTarget: formatExecutiveCurrency(annualTarget),
+    },
+  };
+
+  const realizedVsProjected: BillingRealizedVsProjected = {
+    realized: monthAgg.net,
+    projected: projectedMonth,
+    target: target.target,
+    formatted: {
+      realized: formatExecutiveCurrency(monthAgg.net),
+      projected: formatExecutiveCurrency(projectedMonth),
+      target: formatExecutiveCurrency(target.target),
+    },
+  };
 
   const summaryCards: DashboardMetricCard[] = [
-    metricCard("billing-month", "Faturamento líquido do mês", monthAgg.net, {
-      asCurrency: true,
-      compact: true,
-    }),
-    metricCard("billing-year", "Faturamento líquido do ano", yearAgg.net, {
-      asCurrency: true,
-      compact: true,
-    }),
+    metricCard("billing-month", "Faturamento mês atual", monthAgg.net, { asCurrency: true, compact: true }),
     metricCard("billing-prev-month", "Mesmo mês ano anterior", prevMonthAgg.net, {
       asCurrency: true,
       compact: true,
     }),
-    metricCard("billing-target", "Meta do mês", target.target, { asCurrency: true, compact: true }),
-    metricCard("billing-achievement", "% atingimento meta", target.achievementPercent, { asPercent: true }),
-    metricCard("billing-ticket", "Ticket médio faturado", ticketAvg, { asCurrency: true }),
-    metricCard("billing-count-month", "Pedidos faturados no mês", monthAgg.count),
+    metricCard("billing-year", "Faturamento ano atual", yearAgg.net, { asCurrency: true, compact: true }),
     metricCard("billing-daily-avg", "Média diária faturada", dailyAvgMonth, { asCurrency: true }),
+    metricCard("billing-projected", "Projeção do mês", projectedMonth, {
+      asCurrency: true,
+      compact: true,
+      hint: `${workdaysInMonth} dias úteis no mês`,
+    }),
+    metricCard("billing-target", "Meta do mês (+30%)", target.target, { asCurrency: true, compact: true }),
+    metricCard("billing-achievement", "% atingimento meta", target.achievementPercent, { asPercent: true }),
+    metricCard("billing-gap", "Diferença p/ meta", target.gap, { asCurrency: true, compact: true }),
+    metricCard("billing-count-month", "Pedidos faturados no mês", monthAgg.count),
+    metricCard("billing-ticket", "Ticket médio faturado", ticketAvg, { asCurrency: true }),
   ];
 
   return {
     available: true,
     source:
-      "SalesOrder.totalNetValue com nfes.dataProcessamento; valor do pedido como base (mesma regra CRM)",
+      "SalesOrder.totalNetValue + nfes.dataProcessamento; exclui clientes do grupo; venda de mercado",
     periodLabel: now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
     yearLabel: year,
     summaryCards,
     target,
-    monthlyBilling: buildMonthlyBillingChart(currentYearMonthly, previousYearMonthly, year),
+    projection,
+    yearComparison,
+    realizedVsProjected,
+    monthlyBilling: buildMonthlyBillingChart(
+      currentYearMonthly,
+      previousYearMonthly,
+      twoYearsAgoMonthly,
+      year
+    ),
+    cumulativeBilling: buildCumulativeChart(
+      currentYearMonthly,
+      previousYearMonthly,
+      twoYearsAgoMonthly,
+      year
+    ),
     recentInvoicedOrders: recentInvoiced,
     topCustomers,
+    intercompanyExclusionApplied: true,
+    marketBillingNote: MARKET_BILLING_NOTE,
   };
 }

@@ -74,6 +74,16 @@ export function computeDailyAverageByWorkday(
   return totalValue / workdaysElapsed;
 }
 
+/** Projeção linear do mês = média diária × dias úteis totais do mês. */
+export function computeMonthProjection(
+  dailyAverage: number | null,
+  workdaysInMonth: number
+): number | null {
+  if (dailyAverage == null || !Number.isFinite(dailyAverage)) return null;
+  if (workdaysInMonth <= 0) return null;
+  return dailyAverage * workdaysInMonth;
+}
+
 export function isOpenPortfolioOrder(input: {
   status: string;
   hasNfeDataProcessamento: boolean;

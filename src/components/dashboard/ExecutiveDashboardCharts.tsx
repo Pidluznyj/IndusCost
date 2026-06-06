@@ -4,25 +4,38 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import type { DashboardChartPoint } from "@/src/lib/executiveDashboardTypes";
+import type {
+  BillingRealizedVsProjected,
+  DashboardChartPoint,
+  DashboardCumulativeChartPoint,
+} from "@/src/lib/executiveDashboardTypes";
 import { formatExecutiveCompactCurrency, formatExecutiveCurrency } from "@/src/lib/executiveDashboardFormatters";
 
-type Props = {
+type MonthlyProps = {
   title: string;
   data: DashboardChartPoint[];
   showTarget?: boolean;
+  showTwoYearsAgo?: boolean;
 };
 
-export function ExecutiveMonthlyChart({ title, data, showTarget = true }: Props) {
+export function ExecutiveMonthlyChart({
+  title,
+  data,
+  showTarget = true,
+  showTwoYearsAgo = false,
+}: MonthlyProps) {
   const chartData = data.map((point) => ({
     name: point.label.split("/")[0],
     atual: point.currentYear ?? 0,
     anterior: point.previousYear ?? 0,
+    retrasado: showTwoYearsAgo ? (point.twoYearsAgo ?? 0) : undefined,
     meta: showTarget ? (point.target ?? 0) : undefined,
   }));
 
@@ -45,15 +58,92 @@ export function ExecutiveMonthlyChart({ title, data, showTarget = true }: Props)
                   ? "Ano atual"
                   : name === "anterior"
                     ? "Ano anterior"
-                    : "Meta",
+                    : name === "retrasado"
+                      ? "Ano retrasado"
+                      : "Meta",
               ]}
             />
             <Legend />
+            {showTwoYearsAgo ? (
+              <Bar dataKey="retrasado" name="Ano retrasado" fill="hsl(var(--muted-foreground) / 0.2)" radius={[4, 4, 0, 0]} />
+            ) : null}
             <Bar dataKey="anterior" name="Ano anterior" fill="hsl(var(--muted-foreground) / 0.35)" radius={[4, 4, 0, 0]} />
             <Bar dataKey="atual" name="Ano atual" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
             {showTarget ? (
-              <Bar dataKey="meta" name="Meta" fill="hsl(var(--chart-2, 142 76% 36%))" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="meta" name="Meta (+30%)" fill="hsl(var(--chart-2, 142 76% 36%))" radius={[4, 4, 0, 0]} />
             ) : null}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+}
+
+export function ExecutiveCumulativeChart({
+  title,
+  data,
+}: {
+  title: string;
+  data: DashboardCumulativeChartPoint[];
+}) {
+  const chartData = data.map((point) => ({
+    name: point.label.split("/")[0],
+    atual: point.currentYear ?? null,
+    anterior: point.previousYear ?? 0,
+    retrasado: point.twoYearsAgo ?? null,
+  }));
+
+  return (
+    <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+      <h3 className="mb-4 text-lg font-bold">{title}</h3>
+      <div className="h-72 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            <YAxis
+              tick={{ fontSize: 11 }}
+              tickFormatter={(v) => formatExecutiveCompactCurrency(Number(v)).replace("R$ ", "")}
+            />
+            <Tooltip formatter={(value: number) => formatExecutiveCurrency(value)} />
+            <Legend />
+            <Line type="monotone" dataKey="anterior" name="Ano anterior" stroke="hsl(var(--muted-foreground))" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="retrasado" name="Ano retrasado" stroke="hsl(var(--muted-foreground) / 0.5)" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="atual" name="Ano atual" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+}
+
+export function ExecutiveRealizedVsProjectedChart({
+  title,
+  data,
+}: {
+  title: string;
+  data: BillingRealizedVsProjected;
+}) {
+  const chartData = [
+    { name: "Realizado", valor: data.realized ?? 0 },
+    { name: "Projeção", valor: data.projected ?? 0 },
+    { name: "Meta", valor: data.target ?? 0 },
+  ];
+
+  return (
+    <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+      <h3 className="mb-4 text-lg font-bold">{title}</h3>
+      <div className="h-56 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            <YAxis
+              tick={{ fontSize: 11 }}
+              tickFormatter={(v) => formatExecutiveCompactCurrency(Number(v)).replace("R$ ", "")}
+            />
+            <Tooltip formatter={(value: number) => formatExecutiveCurrency(value)} />
+            <Bar dataKey="valor" name="Valor" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

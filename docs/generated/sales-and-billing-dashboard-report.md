@@ -64,16 +64,58 @@ Abas **Operação/Financeiro** e **Funil de Vendas** preservadas.
 
 | Indicador | Fonte | Regra |
 |-----------|-------|-------|
-| Faturamento mês/ano | `SalesOrder.totalNetValue` | NF com `dataProcessamento` no período |
+| Faturamento mês/ano | `SalesOrder.totalNetValue` | NF com `dataProcessamento` no período; **cliente de mercado** |
 | Mesmo mês ano anterior | idem | período equivalente |
-| Meta / atingimento | × 1,30 | sobre faturamento do mês anterior |
+| Projeção do mês | calculado | média diária × dias úteis totais do mês |
+| Meta / atingimento | × 1,30 | faturamento mesmo mês ano anterior |
+| Meta anual | × 1,30 | faturamento total ano anterior |
+| YTD comparativo | agregação | acumulado até hoje vs mesmo período ano anterior |
 | Ticket médio faturado | calculado | faturamento mês ÷ pedidos faturados |
 | Média diária faturada | dias úteis | faturamento mês ÷ dias úteis decorridos |
-| Evolução mensal | gráfico | faturamento por mês da NF |
-| Top clientes | agregação | faturamento no ano por cliente |
-| Recentes | lista | últimos pedidos com NF processada |
+| Evolução mensal | gráfico | mês a mês: atual, anterior, retrasado, meta |
+| Acumulado mensal | gráfico linha | soma progressiva por mês |
+| Realizado vs projetado | gráfico | mês atual, projeção, meta |
+| Top clientes | agregação | faturamento ano; exclui grupo |
+| Recentes | lista | NF processada, status NF quando disponível |
 
-**Valor base:** `totalNetValue` do pedido (mesma regra CRM/relatórios — não há valor NF separado confiável no schema).
+**Valor base:** `totalNetValue` do pedido. Campo de valor fiscal na NF não está estruturado de forma confiável — documentado como limitação.
+
+**Status NF:** quando `nfe->>'status'` existe, exibido na lista; critério de inclusão continua sendo `dataProcessamento` (não há mapeamento confiável de “4 - Autorizada” no código).
+
+---
+
+## Regra de exclusão de empresas do grupo no faturamento
+
+### Por que excluir
+Lazarios, Koppetel e SM Comércio de Plásticos emitem NF entre si (operações intragrupo). Incluir esses clientes infla o faturamento gerencial e mascara a **venda real de mercado**.
+
+### CNPJs usados (critério principal)
+| Empresa | CNPJ |
+|---------|------|
+| Koppetel | 14.055.501/0001-80 (`14055501000180`) |
+| Lazarios | 72.569.510/0001-95 (`72569510000195`) |
+| SM | **CNPJ pendente de confirmação no cadastro** |
+
+### Fallback por nome (SM e variações)
+Até confirmação do CNPJ da SM, aplica-se filtro por nome normalizado (sem acentos, case-insensitive):
+- `koppetel`, `lazarios`
+- `sm comercio de plasticos` / `sm com ... plastic`
+- nome fantasia exatamente `sm`
+
+### Onde está implementado
+| Arquivo | Função |
+|---------|--------|
+| `src/lib/groupCompanyCustomer.ts` | `isGroupCompanyCustomer`, `isMarketBillingCustomer` |
+| `src/lib/billingMarketCustomerSql.ts` | `billingMarketCustomerFilterSql` (SQL) |
+| `src/lib/billingDashboardMetrics.ts` | Todas as queries da aba Faturamento |
+
+### Impacto esperado
+Redução do faturamento consolidado na aba Faturamento em relação ao total bruto de NF processadas. Pedidos de Venda **não** aplicam esta exclusão (continuam refletindo emissão operacional).
+
+### Limitações
+- SM sem CNPJ confirmado — risco de falso negativo/positivo em nomes ambíguos contendo “SM”.
+- Regra “Venda de Mercado” e “Faturamento Fiscal” do BI ainda não existem como campos dedicados; proxy inicial = NF processada + não cancelado + exclusão de grupo.
+- Status NF “Autorizada” não filtrado nesta versão.
 
 ---
 
@@ -133,9 +175,9 @@ Não altera `utils.ts` (precisão fina em custo/produto).
 
 ## 9. Arquivos alterados
 
-**Novos:** `salesOrdersDashboardMetrics.ts`, `billingDashboardMetrics.ts`, `salesOrderDashboardRules.ts`, `executiveDashboardWorkdays.ts`, `ExecutiveSalesOrdersTab.tsx`, `ExecutiveBillingTab.tsx`, `ExecutiveDashboardCharts.tsx`
+**Novos (faturamento mercado):** `groupCompanyCustomer.ts`, `billingMarketCustomerSql.ts`, `groupCompanyCustomer.test.ts`
 
-**Alterados:** `executiveDashboardTypes.ts`, `executiveDashboardService.ts`, `executiveDashboardFormatters.ts`, `salesOrderInvoicingSql.ts`, `ExecutiveDashboardPanel.tsx`, `executiveDashboardHelpers.test.ts`, `package.json`
+**Alterados:** `billingDashboardMetrics.ts`, `ExecutiveBillingTab.tsx`, `ExecutiveDashboardCharts.tsx`, `executiveDashboardTypes.ts`, `salesOrderDashboardRules.ts`, `package.json`, docs
 
 ---
 

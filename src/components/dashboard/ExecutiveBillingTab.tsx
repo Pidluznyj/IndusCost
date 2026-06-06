@@ -2,7 +2,12 @@ import React from "react";
 import { Link } from "react-router-dom";
 import type { BillingDashboardTab } from "@/src/lib/executiveDashboardTypes";
 import { formatExecutiveCurrency, formatExecutiveInteger } from "@/src/lib/executiveDashboardFormatters";
-import { ExecutiveMonthlyChart, ExecutiveTargetPanel } from "@/src/components/dashboard/ExecutiveDashboardCharts";
+import {
+  ExecutiveCumulativeChart,
+  ExecutiveMonthlyChart,
+  ExecutiveRealizedVsProjectedChart,
+  ExecutiveTargetPanel,
+} from "@/src/components/dashboard/ExecutiveDashboardCharts";
 
 function SummaryCards({ cards }: { cards: BillingDashboardTab["summaryCards"] }) {
   return (
@@ -23,15 +28,68 @@ function SummaryCards({ cards }: { cards: BillingDashboardTab["summaryCards"] })
 export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
   return (
     <div className="space-y-6">
+      <p className="rounded-xl border border-border bg-accent/20 px-4 py-3 text-xs text-muted-foreground">
+        {tab.marketBillingNote}
+      </p>
+
       <SummaryCards cards={tab.summaryCards} />
-      <ExecutiveTargetPanel title="Faturamento — realizado vs meta do mês" target={tab.target} />
-      <ExecutiveMonthlyChart title="Faturamento mensal" data={tab.monthlyBilling} />
+
+      <ExecutiveTargetPanel title="Meta do mês — realizado vs ano anterior (+30%)" target={tab.target} />
+
+      <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+        <h3 className="mb-4 text-lg font-bold">Comparativo anual acumulado</h3>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: "YTD ano atual", value: tab.yearComparison.formatted.yearToDateCurrent },
+            { label: "YTD ano anterior", value: tab.yearComparison.formatted.yearToDatePrevious },
+            { label: "Ano anterior (total)", value: tab.yearComparison.formatted.previousYearTotal },
+            { label: "Meta anual (+30%)", value: tab.yearComparison.formatted.annualTarget },
+          ].map((item) => (
+            <div key={item.label} className="rounded-2xl border border-border bg-accent/20 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{item.label}</p>
+              <p className="mt-1 truncate text-lg font-black" title={item.value}>
+                {item.value}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <ExecutiveRealizedVsProjectedChart title="Realizado vs projetado vs meta" data={tab.realizedVsProjected} />
+        <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+          <h3 className="mb-4 text-lg font-bold">Projeção do mês</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-accent/20 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Média diária</p>
+              <p className="mt-2 text-xl font-black">{tab.projection.formatted.dailyAverage}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {tab.projection.workdaysElapsed} dias úteis decorridos
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-accent/20 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Projeção</p>
+              <p className="mt-2 text-xl font-black">{tab.projection.formatted.projectedMonth}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {tab.projection.workdaysInMonth} dias úteis no mês
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <ExecutiveCumulativeChart title="Faturamento acumulado por mês" data={tab.cumulativeBilling} />
+      <ExecutiveMonthlyChart
+        title="Faturamento mês a mês"
+        data={tab.monthlyBilling}
+        showTwoYearsAgo
+      />
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-          <h3 className="mb-4 text-lg font-bold">Top clientes (ano)</h3>
+          <h3 className="mb-4 text-lg font-bold">Top clientes — mercado (ano)</h3>
           {tab.topCustomers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sem faturamento consolidado no ano.</p>
+            <p className="text-sm text-muted-foreground">Sem faturamento de mercado no ano.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -58,13 +116,13 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
 
         <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-2">
-            <h3 className="text-lg font-bold">Pedidos faturados recentes</h3>
+            <h3 className="text-lg font-bold">Faturamentos recentes</h3>
             <Link to="/sales-orders" className="text-xs font-bold text-primary hover:underline">
               Ver pedidos
             </Link>
           </div>
           {tab.recentInvoicedOrders.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum pedido faturado registrado.</p>
+            <p className="text-sm text-muted-foreground">Nenhum faturamento de mercado registrado.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -72,7 +130,8 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="pb-2 pr-2">Pedido</th>
                     <th className="pb-2 pr-2">Cliente</th>
-                    <th className="pb-2 pr-2">NF processada</th>
+                    <th className="pb-2 pr-2">Processamento</th>
+                    <th className="pb-2 pr-2">Status NF</th>
                     <th className="pb-2">Valor</th>
                   </tr>
                 </thead>
@@ -84,6 +143,7 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
                       <td className="py-2 pr-2">
                         {new Date(row.invoiceDate).toLocaleDateString("pt-BR")}
                       </td>
+                      <td className="py-2 pr-2">{row.invoiceStatus ?? "—"}</td>
                       <td className="py-2">{formatExecutiveCurrency(row.totalNetValue)}</td>
                     </tr>
                   ))}

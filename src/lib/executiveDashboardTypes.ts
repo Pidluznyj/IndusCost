@@ -37,7 +37,16 @@ export type DashboardChartPoint = {
   label: string;
   currentYear: ExecutiveMetricValue;
   previousYear: ExecutiveMetricValue;
+  twoYearsAgo?: ExecutiveMetricValue | null;
   target?: ExecutiveMetricValue;
+};
+
+export type DashboardCumulativeChartPoint = {
+  month: number;
+  label: string;
+  currentYear: ExecutiveMetricValue;
+  previousYear: ExecutiveMetricValue;
+  twoYearsAgo?: ExecutiveMetricValue | null;
 };
 
 export type DashboardStatusBreakdownRow = {
@@ -65,6 +74,42 @@ export type RecentInvoicedOrderRow = {
   customerName: string;
   invoiceDate: string;
   totalNetValue: ExecutiveMetricValue;
+  invoiceStatus: string | null;
+};
+
+export type BillingProjectionBlock = {
+  dailyAverage: ExecutiveMetricValue;
+  projectedMonth: ExecutiveMetricValue;
+  workdaysElapsed: number;
+  workdaysInMonth: number;
+  formatted: {
+    dailyAverage: string;
+    projectedMonth: string;
+  };
+};
+
+export type BillingYearComparison = {
+  yearToDateCurrent: ExecutiveMetricValue;
+  yearToDatePrevious: ExecutiveMetricValue;
+  previousYearTotal: ExecutiveMetricValue;
+  annualTarget: ExecutiveMetricValue;
+  formatted: {
+    yearToDateCurrent: string;
+    yearToDatePrevious: string;
+    previousYearTotal: string;
+    annualTarget: string;
+  };
+};
+
+export type BillingRealizedVsProjected = {
+  realized: ExecutiveMetricValue;
+  projected: ExecutiveMetricValue;
+  target: ExecutiveMetricValue;
+  formatted: {
+    realized: string;
+    projected: string;
+    target: string;
+  };
 };
 
 export type BillingTopCustomerRow = {
@@ -96,9 +141,15 @@ export type BillingDashboardTab = ExecutiveSectionBase & {
   yearLabel: number;
   summaryCards: DashboardMetricCard[];
   target: DashboardTargetBlock;
+  projection: BillingProjectionBlock;
+  yearComparison: BillingYearComparison;
+  realizedVsProjected: BillingRealizedVsProjected;
   monthlyBilling: DashboardChartPoint[];
+  cumulativeBilling: DashboardCumulativeChartPoint[];
   recentInvoicedOrders: RecentInvoicedOrderRow[];
   topCustomers: BillingTopCustomerRow[];
+  intercompanyExclusionApplied: boolean;
+  marketBillingNote: string;
 };
 
 export type ExecutiveDashboardPermissions = {
