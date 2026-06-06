@@ -1230,6 +1230,72 @@ model NomusBomComponentStage {
   @@index([payloadHash])
 }
 
+/// Stage local de Contas a Receber Nomus (read-only sync). Base para dashboards financeiros futuros.
+model NomusAccountsReceivable {
+  id String @id @default(uuid())
+
+  externalId Int @unique
+
+  classification String?
+  type           Int?
+  status         Boolean?
+
+  companyId   Int?
+  companyName String?
+
+  personId    Int?
+  personName  String?
+  personCnpj  String?
+  personPhone String?
+
+  bankAccountId   Int?
+  bankAccountName String?
+
+  paymentMethodId   Int?
+  paymentMethodName String?
+
+  dueDate         DateTime?
+  competenceDate  DateTime?
+  scheduleDate    DateTime?
+  createdAtNomus  DateTime?
+  modifiedAtNomus DateTime?
+  settlementDate  DateTime?
+
+  amountReceivable  Decimal? @db.Decimal(20, 2)
+  amountScheduled   Decimal? @db.Decimal(20, 2)
+  amountReceived    Decimal? @db.Decimal(20, 2)
+  balanceReceivable Decimal? @db.Decimal(20, 2)
+
+  description String?
+  comments    String? @db.Text
+
+  sourceInvoiceId     Int?
+  sourceInvoiceNumber String?
+
+  suspendCollection      Boolean?
+  lateFeePercent         Decimal? @db.Decimal(10, 4)
+  monthlyInterestRate    Decimal? @db.Decimal(10, 4)
+  lateFeeCalculationType String?
+  lateInterestType       String?
+
+  rawPayload  Json
+  payloadHash String
+
+  syncedAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dueDate])
+  @@index([status])
+  @@index([companyName])
+  @@index([personName])
+  @@index([personCnpj])
+  @@index([sourceInvoiceId])
+  @@index([sourceInvoiceNumber])
+  @@index([syncedAt])
+  @@index([payloadHash])
+}
+
 enum NomusOptionalPricingSelectionMode {
   EXACTLY_ONE
   OPTIONAL_ONE
