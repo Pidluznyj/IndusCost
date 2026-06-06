@@ -11,8 +11,15 @@ export type AccountsReceivableSyncCliOptions = {
   singlePage: number | null;
 };
 
-export function parseAccountsReceivableSyncCli(argv: string[]): AccountsReceivableSyncCliOptions {
+export function parseAccountsReceivableSyncCli(argv: string[]): AccountsReceivableSyncCliOptions & {
+  incremental: boolean;
+  syncStrategy: string;
+} {
   const mode = argv.includes("apply") || argv.includes("--apply") ? "apply" : "preview";
+  const incremental =
+    argv.includes("--incremental") ||
+    argv.includes("incremental") ||
+    process.env.NOMUS_AR_INCREMENTAL === "1";
 
   let startPage = 1;
   let maxPages = 200;
@@ -37,7 +44,11 @@ export function parseAccountsReceivableSyncCli(argv: string[]): AccountsReceivab
     maxPages = 1;
   }
 
-  return { mode, startPage, maxPages, singlePage };
+  const syncStrategy = incremental
+    ? "full_refresh_upsert"
+    : "full_initial_or_manual";
+
+  return { mode, startPage, maxPages, singlePage, incremental, syncStrategy };
 }
 
 export function pickAccountsReceivableArray(payload: unknown): unknown[] {

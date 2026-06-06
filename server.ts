@@ -66,6 +66,11 @@ import {
   NomusDailySyncConflictError,
   startNomusDailySyncApply,
 } from "./src/lib/nomusDailySyncRunner.js";
+import {
+  getNomusAccountsReceivableSyncStatus,
+  NomusAccountsReceivableSyncConflictError,
+  startNomusAccountsReceivableSyncApply,
+} from "./src/lib/nomusAccountsReceivableSyncRunner.js";
 import { resolveProductBomUsage, type BomUsageSearchKind } from "./src/lib/productBomUsage.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
@@ -201,7 +206,13 @@ type BootstrapAdminSessionPayload = {
 
 type NomusSyncMode = "apply" | "dry";
 type NomusSyncKind = "runner" | "sync";
-type NomusSyncTarget = "customers" | "products" | "bom-components" | "proposals" | "sales-orders";
+type NomusSyncTarget =
+  | "customers"
+  | "products"
+  | "bom-components"
+  | "proposals"
+  | "sales-orders"
+  | "accounts-receivable";
 type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
 
 const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
@@ -210,9 +221,11 @@ const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
   "bom-components",
   "proposals",
   "sales-orders",
+  "accounts-receivable",
 ];
 const NOMUS_HEALTH_STALE_MS: Record<NomusSyncTarget, number> = {
   "sales-orders": 2 * 60 * 60 * 1000,
+  "accounts-receivable": 2 * 60 * 60 * 1000,
   customers: 26 * 60 * 60 * 1000,
   products: 26 * 60 * 60 * 1000,
   "bom-components": 30 * 60 * 60 * 1000,
@@ -336,6 +349,14 @@ function decodeBootstrapSessionToken(
 }
 
 function parseNomusSyncFileName(fileName: string): { kind: NomusSyncKind; mode: NomusSyncMode; target: NomusSyncTarget } | null {
+  const arMatch = /^runner-accounts-receivable_(apply|dry)_.+\.log$/i.exec(fileName);
+  if (arMatch) {
+    return {
+      kind: "runner",
+      target: "accounts-receivable",
+      mode: arMatch[1].toLowerCase() as NomusSyncMode,
+    };
+  }
   const m =
     /^(runner-)?(customers|products|bom-components|proposals|sales-orders)_(apply|dry)_.+\.log$/i.exec(
       fileName
@@ -517,10 +538,17 @@ async function startServer() {
     const parsedFile = parseNomusSyncFileName(fileMeta.fileName);
     if (!parsedFile) return null;
 
+    const isAccountsReceivable = parsedFile.target === "accounts-receivable";
     const commandMatch = content.match(/^\s*COMMAND\s*:\s*(.+)$/m);
-    const startedMatch = content.match(/^\s*STARTED_AT\s*:\s*(.+)$/m);
-    const finishedMatch = content.match(/^\s*FINISHED_AT\s*:\s*(.+)$/m);
-    const exitCodeMatch = content.match(/^\s*EXIT_CODE\s*:\s*(-?\d+)/m);
+    const startedMatch = content.match(
+      isAccountsReceivable ? /^\s*STARTED_AT=(.+)$/m : /^\s*STARTED_AT\s*:\s*(.+)$/m
+    );
+    const finishedMatch = content.match(
+      isAccountsReceivable ? /^\s*FINISHED_AT=(.+)$/m : /^\s*FINISHED_AT\s*:\s*(.+)$/m
+    );
+    const exitCodeMatch = content.match(
+      isAccountsReceivable ? /^\s*EXIT_CODE=(-?\d+)/m : /^\s*EXIT_CODE\s*:\s*(-?\d+)/m
+    );
     const pageReadMatch = content.match(/página\s+(\d+)\s+lida\s+com\s+(\d+)\s+pedidos/i);
     const blockLimitMatch = content.match(/limite\s+de\s+bloco\s+atingido:\s*startPage=(\d+),\s*maxPages=(\d+),\s*lastPage=(\d+)/i);
 
@@ -534,6 +562,7 @@ async function startServer() {
     const jsonObj = extractFirstJsonObject(content);
     const analysisObj = safeObject(jsonObj?.analysis) ?? {};
     const appliedObj = safeObject(jsonObj?.applied) ?? {};
+    const summaryObj = safeObject(jsonObj?.summary) ?? {};
     const rootBlockedReasons = safeObject(jsonObj?.blockedReasons);
     const analysisBlockedReasons = safeObject(analysisObj.blockedReasons);
     const blockedReasonsRaw = analysisBlockedReasons ?? rootBlockedReasons ?? {};
@@ -545,7 +574,10 @@ async function startServer() {
 
     const successFromJson = typeof jsonObj?.success === "boolean" ? jsonObj.success : null;
     const statusFromJson = typeof jsonObj?.status === "string" ? jsonObj.status.toUpperCase() : null;
-    const isSkipped = content.toLowerCase().includes("dry-run sem apply") || statusFromJson === "SKIPPED";
+    const isSkipped =
+      content.toLowerCase().includes("dry-run sem apply") ||
+      statusFromJson === "SKIPPED" ||
+      /SKIPPED:\s*outra execução/i.test(content);
     const status: NomusSyncStatus =
       isSkipped
         ? "SKIPPED"
@@ -571,13 +603,25 @@ async function startServer() {
       modifiedAt: fileMeta.modifiedAt,
       command: commandMatch?.[1]?.trim() || null,
       metrics: {
-        eligibleCount: safeNumber(analysisObj.eligibleCount ?? jsonObj?.eligibleCount),
+        eligibleCount: safeNumber(
+          isAccountsReceivable
+            ? summaryObj.mapped
+            : analysisObj.eligibleCount ?? jsonObj?.eligibleCount
+        ),
         blockedCount: safeNumber(analysisObj.blockedCount ?? jsonObj?.blockedCount),
-        created: safeNumber(appliedObj.created),
-        updated: safeNumber(appliedObj.updated),
+        created: safeNumber(
+          isAccountsReceivable ? appliedObj.created ?? summaryObj.created : appliedObj.created
+        ),
+        updated: safeNumber(
+          isAccountsReceivable ? appliedObj.updated ?? summaryObj.updated : appliedObj.updated
+        ),
         itemsCreated: safeNumber(appliedObj.itemsCreated),
-        pageRead: pageReadMatch ? Number(pageReadMatch[1]) : null,
-        ordersRead: pageReadMatch ? Number(pageReadMatch[2]) : null,
+        pageRead: pageReadMatch
+          ? Number(pageReadMatch[1])
+          : safeNumber(isAccountsReceivable ? summaryObj.pagesRead : null),
+        ordersRead: pageReadMatch
+          ? Number(pageReadMatch[2])
+          : safeNumber(isAccountsReceivable ? summaryObj.recordsRead : null),
         startPage: blockLimitMatch ? Number(blockLimitMatch[1]) : safeNumber(jsonObj?.startPage),
         maxPages: blockLimitMatch ? Number(blockLimitMatch[2]) : safeNumber(jsonObj?.maxPages),
         lastPage: blockLimitMatch ? Number(blockLimitMatch[3]) : safeNumber(jsonObj?.lastPage),
@@ -855,7 +899,9 @@ async function startServer() {
         message:
           target === "sales-orders"
             ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado para pedidos)."
-            : "Última conclusão com sucesso há mais de 24 horas (prazo esperado).",
+            : target === "accounts-receivable"
+              ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado para contas a receber)."
+              : "Última conclusão com sucesso há mais de 24 horas (prazo esperado).",
         warning: null,
       };
     }
@@ -923,6 +969,7 @@ async function startServer() {
       "bom-components": "Componentes da BOM",
       proposals: "Propostas",
       "sales-orders": "Pedidos de venda",
+      "accounts-receivable": "Contas a receber",
     };
     const select = {
       createdAt: true,
@@ -7540,6 +7587,49 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         console.error("POST /api/settings/nomus-sync/daily-run:", error);
         return res.status(500).json({
           error: "Não foi possível iniciar a rotina diária Nomus. Verifique logs do servidor.",
+        });
+      }
+    }
+  );
+
+  const nomusArSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
+  const nomusArSyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+
+  app.get(
+    "/api/settings/nomus-sync/accounts-receivable-status",
+    requireBootstrapOrAnyPermission([...nomusArSyncViewPermissions]),
+    async (_req, res) => {
+      try {
+        const status = await getNomusAccountsReceivableSyncStatus();
+        return res.json(status);
+      } catch (error) {
+        console.error("GET /api/settings/nomus-sync/accounts-receivable-status:", error);
+        return res.status(500).json({
+          error: "Erro ao consultar status de Contas a Receber Nomus.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/settings/nomus-sync/accounts-receivable-run",
+    requireBootstrapOrAnyPermission([...nomusArSyncManagePermissions]),
+    async (_req, res) => {
+      try {
+        const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
+        const result = await startNomusAccountsReceivableSyncApply(projectRoot);
+        return res.status(202).json(result);
+      } catch (error) {
+        if (error instanceof NomusAccountsReceivableSyncConflictError) {
+          return res.status(409).json({
+            error: error.message,
+            message:
+              "Já existe uma sincronização de Contas a Receber em andamento. Aguarde finalizar.",
+          });
+        }
+        console.error("POST /api/settings/nomus-sync/accounts-receivable-run:", error);
+        return res.status(500).json({
+          error: "Não foi possível iniciar a sincronização de Contas a Receber. Verifique logs do servidor.",
         });
       }
     }

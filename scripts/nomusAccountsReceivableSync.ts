@@ -1,6 +1,10 @@
 import "dotenv/config";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
+  persistAccountsReceivableIntegrationRun,
+  disconnectAccountsReceivableIntegrationPrisma,
+} from "@/src/lib/nomusAccountsReceivableIntegrationRun.js";
+import {
   computePaginationPlan,
   hasNextAccountsReceivablePage,
   NOMUS_ACCOUNTS_RECEIVABLE_PAGE_SIZE,
@@ -173,9 +177,12 @@ async function runApply(rows: MappedNomusAccountsReceivable[], syncedAt: Date) {
 }
 
 async function main(): Promise<void> {
-  const startedAt = Date.now();
+  const runStartedAt = new Date();
+  const startedMs = Date.now();
   const options = parseAccountsReceivableSyncCli(process.argv.slice(2));
   const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
+  const runnerLogFile = (process.env.NOMUS_AR_RUNNER_LOG ?? "").trim() || null;
+
   const headers = redactHeadersForLog(
     Object.fromEntries(
       Object.entries(process.env)
@@ -184,19 +191,36 @@ async function main(): Promise<void> {
     )
   );
 
-  console.warn(`${LOG_PREFIX} modo=${options.mode} startPage=${options.startPage} maxPages=${options.maxPages}`);
+  console.warn(
+    `${LOG_PREFIX} modo=${options.mode} incremental=${options.incremental} strategy=${options.syncStrategy} startPage=${options.startPage} maxPages=${options.maxPages}`
+  );
   console.warn(`${LOG_PREFIX} auth headers (redigidos): ${JSON.stringify(headers)}`);
 
   const sampleUrl = buildNomusUrl(baseUrl, "contasReceber", { pagina: "1" });
   console.warn(`${LOG_PREFIX} endpoint=${redactNomusUrlForLog(sampleUrl)}`);
 
-  const fetched = await fetchAllPages(baseUrl, options);
-  const syncedAt = new Date();
-  const applied =
-    options.mode === "apply" ? await runApply(fetched.rows, syncedAt) : null;
-  const durationMs = Date.now() - startedAt;
+  let exitCode = 0;
+  let errorMessage: string | null = null;
+
+  let fetched = { pagesRead: 0, recordsRead: 0, rows: [] as MappedNomusAccountsReceivable[], errors: 0 };
+  let applied: Awaited<ReturnType<typeof runApply>> | null = null;
+
+  try {
+    fetched = await fetchAllPages(baseUrl, options);
+    const syncedAt = new Date();
+    applied = options.mode === "apply" ? await runApply(fetched.rows, syncedAt) : null;
+  } catch (error) {
+    exitCode = 1;
+    errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} falha`, errorMessage);
+  }
+
+  const durationMs = Date.now() - startedMs;
+  const finishedAt = new Date();
 
   const summary = {
+    syncStrategy: options.syncStrategy,
+    incremental: options.incremental,
     pagesRead: fetched.pagesRead,
     recordsRead: fetched.recordsRead,
     mapped: fetched.rows.length,
@@ -206,28 +230,43 @@ async function main(): Promise<void> {
   };
 
   console.warn(
-    `${LOG_PREFIX} concluído em ${(durationMs / 1000).toFixed(1)}s — páginas=${summary.pagesRead} lidos=${summary.recordsRead} mapeados=${summary.mapped} erros=${summary.mapErrors}`
+    `${LOG_PREFIX} concluído em ${(durationMs / 1000).toFixed(1)}s — páginas=${summary.pagesRead} lidos=${summary.recordsRead} mapeados=${summary.mapped} criados=${applied?.created ?? 0} atualizados=${applied?.updated ?? 0} inalterados=${applied?.unchanged ?? 0} erros=${(applied?.errors ?? 0) + summary.mapErrors}`
   );
 
-  console.log(
-    JSON.stringify(
-      {
-        mode: options.mode,
-        summary,
-        applied,
-        preview: fetched.rows.slice(0, 5).map((row) => ({
-          externalId: row.externalId,
-          personName: row.personName,
-          dueDate: row.dueDate?.toISOString() ?? null,
-          balanceReceivable: row.balanceReceivable?.toString() ?? null,
-          status: row.status,
-          payloadHash: row.payloadHash.slice(0, 12),
-        })),
-      },
-      null,
-      2
-    )
-  );
+  const payload = {
+    mode: options.mode,
+    summary,
+    applied,
+    preview: fetched.rows.slice(0, 5).map((row) => ({
+      externalId: row.externalId,
+      personName: row.personName,
+      dueDate: row.dueDate?.toISOString() ?? null,
+      balanceReceivable: row.balanceReceivable?.toString() ?? null,
+      status: row.status,
+      payloadHash: row.payloadHash.slice(0, 12),
+    })),
+  };
+
+  console.log(JSON.stringify(payload, null, 2));
+
+  if (options.mode === "apply") {
+    await persistAccountsReceivableIntegrationRun({
+      mode: "apply",
+      startedAt: runStartedAt,
+      finishedAt,
+      durationMs,
+      exitCode,
+      logFile: runnerLogFile,
+      command: "sync:nomus:accounts-receivable:apply",
+      summary,
+      applied,
+      errorMessage,
+    });
+  }
+
+  if (exitCode !== 0) {
+    process.exitCode = exitCode;
+  }
 }
 
 main()
@@ -237,4 +276,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await disconnectAccountsReceivableIntegrationPrisma();
   });

@@ -25,6 +25,7 @@ import { AppAlert } from "@/src/components/shared/AppAlert";
 import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 import { AdminUsersModule } from "@/src/components/AdminUsersModule";
 import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
+import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canAccessSettingsSection, canManageUsers } from "@/src/lib/modulePermissions";
 
@@ -91,7 +92,12 @@ type ProductionHourCostSimulationRow = {
 type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
 type NomusSyncKind = "runner" | "sync";
 type NomusSyncMode = "apply" | "dry";
-type NomusSyncTarget = "customers" | "products" | "proposals" | "sales-orders";
+type NomusSyncTarget =
+  | "customers"
+  | "products"
+  | "proposals"
+  | "sales-orders"
+  | "accounts-receivable";
 type NomusIntegrationHealthState = "OK" | "FAILED" | "STALE" | "WARNING" | "NO_DATA";
 
 type NomusHealthLastRun = {
@@ -2000,10 +2006,10 @@ export const SettingsModule = () => {
                 <div>
                   <h3 className="text-lg font-bold">Logs de Sincronização Nomus</h3>
                   <p className="text-sm text-muted-foreground">
-                    Monitoramento das sincronizações Nomus: clientes, produtos, propostas e pedidos de venda.
+                    Monitoramento das sincronizações Nomus: clientes, produtos, propostas, pedidos de venda e contas a receber.
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Somente leitura. Pedidos de venda costumam rodar a cada hora (ex.: minuto 17); demais destinos conforme
+                    Somente leitura na tabela. Pedidos e contas a receber costumam rodar a cada 2 horas; demais destinos conforme
                     agendamento do ambiente.
                   </p>
                 </div>
@@ -2018,6 +2024,11 @@ export const SettingsModule = () => {
               </div>
 
               <NomusDailySyncCard
+                canRun={canRunNomusDailySync}
+                onLogsRefresh={() => setNomusReloadSeq((prev) => prev + 1)}
+              />
+
+              <NomusAccountsReceivableSyncCard
                 canRun={canRunNomusDailySync}
                 onLogsRefresh={() => setNomusReloadSeq((prev) => prev + 1)}
               />
@@ -2123,6 +2134,7 @@ export const SettingsModule = () => {
                   <option value="products">Target: Produtos</option>
                   <option value="proposals">Target: Propostas</option>
                   <option value="sales-orders">Target: Pedidos de venda</option>
+                  <option value="accounts-receivable">Target: Contas a receber</option>
                 </select>
                 <select
                   value={nomusModeFilter}
