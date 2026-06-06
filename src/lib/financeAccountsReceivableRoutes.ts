@@ -6,6 +6,12 @@ import {
   mapPrismaRowToFinanceArDashboardRow,
   parseFinanceArDashboardFilters,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import {
+  buildFinanceArTitlesPayload,
+  FINANCE_AR_TITLE_SELECT,
+  mapPrismaRowToFinanceArTitleRow,
+  parseFinanceArTitlesQuery,
+} from "@/src/lib/financeAccountsReceivableTitles.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {
@@ -23,50 +29,58 @@ export const FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS = [
   "settings.view",
 ] as const;
 
+const FINANCE_AR_DASHBOARD_SELECT = {
+  ...FINANCE_AR_TITLE_SELECT,
+} as const;
+
+async function loadFinanceArRows() {
+  const rows = await prisma.nomusAccountsReceivable.findMany({
+    select: FINANCE_AR_DASHBOARD_SELECT,
+  });
+  return rows.map(mapPrismaRowToFinanceArDashboardRow);
+}
+
 export function registerFinanceAccountsReceivableRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const guard = [requireAppAuth, requireAnyPermission([...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS])] as const;
 
-  app.get(
-    "/api/finance/accounts-receivable/dashboard",
-    requireAppAuth,
-    requireAnyPermission([...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS]),
-    async (req, res) => {
-      try {
-        const user = await getCurrentAppUser(req);
-        if (!user) {
-          return res.status(401).json({ error: "Não autenticado." });
-        }
-
-        const filters = parseFinanceArDashboardFilters(req.query as Record<string, unknown>);
-        const rows = await prisma.nomusAccountsReceivable.findMany({
-          select: {
-            externalId: true,
-            companyName: true,
-            personName: true,
-            personCnpj: true,
-            dueDate: true,
-            settlementDate: true,
-            amountReceivable: true,
-            amountReceived: true,
-            balanceReceivable: true,
-            paymentMethodName: true,
-            bankAccountName: true,
-            sourceInvoiceId: true,
-            sourceInvoiceNumber: true,
-            suspendCollection: true,
-            syncedAt: true,
-          },
-        });
-
-        const payload = buildFinanceAccountsReceivableDashboard(
-          rows.map(mapPrismaRowToFinanceArDashboardRow),
-          filters
-        );
-        return res.json(payload);
-      } catch (error) {
-        console.error("GET /api/finance/accounts-receivable/dashboard", error);
-        return res.status(500).json({ error: "Erro ao montar dashboard de contas a receber." });
+  app.get("/api/finance/accounts-receivable/dashboard", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
       }
+
+      const filters = parseFinanceArDashboardFilters(req.query as Record<string, unknown>);
+      const rows = await loadFinanceArRows();
+      const payload = buildFinanceAccountsReceivableDashboard(
+        rows,
+        filters
+      );
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/finance/accounts-receivable/dashboard", error);
+      return res.status(500).json({ error: "Erro ao montar dashboard de contas a receber." });
     }
-  );
+  });
+
+  app.get("/api/finance/accounts-receivable/titles", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+
+      const query = parseFinanceArTitlesQuery(req.query as Record<string, unknown>);
+      const rows = await prisma.nomusAccountsReceivable.findMany({
+        select: FINANCE_AR_TITLE_SELECT,
+      });
+      const mapped = rows.map(mapPrismaRowToFinanceArTitleRow);
+      const payload = buildFinanceArTitlesPayload(mapped, query);
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/finance/accounts-receivable/titles", error);
+      return res.status(500).json({ error: "Erro ao listar títulos de contas a receber." });
+    }
+  });
 }

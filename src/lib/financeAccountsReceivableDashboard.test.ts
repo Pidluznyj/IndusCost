@@ -26,6 +26,8 @@ function row(partial: Partial<FinanceArDashboardRow> & Pick<FinanceArDashboardRo
     sourceInvoiceId: 100,
     sourceInvoiceNumber: "NF-100",
     suspendCollection: false,
+    description: null,
+    nomusStatus: null,
     syncedAt: new Date("2026-06-06T12:00:00.000Z"),
     ...partial,
   };
@@ -205,5 +207,71 @@ describe("financeAccountsReceivableDashboard", () => {
       }
     }
     assert.equal(startOfLocalDay(REF).getHours(), 0);
+  });
+
+  it("monta scheduleBuckets para vencimentos futuros", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 6) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 10) }),
+      row({ externalId: 3, balanceReceivable: 300, dueDate: new Date(2026, 7, 1) }),
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.scheduleBuckets.length, 6);
+    const today = dash.scheduleBuckets.find((b) => b.key === "today");
+    assert.equal(today?.amount, 100);
+    assert.ok(dash.scheduleBuckets.every((b) => Number.isFinite(b.amount)));
+  });
+
+  it("customerRanking inclui ação sugerida", () => {
+    const rows = [
+      row({
+        externalId: 1,
+        personCnpj: "11.111.111/0001-11",
+        balanceReceivable: 100,
+        dueDate: new Date(2026, 5, 1),
+      }),
+      row({
+        externalId: 2,
+        personCnpj: "11.111.111/0001-11",
+        balanceReceivable: 50,
+        dueDate: new Date(2026, 5, 20),
+        suspendCollection: true,
+      }),
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.customerRanking.length, 1);
+    assert.equal(dash.customerRanking[0]?.suggestedAction, "Revisar motivo da cobrança suspensa");
+  });
+
+  it("paymentMethodSummary calcula ticket médio", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, paymentMethodName: "PIX", dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balanceReceivable: 300, paymentMethodName: "PIX", dueDate: new Date(2026, 5, 20) }),
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.paymentMethodSummary[0]?.averageTicket, 200);
+  });
+
+  it("companySummary inclui recebido no mês e inadimplência", () => {
+    const rows = [
+      row({
+        externalId: 1,
+        companyName: "Empresa A",
+        balanceReceivable: 100,
+        dueDate: new Date(2026, 5, 1),
+      }),
+      row({
+        externalId: 2,
+        companyName: "Empresa A",
+        balanceReceivable: 0,
+        amountReceived: 500,
+        settlementDate: new Date(2026, 5, 5),
+        dueDate: new Date(2026, 5, 1),
+      }),
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.companySummary.length, 1);
+    assert.equal(dash.companySummary[0]?.receivedThisMonthAmount, 500);
+    assert.ok(Number.isFinite(dash.companySummary[0]?.delinquencyRate ?? NaN));
   });
 });

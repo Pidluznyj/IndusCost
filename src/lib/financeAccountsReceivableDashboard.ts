@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { buildCustomerSuggestedAction } from "./financeAccountsReceivableActions.js";
 
 export type FinanceArTitleStatus =
   | "open"
@@ -25,6 +26,7 @@ export type FinanceArDashboardRow = {
   companyName: string | null;
   personName: string | null;
   personCnpj: string | null;
+  description: string | null;
   dueDate: Date | null;
   settlementDate: Date | null;
   amountReceivable: number;
@@ -35,6 +37,7 @@ export type FinanceArDashboardRow = {
   sourceInvoiceId: number | null;
   sourceInvoiceNumber: string | null;
   suspendCollection: boolean | null;
+  nomusStatus: boolean | null;
   syncedAt: Date;
 };
 
@@ -53,6 +56,17 @@ const AGING_BUCKET_DEFS = [
 
 export type FinanceArAgingBucketKey = (typeof AGING_BUCKET_DEFS)[number]["key"];
 
+const SCHEDULE_BUCKET_DEFS = [
+  { key: "today", label: "Hoje", fromDays: 0, toDays: 0 },
+  { key: "next7", label: "Próximos 7 dias", fromDays: 1, toDays: 7 },
+  { key: "next15", label: "Próximos 15 dias", fromDays: 8, toDays: 15 },
+  { key: "next30", label: "Próximos 30 dias", fromDays: 16, toDays: 30 },
+  { key: "next60", label: "Próximos 60 dias", fromDays: 31, toDays: 60 },
+  { key: "next90", label: "Próximos 90 dias", fromDays: 61, toDays: 90 },
+] as const;
+
+export type FinanceArScheduleBucketKey = (typeof SCHEDULE_BUCKET_DEFS)[number]["key"];
+
 export function decimalFieldToNumber(value: Prisma.Decimal | null | undefined): number {
   if (value == null) return 0;
   const n = typeof value === "object" && "toNumber" in value ? value.toNumber() : Number(value);
@@ -64,6 +78,7 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
   companyName: string | null;
   personName: string | null;
   personCnpj: string | null;
+  description?: string | null;
   dueDate: Date | null;
   settlementDate: Date | null;
   amountReceivable: Prisma.Decimal | null;
@@ -74,6 +89,7 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
   sourceInvoiceId: number | null;
   sourceInvoiceNumber: string | null;
   suspendCollection: boolean | null;
+  status?: boolean | null;
   syncedAt: Date;
 }): FinanceArDashboardRow {
   return {
@@ -81,6 +97,7 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
     companyName: row.companyName,
     personName: row.personName,
     personCnpj: row.personCnpj,
+    description: row.description ?? null,
     dueDate: row.dueDate,
     settlementDate: row.settlementDate,
     amountReceivable: decimalFieldToNumber(row.amountReceivable),
@@ -91,8 +108,18 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
     sourceInvoiceId: row.sourceInvoiceId,
     sourceInvoiceNumber: row.sourceInvoiceNumber,
     suspendCollection: row.suspendCollection,
+    nomusStatus: row.status ?? null,
     syncedAt: row.syncedAt,
   };
+}
+
+function assignScheduleBucketKey(daysFromToday: number): FinanceArScheduleBucketKey | null {
+  for (const def of SCHEDULE_BUCKET_DEFS) {
+    if (daysFromToday >= def.fromDays && daysFromToday <= def.toDays) {
+      return def.key;
+    }
+  }
+  return null;
 }
 
 export function startOfLocalDay(date: Date): Date {
@@ -309,6 +336,20 @@ export function buildFinanceAccountsReceivableDashboard(
     agingAcc.set(def.key, { amount: 0, count: 0, customers: new Set() });
   }
 
+  type ScheduleClientAcc = { personName: string | null; personCnpj: string | null; amount: number };
+  const scheduleAcc = new Map<
+    FinanceArScheduleBucketKey,
+    {
+      amount: number;
+      count: number;
+      customers: Set<string>;
+      topClients: Map<string, ScheduleClientAcc>;
+    }
+  >();
+  for (const def of SCHEDULE_BUCKET_DEFS) {
+    scheduleAcc.set(def.key, { amount: 0, count: 0, customers: new Set(), topClients: new Map() });
+  }
+
   const debtorAcc = new Map<
     string,
     {
@@ -320,6 +361,7 @@ export function buildFinanceAccountsReceivableDashboard(
       titlesCount: number;
       oldestOverdueDate: Date | null;
       maxDaysOverdue: number;
+      hasSuspendedOpen: boolean;
     }
   >();
 
@@ -433,6 +475,25 @@ export function buildFinanceAccountsReceivableDashboard(
       bucket.count += 1;
       bucket.customers.add(customerKey);
 
+      const dueDay = startOfLocalDay(row.dueDate);
+      const daysFromToday = Math.floor((dueDay.getTime() - today.getTime()) / MS_PER_DAY);
+      if (daysFromToday >= 0) {
+        const scheduleKey = assignScheduleBucketKey(daysFromToday);
+        if (scheduleKey) {
+          const sched = scheduleAcc.get(scheduleKey)!;
+          sched.amount += balance;
+          sched.count += 1;
+          sched.customers.add(customerKey);
+          const clientKey = customerKey;
+          const existingClient = sched.topClients.get(clientKey);
+          sched.topClients.set(clientKey, {
+            personName: existingClient?.personName ?? row.personName,
+            personCnpj: existingClient?.personCnpj ?? row.personCnpj,
+            amount: (existingClient?.amount ?? 0) + balance,
+          });
+        }
+      }
+
       const monthKey = `${row.dueDate.getFullYear()}-${row.dueDate.getMonth() + 1}`;
       const monthRow =
         monthlyAcc.get(monthKey) ??
@@ -466,6 +527,7 @@ export function buildFinanceAccountsReceivableDashboard(
         titlesCount: 0,
         oldestOverdueDate: null,
         maxDaysOverdue: 0,
+        hasSuspendedOpen: false,
       } as const);
     const daysOverdue = computeDaysOverdue(row.dueDate, today);
     debtorAcc.set(customerKey, {
@@ -483,6 +545,7 @@ export function buildFinanceAccountsReceivableDashboard(
             : debtor.oldestOverdueDate
           : debtor.oldestOverdueDate,
       maxDaysOverdue: Math.max(debtor.maxDaysOverdue, daysOverdue),
+      hasSuspendedOpen: debtor.hasSuspendedOpen || row.suspendCollection === true,
     });
 
     const paymentName = row.paymentMethodName?.trim() || "Sem forma de pagamento";
@@ -567,7 +630,47 @@ export function buildFinanceAccountsReceivableDashboard(
       openAmount: roundMoney(row.openAmount),
       overdueAmount: roundMoney(row.overdueAmount),
       titlesCount: row.titlesCount,
+      averageTicket: roundMoney(row.titlesCount > 0 ? row.openAmount / row.titlesCount : 0),
       delinquencyRate: roundMoney(safeRatio(row.overdueAmount, row.openAmount) * 100),
+    }));
+
+  const scheduleBuckets = SCHEDULE_BUCKET_DEFS.map((def) => {
+    const bucket = scheduleAcc.get(def.key)!;
+    const topClients = [...bucket.topClients.values()]
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 3)
+      .map((c) => ({
+        personName: c.personName,
+        personCnpj: c.personCnpj,
+        amount: roundMoney(c.amount),
+      }));
+    return {
+      key: def.key,
+      label: def.label,
+      amount: roundMoney(bucket.amount),
+      count: bucket.count,
+      customersCount: bucket.customers.size,
+      topClients,
+    };
+  });
+
+  const customerRanking = [...debtorAcc.values()]
+    .sort((a, b) => b.totalOpenAmount - a.totalOpenAmount)
+    .map((debtor) => ({
+      personName: debtor.personName,
+      personCnpj: debtor.personCnpj,
+      totalOpenAmount: roundMoney(debtor.totalOpenAmount),
+      overdueAmount: roundMoney(debtor.overdueAmount),
+      upcomingAmount: roundMoney(debtor.upcomingAmount),
+      titlesCount: debtor.titlesCount,
+      oldestOverdueDate: debtor.oldestOverdueDate?.toISOString() ?? null,
+      maxDaysOverdue: debtor.maxDaysOverdue,
+      percentOfPortfolio: roundMoney(safeRatio(debtor.totalOpenAmount, totalOpenAmount) * 100),
+      suggestedAction: buildCustomerSuggestedAction({
+        maxDaysOverdue: debtor.maxDaysOverdue,
+        hasSuspendedOpen: debtor.hasSuspendedOpen,
+        overdueAmount: debtor.overdueAmount,
+      }),
     }));
 
   const companySummary = [...companyAcc.values()]
@@ -633,6 +736,8 @@ export function buildFinanceAccountsReceivableDashboard(
     monthlyDueSchedule,
     paymentMethodSummary,
     companySummary,
+    scheduleBuckets,
+    customerRanking,
     criticalTitles,
     dataQualityAlerts,
   };

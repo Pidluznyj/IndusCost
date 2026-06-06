@@ -1,6 +1,6 @@
 # Financeiro — Dashboard Contas a Receber
 
-Relatório das fases **FINANCE-AR-DASH-A** (backend) e **FINANCE-AR-DASH-B** (UI).
+Relatório das fases **FINANCE-AR-DASH-A** (backend), **FINANCE-AR-DASH-B** (UI inicial) e **FINANCE-AR-DASH-C** (abas operacionais).
 
 ## Objetivo
 
@@ -16,71 +16,91 @@ Domínio **Financeiro** no IndusCost com dashboard read-only de Contas a Receber
 
 Permissões: `finance.view` + `finance.accountsReceivable.view` (ou fallback `reports.view` / `settings.nomus.view` / `settings.view`).
 
-## Endpoint
+## Endpoints
+
+### Dashboard (agregado)
 
 `GET /api/finance/accounts-receivable/dashboard`
 
-Query params opcionais (mesmos filtros da UI):
+Query params opcionais (filtros globais da UI):
 
 - `companyName`, `personName`, `personCnpj`
 - `status`: `open` | `overdue` | `dueToday` | `upcoming` | `settled` | `suspended` | `all`
 - `dueDateFrom`, `dueDateTo` (`YYYY-MM-DD`)
 - `paymentMethodName`, `bankAccountName`
 
-## UI — FINANCE-AR-DASH-B
+**Payload (campos principais):** `cards`, `agingBuckets`, `topDebtors`, `monthlyDueSchedule`, `criticalTitles`, `paymentMethodSummary`, `companySummary`, `dataQualityAlerts`, `generatedAt`.
+
+**Novos blocos (FASE C, compatíveis com payload anterior):**
+
+- `scheduleBuckets` — faixas Hoje, +7, +15, +30, +60, +90 dias (valor, títulos, clientes, top 3 clientes)
+- `customerRanking` — ranking completo por cliente com `suggestedAction`
+- `paymentMethodSummary[].averageTicket` — ticket médio por forma
+
+### Títulos (paginado)
+
+`GET /api/finance/accounts-receivable/titles`
+
+Mesmos filtros do dashboard, mais:
+
+- `page`, `limit` (máx. 200, padrão 50)
+- `sortBy`: `dueDate` | `balanceReceivable` | `externalId`
+- `sortDirection`: `asc` | `desc`
+- `search` — cliente, CNPJ, NF ou ID Nomus
+- `overdueOnly` — `1` / `true`
+
+Resposta: `{ page, limit, total, totalPages, sortBy, sortDirection, items[] }`.
+
+## UI — FINANCE-AR-DASH-C
+
+### Abas internas
+
+| Aba | Conteúdo |
+|---|---|
+| **Visão Geral** | KPIs, gráficos (aging resumido, top clientes, agenda mensal, formas pag.), títulos críticos |
+| **Aging** | Tabela + gráfico por faixa (8 buckets) |
+| **Agenda** | `scheduleBuckets` + tabela mensal |
+| **Clientes** | Ranking com ação sugerida |
+| **Títulos** | Tabela paginada via `/titles` (busca, ordenação, filtro atrasados) |
+| **Formas de Pagamento** | Gráfico + tabela com ticket médio e inadimplência |
+| **Empresas** | Resumo por `companyName` |
 
 ### Componentes
 
 | Arquivo | Papel |
 |---|---|
-| `FinanceAccountsReceivablePage.tsx` | Tela principal (KPIs, filtros, gráficos, tabela) |
-| `FinanceAccountsReceivableCharts.tsx` | Gráficos Recharts (aging, mensal, top devedores, pagamento) |
+| `FinanceAccountsReceivablePage.tsx` | Shell: cabeçalho, filtros globais, tab bar |
+| `FinanceAccountsReceivableTabPanels.tsx` | Painéis Visão Geral, Aging, Agenda, Clientes, Pagamento, Empresas |
+| `FinanceAccountsReceivableTitlesTab.tsx` | Aba Títulos (endpoint paginado, loading/erro isolados) |
+| `FinanceAccountsReceivableCharts.tsx` | Gráficos Recharts |
 | `financeAccountsReceivableFormat.ts` | Formatadores moeda/percentual/data/status |
-| `financeAccountsReceivableDashboardTypes.ts` | Tipos + builder de query string |
-| `FinanceModule.tsx` | Subnav Financeiro |
+| `financeAccountsReceivableDashboardTypes.ts` | Tipos, `FINANCE_AR_TABS`, builders de query |
+| `financeAccountsReceivableActions.ts` | Regras de ação sugerida por cliente |
+| `financeAccountsReceivableTitles.ts` | Paginação/filtros de títulos |
 
-### Cabeçalho
+### Ação sugerida (Clientes)
 
-- Título, subtítulo, última sync, total de registros, estratégia sync (via status Nomus, se permitido)
-- **Atualizar tela** — recarrega dashboard
-- **Sync no Admin** — link para `/settings` (rotina manual permanece no Admin)
+| Condição | Texto |
+|---|---|
+| Cobrança suspensa em aberto | Revisar motivo da cobrança suspensa |
+| Sem atraso | Acompanhar |
+| 1–7 dias | Lembrete leve |
+| 8–15 dias | Cobrança ativa |
+| 16–30 dias | Contato financeiro/comercial |
+| 31+ dias | Escalonar |
 
-### Cards (9 KPIs)
+### Regras visuais
 
-1. Valor em aberto  
-2. Valor vencido  
-3. Valor a vencer  
-4. Recebido no mês  
-5. % inadimplência  
-6. Títulos em aberto  
-7. Clientes em atraso  
-8. Vencendo em 7 dias  
-9. Vencendo em 30 dias  
+- Moeda BRL (pt-BR), sem 6 casas decimais
+- Datas `dd/mm/aaaa`
+- Percentuais com `%`
+- Valores inválidos exibidos como `—` (sem NaN/null/undefined)
 
-Cada card inclui hint com a regra de cálculo. Valores formatados em pt-BR (moeda compacta quando ≥ R$ 100 mil).
+### Resiliência
 
-### Filtros
-
-Empresa, Cliente, CNPJ, Status, período de vencimento (de/até), forma de pagamento, conta bancária.
-
-- Busca textual com debounce 400 ms  
-- Botão **Limpar filtros**  
-- Recarrega o endpoint automaticamente  
-
-### Gráficos (Recharts)
-
-1. Aging de recebíveis (barras por faixa)  
-2. Agenda mensal (stack vencido + a vencer)  
-3. Top 10 clientes devedores (barras horizontais)  
-4. Formas de pagamento (em aberto vs vencido)  
-
-### Tabela títulos críticos
-
-Até 20 registros do backend — colunas: ID Nomus, empresa, cliente, CNPJ, vencimento, saldo, forma pag., NF origem, status calculado, dias em atraso.
-
-### Estados
-
-Loading, erro, sem dados, dados carregados. Seções vazias não quebram a página.
+- Abas vazias: mensagem clara
+- Erro na aba Títulos não derruba o dashboard
+- Loading independente na aba Títulos
 
 ## Regras de cálculo (backend)
 
@@ -100,11 +120,13 @@ Ver `src/lib/financeAccountsReceivableDashboard.ts` para detalhes completos.
 ## Testes
 
 ```bash
-npm run test:finance:accounts-receivable   # service + formatadores
+npm run test:finance:accounts-receivable   # dashboard, format, actions, titles
 npm run test:nomus:accounts-receivable
 npm run lint
 npm run build
 ```
+
+Arquivos: `financeAccountsReceivableDashboard.test.ts`, `financeAccountsReceivableFormat.test.ts`, `financeAccountsReceivableActions.test.ts`, `financeAccountsReceivableTitles.test.ts`.
 
 ## Limitações
 
@@ -112,7 +134,7 @@ npm run build
 2. Sync manual não duplicado na tela — atalho para Admin.  
 3. Estratégia sync no cabeçalho requer permissão de status Nomus.  
 4. Sem export CSV/PDF nesta fase.  
-5. Sem drill-down por cliente/título individual além da tabela crítica.
+5. Ranking de clientes carregado inteiro no dashboard (sem paginação dedicada).
 
 ## Validação no servidor
 
@@ -126,11 +148,11 @@ npm run build
 sudo systemctl restart induscost
 ```
 
-Conferir: menu **Financeiro → Contas a Receber**, filtros, gráficos e tabela com dados reais (~5718 títulos).
+Conferir: menu **Financeiro → Contas a Receber**, abas, filtros globais, aba Títulos paginada.
 
 ## Próximos passos
 
-- Drill-down por cliente / detalhe do título  
+- Paginação dedicada para ranking de clientes  
 - Export e filtros salvos  
 - Otimização SQL  
 - Template `finance_controller` dedicado  

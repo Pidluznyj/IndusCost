@@ -62,7 +62,34 @@ export type FinanceArPaymentSummary = {
   openAmount: number;
   overdueAmount: number;
   titlesCount: number;
+  averageTicket: number;
   delinquencyRate: number;
+};
+
+export type FinanceArScheduleBucket = {
+  key: string;
+  label: string;
+  amount: number;
+  count: number;
+  customersCount: number;
+  topClients: Array<{
+    personName: string | null;
+    personCnpj: string | null;
+    amount: number;
+  }>;
+};
+
+export type FinanceArCustomerRanking = {
+  personName: string | null;
+  personCnpj: string | null;
+  totalOpenAmount: number;
+  overdueAmount: number;
+  upcomingAmount: number;
+  titlesCount: number;
+  oldestOverdueDate: string | null;
+  maxDaysOverdue: number;
+  percentOfPortfolio: number;
+  suggestedAction: string;
 };
 
 export type FinanceArCriticalTitle = {
@@ -103,6 +130,8 @@ export type FinanceArDashboardPayload = {
   topDebtors: FinanceArTopDebtor[];
   monthlyDueSchedule: FinanceArMonthlyDue[];
   paymentMethodSummary: FinanceArPaymentSummary[];
+  scheduleBuckets: FinanceArScheduleBucket[];
+  customerRanking: FinanceArCustomerRanking[];
   companySummary: Array<{
     companyName: string;
     openAmount: number;
@@ -149,6 +178,39 @@ export const EMPTY_FINANCE_AR_UI_FILTERS: FinanceArUiFilters = {
   bankAccountName: "",
 };
 
+export function buildFinanceArTitlesQuery(
+  filters: FinanceArUiFilters,
+  extras?: {
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortDirection?: string;
+    search?: string;
+    overdueOnly?: boolean;
+  }
+): string {
+  const base = buildFinanceArDashboardQuery(filters);
+  const q = new URLSearchParams(base);
+  if (extras?.page) q.set("page", String(extras.page));
+  if (extras?.limit) q.set("limit", String(extras.limit));
+  if (extras?.sortBy) q.set("sortBy", extras.sortBy);
+  if (extras?.sortDirection) q.set("sortDirection", extras.sortDirection);
+  if (extras?.search?.trim()) q.set("search", extras.search.trim());
+  if (extras?.overdueOnly) q.set("overdueOnly", "1");
+  return q.toString();
+}
+
+export const FINANCE_AR_TABS = [
+  { id: "overview", label: "Visão Geral" },
+  { id: "aging", label: "Aging" },
+  { id: "schedule", label: "Agenda" },
+  { id: "customers", label: "Clientes" },
+  { id: "titles", label: "Títulos" },
+  { id: "payment-methods", label: "Formas de Pagamento" },
+  { id: "companies", label: "Empresas" },
+] as const;
+
+export type FinanceArTabId = (typeof FINANCE_AR_TABS)[number]["id"];
 export function buildFinanceArDashboardQuery(filters: FinanceArUiFilters): string {
   const q = new URLSearchParams();
   if (filters.companyName.trim()) q.set("companyName", filters.companyName.trim());
