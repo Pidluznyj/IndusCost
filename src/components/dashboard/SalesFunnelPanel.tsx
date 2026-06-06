@@ -177,7 +177,27 @@ export function SalesFunnelPanel({
     );
   }
 
-  if (!tab?.available) {
+  if (!tab) {
+    return (
+      <div className="mx-auto max-w-lg rounded-2xl border border-amber-200/80 bg-amber-50/70 px-6 py-10 text-center dark:border-amber-900/50 dark:bg-amber-950/30">
+        <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-700 dark:text-amber-400" />
+        <h3 className="text-lg font-semibold">Funil de Vendas indisponível</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Não foi possível montar os indicadores do funil. Tente atualizar ou volte mais tarde.
+        </p>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  if (!tab.available) {
     return (
       <div className="rounded-2xl border border-border bg-card p-8 text-center">
         <p className="text-sm text-muted-foreground">

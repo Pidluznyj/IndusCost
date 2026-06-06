@@ -23,6 +23,7 @@ import {
 import {
   computeTicketAverage,
   computeDaysOverdue,
+  isOverdueSalesOrderInSelectedYear,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import {
   orderIsInvoicedSql,
@@ -319,11 +320,16 @@ async function queryOpenPortfolioByCustomer(
 }
 
 async function queryCriticalOrders(
+  selectedYear: number,
   yearStart: Date,
   yearEnd: Date,
   todayYmd: string,
   today: Date
 ): Promise<SalesFunnelCriticalOrderRow[]> {
+  const openSince = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  openSince.setDate(openSince.getDate() - OPEN_DAYS_THRESHOLD);
+  const openSinceYmd = toPgDateYmd(openSince);
+
   const rows = await prisma.$queryRaw<
     {
       id: string;
@@ -333,8 +339,6 @@ async function queryCriticalOrders(
       expected_delivery_date: Date | null;
       total_net_value: unknown;
       status: string;
-      is_invoiced: boolean;
-      is_overdue: boolean;
     }[]
   >(
     Prisma.sql`
@@ -345,13 +349,7 @@ async function queryCriticalOrders(
         so."issueDate" AS issue_date,
         so."expectedDeliveryDate" AS expected_delivery_date,
         so."totalNetValue" AS total_net_value,
-        so.status::text AS status,
-        ${IS_INVOICED} AS is_invoiced,
-        (
-          ${NOT_INVOICED}
-          AND so."expectedDeliveryDate" IS NOT NULL
-          AND so."expectedDeliveryDate"::date < ${todayYmd}::date
-        ) AS is_overdue
+        so.status::text AS status
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
       WHERE ${NOT_CANCELLED}
@@ -363,9 +361,17 @@ async function queryCriticalOrders(
             so."expectedDeliveryDate" IS NOT NULL
             AND so."expectedDeliveryDate"::date < ${todayYmd}::date
           )
-          OR so."issueDate"::date <= (${todayYmd}::date - ${OPEN_DAYS_THRESHOLD})
+          OR so."issueDate"::date <= ${openSinceYmd}::date
         )
-      ORDER BY is_overdue DESC, so."expectedDeliveryDate" ASC NULLS LAST, so."issueDate" ASC
+      ORDER BY
+        CASE
+          WHEN so."expectedDeliveryDate" IS NOT NULL
+            AND so."expectedDeliveryDate"::date < ${todayYmd}::date
+          THEN 0
+          ELSE 1
+        END,
+        so."expectedDeliveryDate" ASC NULLS LAST,
+        so."issueDate" ASC
       LIMIT ${CRITICAL_ORDERS_LIMIT}
     `
   );
@@ -373,8 +379,16 @@ async function queryCriticalOrders(
   return rows.map((row) => {
     const issueDate = new Date(row.issue_date);
     const expectedDelivery = row.expected_delivery_date ? new Date(row.expected_delivery_date) : null;
+    const isOverdue = isOverdueSalesOrderInSelectedYear({
+      status: row.status,
+      issueDate,
+      selectedYear,
+      expectedDeliveryDate: expectedDelivery,
+      today,
+      hasNfeDataProcessamento: false,
+    });
     const daysOverdue =
-      row.is_overdue && expectedDelivery ? computeDaysOverdue(expectedDelivery, today) : null;
+      isOverdue && expectedDelivery ? computeDaysOverdue(expectedDelivery, today) : null;
     return {
       orderId: row.id,
       orderCode: row.order_code,
@@ -384,11 +398,11 @@ async function queryCriticalOrders(
       totalNetValue: decimalToNumber(row.total_net_value),
       status: row.status,
       statusLabel: SALES_ORDER_STATUS_LABELS[row.status] ?? row.status,
-      isInvoiced: row.is_invoiced,
-      isOverdue: row.is_overdue,
+      isInvoiced: false,
+      isOverdue,
       daysOverdue,
       daysOpen: computeDaysOpen(issueDate, today),
-      priority: row.is_overdue ? "overdue" : "open",
+      priority: isOverdue ? "overdue" : "open",
     };
   });
 }
@@ -408,7 +422,7 @@ export async function buildSalesFunnelDashboardTab(
       queryMonthlyFunnel(year),
       queryStatusBreakdown(yearStart, yearEnd),
       queryOpenPortfolioByCustomer(yearStart, yearEnd, operationalNow),
-      queryCriticalOrders(yearStart, yearEnd, todayYmd, operationalNow),
+      queryCriticalOrders(year, yearStart, yearEnd, todayYmd, operationalNow),
     ]);
 
   const ticketAvg = computeTicketAverage(totals.validValue, totals.validCount);

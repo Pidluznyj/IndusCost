@@ -36,6 +36,16 @@ export function ExecutiveDashboardPanel({
 }: Props) {
   const [innerTab, setInnerTab] = React.useState<InnerTab>("salesOrders");
   const yearOptions = React.useMemo(() => buildYearOptions(), []);
+  const salesAvailable = data?.tabs.salesOrders?.available ?? false;
+  const billingAvailable = data?.tabs.billing?.available ?? false;
+
+  React.useEffect(() => {
+    if (innerTab === "salesOrders" && !salesAvailable && billingAvailable) {
+      setInnerTab("billing");
+    } else if (innerTab === "billing" && !billingAvailable && salesAvailable) {
+      setInnerTab("salesOrders");
+    }
+  }, [innerTab, salesAvailable, billingAvailable]);
 
   if (loading && !data) {
     return (
@@ -64,6 +74,26 @@ export function ExecutiveDashboardPanel({
   }
 
   if (!data) return null;
+
+  const hasExecutiveTabs = data.tabs.salesOrders != null || data.tabs.billing != null;
+  if (!hasExecutiveTabs) {
+    return (
+      <div className="mx-auto max-w-lg rounded-2xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center">
+        <h3 className="text-lg font-semibold">Painel gerencial parcialmente indisponível</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {data.unavailableIndicators.join(" ") || "Nenhuma aba executiva pôde ser carregada."}
+        </p>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
 
   const updatedAt = new Date(data.generatedAt).toLocaleString("pt-BR");
   const salesTab = data.tabs.salesOrders;
@@ -111,62 +141,64 @@ export function ExecutiveDashboardPanel({
         </div>
       ) : null}
 
-      {data.unavailableIndicators.length > 0 && !salesTab && !billingTab ? (
-        <div className="rounded-2xl border border-border bg-card p-8 text-center">
-          <p className="text-sm text-muted-foreground">{data.unavailableIndicators.join(" ")}</p>
+      {data.unavailableIndicators.length > 0 ? (
+        <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">
+          {data.unavailableIndicators.join(" ")}
         </div>
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-2 border-b border-border pb-1">
-            <button
-              type="button"
-              onClick={() => setInnerTab("salesOrders")}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors",
-                innerTab === "salesOrders"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <ShoppingCart className="h-4 w-4" />
-              Pedidos de Venda
-            </button>
-            <button
-              type="button"
-              onClick={() => setInnerTab("billing")}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors",
-                innerTab === "billing"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Receipt className="h-4 w-4" />
-              Faturamento
-            </button>
-          </div>
+      ) : null}
 
-          {innerTab === "salesOrders" && salesTab?.available ? (
-            <ExecutiveSalesOrdersTab tab={salesTab} />
-          ) : null}
+      <div className="flex flex-wrap gap-2 border-b border-border pb-1">
+        {salesTab?.available ? (
+          <button
+            type="button"
+            onClick={() => setInnerTab("salesOrders")}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+              innerTab === "salesOrders"
+                ? "border-b-2 border-primary text-primary"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <ShoppingCart className="h-4 w-4" />
+            Pedidos de Venda
+          </button>
+        ) : null}
+        {billingTab?.available ? (
+          <button
+            type="button"
+            onClick={() => setInnerTab("billing")}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+              innerTab === "billing"
+                ? "border-b-2 border-primary text-primary"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Receipt className="h-4 w-4" />
+            Faturamento
+          </button>
+        ) : null}
+      </div>
 
-          {innerTab === "billing" && billingTab?.available ? (
-            <ExecutiveBillingTab tab={billingTab} />
-          ) : null}
+      {innerTab === "salesOrders" && salesTab?.available ? (
+        <ExecutiveSalesOrdersTab tab={salesTab} />
+      ) : null}
 
-          {innerTab === "salesOrders" && !salesTab?.available ? (
-            <p className="text-sm text-muted-foreground">
-              {salesTab?.unavailableReason ?? "Aba indisponível para seu perfil."}
-            </p>
-          ) : null}
+      {innerTab === "billing" && billingTab?.available ? (
+        <ExecutiveBillingTab tab={billingTab} />
+      ) : null}
 
-          {innerTab === "billing" && !billingTab?.available ? (
-            <p className="text-sm text-muted-foreground">
-              {billingTab?.unavailableReason ?? "Aba indisponível para seu perfil."}
-            </p>
-          ) : null}
-        </>
-      )}
+      {innerTab === "salesOrders" && !salesTab?.available ? (
+        <p className="text-sm text-muted-foreground">
+          {salesTab?.unavailableReason ?? "Pedidos de Venda indisponível no momento."}
+        </p>
+      ) : null}
+
+      {innerTab === "billing" && !billingTab?.available ? (
+        <p className="text-sm text-muted-foreground">
+          {billingTab?.unavailableReason ?? "Faturamento indisponível no momento."}
+        </p>
+      ) : null}
     </div>
   );
 }

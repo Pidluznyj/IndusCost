@@ -3,8 +3,25 @@ import { buildBillingDashboardTab } from "@/src/lib/billingDashboardMetrics.js";
 import { canSeeSalesOrders } from "@/src/lib/executiveDashboardHelpers.js";
 import { buildSalesFunnelDashboardTab } from "@/src/lib/salesFunnelDashboardMetrics.js";
 import { buildSalesOrdersDashboardTab } from "@/src/lib/salesOrdersDashboardMetrics.js";
-import type { ExecutiveDashboardSummary } from "@/src/lib/executiveDashboardTypes.js";
+import type {
+  BillingDashboardTab,
+  ExecutiveDashboardSummary,
+  SalesFunnelDashboardTab,
+  SalesOrdersDashboardTab,
+} from "@/src/lib/executiveDashboardTypes.js";
 import { resolveExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear.js";
+
+async function loadExecutiveTab<T>(
+  tabName: string,
+  build: () => Promise<T>
+): Promise<T | null> {
+  try {
+    return await build();
+  } catch (error) {
+    console.error(`executive dashboard tab ${tabName}`, error);
+    return null;
+  }
+}
 
 export async function buildExecutiveDashboardSummary(
   user: AppAuthContext,
@@ -31,18 +48,40 @@ export async function buildExecutiveDashboardSummary(
   }
 
   const [salesOrders, billing, salesFunnel] = await Promise.all([
-    buildSalesOrdersDashboardTab(yearCtx),
-    buildBillingDashboardTab(yearCtx),
-    buildSalesFunnelDashboardTab(yearCtx),
+    loadExecutiveTab("salesOrders", () => buildSalesOrdersDashboardTab(yearCtx)),
+    loadExecutiveTab("billing", () => buildBillingDashboardTab(yearCtx)),
+    loadExecutiveTab("salesFunnel", () => buildSalesFunnelDashboardTab(yearCtx)),
   ]);
+
+  if (!salesOrders) {
+    unavailableIndicators.push("Pedidos de Venda indisponíveis no momento.");
+  }
+  if (!billing) {
+    unavailableIndicators.push("Faturamento indisponível no momento.");
+  }
+  if (!salesFunnel) {
+    unavailableIndicators.push("Funil de Vendas indisponível no momento.");
+  }
+
+  if (!salesOrders && !billing) {
+    throw new Error("Não foi possível montar Pedidos de Venda nem Faturamento.");
+  }
 
   return {
     generatedAt: now.toISOString(),
     selectedYear: yearCtx.selectedYear,
     previousYear: yearCtx.previousYear,
     currentMonth: yearCtx.referenceDate.getMonth() + 1,
-    permissions: { salesOrders: true, billing: true, salesFunnel: true },
-    tabs: { salesOrders, billing, salesFunnel },
+    permissions: {
+      salesOrders: salesOrders != null,
+      billing: billing != null,
+      salesFunnel: salesFunnel != null,
+    },
+    tabs: {
+      salesOrders: salesOrders as SalesOrdersDashboardTab | null,
+      billing: billing as BillingDashboardTab | null,
+      salesFunnel: salesFunnel as SalesFunnelDashboardTab | null,
+    },
     unavailableIndicators,
   };
 }
