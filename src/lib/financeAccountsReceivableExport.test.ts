@@ -44,6 +44,21 @@ describe("financeAccountsReceivableExport", () => {
     assert.ok(csvAll.split("\n").length > csvOverdue.split("\n").length);
   });
 
+  it("export respeita filtro year/month", () => {
+    const rows = [
+      row({ externalId: 1, dueDate: new Date(2026, 4, 31) }),
+      row({ externalId: 2, dueDate: new Date(2026, 5, 10) }),
+      row({ externalId: 3, dueDate: new Date(2026, 6, 1) }),
+    ];
+    const csv = buildFinanceArExportCsv(
+      rows,
+      { status: "all", year: 2026, month: 6 },
+      REF
+    );
+    assert.match(csv, /2/);
+    assert.doesNotMatch(csv, /\n3,/);
+  });
+
   it("células exportadas não contêm NaN", () => {
     const cells = mapFinanceArRowToExportCells(row({ externalId: 1 }), REF);
     assert.ok(financeArExportCellsSafe(cells));

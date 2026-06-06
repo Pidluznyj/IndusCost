@@ -5,6 +5,8 @@ export type FinanceArDashboardFiltersApplied = {
   personName?: string;
   personCnpj?: string;
   status: string;
+  year?: number;
+  month?: number;
   dueDateFrom?: Date;
   dueDateTo?: Date;
   paymentMethodName?: string;
@@ -163,6 +165,8 @@ export type FinanceArUiFilters = {
   personName: string;
   personCnpj: string;
   status: string;
+  year: string;
+  month: string;
   dueDateFrom: string;
   dueDateTo: string;
   paymentMethodName: string;
@@ -184,11 +188,47 @@ export const EMPTY_FINANCE_AR_UI_FILTERS: FinanceArUiFilters = {
   personName: "",
   personCnpj: "",
   status: "all",
+  year: "",
+  month: "",
   dueDateFrom: "",
   dueDateTo: "",
   paymentMethodName: "",
   bankAccountName: "",
 };
+
+export function buildFinanceArYearOptions(referenceYear = new Date().getFullYear()) {
+  const options: Array<{ value: string; label: string }> = [{ value: "", label: "Todos" }];
+  for (let y = referenceYear + 1; y >= referenceYear - 5; y -= 1) {
+    options.push({ value: String(y), label: String(y) });
+  }
+  return options;
+}
+
+export const FINANCE_AR_MONTH_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "1", label: "Janeiro" },
+  { value: "2", label: "Fevereiro" },
+  { value: "3", label: "Março" },
+  { value: "4", label: "Abril" },
+  { value: "5", label: "Maio" },
+  { value: "6", label: "Junho" },
+  { value: "7", label: "Julho" },
+  { value: "8", label: "Agosto" },
+  { value: "9", label: "Setembro" },
+  { value: "10", label: "Outubro" },
+  { value: "11", label: "Novembro" },
+  { value: "12", label: "Dezembro" },
+] as const;
+
+/** Se mês informado sem ano, usa o ano corrente para evitar erro 400 na API. */
+export function normalizeFinanceArUiFilters(filters: FinanceArUiFilters): FinanceArUiFilters {
+  const year = filters.year.trim();
+  const month = filters.month.trim();
+  if (month && !year) {
+    return { ...filters, year: String(new Date().getFullYear()), month };
+  }
+  return filters;
+}
 
 export function buildFinanceArTitlesQuery(
   filters: FinanceArUiFilters,
@@ -244,14 +284,19 @@ export function buildFinanceArExportQuery(filters: FinanceArUiFilters): string {
 }
 
 export function buildFinanceArDashboardQuery(filters: FinanceArUiFilters): string {
+  const normalized = normalizeFinanceArUiFilters(filters);
   const q = new URLSearchParams();
-  if (filters.companyName.trim()) q.set("companyName", filters.companyName.trim());
-  if (filters.personName.trim()) q.set("personName", filters.personName.trim());
-  if (filters.personCnpj.trim()) q.set("personCnpj", filters.personCnpj.trim());
-  if (filters.status !== "all") q.set("status", filters.status);
-  if (filters.dueDateFrom.trim()) q.set("dueDateFrom", filters.dueDateFrom.trim());
-  if (filters.dueDateTo.trim()) q.set("dueDateTo", filters.dueDateTo.trim());
-  if (filters.paymentMethodName.trim()) q.set("paymentMethodName", filters.paymentMethodName.trim());
-  if (filters.bankAccountName.trim()) q.set("bankAccountName", filters.bankAccountName.trim());
+  if (normalized.companyName.trim()) q.set("companyName", normalized.companyName.trim());
+  if (normalized.personName.trim()) q.set("personName", normalized.personName.trim());
+  if (normalized.personCnpj.trim()) q.set("personCnpj", normalized.personCnpj.trim());
+  if (normalized.status !== "all") q.set("status", normalized.status);
+  if (normalized.year.trim()) q.set("year", normalized.year.trim());
+  if (normalized.month.trim()) q.set("month", normalized.month.trim());
+  if (normalized.dueDateFrom.trim()) q.set("dueDateFrom", normalized.dueDateFrom.trim());
+  if (normalized.dueDateTo.trim()) q.set("dueDateTo", normalized.dueDateTo.trim());
+  if (normalized.paymentMethodName.trim()) {
+    q.set("paymentMethodName", normalized.paymentMethodName.trim());
+  }
+  if (normalized.bankAccountName.trim()) q.set("bankAccountName", normalized.bankAccountName.trim());
   return q.toString();
 }

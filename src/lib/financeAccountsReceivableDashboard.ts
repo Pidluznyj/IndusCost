@@ -21,11 +21,20 @@ export type FinanceArDashboardFilters = {
   personName?: string;
   personCnpj?: string;
   status: FinanceArTitleStatus;
+  year?: number;
+  month?: number;
   dueDateFrom?: Date;
   dueDateTo?: Date;
   paymentMethodName?: string;
   bankAccountName?: string;
 };
+
+export class FinanceArFilterParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FinanceArFilterParseError";
+  }
+}
 
 export type FinanceArDashboardRow = {
   externalId: number;
@@ -212,12 +221,73 @@ function parseStatusFilter(value: unknown): FinanceArTitleStatus {
     : "all";
 }
 
+function parseOptionalQueryString(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseYearFilter(value: unknown): number | undefined {
+  const raw = parseOptionalQueryString(value);
+  if (raw === null) return undefined;
+  if (!/^\d{4}$/.test(raw)) {
+    throw new FinanceArFilterParseError(
+      "Ano inválido. Informe um ano com 4 dígitos (ex.: 2026)."
+    );
+  }
+  const year = Number.parseInt(raw, 10);
+  if (!Number.isFinite(year) || year < 1000 || year > 9999) {
+    throw new FinanceArFilterParseError(
+      "Ano inválido. Informe um ano com 4 dígitos (ex.: 2026)."
+    );
+  }
+  return year;
+}
+
+function parseMonthFilter(value: unknown, hasYear: boolean): number | undefined {
+  const raw = parseOptionalQueryString(value);
+  if (raw === null) return undefined;
+  const month = Number.parseInt(raw, 10);
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    throw new FinanceArFilterParseError("Mês inválido. Informe um valor entre 1 e 12.");
+  }
+  if (!hasYear) {
+    throw new FinanceArFilterParseError("Informe o ano ao filtrar por mês.");
+  }
+  return month;
+}
+
+export function resolveFinanceArDueDateBounds(
+  filters: Pick<FinanceArDashboardFilters, "dueDateFrom" | "dueDateTo" | "year" | "month">
+): { from: Date | null; to: Date | null; empty: boolean } {
+  let from: Date | null = filters.dueDateFrom ? startOfLocalDay(filters.dueDateFrom) : null;
+  let to: Date | null = filters.dueDateTo ? endOfLocalDay(filters.dueDateTo) : null;
+
+  if (filters.year != null) {
+    let ymFrom = new Date(filters.year, 0, 1, 0, 0, 0, 0);
+    let ymTo = endOfLocalDay(new Date(filters.year, 11, 31));
+    if (filters.month != null) {
+      ymFrom = new Date(filters.year, filters.month - 1, 1, 0, 0, 0, 0);
+      ymTo = endOfLocalDay(new Date(filters.year, filters.month, 0));
+    }
+    from = from ? (from.getTime() > ymFrom.getTime() ? from : ymFrom) : ymFrom;
+    to = to ? (to.getTime() < ymTo.getTime() ? to : ymTo) : ymTo;
+  }
+
+  const empty = from != null && to != null && from.getTime() > to.getTime();
+  return { from, to, empty };
+}
+
 export function parseFinanceArDashboardFilters(query: Record<string, unknown>): FinanceArDashboardFilters {
+  const year = parseYearFilter(query.year);
+  const month = parseMonthFilter(query.month, year != null);
   return {
     companyName: typeof query.companyName === "string" ? query.companyName : undefined,
     personName: typeof query.personName === "string" ? query.personName : undefined,
     personCnpj: typeof query.personCnpj === "string" ? query.personCnpj : undefined,
     status: parseStatusFilter(query.status),
+    year,
+    month,
     dueDateFrom: parseIsoDateOnly(query.dueDateFrom),
     dueDateTo: parseIsoDateOnly(query.dueDateTo),
     paymentMethodName:
@@ -281,8 +351,8 @@ export function filterFinanceArRows(
   const cnpjFilter = normalizeFilterText(filters.personCnpj);
   const paymentFilter = normalizeFilterText(filters.paymentMethodName);
   const bankFilter = normalizeFilterText(filters.bankAccountName);
-  const dueFrom = filters.dueDateFrom ? startOfLocalDay(filters.dueDateFrom) : null;
-  const dueTo = filters.dueDateTo ? endOfLocalDay(filters.dueDateTo) : null;
+  const { from: dueFrom, to: dueTo, empty } = resolveFinanceArDueDateBounds(filters);
+  if (empty) return [];
 
   return rows.filter((row) => {
     if (!textMatchesFilter(row.companyName, companyFilter)) return false;

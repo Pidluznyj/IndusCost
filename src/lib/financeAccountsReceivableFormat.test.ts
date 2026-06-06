@@ -74,4 +74,30 @@ describe("buildFinanceArDashboardQuery", () => {
     const qs = buildFinanceArDashboardQuery(EMPTY_FINANCE_AR_UI_FILTERS);
     assert.doesNotMatch(qs, /status=/);
   });
+
+  it("envia year e month quando informados", () => {
+    const qs = buildFinanceArDashboardQuery({
+      ...EMPTY_FINANCE_AR_UI_FILTERS,
+      year: "2026",
+      month: "6",
+    });
+    assert.match(qs, /year=2026/);
+    assert.match(qs, /month=6/);
+  });
+
+  it("não envia year/month vazios", () => {
+    const qs = buildFinanceArDashboardQuery(EMPTY_FINANCE_AR_UI_FILTERS);
+    assert.doesNotMatch(qs, /year=/);
+    assert.doesNotMatch(qs, /month=/);
+  });
+
+  it("normaliza month sem year para ano corrente na query", () => {
+    const currentYear = new Date().getFullYear();
+    const qs = buildFinanceArDashboardQuery({
+      ...EMPTY_FINANCE_AR_UI_FILTERS,
+      month: "3",
+    });
+    assert.match(qs, new RegExp(`year=${currentYear}`));
+    assert.match(qs, /month=3/);
+  });
 });

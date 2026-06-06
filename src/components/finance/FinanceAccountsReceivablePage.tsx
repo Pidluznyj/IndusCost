@@ -5,9 +5,12 @@ import { fetchJsonOk } from "@/src/lib/http";
 import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
+  buildFinanceArYearOptions,
   EMPTY_FINANCE_AR_UI_FILTERS,
+  FINANCE_AR_MONTH_OPTIONS,
   FINANCE_AR_STATUS_OPTIONS,
   FINANCE_AR_TABS,
+  normalizeFinanceArUiFilters,
   type FinanceArDashboardPayload,
   type FinanceArDataQualityAlertKey,
   type FinanceArTabId,
@@ -65,17 +68,19 @@ export function FinanceAccountsReceivablePage() {
   const debouncedPayment = useDebouncedValue(filters.paymentMethodName, 400);
   const debouncedBank = useDebouncedValue(filters.bankAccountName, 400);
 
-  const effectiveFilters = useMemo(
-    (): FinanceArUiFilters => ({
+  const effectiveFilters = useMemo((): FinanceArUiFilters => {
+    const merged: FinanceArUiFilters = {
       ...filters,
       companyName: debouncedCompany,
       personName: debouncedPerson,
       personCnpj: debouncedCnpj,
       paymentMethodName: debouncedPayment,
       bankAccountName: debouncedBank,
-    }),
-    [filters, debouncedCompany, debouncedPerson, debouncedCnpj, debouncedPayment, debouncedBank]
-  );
+    };
+    return normalizeFinanceArUiFilters(merged);
+  }, [filters, debouncedCompany, debouncedPerson, debouncedCnpj, debouncedPayment, debouncedBank]);
+
+  const yearOptions = useMemo(() => buildFinanceArYearOptions(), []);
 
   const queryString = useMemo(
     () => buildFinanceArDashboardQuery(effectiveFilters),
@@ -153,6 +158,8 @@ export function FinanceAccountsReceivablePage() {
     effectiveFilters.personName ||
     effectiveFilters.personCnpj ||
     effectiveFilters.status !== "all" ||
+    effectiveFilters.year ||
+    effectiveFilters.month ||
     effectiveFilters.dueDateFrom ||
     effectiveFilters.dueDateTo ||
     effectiveFilters.paymentMethodName ||
@@ -270,6 +277,26 @@ export function FinanceAccountsReceivablePage() {
             value={filters.status}
             onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
             options={FINANCE_AR_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          />
+          <FilterSelect
+            label="Ano de vencimento"
+            value={filters.year}
+            onChange={(v) => setFilters((f) => ({ ...f, year: v }))}
+            options={yearOptions}
+          />
+          <FilterSelect
+            label="Mês de vencimento"
+            value={filters.month}
+            onChange={(v) =>
+              setFilters((f) => {
+                const next = { ...f, month: v };
+                if (v && !f.year.trim()) {
+                  next.year = String(new Date().getFullYear());
+                }
+                return next;
+              })
+            }
+            options={FINANCE_AR_MONTH_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           />
           <FilterInput label="Vencimento de" type="date" value={filters.dueDateFrom} onChange={(v) => setFilters((f) => ({ ...f, dueDateFrom: v }))} />
           <FilterInput label="Vencimento até" type="date" value={filters.dueDateTo} onChange={(v) => setFilters((f) => ({ ...f, dueDateTo: v }))} />

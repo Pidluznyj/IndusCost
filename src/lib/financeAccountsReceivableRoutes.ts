@@ -3,6 +3,7 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   buildFinanceAccountsReceivableDashboard,
+  FinanceArFilterParseError,
   mapPrismaRowToFinanceArDashboardRow,
   parseFinanceArDashboardFilters,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
@@ -50,6 +51,36 @@ async function loadFinanceArRows() {
   return rows.map(mapPrismaRowToFinanceArDashboardRow);
 }
 
+function parseFinanceArFiltersOrRespond(
+  res: express.Response,
+  query: Record<string, unknown>
+) {
+  try {
+    return parseFinanceArDashboardFilters(query);
+  } catch (error) {
+    if (error instanceof FinanceArFilterParseError) {
+      res.status(400).json({ error: error.message });
+      return null;
+    }
+    throw error;
+  }
+}
+
+function parseFinanceArTitlesOrRespond(
+  res: express.Response,
+  query: Record<string, unknown>
+) {
+  try {
+    return parseFinanceArTitlesQuery(query);
+  } catch (error) {
+    if (error instanceof FinanceArFilterParseError) {
+      res.status(400).json({ error: error.message });
+      return null;
+    }
+    throw error;
+  }
+}
+
 export function registerFinanceAccountsReceivableRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
   const guard = [requireAppAuth, requireAnyPermission([...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS])] as const;
@@ -62,7 +93,8 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
         return res.status(401).json({ error: "Não autenticado." });
       }
 
-      const filters = parseFinanceArDashboardFilters(req.query as Record<string, unknown>);
+      const filters = parseFinanceArFiltersOrRespond(res, req.query as Record<string, unknown>);
+      if (!filters) return;
       const rows = await loadFinanceArRows();
       const payload = buildFinanceAccountsReceivableDashboard(
         rows,
@@ -82,7 +114,8 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
         return res.status(401).json({ error: "Não autenticado." });
       }
 
-      const query = parseFinanceArTitlesQuery(req.query as Record<string, unknown>);
+      const query = parseFinanceArTitlesOrRespond(res, req.query as Record<string, unknown>);
+      if (!query) return;
       const rows = await prisma.nomusAccountsReceivable.findMany({
         select: FINANCE_AR_TITLE_SELECT,
       });
@@ -102,7 +135,8 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
         return res.status(401).json({ error: "Não autenticado." });
       }
 
-      const filters = parseFinanceArDashboardFilters(req.query as Record<string, unknown>);
+      const filters = parseFinanceArFiltersOrRespond(res, req.query as Record<string, unknown>);
+      if (!filters) return;
       const rows = await loadFinanceArRows();
       const csv = buildFinanceArExportCsv(rows, filters);
       const filename = financeArExportFilename();

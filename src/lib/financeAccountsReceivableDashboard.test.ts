@@ -5,7 +5,9 @@ import {
   classifyFinanceArTitle,
   computeDaysOverdue,
   filterFinanceArRows,
+  FinanceArFilterParseError,
   parseFinanceArDashboardFilters,
+  resolveFinanceArDueDateBounds,
   resolveFinanceArCustomerKey,
   startOfLocalDay,
   type FinanceArDashboardRow,
@@ -184,6 +186,120 @@ describe("financeAccountsReceivableDashboard", () => {
     assert.equal(filters.status, "overdue");
     assert.ok(filters.dueDateFrom instanceof Date);
     assert.ok(filters.dueDateTo instanceof Date);
+  });
+
+  it("parseFinanceArDashboardFilters aceita year e month válidos", () => {
+    const filters = parseFinanceArDashboardFilters({ year: "2026", month: "6" });
+    assert.equal(filters.year, 2026);
+    assert.equal(filters.month, 6);
+  });
+
+  it("parseFinanceArDashboardFilters aceita year sem month", () => {
+    const filters = parseFinanceArDashboardFilters({ year: "2026" });
+    assert.equal(filters.year, 2026);
+    assert.equal(filters.month, undefined);
+  });
+
+  it("parseFinanceArDashboardFilters rejeita month sem year", () => {
+    assert.throws(
+      () => parseFinanceArDashboardFilters({ month: "6" }),
+      FinanceArFilterParseError
+    );
+  });
+
+  it("parseFinanceArDashboardFilters rejeita year inválido", () => {
+    assert.throws(
+      () => parseFinanceArDashboardFilters({ year: "26" }),
+      FinanceArFilterParseError
+    );
+    assert.throws(
+      () => parseFinanceArDashboardFilters({ year: "abcd" }),
+      FinanceArFilterParseError
+    );
+  });
+
+  it("parseFinanceArDashboardFilters rejeita month inválido", () => {
+    assert.throws(
+      () => parseFinanceArDashboardFilters({ year: "2026", month: "13" }),
+      FinanceArFilterParseError
+    );
+    assert.throws(
+      () => parseFinanceArDashboardFilters({ year: "2026", month: "0" }),
+      FinanceArFilterParseError
+    );
+  });
+
+  it("filterFinanceArRows filtra somente ano 2026", () => {
+    const rows = [
+      row({ externalId: 1, dueDate: new Date(2025, 11, 31) }),
+      row({ externalId: 2, dueDate: new Date(2026, 0, 1) }),
+      row({ externalId: 3, dueDate: new Date(2026, 11, 31) }),
+      row({ externalId: 4, dueDate: new Date(2027, 0, 1) }),
+    ];
+    const filtered = filterFinanceArRows(rows, { status: "all", year: 2026 }, REF);
+    assert.deepEqual(
+      filtered.map((r) => r.externalId),
+      [2, 3]
+    );
+  });
+
+  it("filterFinanceArRows filtra junho/2026 sem incluir maio ou julho", () => {
+    const rows = [
+      row({ externalId: 1, dueDate: new Date(2026, 4, 31) }),
+      row({ externalId: 2, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 3, dueDate: new Date(2026, 5, 30) }),
+      row({ externalId: 4, dueDate: new Date(2026, 6, 1) }),
+    ];
+    const filtered = filterFinanceArRows(
+      rows,
+      { status: "all", year: 2026, month: 6 },
+      REF
+    );
+    assert.deepEqual(
+      filtered.map((r) => r.externalId),
+      [2, 3]
+    );
+  });
+
+  it("filterFinanceArRows usa interseção com dueDateFrom/dueDateTo", () => {
+    const rows = [
+      row({ externalId: 1, dueDate: new Date(2026, 5, 5) }),
+      row({ externalId: 2, dueDate: new Date(2026, 5, 20) }),
+      row({ externalId: 3, dueDate: new Date(2026, 5, 28) }),
+    ];
+    const filtered = filterFinanceArRows(
+      rows,
+      {
+        status: "all",
+        year: 2026,
+        month: 6,
+        dueDateFrom: new Date(2026, 5, 10),
+        dueDateTo: new Date(2026, 5, 25),
+      },
+      REF
+    );
+    assert.deepEqual(
+      filtered.map((r) => r.externalId),
+      [2]
+    );
+  });
+
+  it("resolveFinanceArDueDateBounds retorna empty quando interseção é inválida", () => {
+    const bounds = resolveFinanceArDueDateBounds({
+      year: 2026,
+      month: 6,
+      dueDateFrom: new Date(2026, 6, 1),
+      dueDateTo: new Date(2026, 6, 30),
+    });
+    assert.equal(bounds.empty, true);
+    assert.equal(
+      filterFinanceArRows(
+        [row({ externalId: 1, dueDate: new Date(2026, 5, 15) })],
+        { status: "all", year: 2026, month: 6, dueDateFrom: new Date(2026, 6, 1) },
+        REF
+      ).length,
+      0
+    );
   });
 
   it("filterFinanceArRows respeita intervalo dueDateFrom/dueDateTo", () => {

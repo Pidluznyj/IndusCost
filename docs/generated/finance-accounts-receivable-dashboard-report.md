@@ -449,3 +449,79 @@ Servidor dev em `http://0.0.0.0:3000` — rotas financeiras e status AR retornam
 8. Inadimplência por vendedor  
 9. Inadimplência por segmento/cliente  
 10. Filtros incrementais reais da API Nomus, se existirem  
+
+---
+
+## Filtro por ano e mês
+
+**Fase:** FINANCE-AR-DASH-MONTH-YEAR-FILTER  
+**Escopo:** Contas a Receber read-only — dashboard, títulos, exportação CSV.
+
+### Parâmetros
+
+| Query param | Tipo | Regra |
+|---|---|---|
+| `year` | número 4 dígitos (1000–9999) | Filtra títulos cujo `dueDate` cai no ano informado |
+| `month` | 1–12 | Refina o filtro ao mês dentro do ano; **exige `year`** |
+
+Exemplos:
+
+- `GET /api/finance/accounts-receivable/dashboard?year=2026`
+- `GET /api/finance/accounts-receivable/dashboard?year=2026&month=6`
+- `GET /api/finance/accounts-receivable/titles?year=2026&month=6&page=1`
+- `GET /api/finance/accounts-receivable/export?year=2026&month=6`
+
+Valores inválidos retornam **400** com mensagem amigável (não 500). `NaN` não é aceito.
+
+### Regra de vencimento (`dueDate`)
+
+Intervalos calculados em **dia local** (`startOfLocalDay` / `endOfLocalDay`), consistente com o restante do dashboard:
+
+- **Ano:** `dueDate` de 1/jan até 31/dez do ano (inclusive por dia local).
+- **Ano + mês:** `dueDate` do 1º ao último dia do mês (inclusive por dia local).
+
+Títulos sem `dueDate` são excluídos quando há filtro de data ativo.
+
+### Interação com `dueDateFrom` / `dueDateTo`
+
+Quando `year`/`month` e `dueDateFrom`/`dueDateTo` são informados juntos, aplica-se a **interseção**:
+
+- início efetivo = maior entre os inícios;
+- fim efetivo = menor entre os fins.
+
+Se a interseção for vazia, nenhum título é retornado.
+
+### Mês sem ano
+
+- **Backend:** retorna `400` — `"Informe o ano ao filtrar por mês."`
+- **Frontend:** ao selecionar mês sem ano, preenche automaticamente o **ano corrente** antes de chamar a API (evita erro na UX).
+
+### Impacto
+
+Os filtros afetam todos os blocos derivados de `filterFinanceArRows`:
+
+1. Cards/KPIs  
+2. Aging  
+3. Agenda (`scheduleBuckets`)  
+4. Clientes (`customerRanking`, `topDebtors`)  
+5. Títulos (`/titles`)  
+6. Formas de pagamento  
+7. Empresas  
+8. Exportação CSV  
+9. Gráficos e tabelas da tela  
+
+O payload do dashboard inclui `filtersApplied` com `year`, `month`, `dueDateFrom`, `dueDateTo` quando aplicados.
+
+### UI
+
+Campos **Ano de vencimento** e **Mês de vencimento** no bloco de filtros globais, adjacentes a “Vencimento de/até”. Botão **Limpar filtros** zera também ano e mês.
+
+### Testes executados (MONTH-YEAR-FILTER)
+
+| Comando | Escopo |
+|---|---|
+| `npx prisma validate` | schema |
+| `npm run test:finance:accounts-receivable` | parse, filter, query, titles, export |
+| `npm run test:nomus:accounts-receivable` | regressão sync Nomus |
+| `npm run lint` | ESLint |
+| `npm run build` | TypeScript + Vite |

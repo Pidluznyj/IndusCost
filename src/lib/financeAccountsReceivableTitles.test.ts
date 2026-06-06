@@ -147,4 +147,67 @@ describe("financeAccountsReceivableTitles", () => {
     assert.equal(payload.total, 1);
     assert.equal(payload.items[0]?.externalId, 1);
   });
+
+  it("pagina com filtro year/month", () => {
+    const rows = [
+      row({ externalId: 1, dueDate: new Date(2026, 4, 10) }),
+      row({ externalId: 2, dueDate: new Date(2026, 5, 10) }),
+      row({ externalId: 3, dueDate: new Date(2026, 5, 20) }),
+      row({ externalId: 4, dueDate: new Date(2026, 6, 1) }),
+    ];
+    const payload = buildFinanceArTitlesPayload(
+      rows,
+      {
+        page: 1,
+        limit: 1,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: { status: "all", year: 2026, month: 6 },
+      },
+      REF
+    );
+    assert.equal(payload.total, 2);
+    assert.equal(payload.totalPages, 2);
+    assert.equal(payload.items[0]?.externalId, 2);
+  });
+
+  it("filtra por mês + busca", () => {
+    const rows = [
+      row({
+        externalId: 1,
+        dueDate: new Date(2026, 5, 10),
+        sourceInvoiceNumber: "NF-AAA",
+      }),
+      row({
+        externalId: 2,
+        dueDate: new Date(2026, 5, 20),
+        sourceInvoiceNumber: "NF-BBB",
+      }),
+      row({
+        externalId: 3,
+        dueDate: new Date(2026, 4, 20),
+        sourceInvoiceNumber: "NF-BBB",
+      }),
+    ];
+    const payload = buildFinanceArTitlesPayload(
+      rows,
+      {
+        page: 1,
+        limit: 50,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: { status: "all", year: 2026, month: 6 },
+        search: "bbb",
+      },
+      REF
+    );
+    assert.equal(payload.total, 1);
+    assert.equal(payload.items[0]?.externalId, 2);
+  });
+
+  it("parseFinanceArTitlesQuery interpreta year/month", () => {
+    const q = parseFinanceArTitlesQuery({ year: "2026", month: "6", page: "1" });
+    assert.equal(q.filters.year, 2026);
+    assert.equal(q.filters.month, 6);
+  });
 });
