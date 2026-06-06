@@ -171,6 +171,7 @@ describe("financeAccountsReceivableDashboard", () => {
     assert.equal(dash.dataQualityAlerts.receivedGreaterThanReceivable, 1);
     assert.equal(dash.dataQualityAlerts.missingSourceInvoice, 1);
     assert.equal(dash.dataQualityAlerts.suspendedCollectionOpen, 1);
+    assert.ok(dash.dataQualitySummary.length >= 5);
   });
 
   it("parseFinanceArDashboardFilters interpreta query params", () => {

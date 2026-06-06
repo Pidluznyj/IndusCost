@@ -82,6 +82,13 @@ export function formatFinanceMonthLabel(year: number, month: number): string {
   return d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
 }
 
+export function financeArExportFilename(referenceDate: Date = new Date()): string {
+  const y = referenceDate.getFullYear();
+  const m = String(referenceDate.getMonth() + 1).padStart(2, "0");
+  const d = String(referenceDate.getDate()).padStart(2, "0");
+  return `contas-a-receber-${y}-${m}-${d}.csv`;
+}
+
 export function displayFinanceText(value: string | null | undefined): string {
   const trimmed = value?.trim();
   return trimmed ? trimmed : "—";

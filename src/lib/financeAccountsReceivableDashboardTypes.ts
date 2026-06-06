@@ -118,6 +118,17 @@ export type FinanceArDataQualityAlerts = {
   receivedGreaterThanReceivable: number;
   suspendedCollectionOpen: number;
   missingSourceInvoice: number;
+  overdueOver30Days: number;
+  overdueOver60Days: number;
+  overdueOver90Days: number;
+};
+
+export type FinanceArDataQualityAlertItem = {
+  key: string;
+  label: string;
+  count: number;
+  amount: number | null;
+  severity: "info" | "warning" | "critical";
 };
 
 export type FinanceArDashboardPayload = {
@@ -144,6 +155,7 @@ export type FinanceArDashboardPayload = {
   }>;
   criticalTitles: FinanceArCriticalTitle[];
   dataQualityAlerts: FinanceArDataQualityAlerts;
+  dataQualitySummary: FinanceArDataQualityAlertItem[];
 };
 
 export type FinanceArUiFilters = {
@@ -187,6 +199,7 @@ export function buildFinanceArTitlesQuery(
     sortDirection?: string;
     search?: string;
     overdueOnly?: boolean;
+    qualityAlert?: FinanceArDataQualityAlertKey;
   }
 ): string {
   const base = buildFinanceArDashboardQuery(filters);
@@ -197,6 +210,7 @@ export function buildFinanceArTitlesQuery(
   if (extras?.sortDirection) q.set("sortDirection", extras.sortDirection);
   if (extras?.search?.trim()) q.set("search", extras.search.trim());
   if (extras?.overdueOnly) q.set("overdueOnly", "1");
+  if (extras?.qualityAlert) q.set("qualityAlert", extras.qualityAlert);
   return q.toString();
 }
 
@@ -211,6 +225,24 @@ export const FINANCE_AR_TABS = [
 ] as const;
 
 export type FinanceArTabId = (typeof FINANCE_AR_TABS)[number]["id"];
+
+export type FinanceArDataQualityAlertKey =
+  | "missingPersonCnpj"
+  | "missingDueDate"
+  | "missingPaymentMethod"
+  | "negativeBalance"
+  | "receivedGreaterThanReceivable"
+  | "suspendedCollectionOpen"
+  | "missingSourceInvoice"
+  | "overdueOver30Days"
+  | "overdueOver60Days"
+  | "overdueOver90Days";
+
+export function buildFinanceArExportQuery(filters: FinanceArUiFilters): string {
+  const q = buildFinanceArDashboardQuery(filters);
+  return q ? `${q}&format=csv` : "format=csv";
+}
+
 export function buildFinanceArDashboardQuery(filters: FinanceArUiFilters): string {
   const q = new URLSearchParams();
   if (filters.companyName.trim()) q.set("companyName", filters.companyName.trim());

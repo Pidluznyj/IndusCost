@@ -4,6 +4,7 @@ import { fetchJsonOk } from "@/src/lib/http";
 import type { FinanceArTitlesPayload } from "@/src/lib/financeAccountsReceivableTitles.js";
 import {
   buildFinanceArTitlesQuery,
+  type FinanceArDataQualityAlertKey,
   type FinanceArUiFilters,
 } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import {
@@ -23,8 +24,12 @@ import {
 
 export function FinanceArTitlesTab({
   filters,
+  qualityAlert = null,
+  onClearQualityAlert,
 }: {
   filters: FinanceArUiFilters;
+  qualityAlert?: FinanceArDataQualityAlertKey | null;
+  onClearQualityAlert?: () => void;
 }) {
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<"dueDate" | "balanceReceivable" | "externalId">("dueDate");
@@ -43,7 +48,7 @@ export function FinanceArTitlesTab({
 
   useEffect(() => {
     setPage(1);
-  }, [filters, debouncedSearch, overdueOnly, sortBy, sortDirection]);
+  }, [filters, debouncedSearch, overdueOnly, sortBy, sortDirection, qualityAlert]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,6 +61,7 @@ export function FinanceArTitlesTab({
         sortDirection,
         search: debouncedSearch,
         overdueOnly,
+        qualityAlert: qualityAlert ?? undefined,
       });
       const payload = await fetchJsonOk<FinanceArTitlesPayload>(
         `/api/finance/accounts-receivable/titles?${qs}`
@@ -67,7 +73,7 @@ export function FinanceArTitlesTab({
     } finally {
       setLoading(false);
     }
-  }, [filters, page, sortBy, sortDirection, debouncedSearch, overdueOnly]);
+  }, [filters, page, sortBy, sortDirection, debouncedSearch, overdueOnly, qualityAlert]);
 
   useEffect(() => {
     void load();
@@ -85,6 +91,20 @@ export function FinanceArTitlesTab({
 
   return (
     <div className="space-y-4">
+      {qualityAlert ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <span>Filtro de alerta de qualidade ativo.</span>
+          {onClearQualityAlert ? (
+            <button
+              type="button"
+              onClick={onClearQualityAlert}
+              className="font-semibold underline underline-offset-2"
+            >
+              Remover filtro
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-3 items-end">
         <label className="space-y-1 flex-1 min-w-[200px]">
           <span className="text-[10px] font-bold uppercase text-muted-foreground">Busca</span>

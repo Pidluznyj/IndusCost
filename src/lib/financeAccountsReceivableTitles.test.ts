@@ -115,6 +115,7 @@ describe("financeAccountsReceivableTitles", () => {
       overdueOnly: "true",
       search: "cliente",
       status: "overdue",
+      qualityAlert: "missingDueDate",
     });
     assert.equal(q.page, 2);
     assert.equal(q.limit, 25);
@@ -123,5 +124,27 @@ describe("financeAccountsReceivableTitles", () => {
     assert.equal(q.overdueOnly, true);
     assert.equal(q.search, "cliente");
     assert.equal(q.filters.status, "overdue");
+    assert.equal(q.qualityAlert, "missingDueDate");
+  });
+
+  it("filtra por qualityAlert", () => {
+    const rows = [
+      row({ externalId: 1, personCnpj: null, balanceReceivable: 100, dueDate: new Date(2026, 5, 10) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 11) }),
+    ];
+    const payload = buildFinanceArTitlesPayload(
+      rows,
+      {
+        page: 1,
+        limit: 50,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: { status: "all" },
+        qualityAlert: "missingPersonCnpj",
+      },
+      REF
+    );
+    assert.equal(payload.total, 1);
+    assert.equal(payload.items[0]?.externalId, 1);
   });
 });

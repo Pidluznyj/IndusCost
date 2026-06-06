@@ -65,6 +65,16 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "finance.view",
     requires: ["finance.view"],
   }),
+  perm({
+    key: "finance.accountsReceivable.export",
+    label: "Financeiro — Exportar Contas a Receber",
+    group: FIN,
+    module: "finance",
+    description: "Exportar CSV da carteira de Contas a Receber com filtros aplicados.",
+    type: "action",
+    parentKey: "finance.accountsReceivable.view",
+    requires: ["finance.view", "finance.accountsReceivable.view"],
+  }),
 
   // —— CRM ——
   perm({ key: "crm.view", label: "CRM Comercial", group: CRM, module: "crm-commercial", description: "Acessar o módulo CRM Comercial.", type: "menu" }),

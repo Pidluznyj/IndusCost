@@ -1,8 +1,11 @@
 import {
+  rowMatchesFinanceArQualityAlert,
+  type FinanceArDataQualityAlertKey,
+} from "./financeAccountsReceivableDataQuality.js";
+import {
   classifyFinanceArTitle,
   computeDaysOverdue,
   filterFinanceArRows,
-  isFinanceArOpen,
   mapPrismaRowToFinanceArDashboardRow,
   parseFinanceArDashboardFilters,
   roundMoney,
@@ -21,6 +24,7 @@ export type FinanceArTitlesQuery = {
   filters: FinanceArDashboardFilters;
   search?: string;
   overdueOnly?: boolean;
+  qualityAlert?: FinanceArDataQualityAlertKey;
 };
 
 export type FinanceArTitleListItem = {
@@ -76,6 +80,8 @@ export function parseFinanceArTitlesQuery(query: Record<string, unknown>): Finan
       .toLowerCase() === "true";
 
   const searchRaw = typeof query.search === "string" ? query.search.trim() : "";
+  const qualityRaw = String(query.qualityAlert ?? "").trim();
+  const qualityAlert = isFinanceArQualityAlertKey(qualityRaw) ? qualityRaw : undefined;
   return {
     page: parsePositiveInt(query.page, 1, 10_000),
     limit: parsePositiveInt(query.limit, 50, 200),
@@ -84,7 +90,25 @@ export function parseFinanceArTitlesQuery(query: Record<string, unknown>): Finan
     filters: parseFinanceArDashboardFilters(query),
     search: searchRaw || undefined,
     overdueOnly,
+    qualityAlert,
   };
+}
+
+const QUALITY_ALERT_KEYS = new Set<FinanceArDataQualityAlertKey>([
+  "missingPersonCnpj",
+  "missingDueDate",
+  "missingPaymentMethod",
+  "negativeBalance",
+  "receivedGreaterThanReceivable",
+  "suspendedCollectionOpen",
+  "missingSourceInvoice",
+  "overdueOver30Days",
+  "overdueOver60Days",
+  "overdueOver90Days",
+]);
+
+function isFinanceArQualityAlertKey(value: string): value is FinanceArDataQualityAlertKey {
+  return QUALITY_ALERT_KEYS.has(value as FinanceArDataQualityAlertKey);
 }
 
 function rowMatchesSearch(row: FinanceArDashboardRow, search: string): boolean {
@@ -159,6 +183,12 @@ export function buildFinanceArTitlesPayload(
 
   if (query.search) {
     filtered = filtered.filter((row) => rowMatchesSearch(row, query.search!));
+  }
+
+  if (query.qualityAlert) {
+    filtered = filtered.filter((row) =>
+      rowMatchesFinanceArQualityAlert(row, query.qualityAlert!, referenceDate)
+    );
   }
 
   const mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));

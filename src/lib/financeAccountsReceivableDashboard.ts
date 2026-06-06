@@ -1,4 +1,10 @@
 import type { Prisma } from "@prisma/client";
+import {
+  buildFinanceArDataQualitySummary,
+  createFinanceArDataQualityAccumulator,
+  financeArDataQualityAlertsLegacy,
+  trackFinanceArDataQualityRow,
+} from "./financeAccountsReceivableDataQuality.js";
 import { buildCustomerSuggestedAction } from "./financeAccountsReceivableActions.js";
 
 export type FinanceArTitleStatus =
@@ -383,27 +389,12 @@ export function buildFinanceAccountsReceivableDashboard(
     }
   >();
 
-  const dataQualityAlerts = {
-    missingDueDate: 0,
-    missingPersonCnpj: 0,
-    missingPaymentMethod: 0,
-    negativeBalance: 0,
-    receivedGreaterThanReceivable: 0,
-    suspendedCollectionOpen: 0,
-    missingSourceInvoice: 0,
-  };
+  const dataQualityAcc = createFinanceArDataQualityAccumulator();
 
   for (const row of filteredRows) {
     if (lastSyncAt == null || row.syncedAt > lastSyncAt) lastSyncAt = row.syncedAt;
 
-    if (row.balanceReceivable < 0) dataQualityAlerts.negativeBalance += 1;
-    if (row.amountReceived > row.amountReceivable && row.amountReceivable > 0) {
-      dataQualityAlerts.receivedGreaterThanReceivable += 1;
-    }
-    if (!row.paymentMethodName?.trim()) dataQualityAlerts.missingPaymentMethod += 1;
-    if (!row.sourceInvoiceId && !row.sourceInvoiceNumber?.trim()) {
-      dataQualityAlerts.missingSourceInvoice += 1;
-    }
+    trackFinanceArDataQualityRow(dataQualityAcc, row, today);
 
     if (
       row.settlementDate &&
@@ -445,13 +436,6 @@ export function buildFinanceAccountsReceivableDashboard(
     openTitlesCount += 1;
     const balance = row.balanceReceivable;
     totalOpenAmount += balance;
-
-    if (!row.personCnpj?.trim()) dataQualityAlerts.missingPersonCnpj += 1;
-    if (!row.dueDate) {
-      dataQualityAlerts.missingDueDate += 1;
-    }
-
-    if (row.suspendCollection === true) dataQualityAlerts.suspendedCollectionOpen += 1;
 
     const status = classifyFinanceArTitle(row, today);
     const customerKey = resolveFinanceArCustomerKey(row);
@@ -739,6 +723,7 @@ export function buildFinanceAccountsReceivableDashboard(
     scheduleBuckets,
     customerRanking,
     criticalTitles,
-    dataQualityAlerts,
+    dataQualityAlerts: financeArDataQualityAlertsLegacy(dataQualityAcc),
+    dataQualitySummary: buildFinanceArDataQualitySummary(dataQualityAcc),
   };
 }

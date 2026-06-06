@@ -1,6 +1,6 @@
 # Financeiro — Dashboard Contas a Receber
 
-Relatório das fases **FINANCE-AR-DASH-A** (backend), **FINANCE-AR-DASH-B** (UI inicial) e **FINANCE-AR-DASH-C** (abas operacionais).
+Relatório das fases **FINANCE-AR-DASH-A** (backend), **FINANCE-AR-DASH-B** (UI inicial), **FINANCE-AR-DASH-C** (abas operacionais) e **FINANCE-AR-DASH-D** (exportação, qualidade e sync).
 
 ## Objetivo
 
@@ -14,7 +14,11 @@ Domínio **Financeiro** no IndusCost com dashboard read-only de Contas a Receber
 2. Subaba: **Contas a Receber**
 3. URL: `/finance/accounts-receivable`
 
-Permissões: `finance.view` + `finance.accountsReceivable.view` (ou fallback `reports.view` / `settings.nomus.view` / `settings.view`).
+Permissões de visualização: `finance.view` + `finance.accountsReceivable.view` (ou fallback `reports.view` / `settings.nomus.view` / `settings.view`).
+
+Exportação CSV: `finance.accountsReceivable.export` (fallback: mesmas permissões de view — documentado abaixo).
+
+Sync manual: `settings.nomus.sync` (ou `settings.view`).
 
 ## Endpoints
 
@@ -36,6 +40,20 @@ Query params opcionais (filtros globais da UI):
 - `scheduleBuckets` — faixas Hoje, +7, +15, +30, +60, +90 dias (valor, títulos, clientes, top 3 clientes)
 - `customerRanking` — ranking completo por cliente com `suggestedAction`
 - `paymentMethodSummary[].averageTicket` — ticket médio por forma
+- `dataQualitySummary` — alertas enriquecidos (FASE D): count, amount, severity
+- `dataQualityAlerts` — contadores legados (+ overdue 30/60/90)
+
+### Exportação CSV (FASE D)
+
+`GET /api/finance/accounts-receivable/export`
+
+Mesmos filtros do dashboard. Resposta `text/csv; charset=utf-8` com BOM (Excel pt-BR).
+
+Nome sugerido: `contas-a-receber-YYYY-MM-DD.csv`
+
+Colunas: ID Nomus, Empresa, Cliente, CNPJ, Descrição, NF origem, vencimento, baixa, valores, forma/conta, status calculado, dias atraso, cobrança suspensa, última sync.
+
+Permissões: `finance.accountsReceivable.export` **ou** fallback `finance.accountsReceivable.view` / `finance.view` / `reports.view` / `settings.*`.
 
 ### Títulos (paginado)
 
@@ -49,7 +67,48 @@ Mesmos filtros do dashboard, mais:
 - `search` — cliente, CNPJ, NF ou ID Nomus
 - `overdueOnly` — `1` / `true`
 
+- `overdueOnly` — `1` / `true`
+- `qualityAlert` — filtro rápido a partir dos alertas de qualidade (FASE D)
+
 Resposta: `{ page, limit, total, totalPages, sortBy, sortDirection, items[] }`.
+
+## UI — FINANCE-AR-DASH-D
+
+### Exportação
+
+Botão **Exportar CSV** no cabeçalho — respeita filtros globais ativos.
+
+### Alertas de qualidade
+
+Bloco **Alertas de qualidade dos recebíveis** com:
+
+| Alerta | Severidade típica |
+|---|---|
+| Sem CNPJ / sem vencimento / sem forma pag. | Atenção ou crítico |
+| Saldo negativo / recebido > original | Crítico |
+| Cobrança suspensa em aberto | Atenção |
+| Sem NF vinculada | Info |
+| Vencidos > 30 / 60 / 90 dias | Atenção → crítico |
+
+Cada card: quantidade, valor envolvido (quando aplicável), severidade, link **Ver na tabela de títulos** (`qualityAlert`).
+
+### Sync Nomus integrado
+
+Painel compacto reutilizando:
+
+- `GET /api/settings/nomus-sync/accounts-receivable-status`
+- `POST /api/settings/nomus-sync/accounts-receivable-run`
+
+Exibe status (SUCCESS, RUNNING, FAILED, STALE…), duração, lidos/criados/atualizados/inalterados/erros.
+
+Botão **Rodar Contas a Receber agora** — confirmação `RODAR CONTAS A RECEBER NOMUS`, trata HTTP 409, polling enquanto RUNNING.
+
+### UX
+
+- **Atualizar dashboard** (recarrega agregados)
+- **Dados atualizados em** (timestamp `generatedAt`)
+- Empty states e erros por seção
+- Sem NaN/null/undefined na UI
 
 ## UI — FINANCE-AR-DASH-C
 
@@ -76,7 +135,11 @@ Resposta: `{ page, limit, total, totalPages, sortBy, sortDirection, items[] }`.
 | `financeAccountsReceivableFormat.ts` | Formatadores moeda/percentual/data/status |
 | `financeAccountsReceivableDashboardTypes.ts` | Tipos, `FINANCE_AR_TABS`, builders de query |
 | `financeAccountsReceivableActions.ts` | Regras de ação sugerida por cliente |
-| `financeAccountsReceivableTitles.ts` | Paginação/filtros de títulos |
+| `FinanceAccountsReceivableSyncPanel.tsx` | Status/sync Nomus + run manual |
+| `FinanceAccountsReceivableDataQualityPanel.tsx` | Alertas de qualidade |
+| `financeAccountsReceivableExport.ts` | Geração CSV server-side |
+| `financeAccountsReceivableDataQuality.ts` | Regras e severidade de alertas |
+| `financeAccountsReceivableSyncRun.ts` | Helper resposta 409 / duração |
 
 ### Ação sugerida (Clientes)
 
@@ -120,21 +183,21 @@ Ver `src/lib/financeAccountsReceivableDashboard.ts` para detalhes completos.
 ## Testes
 
 ```bash
-npm run test:finance:accounts-receivable   # dashboard, format, actions, titles
+npm run test:finance:accounts-receivable   # dashboard, format, actions, titles, export, quality, sync
 npm run test:nomus:accounts-receivable
 npm run lint
 npm run build
 ```
 
-Arquivos: `financeAccountsReceivableDashboard.test.ts`, `financeAccountsReceivableFormat.test.ts`, `financeAccountsReceivableActions.test.ts`, `financeAccountsReceivableTitles.test.ts`.
+Arquivos: `financeAccountsReceivableDashboard.test.ts`, `financeAccountsReceivableFormat.test.ts`, `financeAccountsReceivableActions.test.ts`, `financeAccountsReceivableTitles.test.ts`, `financeAccountsReceivableDataQuality.test.ts`, `financeAccountsReceivableExport.test.ts`, `financeAccountsReceivableSyncRun.test.ts`.
 
 ## Limitações
 
 1. Cálculo em memória (~5,7k títulos OK; SQL agregado futuro).  
-2. Sync manual não duplicado na tela — atalho para Admin.  
-3. Estratégia sync no cabeçalho requer permissão de status Nomus.  
-4. Sem export CSV/PDF nesta fase.  
-5. Ranking de clientes carregado inteiro no dashboard (sem paginação dedicada).
+2. Export CSV carrega todos os títulos filtrados em memória no servidor.  
+3. Sync manual reutiliza runner/cron existentes — não altera agendamento.  
+4. Ranking de clientes carregado inteiro no dashboard (sem paginação dedicada).  
+5. Sem export XLSX nesta fase (CSV com BOM para Excel).
 
 ## Validação no servidor
 
@@ -148,11 +211,11 @@ npm run build
 sudo systemctl restart induscost
 ```
 
-Conferir: menu **Financeiro → Contas a Receber**, abas, filtros globais, aba Títulos paginada.
+Conferir: menu **Financeiro → Contas a Receber**, export CSV, alertas, sync manual, abas e títulos paginados.
 
 ## Próximos passos
 
+- Filtros salvos e export XLSX  
 - Paginação dedicada para ranking de clientes  
-- Export e filtros salvos  
 - Otimização SQL  
 - Template `finance_controller` dedicado  
