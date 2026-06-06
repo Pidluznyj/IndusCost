@@ -156,12 +156,138 @@ export type BillingTopCustomerRow = {
   totalNetValue: ExecutiveMetricValue;
 };
 
+export type SalesFunnelStage = {
+  id: "emitted" | "valid" | "openPortfolio" | "invoiced" | "overdue" | "cancelled";
+  label: string;
+  description: string;
+  count: number;
+  value: ExecutiveMetricValue;
+  percentOfEmitted: ExecutiveMetricValue;
+  percentOfValid: ExecutiveMetricValue;
+  formatted: {
+    count: string;
+    value: string;
+    compactValue: string;
+    percentOfEmitted: string;
+    percentOfValid: string;
+  };
+};
+
+export type SalesFunnelMonthlyPoint = {
+  month: number;
+  monthLabel: string;
+  issuedValue: number;
+  invoicedValue: number;
+  openPortfolioValue: ExecutiveMetricValue;
+  overdueValue: ExecutiveMetricValue;
+  issuedCount: number;
+  invoicedCount: number;
+  conversionPercent: ExecutiveMetricValue;
+};
+
+export type SalesFunnelConversionMonth = {
+  month: number;
+  monthLabel: string;
+  issuedCount: number;
+  invoicedCount: number;
+  conversionPercent: ExecutiveMetricValue;
+};
+
+export type SalesFunnelOpenCustomerRow = {
+  customerId: string;
+  customerName: string;
+  orderCount: number;
+  openValue: ExecutiveMetricValue;
+  oldestIssueDate: string;
+  daysOpen: number;
+};
+
+export type SalesFunnelCriticalOrderRow = {
+  orderId: string;
+  orderCode: string;
+  customerName: string;
+  issueDate: string;
+  expectedDeliveryDate: string | null;
+  totalNetValue: ExecutiveMetricValue;
+  status: string;
+  statusLabel: string;
+  isInvoiced: boolean;
+  isOverdue: boolean;
+  daysOverdue: ExecutiveMetricValue;
+  daysOpen: number;
+  priority: "overdue" | "open";
+};
+
+export type SalesFunnelDashboardTab = ExecutiveSectionBase & {
+  selectedYear: number;
+  summaryCards: DashboardMetricCard[];
+  funnelStages: SalesFunnelStage[];
+  monthlyEvolution: SalesFunnelMonthlyPoint[];
+  statusBreakdown: DashboardStatusBreakdownRow[];
+  conversionByMonth: SalesFunnelConversionMonth[];
+  openPortfolioByCustomer: SalesFunnelOpenCustomerRow[];
+  criticalOrders: SalesFunnelCriticalOrderRow[];
+  rules: string[];
+  unavailableIndicators: string[];
+};
+
+export type SalesOrdersProjectionBlock = {
+  ytdBusinessDaysElapsed: number;
+  totalBusinessDaysInYear: number;
+  ytdDailyAverage: ExecutiveMetricValue;
+  annualProjection: ExecutiveMetricValue;
+  monthlyProjection: ExecutiveMetricValue;
+  hint: string;
+  formatted: {
+    ytdDailyAverage: string;
+    annualProjection: string;
+    monthlyProjection: string;
+  };
+};
+
+export type SalesOrdersTargetsBlock = {
+  growthRate: number;
+  growthRateLabel: string;
+  annual: DashboardTargetBlock & {
+    basePreviousYear: ExecutiveMetricValue;
+    basePreviousYearLabel: number;
+    actualYtd: ExecutiveMetricValue;
+    hint: string;
+  };
+  monthly: DashboardTargetBlock & {
+    periodLabel: string;
+    basePreviousYearLabel: string;
+    hint: string;
+    realizedMinusTarget: ExecutiveMetricValue;
+    formattedRealizedMinusTarget: string;
+  };
+};
+
+export type SalesOrdersAccumulatedPoint = {
+  month: number;
+  monthLabel: string;
+  periodLabel: string;
+  previousYearAccumulated: number;
+  currentYearAccumulated: ExecutiveMetricValue;
+  accumulatedTarget: number;
+  projectedAccumulated: ExecutiveMetricValue;
+  differenceToTarget: ExecutiveMetricValue;
+  achievementPercent: ExecutiveMetricValue;
+};
+
 export type SalesOrdersDashboardTab = ExecutiveSectionBase & {
+  selectedYear: number;
+  previousYear: number;
+  currentMonth: number;
   periodLabel: string;
   yearLabel: number;
   summaryCards: DashboardMetricCard[];
+  targets: SalesOrdersTargetsBlock;
+  /** @deprecated Use targets.monthly */
   target: DashboardTargetBlock;
+  projection: SalesOrdersProjectionBlock;
   monthlySeries: DashboardMonthlySeriesPoint[];
+  accumulatedEvolution: SalesOrdersAccumulatedPoint[];
   chartSeries: DashboardChartSeriesConfig;
   statusBreakdown: DashboardStatusBreakdownRow[];
   overdueOrders: {
@@ -196,16 +322,19 @@ export type BillingDashboardTab = ExecutiveSectionBase & {
 export type ExecutiveDashboardPermissions = {
   salesOrders: boolean;
   billing: boolean;
+  salesFunnel: boolean;
 };
 
 export type ExecutiveDashboardSummary = {
   generatedAt: string;
   selectedYear: number;
   previousYear: number;
+  currentMonth: number;
   permissions: ExecutiveDashboardPermissions;
   tabs: {
     salesOrders: SalesOrdersDashboardTab | null;
     billing: BillingDashboardTab | null;
+    salesFunnel: SalesFunnelDashboardTab | null;
   };
   unavailableIndicators: string[];
 };

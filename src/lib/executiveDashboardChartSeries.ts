@@ -2,13 +2,16 @@ import type { ExecutiveDashboardYearContext } from "@/src/lib/executiveDashboard
 import {
   computeAchievementPercent,
   computeGrowthTarget,
+  computeRealizedMinusTarget,
   computeTargetGap,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import { getExecutiveChartColors, type ExecutiveChartKind } from "@/src/lib/executiveDashboardChartTheme.js";
 import type {
   DashboardChartSeriesConfig,
   DashboardMonthlySeriesPoint,
+  SalesOrdersAccumulatedPoint,
 } from "@/src/lib/executiveDashboardTypes.js";
+import { countWorkdaysThroughMonth } from "@/src/lib/executiveDashboardWorkdays.js";
 
 const MONTH_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
@@ -22,7 +25,7 @@ export function buildChartSeriesLabels(
     previousYearBar: `${prefix} ${previousYear}`,
     currentYearBar: isSelectedYearCurrent ? `${prefix} ${selectedYear} YTD` : `${prefix} ${selectedYear}`,
     targetLine: `Meta ${selectedYear} (+30%)`,
-    projectedLine: kind === "billing" ? `Projeção ${selectedYear}` : undefined,
+    projectedLine: `Projeção ${selectedYear}`,
   };
 }
 
@@ -74,7 +77,9 @@ export function buildMonthlySeriesPoints(
         ? computeAchievementPercent(currentYearValue, targetValue)
         : null;
     const differenceToTarget =
-      currentYearValue != null ? computeTargetGap(currentYearValue, targetValue) : null;
+      currentYearValue != null
+        ? computeRealizedMinusTarget(currentYearValue, targetValue)
+        : null;
 
     return {
       month,
@@ -90,7 +95,57 @@ export function buildMonthlySeriesPoints(
   });
 }
 
-/** Converte série mensal para gráfico acumulado (YTD progressivo). */
+/** Converte série mensal para gráfico acumulado enriquecido (meta + projeção). */
+export function buildAccumulatedSeriesPoints(
+  ctx: ExecutiveDashboardYearContext,
+  monthlySeries: DashboardMonthlySeriesPoint[],
+  options?: {
+    dailyAverageYtd?: number | null;
+  }
+): SalesOrdersAccumulatedPoint[] {
+  let cumPrev = 0;
+  let cumCurrent = 0;
+  let cumTarget = 0;
+  const dailyAvg = options?.dailyAverageYtd ?? null;
+
+  return monthlySeries.map((point) => {
+    cumPrev += point.previousYearValue;
+    cumTarget += point.targetValue;
+
+    if (point.currentYearValue != null) {
+      cumCurrent += point.currentYearValue;
+    }
+
+    const projectedAccumulated =
+      dailyAvg != null
+        ? dailyAvg * countWorkdaysThroughMonth(ctx.selectedYear, point.month)
+        : null;
+
+    const currentYearAccumulated = point.currentYearValue != null ? cumCurrent : null;
+    const differenceToTarget =
+      currentYearAccumulated != null
+        ? computeRealizedMinusTarget(currentYearAccumulated, cumTarget)
+        : null;
+    const achievementPercent =
+      currentYearAccumulated != null
+        ? computeAchievementPercent(currentYearAccumulated, cumTarget)
+        : null;
+
+    return {
+      month: point.month,
+      monthLabel: point.monthLabel,
+      periodLabel: point.periodLabel,
+      previousYearAccumulated: cumPrev,
+      currentYearAccumulated,
+      accumulatedTarget: cumTarget,
+      projectedAccumulated,
+      differenceToTarget,
+      achievementPercent,
+    };
+  });
+}
+
+/** Converte série mensal para gráfico acumulado simples (YTD progressivo). */
 export function buildCumulativeFromMonthlySeries(
   series: DashboardMonthlySeriesPoint[]
 ): Array<{

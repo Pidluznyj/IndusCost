@@ -30,6 +30,7 @@ import {
   computeDailyAverageByWorkday,
   computeGrowthTarget,
   computeMonthProjection,
+  computeRealizedMinusTarget,
   computeYearProjection,
   computeYtdDailyAverageByWorkday,
   computeTicketAverage,
@@ -277,8 +278,13 @@ describe("salesOrderDashboardRules", () => {
     assert.equal(computeGrowthTarget(100_000), 100_000 * TARGET_GROWTH_FACTOR);
   });
 
-  it("annual target uses growth factor", () => {
-    assert.equal(computeGrowthTarget(1_000_000), 1_300_000);
+  it("annual target equals total previous year times 1.30", () => {
+    assert.equal(computeGrowthTarget(10_000_000), 13_000_000);
+  });
+
+  it("realized minus target is positive when above target", () => {
+    assert.equal(computeRealizedMinusTarget(130, 100), 30);
+    assert.equal(computeRealizedMinusTarget(80, 100), -20);
   });
 
   it("ticket average avoids divide by zero", () => {

@@ -274,6 +274,32 @@ Por mês, o tooltip mostra período, valores do ano anterior, YTD atual (quando 
 - Projeção mensal/anual usa média YTD (não média do mês isolado).
 - Feriados ainda não entram no cálculo de dias úteis.
 
+## Indicadores administrativos de Pedidos de Venda
+
+### Meta do ano
+Total de pedidos não cancelados do **ano anterior** × **1,30**. Ex.: R$ 10 Mi em 2025 → meta 2026 = R$ 13 Mi.
+
+### Meta do mês
+Total do **mesmo mês do ano anterior** × **1,30**. Ex.: junho/2026 compara junho/2025 × 1,30.
+
+### Realizado / Atingido
+Valor de pedidos emitidos no período (`issueDate`), excluindo cancelados, usando `totalNetValue`.
+
+### Projetado / Previsão
+**Média diária YTD** (total YTD ÷ dias úteis decorridos) × dias úteis do período projetado. Nunca usa média do mês isolado.
+
+### Diferença vs meta
+`realizado − meta`. Positivo = acima da meta; negativo = abaixo.
+
+### % atingimento
+`realizado / meta × 100`. Meta zero → tratamento controlado (0% ou 100%).
+
+### Gráfico acumulado
+Série mês a mês: acumulado ano anterior, acumulado YTD ano selecionado, meta acumulada (+30% linha), projeção acumulada (média YTD × dias úteis até o mês).
+
+### Cores e filtro de ano
+Mesma paleta `EXECUTIVE_DASHBOARD_SERIES_COLORS`: laranja (anterior), verde escuro (YTD), verde meta, azul projeção. Labels com ano explícito. Filtro `?year=YYYY` define ano selecionado, anterior e bases de meta.
+
 ---
 
 ## 9. Arquivos alterados

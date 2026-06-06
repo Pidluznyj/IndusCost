@@ -183,7 +183,17 @@ export const DashboardModule = () => {
           />
         )}
 
-        {dashboardTab === "funil" && <SalesFunnelPanel />}
+        {dashboardTab === "funil" && (
+          <SalesFunnelPanel
+            tab={executiveData?.tabs.salesFunnel ?? null}
+            loading={executiveLoading}
+            error={executiveError}
+            selectedYear={executiveYear}
+            onYearChange={setExecutiveYear}
+            onRefresh={() => void fetchExecutive()}
+            generatedAt={executiveData?.generatedAt ?? null}
+          />
+        )}
 
         {dashboardTab === "operacao" && (
           <>

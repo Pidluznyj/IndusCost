@@ -8,10 +8,11 @@ import {
 
 describe("EXECUTIVE_DASHBOARD_SERIES_COLORS", () => {
   it("defines distinct colors per series for sales orders", () => {
-    const colors = getExecutiveChartColors("salesOrders");
+    const colors = EXECUTIVE_DASHBOARD_SERIES_COLORS.salesOrders;
     assert.ok(assertDistinctSeriesColors(colors));
     assert.equal(colors.previousYearBar, "#ED7D31");
     assert.equal(colors.currentYearBar, "#1B5E20");
+    assert.equal(colors.projectedLine, "#1565C0");
   });
 
   it("defines distinct colors per series for billing", () => {

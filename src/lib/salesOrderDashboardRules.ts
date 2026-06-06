@@ -79,6 +79,14 @@ export function computeTargetGap(actual: number | null, target: number | null): 
   return target - actual;
 }
 
+export function computeRealizedMinusTarget(
+  actual: number | null,
+  target: number | null
+): number | null {
+  if (actual == null || target == null || !Number.isFinite(actual) || !Number.isFinite(target)) return null;
+  return actual - target;
+}
+
 export function computeTicketAverage(totalValue: number | null, orderCount: number | null): number | null {
   if (orderCount == null || totalValue == null) return null;
   if (orderCount <= 0) return 0;
@@ -126,6 +134,24 @@ export const EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT =
 
 export const EXECUTIVE_BILLING_YTD_DAILY_AVERAGE_HINT =
   "Média calculada com faturamento de mercado do ano selecionado até hoje, divididos pelos dias úteis decorridos no ano.";
+
+export const EXECUTIVE_ANNUAL_TARGET_HINT =
+  "Meta anual calculada como o total de pedidos não cancelados do ano anterior multiplicado por 1,30.";
+
+export const EXECUTIVE_MONTHLY_TARGET_HINT =
+  "Meta mensal calculada com base no mesmo mês do ano anterior, acrescida de 30%.";
+
+export const EXECUTIVE_REALIZED_HINT =
+  "Valor real de pedidos de venda emitidos no período, excluindo pedidos cancelados.";
+
+export const EXECUTIVE_PROJECTION_HINT =
+  "Projeção calculada usando a média diária YTD por dia útil, aplicada aos dias úteis do período projetado.";
+
+export const EXECUTIVE_TARGET_GAP_HINT =
+  "Diferença entre o realizado e a meta do período. Valor positivo indica superação da meta; negativo indica distância para atingir a meta.";
+
+export const EXECUTIVE_ACHIEVEMENT_HINT =
+  "Percentual do realizado em relação à meta definida para o período.";
 
 export function isOpenPortfolioOrder(input: {
   status: string;

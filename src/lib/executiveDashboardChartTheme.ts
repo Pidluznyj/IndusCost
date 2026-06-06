@@ -8,6 +8,8 @@ export const EXECUTIVE_DASHBOARD_SERIES_COLORS = {
     currentYearBar: "#1B5E20",
     /** Meta mensal (+30%) — linha verde */
     targetLine: "#43A047",
+    /** Projeção acumulada — azul */
+    projectedLine: "#1565C0",
   },
   billing: {
     /** Ano anterior (barra) — dourado */

@@ -46,3 +46,10 @@ export function countWorkdaysInMonth(year: number, monthIndex: number): number {
 export function countWorkdaysInYear(year: number): number {
   return countWorkdaysInRange(startOfYear(new Date(year, 0, 1)), endOfYear(new Date(year, 0, 1)));
 }
+
+/** Dias úteis de janeiro até o fim do mês (month 1–12). */
+export function countWorkdaysThroughMonth(year: number, month: number): number {
+  const start = startOfYear(new Date(year, 0, 1));
+  const end = new Date(year, month, 0, 23, 59, 59, 999);
+  return countWorkdaysInRange(start, end);
+}

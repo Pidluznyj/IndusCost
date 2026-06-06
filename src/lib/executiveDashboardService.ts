@@ -1,6 +1,7 @@
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { buildBillingDashboardTab } from "@/src/lib/billingDashboardMetrics.js";
 import { canSeeSalesOrders } from "@/src/lib/executiveDashboardHelpers.js";
+import { buildSalesFunnelDashboardTab } from "@/src/lib/salesFunnelDashboardMetrics.js";
 import { buildSalesOrdersDashboardTab } from "@/src/lib/salesOrdersDashboardMetrics.js";
 import type { ExecutiveDashboardSummary } from "@/src/lib/executiveDashboardTypes.js";
 import { resolveExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear.js";
@@ -16,29 +17,32 @@ export async function buildExecutiveDashboardSummary(
 
   if (!canAccess) {
     unavailableIndicators.push(
-      "Pedidos de Venda e Faturamento exigem permissão sales_orders.view ou reports.view."
+      "Pedidos de Venda, Faturamento e Funil exigem permissão sales_orders.view ou reports.view."
     );
     return {
       generatedAt: now.toISOString(),
       selectedYear: yearCtx.selectedYear,
       previousYear: yearCtx.previousYear,
-      permissions: { salesOrders: false, billing: false },
-      tabs: { salesOrders: null, billing: null },
+      currentMonth: now.getMonth() + 1,
+      permissions: { salesOrders: false, billing: false, salesFunnel: false },
+      tabs: { salesOrders: null, billing: null, salesFunnel: null },
       unavailableIndicators,
     };
   }
 
-  const [salesOrders, billing] = await Promise.all([
+  const [salesOrders, billing, salesFunnel] = await Promise.all([
     buildSalesOrdersDashboardTab(yearCtx),
     buildBillingDashboardTab(yearCtx),
+    buildSalesFunnelDashboardTab(yearCtx),
   ]);
 
   return {
     generatedAt: now.toISOString(),
     selectedYear: yearCtx.selectedYear,
     previousYear: yearCtx.previousYear,
-    permissions: { salesOrders: true, billing: true },
-    tabs: { salesOrders, billing },
+    currentMonth: yearCtx.referenceDate.getMonth() + 1,
+    permissions: { salesOrders: true, billing: true, salesFunnel: true },
+    tabs: { salesOrders, billing, salesFunnel },
     unavailableIndicators,
   };
 }

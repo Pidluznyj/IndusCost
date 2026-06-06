@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildAccumulatedSeriesPoints,
   buildChartSeriesConfig,
   buildMonthlySeriesPoints,
 } from "./executiveDashboardChartSeries.js";
@@ -24,6 +25,7 @@ describe("buildChartSeriesConfig", () => {
     assert.equal(config.colors.previousYearBar, "#ED7D31");
     assert.equal(config.colors.currentYearBar, "#1B5E20");
     assert.equal(config.colors.targetLine, "#43A047");
+    assert.equal(config.colors.projectedLine, "#1565C0");
   });
 
   it("uses billing palette and projection label", () => {
@@ -58,9 +60,65 @@ describe("buildChartSeriesConfig", () => {
       config.colors.previousYearBar,
       config.colors.currentYearBar,
       config.colors.targetLine,
+      config.colors.projectedLine,
     ];
     assert.equal(new Set(values).size, values.length);
     assert.match(config.labels.currentYearBar, /YTD/);
+    assert.equal(config.labels.projectedLine, "Projeção 2026");
+  });
+});
+
+describe("buildAccumulatedSeriesPoints", () => {
+  it("accumulates previous year month by month", () => {
+    const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
+    const monthly = buildMonthlySeriesPoints(
+      ctx,
+      new Map([
+        [1, 100],
+        [2, 50],
+      ]),
+      new Map([
+        [1, 80],
+        [2, 40],
+      ])
+    );
+    const accumulated = buildAccumulatedSeriesPoints(ctx, monthly, { dailyAverageYtd: 10_000 });
+    assert.equal(accumulated[0]!.previousYearAccumulated, 80);
+    assert.equal(accumulated[1]!.previousYearAccumulated, 120);
+    assert.equal(accumulated[1]!.currentYearAccumulated, 150);
+  });
+
+  it("sets null for future months without false zero", () => {
+    const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
+    const accumulated = buildAccumulatedSeriesPoints(ctx, buildMonthlySeriesPoints(ctx, new Map(), new Map()));
+    const july = accumulated.find((p) => p.month === 7);
+    assert.ok(july);
+    assert.equal(july!.currentYearAccumulated, null);
+    assert.ok(july!.accumulatedTarget >= 0);
+  });
+
+  it("accumulated target equals previous year accumulated × 1.30", () => {
+    const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
+    const monthly = buildMonthlySeriesPoints(ctx, new Map([[1, 130_000]]), new Map([[1, 100_000]]));
+    const accumulated = buildAccumulatedSeriesPoints(ctx, monthly);
+    assert.equal(accumulated[0]!.accumulatedTarget, 100_000 * TARGET_GROWTH_FACTOR);
+  });
+
+  it("difference accumulated uses realized minus target", () => {
+    const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
+    const monthly = buildMonthlySeriesPoints(ctx, new Map([[1, 150_000]]), new Map([[1, 100_000]]));
+    const accumulated = buildAccumulatedSeriesPoints(ctx, monthly);
+    const jan = accumulated[0]!;
+    assert.equal(jan.differenceToTarget, jan.currentYearAccumulated! - jan.accumulatedTarget);
+  });
+
+  it("projected accumulated grows with workdays through month", () => {
+    const ctx = resolveExecutiveDashboardYearContext("2026", NOW_2026);
+    const accumulated = buildAccumulatedSeriesPoints(ctx, buildMonthlySeriesPoints(ctx, new Map(), new Map()), {
+      dailyAverageYtd: 1_000,
+    });
+    assert.ok(accumulated[0]!.projectedAccumulated! > 0);
+    assert.ok(accumulated[11]!.projectedAccumulated! > accumulated[0]!.projectedAccumulated!);
   });
 });
 

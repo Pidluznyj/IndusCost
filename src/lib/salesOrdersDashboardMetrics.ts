@@ -23,20 +23,28 @@ import {
   computeAchievementPercent,
   computeGrowthTarget,
   computeMonthProjection,
+  computeRealizedMinusTarget,
   computeTargetGap,
   computeTicketAverage,
   computeYearProjection,
   computeYtdDailyAverageByWorkday,
+  EXECUTIVE_ACHIEVEMENT_HINT,
+  EXECUTIVE_ANNUAL_TARGET_HINT,
+  EXECUTIVE_MONTHLY_TARGET_HINT,
   EXECUTIVE_OVERDUE_ORDERS_HINT,
+  EXECUTIVE_PROJECTION_HINT,
+  EXECUTIVE_REALIZED_HINT,
   EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
+  EXECUTIVE_TARGET_GAP_HINT,
+  TARGET_GROWTH_FACTOR,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters.js";
 import {
-  orderIsInvoicedSql,
   orderNotInvoicedSql,
   toPgDateYmd,
 } from "@/src/lib/salesOrderInvoicingSql.js";
 import {
+  buildAccumulatedSeriesPoints,
   buildChartSeriesConfig,
   buildMonthlySeriesPoints,
 } from "@/src/lib/executiveDashboardChartSeries.js";
@@ -47,6 +55,8 @@ import type {
   DashboardTargetBlock,
   OverdueOrderRow,
   SalesOrdersDashboardTab,
+  SalesOrdersProjectionBlock,
+  SalesOrdersTargetsBlock,
 } from "@/src/lib/executiveDashboardTypes.js";
 
 const OVERDUE_LIST_LIMIT = 15;
@@ -229,9 +239,7 @@ async function queryMonthlyByIssueDate(year: number): Promise<Map<number, number
 }
 
 async function queryStatusBreakdown(): Promise<DashboardStatusBreakdownRow[]> {
-  const rows = await prisma.$queryRaw<
-    { status: string; count: bigint; total: unknown }[]
-  >(
+  const rows = await prisma.$queryRaw<{ status: string; count: bigint; total: unknown }[]>(
     Prisma.sql`
       SELECT
         so.status::text AS status,
@@ -251,32 +259,30 @@ async function queryStatusBreakdown(): Promise<DashboardStatusBreakdownRow[]> {
   }));
 }
 
-function buildMonthlyEvolution(
-  ctx: ExecutiveDashboardYearContext,
-  currentYearMap: Map<number, number>,
-  previousYearMap: Map<number, number>
-) {
-  return buildMonthlySeriesPoints(ctx, currentYearMap, previousYearMap);
-}
-
 export async function buildSalesOrdersDashboardTab(
   yearCtx: ExecutiveDashboardYearContext
 ): Promise<SalesOrdersDashboardTab> {
   const ref = yearCtx.referenceDate;
   const year = yearCtx.selectedYear;
+  const previousYear = yearCtx.previousYear;
   const monthStart = startOfMonth(ref);
   const monthEnd = endOfMonth(ref);
   const yearStart = startOfYear(ref);
   const yearEnd = endOfYear(ref);
-  const prevYearSameMonthStart = startOfMonth(new Date(yearCtx.previousYear, ref.getMonth(), 1));
-  const prevYearSameMonthEnd = endOfMonth(new Date(yearCtx.previousYear, ref.getMonth(), 1));
+  const prevYearStart = startOfYear(new Date(previousYear, 0, 1));
+  const prevYearEnd = endOfYear(new Date(previousYear, 0, 1));
+  const prevYearSameMonthStart = startOfMonth(new Date(previousYear, ref.getMonth(), 1));
+  const prevYearSameMonthEnd = endOfMonth(new Date(previousYear, ref.getMonth(), 1));
   const operationalNow = new Date();
+  const periodLabel = ref.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const monthCompareLabel = `${ref.toLocaleDateString("pt-BR", { month: "long" })}/${previousYear}`;
 
   const [
     yearAgg,
     ytdAgg,
     monthAgg,
     prevMonthAgg,
+    prevYearTotalAgg,
     openPortfolio,
     overdueSummary,
     overdueList,
@@ -288,69 +294,134 @@ export async function buildSalesOrdersDashboardTab(
     aggregateByIssueDate(yearStart, ref),
     aggregateByIssueDate(monthStart, monthEnd),
     aggregateByIssueDate(prevYearSameMonthStart, prevYearSameMonthEnd),
+    aggregateByIssueDate(prevYearStart, prevYearEnd),
     queryOpenPortfolio(),
     queryOverdueSummary(year, operationalNow),
     queryOverdueList(year, operationalNow),
     queryMonthlyByIssueDate(year),
-    queryMonthlyByIssueDate(yearCtx.previousYear),
+    queryMonthlyByIssueDate(previousYear),
     queryStatusBreakdown(),
   ]);
 
-  const ticketAvg = computeTicketAverage(monthAgg.net, monthAgg.count);
+  const monthlyTarget = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
+  const monthlyRealizedMinusTarget = computeRealizedMinusTarget(monthAgg.net, monthlyTarget.target);
+  const annualBlock = buildTargetBlock(ytdAgg.net, prevYearTotalAgg.net);
+  const annualTargetValue = annualBlock.target;
+  const annualAchievement = annualBlock.achievementPercent;
+  const targets: SalesOrdersTargetsBlock = {
+    growthRate: TARGET_GROWTH_FACTOR,
+    growthRateLabel: "+30%",
+    annual: {
+      ...annualBlock,
+      basePreviousYear: prevYearTotalAgg.net,
+      basePreviousYearLabel: previousYear,
+      actualYtd: ytdAgg.net,
+      hint: EXECUTIVE_ANNUAL_TARGET_HINT,
+    },
+    monthly: {
+      ...monthlyTarget,
+      periodLabel,
+      basePreviousYearLabel: monthCompareLabel,
+      hint: EXECUTIVE_MONTHLY_TARGET_HINT,
+      realizedMinusTarget: monthlyRealizedMinusTarget,
+      formattedRealizedMinusTarget: formatExecutiveCurrency(monthlyRealizedMinusTarget),
+    },
+  };
+
   const yearWorkdaysElapsed = countWorkdaysElapsedInYear(ref);
   const workdaysInMonth = countWorkdaysInMonth(year, ref.getMonth());
   const workdaysInYear = countWorkdaysInYear(year);
   const dailyAvgYtd = computeYtdDailyAverageByWorkday(ytdAgg.net, yearWorkdaysElapsed);
   const projectedMonth = computeMonthProjection(dailyAvgYtd, workdaysInMonth);
   const projectedYear = computeYearProjection(dailyAvgYtd, workdaysInYear);
-  const target = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
+
+  const projection: SalesOrdersProjectionBlock = {
+    ytdBusinessDaysElapsed: yearWorkdaysElapsed,
+    totalBusinessDaysInYear: workdaysInYear,
+    ytdDailyAverage: dailyAvgYtd,
+    annualProjection: projectedYear,
+    monthlyProjection: projectedMonth,
+    hint: EXECUTIVE_PROJECTION_HINT,
+    formatted: {
+      ytdDailyAverage: formatExecutiveCurrency(dailyAvgYtd),
+      annualProjection: formatExecutiveCurrency(projectedYear),
+      monthlyProjection: formatExecutiveCurrency(projectedMonth),
+    },
+  };
+
+  const monthlySeries = buildMonthlySeriesPoints(yearCtx, currentYearMonthly, previousYearMonthly);
+  const accumulatedEvolution = buildAccumulatedSeriesPoints(yearCtx, monthlySeries, {
+    dailyAverageYtd: dailyAvgYtd,
+  });
+  const chartSeries = buildChartSeriesConfig("salesOrders", yearCtx);
 
   const summaryCards: DashboardMetricCard[] = [
-    metricCard("orders-year-value", "Pedidos no ano", yearAgg.net, { asCurrency: true, compact: true }),
-    metricCard("orders-month-value", "Pedidos no mês", monthAgg.net, { asCurrency: true, compact: true }),
-    metricCard("ticket-avg", "Ticket médio", ticketAvg, { asCurrency: true }),
-    metricCard("open-portfolio", "Carteira aberta", openPortfolio.net, {
+    metricCard("realized-ytd", "Realizado YTD", ytdAgg.net, {
       asCurrency: true,
       compact: true,
-      hint: "Não cancelados sem NF processada",
+      hint: EXECUTIVE_REALIZED_HINT,
+    }),
+    metricCard("realized-month", "Realizado no mês", monthAgg.net, {
+      asCurrency: true,
+      compact: true,
+      hint: `${EXECUTIVE_REALIZED_HINT} (${periodLabel})`,
+    }),
+    metricCard("annual-target", "Meta anual", annualTargetValue, {
+      asCurrency: true,
+      compact: true,
+      hint: `${EXECUTIVE_ANNUAL_TARGET_HINT} Base: ${previousYear} · ${targets.growthRateLabel}`,
+    }),
+    metricCard("monthly-target", "Meta do mês", monthlyTarget.target, {
+      asCurrency: true,
+      compact: true,
+      hint: `${EXECUTIVE_MONTHLY_TARGET_HINT} Comparado: ${monthCompareLabel}`,
+    }),
+    metricCard("annual-achievement", "Atingimento anual", annualAchievement, {
+      asPercent: true,
+      hint: EXECUTIVE_ACHIEVEMENT_HINT,
+    }),
+    metricCard("monthly-achievement", "Atingimento mensal", monthlyTarget.achievementPercent, {
+      asPercent: true,
+      hint: EXECUTIVE_ACHIEVEMENT_HINT,
+    }),
+    metricCard("annual-projection", "Projeção anual", projectedYear, {
+      asCurrency: true,
+      compact: true,
+      hint: EXECUTIVE_PROJECTION_HINT,
     }),
     metricCard("daily-avg-ytd", "Média venda/dia útil YTD", dailyAvgYtd, {
       asCurrency: true,
       hint: EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
     }),
-    metricCard("projected-month", "Projeção do mês (YTD)", projectedMonth, {
+    metricCard("open-portfolio", "Carteira aberta", openPortfolio.net, {
       asCurrency: true,
       compact: true,
-      hint: `Média YTD × ${workdaysInMonth} dias úteis no mês`,
-    }),
-    metricCard("projected-year", "Projeção anual (YTD)", projectedYear, {
-      asCurrency: true,
-      compact: true,
-      hint: `Média YTD × ${workdaysInYear} dias úteis no ano`,
+      hint: "Pedidos não cancelados sem nota fiscal processada",
     }),
     metricCard("overdue-count", "Pedidos atrasados", overdueSummary.count, {
       hint: EXECUTIVE_OVERDUE_ORDERS_HINT,
     }),
-    metricCard("overdue-value", "Valor atrasado", overdueSummary.net, {
+    metricCard("monthly-gap", "Diferença p/ meta (mês)", monthlyRealizedMinusTarget, {
       asCurrency: true,
-      compact: true,
-      hint: EXECUTIVE_OVERDUE_ORDERS_HINT,
-    }),
-    metricCard("target-achievement", "% meta do mês", target.achievementPercent, {
-      asPercent: true,
-      hint: "Meta = mesmo mês ano anterior × 1,30",
+      hint: EXECUTIVE_TARGET_GAP_HINT,
     }),
   ];
 
   return {
     available: true,
-    source: "SalesOrder.totalNetValue por issueDate; atrasados filtrados por ano selecionado; carteira via nfes.dataProcessamento",
-    periodLabel: ref.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
+    source: "SalesOrder.totalNetValue por issueDate; metas = ano/mês anterior × 1,30",
+    selectedYear: year,
+    previousYear,
+    currentMonth: ref.getMonth() + 1,
+    periodLabel,
     yearLabel: year,
     summaryCards,
-    target,
-    monthlySeries: buildMonthlyEvolution(yearCtx, currentYearMonthly, previousYearMonthly),
-    chartSeries: buildChartSeriesConfig("salesOrders", yearCtx),
+    targets,
+    target: monthlyTarget,
+    projection,
+    monthlySeries,
+    accumulatedEvolution,
+    chartSeries,
     statusBreakdown,
     overdueOrders: {
       count: overdueSummary.count ?? 0,

@@ -2,18 +2,30 @@ import React from "react";
 import { Link } from "react-router-dom";
 import type { SalesOrdersDashboardTab } from "@/src/lib/executiveDashboardTypes";
 import { formatExecutiveCurrency, formatExecutiveInteger } from "@/src/lib/executiveDashboardFormatters";
-import { ExecutiveMonthlyComboChart, ExecutiveTargetPanel } from "@/src/components/dashboard/ExecutiveDashboardCharts";
+import {
+  ExecutiveAccumulatedComboChart,
+  ExecutiveAdministrativeIndicatorsPanel,
+  ExecutiveMonthlyComboChart,
+  ExecutiveRealizedVsProjectedChart,
+  ExecutiveTargetPanel,
+} from "@/src/components/dashboard/ExecutiveDashboardCharts";
 
 function SummaryCards({ cards }: { cards: SalesOrdersDashboardTab["summaryCards"] }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => (
-        <div key={card.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div
+          key={card.id}
+          className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
+          title={card.hint}
+        >
           <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{card.label}</p>
           <p className="mt-2 truncate text-xl font-black lg:text-2xl" title={card.formatted}>
             {card.compactFormatted ?? card.formatted}
           </p>
-          {card.hint ? <p className="mt-1 text-[11px] text-muted-foreground">{card.hint}</p> : null}
+          {card.hint ? (
+            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{card.hint}</p>
+          ) : null}
         </div>
       ))}
     </div>
@@ -21,13 +33,36 @@ function SummaryCards({ cards }: { cards: SalesOrdersDashboardTab["summaryCards"
 }
 
 export function ExecutiveSalesOrdersTab({ tab }: { tab: SalesOrdersDashboardTab }) {
+  const realizedVsMeta = {
+    realized: tab.targets.monthly.actual,
+    projected: tab.projection.annualProjection,
+    target: tab.targets.annual.target,
+    formatted: {
+      realized: tab.targets.monthly.formatted.actual,
+      projected: tab.projection.formatted.annualProjection,
+      target: tab.targets.annual.formatted.target,
+    },
+  };
+
   return (
     <div className="space-y-6">
       <SummaryCards cards={tab.summaryCards} />
-      <ExecutiveTargetPanel title="Realizado vs meta do mês" target={tab.target} />
+      <ExecutiveAdministrativeIndicatorsPanel targets={tab.targets} projection={tab.projection} />
+      <ExecutiveTargetPanel title={`Realizado vs meta do mês (${tab.periodLabel})`} target={tab.targets.monthly} />
       <ExecutiveMonthlyComboChart
         title="Evolução mensal — pedidos emitidos"
         series={tab.monthlySeries}
+        config={tab.chartSeries}
+      />
+      <ExecutiveAccumulatedComboChart
+        title="Acumulado de Pedidos de Venda"
+        subtitle={`Comparativo ${tab.previousYear} vs ${tab.selectedYear} · meta acumulada +30% · projeção por média YTD`}
+        series={tab.accumulatedEvolution}
+        config={tab.chartSeries}
+      />
+      <ExecutiveRealizedVsProjectedChart
+        title="Realizado vs projeção vs meta anual"
+        data={realizedVsMeta}
         config={tab.chartSeries}
       />
 
@@ -63,10 +98,7 @@ export function ExecutiveSalesOrdersTab({ tab }: { tab: SalesOrdersDashboardTab 
               Ver pedidos
             </Link>
           </div>
-          <p
-            className="mb-3 text-sm text-muted-foreground"
-            title={tab.overdueOrders.description}
-          >
+          <p className="mb-3 text-sm text-muted-foreground" title={tab.overdueOrders.description}>
             {formatExecutiveInteger(tab.overdueOrders.count)} pedido(s) ·{" "}
             {tab.overdueOrders.formattedTotalValue}
           </p>
