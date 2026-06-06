@@ -101,7 +101,6 @@ const QUALITY_ALERT_KEYS = new Set<FinanceArDataQualityAlertKey>([
   "negativeBalance",
   "receivedGreaterThanReceivable",
   "suspendedCollectionOpen",
-  "missingSourceInvoice",
   "overdueOver30Days",
   "overdueOver60Days",
   "overdueOver90Days",

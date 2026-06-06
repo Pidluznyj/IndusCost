@@ -7,6 +7,7 @@ import {
   buildFinanceArExportQuery,
   buildFinanceArYearOptions,
   EMPTY_FINANCE_AR_UI_FILTERS,
+  FINANCE_AR_INVOICE_ISSUED_OPTIONS,
   FINANCE_AR_MONTH_OPTIONS,
   FINANCE_AR_STATUS_OPTIONS,
   FINANCE_AR_TABS,
@@ -34,6 +35,7 @@ import {
   FinanceArScheduleTab,
 } from "@/src/components/finance/FinanceAccountsReceivableTabPanels";
 import { FinanceAccountsReceivableDataQualityPanel } from "@/src/components/finance/FinanceAccountsReceivableDataQualityPanel";
+import { FinanceArInvoicePortfolioPanel } from "@/src/components/finance/FinanceAccountsReceivableInvoicePortfolioPanel";
 import { FinanceAccountsReceivableSyncPanel } from "@/src/components/finance/FinanceAccountsReceivableSyncPanel";
 import { FinanceArTitlesTab } from "@/src/components/finance/FinanceAccountsReceivableTitlesTab";
 import {
@@ -162,8 +164,13 @@ export function FinanceAccountsReceivablePage() {
     effectiveFilters.month ||
     effectiveFilters.dueDateFrom ||
     effectiveFilters.dueDateTo ||
+    effectiveFilters.invoiceIssued !== "all" ||
     effectiveFilters.paymentMethodName ||
     effectiveFilters.bankAccountName;
+
+  const handleFilterInvoiceIssued = (value: "all" | "yes" | "no") => {
+    setFilters((f) => ({ ...f, invoiceIssued: value }));
+  };
 
   return (
     <div className="space-y-5 pb-8">
@@ -312,6 +319,12 @@ export function FinanceAccountsReceivablePage() {
             onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
             options={FINANCE_AR_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           />
+          <FilterSelect
+            label="NF Emitida?"
+            value={filters.invoiceIssued}
+            onChange={(v) => setFilters((f) => ({ ...f, invoiceIssued: v }))}
+            options={FINANCE_AR_INVOICE_ISSUED_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          />
           <FilterInput label="Empresa" value={filters.companyName} onChange={(v) => setFilters((f) => ({ ...f, companyName: v }))} />
           <FilterInput label="Cliente" value={filters.personName} onChange={(v) => setFilters((f) => ({ ...f, personName: v }))} />
           <FilterInput label="CNPJ" value={filters.personCnpj} onChange={(v) => setFilters((f) => ({ ...f, personCnpj: v }))} />
@@ -319,6 +332,13 @@ export function FinanceAccountsReceivablePage() {
           <FilterInput label="Conta bancária" value={filters.bankAccountName} onChange={(v) => setFilters((f) => ({ ...f, bankAccountName: v }))} />
         </div>
       </section>
+
+      <FinanceArInvoicePortfolioPanel
+        cards={cards}
+        activeFilter={effectiveFilters.invoiceIssued}
+        loading={loading}
+        onFilterInvoiceIssued={handleFilterInvoiceIssued}
+      />
 
       {loading && !data ? (
         <FinanceArLoadingBlock label="alertas e indicadores" />

@@ -100,4 +100,17 @@ describe("buildFinanceArDashboardQuery", () => {
     assert.match(qs, new RegExp(`year=${currentYear}`));
     assert.match(qs, /month=3/);
   });
+
+  it("envia invoiceIssued quando diferente de all", () => {
+    const qs = buildFinanceArDashboardQuery({
+      ...EMPTY_FINANCE_AR_UI_FILTERS,
+      invoiceIssued: "no",
+    });
+    assert.match(qs, /invoiceIssued=no/);
+  });
+
+  it("não envia invoiceIssued=all", () => {
+    const qs = buildFinanceArDashboardQuery(EMPTY_FINANCE_AR_UI_FILTERS);
+    assert.doesNotMatch(qs, /invoiceIssued=/);
+  });
 });

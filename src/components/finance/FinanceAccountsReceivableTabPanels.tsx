@@ -73,6 +73,9 @@ export function FinanceArKpiGrid({
       <Kpi label="Clientes em atraso" value={formatFinanceInteger(cards?.overdueCustomersCount)} hint="Clientes com título vencido" loading={loading} />
       <Kpi label="Vencendo em 7 dias" value={formatFinanceCurrencyCompact(cards?.dueNext7DaysAmount)} hint="Hoje até +7 dias" loading={loading} />
       <Kpi label="Vencendo em 30 dias" value={formatFinanceCurrencyCompact(cards?.dueNext30DaysAmount)} hint="Hoje até +30 dias" loading={loading} />
+      <Kpi label="Em aberto com NF" value={formatFinanceCurrencyCompact(cards?.openWithInvoiceAmount)} hint={`${formatFinanceInteger(cards?.openWithInvoiceCount)} títulos faturados`} loading={loading} />
+      <Kpi label="Em aberto pré-NF" value={formatFinanceCurrencyCompact(cards?.openWithoutInvoiceAmount)} hint={`${formatFinancePercent(cards?.preInvoiceShareOfOpenPercent)} da carteira`} loading={loading} />
+      <Kpi label="Vencido pré-NF" value={formatFinanceCurrencyCompact(cards?.overdueWithoutInvoiceAmount)} hint="Sem NF vinculada" loading={loading} />
     </div>
   );
 }

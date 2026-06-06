@@ -3,6 +3,7 @@ import {
   classifyFinanceArTitle,
   computeDaysOverdue,
   filterFinanceArRows,
+  hasFinanceArSourceInvoice,
   roundMoney,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
@@ -10,10 +11,12 @@ import {
 import { formatFinanceCalculatedStatus } from "./financeAccountsReceivableFormat.js";
 
 export const FINANCE_AR_EXPORT_HEADERS = [
-  "ID Nomus",  "Empresa",
+  "ID Nomus",
+  "Empresa",
   "Cliente",
   "CNPJ",
   "Descrição lançamento",
+  "NF emitida",
   "NF origem",
   "Data vencimento",
   "Data baixa",
@@ -65,6 +68,7 @@ export function mapFinanceArRowToExportCells(
     row.personName?.trim() ?? "",
     row.personCnpj?.trim() ?? "",
     row.description?.trim() ?? "",
+    hasFinanceArSourceInvoice(row) ? "Sim" : "Não",
     nfOrigem(row),
     formatExportDate(row.dueDate),
     formatExportDate(row.settlementDate),

@@ -14,7 +14,6 @@ export type FinanceArDataQualityAlertKey =
   | "negativeBalance"
   | "receivedGreaterThanReceivable"
   | "suspendedCollectionOpen"
-  | "missingSourceInvoice"
   | "overdueOver30Days"
   | "overdueOver60Days"
   | "overdueOver90Days";
@@ -39,7 +38,6 @@ export type FinanceArDataQualityAlertsLegacy = {
   negativeBalance: number;
   receivedGreaterThanReceivable: number;
   suspendedCollectionOpen: number;
-  missingSourceInvoice: number;
   overdueOver30Days: number;
   overdueOver60Days: number;
   overdueOver90Days: number;
@@ -53,7 +51,6 @@ export function createFinanceArDataQualityAccumulator(): FinanceArDataQualityAle
     negativeBalance: { count: 0, amount: 0 },
     receivedGreaterThanReceivable: { count: 0, amount: 0 },
     suspendedCollectionOpen: { count: 0, amount: 0 },
-    missingSourceInvoice: { count: 0, amount: 0 },
     overdueOver30Days: { count: 0, amount: 0 },
     overdueOver60Days: { count: 0, amount: 0 },
     overdueOver90Days: { count: 0, amount: 0 },
@@ -85,9 +82,6 @@ export function trackFinanceArDataQualityRow(
   }
   if (!row.paymentMethodName?.trim()) {
     bump(acc, "missingPaymentMethod", open ? balance : 0);
-  }
-  if (!row.sourceInvoiceId && !row.sourceInvoiceNumber?.trim()) {
-    bump(acc, "missingSourceInvoice", open ? balance : 0);
   }
 
   if (!open) return;
@@ -127,7 +121,6 @@ const ALERT_DEFS: Array<{
     severity: "warning",
     includeAmount: true,
   },
-  { key: "missingSourceInvoice", label: "Títulos sem NF vinculada", severity: "info", includeAmount: true },
   { key: "overdueOver30Days", label: "Vencidos acima de 30 dias", severity: "warning", includeAmount: true },
   { key: "overdueOver60Days", label: "Vencidos acima de 60 dias", severity: "critical", includeAmount: true },
   { key: "overdueOver90Days", label: "Vencidos acima de 90 dias", severity: "critical", includeAmount: true },
@@ -158,7 +151,6 @@ export function financeArDataQualityAlertsLegacy(
     negativeBalance: acc.negativeBalance.count,
     receivedGreaterThanReceivable: acc.receivedGreaterThanReceivable.count,
     suspendedCollectionOpen: acc.suspendedCollectionOpen.count,
-    missingSourceInvoice: acc.missingSourceInvoice.count,
     overdueOver30Days: acc.overdueOver30Days.count,
     overdueOver60Days: acc.overdueOver60Days.count,
     overdueOver90Days: acc.overdueOver90Days.count,
@@ -184,8 +176,6 @@ export function rowMatchesFinanceArQualityAlert(
       return row.amountReceived > row.amountReceivable && row.amountReceivable > 0;
     case "suspendedCollectionOpen":
       return open && row.suspendCollection === true;
-    case "missingSourceInvoice":
-      return !row.sourceInvoiceId && !row.sourceInvoiceNumber?.trim();
     case "overdueOver30Days":
     case "overdueOver60Days":
     case "overdueOver90Days": {

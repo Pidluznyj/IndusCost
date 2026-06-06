@@ -6,6 +6,7 @@ import {
   computeDaysOverdue,
   filterFinanceArRows,
   FinanceArFilterParseError,
+  hasFinanceArSourceInvoice,
   parseFinanceArDashboardFilters,
   resolveFinanceArDueDateBounds,
   resolveFinanceArCustomerKey,
@@ -171,9 +172,79 @@ describe("financeAccountsReceivableDashboard", () => {
     assert.equal(dash.dataQualityAlerts.missingPersonCnpj, 1);
     assert.equal(dash.dataQualityAlerts.missingPaymentMethod, 1);
     assert.equal(dash.dataQualityAlerts.receivedGreaterThanReceivable, 1);
-    assert.equal(dash.dataQualityAlerts.missingSourceInvoice, 1);
     assert.equal(dash.dataQualityAlerts.suspendedCollectionOpen, 1);
     assert.ok(dash.dataQualitySummary.length >= 5);
+  });
+
+  it("segmenta carteira em aberto com e sem NF emitida", () => {
+    const rows = [
+      row({
+        externalId: 1,
+        balanceReceivable: 100,
+        dueDate: new Date(2026, 5, 1),
+        sourceInvoiceId: 10,
+        sourceInvoiceNumber: "NF-10",
+      }),
+      row({
+        externalId: 2,
+        balanceReceivable: 200,
+        dueDate: new Date(2026, 5, 20),
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+      }),
+      row({
+        externalId: 3,
+        balanceReceivable: 0,
+        dueDate: new Date(2026, 5, 1),
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+      }),
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.cards.openWithInvoiceCount, 1);
+    assert.equal(dash.cards.openWithoutInvoiceCount, 1);
+    assert.equal(dash.cards.openWithInvoiceAmount, 100);
+    assert.equal(dash.cards.openWithoutInvoiceAmount, 200);
+    assert.equal(dash.cards.preInvoiceShareOfOpenPercent, 66.67);
+  });
+
+  it("hasFinanceArSourceInvoice detecta id ou número", () => {
+    assert.equal(hasFinanceArSourceInvoice({ sourceInvoiceId: 1, sourceInvoiceNumber: null }), true);
+    assert.equal(
+      hasFinanceArSourceInvoice({ sourceInvoiceId: null, sourceInvoiceNumber: "123" }),
+      true
+    );
+    assert.equal(
+      hasFinanceArSourceInvoice({ sourceInvoiceId: null, sourceInvoiceNumber: null }),
+      false
+    );
+  });
+
+  it("filterFinanceArRows filtra invoiceIssued yes/no", () => {
+    const rows = [
+      row({ externalId: 1, sourceInvoiceId: 1, sourceInvoiceNumber: "NF-1" }),
+      row({ externalId: 2, sourceInvoiceId: null, sourceInvoiceNumber: null }),
+    ];
+    const withInvoice = filterFinanceArRows(rows, { status: "all", invoiceIssued: "yes" }, REF);
+    const preInvoice = filterFinanceArRows(rows, { status: "all", invoiceIssued: "no" }, REF);
+    assert.deepEqual(
+      withInvoice.map((r) => r.externalId),
+      [1]
+    );
+    assert.deepEqual(
+      preInvoice.map((r) => r.externalId),
+      [2]
+    );
+  });
+
+  it("parseFinanceArDashboardFilters interpreta invoiceIssued", () => {
+    assert.equal(parseFinanceArDashboardFilters({ invoiceIssued: "yes" }).invoiceIssued, "yes");
+    assert.equal(parseFinanceArDashboardFilters({ invoiceIssued: "nao" }).invoiceIssued, "no");
+    assert.equal(parseFinanceArDashboardFilters({}).invoiceIssued, "all");
+    assert.throws(
+      () => parseFinanceArDashboardFilters({ invoiceIssued: "talvez" }),
+      FinanceArFilterParseError
+    );
   });
 
   it("parseFinanceArDashboardFilters interpreta query params", () => {

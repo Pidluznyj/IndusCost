@@ -59,6 +59,17 @@ describe("financeAccountsReceivableExport", () => {
     assert.doesNotMatch(csv, /\n3,/);
   });
 
+  it("export inclui coluna NF emitida e respeita filtro invoiceIssued", () => {
+    const rows = [
+      row({ externalId: 1, sourceInvoiceId: 10, sourceInvoiceNumber: "NF-10" }),
+      row({ externalId: 2, sourceInvoiceId: null, sourceInvoiceNumber: null }),
+    ];
+    const csv = buildFinanceArExportCsv(rows, { status: "all", invoiceIssued: "no" }, REF);
+    assert.ok(csv.includes("NF emitida"));
+    assert.match(csv, /Não/);
+    assert.doesNotMatch(csv, /\n1,/);
+  });
+
   it("células exportadas não contêm NaN", () => {
     const cells = mapFinanceArRowToExportCells(row({ externalId: 1 }), REF);
     assert.ok(financeArExportCellsSafe(cells));

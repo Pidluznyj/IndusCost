@@ -210,4 +210,9 @@ describe("financeAccountsReceivableTitles", () => {
     assert.equal(q.filters.year, 2026);
     assert.equal(q.filters.month, 6);
   });
+
+  it("parseFinanceArTitlesQuery interpreta invoiceIssued", () => {
+    const q = parseFinanceArTitlesQuery({ invoiceIssued: "yes", page: "1" });
+    assert.equal(q.filters.invoiceIssued, "yes");
+  });
 });

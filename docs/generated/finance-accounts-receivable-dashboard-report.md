@@ -523,11 +523,56 @@ Bloco **Período de vencimento** nos filtros globais (paridade BI), com:
 - **Mês Vencimento** — select, opção “Todos” + meses em português
 - **Vencimento de / até** — intervalo complementar
 
-Campos de cliente, forma de pagamento e demais filtros ficam abaixo deste bloco. Botão **Limpar filtros** zera também ano e mês.
+Campos de cliente, forma de pagamento e demais filtros ficam abaixo deste bloco. Botão **Limpar filtros** zera também ano, mês e NF emitida.
 
-Filtros reservados (não implementados): Dia Vencimento, Status Baixa, NF Emitida? — ver `FinanceArUiFiltersFuture`.
+Filtros reservados (não implementados): Dia Vencimento, Status Baixa — ver `FinanceArUiFiltersFuture`.
 
-### Testes executados (MONTH-YEAR-FILTER)
+---
+
+## Filtro NF Emitida? e carteira pré-NF
+
+**Fase:** FINANCE-AR-INVOICE-FILTER  
+**Contexto:** No Nomus, títulos de contas a receber podem existir **antes** da NF de expedição (`idNfe` / `numeroNotaFiscalOrigem` vazios). Isso é operacional esperado, não erro de dado.
+
+### Parâmetro
+
+| Query param | Valores | Regra |
+|---|---|---|
+| `invoiceIssued` | omitido / `all` | Todos os títulos |
+| | `yes`, `sim`, `true`, `1` | `sourceInvoiceId` ou `sourceInvoiceNumber` preenchido |
+| | `no`, `nao`, `false`, `0` | Carteira pré-NF (sem NF vinculada) |
+
+Inválido → **400** amigável.
+
+### Backend
+
+- `hasFinanceArSourceInvoice(row)` — helper compartilhado
+- `filterFinanceArRows` aplica o filtro junto com demais filtros
+- Endpoints: dashboard, titles, export
+
+### KPIs segmentados (`cards`)
+
+| Campo | Descrição |
+|---|---|
+| `openWithInvoiceCount` / `openWithInvoiceAmount` | Em aberto com NF |
+| `openWithoutInvoiceCount` / `openWithoutInvoiceAmount` | Em aberto pré-NF |
+| `overdueWithInvoiceAmount` / `overdueWithoutInvoiceAmount` | Vencido por segmento |
+| `preInvoiceShareOfOpenPercent` | % pré-NF sobre carteira em aberto |
+
+### UI
+
+- Select **NF Emitida?** (Todos / Sim / Não) nos filtros globais
+- Painel **Carteira por NF emitida** — cartões clicáveis filtram Sim/Não
+- KPIs extras na Visão Geral
+- Export CSV: coluna **NF emitida** (Sim/Não)
+
+### Alertas de qualidade
+
+Removido alerta **“Títulos sem NF vinculada”** — substituído pela segmentação operacional acima.
+
+### Testes
+
+`npm run test:finance:accounts-receivable` — 72 testes incluindo parse, filtro, KPIs, export e query string.
 
 | Comando | Escopo |
 |---|---|

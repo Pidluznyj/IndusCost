@@ -174,6 +174,7 @@ export function FinanceArTitlesTab({
                 <th className="p-2 min-w-[120px]">Cliente</th>
                 <th className="p-2 whitespace-nowrap">CNPJ</th>
                 <th className="p-2 min-w-[140px]">Descrição</th>
+                <th className="p-2 whitespace-nowrap">NF emitida</th>
                 <th className="p-2 whitespace-nowrap">NF origem</th>
                 <th className="p-2 whitespace-nowrap">Vencimento</th>
                 <th className="p-2 whitespace-nowrap">Data baixa</th>
@@ -198,6 +199,11 @@ export function FinanceArTitlesTab({
                   <td className="p-2 font-mono text-xs">{displayFinanceText(row.personCnpj)}</td>
                   <td className="p-2 max-w-[180px] truncate" title={row.description ?? undefined}>
                     {displayFinanceText(row.description)}
+                  </td>
+                  <td className="p-2 text-xs font-semibold">
+                    {row.sourceInvoiceId != null || row.sourceInvoiceNumber?.trim()
+                      ? "Sim"
+                      : "Não"}
                   </td>
                   <td className="p-2 font-mono text-xs">
                     {displayFinanceText(

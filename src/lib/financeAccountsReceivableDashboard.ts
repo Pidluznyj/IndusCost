@@ -16,6 +16,8 @@ export type FinanceArTitleStatus =
   | "suspended"
   | "all";
 
+export type FinanceArInvoiceIssuedFilter = "all" | "yes" | "no";
+
 export type FinanceArDashboardFilters = {
   companyName?: string;
   personName?: string;
@@ -27,6 +29,7 @@ export type FinanceArDashboardFilters = {
   dueDateTo?: Date;
   paymentMethodName?: string;
   bankAccountName?: string;
+  invoiceIssued?: FinanceArInvoiceIssuedFilter;
 };
 
 export class FinanceArFilterParseError extends Error {
@@ -180,6 +183,13 @@ export function isFinanceArSettled(row: Pick<FinanceArDashboardRow, "balanceRece
   return row.balanceReceivable <= 0;
 }
 
+/** Título com NF de origem vinculada no Nomus (`idNfe` ou `numeroNotaFiscalOrigem`). */
+export function hasFinanceArSourceInvoice(
+  row: Pick<FinanceArDashboardRow, "sourceInvoiceId" | "sourceInvoiceNumber">
+): boolean {
+  return row.sourceInvoiceId != null || Boolean(row.sourceInvoiceNumber?.trim());
+}
+
 function normalizeFilterText(value: string | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -285,6 +295,18 @@ export function resolveFinanceArDueDateBounds(
   return { from, toExclusive, empty };
 }
 
+function parseInvoiceIssuedFilter(value: unknown): FinanceArInvoiceIssuedFilter {
+  const raw = parseOptionalQueryString(value);
+  if (raw === null) return "all";
+  const normalized = raw.toLowerCase();
+  if (normalized === "all" || normalized === "todos") return "all";
+  if (["yes", "sim", "true", "1", "s"].includes(normalized)) return "yes";
+  if (["no", "nao", "não", "false", "0", "n"].includes(normalized)) return "no";
+  throw new FinanceArFilterParseError(
+    'NF emitida inválida. Use "yes", "no" ou omita para todos.'
+  );
+}
+
 export function parseFinanceArDashboardFilters(query: Record<string, unknown>): FinanceArDashboardFilters {
   const year = parseYearFilter(query.year);
   const month = parseMonthFilter(query.month, year != null);
@@ -300,6 +322,7 @@ export function parseFinanceArDashboardFilters(query: Record<string, unknown>): 
     paymentMethodName:
       typeof query.paymentMethodName === "string" ? query.paymentMethodName : undefined,
     bankAccountName: typeof query.bankAccountName === "string" ? query.bankAccountName : undefined,
+    invoiceIssued: parseInvoiceIssuedFilter(query.invoiceIssued),
   };
 }
 
@@ -379,6 +402,13 @@ export function filterFinanceArRows(
       return false;
     }
 
+    const invoiceFilter = filters.invoiceIssued ?? "all";
+    if (invoiceFilter !== "all") {
+      const hasInvoice = hasFinanceArSourceInvoice(row);
+      if (invoiceFilter === "yes" && !hasInvoice) return false;
+      if (invoiceFilter === "no" && hasInvoice) return false;
+    }
+
     if (filters.status === "all") return true;
     const status = classifyFinanceArTitle(row, today);
     if (filters.status === "open") return isFinanceArOpen(row);
@@ -412,6 +442,13 @@ export function buildFinanceAccountsReceivableDashboard(
   let dueNext30DaysAmount = 0;
   let receivedThisMonthAmount = 0;
   let lastSyncAt: Date | null = null;
+
+  let openWithInvoiceCount = 0;
+  let openWithoutInvoiceCount = 0;
+  let openWithInvoiceAmount = 0;
+  let openWithoutInvoiceAmount = 0;
+  let overdueWithInvoiceAmount = 0;
+  let overdueWithoutInvoiceAmount = 0;
 
   const overdueCustomers = new Set<string>();
 
@@ -518,12 +555,23 @@ export function buildFinanceAccountsReceivableDashboard(
     const balance = row.balanceReceivable;
     totalOpenAmount += balance;
 
+    const hasInvoice = hasFinanceArSourceInvoice(row);
+    if (hasInvoice) {
+      openWithInvoiceCount += 1;
+      openWithInvoiceAmount += balance;
+    } else {
+      openWithoutInvoiceCount += 1;
+      openWithoutInvoiceAmount += balance;
+    }
+
     const status = classifyFinanceArTitle(row, today);
     const customerKey = resolveFinanceArCustomerKey(row);
 
     if (status === "overdue") {
       overdueAmount += balance;
       overdueCustomers.add(customerKey);
+      if (hasInvoice) overdueWithInvoiceAmount += balance;
+      else overdueWithoutInvoiceAmount += balance;
     } else if (status === "dueToday") {
       dueTodayAmount += balance;
     } else if (status === "upcoming") {
@@ -786,6 +834,15 @@ export function buildFinanceAccountsReceivableDashboard(
       openTitlesCount,
       settledTitlesCount,
       totalOpenAmount: roundMoney(totalOpenAmount),
+      openWithInvoiceCount,
+      openWithoutInvoiceCount,
+      openWithInvoiceAmount: roundMoney(openWithInvoiceAmount),
+      openWithoutInvoiceAmount: roundMoney(openWithoutInvoiceAmount),
+      overdueWithInvoiceAmount: roundMoney(overdueWithInvoiceAmount),
+      overdueWithoutInvoiceAmount: roundMoney(overdueWithoutInvoiceAmount),
+      preInvoiceShareOfOpenPercent: roundMoney(
+        safeRatio(openWithoutInvoiceAmount, totalOpenAmount) * 100
+      ),
       overdueAmount: roundMoney(overdueAmount),
       dueTodayAmount: roundMoney(dueTodayAmount),
       upcomingAmount: roundMoney(upcomingAmount),

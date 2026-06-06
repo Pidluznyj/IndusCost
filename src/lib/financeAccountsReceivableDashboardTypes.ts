@@ -11,6 +11,7 @@ export type FinanceArDashboardFiltersApplied = {
   dueDateTo?: Date;
   paymentMethodName?: string;
   bankAccountName?: string;
+  invoiceIssued?: string;
 };
 
 export type FinanceArDashboardCards = {
@@ -18,6 +19,13 @@ export type FinanceArDashboardCards = {
   openTitlesCount: number;
   settledTitlesCount: number;
   totalOpenAmount: number;
+  openWithInvoiceCount: number;
+  openWithoutInvoiceCount: number;
+  openWithInvoiceAmount: number;
+  openWithoutInvoiceAmount: number;
+  overdueWithInvoiceAmount: number;
+  overdueWithoutInvoiceAmount: number;
+  preInvoiceShareOfOpenPercent: number;
   overdueAmount: number;
   dueTodayAmount: number;
   upcomingAmount: number;
@@ -119,7 +127,6 @@ export type FinanceArDataQualityAlerts = {
   negativeBalance: number;
   receivedGreaterThanReceivable: number;
   suspendedCollectionOpen: number;
-  missingSourceInvoice: number;
   overdueOver30Days: number;
   overdueOver60Days: number;
   overdueOver90Days: number;
@@ -171,6 +178,8 @@ export type FinanceArUiFilters = {
   month: string;
   dueDateFrom: string;
   dueDateTo: string;
+  /** NF Emitida? — `yes` com NF vinculada, `no` carteira pré-NF. */
+  invoiceIssued: string;
   paymentMethodName: string;
   bankAccountName: string;
 };
@@ -181,15 +190,18 @@ export type FinanceArUiFiltersFuture = {
   dueDay?: string;
   /** Status Baixa */
   settlementStatus?: string;
-  /** NF Emitida? */
-  invoiceIssued?: string;
 };
 
 export const FINANCE_AR_FUTURE_FILTER_KEYS = [
   "dueDay",
   "settlementStatus",
-  "invoiceIssued",
 ] as const satisfies ReadonlyArray<keyof FinanceArUiFiltersFuture>;
+
+export const FINANCE_AR_INVOICE_ISSUED_OPTIONS = [
+  { value: "all", label: "Todos" },
+  { value: "yes", label: "Sim" },
+  { value: "no", label: "Não" },
+] as const;
 
 export const FINANCE_AR_STATUS_OPTIONS = [
   { value: "all", label: "Todos" },
@@ -210,6 +222,7 @@ export const EMPTY_FINANCE_AR_UI_FILTERS: FinanceArUiFilters = {
   month: "",
   dueDateFrom: "",
   dueDateTo: "",
+  invoiceIssued: "all",
   paymentMethodName: "",
   bankAccountName: "",
 };
@@ -291,7 +304,6 @@ export type FinanceArDataQualityAlertKey =
   | "negativeBalance"
   | "receivedGreaterThanReceivable"
   | "suspendedCollectionOpen"
-  | "missingSourceInvoice"
   | "overdueOver30Days"
   | "overdueOver60Days"
   | "overdueOver90Days";
@@ -312,6 +324,7 @@ export function buildFinanceArDashboardQuery(filters: FinanceArUiFilters): strin
   if (normalized.month.trim()) q.set("month", normalized.month.trim());
   if (normalized.dueDateFrom.trim()) q.set("dueDateFrom", normalized.dueDateFrom.trim());
   if (normalized.dueDateTo.trim()) q.set("dueDateTo", normalized.dueDateTo.trim());
+  if (normalized.invoiceIssued !== "all") q.set("invoiceIssued", normalized.invoiceIssued);
   if (normalized.paymentMethodName.trim()) {
     q.set("paymentMethodName", normalized.paymentMethodName.trim());
   }
