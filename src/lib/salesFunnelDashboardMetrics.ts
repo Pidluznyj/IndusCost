@@ -57,7 +57,7 @@ function metricCard(
   opts?: { hint?: string; asCurrency?: boolean; compact?: boolean; asPercent?: boolean; countLabel?: string }
 ): DashboardMetricCard {
   const formatted = opts?.asPercent
-    ? `${formatExecutivePercent(value, 1)}%`
+    ? formatExecutivePercent(value, 1)
     : opts?.asCurrency
       ? formatExecutiveCurrency(value)
       : formatExecutiveInteger(value);
@@ -82,9 +82,9 @@ function formatStage(stage: {
     value: formatExecutiveCurrency(stage.value),
     compactValue: formatExecutiveCompactCurrency(stage.value),
     percentOfEmitted:
-      stage.percentOfEmitted != null ? `${formatExecutivePercent(stage.percentOfEmitted, 1)}%` : "—",
+      stage.percentOfEmitted != null ? formatExecutivePercent(stage.percentOfEmitted, 1) : "—",
     percentOfValid:
-      stage.percentOfValid != null ? `${formatExecutivePercent(stage.percentOfValid, 1)}%` : "—",
+      stage.percentOfValid != null ? formatExecutivePercent(stage.percentOfValid, 1) : "—",
   };
 }
 
@@ -528,7 +528,7 @@ export async function buildSalesFunnelDashboardTab(
     metricCard("funnel-invoiced-count", "Faturados", totals.invoicedCount, {
       hint:
         invoicedPercent != null
-          ? `${formatExecutivePercent(invoicedPercent, 1)}% dos válidos`
+          ? `${formatExecutivePercent(invoicedPercent, 1)} dos válidos`
           : undefined,
     }),
     metricCard("funnel-invoiced-value", "Valor faturado", totals.invoicedValue, {
@@ -537,7 +537,7 @@ export async function buildSalesFunnelDashboardTab(
     }),
     metricCard("funnel-open-count", "Carteira aberta", totals.openCount, {
       hint:
-        openPercent != null ? `${formatExecutivePercent(openPercent, 1)}% dos válidos` : undefined,
+        openPercent != null ? `${formatExecutivePercent(openPercent, 1)} dos válidos` : undefined,
     }),
     metricCard("funnel-open-value", "Valor em aberto", totals.openValue, {
       asCurrency: true,
@@ -558,7 +558,7 @@ export async function buildSalesFunnelDashboardTab(
     metricCard("funnel-cancelled-count", "Cancelados", totals.cancelledCount, {
       hint:
         cancelledPercent != null
-          ? `${formatExecutivePercent(cancelledPercent, 1)}% dos emitidos`
+          ? `${formatExecutivePercent(cancelledPercent, 1)} dos emitidos`
           : undefined,
     }),
     metricCard("funnel-cancelled-value", "Valor cancelado", totals.cancelledValue, {

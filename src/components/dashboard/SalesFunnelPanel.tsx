@@ -301,11 +301,11 @@ export function SalesFunnelPanel({
                   yAxisId="right"
                   orientation="right"
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => `${formatExecutivePercent(Number(v), 1)}%`}
+                  tickFormatter={(v) => formatExecutivePercent(Number(v), 1)}
                 />
                 <Tooltip
                   formatter={(value: number, name: string) => {
-                    if (name === "Conversão") return `${formatExecutivePercent(value, 1)}%`;
+                    if (name === "Conversão") return formatExecutivePercent(value, 1);
                     return formatExecutiveCurrency(value);
                   }}
                 />
@@ -375,7 +375,7 @@ export function SalesFunnelPanel({
               <p className="text-[10px] font-bold uppercase text-muted-foreground">{row.monthLabel}</p>
               <p className="mt-1 text-lg font-black">
                 {row.conversionPercent != null
-                  ? `${formatExecutivePercent(row.conversionPercent, 1)}%`
+                  ? formatExecutivePercent(row.conversionPercent, 1)
                   : "—"}
               </p>
               <p className="mt-1 text-[10px] text-muted-foreground">

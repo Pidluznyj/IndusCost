@@ -29,10 +29,11 @@ export function formatExecutiveDecimal(value: number | null, decimals = 2): stri
 
 export function formatExecutivePercent(value: number | null, decimals: 1 | 2 = 1): string {
   if (value == null || !Number.isFinite(value)) return "Não disponível";
-  return new Intl.NumberFormat("pt-BR", {
+  const formatted = new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(value);
+  return `${formatted}%`;
 }
 
 /** Valores grandes abreviados para cards executivos. */

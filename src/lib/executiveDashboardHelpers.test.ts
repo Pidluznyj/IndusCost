@@ -81,8 +81,22 @@ describe("executiveDashboardFormatters", () => {
     assert.equal(formatExecutiveDecimal(123.456789), "123,46");
   });
 
-  it("formatExecutivePercent uses max 2 decimals", () => {
-    assert.equal(formatExecutivePercent(12.3456, 2), "12,35");
+  it("formatExecutivePercent uses max 2 decimals and includes percent symbol", () => {
+    assert.equal(formatExecutivePercent(12.3456, 2), "12,35%");
+    assert.equal(formatExecutivePercent(42.1, 1), "42,1%");
+    assert.equal(formatExecutivePercent(-49.7, 1), "-49,7%");
+  });
+
+  it("formatExecutivePercent rejects invalid values without percent symbol", () => {
+    assert.equal(formatExecutivePercent(null), "Não disponível");
+    assert.equal(formatExecutivePercent(NaN), "Não disponível");
+    assert.doesNotMatch(formatExecutivePercent(null), /%/);
+    assert.doesNotMatch(formatExecutivePercent(NaN), /NaN/);
+  });
+
+  it("formatExecutiveInteger and currency are unchanged", () => {
+    assert.doesNotMatch(formatExecutiveInteger(1500), /%/);
+    assert.match(formatExecutiveCurrency(100), /^R\$/);
   });
 
   it("formatMetric aliases use executive formatting", () => {

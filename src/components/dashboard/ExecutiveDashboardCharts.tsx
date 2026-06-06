@@ -75,7 +75,7 @@ function MonthlyExecutiveTooltip({
     if (point.achievementPercent != null) {
       rows.push({
         label: "Atingimento",
-        value: `${formatExecutivePercent(point.achievementPercent, 1)}%`,
+        value: formatExecutivePercent(point.achievementPercent, 1),
       });
     }
   } else {
@@ -215,7 +215,7 @@ function AccumulatedExecutiveTooltip({
     if (point.achievementPercent != null) {
       rows.push({
         label: "Atingimento acumulado",
-        value: `${formatExecutivePercent(point.achievementPercent, 1)}%`,
+        value: formatExecutivePercent(point.achievementPercent, 1),
       });
     }
   } else {
