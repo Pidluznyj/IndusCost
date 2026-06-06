@@ -1,7 +1,7 @@
 # Correção — Visão Executiva baseada em Pedidos de Venda
 
 **Data:** 2026-06-05  
-**Commit:** _(preenchido após commit)_
+**Commit:** `9b7568d`
 
 ---
 
