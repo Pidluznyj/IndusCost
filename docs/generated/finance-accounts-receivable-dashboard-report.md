@@ -475,10 +475,13 @@ Valores inválidos retornam **400** com mensagem amigável (não 500). `NaN` nã
 
 ### Regra de vencimento (`dueDate`)
 
-Intervalos calculados em **dia local** (`startOfLocalDay` / `endOfLocalDay`), consistente com o restante do dashboard:
+Intervalos calculados em **dia local** (`startOfLocalDay`), consistente com o restante do dashboard:
 
-- **Ano:** `dueDate` de 1/jan até 31/dez do ano (inclusive por dia local).
-- **Ano + mês:** `dueDate` do 1º ao último dia do mês (inclusive por dia local).
+- **Ano:** `dueDate >= 1/jan 00:00` e `dueDate < 1/jan do ano seguinte`.
+- **Ano + mês:** `dueDate >= 1º dia do mês 00:00` e `dueDate < 1º dia do mês seguinte`  
+  (ex.: Jun/2026 → `>= 2026-06-01` e `< 2026-07-01`).
+
+`dueDateFrom`/`dueDateTo` usam a mesma semântica half-open na interseção (`dueDateTo` inclusive = limite exclusivo no dia seguinte).
 
 Títulos sem `dueDate` são excluídos quando há filtro de data ativo.
 
@@ -514,7 +517,15 @@ O payload do dashboard inclui `filtersApplied` com `year`, `month`, `dueDateFrom
 
 ### UI
 
-Campos **Ano de vencimento** e **Mês de vencimento** no bloco de filtros globais, adjacentes a “Vencimento de/até”. Botão **Limpar filtros** zera também ano e mês.
+Bloco **Período de vencimento** nos filtros globais (paridade BI), com:
+
+- **Ano Vencimento** — select, opção “Todos” + anos recentes
+- **Mês Vencimento** — select, opção “Todos” + meses em português
+- **Vencimento de / até** — intervalo complementar
+
+Campos de cliente, forma de pagamento e demais filtros ficam abaixo deste bloco. Botão **Limpar filtros** zera também ano e mês.
+
+Filtros reservados (não implementados): Dia Vencimento, Status Baixa, NF Emitida? — ver `FinanceArUiFiltersFuture`.
 
 ### Testes executados (MONTH-YEAR-FILTER)
 

@@ -261,6 +261,17 @@ describe("financeAccountsReceivableDashboard", () => {
     );
   });
 
+  it("resolveFinanceArDueDateBounds usa intervalo half-open para mês", () => {
+    const bounds = resolveFinanceArDueDateBounds({ year: 2026, month: 6 });
+    assert.equal(bounds.from?.getFullYear(), 2026);
+    assert.equal(bounds.from?.getMonth(), 5);
+    assert.equal(bounds.from?.getDate(), 1);
+    assert.equal(bounds.toExclusive?.getFullYear(), 2026);
+    assert.equal(bounds.toExclusive?.getMonth(), 6);
+    assert.equal(bounds.toExclusive?.getDate(), 1);
+    assert.equal(bounds.empty, false);
+  });
+
   it("filterFinanceArRows usa interseção com dueDateFrom/dueDateTo", () => {
     const rows = [
       row({ externalId: 1, dueDate: new Date(2026, 5, 5) }),

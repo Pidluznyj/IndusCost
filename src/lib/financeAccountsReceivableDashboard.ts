@@ -259,23 +259,30 @@ function parseMonthFilter(value: unknown, hasYear: boolean): number | undefined 
 
 export function resolveFinanceArDueDateBounds(
   filters: Pick<FinanceArDashboardFilters, "dueDateFrom" | "dueDateTo" | "year" | "month">
-): { from: Date | null; to: Date | null; empty: boolean } {
+): { from: Date | null; toExclusive: Date | null; empty: boolean } {
   let from: Date | null = filters.dueDateFrom ? startOfLocalDay(filters.dueDateFrom) : null;
-  let to: Date | null = filters.dueDateTo ? endOfLocalDay(filters.dueDateTo) : null;
+  let toExclusive: Date | null = filters.dueDateTo
+    ? startOfLocalDay(addLocalDays(filters.dueDateTo, 1))
+    : null;
 
   if (filters.year != null) {
     let ymFrom = new Date(filters.year, 0, 1, 0, 0, 0, 0);
-    let ymTo = endOfLocalDay(new Date(filters.year, 11, 31));
+    let ymToExclusive = new Date(filters.year + 1, 0, 1, 0, 0, 0, 0);
     if (filters.month != null) {
       ymFrom = new Date(filters.year, filters.month - 1, 1, 0, 0, 0, 0);
-      ymTo = endOfLocalDay(new Date(filters.year, filters.month, 0));
+      ymToExclusive = new Date(filters.year, filters.month, 1, 0, 0, 0, 0);
     }
     from = from ? (from.getTime() > ymFrom.getTime() ? from : ymFrom) : ymFrom;
-    to = to ? (to.getTime() < ymTo.getTime() ? to : ymTo) : ymTo;
+    toExclusive = toExclusive
+      ? toExclusive.getTime() < ymToExclusive.getTime()
+        ? toExclusive
+        : ymToExclusive
+      : ymToExclusive;
   }
 
-  const empty = from != null && to != null && from.getTime() > to.getTime();
-  return { from, to, empty };
+  const empty =
+    from != null && toExclusive != null && from.getTime() >= toExclusive.getTime();
+  return { from, toExclusive, empty };
 }
 
 export function parseFinanceArDashboardFilters(query: Record<string, unknown>): FinanceArDashboardFilters {
@@ -351,7 +358,8 @@ export function filterFinanceArRows(
   const cnpjFilter = normalizeFilterText(filters.personCnpj);
   const paymentFilter = normalizeFilterText(filters.paymentMethodName);
   const bankFilter = normalizeFilterText(filters.bankAccountName);
-  const { from: dueFrom, to: dueTo, empty } = resolveFinanceArDueDateBounds(filters);
+  const { from: dueFrom, toExclusive: dueToExclusive, empty } =
+    resolveFinanceArDueDateBounds(filters);
   if (empty) return [];
 
   return rows.filter((row) => {
@@ -364,7 +372,10 @@ export function filterFinanceArRows(
     if (dueFrom && (!row.dueDate || startOfLocalDay(row.dueDate).getTime() < dueFrom.getTime())) {
       return false;
     }
-    if (dueTo && (!row.dueDate || startOfLocalDay(row.dueDate).getTime() > dueTo.getTime())) {
+    if (
+      dueToExclusive &&
+      (!row.dueDate || startOfLocalDay(row.dueDate).getTime() >= dueToExclusive.getTime())
+    ) {
       return false;
     }
 

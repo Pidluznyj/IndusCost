@@ -269,37 +269,52 @@ export function FinanceAccountsReceivablePage() {
           </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          <FilterInput label="Empresa" value={filters.companyName} onChange={(v) => setFilters((f) => ({ ...f, companyName: v }))} />
-          <FilterInput label="Cliente" value={filters.personName} onChange={(v) => setFilters((f) => ({ ...f, personName: v }))} />
-          <FilterInput label="CNPJ" value={filters.personCnpj} onChange={(v) => setFilters((f) => ({ ...f, personCnpj: v }))} />
+          <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 rounded-lg border border-border/60 bg-background/30 p-3">
+            <p className="col-span-full text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              Período de vencimento
+            </p>
+            <FilterSelect
+              label="Ano Vencimento"
+              value={filters.year}
+              onChange={(v) => setFilters((f) => ({ ...f, year: v }))}
+              options={yearOptions}
+            />
+            <FilterSelect
+              label="Mês Vencimento"
+              value={filters.month}
+              onChange={(v) =>
+                setFilters((f) => {
+                  const next = { ...f, month: v };
+                  if (v && !f.year.trim()) {
+                    next.year = String(new Date().getFullYear());
+                  }
+                  return next;
+                })
+              }
+              options={FINANCE_AR_MONTH_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            />
+            <FilterInput
+              label="Vencimento de"
+              type="date"
+              value={filters.dueDateFrom}
+              onChange={(v) => setFilters((f) => ({ ...f, dueDateFrom: v }))}
+            />
+            <FilterInput
+              label="Vencimento até"
+              type="date"
+              value={filters.dueDateTo}
+              onChange={(v) => setFilters((f) => ({ ...f, dueDateTo: v }))}
+            />
+          </div>
           <FilterSelect
             label="Status"
             value={filters.status}
             onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
             options={FINANCE_AR_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           />
-          <FilterSelect
-            label="Ano de vencimento"
-            value={filters.year}
-            onChange={(v) => setFilters((f) => ({ ...f, year: v }))}
-            options={yearOptions}
-          />
-          <FilterSelect
-            label="Mês de vencimento"
-            value={filters.month}
-            onChange={(v) =>
-              setFilters((f) => {
-                const next = { ...f, month: v };
-                if (v && !f.year.trim()) {
-                  next.year = String(new Date().getFullYear());
-                }
-                return next;
-              })
-            }
-            options={FINANCE_AR_MONTH_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-          />
-          <FilterInput label="Vencimento de" type="date" value={filters.dueDateFrom} onChange={(v) => setFilters((f) => ({ ...f, dueDateFrom: v }))} />
-          <FilterInput label="Vencimento até" type="date" value={filters.dueDateTo} onChange={(v) => setFilters((f) => ({ ...f, dueDateTo: v }))} />
+          <FilterInput label="Empresa" value={filters.companyName} onChange={(v) => setFilters((f) => ({ ...f, companyName: v }))} />
+          <FilterInput label="Cliente" value={filters.personName} onChange={(v) => setFilters((f) => ({ ...f, personName: v }))} />
+          <FilterInput label="CNPJ" value={filters.personCnpj} onChange={(v) => setFilters((f) => ({ ...f, personCnpj: v }))} />
           <FilterInput label="Forma de pagamento" value={filters.paymentMethodName} onChange={(v) => setFilters((f) => ({ ...f, paymentMethodName: v }))} />
           <FilterInput label="Conta bancária" value={filters.bankAccountName} onChange={(v) => setFilters((f) => ({ ...f, bankAccountName: v }))} />
         </div>

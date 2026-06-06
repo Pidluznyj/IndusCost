@@ -165,13 +165,31 @@ export type FinanceArUiFilters = {
   personName: string;
   personCnpj: string;
   status: string;
+  /** Ano Vencimento — campo `dueDate.year` (NomusAccountsReceivable). */
   year: string;
+  /** Mês Vencimento — campo `dueDate.month` (NomusAccountsReceivable). */
   month: string;
   dueDateFrom: string;
   dueDateTo: string;
   paymentMethodName: string;
   bankAccountName: string;
 };
+
+/** Filtros reservados para paridade com BI — não implementados nesta fase. */
+export type FinanceArUiFiltersFuture = {
+  /** Dia Vencimento */
+  dueDay?: string;
+  /** Status Baixa */
+  settlementStatus?: string;
+  /** NF Emitida? */
+  invoiceIssued?: string;
+};
+
+export const FINANCE_AR_FUTURE_FILTER_KEYS = [
+  "dueDay",
+  "settlementStatus",
+  "invoiceIssued",
+] as const satisfies ReadonlyArray<keyof FinanceArUiFiltersFuture>;
 
 export const FINANCE_AR_STATUS_OPTIONS = [
   { value: "all", label: "Todos" },
