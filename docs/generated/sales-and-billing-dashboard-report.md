@@ -51,7 +51,7 @@ Abas **Operação/Financeiro** e **Funil de Vendas** preservadas.
 | Ticket médio | calculado | valor emitido no mês ÷ quantidade |
 | Carteira aberta | `SUM(totalNetValue)` | não cancelado + sem `nfes.dataProcessamento` |
 | Média diária | calculado | valor ÷ dias úteis decorridos (seg–sex) |
-| Pedidos atrasados | count + lista | entrega prevista vencida + sem NF + não cancelado |
+| Pedidos atrasados | count + lista | emitidos no ano selecionado + entrega vencida + sem NF + não cancelado |
 | Meta / % atingimento | calculado | mesmo mês ano anterior × 1,30 |
 | Evolução mensal | gráfico | emissão mês a mês: ano atual vs anterior |
 | Status dos pedidos | breakdown | agrupado por `SalesOrder.status` (exceto cancelados) |
@@ -128,9 +128,12 @@ Redução do faturamento consolidado na aba Faturamento em relação ao total br
 Existe elemento em `nomusRawResponse.nfes` com `dataProcessamento` preenchido (DD/MM/YYYY). Helper: `orderIsInvoicedSql`.
 
 ### Pedido atrasado
+- `issueDate` no ano selecionado no filtro do dashboard
 - não cancelado
 - sem NF processada
 - `expectedDeliveryDate` < hoje
+
+Os pedidos atrasados são limitados ao ano selecionado no dashboard. Para 2026, somente pedidos emitidos em 2026 entram no indicador.
 
 ### Carteira aberta
 - não cancelado
@@ -266,7 +269,8 @@ Por mês, o tooltip mostra período, valores do ano anterior, YTD atual (quando 
 
 ### Limitações
 
-- Carteira/atrasados permanecem snapshot operacional (data real), não filtrados pelo ano selecionado.
+- Carteira aberta permanece snapshot operacional (data real), não filtrada pelo ano selecionado.
+- Pedidos atrasados respeitam o ano selecionado (`issueDate`).
 - Projeção mensal/anual usa média YTD (não média do mês isolado).
 - Feriados ainda não entram no cálculo de dias úteis.
 

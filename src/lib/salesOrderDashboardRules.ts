@@ -31,6 +31,27 @@ export function isOverdueSalesOrder(input: {
   return deliveryDay < todayDay;
 }
 
+export const EXECUTIVE_OVERDUE_ORDERS_HINT =
+  "Pedidos emitidos no ano selecionado, não cancelados, com entrega prevista vencida e sem NF processada.";
+
+/** Pedido atrasado no dashboard = critério base + issueDate no ano selecionado. */
+export function isOverdueSalesOrderInSelectedYear(input: {
+  status: string;
+  issueDate: Date;
+  selectedYear: number;
+  expectedDeliveryDate: Date | null;
+  today: Date;
+  hasNfeDataProcessamento: boolean;
+}): boolean {
+  if (input.issueDate.getFullYear() !== input.selectedYear) return false;
+  return isOverdueSalesOrder({
+    status: input.status,
+    expectedDeliveryDate: input.expectedDeliveryDate,
+    today: input.today,
+    hasNfeDataProcessamento: input.hasNfeDataProcessamento,
+  });
+}
+
 export function computeDaysOverdue(expectedDeliveryDate: Date, today: Date): number {
   const deliveryDay = new Date(
     expectedDeliveryDate.getFullYear(),

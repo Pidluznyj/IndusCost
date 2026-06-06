@@ -27,6 +27,7 @@ import {
   computeTicketAverage,
   computeYearProjection,
   computeYtdDailyAverageByWorkday,
+  EXECUTIVE_OVERDUE_ORDERS_HINT,
   EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
 } from "@/src/lib/salesOrderDashboardRules.js";
 import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters.js";
@@ -123,14 +124,21 @@ async function queryOpenPortfolio(): Promise<{ count: number | null; net: number
   return { count: safeMetricNumber(Number(row?.c ?? 0n)), net: decimalToNumber(row?.v) };
 }
 
-async function queryOverdueSummary(): Promise<{ count: number | null; net: number | null }> {
-  const todayYmd = toPgDateYmd(new Date());
+async function queryOverdueSummary(
+  selectedYear: number,
+  today: Date
+): Promise<{ count: number | null; net: number | null }> {
+  const todayYmd = toPgDateYmd(today);
+  const yearStart = startOfYear(new Date(selectedYear, 0, 1));
+  const yearEnd = endOfYear(new Date(selectedYear, 0, 1));
   const [row] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
     Prisma.sql`
       SELECT COUNT(*)::bigint AS c, COALESCE(SUM(so."totalNetValue"), 0) AS v
       FROM "SalesOrder" so
       WHERE ${NOT_CANCELLED}
         AND ${orderNotInvoicedSql("so")}
+        AND so."issueDate" >= ${yearStart}
+        AND so."issueDate" <= ${yearEnd}
         AND so."expectedDeliveryDate" IS NOT NULL
         AND so."expectedDeliveryDate"::date < ${todayYmd}::date
     `
@@ -138,8 +146,10 @@ async function queryOverdueSummary(): Promise<{ count: number | null; net: numbe
   return { count: safeMetricNumber(Number(row?.c ?? 0n)), net: decimalToNumber(row?.v) };
 }
 
-async function queryOverdueList(now: Date): Promise<OverdueOrderRow[]> {
+async function queryOverdueList(selectedYear: number, now: Date): Promise<OverdueOrderRow[]> {
   const todayYmd = toPgDateYmd(now);
+  const yearStart = startOfYear(new Date(selectedYear, 0, 1));
+  const yearEnd = endOfYear(new Date(selectedYear, 0, 1));
   const rows = await prisma.$queryRaw<
     {
       id: string;
@@ -164,6 +174,8 @@ async function queryOverdueList(now: Date): Promise<OverdueOrderRow[]> {
       INNER JOIN "Customer" c ON c.id = so."customerId"
       WHERE ${NOT_CANCELLED}
         AND ${orderNotInvoicedSql("so")}
+        AND so."issueDate" >= ${yearStart}
+        AND so."issueDate" <= ${yearEnd}
         AND so."expectedDeliveryDate" IS NOT NULL
         AND so."expectedDeliveryDate"::date < ${todayYmd}::date
       ORDER BY so."expectedDeliveryDate" ASC, so."issueDate" ASC
@@ -277,8 +289,8 @@ export async function buildSalesOrdersDashboardTab(
     aggregateByIssueDate(monthStart, monthEnd),
     aggregateByIssueDate(prevYearSameMonthStart, prevYearSameMonthEnd),
     queryOpenPortfolio(),
-    queryOverdueSummary(),
-    queryOverdueList(operationalNow),
+    queryOverdueSummary(year, operationalNow),
+    queryOverdueList(year, operationalNow),
     queryMonthlyByIssueDate(year),
     queryMonthlyByIssueDate(yearCtx.previousYear),
     queryStatusBreakdown(),
@@ -316,7 +328,14 @@ export async function buildSalesOrdersDashboardTab(
       compact: true,
       hint: `Média YTD × ${workdaysInYear} dias úteis no ano`,
     }),
-    metricCard("overdue-count", "Pedidos atrasados", overdueSummary.count),
+    metricCard("overdue-count", "Pedidos atrasados", overdueSummary.count, {
+      hint: EXECUTIVE_OVERDUE_ORDERS_HINT,
+    }),
+    metricCard("overdue-value", "Valor atrasado", overdueSummary.net, {
+      asCurrency: true,
+      compact: true,
+      hint: EXECUTIVE_OVERDUE_ORDERS_HINT,
+    }),
     metricCard("target-achievement", "% meta do mês", target.achievementPercent, {
       asPercent: true,
       hint: "Meta = mesmo mês ano anterior × 1,30",
@@ -325,7 +344,7 @@ export async function buildSalesOrdersDashboardTab(
 
   return {
     available: true,
-    source: "SalesOrder.totalNetValue por issueDate; carteira/atraso via nfes.dataProcessamento",
+    source: "SalesOrder.totalNetValue por issueDate; atrasados filtrados por ano selecionado; carteira via nfes.dataProcessamento",
     periodLabel: ref.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
     yearLabel: year,
     summaryCards,
@@ -337,6 +356,8 @@ export async function buildSalesOrdersDashboardTab(
       count: overdueSummary.count ?? 0,
       totalValue: overdueSummary.net,
       formattedTotalValue: formatExecutiveCurrency(overdueSummary.net),
+      description: EXECUTIVE_OVERDUE_ORDERS_HINT,
+      selectedYear: year,
       items: overdueList,
     },
     logisticsBreakdown: null,

@@ -36,6 +36,7 @@ import {
   EXECUTIVE_SALES_YTD_DAILY_AVERAGE_HINT,
   isOpenPortfolioOrder,
   isOverdueSalesOrder,
+  isOverdueSalesOrderInSelectedYear,
   isSalesOrderInvoiced,
   TARGET_GROWTH_FACTOR,
 } from "./salesOrderDashboardRules.js";
@@ -198,6 +199,73 @@ describe("salesOrderDashboardRules", () => {
       }),
       false
     );
+  });
+
+  it("overdue in selected year includes only orders issued in that year", () => {
+    const base = {
+      status: "READY_TO_SEND",
+      expectedDeliveryDate: new Date(2026, 4, 1),
+      today,
+      hasNfeDataProcessamento: false,
+    };
+
+    assert.equal(
+      isOverdueSalesOrderInSelectedYear({
+        ...base,
+        issueDate: new Date(2026, 1, 10),
+        selectedYear: 2026,
+      }),
+      true
+    );
+
+    assert.equal(
+      isOverdueSalesOrderInSelectedYear({
+        ...base,
+        issueDate: new Date(2025, 1, 10),
+        selectedYear: 2026,
+      }),
+      false
+    );
+  });
+
+  it("2026 invoiced order is not overdue", () => {
+    assert.equal(
+      isOverdueSalesOrderInSelectedYear({
+        status: "READY_TO_SEND",
+        issueDate: new Date(2026, 1, 10),
+        selectedYear: 2026,
+        expectedDeliveryDate: new Date(2026, 4, 1),
+        today,
+        hasNfeDataProcessamento: true,
+      }),
+      false
+    );
+  });
+
+  it("2026 cancelled order is not overdue", () => {
+    assert.equal(
+      isOverdueSalesOrderInSelectedYear({
+        status: "CANCELLED",
+        issueDate: new Date(2026, 1, 10),
+        selectedYear: 2026,
+        expectedDeliveryDate: new Date(2026, 4, 1),
+        today,
+        hasNfeDataProcessamento: false,
+      }),
+      false
+    );
+  });
+
+  it("changing selected year filters overdue eligibility", () => {
+    const input = {
+      status: "READY_TO_SEND",
+      issueDate: new Date(2025, 2, 5),
+      expectedDeliveryDate: new Date(2025, 4, 1),
+      today,
+      hasNfeDataProcessamento: false,
+    };
+    assert.equal(isOverdueSalesOrderInSelectedYear({ ...input, selectedYear: 2025 }), true);
+    assert.equal(isOverdueSalesOrderInSelectedYear({ ...input, selectedYear: 2026 }), false);
   });
 
   it("invoiced orders are detected by dataProcessamento flag", () => {

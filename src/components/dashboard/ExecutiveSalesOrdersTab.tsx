@@ -58,17 +58,23 @@ export function ExecutiveSalesOrdersTab({ tab }: { tab: SalesOrdersDashboardTab 
 
         <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-2">
-            <h3 className="text-lg font-bold">Pedidos atrasados</h3>
+            <h3 className="text-lg font-bold">Pedidos atrasados ({tab.overdueOrders.selectedYear})</h3>
             <Link to="/sales-orders" className="text-xs font-bold text-primary hover:underline">
               Ver pedidos
             </Link>
           </div>
-          <p className="mb-3 text-sm text-muted-foreground">
+          <p
+            className="mb-3 text-sm text-muted-foreground"
+            title={tab.overdueOrders.description}
+          >
             {formatExecutiveInteger(tab.overdueOrders.count)} pedido(s) ·{" "}
             {tab.overdueOrders.formattedTotalValue}
           </p>
+          <p className="mb-3 text-[11px] text-muted-foreground">{tab.overdueOrders.description}</p>
           {tab.overdueOrders.items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum pedido atrasado no momento.</p>
+            <p className="text-sm text-muted-foreground">
+              Nenhum pedido atrasado emitido em {tab.overdueOrders.selectedYear}.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">

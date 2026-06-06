@@ -168,6 +168,8 @@ export type SalesOrdersDashboardTab = ExecutiveSectionBase & {
     count: number;
     totalValue: ExecutiveMetricValue;
     formattedTotalValue: string;
+    description: string;
+    selectedYear: number;
     items: OverdueOrderRow[];
   };
   /** Status logístico dedicado não existe no schema — usar statusBreakdown. */
