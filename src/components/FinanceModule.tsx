@@ -4,22 +4,29 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FinanceAccountsReceivablePage } from "@/src/components/finance/FinanceAccountsReceivablePage";
+import { FinanceAccountsPayablePage } from "@/src/components/finance/FinanceAccountsPayablePage";
+import {
+  canViewFinanceAccountsPayable,
+} from "@/src/lib/financeAccountsPayablePermissions";
+import { canViewFinanceAccountsReceivable } from "@/src/lib/financeAccountsReceivablePermissions";
 
-const FINANCE_SECTIONS = [{ id: "accounts-receivable", label: "Contas a Receber", to: "accounts-receivable" }] as const;
+const FINANCE_SECTIONS = [
+  { id: "accounts-receivable", label: "Contas a Receber", to: "accounts-receivable" },
+  { id: "accounts-payable", label: "Contas a Pagar", to: "accounts-payable" },
+] as const;
 
 export function FinanceModule() {
   const auth = useAuth();
-  const canViewAccountsReceivable =
-    auth.hasPermission("finance.accountsReceivable.view") ||
-    auth.hasPermission("finance.view") ||
-    auth.hasPermission("reports.view") ||
-    auth.hasPermission("settings.nomus.view") ||
-    auth.hasPermission("settings.view");
+  const canViewAccountsReceivable = canViewFinanceAccountsReceivable(auth);
+  const canViewAccountsPayable = canViewFinanceAccountsPayable(auth);
 
   const visibleSections = FINANCE_SECTIONS.filter((section) => {
     if (section.id === "accounts-receivable") return canViewAccountsReceivable;
+    if (section.id === "accounts-payable") return canViewAccountsPayable;
     return false;
   });
+
+  const defaultSection = visibleSections[0]?.to ?? "accounts-receivable";
 
   if (visibleSections.length === 0) {
     return (
@@ -51,7 +58,7 @@ export function FinanceModule() {
       </nav>
 
       <Routes>
-        <Route index element={<Navigate to="accounts-receivable" replace />} />
+        <Route index element={<Navigate to={defaultSection} replace />} />
         <Route
           path="accounts-receivable"
           element={
@@ -64,7 +71,19 @@ export function FinanceModule() {
             )
           }
         />
-        <Route path="*" element={<Navigate to="accounts-receivable" replace />} />
+        <Route
+          path="accounts-payable"
+          element={
+            canViewAccountsPayable ? (
+              <FinanceAccountsPayablePage />
+            ) : (
+              <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+                Sem permissão para Contas a Pagar.
+              </div>
+            )
+          }
+        />
+        <Route path="*" element={<Navigate to={defaultSection} replace />} />
       </Routes>
     </div>
   );

@@ -622,7 +622,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Financeiro"
-              description="Contas a receber e indicadores financeiros a partir dos dados sincronizados do Nomus."
+              description="Contas a receber e contas a pagar a partir dos dados sincronizados do Nomus."
             >
               <FinanceModule />
             </ModulePageShell>

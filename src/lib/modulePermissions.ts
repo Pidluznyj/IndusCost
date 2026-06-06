@@ -112,6 +112,7 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return (
         check.hasPermission("finance.view") ||
         check.hasPermission("finance.accountsReceivable.view") ||
+        check.hasPermission("finance.accountsPayable.view") ||
         check.hasPermission("reports.view") ||
         check.hasPermission("settings.nomus.view") ||
         check.hasPermission("settings.view")
