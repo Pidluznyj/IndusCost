@@ -31,8 +31,12 @@ import {
   orderNotInvoicedSql,
   toPgDateYmd,
 } from "@/src/lib/salesOrderInvoicingSql.js";
+import {
+  buildChartSeriesConfig,
+  buildMonthlySeriesPoints,
+} from "@/src/lib/executiveDashboardChartSeries.js";
+import type { ExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear.js";
 import type {
-  DashboardChartPoint,
   DashboardMetricCard,
   DashboardStatusBreakdownRow,
   DashboardTargetBlock,
@@ -40,7 +44,6 @@ import type {
   SalesOrdersDashboardTab,
 } from "@/src/lib/executiveDashboardTypes.js";
 
-const MONTH_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const OVERDUE_LIST_LIMIT = 15;
 
 const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
@@ -233,35 +236,25 @@ async function queryStatusBreakdown(): Promise<DashboardStatusBreakdownRow[]> {
 }
 
 function buildMonthlyEvolution(
+  ctx: ExecutiveDashboardYearContext,
   currentYearMap: Map<number, number>,
-  previousYearMap: Map<number, number>,
-  currentYear: number
-): DashboardChartPoint[] {
-  const currentMonth = new Date().getMonth() + 1;
-  return MONTH_SHORT.map((label, idx) => {
-    const month = idx + 1;
-    const previousYear = previousYearMap.get(month) ?? 0;
-    const target = computeGrowthTarget(previousYear);
-    const currentYearValue =
-      month <= currentMonth ? (currentYearMap.get(month) ?? 0) : null;
-    return {
-      month,
-      label: `${label}/${String(currentYear).slice(-2)}`,
-      currentYear: currentYearValue,
-      previousYear,
-      target: month === currentMonth ? target : computeGrowthTarget(previousYear),
-    };
-  });
+  previousYearMap: Map<number, number>
+) {
+  return buildMonthlySeriesPoints(ctx, currentYearMap, previousYearMap);
 }
 
-export async function buildSalesOrdersDashboardTab(now: Date): Promise<SalesOrdersDashboardTab> {
-  const year = now.getFullYear();
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
-  const yearStart = startOfYear(now);
-  const yearEnd = endOfYear(now);
-  const prevYearSameMonthStart = startOfMonth(new Date(year - 1, now.getMonth(), 1));
-  const prevYearSameMonthEnd = endOfMonth(new Date(year - 1, now.getMonth(), 1));
+export async function buildSalesOrdersDashboardTab(
+  yearCtx: ExecutiveDashboardYearContext
+): Promise<SalesOrdersDashboardTab> {
+  const ref = yearCtx.referenceDate;
+  const year = yearCtx.selectedYear;
+  const monthStart = startOfMonth(ref);
+  const monthEnd = endOfMonth(ref);
+  const yearStart = startOfYear(ref);
+  const yearEnd = endOfYear(ref);
+  const prevYearSameMonthStart = startOfMonth(new Date(yearCtx.previousYear, ref.getMonth(), 1));
+  const prevYearSameMonthEnd = endOfMonth(new Date(yearCtx.previousYear, ref.getMonth(), 1));
+  const operationalNow = new Date();
 
   const [
     yearAgg,
@@ -279,15 +272,15 @@ export async function buildSalesOrdersDashboardTab(now: Date): Promise<SalesOrde
     aggregateByIssueDate(prevYearSameMonthStart, prevYearSameMonthEnd),
     queryOpenPortfolio(),
     queryOverdueSummary(),
-    queryOverdueList(now),
+    queryOverdueList(operationalNow),
     queryMonthlyByIssueDate(year),
-    queryMonthlyByIssueDate(year - 1),
+    queryMonthlyByIssueDate(yearCtx.previousYear),
     queryStatusBreakdown(),
   ]);
 
   const ticketAvg = computeTicketAverage(monthAgg.net, monthAgg.count);
-  const monthWorkdays = countWorkdaysElapsedInMonth(now);
-  const yearWorkdays = countWorkdaysElapsedInYear(now);
+  const monthWorkdays = countWorkdaysElapsedInMonth(ref);
+  const yearWorkdays = countWorkdaysElapsedInYear(ref);
   const dailyAvgMonth = computeDailyAverageByWorkday(monthAgg.net, monthWorkdays);
   const dailyAvgYear = computeDailyAverageByWorkday(yearAgg.net, yearWorkdays);
   const target = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
@@ -313,11 +306,12 @@ export async function buildSalesOrdersDashboardTab(now: Date): Promise<SalesOrde
   return {
     available: true,
     source: "SalesOrder.totalNetValue por issueDate; carteira/atraso via nfes.dataProcessamento",
-    periodLabel: now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
+    periodLabel: ref.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
     yearLabel: year,
     summaryCards,
     target,
-    monthlyEvolution: buildMonthlyEvolution(currentYearMonthly, previousYearMonthly, year),
+    monthlySeries: buildMonthlyEvolution(yearCtx, currentYearMonthly, previousYearMonthly),
+    chartSeries: buildChartSeriesConfig("salesOrders", yearCtx),
     statusBreakdown,
     overdueOrders: {
       count: overdueSummary.count ?? 0,

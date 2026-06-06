@@ -71,11 +71,13 @@ export const DashboardModule = () => {
   const [executiveError, setExecutiveError] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
 
+  const [executiveYear, setExecutiveYear] = useState(() => new Date().getFullYear());
+
   const fetchExecutive = useCallback(async () => {
     setExecutiveLoading(true);
     setExecutiveError(null);
     try {
-      const res = await fetch("/api/dashboard/executive-summary");
+      const res = await fetch(`/api/dashboard/executive-summary?year=${executiveYear}`);
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
@@ -83,13 +85,16 @@ export const DashboardModule = () => {
       const json = (await res.json()) as ExecutiveDashboardSummary;
       setExecutiveData(json);
       setExecutiveError(null);
+      if (json.selectedYear && json.selectedYear !== executiveYear) {
+        setExecutiveYear(json.selectedYear);
+      }
     } catch (error) {
       console.error("Erro ao buscar visão executiva:", error);
       setExecutiveError(error instanceof Error ? error.message : "Falha ao carregar visão executiva.");
     } finally {
       setExecutiveLoading(false);
     }
-  }, []);
+  }, [executiveYear]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -172,6 +177,8 @@ export const DashboardModule = () => {
             data={executiveData}
             loading={executiveLoading}
             error={executiveError}
+            selectedYear={executiveYear}
+            onYearChange={setExecutiveYear}
             onRefresh={() => void fetchExecutive()}
           />
         )}

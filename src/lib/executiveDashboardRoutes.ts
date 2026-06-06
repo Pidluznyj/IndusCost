@@ -25,7 +25,7 @@ export function registerExecutiveDashboardRoutes(
         if (!user) {
           return res.status(401).json({ error: "Não autenticado." });
         }
-        const summary = await buildExecutiveDashboardSummary(user);
+        const summary = await buildExecutiveDashboardSummary(user, req.query.year);
         return res.json(summary);
       } catch (error) {
         console.error("GET /api/dashboard/executive-summary", error);

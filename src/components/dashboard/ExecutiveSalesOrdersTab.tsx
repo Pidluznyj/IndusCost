@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import type { SalesOrdersDashboardTab } from "@/src/lib/executiveDashboardTypes";
 import { formatExecutiveCurrency, formatExecutiveInteger } from "@/src/lib/executiveDashboardFormatters";
-import { ExecutiveMonthlyChart, ExecutiveTargetPanel } from "@/src/components/dashboard/ExecutiveDashboardCharts";
+import { ExecutiveMonthlyComboChart, ExecutiveTargetPanel } from "@/src/components/dashboard/ExecutiveDashboardCharts";
 
 function SummaryCards({ cards }: { cards: SalesOrdersDashboardTab["summaryCards"] }) {
   return (
@@ -25,7 +25,11 @@ export function ExecutiveSalesOrdersTab({ tab }: { tab: SalesOrdersDashboardTab 
     <div className="space-y-6">
       <SummaryCards cards={tab.summaryCards} />
       <ExecutiveTargetPanel title="Realizado vs meta do mês" target={tab.target} />
-      <ExecutiveMonthlyChart title="Evolução mensal — pedidos emitidos" data={tab.monthlyEvolution} />
+      <ExecutiveMonthlyComboChart
+        title="Evolução mensal — pedidos emitidos"
+        series={tab.monthlySeries}
+        config={tab.chartSeries}
+      />
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">

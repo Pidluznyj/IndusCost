@@ -173,11 +173,66 @@ Não altera `utils.ts` (precisão fina em custo/produto).
 
 ---
 
+## Evolução visual dos gráficos e filtro de ano
+
+### Filtro global de ano
+
+- Seletor **Ano** no cabeçalho do Painel Gerencial (`ExecutiveDashboardPanel`).
+- Estado mantido no frontend (`DashboardModule`) e enviado como `GET /api/dashboard/executive-summary?year=YYYY`.
+- Se o parâmetro estiver ausente ou inválido (fora de 2020…ano atual+1), o backend usa o ano calendário atual.
+- Resposta inclui `selectedYear`, `previousYear` e `generatedAt`.
+- **Ano selecionado** = ano atual da análise; **ano anterior** = `selectedYear - 1`; meta mensual = mês do ano anterior × 1,30.
+
+### Meta como linha
+
+- Gráficos mensais usam `ComposedChart` (Recharts): barras para realizado + linha para meta.
+- `chartSeries.targetAsLine: true` — a meta não é renderizada como barra.
+- Pedidos: linha verde (`#43A047`); Faturamento: linha vermelha tracejada (`#C62828`).
+
+### Cores (padrão BI)
+
+| Série | Pedidos de Venda | Faturamento |
+|-------|------------------|-------------|
+| Ano anterior (barra) | Laranja `#ED7D31` | Dourado `#D4A017` |
+| Ano atual / YTD (barra) | Verde escuro `#1B5E20` | Laranja `#ED7D31` |
+| Meta (linha) | Verde `#43A047` | Vermelho `#C62828` |
+| Projeção (linha) | — | Azul `#1565C0` |
+
+Definidas em `executiveDashboardChartTheme.ts`; legendas e tooltips usam os mesmos rótulos/cores.
+
+### Legendas
+
+Exemplos com ano 2026 selecionado:
+- Pedidos: `Pedidos 2025`, `Pedidos 2026 YTD`, `Meta 2026 (+30%)`
+- Faturamento: `Faturamento 2025`, `Faturamento 2026 YTD`, `Meta 2026 (+30%)`, `Projeção 2026`
+
+Labels gerados em `buildChartSeriesLabels()` conforme `selectedYear` / `previousYear`.
+
+### Tooltips executivos
+
+Por mês, o tooltip mostra período, valores do ano anterior, YTD atual (quando houver), meta (+30%), diferença vs meta e atingimento %. Valores formatados com 2 casas (moeda) ou 1–2 casas (%); sem `null`, `undefined`, `NaN` ou 6 casas decimais.
+
+### YTD e meses futuros
+
+- No ano calendário atual, barras YTD só até o mês corrente (`ytdMonthLimit`).
+- Meses futuros: `currentYearValue = null` (sem barra zerada falsa).
+- Meta (linha planejada) permanece visível em todos os meses.
+
+### Limitações
+
+- Carteira/atrasados permanecem snapshot operacional (data real), não filtrados pelo ano selecionado.
+- Projeção de faturamento só no mês YTD corrente quando ano selecionado = ano calendário atual.
+- Feriados ainda não entram no cálculo de dias úteis.
+
+---
+
 ## 9. Arquivos alterados
 
 **Novos (faturamento mercado):** `groupCompanyCustomer.ts`, `billingMarketCustomerSql.ts`, `groupCompanyCustomer.test.ts`
 
-**Alterados:** `billingDashboardMetrics.ts`, `ExecutiveBillingTab.tsx`, `ExecutiveDashboardCharts.tsx`, `executiveDashboardTypes.ts`, `salesOrderDashboardRules.ts`, `package.json`, docs
+**Novos (gráficos e ano):** `executiveDashboardYear.ts`, `executiveDashboardChartTheme.ts`, `executiveDashboardChartSeries.ts`, `executiveDashboardYear.test.ts`, `executiveDashboardChartSeries.test.ts`
+
+**Alterados:** `billingDashboardMetrics.ts`, `salesOrdersDashboardMetrics.ts`, `executiveDashboardService.ts`, `executiveDashboardRoutes.ts`, `ExecutiveBillingTab.tsx`, `ExecutiveSalesOrdersTab.tsx`, `ExecutiveDashboardPanel.tsx`, `ExecutiveDashboardCharts.tsx`, `DashboardModule.tsx`, `executiveDashboardTypes.ts`, `salesOrderDashboardRules.ts`, `package.json`, docs
 
 ---
 

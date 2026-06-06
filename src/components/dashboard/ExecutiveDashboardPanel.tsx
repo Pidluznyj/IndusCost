@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React from "react";
 import { Loader2, RefreshCw, ShoppingCart, Receipt } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "@/src/lib/executiveDashboardYear";
 import type { ExecutiveDashboardSummary } from "@/src/lib/executiveDashboardTypes";
 import { ExecutiveSalesOrdersTab } from "@/src/components/dashboard/ExecutiveSalesOrdersTab";
 import { ExecutiveBillingTab } from "@/src/components/dashboard/ExecutiveBillingTab";
@@ -9,13 +10,32 @@ type Props = {
   data: ExecutiveDashboardSummary | null;
   loading: boolean;
   error: string | null;
+  selectedYear: number;
+  onYearChange: (year: number) => void;
   onRefresh: () => void;
 };
 
 type InnerTab = "salesOrders" | "billing";
 
-export function ExecutiveDashboardPanel({ data, loading, error, onRefresh }: Props) {
-  const [innerTab, setInnerTab] = useState<InnerTab>("salesOrders");
+function buildYearOptions(now = new Date()): number[] {
+  const max = now.getFullYear() + 1;
+  const years: number[] = [];
+  for (let y = max; y >= EXECUTIVE_DASHBOARD_MIN_YEAR; y -= 1) {
+    years.push(y);
+  }
+  return years;
+}
+
+export function ExecutiveDashboardPanel({
+  data,
+  loading,
+  error,
+  selectedYear,
+  onYearChange,
+  onRefresh,
+}: Props) {
+  const [innerTab, setInnerTab] = React.useState<InnerTab>("salesOrders");
+  const yearOptions = React.useMemo(() => buildYearOptions(), []);
 
   if (loading && !data) {
     return (
@@ -54,17 +74,35 @@ export function ExecutiveDashboardPanel({ data, loading, error, onRefresh }: Pro
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black tracking-tight">Painel Gerencial</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Atualizado em {updatedAt}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Análise {data.selectedYear} vs {data.previousYear} · Atualizado em {updatedAt}
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent/50 disabled:opacity-60"
-        >
-          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-          Atualizar
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm">
+            <span className="text-muted-foreground">Ano</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => onYearChange(Number(e.target.value))}
+              className="bg-transparent font-semibold outline-none"
+            >
+              {yearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent/50 disabled:opacity-60"
+          >
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {error ? (

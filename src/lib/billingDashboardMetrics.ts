@@ -1,5 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { billingMarketCustomerFilterSql } from "@/src/lib/billingMarketCustomerSql.js";
+import {
+  buildChartSeriesConfig,
+  buildCumulativeFromMonthlySeries,
+  buildMonthlySeriesPoints,
+} from "@/src/lib/executiveDashboardChartSeries.js";
+import type { ExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
   decimalToNumber,
@@ -40,14 +46,12 @@ import type {
   BillingRealizedVsProjected,
   BillingTopCustomerRow,
   BillingYearComparison,
-  DashboardChartPoint,
   DashboardCumulativeChartPoint,
   DashboardMetricCard,
   DashboardTargetBlock,
   RecentInvoicedOrderRow,
 } from "@/src/lib/executiveDashboardTypes.js";
 
-const MONTH_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const RECENT_INVOICED_LIMIT = 15;
 const TOP_CUSTOMERS_LIMIT = 10;
 const MARKET_BILLING_NOTE =
@@ -221,68 +225,41 @@ async function queryTopMarketCustomersInPeriod(from: Date, to: Date): Promise<Bi
   }));
 }
 
-function buildMonthlyBillingChart(
-  currentYearMap: Map<number, number>,
-  previousYearMap: Map<number, number>,
-  twoYearsAgoMap: Map<number, number> | null,
-  currentYear: number
-): DashboardChartPoint[] {
-  const currentMonth = new Date().getMonth() + 1;
-  return MONTH_SHORT.map((label, idx) => {
-    const month = idx + 1;
-    const previousYear = previousYearMap.get(month) ?? 0;
-    return {
-      month,
-      label: `${label}/${String(currentYear).slice(-2)}`,
-      currentYear: month <= currentMonth ? (currentYearMap.get(month) ?? 0) : null,
-      previousYear,
-      twoYearsAgo: twoYearsAgoMap?.get(month) ?? null,
-      target: computeGrowthTarget(previousYear),
-    };
-  });
-}
-
-function buildCumulativeChart(
-  currentYearMap: Map<number, number>,
-  previousYearMap: Map<number, number>,
-  twoYearsAgoMap: Map<number, number> | null,
-  currentYear: number
+function toCumulativeBillingPoints(
+  series: ReturnType<typeof buildMonthlySeriesPoints>
 ): DashboardCumulativeChartPoint[] {
-  const currentMonth = new Date().getMonth() + 1;
-  let cumCurrent = 0;
-  let cumPrevious = 0;
-  let cumTwo = 0;
-
-  return MONTH_SHORT.map((label, idx) => {
-    const month = idx + 1;
-    const prev = previousYearMap.get(month) ?? 0;
-    const two = twoYearsAgoMap?.get(month) ?? 0;
-    cumPrevious += prev;
-    cumTwo += two;
-    if (month <= currentMonth) {
-      cumCurrent += currentYearMap.get(month) ?? 0;
-    }
-    return {
-      month,
-      label: `${label}/${String(currentYear).slice(-2)}`,
-      currentYear: month <= currentMonth ? cumCurrent : null,
-      previousYear: cumPrevious,
-      twoYearsAgo: twoYearsAgoMap ? cumTwo : null,
-    };
-  });
+  const cumulative = buildCumulativeFromMonthlySeries(series);
+  return cumulative.map((row) => ({
+    month: row.month,
+    label: row.periodLabel,
+    currentYear: row.currentYearValue,
+    previousYear: row.previousYearValue,
+    twoYearsAgo: null,
+  }));
 }
 
-export async function buildBillingDashboardTab(now: Date): Promise<BillingDashboardTab> {
-  const year = now.getFullYear();
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
-  const yearStart = startOfYear(now);
-  const yearEnd = endOfYear(now);
-  const prevYearSameMonthStart = startOfMonth(new Date(year - 1, now.getMonth(), 1));
-  const prevYearSameMonthEnd = endOfMonth(new Date(year - 1, now.getMonth(), 1));
-  const prevYearStart = startOfYear(new Date(year - 1, 0, 1));
-  const prevYearEnd = endOfYear(new Date(year - 1, 0, 1));
-  const ytdPrevEnd = new Date(year - 1, now.getMonth(), now.getDate(), 23, 59, 59, 999);
+export async function buildBillingDashboardTab(
+  yearCtx: ExecutiveDashboardYearContext
+): Promise<BillingDashboardTab> {
+  const ref = yearCtx.referenceDate;
+  const year = yearCtx.selectedYear;
+  const monthStart = startOfMonth(ref);
+  const monthEnd = endOfMonth(ref);
+  const yearStart = startOfYear(ref);
+  const yearEnd = endOfYear(ref);
+  const prevYearSameMonthStart = startOfMonth(new Date(yearCtx.previousYear, ref.getMonth(), 1));
+  const prevYearSameMonthEnd = endOfMonth(new Date(yearCtx.previousYear, ref.getMonth(), 1));
+  const prevYearStart = startOfYear(new Date(yearCtx.previousYear, 0, 1));
+  const prevYearEnd = endOfYear(new Date(yearCtx.previousYear, 0, 1));
+  const ytdPrevEnd = new Date(
+    yearCtx.previousYear,
+    ref.getMonth(),
+    ref.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
 
   const [
     monthAgg,
@@ -293,7 +270,6 @@ export async function buildBillingDashboardTab(now: Date): Promise<BillingDashbo
     ytdPreviousAgg,
     currentYearMonthly,
     previousYearMonthly,
-    twoYearsAgoMonthly,
     recentInvoiced,
     topCustomers,
   ] = await Promise.all([
@@ -301,18 +277,17 @@ export async function buildBillingDashboardTab(now: Date): Promise<BillingDashbo
     queryMarketBillingInPeriod(yearStart, yearEnd),
     queryMarketBillingInPeriod(prevYearSameMonthStart, prevYearSameMonthEnd),
     queryMarketBillingInPeriod(prevYearStart, prevYearEnd),
-    queryMarketBillingInPeriod(yearStart, now),
+    queryMarketBillingInPeriod(yearStart, ref),
     queryMarketBillingInPeriod(prevYearStart, ytdPrevEnd),
     queryMonthlyMarketBilling(year),
-    queryMonthlyMarketBilling(year - 1),
-    queryMonthlyMarketBilling(year - 2),
+    queryMonthlyMarketBilling(yearCtx.previousYear),
     queryRecentMarketInvoicedOrders(),
     queryTopMarketCustomersInPeriod(yearStart, yearEnd),
   ]);
 
   const ticketAvg = computeTicketAverage(monthAgg.net, monthAgg.count);
-  const monthWorkdaysElapsed = countWorkdaysElapsedInMonth(now);
-  const workdaysInMonth = countWorkdaysInMonth(year, now.getMonth());
+  const monthWorkdaysElapsed = countWorkdaysElapsedInMonth(ref);
+  const workdaysInMonth = countWorkdaysInMonth(year, ref.getMonth());
   const dailyAvgMonth = computeDailyAverageByWorkday(monthAgg.net, monthWorkdaysElapsed);
   const projectedMonth = computeMonthProjection(dailyAvgMonth, workdaysInMonth);
   const target = buildTargetBlock(monthAgg.net, prevMonthAgg.net);
@@ -373,29 +348,27 @@ export async function buildBillingDashboardTab(now: Date): Promise<BillingDashbo
     metricCard("billing-ticket", "Ticket médio faturado", ticketAvg, { asCurrency: true }),
   ];
 
+  const monthlySeries = buildMonthlySeriesPoints(
+    yearCtx,
+    currentYearMonthly,
+    previousYearMonthly,
+    { projectedMonthValue: projectedMonth, projectionMonth: yearCtx.ytdMonthLimit }
+  );
+
   return {
     available: true,
     source:
       "SalesOrder.totalNetValue + nfes.dataProcessamento; exclui clientes do grupo; venda de mercado",
-    periodLabel: now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
+    periodLabel: ref.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
     yearLabel: year,
     summaryCards,
     target,
     projection,
     yearComparison,
     realizedVsProjected,
-    monthlyBilling: buildMonthlyBillingChart(
-      currentYearMonthly,
-      previousYearMonthly,
-      twoYearsAgoMonthly,
-      year
-    ),
-    cumulativeBilling: buildCumulativeChart(
-      currentYearMonthly,
-      previousYearMonthly,
-      twoYearsAgoMonthly,
-      year
-    ),
+    monthlySeries,
+    chartSeries: buildChartSeriesConfig("billing", yearCtx),
+    cumulativeBilling: toCumulativeBillingPoints(monthlySeries),
     recentInvoicedOrders: recentInvoiced,
     topCustomers,
     intercompanyExclusionApplied: true,

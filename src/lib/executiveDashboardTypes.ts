@@ -41,6 +41,39 @@ export type DashboardChartPoint = {
   target?: ExecutiveMetricValue;
 };
 
+/** Série mensal enriquecida para gráficos barra + linha e tooltips executivos. */
+export type DashboardMonthlySeriesPoint = {
+  month: number;
+  monthLabel: string;
+  periodLabel: string;
+  previousYearValue: number;
+  currentYearValue: ExecutiveMetricValue;
+  targetValue: number;
+  projectedValue: ExecutiveMetricValue;
+  achievementPercent: ExecutiveMetricValue;
+  differenceToTarget: ExecutiveMetricValue;
+};
+
+export type DashboardChartSeriesConfig = {
+  kind: "salesOrders" | "billing";
+  selectedYear: number;
+  previousYear: number;
+  ytdMonthLimit: number;
+  targetAsLine: true;
+  labels: {
+    previousYearBar: string;
+    currentYearBar: string;
+    targetLine: string;
+    projectedLine?: string;
+  };
+  colors: {
+    previousYearBar: string;
+    currentYearBar: string;
+    targetLine: string;
+    projectedLine?: string;
+  };
+};
+
 export type DashboardCumulativeChartPoint = {
   month: number;
   label: string;
@@ -124,7 +157,8 @@ export type SalesOrdersDashboardTab = ExecutiveSectionBase & {
   yearLabel: number;
   summaryCards: DashboardMetricCard[];
   target: DashboardTargetBlock;
-  monthlyEvolution: DashboardChartPoint[];
+  monthlySeries: DashboardMonthlySeriesPoint[];
+  chartSeries: DashboardChartSeriesConfig;
   statusBreakdown: DashboardStatusBreakdownRow[];
   overdueOrders: {
     count: number;
@@ -144,7 +178,8 @@ export type BillingDashboardTab = ExecutiveSectionBase & {
   projection: BillingProjectionBlock;
   yearComparison: BillingYearComparison;
   realizedVsProjected: BillingRealizedVsProjected;
-  monthlyBilling: DashboardChartPoint[];
+  monthlySeries: DashboardMonthlySeriesPoint[];
+  chartSeries: DashboardChartSeriesConfig;
   cumulativeBilling: DashboardCumulativeChartPoint[];
   recentInvoicedOrders: RecentInvoicedOrderRow[];
   topCustomers: BillingTopCustomerRow[];
@@ -159,6 +194,8 @@ export type ExecutiveDashboardPermissions = {
 
 export type ExecutiveDashboardSummary = {
   generatedAt: string;
+  selectedYear: number;
+  previousYear: number;
   permissions: ExecutiveDashboardPermissions;
   tabs: {
     salesOrders: SalesOrdersDashboardTab | null;

@@ -4,7 +4,7 @@ import type { BillingDashboardTab } from "@/src/lib/executiveDashboardTypes";
 import { formatExecutiveCurrency, formatExecutiveInteger } from "@/src/lib/executiveDashboardFormatters";
 import {
   ExecutiveCumulativeChart,
-  ExecutiveMonthlyChart,
+  ExecutiveMonthlyComboChart,
   ExecutiveRealizedVsProjectedChart,
   ExecutiveTargetPanel,
 } from "@/src/components/dashboard/ExecutiveDashboardCharts";
@@ -56,7 +56,11 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
       </section>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <ExecutiveRealizedVsProjectedChart title="Realizado vs projetado vs meta" data={tab.realizedVsProjected} />
+        <ExecutiveRealizedVsProjectedChart
+          title="Realizado vs projetado vs meta"
+          data={tab.realizedVsProjected}
+          config={tab.chartSeries}
+        />
         <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
           <h3 className="mb-4 text-lg font-bold">Projeção do mês</h3>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -78,11 +82,15 @@ export function ExecutiveBillingTab({ tab }: { tab: BillingDashboardTab }) {
         </section>
       </div>
 
-      <ExecutiveCumulativeChart title="Faturamento acumulado por mês" data={tab.cumulativeBilling} />
-      <ExecutiveMonthlyChart
+      <ExecutiveCumulativeChart
+        title="Faturamento acumulado por mês"
+        data={tab.cumulativeBilling}
+        config={tab.chartSeries}
+      />
+      <ExecutiveMonthlyComboChart
         title="Faturamento mês a mês"
-        data={tab.monthlyBilling}
-        showTwoYearsAgo
+        series={tab.monthlySeries}
+        config={tab.chartSeries}
       />
 
       <div className="grid gap-6 xl:grid-cols-2">
