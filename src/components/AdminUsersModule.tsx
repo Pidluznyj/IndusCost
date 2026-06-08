@@ -77,8 +77,9 @@ function hasSellerLink(form: UserFormState): boolean {
   return Boolean(form.externalSellerId.trim() || form.sellerResponsibleName.trim());
 }
 
-function formHasCrmSellerOwn(form: UserFormState): boolean {
-  return form.permissions.includes("crm.seller.own");
+/** Somente vendedores (role SELLER) precisam de vínculo Nomus obrigatório. */
+function requiresCommercialSellerLink(form: UserFormState): boolean {
+  return form.role === "SELLER";
 }
 
 export const AdminUsersModule: React.FC = () => {
@@ -201,21 +202,15 @@ export const AdminUsersModule: React.FC = () => {
       const n = Number.parseInt(form.externalSellerId.trim(), 10);
       if (!Number.isFinite(n) || n < 0) return "ID do vendedor Nomus inválido.";
     }
-    if (formHasCrmSellerOwn(form) && !hasSellerLink(form)) {
-      return "Usuário com Minha Gestão (crm.seller.own) precisa estar vinculado a um vendedor.";
+    if (requiresCommercialSellerLink(form) && !hasSellerLink(form)) {
+      return "Perfil vendedor precisa estar vinculado a um vendedor Nomus.";
     }
     return null;
   };
 
   const sellerLinkWarning = useMemo(() => {
-    if (hasSellerLink(form)) return null;
-    if (formHasCrmSellerOwn(form)) {
-      return "Usuário com Minha Gestão precisa estar vinculado a um vendedor.";
-    }
-    if (form.role === "SELLER") {
-      return "Perfil vendedor sem vínculo: Minha Gestão Comercial ficará vazia até vincular um vendedor real.";
-    }
-    return null;
+    if (hasSellerLink(form) || !requiresCommercialSellerLink(form)) return null;
+    return "Perfil vendedor precisa estar vinculado a um vendedor Nomus para Minha Gestão Comercial.";
   }, [form]);
 
   // Quantos Super Administradores ativos existem na lista carregada — usado para
@@ -577,7 +572,7 @@ export const AdminUsersModule: React.FC = () => {
                       ? "Gestores comerciais podem ver todos os vendedores no CRM (crm.seller.all)."
                       : form.role === "SUPER_ADMIN"
                         ? "Super administrador possui todas as permissões automaticamente."
-                        : "Selecione o vendedor comercial quando o usuário tiver Minha Gestão (crm.seller.own)."}
+                        : "Vínculo comercial é opcional. Obrigatório apenas para perfil Vendedor."}
                 </p>
               </div>
               <button type="button" onClick={() => setEditorOpen(false)} className="p-2 rounded-full hover:bg-accent">
@@ -719,14 +714,7 @@ export const AdminUsersModule: React.FC = () => {
                     }
                   />
                   {sellerLinkWarning ? (
-                    <div
-                      className={cn(
-                        "rounded-lg border px-3 py-2 text-xs mt-2",
-                        formHasCrmSellerOwn(form)
-                          ? "border-red-200 bg-red-50 text-red-900"
-                          : "border-amber-200 bg-amber-50 text-amber-900"
-                      )}
-                    >
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 mt-2">
                       {sellerLinkWarning}
                     </div>
                   ) : null}
