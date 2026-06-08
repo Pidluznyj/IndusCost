@@ -465,7 +465,9 @@ export function FleetPublicReservationPage() {
           <section className="space-y-3">
             <p className="text-sm text-slate-600">Selecione o veículo desejado.</p>
             {vehicles.length === 0 ? (
-              <p className="text-amber-700 text-sm">Nenhum veículo disponível no momento.</p>
+              <p className="text-amber-700 text-sm">
+                Nenhum veículo disponível para solicitação no momento.
+              </p>
             ) : (
               vehicles.map((v) => {
                 const selected = vehicleId === v.id;

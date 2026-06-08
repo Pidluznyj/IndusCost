@@ -4,12 +4,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   buildFleetPublicReservationSlots,
+  buildFleetReservationLocalDateTime,
   buildPublicDateRange,
   combineDateAndTimeLocal,
+  dateOnlyToYmd,
   FLEET_PUBLIC_DEFAULT_SLOTS,
   filterPastSlotsForToday,
+  formatFleetLocalDate,
   formatWeekdayDateLabel,
   parseFleetPublicSlotConfig,
+  parseLocalDateOnly,
 } from "./fleetPublicReservationSlots.js";
 import {
   findReservationConflict,
@@ -18,8 +22,11 @@ import {
 import {
   formatPublicVehicleLabel,
   generatePublicReservationToken,
+  isPublicReservationVehicleEligible,
+  serializePublicRequestItem,
   serializePublicVehicle,
 } from "./fleetPublicReservationService.js";
+import { FLEET_NON_RESERVABLE_VEHICLE_STATUSES } from "./fleetValidation.js";
 import {
   buildPublicReservationUrl,
   FLEET_PUBLIC_RESERVATION_INITIAL_STEP,
@@ -62,6 +69,81 @@ describe("fleetCpfUtils", () => {
     assert.equal(normalizeCpfDigits("111.444.777-35"), "11144477735");
     assert.equal(formatCpfMask("11144477735"), "111.444.777-35");
     assert.equal(maskCpfForDisplay("11144477735"), "***.***.***-35");
+  });
+});
+
+describe("fleetPublicReservation local date handling", () => {
+  it("parseLocalDateOnly + dateOnlyToYmd preserves 2026-06-08 (no day shift)", () => {
+    const stored = parseLocalDateOnly("2026-06-08")!;
+    assert.equal(dateOnlyToYmd(stored), "2026-06-08");
+    assert.equal(formatFleetLocalDate(stored), "08/06/2026");
+    assert.equal(formatFleetLocalDate("2026-06-08"), "08/06/2026");
+  });
+
+  it("simulates Brazil offset: UTC midnight DATE must not display as 07/06", () => {
+    const fromDb = new Date("2026-06-08T00:00:00.000Z");
+    const wrongLocal = fromDb.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    assert.equal(wrongLocal, "07/06/2026");
+    assert.equal(formatFleetLocalDate(fromDb), "08/06/2026");
+    assert.equal(dateOnlyToYmd(fromDb), "2026-06-08");
+  });
+
+  it("buildFleetReservationLocalDateTime keeps local wall clock for slot", () => {
+    const start = buildFleetReservationLocalDateTime("2026-06-08", "09:00");
+    const end = buildFleetReservationLocalDateTime("2026-06-08", "12:00");
+    assert.equal(start.getFullYear(), 2026);
+    assert.equal(start.getMonth(), 5);
+    assert.equal(start.getDate(), 8);
+    assert.equal(start.getHours(), 9);
+    assert.equal(end.getHours(), 12);
+  });
+
+  it("buildPublicDateRange preserves calendar days without UTC drift", () => {
+    const dates = buildPublicDateRange("2026-06-08", 3);
+    assert.deepEqual(dates, ["2026-06-08", "2026-06-09", "2026-06-10"]);
+    assert.match(formatWeekdayDateLabel("2026-06-08"), /08\/06/);
+  });
+
+  it("serializePublicRequestItem exposes YMD string and label for internal API", () => {
+    const item = serializePublicRequestItem({
+      id: "r1",
+      requestedDate: parseLocalDateOnly("2026-06-08")!,
+      startTime: "09:00",
+      endTime: "12:00",
+    } as Parameters<typeof serializePublicRequestItem>[0]);
+    assert.equal(item.requestedDate, "2026-06-08");
+    assert.equal(item.requestedDateLabel, "08/06/2026");
+  });
+});
+
+describe("fleetPublicReservation public vehicle eligibility", () => {
+  it("AVAILABLE is eligible", () => {
+    assert.equal(isPublicReservationVehicleEligible("AVAILABLE"), true);
+  });
+
+  it("BLOCKED INACTIVE MAINTENANCE IN_USE SOLD RETURNED RESERVED are not eligible", () => {
+    for (const status of FLEET_NON_RESERVABLE_VEHICLE_STATUSES) {
+      assert.equal(isPublicReservationVehicleEligible(status), false, status);
+    }
+  });
+
+  it("public vehicles endpoint lists only AVAILABLE in service query", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes('status: "AVAILABLE"'));
+    assert.ok(src.includes("assertPublicReservationVehicleOrThrow"));
+    assert.ok(src.includes("FLEET_VEHICLE_NOT_ELIGIBLE"));
+  });
+
+  it("serializePublicVehicle still omits plate", () => {
+    const serialized = serializePublicVehicle({
+      id: "v1",
+      brand: "Fiat",
+      model: "Uno",
+      vehicleType: "Hatch",
+      notes: null,
+    });
+    assert.ok(!("plate" in serialized));
   });
 });
 

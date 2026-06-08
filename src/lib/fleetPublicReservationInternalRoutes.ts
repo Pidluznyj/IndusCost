@@ -12,6 +12,7 @@ import {
   rejectPublicReservationDriver,
   rejectPublicReservationRequest,
   serializePublicRequestDriver,
+  serializePublicRequestItem,
 } from "@/src/lib/fleetPublicReservationService.js";
 import { buildPublicReservationUrl } from "@/src/lib/fleetPublicReservationLink.js";
 
@@ -62,10 +63,7 @@ export function registerFleetPublicReservationInternalRoutes(
       const result = await listPublicReservationRequests({ status, page, limit });
       res.json({
         ...result,
-        items: result.items.map((item) => ({
-          ...item,
-          driver: serializePublicRequestDriver(item.driver),
-        })),
+        items: result.items.map((item) => serializePublicRequestItem(item)),
       });
     } catch (e) {
       handleFleetRouteError(res, e, "GET public-reservation-requests", req);
@@ -77,7 +75,7 @@ export function registerFleetPublicReservationInternalRoutes(
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
       const request = await getPublicReservationRequestOrThrow(id);
-      res.json({ request: { ...request, driver: serializePublicRequestDriver(request.driver) } });
+      res.json({ request: serializePublicRequestItem(request) });
     } catch (e) {
       handleFleetRouteError(res, e, "GET public-reservation-request", req);
     }

@@ -96,10 +96,65 @@ export function buildFleetPublicReservationSlots(config: FleetPublicSlotConfig):
   return slots.sort((a, b) => a.start.localeCompare(b.start));
 }
 
+/** Monta DateTime de reserva no fuso local do servidor (parede de relógio YYYY-MM-DD + HH:mm). */
 export function combineDateAndTimeLocal(dateStr: string, timeStr: string): Date {
   const [y, m, d] = dateStr.split("-").map((p) => parseInt(p, 10));
   const [hh, mm] = timeStr.split(":").map((p) => parseInt(p, 10));
   return new Date(y, m - 1, d, hh, mm ?? 0, 0, 0);
+}
+
+/** Alias explícito para DateTime de reserva (data local + hora local). */
+export const buildFleetReservationLocalDateTime = combineDateAndTimeLocal;
+
+const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function parseYmdParts(value: string): { y: number; m: number; d: number } | null {
+  const m = value.match(DATE_ONLY_RE);
+  if (!m) return null;
+  const y = parseInt(m[1]!, 10);
+  const mo = parseInt(m[2]!, 10);
+  const d = parseInt(m[3]!, 10);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return { y, m: mo, d };
+}
+
+/**
+ * Converte "YYYY-MM-DD" em Date para coluna DATE do Prisma sem deslocar o dia.
+ * Usa meio-dia UTC para o valor calendário ficar estável em qualquer fuso do servidor.
+ */
+export function parseLocalDateOnly(value: string): Date | null {
+  const parts = parseYmdParts(value);
+  if (!parts) return null;
+  const dt = new Date(Date.UTC(parts.y, parts.m - 1, parts.d, 12, 0, 0, 0));
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+/** Extrai YYYY-MM-DD de um Date vindo de coluna DATE (componentes UTC). */
+export function dateOnlyToYmd(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** @deprecated Use dateOnlyToYmd — mantido para compatibilidade de imports. */
+export const dateToYmdUtc = dateOnlyToYmd;
+
+/** Formata data calendário para exibição pt-BR (DD/MM/YYYY) sem deslocar por UTC. */
+export function formatFleetLocalDate(value: Date | string): string {
+  if (typeof value === "string") {
+    const parts = parseYmdParts(value.slice(0, 10));
+    if (parts) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${pad(parts.d)}/${pad(parts.m)}/${parts.y}`;
+    }
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const ymd = dateOnlyToYmd(value);
+    return formatFleetLocalDate(ymd);
+  }
+  return typeof value === "string" ? value : "";
 }
 
 export function isSameLocalDate(a: Date, b: Date): boolean {
@@ -125,10 +180,9 @@ export function filterPastSlotsForToday(
   });
 }
 
+/** @deprecated Preferir parseLocalDateOnly para persistência; alias mantido. */
 export function parseDateOnly(value: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const d = combineDateAndTimeLocal(value, "00:00");
-  return Number.isNaN(d.getTime()) ? null : d;
+  return parseLocalDateOnly(value);
 }
 
 const WEEKDAY_PT = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
@@ -139,30 +193,24 @@ export function formatDateYmd(d: Date): string {
 }
 
 export function formatWeekdayDateLabel(dateStr: string): string {
-  const d = parseDateOnly(dateStr);
-  if (!d) return dateStr;
-  const weekday = WEEKDAY_PT[d.getDay()] ?? "";
+  const parts = parseYmdParts(dateStr);
+  if (!parts) return dateStr;
+  const d = new Date(Date.UTC(parts.y, parts.m - 1, parts.d));
+  const weekday = WEEKDAY_PT[d.getUTCDay()] ?? "";
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${weekday}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  return `${weekday}, ${pad(parts.d)}/${pad(parts.m)}`;
 }
 
 /** Gera lista de datas YYYY-MM-DD a partir de `from` por `days` (máx. 14). */
 export function buildPublicDateRange(from: string, days: number): string[] {
-  const start = parseDateOnly(from);
-  if (!start) return [];
+  const parts = parseYmdParts(from);
+  if (!parts) return [];
   const count = Math.min(14, Math.max(1, Math.floor(days)));
   const out: string[] = [];
+  const cursor = new Date(Date.UTC(parts.y, parts.m - 1, parts.d, 12, 0, 0, 0));
   for (let i = 0; i < count; i++) {
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
-    out.push(formatDateYmd(d));
+    out.push(dateOnlyToYmd(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return out;
-}
-
-export function dateToYmdUtc(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }

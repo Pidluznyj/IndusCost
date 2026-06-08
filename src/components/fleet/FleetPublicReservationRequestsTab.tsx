@@ -9,6 +9,7 @@ import {
 } from "@/src/components/fleet/fleetUi";
 import type { FleetDriverRow } from "@/src/types/fleet";
 import { formatCpfMask } from "@/src/lib/fleetCpfUtils";
+import { formatFleetLocalDate } from "@/src/lib/fleetPublicReservationSlots";
 
 type PublicRequestRow = {
   id: string;
@@ -41,7 +42,8 @@ type PublicRequestRow = {
     needsPublicApproval?: boolean;
     createdFromPublicReservation?: boolean;
   } | null;
-  vehicle: { id: string; brand: string; model: string; plate: string | null } | null;
+  vehicle: { id: string; brand: string; model: string; plate: string | null; status?: string } | null;
+  requestedDateLabel?: string;
   fleetReservation: { id: string; status: string } | null;
 };
 
@@ -56,9 +58,9 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: "Cancelada",
 };
 
-function formatDate(v: string) {
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString("pt-BR");
+function formatRequestDate(row: Pick<PublicRequestRow, "requestedDate" | "requestedDateLabel">) {
+  if (row.requestedDateLabel) return row.requestedDateLabel;
+  return formatFleetLocalDate(row.requestedDate);
 }
 
 function formatDt(v: string) {
@@ -293,12 +295,21 @@ export function FleetPublicReservationRequestsTab() {
                     {row.requesterCpf ? formatCpfMask(row.requesterCpf) : "—"}
                   </td>
                   <td className="px-3 py-2 text-xs">{cnhStatusLabel(row)}</td>
-                  <td className="px-3 py-2">{formatDate(row.requestedDate)}</td>
+                  <td className="px-3 py-2">{formatRequestDate(row)}</td>
                   <td className="px-3 py-2">
                     {row.startTime}–{row.endTime}
                   </td>
                   <td className="px-3 py-2">
-                    {row.vehicle ? `${row.vehicle.brand} ${row.vehicle.model}` : "—"}
+                    {row.vehicle ? (
+                      <>
+                        {row.vehicle.brand} {row.vehicle.model}
+                        {row.vehicle.status ? (
+                          <span className="ml-1 text-xs text-slate-500">({row.vehicle.status})</span>
+                        ) : null}
+                      </>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <span
@@ -365,7 +376,7 @@ export function FleetPublicReservationRequestsTab() {
               {detail.requesterPhone && <p>Telefone (solicitação): {detail.requesterPhone}</p>}
               {detail.requesterDepartment && <p>Setor: {detail.requesterDepartment}</p>}
               <p>
-                <strong>Data:</strong> {formatDate(detail.requestedDate)} — {detail.startTime}–
+                <strong>Data:</strong> {formatRequestDate(detail)} — {detail.startTime}–
                 {detail.endTime}
               </p>
               <p>

@@ -215,6 +215,46 @@ sudo systemctl restart induscost
 4. Confirmar tela de CPF sem login.
 5. Enviar solicitação teste; aprovar em **Solicitações QR**.
 
+## Correção de data local e elegibilidade de veículos
+
+### Causa do bug 08/06 → 07/06
+
+- Coluna `requestedDate` (`@db.Date`) é lida pelo Prisma como `Date` em **meia-noite UTC** (ex.: `2026-06-08T00:00:00.000Z`).
+- A tela interna formatava com `new Date(iso).toLocaleDateString("pt-BR")`, que em fuso Brasil (UTC−3) exibe **07/06**.
+- Persistência antiga usava meia-noite **local** do servidor, instável entre ambientes.
+
+### Regra final de data local
+
+| Uso | Helper |
+|-----|--------|
+| Persistir dia escolhido (`DATE`) | `parseLocalDateOnly("YYYY-MM-DD")` — meio-dia UTC estável |
+| Ler dia do banco | `dateOnlyToYmd(date)` — componentes UTC |
+| Montar `DateTime` da reserva | `buildFleetReservationLocalDateTime(date, "HH:mm")` — parede de relógio local |
+| Exibir na UI/API | `formatFleetLocalDate` → `DD/MM/YYYY` sem deslocar |
+| Tráfego API | `requestedDate: "2026-06-08"` (string), não ISO UTC do frontend |
+
+**Proibido** para regra de dia: `new Date("YYYY-MM-DD")` no frontend/backend para exibição ou gravação de calendário.
+
+### Veículos que não aparecem no fluxo público
+
+Somente `FleetVehicle.status = AVAILABLE` na listagem pública. Excluídos (via `isVehicleReservable` / `isPublicReservationVehicleEligible`):
+
+`BLOCKED`, `MAINTENANCE`, `IN_USE`, `INACTIVE`, `RETURNED`, `SOLD`, `CLAIMED`, `RESERVED`
+
+### Validações no backend
+
+- `GET /vehicles` — só `AVAILABLE`
+- `GET /availability` — `assertPublicReservationVehicleOrThrow`
+- `POST /request` — revalida elegibilidade (422 se bloqueado/inativo)
+- `PATCH .../approve` — revalida antes de criar `FleetReservation` (422 se indisponível)
+
+### Como testar no servidor
+
+1. Solicitar reserva para **08/06** no link público → em **Solicitações QR** deve aparecer **08/06/2026** (não 07/06).
+2. Veículo `BLOCKED` ou `INACTIVE` não deve listar no público.
+3. `POST /request` com `vehicleId` bloqueado → 422.
+4. Aprovar solicitação após bloquear veículo → 422 com mensagem clara.
+
 ## Limitações
 
 - Cadastro público cria motorista `PENDING` (validação interna posterior).
