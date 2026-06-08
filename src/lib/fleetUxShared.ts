@@ -121,4 +121,9 @@ export const FLEET_AUDIT_ACTION_LABEL: Record<string, string> = {
   STATUS: "Status",
   AUTO_BLOCK_CHECKLIST: "Bloqueio por checklist crítico",
   CRITICAL_CHECKLIST: "Checklist com item crítico",
+  PUBLIC_CHECK_IN: "Check-in público (QR)",
+  PUBLIC_CHECK_OUT: "Check-out público (QR)",
+  PRESUMED_CHECK_OUT: "Check-out presumido (novo check-in)",
+  REGENERATE: "Regeneração de token",
+  REVOKE: "Revogação de token",
 };

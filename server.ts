@@ -63,6 +63,7 @@ import {
   registerFleetPublicReservationRoutes,
   registerFleetPublicReservationShortLinkMiddleware,
 } from "./src/lib/fleetPublicReservationRoutes.js";
+import { registerFleetPublicVehicleChecklistRoutes } from "./src/lib/fleetPublicVehicleChecklistRoutes.js";
 import { registerAccessProfilesRoutes } from "./src/lib/accessProfilesRoutes.js";
 import {
   AccessProfileError,
@@ -14568,6 +14569,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   // --- API pública: solicitação de reserva de frota (QR Code, sem login) ---
   registerFleetPublicReservationRoutes(app);
   registerFleetPublicReservationShortLinkMiddleware(app);
+  registerFleetPublicVehicleChecklistRoutes(app);
 
   // --- API: Gestão de Frota ---
   registerFleetRoutes(app, {

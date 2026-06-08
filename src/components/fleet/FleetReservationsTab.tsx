@@ -111,6 +111,7 @@ export function FleetReservationsTab() {
   const [reasonText, setReasonText] = useState("");
   const [replaceModal, setReplaceModal] = useState<string | null>(null);
   const [replaceVehicleId, setReplaceVehicleId] = useState("");
+  const [checklistSummaries, setChecklistSummaries] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [checkoutModal, setCheckoutModal] = useState<FleetReservationRow | null>(null);
   const [checkinModal, setCheckinModal] = useState<FleetReservationRow | null>(null);
@@ -139,8 +140,24 @@ export function FleetReservationsTab() {
       if (filterStart) q.set("startDate", filterStart);
       if (filterEnd) q.set("endDate", filterEnd);
       const data = await fetchJsonOk<Record<string, unknown>>(`/api/fleet/reservations?${q}`);
-      setReservations(pickFleetListItems<FleetReservationRow>(data, "reservations"));
+      const rows = pickFleetListItems<FleetReservationRow>(data, "reservations");
+      setReservations(rows);
       setPagination(pickFleetPagination(data));
+      const active = rows.filter((r) => ["APPROVED", "IN_USE", "FINISHED", "FINISHED_WITH_PENDING"].includes(r.status));
+      const summaries: Record<string, string> = {};
+      await Promise.all(
+        active.slice(0, 30).map(async (r) => {
+          try {
+            const res = await fetchJsonOk<{ summary: { label: string } }>(
+              `/api/fleet/reservations/${r.id}/checklists`
+            );
+            summaries[r.id] = res.summary?.label ?? "—";
+          } catch {
+            summaries[r.id] = "—";
+          }
+        })
+      );
+      setChecklistSummaries(summaries);
     } catch (e: unknown) {
       setError(formatFleetApiError(e, "Erro ao carregar reservas."));
     } finally {
@@ -321,6 +338,9 @@ export function FleetReservationsTab() {
           >
             {STATUS_LABEL[r.status]}
           </span>
+          {checklistSummaries[r.id] && checklistSummaries[r.id] !== "—" && (
+            <p className="text-xs text-indigo-700 mt-1">{checklistSummaries[r.id]}</p>
+          )}
         </div>
         <div className="flex flex-wrap gap-1">
           {canApprove && r.status === "PENDING_APPROVAL" && (

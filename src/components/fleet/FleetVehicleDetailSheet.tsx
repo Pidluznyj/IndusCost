@@ -24,6 +24,7 @@ import {
   formatFleetApiError,
 } from "@/src/components/fleet/fleetUi";
 import { FLEET_AUDIT_ACTION_LABEL } from "@/src/lib/fleetUxShared";
+import { FleetVehicleChecklistQrPanel } from "@/src/components/fleet/FleetVehicleChecklistQrPanel";
 
 const STATUS_LABEL: Record<FleetVehicleStatus, string> = {
   AVAILABLE: "Disponível",
@@ -101,6 +102,16 @@ export function FleetVehicleDetailSheet({
   const [usages, setUsages] = useState<FleetUsageRow[]>([]);
   const [maintenances, setMaintenances] = useState<FleetMaintenanceRow[]>([]);
   const [attachments, setAttachments] = useState<FleetAttachmentRow[]>([]);
+  const [vehicleChecklists, setVehicleChecklists] = useState<
+    Array<{
+      id: string;
+      type: string;
+      source: string;
+      completedAt: string;
+      odometer: number;
+      reservation?: { id: string; destination: string | null };
+    }>
+  >([]);
   const [attachmentForm, setAttachmentForm] = useState({
     fileName: "",
     fileUrl: "",
@@ -120,7 +131,7 @@ export function FleetVehicleDetailSheet({
     setLoading(true);
     setError(null);
     try {
-      const [detail, contractsRes, documentsRes, auditRes, usagesRes, maintRes, attachRes] =
+      const [detail, contractsRes, documentsRes, auditRes, usagesRes, maintRes, attachRes, checklistsRes] =
         await Promise.all([
         fetchJsonOk<{ vehicle: FleetVehicleDetail }>(`/api/fleet/vehicles/${vehicleId}`),
         fetchJsonOk<{ contracts: FleetContractRow[] }>(`/api/fleet/vehicles/${vehicleId}/contracts`),
@@ -133,6 +144,9 @@ export function FleetVehicleDetailSheet({
         fetchJsonOk<{ attachments: FleetAttachmentRow[] }>(
           `/api/fleet/attachments?vehicleId=${vehicleId}`
         ),
+        fetchJsonOk<{ checklists: typeof vehicleChecklists }>(
+          `/api/fleet/vehicles/${vehicleId}/checklists`
+        ),
       ]);
       const v = detail.vehicle;
       setVehicle(v);
@@ -142,6 +156,7 @@ export function FleetVehicleDetailSheet({
       setUsages(usagesRes.usages);
       setMaintenances(maintRes.maintenances);
       setAttachments(attachRes.attachments);
+      setVehicleChecklists(checklistsRes.checklists);
       setEditForm({
         plate: v.plate ?? "",
         brand: v.brand,
@@ -531,6 +546,7 @@ export function FleetVehicleDetailSheet({
                       Salvar informações
                     </button>
                   )}
+                  <FleetVehicleChecklistQrPanel vehicleId={vehicleId} canManage={canEdit} />
                 </div>
               )}
 
@@ -872,7 +888,33 @@ export function FleetVehicleDetailSheet({
               )}
 
               {tab === "usage" && (
-                <div className="space-y-2">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800 mb-2">Checklists QR</h4>
+                    {vehicleChecklists.length === 0 ? (
+                      <p className="text-sm text-slate-500">Nenhum checklist registrado.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {vehicleChecklists.map((c) => (
+                          <div key={c.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                            <div className="font-medium">
+                              {c.type === "CHECK_IN"
+                                ? "Check-in"
+                                : c.type === "CHECK_OUT"
+                                  ? "Check-out"
+                                  : "Check-out automático"}{" "}
+                              · {c.odometer.toLocaleString("pt-BR")} km
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {formatDt(c.completedAt)} · {c.source}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800 mb-2">Usos / reservas</h4>
                   {usages.length === 0 ? (
                     <p className="text-sm text-slate-500">Nenhum uso registrado para este veículo.</p>
                   ) : (
@@ -908,6 +950,7 @@ export function FleetVehicleDetailSheet({
                       </div>
                     ))
                   )}
+                  </div>
                 </div>
               )}
 

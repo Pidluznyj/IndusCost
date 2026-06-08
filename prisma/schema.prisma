@@ -1784,6 +1784,35 @@ enum FleetChecklistStatus {
   CANCELED
 }
 
+enum FleetVehicleChecklistTokenStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum FleetReservationChecklistType {
+  CHECK_IN
+  CHECK_OUT
+  AUTO_CHECK_OUT
+}
+
+enum FleetReservationChecklistSource {
+  PUBLIC_QR
+  ADMIN
+  AUTO_FROM_NEXT_CHECKIN
+}
+
+enum FleetReservationChecklistStatus {
+  COMPLETED
+  CANCELLED
+}
+
+enum FleetReservationChecklistItemStatus {
+  OK
+  ATENCAO
+  AVARIA
+  NAO_SE_APLICA
+}
+
 model FleetVehicle {
   id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   plate             String?
@@ -1822,12 +1851,29 @@ model FleetVehicle {
   fines         FleetFine[]
   incidents     FleetIncident[]
   attachments   FleetAttachment[]
+  checklistToken              FleetVehicleChecklistToken?
+  reservationChecklists       FleetReservationChecklist[]
 
   @@index([status])
   @@index([origin])
   @@index([unit])
   @@index([costCenter])
   @@index([plate])
+}
+
+model FleetVehicleChecklistToken {
+  id              String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId       String                         @unique @db.Uuid
+  publicToken     String                         @unique
+  status          FleetVehicleChecklistTokenStatus @default(ACTIVE)
+  createdAt       DateTime                       @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime                       @default(now()) @updatedAt @db.Timestamptz(6)
+  revokedAt       DateTime?                      @db.Timestamptz(6)
+  createdByUserId String?                        @db.Uuid
+
+  vehicle FleetVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status])
 }
 
 model FleetVehicleContract {
@@ -1905,6 +1951,7 @@ model FleetDriver {
   fuelings     FleetFueling[]
   fines        FleetFine[]
   incidents    FleetIncident[]
+  reservationChecklists FleetReservationChecklist[]
 
   @@index([status])
   @@index([cpf])
@@ -1942,11 +1989,61 @@ model FleetReservation {
   incidents    FleetIncident[]
   attachments  FleetAttachment[]
   publicReservationRequest FleetPublicReservationRequest?
+  reservationChecklists    FleetReservationChecklist[]
 
   @@index([vehicleId])
   @@index([driverId])
   @@index([status])
   @@index([startDateTime, endDateTime])
+}
+
+model FleetReservationChecklist {
+  id                     String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reservationId          String                          @db.Uuid
+  vehicleId              String                          @db.Uuid
+  driverId               String?                         @db.Uuid
+  type                   FleetReservationChecklistType
+  source                 FleetReservationChecklistSource
+  status                 FleetReservationChecklistStatus @default(COMPLETED)
+  odometer               Decimal                         @db.Decimal(20, 6)
+  fuelLevel              String?
+  generalNotes           String?
+  responsibilityAccepted Boolean                         @default(false)
+  completedAt            DateTime                        @default(now()) @db.Timestamptz(6)
+  completedByCpf         String?
+  completedByName        String?
+  triggeredByChecklistId String?                         @db.Uuid
+  createdAt              DateTime                        @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime                        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  reservation          FleetReservation              @relation(fields: [reservationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  vehicle              FleetVehicle                  @relation(fields: [vehicleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  driver               FleetDriver?                  @relation(fields: [driverId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  triggeredByChecklist FleetReservationChecklist?    @relation("ChecklistAutoTrigger", fields: [triggeredByChecklistId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  triggeredChecklists  FleetReservationChecklist[]   @relation("ChecklistAutoTrigger")
+  items                FleetReservationChecklistItem[]
+
+  @@index([reservationId])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([type])
+  @@index([completedAt])
+}
+
+model FleetReservationChecklistItem {
+  id          String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  checklistId String                            @db.Uuid
+  code        String
+  label       String
+  status      FleetReservationChecklistItemStatus
+  notes       String?
+  createdAt   DateTime                          @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
+
+  checklist FleetReservationChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([checklistId])
+  @@index([code])
 }
 
 model FleetPublicReservationRequest {
