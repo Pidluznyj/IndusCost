@@ -35,12 +35,19 @@ import {
   type PublicRegisterInput,
 } from "@/src/lib/fleetPublicReservationDriverOps.js";
 import { maskCpfForDisplay } from "@/src/lib/fleetCpfUtils.js";
+import {
+  buildPublicReservationUrl,
+  resolvePublicReservationBaseUrl,
+} from "@/src/lib/fleetPublicReservationLink.js";
+
+export { buildPublicReservationUrl } from "@/src/lib/fleetPublicReservationLink.js";
 
 export { identifyPublicDriverByCpf, registerPublicDriver };
 export type { PublicRegisterInput };
 
 export const FLEET_PUBLIC_SETTINGS_KEYS = [
   "publicReservationEnabled",
+  "publicReservationBaseUrl",
   "publicReservationToken",
   "publicReservationTitle",
   "publicReservationInstructions",
@@ -78,12 +85,6 @@ export function generatePublicReservationToken(): string {
 
 export function generatePublicReservationCode(): string {
   return `FRQ-${randomBytes(4).toString("hex").toUpperCase()}`;
-}
-
-export function buildPublicReservationUrl(token: string, origin?: string): string {
-  const base = (origin ?? "").replace(/\/$/, "");
-  if (base) return `${base}/public/fleet/reservation/${token}`;
-  return `/public/fleet/reservation/${token}`;
 }
 
 export async function ensurePublicReservationToken(userId: string | null): Promise<string> {
@@ -740,13 +741,19 @@ export async function rejectPublicReservationRequest(input: {
   return updated;
 }
 
-export async function getInternalPublicReservationLink(origin?: string) {
+export async function getInternalPublicReservationLink(requestOrigin?: string) {
   const settings = await loadFleetSettings();
   const token = settings.publicReservationToken?.trim();
   const enabled = settings.publicReservationEnabled === "true";
+  const baseUrl = resolvePublicReservationBaseUrl(settings, requestOrigin);
+  const configuredBase = settings.publicReservationBaseUrl?.trim() || null;
+
   return {
     enabled,
     token: token || null,
-    url: token ? buildPublicReservationUrl(token, origin) : null,
+    baseUrl,
+    configuredBaseUrl: configuredBase,
+    url: token && baseUrl ? buildPublicReservationUrl(token, baseUrl) : null,
+    needsBaseUrlConfig: !baseUrl,
   };
 }

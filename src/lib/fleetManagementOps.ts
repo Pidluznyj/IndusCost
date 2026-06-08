@@ -206,6 +206,7 @@ export const FLEET_EDITABLE_SETTINGS_KEYS = [
   "percentualAlertaFranquiaKm",
   "manutencaoValorAprovacao",
   "publicReservationEnabled",
+  "publicReservationBaseUrl",
   "publicReservationToken",
   "publicReservationTitle",
   "publicReservationInstructions",

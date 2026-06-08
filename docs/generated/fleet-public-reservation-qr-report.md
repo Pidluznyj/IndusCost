@@ -7,14 +7,46 @@ Permitir que colaboradores solicitem reserva de veículo por página pública/mo
 ## Rota pública (frontend)
 
 - `/public/fleet/reservation/:token`
+- **Sem login** — rota registrada fora de `RequireAuth` no `App.tsx`.
+- Primeira tela: **CPF** (wizard inicia em etapa CPF).
+
+## Link compartilhável (rede interna / VPN)
+
+Configure em **Frota → Configurações**:
+
+| Setting | Exemplo |
+|---------|---------|
+| `publicReservationBaseUrl` | `http://192.168.100.5:3000` |
+| `publicReservationEnabled` | `true` |
+| `publicReservationToken` | (gerado no painel) |
+
+**Link para enviar aos usuários:**
+
+```
+http://192.168.100.5:3000/public/fleet/reservation/<TOKEN>
+```
+
+- Funciona na rede interna ou VPN — o servidor não precisa de acesso externo.
+- O painel **Reserva pública / QR Code** oferece: copiar link, abrir link, QR Code, regenerar token, ativar/desativar.
+- **Não** usar `127.0.0.1` no link copiado: configure `publicReservationBaseUrl` com IP/DNS acessível pelos celulares.
+- Se a base estiver vazia e o admin acessar por localhost, o painel avisa para configurar a URL.
 
 ## Token / QR Code
 
-- Token em `FleetSettings.publicReservationToken` (64 hex, `crypto.randomBytes(32)`).
-- Ativação: `publicReservationEnabled = true`.
-- Regeneração interna: `POST /api/fleet/public-reservation/regenerate-token`.
-- QR Code: `api.qrserver.com` no painel **Frota → Configurações**.
+- Token em `FleetSettings.publicReservationToken` (64 hex).
+- Base URL em `FleetSettings.publicReservationBaseUrl`.
+- Regeneração: `POST /api/fleet/public-reservation/regenerate-token`.
+- QR Code aponta para o **mesmo link completo** (URL codificada no serviço de imagem).
 - Placas **não** expostas na API/tela pública.
+
+## Solicitar vs consultar reservas
+
+| Ação | Login |
+|------|-------|
+| Solicitar reserva (link/QR público) | **Não** — apenas token válido |
+| Consultar/administrar solicitações | **Sim** — Frota → Solicitações QR (`fleet.reservations.*`) |
+
+Não há consulta pública por CPF nesta fase.
 
 ## Fluxo do usuário (público)
 
@@ -117,10 +149,11 @@ npm run build
 sudo systemctl restart induscost
 ```
 
-1. Ativar token e `publicReservationEnabled`.
-2. Testar CPF existente e CPF novo no celular.
-3. Selecionar veículo, período, enviar solicitação.
-4. Aprovar em **Solicitações QR**.
+1. **Frota → Configurações**: `publicReservationBaseUrl = http://192.168.100.5:3000` (ou IP/DNS real).
+2. Gerar token, ativar `publicReservationEnabled`, salvar.
+3. Copiar link do painel e abrir no celular (mesma rede/VPN).
+4. Confirmar tela de CPF sem login.
+5. Enviar solicitação teste; aprovar em **Solicitações QR**.
 
 ## Limitações
 

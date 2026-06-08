@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   buildFleetPublicReservationSlots,
   buildPublicDateRange,
@@ -14,11 +16,18 @@ import {
   reservationPeriodsOverlap,
 } from "./fleetValidation.js";
 import {
-  buildPublicReservationUrl,
   formatPublicVehicleLabel,
   generatePublicReservationToken,
   serializePublicVehicle,
 } from "./fleetPublicReservationService.js";
+import {
+  buildPublicReservationUrl,
+  FLEET_PUBLIC_RESERVATION_INITIAL_STEP,
+  FLEET_PUBLIC_RESERVATION_PATH,
+  isLocalhostOrigin,
+  normalizePublicReservationBaseUrl,
+  resolvePublicReservationBaseUrl,
+} from "./fleetPublicReservationLink.js";
 import {
   formatCpfMask,
   isValidCpf,
@@ -154,6 +163,67 @@ describe("fleetPublicReservation conflict", () => {
   });
 });
 
+describe("fleetPublicReservationLink", () => {
+  it("buildPublicReservationUrl uses configured base URL", () => {
+    const url = buildPublicReservationUrl(
+      "abc123token",
+      "http://192.168.100.5:3000"
+    );
+    assert.equal(url, "http://192.168.100.5:3000/public/fleet/reservation/abc123token");
+  });
+
+  it("buildPublicReservationUrl removes trailing slash from base", () => {
+    const url = buildPublicReservationUrl(
+      "tok",
+      "http://192.168.100.5:3000/"
+    );
+    assert.equal(url, "http://192.168.100.5:3000/public/fleet/reservation/tok");
+    assert.ok(!url.includes("//public"));
+  });
+
+  it("resolvePublicReservationBaseUrl prefers setting over localhost origin", () => {
+    const base = resolvePublicReservationBaseUrl(
+      { publicReservationBaseUrl: "http://192.168.100.5:3000" },
+      "http://127.0.0.1:3000"
+    );
+    assert.equal(base, "http://192.168.100.5:3000");
+    const url = buildPublicReservationUrl("tok", base);
+    assert.ok(!url.includes("127.0.0.1"));
+  });
+
+  it("resolvePublicReservationBaseUrl uses non-localhost origin when setting empty", () => {
+    const base = resolvePublicReservationBaseUrl({}, "http://192.168.100.5:3000");
+    assert.equal(base, "http://192.168.100.5:3000");
+  });
+
+  it("resolvePublicReservationBaseUrl returns null for localhost-only origin", () => {
+    const base = resolvePublicReservationBaseUrl({}, "http://127.0.0.1:3000");
+    assert.equal(base, null);
+    assert.equal(isLocalhostOrigin("http://127.0.0.1:3000"), true);
+  });
+
+  it("normalizePublicReservationBaseUrl strips trailing slashes", () => {
+    assert.equal(normalizePublicReservationBaseUrl("http://a/b/"), "http://a/b");
+  });
+
+  it("initial wizard step is CPF", () => {
+    assert.equal(FLEET_PUBLIC_RESERVATION_INITIAL_STEP, "cpf");
+  });
+});
+
+describe("fleetPublicReservation public route auth", () => {
+  it("public reservation route is outside RequireAuth in App.tsx", () => {
+    const appPath = join(process.cwd(), "src", "App.tsx");
+    const src = readFileSync(appPath, "utf8");
+    const publicRoute = `path="${FLEET_PUBLIC_RESERVATION_PATH}/:token"`;
+    const idxPublic = src.indexOf(publicRoute);
+    const idxAuth = src.indexOf("<Route element={<RequireAuth />}>");
+    assert.ok(idxPublic >= 0, "rota pública deve existir");
+    assert.ok(idxAuth >= 0, "RequireAuth deve existir");
+    assert.ok(idxPublic < idxAuth, "rota pública deve vir antes do guard de auth");
+  });
+});
+
 describe("fleetPublicReservation security helpers", () => {
   it("generatePublicReservationToken is long hex", () => {
     const t = generatePublicReservationToken();
@@ -190,6 +260,17 @@ describe("fleetPublicReservation permissions catalog", () => {
   it("editable settings include public reservation keys", async () => {
     const { FLEET_EDITABLE_SETTINGS_KEYS } = await import("./fleetManagementOps.js");
     assert.ok(FLEET_EDITABLE_SETTINGS_KEYS.includes("publicReservationEnabled"));
+    assert.ok(FLEET_EDITABLE_SETTINGS_KEYS.includes("publicReservationBaseUrl"));
     assert.ok(FLEET_EDITABLE_SETTINGS_KEYS.includes("publicReservationToken"));
+  });
+});
+
+describe("fleetPublicReservation public token responses", () => {
+  it("routes map disabled token to 403 and invalid to 404", () => {
+    const routesPath = join(process.cwd(), "src", "lib", "fleetPublicReservationRoutes.ts");
+    const src = readFileSync(routesPath, "utf8");
+    assert.ok(src.includes('resolved.reason === "disabled"'));
+    assert.ok(src.includes("res.status(403)"));
+    assert.ok(src.includes("res.status(404)"));
   });
 });

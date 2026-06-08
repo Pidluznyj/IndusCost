@@ -4,6 +4,7 @@ import { Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { formatCpfMask } from "@/src/lib/fleetCpfUtils";
+import { FLEET_PUBLIC_RESERVATION_INITIAL_STEP } from "@/src/lib/fleetPublicReservationLink";
 
 type PublicConfig = {
   title: string;
@@ -75,7 +76,7 @@ function addDaysIso(base: string, days: number) {
 
 export function FleetPublicReservationPage() {
   const { token } = useParams<{ token: string }>();
-  const [step, setStep] = useState<Step>("cpf");
+  const [step, setStep] = useState<Step>(FLEET_PUBLIC_RESERVATION_INITIAL_STEP);
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);

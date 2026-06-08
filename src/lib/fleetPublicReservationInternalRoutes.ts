@@ -10,6 +10,7 @@ import {
   listPublicReservationRequests,
   rejectPublicReservationRequest,
 } from "@/src/lib/fleetPublicReservationService.js";
+import { buildPublicReservationUrl } from "@/src/lib/fleetPublicReservationLink.js";
 
 function isUuid(value: unknown): value is string {
   return (
@@ -39,9 +40,11 @@ export function registerFleetPublicReservationInternalRoutes(
       const user = await getCurrentAppUser(req);
       const token = await ensurePublicReservationToken(user?.id ?? null);
       const origin = `${req.protocol}://${req.get("host") ?? ""}`;
+      const link = await getInternalPublicReservationLink(origin);
       res.json({
         token,
-        url: `${origin.replace(/\/$/, "")}/public/fleet/reservation/${token}`,
+        baseUrl: link.baseUrl,
+        url: link.baseUrl ? buildPublicReservationUrl(token, link.baseUrl) : null,
       });
     } catch (e) {
       handleFleetRouteError(res, e, "POST regenerate token", req);
