@@ -342,8 +342,36 @@ Se vazio: *"Nenhuma decisão registrada ainda."*
 
 - `FleetPublicReservationRequest` + `requesterCpf`, `driverId` → `FleetDriver`
 - `FleetPublicReservationApprovalHistory` — histórico de decisões
-- Migrations: `20260609120000_*`, `20260610120000_fleet_public_reservation_cpf_driver`, `20260612120000_fleet_public_driver_approval`, `20260614120000_fleet_public_reservation_approval_history`
+- Migrations: `20260609120000_*`, `20260610120000_fleet_public_reservation_cpf_driver`, `20260612120000_fleet_public_driver_approval`, `20260612121000_fleet_public_driver_approval_backfill`, `20260613120000_fleet_public_reservation_slug`, `20260614120000_fleet_public_reservation_approval_history`
 - Reutiliza **`FleetDriver`** — sem model duplicado de condutor.
+
+### Recuperação migration P3018 (enum PostgreSQL)
+
+**Causa:** a migration `20260612120000_fleet_public_driver_approval` original adicionava valores ao enum `FleetPublicReservationRequestStatus` e, na **mesma transação**, executava `UPDATE ... SET status = 'PENDING_RESERVATION_APPROVAL'`. O PostgreSQL retorna **55P04** / Prisma **P3018**: *"New enum values must be committed before they can be used."*
+
+**Correção no repositório:** migration dividida em duas etapas:
+
+| Migration | Conteúdo |
+|-----------|----------|
+| `20260612120000_fleet_public_driver_approval` | Somente estrutural: `ALTER TYPE ADD VALUE`, colunas em `FleetDriver` |
+| `20260612121000_fleet_public_driver_approval_backfill` | `UPDATE` legado `PENDING` → `PENDING_RESERVATION_APPROVAL` + `SET DEFAULT` |
+
+Colunas criadas em `FleetDriver`: `createdFromPublicReservation`, `publicRegistrationReviewedAt`, `publicRegistrationReviewedByUserId`, `publicRegistrationRejectionReason`.
+
+**Se `migrate deploy` falhou no servidor** (DB sem colunas, app com schema novo → erro `createdFromPublicReservation does not exist`):
+
+```bash
+cd /opt/induscost
+git pull origin main
+npx prisma migrate resolve --rolled-back 20260612120000_fleet_public_driver_approval
+npx prisma migrate deploy
+npx prisma generate
+npm run test:fleet
+npm run build
+sudo systemctl restart induscost
+```
+
+Depois validar `POST /api/public/fleet/reservation/:token/identify` (tela de CPF).
 
 ## Validação no servidor
 

@@ -682,6 +682,38 @@ describe("fleetPublicReservation public token responses", () => {
   });
 });
 
+describe("fleetPublicReservation driver approval migrations", () => {
+  it("structural migration does not use new enum values in UPDATE (PostgreSQL P3018)", () => {
+    const structuralPath = join(
+      process.cwd(),
+      "prisma",
+      "migrations",
+      "20260612120000_fleet_public_driver_approval",
+      "migration.sql"
+    );
+    const src = readFileSync(structuralPath, "utf8");
+    assert.ok(src.includes("PENDING_DRIVER_APPROVAL"));
+    assert.ok(src.includes("createdFromPublicReservation"));
+    assert.equal(src.includes("UPDATE \"FleetPublicReservationRequest\""), false);
+    assert.equal(src.includes("PENDING_RESERVATION_APPROVAL"), true);
+    assert.equal(src.includes("SET \"status\" = 'PENDING_RESERVATION_APPROVAL'"), false);
+  });
+
+  it("backfill migration applies status update in separate step", () => {
+    const backfillPath = join(
+      process.cwd(),
+      "prisma",
+      "migrations",
+      "20260612121000_fleet_public_driver_approval_backfill",
+      "migration.sql"
+    );
+    const src = readFileSync(backfillPath, "utf8");
+    assert.ok(src.includes("UPDATE \"FleetPublicReservationRequest\""));
+    assert.ok(src.includes("PENDING_RESERVATION_APPROVAL"));
+    assert.ok(src.includes("SET DEFAULT"));
+  });
+});
+
 describe("fleetPublicReservation approval history", () => {
   const baseRequest = {
     publicCode: "QR-ABC",
