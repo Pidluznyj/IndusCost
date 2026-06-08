@@ -24,11 +24,16 @@ import { SETTINGS_TOUR_STEPS } from "@/src/tours/settingsTourSteps";
 import { AppAlert } from "@/src/components/shared/AppAlert";
 import { BrandingSettingsPanel } from "@/src/components/BrandingSettingsPanel";
 import { AdminUsersModule } from "@/src/components/AdminUsersModule";
+import { AccessProfilesModule } from "@/src/components/AccessProfilesModule";
 import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { canAccessSettingsSection, canManageUsers } from "@/src/lib/modulePermissions";
+import {
+  canAccessSettingsSection,
+  canManageUsers,
+  canViewAccessProfiles,
+} from "@/src/lib/modulePermissions";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -328,8 +333,10 @@ const HUB_SECTIONS: Array<{
 export const SettingsModule = () => {
   const auth = useAuth();
   const canManageUsersPerm = canManageUsers(auth);
+  const canViewAccessProfilesPerm = canViewAccessProfiles(auth);
   const canViewSettings = auth.hasPermission("settings.view");
   const canRunNomusDailySync = auth.hasPermission("settings.nomus.sync");
+  const [securitySubTab, setSecuritySubTab] = useState<"users" | "accessProfiles">("users");
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
   const [components, setComponents] = useState<PayrollComponent[]>([]);
@@ -2779,8 +2786,36 @@ export const SettingsModule = () => {
           )}
 
           {activeHubSection === "security" && (
-            <div className="rounded-2xl border border-border bg-card p-6">
-              <AdminUsersModule />
+            <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+              <div className="flex flex-wrap gap-2 border-b border-border pb-3">
+                <button
+                  type="button"
+                  onClick={() => setSecuritySubTab("users")}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold",
+                    securitySubTab === "users"
+                      ? "bg-primary text-primary-foreground"
+                      : "border border-border hover:bg-accent"
+                  )}
+                >
+                  Usuários
+                </button>
+                {canViewAccessProfilesPerm ? (
+                  <button
+                    type="button"
+                    onClick={() => setSecuritySubTab("accessProfiles")}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-semibold",
+                      securitySubTab === "accessProfiles"
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border hover:bg-accent"
+                    )}
+                  >
+                    Perfis de Acesso
+                  </button>
+                ) : null}
+              </div>
+              {securitySubTab === "users" ? <AdminUsersModule /> : <AccessProfilesModule />}
             </div>
           )}
 

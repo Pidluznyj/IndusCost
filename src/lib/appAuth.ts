@@ -26,6 +26,8 @@ export type SafeAppUser = {
   role: AppUserRole;
   permissions: string[];
   effectivePermissions: string[];
+  accessProfileId: string | null;
+  accessProfileName: string | null;
   isActive: boolean;
   externalSellerId: number | null;
   sellerResponsibleName: string | null;
@@ -118,7 +120,11 @@ export function createOpaqueSessionToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-export function toSafeAppUser(user: AppUser): SafeAppUser {
+export type SafeAppUserOptions = {
+  accessProfileName?: string | null;
+};
+
+export function toSafeAppUser(user: AppUser, options: SafeAppUserOptions = {}): SafeAppUser {
   const permissions = filterKnownPermissions(user.permissions);
   return {
     id: user.id,
@@ -127,6 +133,8 @@ export function toSafeAppUser(user: AppUser): SafeAppUser {
     role: user.role,
     permissions,
     effectivePermissions: getEffectivePermissions({ role: user.role, permissions }),
+    accessProfileId: user.accessProfileId ?? null,
+    accessProfileName: options.accessProfileName ?? null,
     isActive: user.isActive,
     externalSellerId: user.externalSellerId,
     sellerResponsibleName: user.sellerResponsibleName,

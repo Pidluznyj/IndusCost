@@ -51,6 +51,8 @@ function mockUser(perms: string[]): AppAuthContext {
     role: "ADMIN",
     permissions: perms,
     effectivePermissions: perms,
+    accessProfileId: null,
+    accessProfileName: null,
     isActive: true,
     externalSellerId: null,
     sellerResponsibleName: null,

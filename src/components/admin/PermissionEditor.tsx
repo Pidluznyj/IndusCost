@@ -6,6 +6,7 @@ import {
   applyTemplatePermissions,
   buildGroupTree,
   clearGroup,
+  enablePermission,
   groupCatalogEntries,
   riskBadgeLabel,
   selectAllInGroup,
@@ -18,10 +19,18 @@ import {
 } from "@/src/lib/permissionCatalogUtils";
 import { MODULE_LABELS, type AppModuleId } from "@/src/lib/modulePermissions";
 
+export type QuickAccessProfileOption = {
+  id: string;
+  name: string;
+  description?: string | null;
+  permissions: string[];
+};
+
 export type PermissionEditorProps = {
   selected: string[];
   onChange: (permissions: string[]) => void;
   readOnly?: boolean;
+  quickProfiles?: QuickAccessProfileOption[];
 };
 
 function PermissionRow({
@@ -95,6 +104,7 @@ export const PermissionEditor: React.FC<PermissionEditorProps> = ({
   selected,
   onChange,
   readOnly = false,
+  quickProfiles,
 }) => {
   const [search, setSearch] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -118,6 +128,15 @@ export const PermissionEditor: React.FC<PermissionEditorProps> = ({
   const applyTemplate = (id: PermissionTemplateId) => {
     if (readOnly) return;
     onChange(applyTemplatePermissions(id));
+  };
+
+  const applyQuickProfile = (profile: QuickAccessProfileOption) => {
+    if (readOnly) return;
+    let acc: string[] = [];
+    for (const key of profile.permissions) {
+      acc = enablePermission(acc, key);
+    }
+    onChange(acc);
   };
 
   const toggleGroupCollapsed = (group: string) => {
@@ -164,19 +183,33 @@ export const PermissionEditor: React.FC<PermissionEditorProps> = ({
 
       {!readOnly ? (
         <div className="space-y-2">
-          <p className="text-[10px] font-bold uppercase text-muted-foreground">Modelos rápidos</p>
+          <p className="text-[10px] font-bold uppercase text-muted-foreground">
+            {quickProfiles && quickProfiles.length > 0 ? "Perfis cadastrados" : "Modelos rápidos"}
+          </p>
           <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(PERMISSION_TEMPLATES) as PermissionTemplateId[]).map((id) => (
-              <button
-                key={id}
-                type="button"
-                title={PERMISSION_TEMPLATES[id].description}
-                onClick={() => applyTemplate(id)}
-                className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
-              >
-                {PERMISSION_TEMPLATES[id].label}
-              </button>
-            ))}
+            {quickProfiles && quickProfiles.length > 0
+              ? quickProfiles.map((profile) => (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    title={profile.description ?? profile.name}
+                    onClick={() => applyQuickProfile(profile)}
+                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                  >
+                    {profile.name}
+                  </button>
+                ))
+              : (Object.keys(PERMISSION_TEMPLATES) as PermissionTemplateId[]).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    title={PERMISSION_TEMPLATES[id].description}
+                    onClick={() => applyTemplate(id)}
+                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                  >
+                    {PERMISSION_TEMPLATES[id].label}
+                  </button>
+                ))}
           </div>
         </div>
       ) : null}

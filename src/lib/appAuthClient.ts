@@ -14,6 +14,8 @@ export type AuthUser = {
   role: AppUserRole;
   permissions: string[];
   effectivePermissions: string[];
+  accessProfileId: string | null;
+  accessProfileName: string | null;
   isActive: boolean;
   externalSellerId: number | null;
   sellerResponsibleName: string | null;

@@ -161,6 +161,20 @@ export function canManageUsers(check: PermissionChecker): boolean {
   return check.hasPermission("users.manage");
 }
 
+export function canViewAccessProfiles(check: PermissionChecker): boolean {
+  return (
+    check.hasPermission("accessProfiles.view") ||
+    check.hasPermission("accessProfiles.manage") ||
+    check.hasPermission("users.manage")
+  );
+}
+
+export function canManageAccessProfiles(check: PermissionChecker): boolean {
+  return (
+    check.hasPermission("accessProfiles.manage") || check.hasPermission("users.manage")
+  );
+}
+
 export function canAccessSettingsSection(
   section:
     | "globals"
@@ -176,7 +190,11 @@ export function canAccessSettingsSection(
   const legacy = check.hasPermission("settings.view");
   switch (section) {
     case "security":
-      return check.hasPermission("users.manage");
+      return (
+        check.hasPermission("users.manage") ||
+        check.hasPermission("accessProfiles.view") ||
+        check.hasPermission("accessProfiles.manage")
+      );
     case "branding":
       return check.hasPermission("settings.branding.view") || legacy;
     case "globals":

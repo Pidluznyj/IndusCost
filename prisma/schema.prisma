@@ -1111,24 +1111,44 @@ enum AppUserRole {
   VIEWER
 }
 
+model AccessProfile {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String       @unique
+  description String?
+  roleBase    AppUserRole?
+  systemKey   String?      @unique
+  permissions String[]     @default([])
+  isSystem    Boolean      @default(false)
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @db.Timestamptz(6)
+  users       AppUser[]
+
+  @@index([isActive])
+  @@index([isSystem])
+}
+
 model AppUser {
-  id                    String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                  String
-  email                 String       @unique
+  email                 String         @unique
   passwordHash          String
-  role                  AppUserRole  @default(VIEWER)
-  permissions           String[]     @default([])
-  isActive              Boolean      @default(true)
+  role                  AppUserRole    @default(VIEWER)
+  permissions           String[]       @default([])
+  accessProfileId       String?        @db.Uuid
+  isActive              Boolean        @default(true)
   externalSellerId      Int?
   sellerResponsibleName String?
-  lastLoginAt           DateTime?    @db.Timestamptz(6)
-  createdAt             DateTime     @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime     @updatedAt @db.Timestamptz(6)
+  lastLoginAt           DateTime?      @db.Timestamptz(6)
+  createdAt             DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime       @updatedAt @db.Timestamptz(6)
+  accessProfile         AccessProfile? @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
   sessions              AppSession[]
 
   @@index([role])
   @@index([isActive])
   @@index([externalSellerId])
+  @@index([accessProfileId])
 }
 
 model AppSession {

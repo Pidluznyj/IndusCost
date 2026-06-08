@@ -59,6 +59,12 @@ import {
 } from "./src/lib/materialDemandFilters.js";
 import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
 import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
+import { registerAccessProfilesRoutes } from "./src/lib/accessProfilesRoutes.js";
+import {
+  AccessProfileError,
+  applyAccessProfileToUserFields,
+  resolveAccessProfileForUser,
+} from "./src/lib/accessProfilesService.js";
 import { registerExecutiveDashboardRoutes } from "./src/lib/executiveDashboardRoutes.js";
 import { registerNomusAccountsReceivableRoutes } from "./src/lib/nomusAccountsReceivableRoutes.js";
 import { registerNomusAccountsPayableRoutes } from "./src/lib/nomusAccountsPayableRoutes.js";
@@ -1318,9 +1324,16 @@ async function startServer() {
         }),
       ]);
 
-      const refreshed = await prisma.appUser.findUniqueOrThrow({ where: { id: user.id } });
+      const refreshed = await prisma.appUser.findUniqueOrThrow({
+        where: { id: user.id },
+        include: { accessProfile: { select: { name: true } } },
+      });
       setAppSessionCookie(res, token);
-      return res.json({ user: toSafeAppUser(refreshed) });
+      return res.json({
+        user: toSafeAppUser(refreshed, {
+          accessProfileName: refreshed.accessProfile?.name ?? null,
+        }),
+      });
     } catch (error) {
       console.error("POST /api/auth/login", error);
       return res.status(500).json({ error: "Erro ao autenticar usuário." });
@@ -1348,12 +1361,18 @@ async function startServer() {
       if (!auth) {
         return res.json({ authenticated: false, user: null });
       }
-      const user = await prisma.appUser.findUnique({ where: { id: auth.id } });
+      const user = await prisma.appUser.findUnique({
+        where: { id: auth.id },
+        include: { accessProfile: { select: { name: true } } },
+      });
       if (!user || !user.isActive) {
         clearAppSessionCookie(res);
         return res.json({ authenticated: false, user: null });
       }
-      return res.json({ authenticated: true, user: toSafeAppUser(user) });
+      return res.json({
+        authenticated: true,
+        user: toSafeAppUser(user, { accessProfileName: user.accessProfile?.name ?? null }),
+      });
     } catch (error) {
       console.error("GET /api/auth/me", error);
       return res.status(500).json({ error: "Erro ao consultar sessão." });
@@ -1378,8 +1397,13 @@ async function startServer() {
     try {
       const users = await prisma.appUser.findMany({
         orderBy: [{ name: "asc" }, { email: "asc" }],
+        include: { accessProfile: { select: { name: true } } },
       });
-      return res.json({ users: users.map((u) => toSafeAppUser(u)) });
+      return res.json({
+        users: users.map((u) =>
+          toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null })
+        ),
+      });
     } catch (error) {
       console.error("GET /api/admin/users", error);
       return res.status(500).json({ error: "Erro ao listar usuários." });
@@ -1391,8 +1415,12 @@ async function startServer() {
       const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
       const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
       const password = typeof req.body?.password === "string" ? req.body.password : "";
-      const role = parseAppUserRole(req.body?.role) ?? AppUserRole.VIEWER;
-      const permissions = filterKnownPermissions(req.body?.permissions);
+      let role = parseAppUserRole(req.body?.role) ?? AppUserRole.VIEWER;
+      let permissions = filterKnownPermissions(req.body?.permissions);
+      const accessProfileId =
+        req.body?.accessProfileId === null || req.body?.accessProfileId === undefined
+          ? null
+          : String(req.body.accessProfileId).trim() || null;
       const isActive = req.body?.isActive !== false;
       const externalSellerId =
         req.body?.externalSellerId === null || req.body?.externalSellerId === undefined
@@ -1423,6 +1451,13 @@ async function startServer() {
         });
       }
 
+      if (accessProfileId) {
+        const profile = await resolveAccessProfileForUser(prisma, accessProfileId);
+        const applied = applyAccessProfileToUserFields(profile);
+        if (applied.role) role = applied.role;
+        if (req.body?.permissions === undefined) permissions = applied.permissions;
+      }
+
       const passwordHash = await hashPassword(password);
       const user = await prisma.appUser.create({
         data: {
@@ -1431,13 +1466,20 @@ async function startServer() {
           passwordHash,
           role,
           permissions,
+          accessProfileId,
           isActive,
           externalSellerId: externalSellerId ?? null,
           sellerResponsibleName,
         },
+        include: { accessProfile: { select: { name: true } } },
       });
-      return res.status(201).json({ user: toSafeAppUser(user) });
+      return res.status(201).json({
+        user: toSafeAppUser(user, { accessProfileName: user.accessProfile?.name ?? null }),
+      });
     } catch (error) {
+      if (error instanceof AccessProfileError) {
+        return res.status(409).json({ error: error.code, message: error.message });
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         return res.status(409).json({ error: "EMAIL_ALREADY_EXISTS", message: "E-mail já cadastrado." });
       }
@@ -1483,6 +1525,28 @@ async function startServer() {
       }
       if (req.body?.permissions !== undefined) {
         data.permissions = filterKnownPermissions(req.body.permissions);
+      }
+      if (req.body?.accessProfileId !== undefined) {
+        if (req.body.accessProfileId === null) {
+          data.accessProfile = { disconnect: true };
+        } else {
+          const profileId = String(req.body.accessProfileId).trim();
+          if (!profileId) {
+            return res.status(400).json({
+              error: "INVALID_PROFILE",
+              message: "Perfil de acesso inválido.",
+            });
+          }
+          const profile = await resolveAccessProfileForUser(prisma, profileId);
+          data.accessProfile = { connect: { id: profile.id } };
+          const applied = applyAccessProfileToUserFields(profile);
+          if (req.body?.role === undefined && applied.role) {
+            data.role = applied.role;
+          }
+          if (req.body?.permissions === undefined) {
+            data.permissions = applied.permissions;
+          }
+        }
       }
       if (req.body?.isActive !== undefined) {
         data.isActive = Boolean(req.body.isActive);
@@ -1584,9 +1648,18 @@ async function startServer() {
         }
       }
 
-      const user = await prisma.appUser.update({ where: { id }, data });
-      return res.json({ user: toSafeAppUser(user) });
+      const user = await prisma.appUser.update({
+        where: { id },
+        data,
+        include: { accessProfile: { select: { name: true } } },
+      });
+      return res.json({
+        user: toSafeAppUser(user, { accessProfileName: user.accessProfile?.name ?? null }),
+      });
     } catch (error) {
+      if (error instanceof AccessProfileError) {
+        return res.status(409).json({ error: error.code, message: error.message });
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         return res.status(409).json({ error: "EMAIL_ALREADY_EXISTS", message: "E-mail já cadastrado." });
       }
@@ -1687,6 +1760,11 @@ async function startServer() {
       console.error("POST /api/admin/users/bootstrap-super-admin", error);
       return res.status(500).json({ error: "Erro ao criar super administrador." });
     }
+  });
+
+  registerAccessProfilesRoutes(app, {
+    requireAppAuth,
+    getCurrentAppUser,
   });
 
   // --- API: Test DB Connection ---

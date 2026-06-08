@@ -26,11 +26,17 @@ import {
 import { PermissionEditor } from "@/src/components/admin/PermissionEditor";
 import { SellerNomusPicker } from "@/src/components/admin/SellerNomusPicker";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
+import type { AccessProfileRecord } from "@/src/lib/accessProfilesClient";
+import {
+  applyProfilePermissionsRaw,
+  permissionsMatchProfile,
+} from "@/src/lib/accessProfilesUtils";
 
 type UserFormState = {
   name: string;
   email: string;
   role: AppUserRole;
+  accessProfileId: string;
   isActive: boolean;
   externalSellerId: string;
   sellerResponsibleName: string;
@@ -42,6 +48,7 @@ const EMPTY_FORM: UserFormState = {
   name: "",
   email: "",
   role: "VIEWER",
+  accessProfileId: "",
   isActive: true,
   externalSellerId: "",
   sellerResponsibleName: "",
@@ -80,6 +87,7 @@ export const AdminUsersModule: React.FC = () => {
   const currentUserId = authUser?.id ?? null;
 
   const [users, setUsers] = useState<AuthUser[]>([]);
+  const [accessProfiles, setAccessProfiles] = useState<AccessProfileRecord[]>([]);
   const [catalog, setCatalog] = useState<PermissionCatalogEntry[]>([]);
   const [sellerOptions, setSellerOptions] = useState<AdminSellerOption[]>([]);
   const [sellerOptionsLoading, setSellerOptionsLoading] = useState(false);
@@ -107,13 +115,15 @@ export const AdminUsersModule: React.FC = () => {
     setError(null);
     try {
       setSellerOptionsLoading(true);
-      const [usersRes, catalogRes, sellersRes] = await Promise.all([
+      const [usersRes, catalogRes, sellersRes, profilesRes] = await Promise.all([
         fetchJsonOk<{ users: AuthUser[] }>("/api/admin/users"),
         fetchJsonOk<{ permissions: PermissionCatalogEntry[] }>("/api/admin/permissions/catalog"),
         fetchJsonOk<{ sellers: AdminSellerOption[] }>("/api/admin/seller-options"),
+        fetchJsonOk<{ profiles: AccessProfileRecord[] }>("/api/access-profiles?activeOnly=1"),
       ]);
       setUsers(Array.isArray(usersRes.users) ? usersRes.users : []);
       setCatalog(Array.isArray(catalogRes.permissions) ? catalogRes.permissions : []);
+      setAccessProfiles(Array.isArray(profilesRes.profiles) ? profilesRes.profiles : []);
       setSellerOptions(Array.isArray(sellersRes.sellers) ? sellersRes.sellers : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar usuários.");
@@ -140,6 +150,7 @@ export const AdminUsersModule: React.FC = () => {
       name: user.name,
       email: user.email,
       role: user.role,
+      accessProfileId: user.accessProfileId ?? "",
       isActive: user.isActive,
       externalSellerId: user.externalSellerId != null ? String(user.externalSellerId) : "",
       sellerResponsibleName: user.sellerResponsibleName ?? "",
@@ -148,6 +159,34 @@ export const AdminUsersModule: React.FC = () => {
     });
     setFormError(null);
     setEditorOpen(true);
+  };
+
+  const selectedAccessProfile = useMemo(
+    () => accessProfiles.find((p) => p.id === form.accessProfileId) ?? null,
+    [accessProfiles, form.accessProfileId]
+  );
+
+  const permissionsCustomized = useMemo(() => {
+    if (!selectedAccessProfile || selectedAccessProfile.roleBase === "SUPER_ADMIN") return false;
+    return !permissionsMatchProfile(form.permissions, selectedAccessProfile.permissions);
+  }, [form.permissions, selectedAccessProfile]);
+
+  const applyAccessProfileSelection = (profileId: string) => {
+    const profile = accessProfiles.find((p) => p.id === profileId);
+    if (!profile) {
+      setForm((f) => ({ ...f, accessProfileId: profileId }));
+      return;
+    }
+    const permissions =
+      profile.roleBase === "SUPER_ADMIN"
+        ? []
+        : applyProfilePermissionsRaw(profile.permissions);
+    setForm((f) => ({
+      ...f,
+      accessProfileId: profileId,
+      role: profile.roleBase ?? f.role,
+      permissions,
+    }));
   };
 
   const validateForm = (isCreate: boolean): string | null => {
@@ -260,6 +299,7 @@ export const AdminUsersModule: React.FC = () => {
             password: form.password,
             role: form.role,
             permissions: form.permissions,
+            accessProfileId: form.accessProfileId || null,
             isActive: form.isActive,
             externalSellerId,
             sellerResponsibleName: form.sellerResponsibleName.trim() || null,
@@ -274,6 +314,7 @@ export const AdminUsersModule: React.FC = () => {
             email: form.email.trim(),
             role: form.role,
             permissions: form.permissions,
+            accessProfileId: form.accessProfileId || null,
             isActive: form.isActive,
             externalSellerId,
             sellerResponsibleName: form.sellerResponsibleName.trim() || null,
@@ -402,7 +443,8 @@ export const AdminUsersModule: React.FC = () => {
                 <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="px-4 py-3 font-semibold">Nome</th>
                   <th className="px-4 py-3 font-semibold">E-mail</th>
-                  <th className="px-4 py-3 font-semibold">Perfil</th>
+                  <th className="px-4 py-3 font-semibold">Role</th>
+                  <th className="px-4 py-3 font-semibold">Perfil de acesso</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
                   <th className="px-4 py-3 font-semibold">Vendedor</th>
                   <th className="px-4 py-3 font-semibold">Último login</th>
@@ -438,6 +480,9 @@ export const AdminUsersModule: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{user.email}</td>
                     <td className="px-4 py-3">{formatRoleLabel(user.role)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {user.accessProfileName ?? "—"}
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={cn(
@@ -610,6 +655,30 @@ export const AdminUsersModule: React.FC = () => {
                     />
                   </div>
                 ) : null}
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-semibold text-muted-foreground">Perfil de acesso</label>
+                  <select
+                    value={form.accessProfileId}
+                    onChange={(e) => applyAccessProfileSelection(e.target.value)}
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  >
+                    <option value="">Selecione um perfil (opcional)</option>
+                    {accessProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                        {profile.isSystem ? " · sistema" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedAccessProfile?.description ? (
+                    <p className="text-[10px] text-muted-foreground">{selectedAccessProfile.description}</p>
+                  ) : null}
+                  {permissionsCustomized ? (
+                    <p className="text-[10px] text-amber-800 font-semibold">
+                      Permissões personalizadas (diferentes do perfil selecionado).
+                    </p>
+                  ) : null}
+                </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground">Perfil (role)</label>
                   <select
@@ -666,9 +735,15 @@ export const AdminUsersModule: React.FC = () => {
 
               {form.role !== "SUPER_ADMIN" ? (
                 <PermissionEditor
-                    selected={form.permissions}
-                    onChange={(permissions) => setForm((f) => ({ ...f, permissions }))}
-                  />
+                  selected={form.permissions}
+                  onChange={(permissions) => setForm((f) => ({ ...f, permissions }))}
+                  quickProfiles={accessProfiles.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    description: p.description,
+                    permissions: p.permissions,
+                  }))}
+                />
               ) : (
                 <p className="text-xs text-muted-foreground rounded-lg border border-dashed border-border px-3 py-2">
                   SUPER_ADMIN possui acesso total automático. Não é necessário marcar permissões manualmente.
