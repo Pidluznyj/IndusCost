@@ -1703,6 +1703,13 @@ enum FleetReservationStatus {
   NO_SHOW
 }
 
+enum FleetPublicReservationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum FleetMaintenanceStatus {
   OPEN
   SCHEDULED
@@ -1788,7 +1795,8 @@ model FleetVehicle {
 
   contracts     FleetVehicleContract[]
   documents     FleetVehicleDocument[]
-  reservations  FleetReservation[]
+  reservations              FleetReservation[]
+  publicReservationRequests FleetPublicReservationRequest[]
   usages        FleetUsage[]
   checklists    FleetChecklist[]
   maintenances  FleetMaintenance[]
@@ -1911,11 +1919,48 @@ model FleetReservation {
   fines        FleetFine[]
   incidents    FleetIncident[]
   attachments  FleetAttachment[]
+  publicReservationRequest FleetPublicReservationRequest?
 
   @@index([vehicleId])
   @@index([driverId])
   @@index([status])
   @@index([startDateTime, endDateTime])
+}
+
+model FleetPublicReservationRequest {
+  id                     String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicCode             String                              @unique
+  requesterName          String
+  requesterEmail         String?
+  requesterPhone         String?
+  requesterDepartment    String?
+  requesterEmployeeId    String?
+  responsibilityAccepted Boolean                             @default(false)
+  requestedDate          DateTime                            @db.Date
+  startTime              String
+  endTime                String
+  reason                 String
+  destination            String
+  notes                  String?
+  passengersCount        Int?
+  hasCargo               Boolean?
+  cargoDescription       String?
+  vehicleId              String?                             @db.Uuid
+  status                 FleetPublicReservationRequestStatus @default(PENDING)
+  reviewComment          String?
+  reviewedByUserId       String?                             @db.Uuid
+  reviewedAt             DateTime?                           @db.Timestamptz(6)
+  fleetReservationId     String?                             @unique @db.Uuid
+  createdAt              DateTime                            @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
+
+  vehicle          FleetVehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  fleetReservation FleetReservation? @relation(fields: [fleetReservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([status])
+  @@index([requestedDate])
+  @@index([vehicleId])
+  @@index([createdAt])
 }
 
 model FleetUsage {

@@ -205,4 +205,11 @@ export const FLEET_EDITABLE_SETTINGS_KEYS = [
   "diasAlertaCnh",
   "percentualAlertaFranquiaKm",
   "manutencaoValorAprovacao",
+  "publicReservationEnabled",
+  "publicReservationToken",
+  "publicReservationTitle",
+  "publicReservationInstructions",
+  "publicReservationSlotMinutes",
+  "publicReservationStartHour",
+  "publicReservationEndHour",
 ] as const;

@@ -59,6 +59,7 @@ import {
 } from "./src/lib/materialDemandFilters.js";
 import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
 import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
+import { registerFleetPublicReservationRoutes } from "./src/lib/fleetPublicReservationRoutes.js";
 import { registerAccessProfilesRoutes } from "./src/lib/accessProfilesRoutes.js";
 import {
   AccessProfileError,
@@ -14560,6 +14561,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       res.status(500).json({ error: e?.message || "Erro ao alterar status." });
     }
   });
+
+  // --- API pública: solicitação de reserva de frota (QR Code, sem login) ---
+  registerFleetPublicReservationRoutes(app);
 
   // --- API: Gestão de Frota ---
   registerFleetRoutes(app, {

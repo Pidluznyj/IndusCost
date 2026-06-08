@@ -10,6 +10,8 @@ import { FleetFinancialTab } from "@/src/components/fleet/FleetFinancialTab";
 import { FleetReportsTab } from "@/src/components/fleet/FleetReportsTab";
 import { FleetMobileUsageFlow } from "@/src/components/fleet/FleetMobileUsageFlow";
 import { FleetImportSettings } from "@/src/components/fleet/FleetImportSettings";
+import { FleetPublicReservationQrPanel } from "@/src/components/fleet/FleetPublicReservationQrPanel";
+import { FleetPublicReservationRequestsTab } from "@/src/components/fleet/FleetPublicReservationRequestsTab";
 import { FleetPermissionDenied, useFleetPermissions, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 import type { FleetDashboardResponse } from "@/src/types/fleet";
 
@@ -17,6 +19,7 @@ const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "vehicles", label: "Veículos" },
   { id: "reservations", label: "Agenda / Reservas" },
+  { id: "publicRequests", label: "Solicitações QR" },
   { id: "mobile", label: "Uso em campo" },
   { id: "drivers", label: "Motoristas" },
   { id: "maintenances", label: "Manutenções" },
@@ -35,6 +38,7 @@ const BOOL_SETTING_KEYS = [
   "bloquearRetiradaCnhVencida",
   "checklistRetiradaObrigatorio",
   "checklistDevolucaoObrigatorio",
+  "publicReservationEnabled",
 ];
 
 function Card({ label, value }: { label: string; value: number | string }) {
@@ -268,6 +272,7 @@ export function FleetModule() {
       {tab === "vehicles" && <FleetVehiclesTab />}
       {tab === "drivers" && <FleetDriversTab />}
       {tab === "reservations" && <FleetReservationsTab />}
+      {tab === "publicRequests" && <FleetPublicReservationRequestsTab />}
       {tab === "mobile" && <FleetMobileUsageFlow />}
       {tab === "maintenances" && <FleetMaintenancesTab />}
       {tab === "reports" && <FleetReportsTab />}
@@ -288,6 +293,7 @@ export function FleetModule() {
       {tab === "settings" && (
         <div className="space-y-6 max-w-3xl">
           {canManage && <FleetImportSettings />}
+          <FleetPublicReservationQrPanel canManage={canSettings} />
           <div className="space-y-3 max-w-xl">
           {loading && settings.length === 0 ? (
             <div className="flex justify-center py-8">
