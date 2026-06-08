@@ -33,6 +33,7 @@ import {
   parseFleetPublicSlotConfig,
   type FleetPublicSlot,
 } from "@/src/lib/fleetPublicReservationSlots.js";
+import { resolveSlotsForConsolidatedPeriod } from "@/src/lib/fleetPublicSlotSelection.js";
 import {
   assertValidPublicCpf,
   driverNeedsPublicApproval,
@@ -628,11 +629,12 @@ export async function createPublicReservationRequest(
   const allowedSlots = buildFleetPublicReservationSlots(slotConfig);
   const startTime = input.startTime?.trim();
   const endTime = input.endTime?.trim();
-  const slotOk = allowedSlots.some((s) => s.start === startTime && s.end === endTime);
-  if (!slotOk) throw new FleetValidationError("Período selecionado inválido.");
+  const includedSlots = resolveSlotsForConsolidatedPeriod(allowedSlots, startTime ?? "", endTime ?? "");
+  if (!includedSlots) throw new FleetValidationError("Período selecionado inválido.");
 
   const visibleSlots = filterPastSlotsForToday(allowedSlots, dateStr);
-  if (!visibleSlots.some((s) => s.start === startTime && s.end === endTime)) {
+  const visibleKeys = new Set(visibleSlots.map((s) => s.key));
+  if (!includedSlots.every((s) => visibleKeys.has(s.key))) {
     throw new FleetValidationError("Período indisponível — horário já passou.");
   }
 
@@ -641,11 +643,26 @@ export async function createPublicReservationRequest(
 
   await assertPublicReservationVehicleOrThrow(vehicleId);
 
-  const slot = allowedSlots.find((s) => s.start === startTime && s.end === endTime)!;
   const { reservations, pendingRequests } = await loadDayConflicts(dateStr, vehicleId);
+  const consolidatedSlot: FleetPublicSlot = {
+    start: startTime!,
+    end: endTime!,
+    label: "",
+    key: `${startTime}-${endTime}`,
+  };
 
-  if (vehicleHasSlotConflict(vehicleId, slot, dateStr, reservations, pendingRequests)) {
-    throw new FleetValidationError("Período indisponível para o veículo selecionado.");
+  if (vehicleHasSlotConflict(vehicleId, consolidatedSlot, dateStr, reservations, pendingRequests)) {
+    throw new FleetValidationError(
+      "Período indisponível para o veículo selecionado. Escolha outro horário."
+    );
+  }
+
+  for (const slot of includedSlots) {
+    if (vehicleHasSlotConflict(vehicleId, slot, dateStr, reservations, pendingRequests)) {
+      throw new FleetValidationError(
+        "Um ou mais períodos selecionados não estão mais disponíveis. Escolha novamente."
+      );
+    }
   }
 
   let passengersCount: number | null = null;

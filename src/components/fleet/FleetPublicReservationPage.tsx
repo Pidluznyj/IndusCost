@@ -5,6 +5,13 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { formatCpfMask } from "@/src/lib/fleetCpfUtils";
 import { FLEET_PUBLIC_RESERVATION_INITIAL_STEP } from "@/src/lib/fleetPublicReservationLink";
+import {
+  consolidateSelectedSlots,
+  FLEET_PUBLIC_SLOT_SELECTION_GAP_MESSAGE,
+  formatConsolidatedPeriodLabel,
+  formatSelectedSlotsSummary,
+  selectSlotsByKeys,
+} from "@/src/lib/fleetPublicSlotSelection";
 
 type PublicConfig = {
   title: string;
@@ -38,6 +45,7 @@ type PublicSlot = {
   start: string;
   end: string;
   label: string;
+  key: string;
   available: boolean;
   status: "available" | "unavailable";
 };
@@ -105,8 +113,7 @@ export function FleetPublicReservationPage() {
   const [weekStart, setWeekStart] = useState(todayIso());
   const [daysAvailability, setDaysAvailability] = useState<DayAvailability[]>([]);
   const [selectedDate, setSelectedDate] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [selectedSlotKeys, setSelectedSlotKeys] = useState<string[]>([]);
 
   const [reason, setReason] = useState("");
   const [destination, setDestination] = useState("");
@@ -143,11 +150,37 @@ export function FleetPublicReservationPage() {
     [vehicles, vehicleId]
   );
 
-  const selectedSlotLabel = useMemo(() => {
+  const consolidatedSelection = useMemo(() => {
     const day = daysAvailability.find((d) => d.date === selectedDate);
-    const slot = day?.slots.find((s) => s.start === startTime && s.end === endTime);
-    return slot?.label ?? (startTime && endTime ? `${startTime}–${endTime}` : "—");
-  }, [daysAvailability, selectedDate, startTime, endTime]);
+    if (!day || selectedSlotKeys.length === 0) return null;
+    const slots = selectSlotsByKeys(
+      day.slots.map((s) => ({
+        start: s.start,
+        end: s.end,
+        label: s.label,
+        key: s.key,
+      })),
+      selectedSlotKeys
+    );
+    return consolidateSelectedSlots(slots);
+  }, [daysAvailability, selectedDate, selectedSlotKeys]);
+
+  const selectedPeriodsSummary = useMemo(() => {
+    if (!consolidatedSelection) return "—";
+    return formatSelectedSlotsSummary(consolidatedSelection);
+  }, [consolidatedSelection]);
+
+  const selectedConsolidatedLabel = useMemo(() => {
+    if (!consolidatedSelection) return "—";
+    const day = daysAvailability.find((d) => d.date === selectedDate);
+    const allDaySlots = day?.slots.map((s) => ({
+      start: s.start,
+      end: s.end,
+      label: s.label,
+      key: s.key,
+    }));
+    return formatConsolidatedPeriodLabel(consolidatedSelection, allDaySlots);
+  }, [consolidatedSelection, daysAvailability, selectedDate]);
 
   const selectedDayLabel = useMemo(
     () => daysAvailability.find((d) => d.date === selectedDate)?.weekdayLabel ?? selectedDate,
@@ -275,7 +308,7 @@ export function FleetPublicReservationPage() {
   };
 
   const submitRequest = async () => {
-    if (!token) return;
+    if (!token || !consolidatedSelection) return;
     setBusy(true);
     setError(null);
     try {
@@ -293,8 +326,8 @@ export function FleetPublicReservationPage() {
             requesterDepartment: department || null,
             responsibilityAccepted,
             requestedDate: selectedDate,
-            startTime,
-            endTime,
+            startTime: consolidatedSelection!.startTime,
+            endTime: consolidatedSelection!.endTime,
             reason: reason.trim(),
             destination: destination.trim(),
             notes: notes.trim() || null,
@@ -328,14 +361,51 @@ export function FleetPublicReservationPage() {
     }
     setError(null);
     setSelectedDate("");
-    setStartTime("");
-    setEndTime("");
+    setSelectedSlotKeys([]);
     setStep("schedule");
   };
 
+  const toggleSlotSelection = (dayDate: string, slot: PublicSlot) => {
+    if (!slot.available) return;
+    if (selectedDate !== dayDate) {
+      setSelectedDate(dayDate);
+      setSelectedSlotKeys([slot.key]);
+      setError(null);
+      return;
+    }
+    setSelectedSlotKeys((prev) => {
+      if (prev.includes(slot.key)) return prev.filter((k) => k !== slot.key);
+      return [...prev, slot.key];
+    });
+    setError(null);
+  };
+
   const goNextFromSchedule = () => {
-    if (!selectedDate || !startTime || !endTime) {
+    if (!selectedDate || selectedSlotKeys.length === 0) {
       setError("Selecione um dia e período disponível.");
+      return;
+    }
+    const day = daysAvailability.find((d) => d.date === selectedDate);
+    const slots = selectSlotsByKeys(
+      (day?.slots ?? []).map((s) => ({
+        start: s.start,
+        end: s.end,
+        label: s.label,
+        key: s.key,
+      })),
+      selectedSlotKeys
+    );
+    const consolidated = consolidateSelectedSlots(slots);
+    if (!consolidated) {
+      setError(FLEET_PUBLIC_SLOT_SELECTION_GAP_MESSAGE);
+      return;
+    }
+    const unavailable = slots.some((s) => {
+      const live = day?.slots.find((d) => d.key === s.key);
+      return live && !live.available;
+    });
+    if (unavailable) {
+      setError("Um ou mais períodos selecionados não estão mais disponíveis. Escolha novamente.");
       return;
     }
     setError(null);
@@ -494,6 +564,10 @@ export function FleetPublicReservationPage() {
 
         {step === "schedule" && (
           <section className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Toque nos períodos desejados. Você pode selecionar mais de um horário em sequência no
+              mesmo dia.
+            </p>
             <div className="flex items-center justify-between">
               <button
                 type="button"
@@ -521,19 +595,13 @@ export function FleetPublicReservationPage() {
                   <div className="grid gap-2">
                     {day.slots.map((slot) => {
                       const selected =
-                        selectedDate === day.date &&
-                        startTime === slot.start &&
-                        endTime === slot.end;
+                        selectedDate === day.date && selectedSlotKeys.includes(slot.key);
                       return (
                         <button
-                          key={`${day.date}-${slot.start}`}
+                          key={`${day.date}-${slot.key}`}
                           type="button"
                           disabled={!slot.available}
-                          onClick={() => {
-                            setSelectedDate(day.date);
-                            setStartTime(slot.start);
-                            setEndTime(slot.end);
-                          }}
+                          onClick={() => toggleSlotSelection(day.date, slot)}
                           className={cn(
                             "rounded-xl border px-3 py-3 text-left text-sm transition",
                             !slot.available && "opacity-40 cursor-not-allowed bg-slate-50",
@@ -551,6 +619,17 @@ export function FleetPublicReservationPage() {
                   </div>
                 </div>
               ))
+            )}
+            {consolidatedSelection && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm space-y-2">
+                <p className="font-semibold text-emerald-900">Resumo da seleção</p>
+                <p className="text-emerald-800">
+                  <span className="font-medium">Períodos:</span> {selectedPeriodsSummary}
+                </p>
+                <p className="text-emerald-800">
+                  <span className="font-medium">Intervalo:</span> {selectedConsolidatedLabel}
+                </p>
+              </div>
             )}
           </section>
         )}
@@ -582,7 +661,8 @@ export function FleetPublicReservationPage() {
               <Row label="Nome" value={name} />
               <Row label="Veículo" value={vehicleLabel} />
               <Row label="Dia" value={selectedDayLabel} />
-              <Row label="Período" value={selectedSlotLabel} />
+              <Row label="Períodos" value={selectedPeriodsSummary} />
+              <Row label="Intervalo" value={selectedConsolidatedLabel} />
               <Row label="Motivo" value={reason} />
               <Row label="Destino" value={destination} />
             </div>

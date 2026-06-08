@@ -94,7 +94,7 @@ describe("fleetReservationsCleanup", () => {
     const src = readFileSync(uiPath, "utf8");
     assert.ok(src.includes("isSuperAdmin"));
     assert.ok(src.includes("fleetReservationsCleanupShared"));
-    assert.ok(src.includes(FLEET_RESERVATIONS_CLEANUP_CONFIRM_PHRASE));
+    assert.ok(src.includes("FLEET_RESERVATIONS_CLEANUP_CONFIRM_PHRASE"));
     assert.ok(src.includes("reservations-cleanup-preview"));
   });
 

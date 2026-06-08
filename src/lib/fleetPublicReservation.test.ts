@@ -16,6 +16,14 @@ import {
   parseLocalDateOnly,
 } from "./fleetPublicReservationSlots.js";
 import {
+  areSlotsContiguous,
+  consolidateSelectedSlots,
+  formatConsolidatedPeriodLabel,
+  FLEET_PUBLIC_SLOT_SELECTION_GAP_MESSAGE,
+  resolveSlotsForConsolidatedPeriod,
+  selectSlotsByKeys,
+} from "./fleetPublicSlotSelection.js";
+import {
   findReservationConflict,
   reservationPeriodsOverlap,
 } from "./fleetValidation.js";
@@ -336,6 +344,142 @@ describe("fleetPublicReservationSlots", () => {
     assert.equal(cfg.startHour, 6);
     assert.equal(cfg.endHour, 20);
     assert.equal(cfg.slotMinutes, 180);
+  });
+});
+
+describe("fleetPublicSlotSelection multi-slot", () => {
+  const allSlots = FLEET_PUBLIC_DEFAULT_SLOTS;
+
+  it("single slot selection keeps start/end unchanged", () => {
+    const consolidated = consolidateSelectedSlots([allSlots[0]!]);
+    assert.ok(consolidated);
+    assert.equal(consolidated.startTime, "06:00");
+    assert.equal(consolidated.endTime, "09:00");
+    assert.equal(
+      resolveSlotsForConsolidatedPeriod(allSlots, consolidated.startTime, consolidated.endTime)?.length,
+      1
+    );
+  });
+
+  it("contiguous slots consolidate to first start and last end", () => {
+    const selected = selectSlotsByKeys(allSlots, ["06:00-09:00", "09:00-12:00", "12:00-15:00"]);
+    const consolidated = consolidateSelectedSlots(selected);
+    assert.ok(consolidated);
+    assert.equal(consolidated.startTime, "06:00");
+    assert.equal(consolidated.endTime, "15:00");
+    assert.deepEqual(
+      resolveSlotsForConsolidatedPeriod(allSlots, "06:00", "15:00")?.map((s) => s.key),
+      ["06:00-09:00", "09:00-12:00", "12:00-15:00"]
+    );
+  });
+
+  it("overlapping contiguous slots consolidate correctly (15–18 + 17–20)", () => {
+    const selected = selectSlotsByKeys(allSlots, ["15:00-18:00", "17:00-20:00"]);
+    const consolidated = consolidateSelectedSlots(selected);
+    assert.ok(consolidated);
+    assert.equal(consolidated.startTime, "15:00");
+    assert.equal(consolidated.endTime, "20:00");
+  });
+
+  it("all day slots consolidate to 06:00–20:00 with full-day label", () => {
+    const consolidated = consolidateSelectedSlots(allSlots);
+    assert.ok(consolidated);
+    assert.equal(consolidated.startTime, "06:00");
+    assert.equal(consolidated.endTime, "20:00");
+    assert.equal(
+      formatConsolidatedPeriodLabel(consolidated, allSlots),
+      "Dia todo — 06:00 às 20:00"
+    );
+    assert.deepEqual(
+      resolveSlotsForConsolidatedPeriod(allSlots, "06:00", "20:00")?.map((s) => s.key),
+      allSlots.map((s) => s.key)
+    );
+  });
+
+  it("non-contiguous slots are rejected", () => {
+    const selected = selectSlotsByKeys(allSlots, ["06:00-09:00", "15:00-18:00"]);
+    assert.equal(consolidateSelectedSlots(selected), null);
+    assert.equal(areSlotsContiguous(selected), false);
+    assert.equal(FLEET_PUBLIC_SLOT_SELECTION_GAP_MESSAGE.length > 10, true);
+  });
+
+  it("consolidated interval conflicts when any part overlaps existing booking", () => {
+    const consolidatedStart = combineDateAndTimeLocal("2026-06-10", "06:00");
+    const consolidatedEnd = combineDateAndTimeLocal("2026-06-10", "20:00");
+    const morningBlockedStart = combineDateAndTimeLocal("2026-06-10", "09:00");
+    const morningBlockedEnd = combineDateAndTimeLocal("2026-06-10", "12:00");
+    assert.equal(
+      reservationPeriodsOverlap(
+        consolidatedStart,
+        consolidatedEnd,
+        morningBlockedStart,
+        morningBlockedEnd
+      ),
+      true
+    );
+    const afternoonBlockedStart = combineDateAndTimeLocal("2026-06-10", "12:00");
+    const afternoonBlockedEnd = combineDateAndTimeLocal("2026-06-10", "15:00");
+    assert.equal(
+      reservationPeriodsOverlap(
+        consolidatedStart,
+        consolidatedEnd,
+        afternoonBlockedStart,
+        afternoonBlockedEnd
+      ),
+      true
+    );
+    const outsideStart = combineDateAndTimeLocal("2026-06-10", "20:00");
+    const outsideEnd = combineDateAndTimeLocal("2026-06-10", "23:00");
+    assert.equal(
+      reservationPeriodsOverlap(consolidatedStart, consolidatedEnd, outsideStart, outsideEnd),
+      false
+    );
+  });
+
+  it("consolidated period preserves local date on save (no day shift)", () => {
+    const dateStr = "2026-06-08";
+    const startDt = buildFleetReservationLocalDateTime(dateStr, "06:00");
+    const endDt = buildFleetReservationLocalDateTime(dateStr, "20:00");
+    assert.equal(startDt.getFullYear(), 2026);
+    assert.equal(startDt.getMonth(), 5);
+    assert.equal(startDt.getDate(), 8);
+    assert.equal(endDt.getHours(), 20);
+    const stored = parseLocalDateOnly(dateStr)!;
+    assert.equal(dateOnlyToYmd(stored), dateStr);
+  });
+
+  it("createPublicReservationRequest validates consolidated period via resolveSlotsForConsolidatedPeriod", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes("resolveSlotsForConsolidatedPeriod"));
+    assert.ok(src.includes("Um ou mais períodos selecionados não estão mais disponíveis"));
+  });
+
+  it("public page supports multi-slot selection state", () => {
+    const pagePath = join(
+      process.cwd(),
+      "src",
+      "components",
+      "fleet",
+      "FleetPublicReservationPage.tsx"
+    );
+    const src = readFileSync(pagePath, "utf8");
+    assert.ok(src.includes("selectedSlotKeys"));
+    assert.ok(src.includes("FLEET_PUBLIC_SLOT_SELECTION_GAP_MESSAGE"));
+    assert.ok(src.includes("Intervalo"));
+  });
+
+  it("internal approval tab shows consolidated startTime–endTime interval", () => {
+    const tabPath = join(
+      process.cwd(),
+      "src",
+      "components",
+      "fleet",
+      "FleetPublicReservationRequestsTab.tsx"
+    );
+    const src = readFileSync(tabPath, "utf8");
+    assert.ok(src.includes("{row.startTime}–{row.endTime}"));
+    assert.ok(src.includes("{detail.startTime}–"));
   });
 });
 
