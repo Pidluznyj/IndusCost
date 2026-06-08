@@ -237,6 +237,7 @@ Pendências planejadas: [backlog-futuro.md](./backlog-futuro.md).
 
 ## Referências no repositório
 
+- **Status final (executivo + técnico):** [status-final-implementacao.md](./status-final-implementacao.md)
 - Permissões: `docs/FLEET_PERMISSIONS.md`
 - Manual do usuário: `docs/fleet/manual-operacional.md`
 - Import CSV: `src/lib/fleetCsvImport.ts`, `scripts/fleetImportCsv.ts`
