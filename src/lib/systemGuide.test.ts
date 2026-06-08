@@ -47,9 +47,26 @@ describe("systemGuide wiki", () => {
     const fleet = SYSTEM_GUIDE_SECTIONS.find((s) => s.anchor === "gestao-frota");
     const publicRes = SYSTEM_GUIDE_SECTIONS.find((s) => s.anchor === "frota-reserva-publica");
     const checklist = SYSTEM_GUIDE_SECTIONS.find((s) => s.anchor === "frota-checklist-qr");
-    assert.ok(fleet && fleet.entries.length > 0);
-    assert.ok(publicRes && publicRes.entries.length > 0);
-    assert.ok(checklist && checklist.entries.length > 0);
+    assert.ok(fleet && fleet.entries.length >= 4);
+    assert.ok(publicRes && publicRes.entries.length >= 2);
+    assert.ok(checklist && checklist.entries.length >= 2);
+    const fleetAnchors = fleet!.entries.map((e) => e.anchor);
+    assert.ok(fleetAnchors.includes("frota-veiculos"));
+    assert.ok(fleetAnchors.includes("frota-configuracoes"));
+  });
+
+  it("finance section has separate AR and AP articles", () => {
+    const fin = SYSTEM_GUIDE_SECTIONS.find((s) => s.anchor === "financeiro");
+    const anchors = fin?.entries.map((e) => e.anchor) ?? [];
+    assert.ok(anchors.includes("financeiro-contas-receber"));
+    assert.ok(anchors.includes("financeiro-contas-pagar"));
+  });
+
+  it("dashboard has executive and funnel detail articles", () => {
+    const dash = SYSTEM_GUIDE_SECTIONS.find((s) => s.anchor === "dashboard");
+    const anchors = dash?.entries.map((e) => e.anchor) ?? [];
+    assert.ok(anchors.includes("dashboard-visao-executiva"));
+    assert.ok(anchors.includes("dashboard-funil-vendas"));
   });
 
   it("engineering section covers CIU analysis", () => {
