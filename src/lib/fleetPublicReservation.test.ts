@@ -28,6 +28,7 @@ import {
 } from "./fleetPublicReservationService.js";
 import { FLEET_NON_RESERVABLE_VEHICLE_STATUSES } from "./fleetValidation.js";
 import {
+  buildPublicReservationLinkApiUrl,
   buildPublicReservationShareLinks,
   buildPublicReservationShortUrl,
   buildPublicReservationUrl,
@@ -358,6 +359,129 @@ describe("fleetPublicReservation conflict", () => {
       },
     ];
     assert.equal(findReservationConflict(existing, start, end)?.id, "r1");
+  });
+});
+
+describe("fleetPublicReservation short link public access", () => {
+  it("/public/fleet/reservation/:token is registered before RequireAuth in App.tsx", () => {
+    const appPath = join(process.cwd(), "src", "App.tsx");
+    const src = readFileSync(appPath, "utf8");
+    const idxPublic = src.indexOf('path="/public/fleet/reservation/:token"');
+    const idxShort = src.indexOf('path="/reservar-carro"');
+    const idxAuth = src.indexOf("<Route element={<RequireAuth />}>");
+    assert.ok(idxPublic >= 0);
+    assert.ok(idxShort >= 0);
+    assert.ok(idxAuth >= 0);
+    assert.ok(idxPublic < idxAuth);
+    assert.ok(idxShort < idxAuth);
+  });
+
+  it("/reservar-carro uses FleetPublicReservationShortLinkPage without RequireAuth", () => {
+    const appPath = join(process.cwd(), "src", "App.tsx");
+    const src = readFileSync(appPath, "utf8");
+    assert.ok(src.includes("FleetPublicReservationShortLinkPage"));
+    const shortBlock = src.slice(
+      src.indexOf('path="/reservar-carro"'),
+      src.indexOf("<Route element={<RequireAuth />}>", src.indexOf('path="/reservar-carro"'))
+    );
+    assert.ok(!shortBlock.includes("RequireAuth"));
+  });
+
+  it("short link page resolves slug via public API and navigates to technical route", () => {
+    const pagePath = join(
+      process.cwd(),
+      "src",
+      "components",
+      "fleet",
+      "FleetPublicReservationShortLinkPage.tsx"
+    );
+    const src = readFileSync(pagePath, "utf8");
+    assert.ok(src.includes("buildPublicReservationLinkApiUrl"));
+    assert.ok(src.includes("navigate(body.targetUrl"));
+    assert.ok(!src.includes('to="/login"'));
+    assert.ok(!src.includes("RequireAuth"));
+  });
+
+  it("buildPublicReservationLinkApiUrl maps slug to public reservation-link endpoint", () => {
+    assert.equal(
+      buildPublicReservationLinkApiUrl("reservar-carro"),
+      "/api/public/fleet/reservation-link/reservar-carro"
+    );
+    assert.equal(
+      buildPublicReservationLinkApiUrl("r/frota"),
+      "/api/public/fleet/reservation-link/r/frota"
+    );
+  });
+
+  it("short link page shows controlled errors for 403/404 without login redirect", () => {
+    const pagePath = join(
+      process.cwd(),
+      "src",
+      "components",
+      "fleet",
+      "FleetPublicReservationShortLinkPage.tsx"
+    );
+    const src = readFileSync(pagePath, "utf8");
+    assert.ok(src.includes("res.status === 403"));
+    assert.ok(src.includes("res.status === 404"));
+    assert.ok(src.includes("Solicitação pública desativada"));
+    assert.ok(src.includes("Link não encontrado"));
+  });
+
+  it("QR panel and share links prefer short URL", () => {
+    const panelPath = join(process.cwd(), "src", "components", "fleet", "FleetPublicReservationQrPanel.tsx");
+    const panelSrc = readFileSync(panelPath, "utf8");
+    assert.ok(panelSrc.includes("qrUrl = links?.shortUrl"));
+    assert.ok(panelSrc.includes("Copiar link curto"));
+    const links = buildPublicReservationShareLinks({
+      token: "abc123token",
+      baseUrl: "http://192.168.100.5:3000",
+      slug: "reservar-carro",
+    });
+    assert.equal(links.shortUrl, "http://192.168.100.5:3000/reservar-carro");
+    assert.equal(links.shareUrl, links.shortUrl);
+  });
+
+  it("technical public reservation route remains valid alongside short link", () => {
+    const links = buildPublicReservationShareLinks({
+      token: "tok12345678901234567890123456789012",
+      baseUrl: "http://192.168.100.5:3000",
+      slug: "reservar-carro",
+    });
+    assert.match(links.technicalUrl ?? "", /\/public\/fleet\/reservation\/tok/);
+  });
+
+  it("reservation-link API returns targetUrl path for slug resolution", () => {
+    const routesPath = join(process.cwd(), "src", "lib", "fleetPublicReservationRoutes.ts");
+    const src = readFileSync(routesPath, "utf8");
+    assert.ok(src.includes("targetUrl: result.targetPath"));
+    assert.ok(!src.includes("requireAppAuth"));
+  });
+
+  it("short link middleware still redirects before SPA fallback", () => {
+    const serverPath = join(process.cwd(), "server.ts");
+    const src = readFileSync(serverPath, "utf8");
+    const idxMiddleware = src.indexOf("registerFleetPublicReservationShortLinkMiddleware");
+    const idxVite = src.indexOf("vite.middlewares");
+    const idxStatic = src.indexOf("express.static(distPath)");
+    assert.ok(idxMiddleware >= 0);
+    assert.ok(idxVite >= 0 || idxStatic >= 0);
+    if (idxVite >= 0) assert.ok(idxMiddleware < idxVite);
+    if (idxStatic >= 0) assert.ok(idxMiddleware < idxStatic);
+  });
+
+  it("first wizard step remains CPF after short link resolution", () => {
+    assert.equal(FLEET_PUBLIC_RESERVATION_INITIAL_STEP, "cpf");
+    const pagePath = join(process.cwd(), "src", "components", "fleet", "FleetPublicReservationPage.tsx");
+    const src = readFileSync(pagePath, "utf8");
+    assert.ok(src.includes("FLEET_PUBLIC_RESERVATION_INITIAL_STEP"));
+  });
+
+  it("fleet QR settings panel unchanged for internal authenticated use", () => {
+    const panelPath = join(process.cwd(), "src", "components", "fleet", "FleetPublicReservationQrPanel.tsx");
+    const src = readFileSync(panelPath, "utf8");
+    assert.ok(src.includes("/api/fleet/public-reservation/link"));
+    assert.ok(src.includes("canManage"));
   });
 });
 

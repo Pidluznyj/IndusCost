@@ -22,6 +22,7 @@ import { MaintenanceModule } from "./components/MaintenanceModule";
 import { FleetModule } from "./components/FleetModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
 import { FleetPublicReservationPage } from "./components/fleet/FleetPublicReservationPage";
+import { FleetPublicReservationShortLinkPage } from "./components/fleet/FleetPublicReservationShortLinkPage";
 import { SystemGuideModule } from "./components/SystemGuideModule";
 import { PublicLandingRoute } from "./components/PublicLandingRoute";
 import { PublicLoginRoute } from "./components/PublicLoginRoute";
@@ -263,6 +264,8 @@ export default function App() {
       <Route path="/login" element={<PublicLoginRoute />} />
       <Route path="/proposals/:id/print" element={<ProposalPrintView />} />
       <Route path="/public/fleet/reservation/:token" element={<FleetPublicReservationPage />} />
+      <Route path="/reservar-carro" element={<FleetPublicReservationShortLinkPage />} />
+      <Route path="/r/:sub" element={<FleetPublicReservationShortLinkPage />} />
       <Route element={<RequireAuth />}>
       <Route element={<Layout />}>
         <Route

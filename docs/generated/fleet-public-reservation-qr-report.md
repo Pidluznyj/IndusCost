@@ -4,11 +4,20 @@
 
 Permitir que colaboradores solicitem reserva de veículo por página pública/mobile (QR Code), sem login no ERP. Identificação por **CPF**, vínculo com cadastro de **motorista** (`FleetDriver`), seleção obrigatória de veículo e período. A equipe de frota aprova ou rejeita internamente.
 
-## Rota pública (frontend)
+## Rotas públicas (frontend)
 
-- `/public/fleet/reservation/:token`
-- **Sem login** — rota registrada fora de `RequireAuth` no `App.tsx`.
+| Rota | Uso |
+|------|-----|
+| `/reservar-carro` | Link curto padrão — resolve token e abre wizard |
+| `/r/frota` (exemplo) | Slug com barra — mesma resolução pública |
+| `/public/fleet/reservation/:token` | Link técnico direto |
+
+Todas ficam **antes** de `<RequireAuth />` no `App.tsx`.
+
+- **Sem login** para solicitar reserva.
 - Primeira tela: **CPF** (wizard inicia em etapa CPF).
+- Token inválido → mensagem controlada (404), **não** redireciona para login.
+- Feature desativada → 403 controlado, **não** redireciona para login.
 
 ## Link curto/amigável e cópia do link
 
@@ -30,8 +39,13 @@ Setting `publicReservationSlug` (padrão: `reservar-carro`):
 http://192.168.100.5:3000/reservar-carro
 ```
 
-- Abre a mesma tela de CPF **sem login**.
-- O servidor redireciona (HTTP 302) para o link técnico com o token ativo.
+- **Rota pública** — não exige login no ERP.
+- Abre diretamente a tela de **CPF** (mesmo fluxo do link técnico).
+- Login é necessário **somente** para área interna: consultar, aprovar, rejeitar ou administrar solicitações.
+- Resolução em duas camadas:
+  1. **Frontend:** rota React `/reservar-carro` (e `/r/:sub` para slugs com barra), registrada **antes** de `RequireAuth`, via `FleetPublicReservationShortLinkPage`.
+  2. **Backend:** redirect HTTP 302 opcional (`/reservar-carro` → `/public/fleet/reservation/<TOKEN>`) antes do fallback da SPA.
+- A página curta consulta `GET /api/public/fleet/reservation-link/:slug` (sem autenticação) e navega para `/public/fleet/reservation/<TOKEN>`.
 - Também aceita slug com barra, ex.: `r/frota` → `http://192.168.100.5:3000/r/frota`.
 
 ### Base URL interna

@@ -14567,6 +14567,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   // --- API pública: solicitação de reserva de frota (QR Code, sem login) ---
   registerFleetPublicReservationRoutes(app);
+  registerFleetPublicReservationShortLinkMiddleware(app);
 
   // --- API: Gestão de Frota ---
   registerFleetRoutes(app, {
@@ -14632,9 +14633,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       stack: process.env.NODE_ENV !== "production" ? err.stack : undefined
     });
   });
-
-  // Link curto da reserva pública (ex.: /reservar-carro → /public/fleet/reservation/:token)
-  registerFleetPublicReservationShortLinkMiddleware(app);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

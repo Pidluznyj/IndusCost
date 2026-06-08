@@ -178,6 +178,17 @@ export function resolveClientPublicReservationBaseUrl(
   return null;
 }
 
+/** Monta URL da API pública que resolve slug → rota técnica com token. */
+export function buildPublicReservationLinkApiUrl(slug: string): string {
+  const normalized = normalizePublicReservationSlug(slug);
+  if (!normalized) return "/api/public/fleet/reservation-link/";
+  const parts = normalized.split("/");
+  if (parts.length >= 2) {
+    return `/api/public/fleet/reservation-link/${encodeURIComponent(parts[0]!)}/${encodeURIComponent(parts[1]!)}`;
+  }
+  return `/api/public/fleet/reservation-link/${encodeURIComponent(normalized)}`;
+}
+
 /** Compara path da requisição com o slug configurado (ex.: /reservar-carro). */
 export function publicReservationPathMatchesSlug(
   requestPath: string,
