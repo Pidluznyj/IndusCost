@@ -132,20 +132,29 @@ describe("fleetPublicReservation local date handling", () => {
 });
 
 describe("fleetPublicReservation public vehicle eligibility", () => {
-  it("AVAILABLE is eligible", () => {
+  it("AVAILABLE IN_USE and RESERVED are eligible in public flow (period-based booking)", () => {
     assert.equal(isPublicReservationVehicleEligible("AVAILABLE"), true);
+    assert.equal(isPublicReservationVehicleEligible("IN_USE"), true);
+    assert.equal(isPublicReservationVehicleEligible("RESERVED"), true);
   });
 
-  it("BLOCKED INACTIVE MAINTENANCE IN_USE SOLD RETURNED RESERVED are not eligible", () => {
-    for (const status of FLEET_NON_RESERVABLE_VEHICLE_STATUSES) {
+  it("BLOCKED INACTIVE MAINTENANCE SOLD RETURNED CLAIMED are not eligible publicly", () => {
+    for (const status of [
+      "BLOCKED",
+      "INACTIVE",
+      "MAINTENANCE",
+      "SOLD",
+      "RETURNED",
+      "CLAIMED",
+    ] as const) {
       assert.equal(isPublicReservationVehicleEligible(status), false, status);
     }
   });
 
-  it("public vehicles endpoint lists only AVAILABLE in service query", () => {
+  it("public vehicles endpoint lists non-hard-blocked vehicles", () => {
     const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
     const src = readFileSync(servicePath, "utf8");
-    assert.ok(src.includes('status: "AVAILABLE"'));
+    assert.ok(src.includes("FLEET_PUBLIC_HARD_BLOCKED_VEHICLE_STATUSES"));
     assert.ok(src.includes("assertPublicReservationVehicleOrThrow"));
     assert.ok(src.includes("FLEET_VEHICLE_NOT_ELIGIBLE"));
   });
@@ -350,6 +359,23 @@ describe("fleetPublicReservation requests list filter", () => {
   });
 });
 
+describe("fleetPublicReservation period-based availability", () => {
+  it("public approval uses validatePublicReservationPeriod not vehicle current status", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes("validatePublicReservationPeriod"));
+    assert.ok(src.includes("assertPublicReservationVehicleAllowed"));
+    assert.equal(src.includes("validateReservationFull"), false);
+  });
+
+  it("assertNoReservationOverlap queries by period intersection", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes("startDateTime: { lt: end }"));
+    assert.ok(src.includes("endDateTime: { gt: start }"));
+  });
+});
+
 describe("fleetPublicReservation expired reservation release", () => {
   it("recalculate ignores APPROVED reservations past endDateTime", () => {
     const opsPath = join(process.cwd(), "src", "lib", "fleetVehicleStatusOps.ts");
@@ -367,11 +393,10 @@ describe("fleetPublicReservation expired reservation release", () => {
     assert.ok((approvedBranch as { endDateTime?: { gt: Date } }).endDateTime?.gt instanceof Date);
   });
 
-  it("public approval recalculates vehicle status before validate", () => {
+  it("public approval validates requested period not current vehicle status", () => {
     const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
     const src = readFileSync(servicePath, "utf8");
-    assert.ok(src.includes("PUBLIC_RESERVATION_APPROVE_PREP"));
-    assert.ok(src.includes("PUBLIC_RESERVATION_VEHICLE_CHECK"));
+    assert.ok(src.includes("validatePublicReservationPeriod"));
   });
 });
 

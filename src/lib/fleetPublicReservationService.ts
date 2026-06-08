@@ -1,24 +1,25 @@
 import { randomBytes } from "node:crypto";
 import type { FleetPublicReservationRequestStatus, FleetVehicle, Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
-import { loadFleetSettings, writeFleetAuditLog } from "@/src/lib/fleetService.js";
+import {
+  assertNoReservationOverlap,
+  loadFleetSettings,
+  writeFleetAuditLog,
+} from "@/src/lib/fleetService.js";
 import {
   FleetValidationError,
   assertDateRange,
   assertDriverAuthorizedForReservation,
-  assertVehicleReservable,
+  assertPublicReservationVehicleAllowed,
   computeCnhStatus,
   assertReasonRequired,
   findReservationConflict,
-  isVehicleReservable,
-  buildActiveReservationWhere,
+  FLEET_ACTIVE_RESERVATION_STATUSES,
+  FLEET_PUBLIC_HARD_BLOCKED_VEHICLE_STATUSES,
+  isPublicReservationVehicleAllowed,
   reservationPeriodsOverlap,
 } from "@/src/lib/fleetValidation.js";
-import { recalculateVehicleOperationalStatus } from "@/src/lib/fleetVehicleStatusOps.js";
-import {
-  syncVehicleStatusAfterReservationChange,
-  validateReservationFull,
-} from "@/src/lib/fleetReservationOps.js";
+import { syncVehicleStatusAfterReservationChange } from "@/src/lib/fleetReservationOps.js";
 import {
   buildFleetPublicReservationSlots,
   buildPublicDateRange,
@@ -197,11 +198,11 @@ export function formatPublicVehicleLabel(vehicle: Pick<FleetVehicle, "brand" | "
   return type ? `${base} (${type})` : base;
 }
 
-/** Veículo apto para aparecer no fluxo público (reutiliza isVehicleReservable). */
+/** Veículo apto no fluxo público — bloqueia só status estruturais; IN_USE/RESERVED atuais são permitidos. */
 export function isPublicReservationVehicleEligible(
-  status: Parameters<typeof isVehicleReservable>[0]
+  status: Parameters<typeof isPublicReservationVehicleAllowed>[0]
 ): boolean {
-  return isVehicleReservable(status);
+  return isPublicReservationVehicleAllowed(status);
 }
 
 export function serializePublicRequestItem<
@@ -234,7 +235,9 @@ export function serializePublicVehicle(
 
 async function listReservableVehicles(vehicleId?: string | null) {
   const vehicles = await prisma.fleetVehicle.findMany({
-    where: vehicleId ? { id: vehicleId } : { status: "AVAILABLE" },
+    where: vehicleId
+      ? { id: vehicleId }
+      : { status: { notIn: FLEET_PUBLIC_HARD_BLOCKED_VEHICLE_STATUSES } },
     select: {
       id: true,
       brand: true,
@@ -250,21 +253,74 @@ async function listReservableVehicles(vehicleId?: string | null) {
 }
 
 async function assertPublicReservationVehicleOrThrow(vehicleId: string) {
-  await recalculateVehicleOperationalStatus(vehicleId, {
-    trigger: "PUBLIC_RESERVATION_VEHICLE_CHECK",
-  });
   const vehicle = await prisma.fleetVehicle.findUnique({
     where: { id: vehicleId },
     select: { id: true, brand: true, model: true, vehicleType: true, status: true, plate: true, notes: true },
   });
-  if (!vehicle || !isPublicReservationVehicleEligible(vehicle.status)) {
-    throw new FleetBusinessError("Veículo não disponível para solicitação pública.", {
+  if (!vehicle) {
+    throw new FleetBusinessError("Veículo não encontrado.", {
       httpStatus: 422,
       code: "FLEET_VEHICLE_NOT_ELIGIBLE",
     });
   }
-  assertVehicleReservable(vehicle);
+  try {
+    assertPublicReservationVehicleAllowed(vehicle);
+  } catch (e) {
+    if (e instanceof FleetValidationError) {
+      throw new FleetBusinessError(e.message, {
+        httpStatus: 422,
+        code: "FLEET_VEHICLE_NOT_ELIGIBLE",
+      });
+    }
+    throw e;
+  }
   return vehicle;
+}
+
+async function validatePublicReservationPeriod(input: {
+  vehicleId: string;
+  driverId: string;
+  dateStr: string;
+  startTime: string;
+  endTime: string;
+  excludeRequestId?: string;
+}) {
+  const vehicle = await prisma.fleetVehicle.findUnique({ where: { id: input.vehicleId } });
+  if (!vehicle) throw new FleetValidationError("Veículo não encontrado.");
+  assertPublicReservationVehicleAllowed(vehicle);
+
+  const settings = await loadFleetSettings();
+  if (settings.bloquearReservaDocumentoVencido === "true") {
+    const expiredDoc = await prisma.fleetVehicleDocument.findFirst({
+      where: { vehicleId: vehicle.id, status: "EXPIRED" },
+    });
+    if (expiredDoc) {
+      throw new FleetValidationError("Documento vencido impede nova reserva para este veículo.");
+    }
+  }
+
+  const driver = await prisma.fleetDriver.findUnique({ where: { id: input.driverId } });
+  if (!driver) throw new FleetValidationError("Motorista não encontrado.");
+  assertDriverAuthorizedForReservation(driver, {
+    blockExpiredCnh: settings.bloquearRetiradaCnhVencida !== "false",
+    vehicleType: vehicle.vehicleType,
+  });
+
+  const startDateTime = buildFleetReservationLocalDateTime(input.dateStr, input.startTime);
+  const endDateTime = buildFleetReservationLocalDateTime(input.dateStr, input.endTime);
+  assertDateRange(startDateTime, endDateTime, "Reserva");
+
+  await assertNoReservationOverlap(input.vehicleId, startDateTime, endDateTime);
+
+  const slot = { start: input.startTime, end: input.endTime, label: "", key: "" };
+  const { reservations, pendingRequests } = await loadDayConflicts(input.dateStr, input.vehicleId);
+  if (
+    vehicleHasSlotConflict(input.vehicleId, slot, input.dateStr, reservations, pendingRequests, {
+      excludeRequestId: input.excludeRequestId,
+    })
+  ) {
+    throw new FleetValidationError("Conflito de agenda — período já ocupado para este veículo.");
+  }
 }
 
 type PeriodLike = { startDateTime: Date; endDateTime: Date; id?: string };
@@ -299,11 +355,11 @@ async function loadDayConflicts(dateStr: string, vehicleId: string) {
     throw new FleetValidationError("Data inválida para verificação de disponibilidade.");
   }
 
-  const now = new Date();
   const [reservations, pendingRequests] = await Promise.all([
     prisma.fleetReservation.findMany({
       where: {
-        ...buildActiveReservationWhere(vehicleId, { at: now }),
+        vehicleId,
+        status: { in: FLEET_ACTIVE_RESERVATION_STATUSES },
         startDateTime: { lt: dayEnd },
         endDateTime: { gt: dayStart },
       },
@@ -336,11 +392,11 @@ async function loadRangeConflicts(from: string, days: number, vehicleId: string)
   const rangeEnd = combineDateAndTimeLocal(dates[dates.length - 1]!, "23:59");
   const dateObjs = dates.map((d) => parseLocalDateOnly(d)!).filter(Boolean);
 
-  const now = new Date();
   const [reservations, pendingRequests] = await Promise.all([
     prisma.fleetReservation.findMany({
       where: {
-        ...buildActiveReservationWhere(vehicleId, { at: now }),
+        vehicleId,
+        status: { in: FLEET_ACTIVE_RESERVATION_STATUSES },
         startDateTime: { lt: rangeEnd },
         endDateTime: { gt: rangeStart },
       },
@@ -1021,40 +1077,14 @@ export async function approvePublicReservationRequest(input: {
   const endDateTime = buildFleetReservationLocalDateTime(dateStr, existing.endTime);
   assertDateRange(startDateTime, endDateTime, "Reserva");
 
-  await recalculateVehicleOperationalStatus(vehicleId, {
-    userId: input.reviewedByUserId,
-    trigger: "PUBLIC_RESERVATION_APPROVE_PREP",
-  });
-
-  await validateReservationFull({
+  await validatePublicReservationPeriod({
     vehicleId,
     driverId,
-    startDateTime,
-    endDateTime,
-    excludeReservationId: undefined,
+    dateStr,
+    startTime: existing.startTime,
+    endTime: existing.endTime,
+    excludeRequestId: existing.id,
   });
-
-  try {
-    await assertPublicReservationVehicleOrThrow(vehicleId);
-  } catch (e) {
-    if (e instanceof FleetBusinessError) {
-      throw new FleetBusinessError(
-        "Veículo não está mais disponível para aprovação. Verifique o status do veículo.",
-        { httpStatus: 422, code: "FLEET_VEHICLE_NOT_ELIGIBLE" }
-      );
-    }
-    throw e;
-  }
-
-  const { reservations, pendingRequests } = await loadDayConflicts(dateStr, vehicleId);
-  const slot = { start: existing.startTime, end: existing.endTime, label: "", key: "" };
-  if (
-    vehicleHasSlotConflict(vehicleId, slot, dateStr, reservations, pendingRequests, {
-      excludeRequestId: existing.id,
-    })
-  ) {
-    throw new FleetValidationError("Conflito de agenda — período já ocupado para este veículo.");
-  }
 
   const requesterNote = [
     `[Solicitação pública ${existing.publicCode}]`,

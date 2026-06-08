@@ -22,6 +22,16 @@ export const FLEET_NON_RESERVABLE_VEHICLE_STATUSES: FleetVehicleStatus[] = [
   "RESERVED",
 ];
 
+/** Bloqueio absoluto no fluxo público — IN_USE/RESERVED do momento não impedem outro dia/hora. */
+export const FLEET_PUBLIC_HARD_BLOCKED_VEHICLE_STATUSES: FleetVehicleStatus[] = [
+  "BLOCKED",
+  "MAINTENANCE",
+  "INACTIVE",
+  "RETURNED",
+  "SOLD",
+  "CLAIMED",
+];
+
 export const ORIGINS_REQUIRING_CONTRACT: FleetVehicleOrigin[] = [
   "RENTED",
   "LEASING",
@@ -143,6 +153,20 @@ export function assertNonNegativeAmount(amount: number, label = "Valor"): void {
 
 export function isVehicleReservable(status: FleetVehicleStatus): boolean {
   return !FLEET_NON_RESERVABLE_VEHICLE_STATUSES.includes(status);
+}
+
+export function isPublicReservationVehicleAllowed(status: FleetVehicleStatus): boolean {
+  return !FLEET_PUBLIC_HARD_BLOCKED_VEHICLE_STATUSES.includes(status);
+}
+
+export function assertPublicReservationVehicleAllowed(
+  vehicle: Pick<FleetVehicle, "status" | "plate">
+): void {
+  if (!isPublicReservationVehicleAllowed(vehicle.status)) {
+    throw new FleetValidationError(
+      `Veículo indisponível para solicitação pública (status: ${vehicle.status}).`
+    );
+  }
 }
 
 export function assertVehicleReservable(vehicle: Pick<FleetVehicle, "status" | "plate">): void {
