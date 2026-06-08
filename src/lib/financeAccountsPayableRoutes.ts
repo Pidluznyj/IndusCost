@@ -3,9 +3,12 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   buildFinanceAccountsPayableDashboard,
+  buildFinanceApPrismaWhere,
   FinanceApFilterParseError,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
+  resolveFinanceApDashboardFiltersForLoad,
+  type FinanceApDashboardFilters,
 } from "@/src/lib/financeAccountsPayableDashboard.js";
 import {
   buildFinanceApExportCsv,
@@ -44,11 +47,23 @@ const FINANCE_AP_DASHBOARD_SELECT = {
   ...FINANCE_AP_TITLE_SELECT,
 } as const;
 
-async function loadFinanceApRows() {
+async function loadFinanceApRows(filters: FinanceApDashboardFilters) {
+  const where = buildFinanceApPrismaWhere(filters);
   const rows = await prisma.nomusAccountsPayable.findMany({
+    where,
     select: FINANCE_AP_DASHBOARD_SELECT,
+    orderBy: { dueDate: "asc" },
   });
   return rows.map(mapPrismaRowToFinanceApDashboardRow);
+}
+
+function resolveFinanceApLoadFilters(
+  res: express.Response,
+  query: Record<string, unknown>
+): FinanceApDashboardFilters | null {
+  const filters = parseFinanceApFiltersOrRespond(res, query);
+  if (!filters) return null;
+  return resolveFinanceApDashboardFiltersForLoad(query, filters);
 }
 
 function parseFinanceApFiltersOrRespond(
@@ -93,13 +108,11 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
         return res.status(401).json({ error: "Não autenticado." });
       }
 
-      const filters = parseFinanceApFiltersOrRespond(res, req.query as Record<string, unknown>);
+      const query = req.query as Record<string, unknown>;
+      const filters = resolveFinanceApLoadFilters(res, query);
       if (!filters) return;
-      const rows = await loadFinanceApRows();
-      const payload = buildFinanceAccountsPayableDashboard(
-        rows,
-        filters
-      );
+      const rows = await loadFinanceApRows(filters);
+      const payload = buildFinanceAccountsPayableDashboard(rows, filters);
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/dashboard", error);
@@ -114,13 +127,20 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
         return res.status(401).json({ error: "Não autenticado." });
       }
 
-      const query = parseFinanceApTitlesOrRespond(res, req.query as Record<string, unknown>);
+      const rawQuery = req.query as Record<string, unknown>;
+      const query = parseFinanceApTitlesOrRespond(res, rawQuery);
       if (!query) return;
+      const loadFilters = resolveFinanceApDashboardFiltersForLoad(rawQuery, query.filters);
       const rows = await prisma.nomusAccountsPayable.findMany({
+        where: buildFinanceApPrismaWhere(loadFilters),
         select: FINANCE_AP_TITLE_SELECT,
+        orderBy: { dueDate: "asc" },
       });
       const mapped = rows.map(mapPrismaRowToFinanceApTitleRow);
-      const payload = buildFinanceApTitlesPayload(mapped, query);
+      const payload = buildFinanceApTitlesPayload(mapped, {
+        ...query,
+        filters: loadFilters,
+      });
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/titles", error);
@@ -135,9 +155,10 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
         return res.status(401).json({ error: "Não autenticado." });
       }
 
-      const filters = parseFinanceApFiltersOrRespond(res, req.query as Record<string, unknown>);
+      const query = req.query as Record<string, unknown>;
+      const filters = resolveFinanceApLoadFilters(res, query);
       if (!filters) return;
-      const rows = await loadFinanceApRows();
+      const rows = await loadFinanceApRows(filters);
       const csv = buildFinanceApExportCsv(rows, filters);
       const filename = financeApExportFilename();
       res.setHeader("Content-Type", "text/csv; charset=utf-8");

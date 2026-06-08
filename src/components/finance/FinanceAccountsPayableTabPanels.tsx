@@ -11,7 +11,10 @@ import {
   formatFinanceInteger,
   formatFinancePercent,
 } from "@/src/lib/financeAccountsPayableFormat";
-import type { FinanceApDashboardPayload } from "@/src/lib/financeAccountsPayableDashboardTypes";
+import {
+  FINANCE_AP_SUPPLIER_RANKING_LIMIT,
+  type FinanceApDashboardPayload,
+} from "@/src/lib/financeAccountsPayableDashboardTypes";
 import {
   FinanceApAgingChart,
   FinanceApMonthlyScheduleChart,
@@ -171,6 +174,13 @@ export function FinanceApSuppliersTab({ data }: { data: FinanceApDashboardPayloa
   if (!rows.length) return <TabEmpty message="Nenhum fornecedor em aberto na seleção." />;
 
   return (
+    <div className="space-y-3">
+      {rows.length >= FINANCE_AP_SUPPLIER_RANKING_LIMIT ? (
+        <p className="text-xs text-muted-foreground">
+          Exibindo os {FINANCE_AP_SUPPLIER_RANKING_LIMIT} maiores fornecedores por saldo em aberto no
+          período filtrado.
+        </p>
+      ) : null}
     <SimpleTable
       headers={[
         "Fornecedor",
@@ -197,6 +207,7 @@ export function FinanceApSuppliersTab({ data }: { data: FinanceApDashboardPayloa
         r.suggestedAction,
       ])}
     />
+    </div>
   );
 }
 

@@ -2,17 +2,27 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildFinanceAccountsPayableDashboard,
+  buildFinanceApPrismaWhere,
   classifyFinanceApTitle,
   computeDaysOverdue,
   filterFinanceApRows,
   FinanceApFilterParseError,
   hasFinanceApDocument,
+  hasFinanceApPeriodFilter,
+  isFinanceApPeriodAllQuery,
   parseFinanceApDashboardFilters,
+  resolveFinanceApDashboardFiltersForLoad,
   resolveFinanceApDueDateBounds,
   resolveFinanceApSupplierKey,
   startOfLocalDay,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import {
+  buildFinanceApDashboardQuery,
+  createDefaultFinanceApUiFilters,
+  FINANCE_AP_SUPPLIER_RANKING_LIMIT,
+  formatFinanceApPeriodLabel,
+} from "./financeAccountsPayableDashboardTypes.js";
 
 function row(partial: Partial<FinanceApDashboardRow> & Pick<FinanceApDashboardRow, "externalId">): FinanceApDashboardRow {
   return {
@@ -434,6 +444,57 @@ describe("financeAccountsPayableDashboard", () => {
     ];
     const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all" }, REF);
     assert.equal(dash.paymentMethodSummary[0]?.averageTicket, 200);
+  });
+
+  it("aplica ano corrente por padrão quando a requisição não define período", () => {
+    const filters = parseFinanceApDashboardFilters({ status: "all" });
+    assert.equal(hasFinanceApPeriodFilter(filters), false);
+    const resolved = resolveFinanceApDashboardFiltersForLoad({}, filters, REF);
+    assert.equal(resolved.year, 2026);
+  });
+
+  it("respeita period=all para carregar todos os anos", () => {
+    const filters = parseFinanceApDashboardFilters({ status: "all", period: "all" });
+    const resolved = resolveFinanceApDashboardFiltersForLoad({ period: "all" }, filters, REF);
+    assert.equal(resolved.year, undefined);
+    assert.equal(isFinanceApPeriodAllQuery({ period: "all" }), true);
+  });
+
+  it("buildFinanceApPrismaWhere aplica intervalo de vencimento por ano", () => {
+    const where = buildFinanceApPrismaWhere({ status: "all", year: 2026 });
+    const and = (where as { AND?: Array<{ dueDate?: { gte?: Date; lt?: Date } }> }).AND;
+    assert.ok(and?.length);
+    const due = and?.find((clause) => clause.dueDate)?.dueDate;
+    assert.equal(due?.gte?.getFullYear(), 2026);
+    assert.equal(due?.lt?.getFullYear(), 2027);
+  });
+
+  it("buildFinanceApDashboardQuery envia period=all quando ano está vazio", () => {
+    const qs = buildFinanceApDashboardQuery({
+      ...createDefaultFinanceApUiFilters(REF),
+      year: "",
+    });
+    assert.ok(qs.includes("period=all"));
+    assert.ok(!qs.includes("year="));
+  });
+
+  it("filtros padrão da UI incluem ano corrente", () => {
+    const defaults = createDefaultFinanceApUiFilters(REF);
+    assert.equal(defaults.year, "2026");
+    assert.equal(formatFinanceApPeriodLabel(defaults, REF), "Ano 2026");
+  });
+
+  it("supplierRanking limita fornecedores no payload", () => {
+    const rows = Array.from({ length: FINANCE_AP_SUPPLIER_RANKING_LIMIT + 5 }, (_, i) =>
+      row({
+        externalId: i + 1,
+        personCnpj: `${String(i + 1).padStart(2, "0")}.111.111/0001-11`,
+        balancePayable: 100 + i,
+        dueDate: new Date(2026, 5, 10),
+      })
+    );
+    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all", year: 2026 }, REF);
+    assert.equal(dash.supplierRanking.length, FINANCE_AP_SUPPLIER_RANKING_LIMIT);
   });
 
   it("companySummary inclui recebido no mês e atrasoência", () => {

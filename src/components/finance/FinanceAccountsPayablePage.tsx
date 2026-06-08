@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -6,7 +6,9 @@ import {
   buildFinanceApDashboardQuery,
   buildFinanceApExportQuery,
   buildFinanceApYearOptions,
-  EMPTY_FINANCE_AP_UI_FILTERS,
+  createDefaultFinanceApUiFilters,
+  formatFinanceApPeriodLabel,
+  isDefaultFinanceApUiFilters,
   FINANCE_AP_SUSPEND_PAYMENT_OPTIONS,
   FINANCE_AP_MONTH_OPTIONS,
   FINANCE_AP_STATUS_OPTIONS,
@@ -62,7 +64,8 @@ export function FinanceAccountsPayablePage() {
   const [titlesQualityAlert, setTitlesQualityAlert] = useState<FinanceApDataQualityAlertKey | null>(
     null
   );
-  const [filters, setFilters] = useState<FinanceApUiFilters>(EMPTY_FINANCE_AP_UI_FILTERS);
+  const [filters, setFilters] = useState<FinanceApUiFilters>(() => createDefaultFinanceApUiFilters());
+  const dashboardAbortRef = useRef<AbortController | null>(null);
   const debouncedCompany = useDebouncedValue(filters.companyName, 400);
   const debouncedPerson = useDebouncedValue(filters.personName, 400);
   const debouncedCnpj = useDebouncedValue(filters.personCnpj, 400);
@@ -96,22 +99,27 @@ export function FinanceAccountsPayablePage() {
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
+    dashboardAbortRef.current?.abort();
+    const controller = new AbortController();
+    dashboardAbortRef.current = controller;
     setLoading(true);
     setDashboardError(null);
     try {
-      const url = queryString
-        ? `/api/finance/accounts-payable/dashboard?${queryString}`
-        : "/api/finance/accounts-payable/dashboard";
-      const payload = await fetchJsonOk<FinanceApDashboardPayload>(url);
+      const url = `/api/finance/accounts-payable/dashboard?${queryString}`;
+      const payload = await fetchJsonOk<FinanceApDashboardPayload>(url, {
+        signal: controller.signal,
+        credentials: "include",
+      });
+      if (controller.signal.aborted) return;
       setData(payload);
     } catch (e) {
-      setDashboardError(
-        e instanceof Error
-          ? e.message
-          : "Não foi possível carregar o dashboard. Tente atualizar em instantes."
-      );
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      console.error("FinanceAccountsPayablePage.loadDashboard", e);
+      setDashboardError("Não foi possível carregar Contas a Pagar. Tente novamente.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [queryString]);
 
@@ -154,19 +162,27 @@ export function FinanceAccountsPayablePage() {
   };
 
   const cards = data?.cards;
+  const periodLabel = useMemo(
+    () => formatFinanceApPeriodLabel(effectiveFilters),
+    [effectiveFilters]
+  );
+
   const filtersActive =
-    effectiveFilters.companyName ||
-    effectiveFilters.personName ||
-    effectiveFilters.personCnpj ||
-    effectiveFilters.status !== "all" ||
-    effectiveFilters.year ||
-    effectiveFilters.month ||
-    effectiveFilters.dueDateFrom ||
-    effectiveFilters.dueDateTo ||
-    effectiveFilters.documentQuery ||
-    effectiveFilters.suspendPayment !== "all" ||
-    effectiveFilters.paymentMethodName ||
-    effectiveFilters.bankAccountName;
+    !isDefaultFinanceApUiFilters(effectiveFilters) &&
+    Boolean(
+      effectiveFilters.companyName ||
+        effectiveFilters.personName ||
+        effectiveFilters.personCnpj ||
+        effectiveFilters.status !== "all" ||
+        !effectiveFilters.year ||
+        effectiveFilters.month ||
+        effectiveFilters.dueDateFrom ||
+        effectiveFilters.dueDateTo ||
+        effectiveFilters.documentQuery ||
+        effectiveFilters.suspendPayment !== "all" ||
+        effectiveFilters.paymentMethodName ||
+        effectiveFilters.bankAccountName
+    );
 
   return (
     <div className="space-y-5 pb-8">
@@ -186,6 +202,10 @@ export function FinanceAccountsPayablePage() {
                 <dd className="inline font-semibold text-foreground">
                   {formatFinanceDateTime(cards?.lastSyncAt)}
                 </dd>
+              </div>
+              <div>
+                <dt className="inline">Período analisado: </dt>
+                <dd className="inline font-semibold text-foreground">{periodLabel}</dd>
               </div>
               <div>
                 <dt className="inline">Registros filtrados: </dt>
@@ -238,7 +258,11 @@ export function FinanceAccountsPayablePage() {
       />
 
       {dashboardError ? (
-        <FinanceApErrorBanner message={dashboardError} onDismiss={() => setDashboardError(null)} />
+        <FinanceApErrorBanner
+          message={dashboardError}
+          onRetry={() => void loadDashboard()}
+          onDismiss={() => setDashboardError(null)}
+        />
       ) : null}
       {exportError ? (
         <FinanceApErrorBanner message={exportError} onDismiss={() => setExportError(null)} />
@@ -262,7 +286,7 @@ export function FinanceAccountsPayablePage() {
           <button
             type="button"
             onClick={() => {
-              setFilters(EMPTY_FINANCE_AP_UI_FILTERS);
+              setFilters(createDefaultFinanceApUiFilters());
               setTitlesQualityAlert(null);
             }}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"

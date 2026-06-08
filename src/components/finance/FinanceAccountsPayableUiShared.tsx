@@ -36,9 +36,11 @@ export function FinanceApStickyTableHead({ children }: { children: React.ReactNo
 
 export function FinanceApErrorBanner({
   message,
+  onRetry,
   onDismiss,
 }: {
   message: string;
+  onRetry?: () => void;
   onDismiss?: () => void;
 }) {
   return (
@@ -47,15 +49,26 @@ export function FinanceApErrorBanner({
       role="alert"
     >
       <span>{message}</span>
-      {onDismiss ? (
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="text-xs font-semibold underline underline-offset-2 shrink-0"
-        >
-          Fechar
-        </button>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-3 shrink-0">
+        {onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="text-xs font-semibold underline underline-offset-2"
+          >
+            Tentar novamente
+          </button>
+        ) : null}
+        {onDismiss ? (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="text-xs font-semibold underline underline-offset-2"
+          >
+            Fechar
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

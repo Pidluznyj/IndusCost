@@ -6,6 +6,10 @@ import {
   trackFinanceApDataQualityRow,
 } from "./financeAccountsPayableDataQuality.js";
 import { buildSupplierSuggestedAction } from "./financeAccountsPayableActions.js";
+import {
+  FINANCE_AP_COMPANY_SUMMARY_LIMIT,
+  FINANCE_AP_SUPPLIER_RANKING_LIMIT,
+} from "./financeAccountsPayableDashboardTypes.js";
 
 export type FinanceApTitleStatus =
   | "open"
@@ -244,6 +248,7 @@ function parseOptionalQueryString(value: unknown): string | null {
 function parseYearFilter(value: unknown): number | undefined {
   const raw = parseOptionalQueryString(value);
   if (raw === null) return undefined;
+  if (raw.toLowerCase() === "all") return undefined;
   if (!/^\d{4}$/.test(raw)) {
     throw new FinanceApFilterParseError(
       "Ano inválido. Informe um ano com 4 dígitos (ex.: 2026)."
@@ -297,6 +302,87 @@ export function resolveFinanceApDueDateBounds(
   const empty =
     from != null && toExclusive != null && from.getTime() >= toExclusive.getTime();
   return { from, toExclusive, empty };
+}
+
+export function hasFinanceApPeriodFilter(
+  filters: Pick<FinanceApDashboardFilters, "year" | "month" | "dueDateFrom" | "dueDateTo">
+): boolean {
+  return (
+    filters.year != null ||
+    filters.month != null ||
+    filters.dueDateFrom != null ||
+    filters.dueDateTo != null
+  );
+}
+
+export function isFinanceApPeriodAllQuery(query: Record<string, unknown>): boolean {
+  const raw = query.period;
+  if (raw == null || raw === "") return false;
+  return String(raw).trim().toLowerCase() === "all";
+}
+
+/** Período padrão (ano corrente) quando a requisição não fixa escopo nem pede todos os anos. */
+export function resolveFinanceApDashboardFiltersForLoad(
+  query: Record<string, unknown>,
+  filters: FinanceApDashboardFilters,
+  referenceDate = new Date()
+): FinanceApDashboardFilters {
+  if (isFinanceApPeriodAllQuery(query) || hasFinanceApPeriodFilter(filters)) {
+    return filters;
+  }
+  return { ...filters, year: referenceDate.getFullYear() };
+}
+
+function pushFinanceApPrismaContains(
+  and: Prisma.NomusAccountsPayableWhereInput[],
+  field: "companyName" | "personName" | "personCnpj" | "paymentMethodName" | "bankAccountName",
+  value: string | undefined
+) {
+  const trimmed = value?.trim();
+  if (!trimmed) return;
+  and.push({ [field]: { contains: trimmed, mode: "insensitive" } });
+}
+
+export function buildFinanceApPrismaWhere(
+  filters: FinanceApDashboardFilters
+): Prisma.NomusAccountsPayableWhereInput {
+  const and: Prisma.NomusAccountsPayableWhereInput[] = [];
+  const { from, toExclusive, empty } = resolveFinanceApDueDateBounds(filters);
+  if (empty) return { externalId: -1 };
+  if (from != null || toExclusive != null) {
+    const dueDate: Prisma.DateTimeNullableFilter = {};
+    if (from != null) dueDate.gte = from;
+    if (toExclusive != null) dueDate.lt = toExclusive;
+    and.push({ dueDate });
+  }
+
+  pushFinanceApPrismaContains(and, "companyName", filters.companyName);
+  pushFinanceApPrismaContains(and, "personName", filters.personName);
+  pushFinanceApPrismaContains(and, "personCnpj", filters.personCnpj);
+  pushFinanceApPrismaContains(and, "paymentMethodName", filters.paymentMethodName);
+  pushFinanceApPrismaContains(and, "bankAccountName", filters.bankAccountName);
+
+  const openStatuses = new Set<FinanceApTitleStatus>([
+    "open",
+    "overdue",
+    "dueToday",
+    "upcoming",
+    "suspended",
+  ]);
+  if (openStatuses.has(filters.status)) {
+    and.push({ balancePayable: { gt: 0 } });
+  } else if (filters.status === "settled") {
+    and.push({ OR: [{ balancePayable: { lte: 0 } }, { balancePayable: null }] });
+  }
+
+  const suspendFilter = filters.suspendPayment ?? "all";
+  if (suspendFilter === "yes") {
+    and.push({ suspendPayment: true });
+  } else if (suspendFilter === "no") {
+    and.push({ OR: [{ suspendPayment: false }, { suspendPayment: null }] });
+  }
+
+  return and.length > 0 ? { AND: and } : {};
 }
 
 function parseSuspendPaymentFilter(value: unknown): FinanceApSuspendPaymentFilter {
@@ -766,6 +852,7 @@ export function buildFinanceAccountsPayableDashboard(
 
   const supplierRanking = [...debtorAcc.values()]
     .sort((a, b) => b.totalOpenAmount - a.totalOpenAmount)
+    .slice(0, FINANCE_AP_SUPPLIER_RANKING_LIMIT)
     .map((debtor) => ({
       personName: debtor.personName,
       personCnpj: debtor.personCnpj,
@@ -785,6 +872,7 @@ export function buildFinanceAccountsPayableDashboard(
 
   const companySummary = [...companyAcc.values()]
     .sort((a, b) => b.openAmount - a.openAmount)
+    .slice(0, FINANCE_AP_COMPANY_SUMMARY_LIMIT)
     .map((row) => ({
       companyName: row.companyName,
       openAmount: roundMoney(row.openAmount),

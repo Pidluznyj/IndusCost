@@ -73,7 +73,8 @@ export function FinanceApTitlesTab({
       );
       setData(payload);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar títulos.");
+      console.error("FinanceApTitlesTab.load", e);
+      setError("Não foi possível carregar Contas a Pagar. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -155,7 +156,11 @@ export function FinanceApTitlesTab({
       </div>
 
       {error ? (
-        <FinanceApErrorBanner message={error} onDismiss={() => setError(null)} />
+        <FinanceApErrorBanner
+          message={error}
+          onRetry={() => void load()}
+          onDismiss={() => setError(null)}
+        />
       ) : null}
 
       {initialLoad ? <FinanceApLoadingBlock label="títulos" /> : null}

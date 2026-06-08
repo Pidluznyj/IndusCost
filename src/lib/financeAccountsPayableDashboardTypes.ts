@@ -1,5 +1,8 @@
 /** Tipos do payload GET /api/finance/accounts-payable/dashboard */
 
+export const FINANCE_AP_SUPPLIER_RANKING_LIMIT = 100;
+export const FINANCE_AP_COMPANY_SUMMARY_LIMIT = 50;
+
 export type FinanceApDashboardFiltersApplied = {
   companyName?: string;
   personName?: string;
@@ -227,6 +230,55 @@ export const EMPTY_FINANCE_AP_UI_FILTERS: FinanceApUiFilters = {
   bankAccountName: "",
 };
 
+/** Filtros iniciais seguros: ano corrente como período padrão de vencimento. */
+export function createDefaultFinanceApUiFilters(referenceDate = new Date()): FinanceApUiFilters {
+  return {
+    ...EMPTY_FINANCE_AP_UI_FILTERS,
+    year: String(referenceDate.getFullYear()),
+  };
+}
+
+export function formatFinanceApPeriodLabel(
+  filters: FinanceApUiFilters,
+  referenceDate = new Date()
+): string {
+  const year = filters.year.trim();
+  const month = filters.month.trim();
+  if (filters.dueDateFrom.trim() || filters.dueDateTo.trim()) {
+    const from = filters.dueDateFrom.trim() || "…";
+    const to = filters.dueDateTo.trim() || "…";
+    return `${from} até ${to}`;
+  }
+  if (month && year) {
+    const monthLabel =
+      FINANCE_AP_MONTH_OPTIONS.find((o) => o.value === month)?.label ?? `Mês ${month}`;
+    return `${monthLabel} de ${year}`;
+  }
+  if (year) return `Ano ${year}`;
+  return "Todos os períodos";
+}
+
+export function isDefaultFinanceApUiFilters(
+  filters: FinanceApUiFilters,
+  referenceDate = new Date()
+): boolean {
+  const defaults = createDefaultFinanceApUiFilters(referenceDate);
+  return (
+    filters.companyName === defaults.companyName &&
+    filters.personName === defaults.personName &&
+    filters.personCnpj === defaults.personCnpj &&
+    filters.status === defaults.status &&
+    filters.year === defaults.year &&
+    filters.month === defaults.month &&
+    filters.dueDateFrom === defaults.dueDateFrom &&
+    filters.dueDateTo === defaults.dueDateTo &&
+    filters.documentQuery === defaults.documentQuery &&
+    filters.suspendPayment === defaults.suspendPayment &&
+    filters.paymentMethodName === defaults.paymentMethodName &&
+    filters.bankAccountName === defaults.bankAccountName
+  );
+}
+
 export function buildFinanceApYearOptions(referenceYear = new Date().getFullYear()) {
   const options: Array<{ value: string; label: string }> = [{ value: "", label: "Todos" }];
   for (let y = referenceYear + 1; y >= referenceYear - 5; y -= 1) {
@@ -320,7 +372,11 @@ export function buildFinanceApDashboardQuery(filters: FinanceApUiFilters): strin
   if (normalized.personName.trim()) q.set("personName", normalized.personName.trim());
   if (normalized.personCnpj.trim()) q.set("personCnpj", normalized.personCnpj.trim());
   if (normalized.status !== "all") q.set("status", normalized.status);
-  if (normalized.year.trim()) q.set("year", normalized.year.trim());
+  if (normalized.year.trim()) {
+    q.set("year", normalized.year.trim());
+  } else {
+    q.set("period", "all");
+  }
   if (normalized.month.trim()) q.set("month", normalized.month.trim());
   if (normalized.dueDateFrom.trim()) q.set("dueDateFrom", normalized.dueDateFrom.trim());
   if (normalized.dueDateTo.trim()) q.set("dueDateTo", normalized.dueDateTo.trim());
