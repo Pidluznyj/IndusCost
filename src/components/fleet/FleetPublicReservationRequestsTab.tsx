@@ -264,6 +264,13 @@ export function FleetPublicReservationRequestsTab() {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900">
+        <p className="font-medium">Solicitações pelo link ou QR público</p>
+        <p className="mt-1 text-emerald-800/90">
+          Quando alguém solicita reserva pelo formulário público, aparece aqui. Primeiro aprove o
+          motorista (se for novo), depois aprove ou rejeite a reserva com um motivo claro.
+        </p>
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <select
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm"

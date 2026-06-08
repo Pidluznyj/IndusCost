@@ -184,6 +184,13 @@ export function FleetDriversTab() {
 
   return (
     <div className="space-y-3">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
+        <p className="font-medium text-slate-900">Motoristas autorizados</p>
+        <p className="mt-1">
+          Cadastre condutores, acompanhe a validade da CNH e autorize motoristas criados pelo
+          formulário público de reserva.
+        </p>
+      </div>
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />

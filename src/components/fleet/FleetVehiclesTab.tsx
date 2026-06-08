@@ -127,6 +127,13 @@ export function FleetVehiclesTab() {
 
   return (
     <div className="space-y-3">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
+        <p className="font-medium text-slate-900">Frota de veículos</p>
+        <p className="mt-1">
+          Consulte disponibilidade, abra a ficha do veículo para documentos, contratos, histórico e
+          o QR fixo de checklist.
+        </p>
+      </div>
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />

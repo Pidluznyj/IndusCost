@@ -7,6 +7,8 @@ import {
   getVehicleChecklistTokenInfo,
   listReservationChecklists,
   listVehicleReservationChecklists,
+  listRecentReservationChecklists,
+  listPendingChecklistReservations,
   regenerateVehicleChecklistToken,
   revokeVehicleChecklistToken,
   getReservationChecklistSummary,
@@ -118,6 +120,26 @@ export function registerFleetVehicleChecklistInternalRoutes(
       res.json({ checklists });
     } catch (e) {
       handleFleetRouteError(res, e, "GET vehicle checklists", req);
+    }
+  });
+
+  app.get("/api/fleet/reservation-checklists", ...g.view, async (req, res) => {
+    try {
+      const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? "30"), 10) || 30));
+      const attentionOnly = String(req.query.attentionOnly ?? "").trim() === "true";
+      res.json(await listRecentReservationChecklists({ page, limit, attentionOnly }));
+    } catch (e) {
+      handleFleetRouteError(res, e, "GET reservation-checklists list", req);
+    }
+  });
+
+  app.get("/api/fleet/checklist-pending-reservations", ...g.view, async (req, res) => {
+    try {
+      const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+      res.json(await listPendingChecklistReservations(limit));
+    } catch (e) {
+      handleFleetRouteError(res, e, "GET checklist-pending-reservations", req);
     }
   });
 

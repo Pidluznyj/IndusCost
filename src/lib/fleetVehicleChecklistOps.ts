@@ -417,6 +417,95 @@ export async function listVehicleReservationChecklists(vehicleId: string, limit 
   return rows.map((r) => serializeReservationChecklist(r));
 }
 
+export async function listRecentReservationChecklists(input?: {
+  page?: number;
+  limit?: number;
+  attentionOnly?: boolean;
+}) {
+  const page = Math.max(1, input?.page ?? 1);
+  const limit = Math.min(100, Math.max(1, input?.limit ?? 30));
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.FleetReservationChecklistWhereInput = {
+    status: "COMPLETED",
+  };
+  if (input?.attentionOnly) {
+    where.items = { some: { status: { in: ["ATENCAO", "AVARIA"] } } };
+  }
+
+  const [rows, total] = await Promise.all([
+    prisma.fleetReservationChecklist.findMany({
+      where,
+      include: CHECKLIST_INCLUDE,
+      orderBy: { completedAt: "desc" },
+      skip,
+      take: limit,
+    }),
+    prisma.fleetReservationChecklist.count({ where }),
+  ]);
+
+  return {
+    checklists: rows.map((r) => serializeReservationChecklist(r)),
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+  };
+}
+
+export async function listPendingChecklistReservations(limit = 50) {
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - CHECK_OUT_WINDOW_AFTER_MS);
+
+  const rows = await prisma.fleetReservation.findMany({
+    where: {
+      status: { in: ["APPROVED", "IN_USE"] },
+      endDateTime: { gte: windowStart },
+    },
+    include: {
+      vehicle: { select: { id: true, plate: true, brand: true, model: true, status: true } },
+      driver: { select: { id: true, name: true, cpf: true } },
+      reservationChecklists: {
+        where: { status: "COMPLETED" },
+        select: { type: true },
+      },
+    },
+    orderBy: { startDateTime: "asc" },
+    take: Math.min(200, limit * 3),
+  });
+
+  const pending = rows
+    .map((r) => {
+      const state = deriveReservationChecklistState(r.reservationChecklists);
+      const hasAutoCheckOut = r.reservationChecklists.some((c) => c.type === "AUTO_CHECK_OUT");
+      const label = getReservationChecklistStatusLabel({
+        reservationStatus: r.status,
+        hasCheckIn: state.hasCheckIn,
+        hasCheckOut: state.hasCheckOut,
+        hasAutoCheckOut,
+      });
+      const needsAction =
+        (r.status === "APPROVED" && !state.hasCheckIn) ||
+        ((r.status === "APPROVED" || r.status === "IN_USE") &&
+          state.hasCheckIn &&
+          !state.hasCheckOut);
+      return {
+        reservationId: r.id,
+        status: r.status,
+        startDateTime: r.startDateTime.toISOString(),
+        endDateTime: r.endDateTime.toISOString(),
+        destination: r.destination,
+        vehicle: r.vehicle,
+        driver: r.driver,
+        checklistLabel: label,
+        needsAction,
+        hasCheckIn: state.hasCheckIn,
+        hasCheckOut: state.hasCheckOut,
+      };
+    })
+    .filter((r) => r.needsAction)
+    .slice(0, limit);
+
+  return { reservations: pending, total: pending.length };
+}
+
 export function getReservationChecklistStatusLabel(input: {
   reservationStatus: FleetReservationStatus;
   hasCheckIn: boolean;
