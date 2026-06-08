@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { FleetPublicReservationRequestStatus, FleetVehicle } from "@prisma/client";
+import type { FleetPublicReservationRequestStatus, FleetVehicle, Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import { loadFleetSettings, writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import {
@@ -291,6 +291,9 @@ async function loadDayConflicts(dateStr: string, vehicleId: string) {
   const dayStart = combineDateAndTimeLocal(dateStr, "00:00");
   const dayEnd = combineDateAndTimeLocal(dateStr, "23:59");
   const requestedDate = parseLocalDateOnly(dateStr);
+  if (!requestedDate) {
+    throw new FleetValidationError("Data inválida para verificação de disponibilidade.");
+  }
 
   const [reservations, pendingRequests] = await Promise.all([
     prisma.fleetReservation.findMany({
@@ -306,7 +309,7 @@ async function loadDayConflicts(dateStr: string, vehicleId: string) {
       where: {
         status: { in: FLEET_PUBLIC_ACTIVE_REQUEST_STATUSES },
         vehicleId,
-        requestedDate: requestedDate ?? undefined,
+        requestedDate,
       },
       select: {
         id: true,
@@ -650,8 +653,13 @@ export async function listPublicReservationRequests(query: {
   page?: number;
   limit?: number;
 }) {
-  const where: { status?: FleetPublicReservationRequestStatus } = {};
-  if (query.status) where.status = query.status as FleetPublicReservationRequestStatus;
+  const where: Prisma.FleetPublicReservationRequestWhereInput = {};
+  const statusFilter = query.status?.trim();
+  if (statusFilter === "pending") {
+    where.status = { in: FLEET_PUBLIC_PENDING_REVIEW_STATUSES };
+  } else if (statusFilter) {
+    where.status = statusFilter as FleetPublicReservationRequestStatus;
+  }
 
   const page = Math.max(1, query.page ?? 1);
   const limit = Math.min(100, Math.max(1, query.limit ?? 25));

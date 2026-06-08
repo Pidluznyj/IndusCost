@@ -101,7 +101,7 @@ export function FleetPublicReservationRequestsTab() {
   const { canApproveReservations, canView } = useFleetPermissions();
   const [items, setItems] = useState<PublicRequestRow[]>([]);
   const [meta, setMeta] = useState<FleetPaginatedMeta>({ page: 1, limit: 25, total: 0, totalPages: 1 });
-  const [filterStatus, setFilterStatus] = useState("PENDING_DRIVER_APPROVAL");
+  const [filterStatus, setFilterStatus] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<PublicRequestRow | null>(null);
@@ -270,7 +270,8 @@ export function FleetPublicReservationRequestsTab() {
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
         >
-          <option value="">Todos</option>
+          <option value="pending">Todos pendentes</option>
+          <option value="">Todos os status</option>
           <option value="PENDING_DRIVER_APPROVAL">Aguardando motorista</option>
           <option value="PENDING_RESERVATION_APPROVAL">Aguardando reserva</option>
           <option value="PENDING">Pendentes (legado)</option>
@@ -294,7 +295,15 @@ export function FleetPublicReservationRequestsTab() {
           <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
         </div>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-600">Nenhuma solicitação encontrada.</p>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 space-y-1">
+          <p>Nenhuma solicitação encontrada para o filtro selecionado.</p>
+          {filterStatus === "PENDING_DRIVER_APPROVAL" && (
+            <p className="text-xs text-slate-500">
+              Solicitações já com motorista aprovado ficam em &quot;Aguardando reserva&quot; ou &quot;Todos
+              pendentes&quot;.
+            </p>
+          )}
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <table className="min-w-full text-sm">

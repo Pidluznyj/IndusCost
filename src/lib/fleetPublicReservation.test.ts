@@ -330,6 +330,26 @@ describe("fleetPublicReservationSlots", () => {
   });
 });
 
+describe("fleetPublicReservation requests list filter", () => {
+  it("list supports pending filter for all review statuses", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes('statusFilter === "pending"'));
+    assert.ok(src.includes("FLEET_PUBLIC_PENDING_REVIEW_STATUSES"));
+
+    const tabPath = join(
+      process.cwd(),
+      "src",
+      "components",
+      "fleet",
+      "FleetPublicReservationRequestsTab.tsx"
+    );
+    const tabSrc = readFileSync(tabPath, "utf8");
+    assert.ok(tabSrc.includes('useState("pending")'));
+    assert.ok(tabSrc.includes('value="pending"'));
+  });
+});
+
 describe("fleetPublicReservation schedule overlap", () => {
   it("adjacent slots 12:00-15:00 and 15:00-18:00 do not overlap (half-open interval)", () => {
     const aStart = combineDateAndTimeLocal("2026-06-08", "12:00");
