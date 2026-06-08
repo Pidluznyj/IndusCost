@@ -2,6 +2,9 @@ import React from "react";
 import { AlertCircle } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 
+export const FABRICATED_BOM_COMPONENT_TOOLTIP =
+  "Custo total do componente fabricado: MP própria + conversão própria. Nos cards acima, essas parcelas podem aparecer separadas para conciliação.";
+
 export type BomCostDetailRowData = {
   description: string;
   requiredQty: number;
@@ -27,9 +30,19 @@ function buildExclusionTooltip(item: BomCostDetailRowData): string {
   return parts.join("\n\n");
 }
 
-export function BomCostDetailRow({ item }: { item: BomCostDetailRowData }) {
+export function BomCostDetailRow({
+  item,
+  isFabricatedComponent = false,
+}: {
+  item: BomCostDetailRowData;
+  isFabricatedComponent?: boolean;
+}) {
   const excluded = item.excludedFromCost === true;
-  const tooltip = excluded ? buildExclusionTooltip(item) : undefined;
+  const tooltip = excluded
+    ? buildExclusionTooltip(item)
+    : isFabricatedComponent
+      ? FABRICATED_BOM_COMPONENT_TOOLTIP
+      : undefined;
 
   return (
     <tr

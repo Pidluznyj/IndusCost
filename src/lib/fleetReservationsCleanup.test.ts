@@ -26,8 +26,9 @@ function mockUser(role: AppAuthContext["role"]): AppAuthContext {
     sellerResponsibleName: null,
     accessProfileId: null,
     accessProfileName: null,
-    mustChangePassword: false,
     lastLoginAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     sessionId: "sess-1",
   };
 }

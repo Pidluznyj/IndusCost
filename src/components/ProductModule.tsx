@@ -942,6 +942,23 @@ export const ProductModule = () => {
       const ownProcessSkipReason =
         (backendCostAnalysis as { ownProcessSkipReason?: string | null }).ownProcessSkipReason ??
         null;
+      const processBreakdown = Array.isArray(backendCostAnalysis.details?.processBreakdown)
+        ? (backendCostAnalysis.details.processBreakdown as Array<{
+            rollupFromBom?: boolean;
+            calculationDetails?: { rollupFromBom?: boolean; childSku?: string };
+          }>)
+        : [];
+      const hasBomChildConversionRollup = processBreakdown.some(
+        (step) => Boolean(step?.rollupFromBom || step?.calculationDetails?.rollupFromBom)
+      );
+      const fabricatedChildSkus = [
+        ...new Set(
+          processBreakdown
+            .filter((step) => step?.rollupFromBom || step?.calculationDetails?.rollupFromBom)
+            .map((step) => String(step?.calculationDetails?.childSku ?? "").trim())
+            .filter((sku) => sku.length > 0)
+        ),
+      ];
       return {
         bomCost,
         routingCost,
@@ -958,6 +975,8 @@ export const ProductModule = () => {
         costingMode,
         ownProcessSkipped,
         ownProcessSkipReason,
+        hasBomChildConversionRollup,
+        fabricatedChildSkus,
       };
     }
     return {
@@ -976,6 +995,8 @@ export const ProductModule = () => {
       costingMode: "OWN_PROCESS" as string,
       ownProcessSkipped: false,
       ownProcessSkipReason: null as string | null,
+      hasBomChildConversionRollup: false,
+      fabricatedChildSkus: [] as string[],
     };
   }, [backendCostAnalysis]);
 
@@ -2118,12 +2139,12 @@ export const ProductModule = () => {
                                 : "Sem processo próprio"}
                             </Badge>
                             <span className="font-semibold">
-                              O custo de transformação deste item não é calculado neste nível.
+                              O custo de transformação próprio deste item não é calculado neste nível.
                             </span>
                           </div>
                           <p className="text-xs opacity-95">
                             {displayCost.ownProcessSkipReason ??
-                              "O custo vem da BOM. HH/HM próprios = 0; o HH/HM de componentes filhos continua dentro do custo dos próprios filhos."}
+                              "Quando houver componentes fabricados na BOM, a conversão deles é exibida separadamente para conciliação."}
                           </p>
                         </AppAlert>
                       )}
@@ -2148,7 +2169,11 @@ export const ProductModule = () => {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-blue-600 uppercase">Custo da estrutura (BOM)</p>
+                            <p className="text-xs font-bold text-blue-600 uppercase">
+                              {displayCost.hasBomChildConversionRollup
+                                ? "Custo da estrutura (BOM) — parcela MP"
+                                : "Custo da estrutura (BOM)"}
+                            </p>
                             <Layers className="h-4 w-4 text-blue-500" />
                           </div>
                           <CalculatedValue meta={displayCost.calculationExplainability?.totalMaterialCost ?? null}>
@@ -2168,12 +2193,18 @@ export const ProductModule = () => {
                             )}
                           </CalculatedValue>
                           <p className="text-[10px] text-blue-600/60">
-                            Soma das linhas da BOM (matérias-primas e/ou CIU dos componentes), conforme o motor.
+                            {displayCost.hasBomChildConversionRollup
+                              ? "MP direta + MP dos componentes fabricados. A conversão (HH/HM) dos filhos aparece separada no card Conversão."
+                              : "Soma das linhas da BOM (matérias-primas e/ou CIU dos componentes), conforme o motor."}
                           </p>
                         </div>
                         <div className="p-6 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-purple-600 uppercase">Conversão (HH + HM)</p>
+                            <p className="text-xs font-bold text-purple-600 uppercase">
+                              {displayCost.ownProcessSkipped && displayCost.hasBomChildConversionRollup
+                                ? "Conversão (HH + HM) — componentes fabricados"
+                                : "Conversão (HH + HM)"}
+                            </p>
                             <Settings className="h-4 w-4 text-purple-500" />
                           </div>
                           <CalculatedValue meta={displayCost.calculationExplainability?.totalConversionCost ?? null}>
@@ -2192,12 +2223,18 @@ export const ProductModule = () => {
                               </p>
                             )}
                           </CalculatedValue>
-                          <p className="text-[10px] text-purple-600/60">Processo padrão ou roteiro; sem CIF rateado</p>
-                          <p className="text-[10px] text-muted-foreground leading-snug">
-                            O motor usa primeiro o <strong>processo padrão</strong> do componente (ciclo/cavidades na aba
-                            Informações). Só se ele estiver vazio é que entra o <strong>roteiro</strong> (aba Processo).
-                            Remover só o roteiro não zera a conversão se o processo padrão continuar preenchido.
+                          <p className="text-[10px] text-purple-600/60">
+                            {displayCost.ownProcessSkipped && displayCost.hasBomChildConversionRollup
+                              ? "Inclui conversão de componentes fabricados da BOM. Sem CIF rateado."
+                              : "Processo padrão ou roteiro; sem CIF rateado"}
                           </p>
+                          {!(displayCost.ownProcessSkipped && displayCost.hasBomChildConversionRollup) && (
+                            <p className="text-[10px] text-muted-foreground leading-snug">
+                              O motor usa primeiro o <strong>processo padrão</strong> do componente (ciclo/cavidades na aba
+                              Informações). Só se ele estiver vazio é que entra o <strong>roteiro</strong> (aba Processo).
+                              Remover só o roteiro não zera a conversão se o processo padrão continuar preenchido.
+                            </p>
+                          )}
                         </div>
                         <div className="p-6 rounded-2xl bg-primary/10 border border-primary/20 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
@@ -2277,6 +2314,12 @@ export const ProductModule = () => {
                             <p className="text-[11px] leading-relaxed text-muted-foreground">
                               Estrutura salva: quantidades com perda e custo por linha (MP ou CIU do componente).
                             </p>
+                            {displayCost.hasBomChildConversionRollup && (
+                              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                                Componentes fabricados aparecem na tabela com CIU completo. Nos cards, MP e conversão
+                                podem ser separados para explicar a composição do total.
+                              </p>
+                            )}
                           </div>
                           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-border/30">
                             <div className="max-h-[min(52vh,26rem)] overflow-auto overscroll-y-contain">
@@ -2319,7 +2362,13 @@ export const ProductModule = () => {
                                   ) : (
                                     displayCost.details.materials.map((item: BomCostDetailRowData, idx: number) => (
                                       <React.Fragment key={`${item.description}-${idx}`}>
-                                        <BomCostDetailRow item={item} />
+                                        <BomCostDetailRow
+                                          item={item}
+                                          isFabricatedComponent={Boolean(
+                                            item.sku &&
+                                              displayCost.fabricatedChildSkus.includes(String(item.sku).trim())
+                                          )}
+                                        />
                                       </React.Fragment>
                                     ))
                                   )}
@@ -2339,10 +2388,20 @@ export const ProductModule = () => {
                               {displayCost.productType === "PRODUCT" ? (
                                 <>
                                   <span className="font-semibold text-foreground/85">Produto: </span>
-                                  mostra o processo próprio (ciclo/roteiro), quando houver, e linhas{" "}
-                                  <span className="font-semibold text-foreground/85">“Estrutura (BOM)”</span> com a
-                                  conversão (HH/HM) dos componentes fabricados na unidade do produto — mesma parcela do
-                                  motor, sem duplicar.
+                                  {displayCost.hasBomChildConversionRollup ? (
+                                    <>
+                                      as linhas abaixo pertencem a componentes fabricados da BOM, não ao processo
+                                      próprio deste produto. São exibidas para conciliar MP + HH + HM sem duplicar
+                                      custo.
+                                    </>
+                                  ) : (
+                                    <>
+                                      mostra o processo próprio (ciclo/roteiro), quando houver, e linhas{" "}
+                                      <span className="font-semibold text-foreground/85">“Estrutura (BOM)”</span> com a
+                                      conversão (HH/HM) dos componentes fabricados na unidade do produto — mesma parcela
+                                      do motor, sem duplicar.
+                                    </>
+                                  )}
                                 </>
                               ) : (
                                 <>
