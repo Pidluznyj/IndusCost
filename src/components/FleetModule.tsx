@@ -12,6 +12,7 @@ import { FleetMobileUsageFlow } from "@/src/components/fleet/FleetMobileUsageFlo
 import { FleetImportSettings } from "@/src/components/fleet/FleetImportSettings";
 import { FleetPublicReservationQrPanel } from "@/src/components/fleet/FleetPublicReservationQrPanel";
 import { FleetPublicReservationRequestsTab } from "@/src/components/fleet/FleetPublicReservationRequestsTab";
+import { FleetReservationsCleanupPanel } from "@/src/components/fleet/FleetReservationsCleanupPanel";
 import { FleetPermissionDenied, useFleetPermissions, formatFleetApiError } from "@/src/components/fleet/fleetUi";
 import type { FleetDashboardResponse } from "@/src/types/fleet";
 
@@ -292,6 +293,7 @@ export function FleetModule() {
 
       {tab === "settings" && (
         <div className="space-y-6 max-w-3xl">
+          <FleetReservationsCleanupPanel />
           {canManage && <FleetImportSettings />}
           <FleetPublicReservationQrPanel canManage={canSettings} />
           <div className="space-y-3 max-w-xl">

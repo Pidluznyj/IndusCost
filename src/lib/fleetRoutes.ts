@@ -30,6 +30,7 @@ import {
 } from "@/src/lib/fleetManagementRoutes.js";
 import { registerFleetImportRoutes } from "@/src/lib/fleetImportRoutes.js";
 import { registerFleetPublicReservationInternalRoutes } from "@/src/lib/fleetPublicReservationInternalRoutes.js";
+import { registerFleetReservationsCleanupRoutes } from "@/src/lib/fleetReservationsCleanupRoutes.js";
 import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRouteGuards.js";
 import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { getEffectivePermissions, type AppAuthContext } from "@/src/lib/appAuth.js";
@@ -319,6 +320,7 @@ export function registerFleetRoutes(app: express.Express, auth: AuthGuards) {
   registerFleetManagementRoutes(app, auth);
   registerFleetImportRoutes(app, auth);
   registerFleetPublicReservationInternalRoutes(app, auth);
+  registerFleetReservationsCleanupRoutes(app, auth);
 
   // --- Settings ---
   app.get("/api/fleet/settings", ...g.view, async (req, res) => {
