@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Loader2, RefreshCw, RotateCcw } from "lucide-react";
+import { Download, Filter, Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
@@ -45,15 +45,6 @@ import {
   FinanceArTabNav,
 } from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
-}
-
 export function FinanceAccountsReceivablePage() {
   const auth = useAuth();
   const canExport = canExportFinanceAccountsReceivable(auth);
@@ -63,30 +54,28 @@ export function FinanceAccountsReceivablePage() {
   const [titlesQualityAlert, setTitlesQualityAlert] = useState<FinanceArDataQualityAlertKey | null>(
     null
   );
-  const [filters, setFilters] = useState<FinanceArUiFilters>(EMPTY_FINANCE_AR_UI_FILTERS);
-  const debouncedCompany = useDebouncedValue(filters.companyName, 400);
-  const debouncedPerson = useDebouncedValue(filters.personName, 400);
-  const debouncedCnpj = useDebouncedValue(filters.personCnpj, 400);
-  const debouncedPayment = useDebouncedValue(filters.paymentMethodName, 400);
-  const debouncedBank = useDebouncedValue(filters.bankAccountName, 400);
+  const [draftFilters, setDraftFilters] = useState<FinanceArUiFilters>(EMPTY_FINANCE_AR_UI_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<FinanceArUiFilters>(() =>
+    normalizeFinanceArUiFilters(EMPTY_FINANCE_AR_UI_FILTERS)
+  );
 
-  const effectiveFilters = useMemo((): FinanceArUiFilters => {
-    const merged: FinanceArUiFilters = {
-      ...filters,
-      companyName: debouncedCompany,
-      personName: debouncedPerson,
-      personCnpj: debouncedCnpj,
-      paymentMethodName: debouncedPayment,
-      bankAccountName: debouncedBank,
-    };
-    return normalizeFinanceArUiFilters(merged);
-  }, [filters, debouncedCompany, debouncedPerson, debouncedCnpj, debouncedPayment, debouncedBank]);
+  const normalizedDraftFilters = useMemo(
+    () => normalizeFinanceArUiFilters(draftFilters),
+    [draftFilters]
+  );
+
+  const hasPendingFilterChanges = useMemo(
+    () =>
+      buildFinanceArDashboardQuery(normalizedDraftFilters) !==
+      buildFinanceArDashboardQuery(appliedFilters),
+    [normalizedDraftFilters, appliedFilters]
+  );
 
   const yearOptions = useMemo(() => buildFinanceArYearOptions(), []);
 
   const queryString = useMemo(
-    () => buildFinanceArDashboardQuery(effectiveFilters),
-    [effectiveFilters]
+    () => buildFinanceArDashboardQuery(appliedFilters),
+    [appliedFilters]
   );
 
   const [data, setData] = useState<FinanceArDashboardPayload | null>(null);
@@ -126,7 +115,7 @@ export function FinanceAccountsReceivablePage() {
     setExportError(null);
     setExportSuccess(null);
     try {
-      const qs = buildFinanceArExportQuery(effectiveFilters);
+      const qs = buildFinanceArExportQuery(appliedFilters);
       const res = await fetch(`/api/finance/accounts-receivable/export?${qs}`, {
         credentials: "include",
       });
@@ -156,20 +145,31 @@ export function FinanceAccountsReceivablePage() {
 
   const cards = data?.cards;
   const filtersActive =
-    effectiveFilters.companyName ||
-    effectiveFilters.personName ||
-    effectiveFilters.personCnpj ||
-    effectiveFilters.status !== "all" ||
-    effectiveFilters.year ||
-    effectiveFilters.month ||
-    effectiveFilters.dueDateFrom ||
-    effectiveFilters.dueDateTo ||
-    effectiveFilters.invoiceIssued !== "all" ||
-    effectiveFilters.paymentMethodName ||
-    effectiveFilters.bankAccountName;
+    appliedFilters.companyName ||
+    appliedFilters.personName ||
+    appliedFilters.personCnpj ||
+    appliedFilters.status !== "all" ||
+    appliedFilters.year ||
+    appliedFilters.month ||
+    appliedFilters.dueDateFrom ||
+    appliedFilters.dueDateTo ||
+    appliedFilters.invoiceIssued !== "all" ||
+    appliedFilters.paymentMethodName ||
+    appliedFilters.bankAccountName;
+
+  const handleApplyFilters = () => {
+    setAppliedFilters(normalizedDraftFilters);
+  };
+
+  const handleClearFilters = () => {
+    const empty = normalizeFinanceArUiFilters(EMPTY_FINANCE_AR_UI_FILTERS);
+    setDraftFilters(EMPTY_FINANCE_AR_UI_FILTERS);
+    setAppliedFilters(empty);
+    setTitlesQualityAlert(null);
+  };
 
   const handleFilterInvoiceIssued = (value: "all" | "yes" | "no") => {
-    setFilters((f) => ({ ...f, invoiceIssued: value }));
+    setDraftFilters((f) => ({ ...f, invoiceIssued: value }));
   };
 
   return (
@@ -259,21 +259,34 @@ export function FinanceAccountsReceivablePage() {
             </p>
             {filtersActive ? (
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Filtros ativos — afetam KPIs, gráficos, exportação e títulos.
+                Filtros aplicados — afetam KPIs, gráficos, exportação e títulos.
+              </p>
+            ) : null}
+            {hasPendingFilterChanges ? (
+              <p className="text-[11px] text-amber-800 font-semibold mt-0.5">
+                Há alterações nos filtros ainda não aplicadas.
               </p>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setFilters(EMPTY_FINANCE_AR_UI_FILTERS);
-              setTitlesQualityAlert(null);
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Limpar filtros
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleApplyFilters}
+              disabled={!hasPendingFilterChanges || loading}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              <Filter className="h-3.5 w-3.5" />
+              Aplicar filtros
+            </button>
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Limpar filtros
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 rounded-lg border border-border/60 bg-background/30 p-3">
@@ -282,15 +295,15 @@ export function FinanceAccountsReceivablePage() {
             </p>
             <FilterSelect
               label="Ano Vencimento"
-              value={filters.year}
-              onChange={(v) => setFilters((f) => ({ ...f, year: v }))}
+              value={draftFilters.year}
+              onChange={(v) => setDraftFilters((f) => ({ ...f, year: v }))}
               options={yearOptions}
             />
             <FilterSelect
               label="Mês Vencimento"
-              value={filters.month}
+              value={draftFilters.month}
               onChange={(v) =>
-                setFilters((f) => {
+                setDraftFilters((f) => {
                   const next = { ...f, month: v };
                   if (v && !f.year.trim()) {
                     next.year = String(new Date().getFullYear());
@@ -303,39 +316,39 @@ export function FinanceAccountsReceivablePage() {
             <FilterInput
               label="Vencimento de"
               type="date"
-              value={filters.dueDateFrom}
-              onChange={(v) => setFilters((f) => ({ ...f, dueDateFrom: v }))}
+              value={draftFilters.dueDateFrom}
+              onChange={(v) => setDraftFilters((f) => ({ ...f, dueDateFrom: v }))}
             />
             <FilterInput
               label="Vencimento até"
               type="date"
-              value={filters.dueDateTo}
-              onChange={(v) => setFilters((f) => ({ ...f, dueDateTo: v }))}
+              value={draftFilters.dueDateTo}
+              onChange={(v) => setDraftFilters((f) => ({ ...f, dueDateTo: v }))}
             />
           </div>
           <FilterSelect
             label="Status"
-            value={filters.status}
-            onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+            value={draftFilters.status}
+            onChange={(v) => setDraftFilters((f) => ({ ...f, status: v }))}
             options={FINANCE_AR_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           />
           <FilterSelect
             label="NF Emitida?"
-            value={filters.invoiceIssued}
-            onChange={(v) => setFilters((f) => ({ ...f, invoiceIssued: v }))}
+            value={draftFilters.invoiceIssued}
+            onChange={(v) => setDraftFilters((f) => ({ ...f, invoiceIssued: v }))}
             options={FINANCE_AR_INVOICE_ISSUED_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           />
-          <FilterInput label="Empresa" value={filters.companyName} onChange={(v) => setFilters((f) => ({ ...f, companyName: v }))} />
-          <FilterInput label="Cliente" value={filters.personName} onChange={(v) => setFilters((f) => ({ ...f, personName: v }))} />
-          <FilterInput label="CNPJ" value={filters.personCnpj} onChange={(v) => setFilters((f) => ({ ...f, personCnpj: v }))} />
-          <FilterInput label="Forma de pagamento" value={filters.paymentMethodName} onChange={(v) => setFilters((f) => ({ ...f, paymentMethodName: v }))} />
-          <FilterInput label="Conta bancária" value={filters.bankAccountName} onChange={(v) => setFilters((f) => ({ ...f, bankAccountName: v }))} />
+          <FilterInput label="Empresa" value={draftFilters.companyName} onChange={(v) => setDraftFilters((f) => ({ ...f, companyName: v }))} />
+          <FilterInput label="Cliente" value={draftFilters.personName} onChange={(v) => setDraftFilters((f) => ({ ...f, personName: v }))} />
+          <FilterInput label="CNPJ" value={draftFilters.personCnpj} onChange={(v) => setDraftFilters((f) => ({ ...f, personCnpj: v }))} />
+          <FilterInput label="Forma de pagamento" value={draftFilters.paymentMethodName} onChange={(v) => setDraftFilters((f) => ({ ...f, paymentMethodName: v }))} />
+          <FilterInput label="Conta bancária" value={draftFilters.bankAccountName} onChange={(v) => setDraftFilters((f) => ({ ...f, bankAccountName: v }))} />
         </div>
       </section>
 
       <FinanceArInvoicePortfolioPanel
         cards={cards}
-        activeFilter={effectiveFilters.invoiceIssued}
+        activeFilter={appliedFilters.invoiceIssued}
         loading={loading}
         onFilterInvoiceIssued={handleFilterInvoiceIssued}
       />
@@ -368,7 +381,7 @@ export function FinanceAccountsReceivablePage() {
         ) : null}
         {activeTab === "titles" ? (
           <FinanceArTitlesTab
-            filters={effectiveFilters}
+            filters={appliedFilters}
             qualityAlert={titlesQualityAlert}
             onClearQualityAlert={() => setTitlesQualityAlert(null)}
           />
