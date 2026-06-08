@@ -654,7 +654,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Guia do Sistema"
-              description="Manual funcional e de negócio do IndusCost — referência oficial para uso da aplicação."
+              description="Wiki completa do IndusCost — manual navegável com passo a passo de cada módulo."
             >
               <SystemGuideModule />
             </ModulePageShell>

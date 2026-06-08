@@ -273,12 +273,7 @@ export function FleetChecklistsTab() {
             })}
           </ul>
           {pagination && (
-            <FleetListPagination
-              page={page}
-              pagination={pagination}
-              onPageChange={setPage}
-              disabled={loading}
-            />
+            <FleetListPagination meta={pagination} loading={loading} onPageChange={setPage} />
           )}
         </>
       )}
