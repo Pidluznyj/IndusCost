@@ -374,7 +374,8 @@ function vehicleHasSlotConflict(
     requestedDate: Date;
     startTime: string;
     endTime: string;
-  }[]
+  }[],
+  options?: { excludeRequestId?: string; excludeReservationId?: string }
 ): boolean {
   const start = combineDateAndTimeLocal(dateStr, slot.start);
   const end = combineDateAndTimeLocal(dateStr, slot.end);
@@ -382,11 +383,19 @@ function vehicleHasSlotConflict(
   const resHit = findReservationConflict(
     reservations.filter((r) => r.vehicleId === vehicleId),
     start,
-    end
+    end,
+    options?.excludeReservationId
   );
   if (resHit) return true;
 
-  const reqHit = findPublicRequestConflict(pendingRequests, dateStr, slot.start, slot.end, vehicleId);
+  const reqHit = findPublicRequestConflict(
+    pendingRequests,
+    dateStr,
+    slot.start,
+    slot.end,
+    vehicleId,
+    options?.excludeRequestId
+  );
   return Boolean(reqHit);
 }
 
@@ -701,7 +710,9 @@ export async function getPublicReservationRequestOrThrow(id: string) {
           publicRegistrationRejectionReason: true,
         },
       },
-      vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true } },
+      vehicle: {
+        select: { id: true, brand: true, model: true, vehicleType: true, plate: true, status: true },
+      },
       fleetReservation: { select: { id: true, status: true } },
     },
   });
@@ -972,9 +983,16 @@ export async function approvePublicReservationRequest(input: {
     throw new FleetValidationError("Somente solicitações aguardando aprovação da reserva podem ser aprovadas.");
   }
 
-  const vehicleId = input.vehicleId?.trim() || existing.vehicleId?.trim();
+  const requestedVehicleId = existing.vehicleId?.trim();
+  if (!requestedVehicleId) {
+    throw new FleetValidationError("Solicitação sem veículo vinculado — não é possível aprovar.");
+  }
+  const inputVehicleId = input.vehicleId?.trim();
+  if (inputVehicleId && inputVehicleId !== requestedVehicleId) {
+    throw new FleetValidationError("Aprove somente o veículo solicitado na reserva pública.");
+  }
+  const vehicleId = requestedVehicleId;
   const driverId = input.driverId?.trim() || existing.driverId?.trim();
-  if (!vehicleId) throw new FleetValidationError("Selecione o veículo para aprovar.");
   if (!driverId) throw new FleetValidationError("Selecione o motorista para aprovar.");
 
   const driverRow =
@@ -1013,20 +1031,12 @@ export async function approvePublicReservationRequest(input: {
 
   const { reservations, pendingRequests } = await loadDayConflicts(dateStr, vehicleId);
   const slot = { start: existing.startTime, end: existing.endTime, label: "", key: "" };
-  if (vehicleHasSlotConflict(vehicleId, slot, dateStr, reservations, pendingRequests)) {
+  if (
+    vehicleHasSlotConflict(vehicleId, slot, dateStr, reservations, pendingRequests, {
+      excludeRequestId: existing.id,
+    })
+  ) {
     throw new FleetValidationError("Conflito de agenda — período já ocupado para este veículo.");
-  }
-
-  const conflictPending = findPublicRequestConflict(
-    pendingRequests,
-    dateStr,
-    existing.startTime,
-    existing.endTime,
-    vehicleId,
-    existing.id
-  );
-  if (conflictPending) {
-    throw new FleetValidationError("Conflito com outra solicitação pendente no mesmo período.");
   }
 
   const requesterNote = [

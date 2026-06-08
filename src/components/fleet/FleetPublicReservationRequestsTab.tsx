@@ -48,8 +48,6 @@ type PublicRequestRow = {
   fleetReservation: { id: string; status: string } | null;
 };
 
-type VehicleOption = { id: string; brand: string; model: string; plate: string | null };
-
 type ApprovalHistoryEntry = {
   id: string;
   actionLabel: string;
@@ -107,9 +105,7 @@ export function FleetPublicReservationRequestsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<PublicRequestRow | null>(null);
-  const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   const [drivers, setDrivers] = useState<FleetDriverRow[]>([]);
-  const [approveVehicleId, setApproveVehicleId] = useState("");
   const [approveDriverId, setApproveDriverId] = useState("");
   const [rejectReason, setRejectReason] = useState("");
   const [driverRejectReason, setDriverRejectReason] = useState("");
@@ -164,21 +160,17 @@ export function FleetPublicReservationRequestsTab() {
 
   const openDetail = async (row: PublicRequestRow) => {
     setDetail(row);
-    setApproveVehicleId(row.vehicle?.id ?? "");
     setApproveDriverId(row.driverId ?? row.driver?.id ?? "");
     setRejectReason("");
     setDriverRejectReason("");
     setHistory([]);
     void loadHistory(row.id);
     try {
-      const [vRes, dRes] = await Promise.all([
-        fetchJsonOk<{ items: VehicleOption[] }>("/api/fleet/vehicles?limit=200"),
-        fetchJsonOk<{ items: FleetDriverRow[] }>("/api/fleet/drivers?limit=200&status=AUTHORIZED"),
-      ]);
-      setVehicles(vRes.items ?? []);
+      const dRes = await fetchJsonOk<{ items: FleetDriverRow[] }>(
+        "/api/fleet/drivers?limit=200&status=AUTHORIZED"
+      );
       setDrivers(dRes.items ?? []);
     } catch {
-      setVehicles([]);
       setDrivers([]);
     }
   };
@@ -230,7 +222,10 @@ export function FleetPublicReservationRequestsTab() {
       await fetchJsonOk(`/api/fleet/public-reservation-requests/${detail.id}/approve`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vehicleId: approveVehicleId, driverId: approveDriverId }),
+        body: JSON.stringify({
+          vehicleId: detail.vehicle?.id,
+          driverId: approveDriverId,
+        }),
       });
       setDetail(null);
       await load(meta.page);
@@ -504,22 +499,20 @@ export function FleetPublicReservationRequestsTab() {
             {detailAwaitingReservation && canApproveReservations && (
               <div className="space-y-3 border-t border-slate-200 pt-4">
                 <p className="text-sm font-medium text-slate-800">Etapa 2 — Reserva do veículo</p>
-                <label className="block text-sm">
-                  <span className="font-medium">Veículo *</span>
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-                    value={approveVehicleId}
-                    onChange={(e) => setApproveVehicleId(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.brand} {v.model}
-                        {v.plate ? ` (${v.plate})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <span className="font-medium text-slate-800">Veículo solicitado</span>
+                  {detail.vehicle ? (
+                    <p className="mt-1 text-slate-700">
+                      {detail.vehicle.brand} {detail.vehicle.model}
+                      {detail.vehicle.plate ? ` (${detail.vehicle.plate})` : ""}
+                      {detail.vehicle.status ? (
+                        <span className="ml-1 text-xs text-slate-500">({detail.vehicle.status})</span>
+                      ) : null}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-amber-800">Veículo não informado na solicitação.</p>
+                  )}
+                </div>
                 <label className="block text-sm">
                   <span className="font-medium">Motorista *</span>
                   <select
@@ -542,7 +535,7 @@ export function FleetPublicReservationRequestsTab() {
                 </label>
                 <button
                   type="button"
-                  disabled={actionLoading || !approveVehicleId || !approveDriverId}
+                  disabled={actionLoading || !detail.vehicle?.id || !approveDriverId}
                   onClick={() => void approve()}
                   className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-emerald-700 py-2.5 text-sm text-white disabled:opacity-50"
                   title={

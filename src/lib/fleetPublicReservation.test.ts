@@ -330,6 +330,49 @@ describe("fleetPublicReservationSlots", () => {
   });
 });
 
+describe("fleetPublicReservation schedule overlap", () => {
+  it("adjacent slots 12:00-15:00 and 15:00-18:00 do not overlap (half-open interval)", () => {
+    const aStart = combineDateAndTimeLocal("2026-06-08", "12:00");
+    const aEnd = combineDateAndTimeLocal("2026-06-08", "15:00");
+    const bStart = combineDateAndTimeLocal("2026-06-08", "15:00");
+    const bEnd = combineDateAndTimeLocal("2026-06-08", "18:00");
+    assert.equal(reservationPeriodsOverlap(aStart, aEnd, bStart, bEnd), false);
+  });
+
+  it("overlapping slots 12:00-15:00 and 14:00-17:00 conflict", () => {
+    const aStart = combineDateAndTimeLocal("2026-06-08", "12:00");
+    const aEnd = combineDateAndTimeLocal("2026-06-08", "15:00");
+    const bStart = combineDateAndTimeLocal("2026-06-08", "14:00");
+    const bEnd = combineDateAndTimeLocal("2026-06-08", "17:00");
+    assert.equal(reservationPeriodsOverlap(aStart, aEnd, bStart, bEnd), true);
+  });
+
+  it("approve excludes current request from pending conflict check", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes("excludeRequestId: existing.id"));
+    assert.ok(src.includes("options?: { excludeRequestId?: string"));
+  });
+
+  it("approve locks vehicle to the one requested in public flow", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes("Aprove somente o veículo solicitado na reserva pública."));
+    assert.ok(src.includes("const vehicleId = requestedVehicleId"));
+
+    const tabPath = join(
+      process.cwd(),
+      "src",
+      "components",
+      "fleet",
+      "FleetPublicReservationRequestsTab.tsx"
+    );
+    const tabSrc = readFileSync(tabPath, "utf8");
+    assert.ok(tabSrc.includes("Veículo solicitado"));
+    assert.equal(tabSrc.includes("/api/fleet/vehicles?limit=200"), false);
+  });
+});
+
 describe("fleetPublicReservation conflict", () => {
   it("reservationPeriodsOverlap matches active booking rule", () => {
     const existingStart = new Date(2026, 5, 10, 9, 0);
