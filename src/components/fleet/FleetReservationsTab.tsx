@@ -26,6 +26,11 @@ import {
   pickFleetListItems,
   pickFleetPagination,
   type FleetPaginatedMeta, formatFleetApiError } from "@/src/components/fleet/fleetUi";
+import {
+  computeNextPickupIds,
+  isCheckoutBlocked,
+  sortReservationsByPickupOrder,
+} from "@/src/components/fleet/fleetReservationListUi";
 
 const STATUS_LABEL: Record<FleetReservationStatus, string> = {
   REQUESTED: "Solicitada",
@@ -180,12 +185,22 @@ export function FleetReservationsTab() {
     return Array.from({ length: 7 }, (_, i) => addDays(weekAnchor, i));
   }, [weekAnchor]);
 
+  const sortedReservations = useMemo(
+    () => sortReservationsByPickupOrder(reservations),
+    [reservations]
+  );
+
+  const nextPickupIds = useMemo(
+    () => computeNextPickupIds(reservations),
+    [reservations]
+  );
+
   const reservationsByDay = useMemo(() => {
     const map = new Map<string, FleetReservationRow[]>();
     for (const day of weekDays) {
       map.set(day.toDateString(), []);
     }
-    for (const r of reservations) {
+    for (const r of sortedReservations) {
       const start = new Date(r.startDateTime);
       for (const day of weekDays) {
         const dayEnd = addDays(day, 1);
@@ -195,8 +210,13 @@ export function FleetReservationsTab() {
         }
       }
     }
+    for (const [, items] of map) {
+      items.sort(
+        (a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()
+      );
+    }
     return map;
-  }, [reservations, weekDays]);
+  }, [sortedReservations, weekDays]);
 
   const vehicleOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -258,20 +278,35 @@ export function FleetReservationsTab() {
     }
   };
 
-  const cardClass = (status: FleetReservationStatus) =>
+  const cardClass = (
+    status: FleetReservationStatus,
+    options?: { isNextPickup?: boolean }
+  ) =>
     cn(
       "rounded-xl border bg-white p-3 text-sm",
-      status === "PENDING_APPROVAL" || status === "REQUESTED"
-        ? "border-amber-300 bg-amber-50/40"
-        : status === "APPROVED"
-          ? "border-emerald-200"
-          : status === "REJECTED" || status === "CANCELED"
-            ? "border-slate-200 opacity-75"
-            : "border-slate-200"
+      options?.isNextPickup
+        ? "border-emerald-400 bg-emerald-50/70 ring-1 ring-emerald-200"
+        : status === "PENDING_APPROVAL" || status === "REQUESTED"
+          ? "border-amber-300 bg-amber-50/40"
+          : status === "APPROVED"
+            ? "border-emerald-200"
+            : status === "IN_USE"
+              ? "border-indigo-300 bg-indigo-50/40"
+              : status === "REJECTED" || status === "CANCELED"
+                ? "border-slate-200 opacity-75"
+                : "border-slate-200"
     );
 
-  const ReservationCard = ({ r }: { r: FleetReservationRow }) => (
-    <div className={cardClass(r.status)}>
+  const ReservationCard = ({
+    r,
+    isNextPickup,
+    checkoutBlocked,
+  }: {
+    r: FleetReservationRow;
+    isNextPickup: boolean;
+    checkoutBlocked: boolean;
+  }) => (
+    <div className={cardClass(r.status, { isNextPickup })}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <span className="font-medium">
@@ -319,7 +354,13 @@ export function FleetReservationsTab() {
               </button>
               <button
                 type="button"
-                className="rounded border px-2 py-1 text-xs"
+                className="rounded border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={checkoutBlocked}
+                title={
+                  checkoutBlocked
+                    ? "Veículo em uso — retirada indisponível até a devolução"
+                    : undefined
+                }
                 onClick={() => setCheckoutModal(r)}
               >
                 Retirada
@@ -373,7 +414,15 @@ export function FleetReservationsTab() {
       <p className="mt-1 text-slate-600">
         {formatDt(r.startDateTime)} → {formatDt(r.endDateTime)}
         {r.driver?.name ? ` · ${r.driver.name}` : ""}
+        {isNextPickup && (
+          <span className="ml-2 text-xs font-medium text-emerald-700">Próxima retirada</span>
+        )}
       </p>
+      {checkoutBlocked && (
+        <p className="mt-1 text-xs text-slate-400">
+          Veículo indisponível para retirada — aguarde a devolução em andamento.
+        </p>
+      )}
       {r.rejectionReason && (
         <p className="mt-1 text-xs text-red-700">Rejeição: {r.rejectionReason}</p>
       )}
@@ -522,9 +571,13 @@ export function FleetReservationsTab() {
           {reservations.length === 0 ? (
             <p className="text-sm text-slate-500">Nenhuma reserva no período.</p>
           ) : (
-            reservations.map((r) => (
+            sortedReservations.map((r) => (
               <div key={r.id}>
-                <ReservationCard r={r} />
+                <ReservationCard
+                  r={r}
+                  isNextPickup={nextPickupIds.has(r.id)}
+                  checkoutBlocked={isCheckoutBlocked(r, reservations)}
+                />
               </div>
             ))
           )}
@@ -548,11 +601,17 @@ export function FleetReservationsTab() {
                       key={r.id}
                       className={cn(
                         "rounded border px-1 py-0.5 text-[10px] leading-tight",
-                        r.status === "PENDING_APPROVAL"
-                          ? "border-amber-400 bg-amber-100"
-                          : "border-slate-200 bg-white"
+                        nextPickupIds.has(r.id)
+                          ? "border-emerald-400 bg-emerald-50"
+                          : r.status === "PENDING_APPROVAL"
+                            ? "border-amber-400 bg-amber-100"
+                            : r.status === "IN_USE"
+                              ? "border-indigo-300 bg-indigo-50"
+                              : "border-slate-200 bg-white"
                       )}
-                      title={`${r.vehicle?.plate} ${STATUS_LABEL[r.status]}`}
+                      title={`${r.vehicle?.plate} ${STATUS_LABEL[r.status]}${
+                        nextPickupIds.has(r.id) ? " · Próxima retirada" : ""
+                      }`}
                     >
                       {r.vehicle?.plate ?? "—"}
                       <br />
