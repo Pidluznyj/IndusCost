@@ -1,5 +1,5 @@
-import React from "react";
-import { Loader2 } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fleetSafeCell } from "@/src/lib/fleetFormat";
 
@@ -91,6 +91,90 @@ export {
   pickFleetPagination,
   type FleetPaginatedMeta,
 } from "@/src/lib/fleetFormat";
+
+export function FleetStatusMultiFilter<T extends string>({
+  options,
+  selected,
+  onChange,
+  placeholder = "Status",
+  className,
+}: {
+  options: { value: T; label: string }[];
+  selected: T[];
+  onChange: (values: T[]) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const label =
+    selected.length === 0
+      ? placeholder
+      : selected.length === 1
+        ? (options.find((o) => o.value === selected[0])?.label ?? placeholder)
+        : `${selected.length} status`;
+
+  const toggle = (value: T) => {
+    onChange(
+      selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]
+    );
+  };
+
+  return (
+    <div ref={rootRef} className={cn("relative", className)}>
+      <button
+        type="button"
+        className={cn(
+          "inline-flex min-w-[120px] items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm",
+          selected.length > 0 && "border-slate-300"
+        )}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+      >
+        <span className={cn(selected.length === 0 && "text-slate-500")}>{label}</span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute left-0 z-20 mt-1 min-w-[220px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          {options.map((o) => (
+            <label
+              key={o.value}
+              className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50"
+            >
+              <input
+                type="checkbox"
+                className="rounded border-slate-300"
+                checked={selected.includes(o.value)}
+                onChange={() => toggle(o.value)}
+              />
+              <span>{o.label}</span>
+            </label>
+          ))}
+          {selected.length > 0 && (
+            <button
+              type="button"
+              className="mt-1 w-full border-t border-slate-100 px-3 py-1.5 text-left text-xs text-slate-500 hover:bg-slate-50"
+              onClick={() => onChange([])}
+            >
+              Limpar seleção
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function FleetListPagination({
   meta,

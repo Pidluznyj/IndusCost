@@ -23,6 +23,7 @@ import { FleetCheckoutCheckinModal } from "@/src/components/fleet/FleetCheckoutC
 import { FleetMobileUsageFlow } from "@/src/components/fleet/FleetMobileUsageFlow";
 import {
   FleetListPagination,
+  FleetStatusMultiFilter,
   pickFleetListItems,
   pickFleetPagination,
   type FleetPaginatedMeta, formatFleetApiError } from "@/src/components/fleet/fleetUi";
@@ -96,7 +97,7 @@ export function FleetReservationsTab() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "week">("list");
   const [weekAnchor, setWeekAnchor] = useState(() => startOfWeek(new Date()));
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatuses, setFilterStatuses] = useState<FleetReservationStatus[]>([]);
   const [filterVehicle, setFilterVehicle] = useState("");
   const [filterDriver, setFilterDriver] = useState("");
   const [filterStart, setFilterStart] = useState("");
@@ -132,7 +133,7 @@ export function FleetReservationsTab() {
       const q = new URLSearchParams();
       q.set("page", String(page));
       q.set("limit", "50");
-      if (filterStatus) q.set("status", filterStatus);
+      if (filterStatuses.length > 0) q.set("status", filterStatuses.join(","));
       if (filterVehicle) q.set("vehicleId", filterVehicle);
       if (filterDriver) q.set("driverId", filterDriver);
       if (filterStart) q.set("startDate", filterStart);
@@ -145,11 +146,11 @@ export function FleetReservationsTab() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterVehicle, filterDriver, filterStart, filterEnd, page]);
+  }, [filterStatuses, filterVehicle, filterDriver, filterStart, filterEnd, page]);
 
   useEffect(() => {
     setPage(1);
-  }, [filterStatus, filterVehicle, filterDriver, filterStart, filterEnd]);
+  }, [filterStatuses, filterVehicle, filterDriver, filterStart, filterEnd]);
 
   useEffect(() => {
     void loadReservations();
@@ -456,18 +457,11 @@ export function FleetReservationsTab() {
           onChange={(e) => setFilterEnd(e.target.value)}
           title="Fim período"
         />
-        <select
-          className="rounded-lg border border-slate-200 px-2 py-2 text-sm"
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-        >
-          <option value="">Status</option>
-          {RESERVATION_STATUS_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <FleetStatusMultiFilter
+          options={RESERVATION_STATUS_OPTIONS}
+          selected={filterStatuses}
+          onChange={setFilterStatuses}
+        />
         <select
           className="rounded-lg border border-slate-200 px-2 py-2 text-sm min-w-[140px]"
           value={filterVehicle}

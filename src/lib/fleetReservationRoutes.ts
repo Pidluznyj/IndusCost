@@ -65,7 +65,7 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
       const where = buildReservationWhere({
         vehicleId: list.vehicleId || undefined,
         driverId: list.driverId || undefined,
-        status: list.status || undefined,
+        statuses: list.statuses.length > 0 ? list.statuses : undefined,
         start: list.startDate?.toISOString(),
         end: list.endDate?.toISOString(),
       });

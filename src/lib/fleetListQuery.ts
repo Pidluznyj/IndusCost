@@ -5,12 +5,36 @@ export const FLEET_LIST_MAX_LIMIT = 200;
 
 export type FleetListSortOrder = "asc" | "desc";
 
+export function parseFleetListStatuses(query: Record<string, unknown>): string[] {
+  const fromStatuses = parseFleetListStatusCsv(query.statuses);
+  if (fromStatuses.length > 0) return fromStatuses;
+  return parseFleetListStatusCsv(query.status);
+}
+
+function parseFleetListStatusCsv(raw: unknown): string[] {
+  if (typeof raw === "string" && raw.trim()) {
+    return [
+      ...new Set(
+        raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      ),
+    ];
+  }
+  if (Array.isArray(raw)) {
+    return [...new Set(raw.map((s) => String(s).trim()).filter(Boolean))];
+  }
+  return [];
+}
+
 export type FleetListQuery = {
   page: number;
   limit: number;
   skip: number;
   search: string;
   status: string;
+  statuses: string[];
   startDate: Date | null;
   endDate: Date | null;
   vehicleId: string;
@@ -77,13 +101,15 @@ export function parseFleetListQuery(query: Record<string, unknown>): FleetListQu
   const { startDate, endDate } = parseFleetListDateRange(query);
   const sortOrderRaw = String(query.sortOrder ?? query.order ?? "desc").trim().toLowerCase();
   const sortOrder: FleetListSortOrder = sortOrderRaw === "asc" ? "asc" : "desc";
+  const statuses = parseFleetListStatuses(query);
 
   return {
     page,
     limit,
     skip: (page - 1) * limit,
     search: String(query.search ?? "").trim(),
-    status: String(query.status ?? "").trim(),
+    status: statuses.length === 1 ? statuses[0] : statuses.join(","),
+    statuses,
     startDate,
     endDate,
     vehicleId: String(query.vehicleId ?? "").trim(),

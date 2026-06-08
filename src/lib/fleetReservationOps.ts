@@ -48,6 +48,7 @@ export function buildReservationWhere(query: {
   vehicleId?: string;
   driverId?: string;
   status?: string;
+  statuses?: string[];
   start?: string;
   end?: string;
   requesterUserId?: string;
@@ -55,7 +56,19 @@ export function buildReservationWhere(query: {
   const where: Prisma.FleetReservationWhereInput = {};
   if (query.vehicleId) where.vehicleId = query.vehicleId;
   if (query.driverId) where.driverId = query.driverId;
-  if (query.status) where.status = query.status as FleetReservationStatus;
+  const statusList =
+    query.statuses && query.statuses.length > 0
+      ? query.statuses
+      : query.status
+        ? query.status.includes(",")
+          ? query.status.split(",").map((s) => s.trim()).filter(Boolean)
+          : [query.status]
+        : [];
+  if (statusList.length === 1) {
+    where.status = statusList[0] as FleetReservationStatus;
+  } else if (statusList.length > 1) {
+    where.status = { in: statusList as FleetReservationStatus[] };
+  }
   if (query.requesterUserId) where.requesterUserId = query.requesterUserId;
   if (query.start || query.end) {
     const start = query.start ? new Date(query.start) : new Date(0);

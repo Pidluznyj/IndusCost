@@ -1026,6 +1026,19 @@ describe("fleet list query", async () => {
     assert.ok(where.AND);
   });
 
+  it("buildReservationWhere filters by multiple statuses", () => {
+    const where = buildReservationWhere({
+      statuses: ["APPROVED", "IN_USE"],
+    });
+    assert.deepEqual(where.status, { in: ["APPROVED", "IN_USE"] });
+  });
+
+  it("parseFleetListQuery parses comma-separated status filter", async () => {
+    const { parseFleetListQuery } = await import("./fleetListQuery.js");
+    const q = parseFleetListQuery({ status: "APPROVED,IN_USE" });
+    assert.deepEqual(q.statuses, ["APPROVED", "IN_USE"]);
+  });
+
   it("buildFleetListResponse keeps legacy key and items", () => {
     const body = buildFleetListResponse("vehicles", [{ id: "x" }], fleetListMeta(1, 1, 50));
     assert.equal((body.vehicles as unknown[]).length, 1);
