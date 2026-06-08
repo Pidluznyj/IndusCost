@@ -59,11 +59,26 @@ import {
 } from "./src/lib/materialDemandFilters.js";
 import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
 import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
+import { registerExecutiveDashboardRoutes } from "./src/lib/executiveDashboardRoutes.js";
+import { registerNomusAccountsReceivableRoutes } from "./src/lib/nomusAccountsReceivableRoutes.js";
+import { registerNomusAccountsPayableRoutes } from "./src/lib/nomusAccountsPayableRoutes.js";
+import { registerFinanceAccountsReceivableRoutes } from "./src/lib/financeAccountsReceivableRoutes.js";
+import { registerFinanceAccountsPayableRoutes } from "./src/lib/financeAccountsPayableRoutes.js";
 import {
   getNomusDailySyncStatus,
   NomusDailySyncConflictError,
   startNomusDailySyncApply,
 } from "./src/lib/nomusDailySyncRunner.js";
+import {
+  getNomusAccountsReceivableSyncStatus,
+  NomusAccountsReceivableSyncConflictError,
+  startNomusAccountsReceivableSyncApply,
+} from "./src/lib/nomusAccountsReceivableSyncRunner.js";
+import {
+  getNomusAccountsPayableSyncStatus,
+  NomusAccountsPayableSyncConflictError,
+  startNomusAccountsPayableSyncApply,
+} from "./src/lib/nomusAccountsPayableSyncRunner.js";
 import { resolveProductBomUsage, type BomUsageSearchKind } from "./src/lib/productBomUsage.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
@@ -72,6 +87,13 @@ import {
   buildSnapshotSaveData,
 } from "./src/lib/newProductSimulationSnapshot.js";
 import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/customerIndicators.js";
+import {
+  buildCustomerListResponse,
+  buildCustomerSearchWhere,
+  customerListMeta,
+  parseCustomerListQuery,
+  shouldUseCustomerPagination,
+} from "./src/lib/customerListQuery.js";
 import {
   ALL_PERMISSION_KEYS,
   APP_SESSION_COOKIE_NAME,
@@ -119,6 +141,7 @@ import {
   buildNomusEffectiveBomCostImpact,
   type CurrentCostSnapshot,
 } from "./src/lib/nomusEffectiveBomCostImpact.js";
+import { buildCurrentCostSnapshotFromAnalysis } from "./src/lib/productCostSnapshot.js";
 import {
   clearReviewDecision,
   listReviewDecisionsForParentCode,
@@ -191,7 +214,14 @@ type BootstrapAdminSessionPayload = {
 
 type NomusSyncMode = "apply" | "dry";
 type NomusSyncKind = "runner" | "sync";
-type NomusSyncTarget = "customers" | "products" | "bom-components" | "proposals" | "sales-orders";
+type NomusSyncTarget =
+  | "customers"
+  | "products"
+  | "bom-components"
+  | "proposals"
+  | "sales-orders"
+  | "accounts-receivable"
+  | "accounts-payable";
 type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
 
 const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
@@ -200,9 +230,13 @@ const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
   "bom-components",
   "proposals",
   "sales-orders",
+  "accounts-receivable",
+  "accounts-payable",
 ];
 const NOMUS_HEALTH_STALE_MS: Record<NomusSyncTarget, number> = {
   "sales-orders": 2 * 60 * 60 * 1000,
+  "accounts-receivable": 2 * 60 * 60 * 1000,
+  "accounts-payable": 2 * 60 * 60 * 1000,
   customers: 26 * 60 * 60 * 1000,
   products: 26 * 60 * 60 * 1000,
   "bom-components": 30 * 60 * 60 * 1000,
@@ -326,6 +360,22 @@ function decodeBootstrapSessionToken(
 }
 
 function parseNomusSyncFileName(fileName: string): { kind: NomusSyncKind; mode: NomusSyncMode; target: NomusSyncTarget } | null {
+  const arMatch = /^runner-accounts-receivable_(apply|dry)_.+\.log$/i.exec(fileName);
+  if (arMatch) {
+    return {
+      kind: "runner",
+      target: "accounts-receivable",
+      mode: arMatch[1].toLowerCase() as NomusSyncMode,
+    };
+  }
+  const apMatch = /^runner-accounts-payable_(apply|dry)_.+\.log$/i.exec(fileName);
+  if (apMatch) {
+    return {
+      kind: "runner",
+      target: "accounts-payable",
+      mode: apMatch[1].toLowerCase() as NomusSyncMode,
+    };
+  }
   const m =
     /^(runner-)?(customers|products|bom-components|proposals|sales-orders)_(apply|dry)_.+\.log$/i.exec(
       fileName
@@ -507,10 +557,18 @@ async function startServer() {
     const parsedFile = parseNomusSyncFileName(fileMeta.fileName);
     if (!parsedFile) return null;
 
+    const isRunnerFinanceLog =
+      parsedFile.target === "accounts-receivable" || parsedFile.target === "accounts-payable";
     const commandMatch = content.match(/^\s*COMMAND\s*:\s*(.+)$/m);
-    const startedMatch = content.match(/^\s*STARTED_AT\s*:\s*(.+)$/m);
-    const finishedMatch = content.match(/^\s*FINISHED_AT\s*:\s*(.+)$/m);
-    const exitCodeMatch = content.match(/^\s*EXIT_CODE\s*:\s*(-?\d+)/m);
+    const startedMatch = content.match(
+      isRunnerFinanceLog ? /^\s*STARTED_AT=(.+)$/m : /^\s*STARTED_AT\s*:\s*(.+)$/m
+    );
+    const finishedMatch = content.match(
+      isRunnerFinanceLog ? /^\s*FINISHED_AT=(.+)$/m : /^\s*FINISHED_AT\s*:\s*(.+)$/m
+    );
+    const exitCodeMatch = content.match(
+      isRunnerFinanceLog ? /^\s*EXIT_CODE=(-?\d+)/m : /^\s*EXIT_CODE\s*:\s*(-?\d+)/m
+    );
     const pageReadMatch = content.match(/página\s+(\d+)\s+lida\s+com\s+(\d+)\s+pedidos/i);
     const blockLimitMatch = content.match(/limite\s+de\s+bloco\s+atingido:\s*startPage=(\d+),\s*maxPages=(\d+),\s*lastPage=(\d+)/i);
 
@@ -524,6 +582,7 @@ async function startServer() {
     const jsonObj = extractFirstJsonObject(content);
     const analysisObj = safeObject(jsonObj?.analysis) ?? {};
     const appliedObj = safeObject(jsonObj?.applied) ?? {};
+    const summaryObj = safeObject(jsonObj?.summary) ?? {};
     const rootBlockedReasons = safeObject(jsonObj?.blockedReasons);
     const analysisBlockedReasons = safeObject(analysisObj.blockedReasons);
     const blockedReasonsRaw = analysisBlockedReasons ?? rootBlockedReasons ?? {};
@@ -535,7 +594,10 @@ async function startServer() {
 
     const successFromJson = typeof jsonObj?.success === "boolean" ? jsonObj.success : null;
     const statusFromJson = typeof jsonObj?.status === "string" ? jsonObj.status.toUpperCase() : null;
-    const isSkipped = content.toLowerCase().includes("dry-run sem apply") || statusFromJson === "SKIPPED";
+    const isSkipped =
+      content.toLowerCase().includes("dry-run sem apply") ||
+      statusFromJson === "SKIPPED" ||
+      /SKIPPED:\s*outra execução/i.test(content);
     const status: NomusSyncStatus =
       isSkipped
         ? "SKIPPED"
@@ -561,13 +623,25 @@ async function startServer() {
       modifiedAt: fileMeta.modifiedAt,
       command: commandMatch?.[1]?.trim() || null,
       metrics: {
-        eligibleCount: safeNumber(analysisObj.eligibleCount ?? jsonObj?.eligibleCount),
+        eligibleCount: safeNumber(
+          isRunnerFinanceLog
+            ? summaryObj.mapped
+            : analysisObj.eligibleCount ?? jsonObj?.eligibleCount
+        ),
         blockedCount: safeNumber(analysisObj.blockedCount ?? jsonObj?.blockedCount),
-        created: safeNumber(appliedObj.created),
-        updated: safeNumber(appliedObj.updated),
+        created: safeNumber(
+          isRunnerFinanceLog ? appliedObj.created ?? summaryObj.created : appliedObj.created
+        ),
+        updated: safeNumber(
+          isRunnerFinanceLog ? appliedObj.updated ?? summaryObj.updated : appliedObj.updated
+        ),
         itemsCreated: safeNumber(appliedObj.itemsCreated),
-        pageRead: pageReadMatch ? Number(pageReadMatch[1]) : null,
-        ordersRead: pageReadMatch ? Number(pageReadMatch[2]) : null,
+        pageRead: pageReadMatch
+          ? Number(pageReadMatch[1])
+          : safeNumber(isRunnerFinanceLog ? summaryObj.pagesRead : null),
+        ordersRead: pageReadMatch
+          ? Number(pageReadMatch[2])
+          : safeNumber(isRunnerFinanceLog ? summaryObj.recordsRead : null),
         startPage: blockLimitMatch ? Number(blockLimitMatch[1]) : safeNumber(jsonObj?.startPage),
         maxPages: blockLimitMatch ? Number(blockLimitMatch[2]) : safeNumber(jsonObj?.maxPages),
         lastPage: blockLimitMatch ? Number(blockLimitMatch[3]) : safeNumber(jsonObj?.lastPage),
@@ -845,7 +919,11 @@ async function startServer() {
         message:
           target === "sales-orders"
             ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado para pedidos)."
-            : "Última conclusão com sucesso há mais de 24 horas (prazo esperado).",
+            : target === "accounts-receivable"
+              ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado para contas a receber)."
+              : target === "accounts-payable"
+                ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado para contas a pagar)."
+                : "Última conclusão com sucesso há mais de 24 horas (prazo esperado).",
         warning: null,
       };
     }
@@ -913,6 +991,8 @@ async function startServer() {
       "bom-components": "Componentes da BOM",
       proposals: "Propostas",
       "sales-orders": "Pedidos de venda",
+      "accounts-receivable": "Contas a receber",
+      "accounts-payable": "Contas a pagar",
     };
     const select = {
       createdAt: true,
@@ -3924,23 +4004,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           select: { id: true },
         });
         if (product) {
-          const cache = await initAnalysisCache();
-          const analysis = await getProductCostAnalysis(product.id, cache, true);
-          if (analysis && !isCostAnalysisFailure(analysis)) {
-            const detailsMaterials = (
-              analysis as { details?: { materials?: CurrentCostSnapshot["materials"] } }
-            ).details?.materials;
-            currentSnapshot = {
-              productId: analysis.productId,
-              sku: analysis.sku,
-              totalMaterialCost: Number(analysis.totalMaterialCost),
-              totalHH_Unit: Number(analysis.totalHH_Unit),
-              totalHM_Unit: Number(analysis.totalHM_Unit),
-              totalIndustrialCost: Number(analysis.totalIndustrialCost),
-              costAnalysisPartial: Boolean(analysis.costAnalysisPartial),
-              materials: Array.isArray(detailsMaterials) ? detailsMaterials : undefined,
-            };
-          }
+          currentSnapshot = await loadCurrentCostSnapshotForProductId(product.id);
         }
 
         const result = await buildNomusEffectiveBomCostImpact(
@@ -4049,7 +4113,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         if (!parentCode) {
           return res.status(400).json({ error: "parentCode é obrigatório." });
         }
-        const result = await buildControlledApplyPreview(parentCode);
+        const result = await buildControlledApplyPreview(parentCode, {
+          resolveCurrentCostSnapshot: resolveCurrentCostSnapshotForNomus,
+        });
         return res.json(result);
       } catch (error) {
         console.error("GET /api/nomus/effective-pricing-bom/apply-preview", error);
@@ -4084,6 +4150,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           planHash,
           confirmationText,
           approvedBy,
+          resolveCurrentCostSnapshot: resolveCurrentCostSnapshotForNomus,
         });
         return res.json(result);
       } catch (error) {
@@ -7548,6 +7615,92 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   );
 
+  const nomusArSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
+  const nomusArSyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+
+  app.get(
+    "/api/settings/nomus-sync/accounts-receivable-status",
+    requireBootstrapOrAnyPermission([...nomusArSyncViewPermissions]),
+    async (_req, res) => {
+      try {
+        const status = await getNomusAccountsReceivableSyncStatus();
+        return res.json(status);
+      } catch (error) {
+        console.error("GET /api/settings/nomus-sync/accounts-receivable-status:", error);
+        return res.status(500).json({
+          error: "Erro ao consultar status de Contas a Receber Nomus.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/settings/nomus-sync/accounts-receivable-run",
+    requireBootstrapOrAnyPermission([...nomusArSyncManagePermissions]),
+    async (_req, res) => {
+      try {
+        const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
+        const result = await startNomusAccountsReceivableSyncApply(projectRoot);
+        return res.status(202).json(result);
+      } catch (error) {
+        if (error instanceof NomusAccountsReceivableSyncConflictError) {
+          return res.status(409).json({
+            error: error.message,
+            message:
+              "Já existe uma sincronização de Contas a Receber em andamento. Aguarde finalizar.",
+          });
+        }
+        console.error("POST /api/settings/nomus-sync/accounts-receivable-run:", error);
+        return res.status(500).json({
+          error: "Não foi possível iniciar a sincronização de Contas a Receber. Verifique logs do servidor.",
+        });
+      }
+    }
+  );
+
+  const nomusApSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
+  const nomusApSyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+
+  app.get(
+    "/api/settings/nomus-sync/accounts-payable-status",
+    requireBootstrapOrAnyPermission([...nomusApSyncViewPermissions]),
+    async (_req, res) => {
+      try {
+        const status = await getNomusAccountsPayableSyncStatus();
+        return res.json(status);
+      } catch (error) {
+        console.error("GET /api/settings/nomus-sync/accounts-payable-status:", error);
+        return res.status(500).json({
+          error: "Erro ao consultar status de Contas a Pagar Nomus.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/settings/nomus-sync/accounts-payable-run",
+    requireBootstrapOrAnyPermission([...nomusApSyncManagePermissions]),
+    async (_req, res) => {
+      try {
+        const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
+        const result = await startNomusAccountsPayableSyncApply(projectRoot);
+        return res.status(202).json(result);
+      } catch (error) {
+        if (error instanceof NomusAccountsPayableSyncConflictError) {
+          return res.status(409).json({
+            error: error.message,
+            message:
+              "Já existe uma sincronização de Contas a Pagar em andamento. Aguarde finalizar.",
+          });
+        }
+        console.error("POST /api/settings/nomus-sync/accounts-payable-run:", error);
+        return res.status(500).json({
+          error: "Não foi possível iniciar a sincronização de Contas a Pagar. Verifique logs do servidor.",
+        });
+      }
+    }
+  );
+
   function parseFiniteNumberFromUnknown(value: unknown, fallback = 0): number {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
@@ -7688,6 +7841,21 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   function isCostAnalysisFailure(x: unknown): x is { error: string; message?: string } {
     return typeof x === "object" && x !== null && "error" in x && typeof (x as { error: unknown }).error === "string";
+  }
+
+  async function loadCurrentCostSnapshotForProductId(
+    productId: string
+  ): Promise<CurrentCostSnapshot | null> {
+    const cache = await initAnalysisCache();
+    const analysis = await getProductCostAnalysis(productId, cache, true);
+    return buildCurrentCostSnapshotFromAnalysis(analysis);
+  }
+
+  async function resolveCurrentCostSnapshotForNomus(
+    productId: string,
+    _sku: string
+  ): Promise<CurrentCostSnapshot | null> {
+    return loadCurrentCostSnapshotForProductId(productId);
   }
 
   /** Texto único para logs/UI quando o custeio recursivo falha (inclui cause aninhado, ex.: filho do filho). */
@@ -10156,10 +10324,33 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   app.get("/api/customers", requireAppAuth, requirePermission("customers.view"), async (req, res) => {
-    const customers = await prisma.customer.findMany({
-      orderBy: { companyName: "asc" },
-    });
-    res.json(customers);
+    try {
+      const query = req.query as Record<string, unknown>;
+      if (!shouldUseCustomerPagination(query)) {
+        const customers = await prisma.customer.findMany({
+          orderBy: { companyName: "asc" },
+        });
+        return res.json(customers);
+      }
+
+      const list = parseCustomerListQuery(query);
+      const where = buildCustomerSearchWhere(list.search);
+      const [total, items] = await Promise.all([
+        prisma.customer.count({ where }),
+        prisma.customer.findMany({
+          where,
+          orderBy: { companyName: "asc" },
+          skip: list.skip,
+          take: list.limit,
+        }),
+      ]);
+
+      const meta = customerListMeta(total, list.page, list.limit);
+      res.json(buildCustomerListResponse(items, meta));
+    } catch (error) {
+      console.error("GET /api/customers", error);
+      res.status(500).json({ error: "Erro ao listar clientes." });
+    }
   });
 
   /** Indicadores agregados do cadastro (somente leitura). */
@@ -14295,6 +14486,46 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   // --- API: Gestão de Frota ---
   registerFleetRoutes(app, {
     requireAppAuth,
+    getCurrentAppUser,
+  });
+
+  registerExecutiveDashboardRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+    getCurrentAppUser,
+  });
+
+  registerNomusAccountsReceivableRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerNomusAccountsPayableRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerFinanceAccountsReceivableRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerFinanceAccountsPayableRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  const { registerCompanyIntelligenceRoutes } = await import(
+    "./src/lib/companyIntelligenceRoutes.js"
+  );
+  registerCompanyIntelligenceRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+    requireAnyPermission,
     getCurrentAppUser,
   });
 

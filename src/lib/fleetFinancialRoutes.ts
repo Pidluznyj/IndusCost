@@ -10,7 +10,7 @@ import {
 } from "@/src/lib/fleetValidation.js";
 import { writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { createMaintenance } from "@/src/lib/fleetMaintenanceOps.js";
-import { syncVehicleStatusAfterMaintenance } from "@/src/lib/fleetMaintenanceOps.js";
+import { syncVehicleStatusAfterMaintenance } from "@/src/lib/fleetVehicleStatusOps.js";
 import {
   FLEET_COST_TYPES,
   assertCompetence,

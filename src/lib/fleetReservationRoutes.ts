@@ -239,11 +239,12 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
           },
           include: RESERVATION_INCLUDE,
         });
-        await tx.fleetVehicle.update({
-          where: { id: existing.vehicleId },
-          data: { status: "RESERVED" },
-        });
         return r;
+      });
+
+      await syncVehicleStatusAfterReservationChange(existing.vehicleId, {
+        userId: user?.id ?? null,
+        trigger: "RESERVATION_APPROVE",
       });
 
       await writeFleetAuditLog({
@@ -371,14 +372,14 @@ export function registerFleetReservationRoutes(app: express.Express, auth: AuthG
         include: RESERVATION_INCLUDE,
       });
 
-      await syncVehicleStatusAfterReservationChange(oldVehicleId);
-      await syncVehicleStatusAfterReservationChange(newVehicleId);
-      if (updated.status === "APPROVED") {
-        await prisma.fleetVehicle.update({
-          where: { id: newVehicleId },
-          data: { status: "RESERVED" },
-        });
-      }
+      await syncVehicleStatusAfterReservationChange(oldVehicleId, {
+        userId: user?.id ?? null,
+        trigger: "RESERVATION_REPLACE_VEHICLE_OLD",
+      });
+      await syncVehicleStatusAfterReservationChange(newVehicleId, {
+        userId: user?.id ?? null,
+        trigger: "RESERVATION_REPLACE_VEHICLE_NEW",
+      });
 
       await writeFleetAuditLog({
         entityType: "FleetReservation",

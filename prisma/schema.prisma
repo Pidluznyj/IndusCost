@@ -315,6 +315,7 @@ model Customer {
   accountOwner       String?
   CommercialActivity CommercialActivity[]
   CrmCustomerProfile CrmCustomerProfile?
+  CustomerCnpjLookup CustomerCnpjLookup[]
   proposals          Proposal[]
   salesOrders        SalesOrder[]
 }
@@ -749,6 +750,30 @@ model CommercialAuditLog {
   @@index([performedAt])
 }
 
+model CustomerCnpjLookup {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cnpj               String
+  customerId         String?   @db.Uuid
+  source             String    @default("publica.cnpj.ws")
+  rawJson            Json
+  normalizedSummary  Json
+  riskScore          Int
+  riskVerdict        String
+  riskDetails        Json
+  commercialInsights Json
+  fetchedAt          DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt          DateTime  @db.Timestamptz(6)
+  fetchedByUserId    String?
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([cnpj])
+  @@index([customerId])
+  @@index([fetchedAt])
+  @@index([expiresAt])
+}
 
 model IntegrationRun {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1202,6 +1227,140 @@ model NomusBomComponentStage {
   @@index([parentExternalProductId])
   @@index([componentExternalProductId])
   @@index([isActiveDefault])
+  @@index([payloadHash])
+}
+
+/// Stage local de Contas a Receber Nomus (read-only sync). Base para dashboards financeiros futuros.
+model NomusAccountsReceivable {
+  id String @id @default(uuid())
+
+  externalId Int @unique
+
+  classification String?
+  type           Int?
+  status         Boolean?
+
+  companyId   Int?
+  companyName String?
+
+  personId    Int?
+  personName  String?
+  personCnpj  String?
+  personPhone String?
+
+  bankAccountId   Int?
+  bankAccountName String?
+
+  paymentMethodId   Int?
+  paymentMethodName String?
+
+  dueDate         DateTime?
+  competenceDate  DateTime?
+  scheduleDate    DateTime?
+  createdAtNomus  DateTime?
+  modifiedAtNomus DateTime?
+  settlementDate  DateTime?
+
+  amountReceivable  Decimal? @db.Decimal(20, 2)
+  amountScheduled   Decimal? @db.Decimal(20, 2)
+  amountReceived    Decimal? @db.Decimal(20, 2)
+  balanceReceivable Decimal? @db.Decimal(20, 2)
+
+  description String?
+  comments    String? @db.Text
+
+  sourceInvoiceId     Int?
+  sourceInvoiceNumber String?
+
+  suspendCollection      Boolean?
+  lateFeePercent         Decimal? @db.Decimal(10, 4)
+  monthlyInterestRate    Decimal? @db.Decimal(10, 4)
+  lateFeeCalculationType String?
+  lateInterestType       String?
+
+  rawPayload  Json
+  payloadHash String
+
+  syncedAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dueDate])
+  @@index([status])
+  @@index([companyName])
+  @@index([personName])
+  @@index([personCnpj])
+  @@index([sourceInvoiceId])
+  @@index([sourceInvoiceNumber])
+  @@index([syncedAt])
+  @@index([payloadHash])
+}
+
+/// Stage local de Contas a Pagar Nomus (read-only sync). Base para dashboards financeiros futuros.
+model NomusAccountsPayable {
+  id String @id @default(uuid())
+
+  externalId Int @unique
+
+  classification String?
+  type           Int?
+  status         Boolean?
+
+  companyId   Int?
+  companyName String?
+
+  personId    Int?
+  personName  String?
+  personCnpj  String?
+  personPhone String?
+
+  bankAccountId   Int?
+  bankAccountName String?
+
+  paymentMethodId   Int?
+  paymentMethodName String?
+
+  dueDate         DateTime?
+  competenceDate  DateTime?
+  scheduleDate    DateTime?
+  createdAtNomus  DateTime?
+  modifiedAtNomus DateTime?
+  settlementDate  DateTime?
+  paymentDate     DateTime?
+
+  amountPayable  Decimal? @db.Decimal(20, 2)
+  amountScheduled Decimal? @db.Decimal(20, 2)
+  amountPaid     Decimal? @db.Decimal(20, 2)
+  balancePayable Decimal? @db.Decimal(20, 2)
+
+  description        String?
+  comments           String? @db.Text
+  documentNumber     String?
+  sourceInvoiceId     Int?
+  sourceInvoiceNumber String?
+
+  suspendPayment         Boolean?
+  lateFeePercent         Decimal? @db.Decimal(10, 4)
+  monthlyInterestRate    Decimal? @db.Decimal(10, 4)
+  lateFeeCalculationType String?
+  lateInterestType       String?
+
+  rawPayload  Json
+  payloadHash String
+
+  syncedAt  DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dueDate])
+  @@index([status])
+  @@index([companyName])
+  @@index([personName])
+  @@index([personCnpj])
+  @@index([documentNumber])
+  @@index([sourceInvoiceId])
+  @@index([sourceInvoiceNumber])
+  @@index([syncedAt])
   @@index([payloadHash])
 }
 

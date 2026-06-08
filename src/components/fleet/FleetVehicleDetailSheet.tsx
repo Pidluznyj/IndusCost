@@ -14,6 +14,7 @@ import type {
   FleetVehicleStatus,
 } from "@/src/types/fleet";
 import { MAINTENANCE_STATUS_LABEL } from "@/src/types/fleet";
+import { formatMaintenanceBlockLabel } from "@/src/lib/fleetValidation";
 import { CONTRACT_TYPE_OPTIONS, DOCUMENT_TYPE_OPTIONS } from "@/src/types/fleet";
 import {
   confirmFleetCriticalAction,
@@ -912,25 +913,41 @@ export function FleetVehicleDetailSheet({
 
               {tab === "maintenances" && (
                 <div className="space-y-3">
-                  {(canEdit || canManage) && (
-                    <button
-                      type="button"
-                      className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
-                      disabled={saving}
-                      onClick={() =>
-                        void runAction("/api/fleet/maintenances", {
-                          vehicleId,
-                          maintenanceType: "CORRETIVA",
-                          priority: "MEDIA",
-                          description: "Manutenção aberta pela ficha do veículo",
-                          blocksVehicle: true,
-                          currentKm: vehicle?.currentKm,
-                        })
-                      }
-                    >
-                      Abrir manutenção corretiva
-                    </button>
-                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {(canEdit || canManage) && (
+                      <button
+                        type="button"
+                        className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
+                        disabled={saving}
+                        onClick={() =>
+                          void runAction("/api/fleet/maintenances", {
+                            vehicleId,
+                            maintenanceType: "CORRETIVA",
+                            priority: "MEDIA",
+                            description: "Manutenção aberta pela ficha do veículo",
+                            blocksVehicle: true,
+                            currentKm: vehicle?.currentKm,
+                          })
+                        }
+                      >
+                        Abrir manutenção corretiva
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
+                        type="button"
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        disabled={saving}
+                        onClick={() =>
+                          void runAction(`/api/fleet/vehicles/${vehicleId}/recalculate-status`, {
+                            reason: "Recálculo manual pela ficha do veículo",
+                          })
+                        }
+                      >
+                        Recalcular status
+                      </button>
+                    )}
+                  </div>
                   {maintenances.length === 0 ? (
                     <p className="text-sm text-slate-500">Nenhuma manutenção registrada.</p>
                   ) : (
@@ -939,7 +956,9 @@ export function FleetVehicleDetailSheet({
                         <div className="font-medium">
                           {MAINTENANCE_STATUS_LABEL[m.status]} · {m.maintenanceType} · {m.priority}
                           {m.blocksVehicle && (
-                            <span className="ml-2 text-amber-700 text-xs">bloqueia veículo</span>
+                            <span className="ml-2 text-amber-700 text-xs">
+                              {formatMaintenanceBlockLabel(m.blocksVehicle, m.status)}
+                            </span>
                           )}
                         </div>
                         <p className="mt-1">{m.description}</p>

@@ -8,6 +8,7 @@ import {
   isVehicleReservable,
 } from "@/src/lib/fleetValidation.js";
 import { assertNoReservationOverlap, loadFleetSettings } from "@/src/lib/fleetService.js";
+import { recalculateVehicleOperationalStatus } from "@/src/lib/fleetVehicleStatusOps.js";
 
 const RESERVATION_INCLUDE = {
   vehicle: {
@@ -107,43 +108,16 @@ export async function validateReservationFull(input: {
   );
 }
 
-/** Atualiza status do veículo conforme reservas ativas/aprovadas. */
-export async function syncVehicleStatusAfterReservationChange(vehicleId: string) {
-  const vehicle = await prisma.fleetVehicle.findUnique({ where: { id: vehicleId } });
-  if (!vehicle) return;
-  if (["IN_USE", "MAINTENANCE", "BLOCKED", "SOLD", "RETURNED", "INACTIVE"].includes(vehicle.status)) {
-    return;
-  }
-
-  const now = new Date();
-  const active = await prisma.fleetReservation.findFirst({
-    where: {
-      vehicleId,
-      status: { in: ["APPROVED", "IN_USE"] },
-      endDateTime: { gt: now },
-    },
-    orderBy: { startDateTime: "asc" },
+/** Atualiza status do veículo via recalc central (substitui matriz local legada). */
+export async function syncVehicleStatusAfterReservationChange(
+  vehicleId: string,
+  options?: { userId?: string | null; trigger?: string }
+) {
+  await recalculateVehicleOperationalStatus(vehicleId, {
+    trigger: options?.trigger ?? "SYNC_AFTER_RESERVATION",
+    userId: options?.userId ?? null,
+    reason: "Alteração de reserva — recalcular status operacional",
   });
-
-  const pending = await prisma.fleetReservation.findFirst({
-    where: {
-      vehicleId,
-      status: { in: ["REQUESTED", "PENDING_APPROVAL"] },
-      endDateTime: { gt: now },
-    },
-  });
-
-  let nextStatus = "AVAILABLE";
-  if (active?.status === "IN_USE") nextStatus = "IN_USE";
-  else if (active) nextStatus = "RESERVED";
-  else if (pending) nextStatus = "AVAILABLE";
-
-  if (vehicle.status !== nextStatus) {
-    await prisma.fleetVehicle.update({
-      where: { id: vehicleId },
-      data: { status: nextStatus as typeof vehicle.status },
-    });
-  }
 }
 
 export function canUserCancelReservation(

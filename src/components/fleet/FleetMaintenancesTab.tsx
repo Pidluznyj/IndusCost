@@ -9,6 +9,7 @@ import {
   MAINTENANCE_STATUS_LABEL,
   MAINTENANCE_TYPE_OPTIONS,
 } from "@/src/types/fleet";
+import { formatMaintenanceBlockLabel, canShowMaintenanceCancelAction, formatMaintenanceCancelOutcome } from "@/src/lib/fleetValidation";
 import {
   confirmFleetCriticalAction,
   FleetListPagination,
@@ -16,6 +17,19 @@ import {
   pickFleetListItems,
   pickFleetPagination,
   type FleetPaginatedMeta, formatFleetApiError } from "@/src/components/fleet/fleetUi";
+
+const EMPTY_CANCEL_FORM = {
+  reason: "",
+  closedAt: "",
+  notes: "",
+};
+
+function defaultCancelForm() {
+  return {
+    ...EMPTY_CANCEL_FORM,
+    closedAt: new Date().toISOString().slice(0, 16),
+  };
+}
 
 const EMPTY_FORM = {
   vehicleId: "",
@@ -38,8 +52,29 @@ function formatDt(v: string | null | undefined) {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
 }
 
+type VehicleStatusRecalc = {
+  previousStatus: string;
+  nextStatus: string;
+  changed: boolean;
+  blockers: { label: string }[];
+};
+
+function formatVehicleStatusOutcome(result: VehicleStatusRecalc | null | undefined): string | null {
+  if (!result) return null;
+  if (result.nextStatus === "AVAILABLE" && result.changed) {
+    return "Manutenção registrada e veículo liberado para Disponível.";
+  }
+  if (result.changed) {
+    return `Status do veículo atualizado: ${result.previousStatus} → ${result.nextStatus}.`;
+  }
+  if (result.blockers.length > 0) {
+    return `Veículo permanece bloqueado por: ${result.blockers.map((b) => b.label).join("; ")}.`;
+  }
+  return "Status do veículo mantido — nenhum bloqueio ativo detectado.";
+}
+
 export function FleetMaintenancesTab() {
-  const { canManageMaintenance: canManage } = useFleetPermissions();
+  const { canManageMaintenance: canManage, canManage: canManageFleet } = useFleetPermissions();
 
   const [rows, setRows] = useState<FleetMaintenanceRow[]>([]);
   const [vehicles, setVehicles] = useState<
@@ -64,7 +99,9 @@ export function FleetMaintenancesTab() {
     completedAt: "",
     generateCost: true,
   });
-  const [cancelReason, setCancelReason] = useState("");
+  const [cancelForm, setCancelForm] = useState(defaultCancelForm);
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<FleetPaginatedMeta | null>(null);
@@ -143,7 +180,7 @@ export function FleetMaintenancesTab() {
       completedAt: "",
       generateCost: true,
     });
-    setCancelReason("");
+    setCancelForm(defaultCancelForm());
     setModalOpen(true);
   };
 
@@ -182,27 +219,97 @@ export function FleetMaintenancesTab() {
     }
   };
 
-  const action = async (id: string, path: string, body?: Record<string, unknown>) => {
+  const action = async (
+    id: string,
+    path: string,
+    body?: Record<string, unknown>
+  ): Promise<VehicleStatusRecalc | null> => {
     setSaving(true);
     setError(null);
+    setSuccessMessage(null);
     try {
-      await fetchJsonOk(`/api/fleet/maintenances/${id}/${path}`, {
+      const res = await fetchJsonOk<{
+        vehicleStatus?: VehicleStatusRecalc;
+        maintenance?: FleetMaintenanceRow;
+      }>(`/api/fleet/maintenances/${id}/${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
       });
       await load();
+      await loadVehicles();
+      const outcome =
+        path === "cancel"
+          ? formatMaintenanceCancelOutcome(res.vehicleStatus)
+          : formatVehicleStatusOutcome(res.vehicleStatus);
+      if (outcome) setSuccessMessage(outcome);
       if (detailId === id) {
         const refreshed = await fetchJsonOk<{ maintenance: FleetMaintenanceRow }>(
           `/api/fleet/maintenances/${id}`
         );
         openEdit(refreshed.maintenance);
       }
+      return res.vehicleStatus ?? null;
     } catch (e: unknown) {
       setError(formatFleetApiError(e, "Erro na operação."));
+      return null;
     } finally {
       setSaving(false);
     }
+  };
+
+  const recalculateVehicleStatus = async (vehicleId: string) => {
+    if (!canManageFleet) return;
+    setSaving(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const result = await fetchJsonOk<VehicleStatusRecalc>(
+        `/api/fleet/vehicles/${vehicleId}/recalculate-status`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "Recálculo manual pela aba Manutenções" }),
+        }
+      );
+      await loadVehicles();
+      const outcome = formatVehicleStatusOutcome(result);
+      setSuccessMessage(
+        outcome ??
+          (result.nextStatus === "AVAILABLE"
+            ? "Veículo liberado para Disponível."
+            : `Veículo ainda bloqueado por: ${result.blockers.map((b) => b.label).join("; ")}`)
+      );
+    } catch (e: unknown) {
+      setError(formatFleetApiError(e, "Erro ao recalcular status."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitCancel = async (id: string) => {
+    const reason = cancelForm.reason.trim();
+    if (reason.length < 5) {
+      setError("Informe o motivo do cancelamento (mínimo 5 caracteres).");
+      return;
+    }
+    if (!cancelForm.closedAt) {
+      setError("Informe a data de fechamento/cancelamento.");
+      return;
+    }
+    await action(id, "cancel", {
+      reason,
+      closedAt: cancelForm.closedAt,
+      notes: cancelForm.notes.trim() || undefined,
+    });
+    setCancelTargetId(null);
+    setCancelForm(defaultCancelForm());
+  };
+
+  const openCancelModal = (id: string) => {
+    setCancelTargetId(id);
+    setCancelForm(defaultCancelForm());
+    setError(null);
   };
 
   const submitComplete = async () => {
@@ -222,6 +329,12 @@ export function FleetMaintenancesTab() {
 
   return (
     <div className="space-y-3">
+      {successMessage && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          {successMessage}
+        </div>
+      )}
+
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -280,6 +393,16 @@ export function FleetMaintenancesTab() {
         </select>
         <input type="date" className="rounded-lg border px-2 py-2 text-sm" value={filterStart} onChange={(e) => setFilterStart(e.target.value)} />
         <input type="date" className="rounded-lg border px-2 py-2 text-sm" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} />
+        {canManageFleet && filterVehicle && (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void recalculateVehicleStatus(filterVehicle)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          >
+            Recalcular status do veículo
+          </button>
+        )}
         {canManage && (
           <button
             type="button"
@@ -328,23 +451,41 @@ export function FleetMaintenancesTab() {
                     <td className="px-3 py-2">{MAINTENANCE_STATUS_LABEL[m.status]}</td>
                     <td className="px-3 py-2">{m.priority}</td>
                     <td className="px-3 py-2">
-                      {m.blocksVehicle ? (
-                        <span className="text-amber-700 font-medium">Sim</span>
-                      ) : (
-                        "Não"
-                      )}
+                      <span
+                        className={cn(
+                          m.blocksVehicle &&
+                            !["COMPLETED", "CANCELED"].includes(m.status) &&
+                            "text-amber-700 font-medium"
+                        )}
+                      >
+                        {formatMaintenanceBlockLabel(m.blocksVehicle, m.status)}
+                      </span>
                     </td>
                     <td className="px-3 py-2 text-right">
-                      {canManage && (
-                        <button
-                          type="button"
-                          className="rounded border p-1"
-                          onClick={() => openEdit(m)}
-                          title="Detalhar / editar"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                      <div className="inline-flex gap-1">
+                        {canManage && canShowMaintenanceCancelAction(m.status) && (
+                          <button
+                            type="button"
+                            className="rounded border border-red-200 px-2 py-1 text-xs text-red-700"
+                            disabled={saving}
+                            title="Cancelar manutenção"
+                            aria-label="Cancelar manutenção"
+                            onClick={() => openCancelModal(m.id)}
+                          >
+                            ✕
+                          </button>
+                        )}
+                        {canManage && (
+                          <button
+                            type="button"
+                            className="rounded border p-1"
+                            onClick={() => openEdit(m)}
+                            title="Detalhar / editar"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -572,26 +713,39 @@ export function FleetMaintenancesTab() {
                   </div>
                 )}
 
-                {!["COMPLETED", "CANCELED"].includes(selected.status) && (
-                  <div className="flex gap-2 items-end">
+                {canShowMaintenanceCancelAction(selected.status) && (
+                  <div className="rounded-lg border border-red-100 bg-red-50/50 p-3 space-y-2">
+                    <p className="text-xs text-red-800">
+                      Informe o motivo do cancelamento. Se não houver outros bloqueios ativos, o
+                      veículo será liberado automaticamente.
+                    </p>
                     <textarea
-                      className="flex-1 rounded border px-2 py-1.5 text-sm"
+                      className="w-full rounded border px-2 py-1.5 text-sm"
                       rows={2}
                       placeholder="Motivo do cancelamento *"
-                      value={cancelReason}
-                      onChange={(e) => setCancelReason(e.target.value)}
+                      value={cancelForm.reason}
+                      onChange={(e) => setCancelForm((f) => ({ ...f, reason: e.target.value }))}
+                    />
+                    <input
+                      type="datetime-local"
+                      className="w-full rounded border px-2 py-1.5 text-sm"
+                      value={cancelForm.closedAt}
+                      onChange={(e) => setCancelForm((f) => ({ ...f, closedAt: e.target.value }))}
+                    />
+                    <textarea
+                      className="w-full rounded border px-2 py-1.5 text-sm"
+                      rows={2}
+                      placeholder="Observação complementar (opcional)"
+                      value={cancelForm.notes}
+                      onChange={(e) => setCancelForm((f) => ({ ...f, notes: e.target.value }))}
                     />
                     <button
                       type="button"
-                      className="rounded border border-red-200 px-2 py-1 text-xs text-red-700"
-                      disabled={saving || !cancelReason.trim()}
-                      onClick={() => {
-                        const { confirmed } = confirmFleetCriticalAction("maintenance.cancel");
-                        if (!confirmed || !cancelReason.trim()) return;
-                        void action(detailId, "cancel", { reason: cancelReason });
-                      }}
+                      className="rounded border border-red-300 bg-white px-2 py-1 text-xs text-red-700 disabled:opacity-50"
+                      disabled={saving || cancelForm.reason.trim().length < 5 || !cancelForm.closedAt}
+                      onClick={() => void submitCancel(detailId)}
                     >
-                      Cancelar OS
+                      Cancelar manutenção
                     </button>
                   </div>
                 )}
@@ -622,6 +776,69 @@ export function FleetMaintenancesTab() {
                   Salvar alterações
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelTargetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl">
+            <h3 className="font-semibold text-slate-900">Cancelar manutenção</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Informe o motivo do cancelamento. Se não houver outros bloqueios ativos, o veículo
+              será liberado automaticamente.
+            </p>
+            <label className="mt-3 block text-xs font-medium text-slate-600">
+              Motivo do cancelamento *
+            </label>
+            <textarea
+              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              rows={3}
+              placeholder="Descreva o motivo (mínimo 5 caracteres)"
+              value={cancelForm.reason}
+              onChange={(e) => setCancelForm((f) => ({ ...f, reason: e.target.value }))}
+            />
+            <label className="mt-3 block text-xs font-medium text-slate-600">
+              Data de fechamento/cancelamento *
+            </label>
+            <input
+              type="datetime-local"
+              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              value={cancelForm.closedAt}
+              onChange={(e) => setCancelForm((f) => ({ ...f, closedAt: e.target.value }))}
+            />
+            <label className="mt-3 block text-xs font-medium text-slate-600">
+              Observação complementar
+            </label>
+            <textarea
+              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              rows={2}
+              placeholder="Opcional"
+              value={cancelForm.notes}
+              onChange={(e) => setCancelForm((f) => ({ ...f, notes: e.target.value }))}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded border px-3 py-1.5 text-sm"
+                onClick={() => {
+                  setCancelTargetId(null);
+                  setCancelForm(defaultCancelForm());
+                }}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="rounded bg-red-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                disabled={
+                  saving || cancelForm.reason.trim().length < 5 || !cancelForm.closedAt
+                }
+                onClick={() => void submitCancel(cancelTargetId)}
+              >
+                Confirmar cancelamento
+              </button>
             </div>
           </div>
         </div>

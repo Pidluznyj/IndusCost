@@ -12,6 +12,9 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import {
+  formatMobileChecklistBlockMessage,
+  getMobileChecklistStepStatus,
+  isChecklistItemAnswered,
   isFleetChecklistRequiredForMode,
   isMobileChecklistStepComplete,
   MOBILE_USAGE_STEP_LABELS,
@@ -90,6 +93,19 @@ export function FleetMobileUsageFlow({
   const checklistRequired = useMemo(
     () => (mode ? isFleetChecklistRequiredForMode(settings, mode) : false),
     [mode, settings]
+  );
+
+  const checklistStatus = useMemo(() => {
+    if (!checklist || !mode) return null;
+    return getMobileChecklistStepStatus(checklist.items, {
+      required: checklistRequired,
+      mode,
+    });
+  }, [checklist, checklistRequired, mode]);
+
+  const checklistBlockMessage = useMemo(
+    () => (checklistStatus ? formatMobileChecklistBlockMessage(checklistStatus) : null),
+    [checklistStatus]
   );
 
   const vehicleKm = reservation?.vehicle?.currentKm ?? 0;
@@ -249,10 +265,7 @@ export function FleetMobileUsageFlow({
     }
     if (step === "checklist") {
       if (!checklist) return !checklistRequired;
-      if (mode === "checkout" && mobileCheckoutBlockedByCritical(checklist.items)) {
-        return false;
-      }
-      return isMobileChecklistStepComplete(checklist.items, checklistRequired);
+      return checklistStatus?.canAdvance ?? isMobileChecklistStepComplete(checklist.items, checklistRequired);
     }
     if (step === "photos") return true;
     return true;
@@ -264,8 +277,8 @@ export function FleetMobileUsageFlow({
       return;
     }
     if (step === "checklist") {
-      if (mode === "checkout" && checklist && mobileCheckoutBlockedByCritical(checklist.items)) {
-        setError("Item crítico não conforme: corrija antes da retirada.");
+      if (checklist && checklistBlockMessage) {
+        setError(checklistBlockMessage);
         return;
       }
       if (checklist && !isMobileChecklistStepComplete(checklist.items, checklistRequired)) {
@@ -501,7 +514,12 @@ export function FleetMobileUsageFlow({
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto px-3 py-4">
+      <main
+        className={cn(
+          "flex-1 overflow-y-auto px-3 py-4",
+          step === "checklist" && "pb-36"
+        )}
+      >
         {step === "reservation" && (
           <section className="space-y-3">
             <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
@@ -581,21 +599,41 @@ export function FleetMobileUsageFlow({
                 Checklist obrigatório (configuração da frota).
               </p>
             )}
+            {checklistStatus && checklistStatus.totalCount > 0 && (
+              <p
+                className={cn(
+                  "text-sm font-medium rounded-lg px-3 py-2 border",
+                  checklistStatus.canAdvance
+                    ? "text-emerald-800 bg-emerald-50 border-emerald-200"
+                    : "text-amber-900 bg-amber-50 border-amber-200"
+                )}
+              >
+                {checklistStatus.answeredCount}/{checklistStatus.totalCount} itens respondidos
+              </p>
+            )}
             <ul className="space-y-3">
-              {checklist.items.map((item) => (
+              {checklist.items.map((item) => {
+                const answered = isChecklistItemAnswered(item.result);
+                return (
                 <li
                   key={item.id}
                   className={cn(
                     "rounded-xl border bg-white p-3",
-                    item.isCritical && item.result === "NOT_OK"
+                    !answered && "border-amber-400 ring-1 ring-amber-200",
+                    answered && item.isCritical && item.result === "NOT_OK"
                       ? "border-red-300"
-                      : "border-slate-200"
+                      : answered
+                        ? "border-slate-200"
+                        : undefined
                   )}
                 >
                   <p className="text-sm font-medium text-slate-900">
                     {item.itemName}
                     {item.isCritical && (
                       <span className="ml-1 text-xs text-red-600">(crítico)</span>
+                    )}
+                    {!answered && (
+                      <span className="ml-1 text-xs text-amber-700">(pendente)</span>
                     )}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -621,8 +659,14 @@ export function FleetMobileUsageFlow({
                     ))}
                   </div>
                 </li>
-              ))}
+              );
+              })}
             </ul>
+            {checklistBlockMessage && (
+              <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                {checklistBlockMessage}
+              </p>
+            )}
             {mode === "checkout" && mobileCheckoutBlockedByCritical(checklist.items) && (
               <p className="text-sm text-red-700">
                 Item crítico não conforme bloqueia a retirada até correção ou manutenção.
@@ -764,7 +808,18 @@ export function FleetMobileUsageFlow({
         )}
       </main>
 
-      <footer className="sticky bottom-0 z-20 border-t border-slate-200 bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex gap-2 shrink-0">
+      <footer className="sticky bottom-0 z-20 border-t border-slate-200 bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex flex-col gap-2 shrink-0">
+        {step === "checklist" && checklistStatus && checklistStatus.totalCount > 0 && (
+          <div className="text-xs text-slate-600">
+            <p className="font-medium">
+              {checklistStatus.answeredCount}/{checklistStatus.totalCount} itens respondidos
+            </p>
+            {checklistBlockMessage && (
+              <p className="mt-0.5 text-amber-800">{checklistBlockMessage}</p>
+            )}
+          </div>
+        )}
+        <div className="flex gap-2">
         {step !== "reservation" && !doneMessage && (
           <button
             type="button"
@@ -811,6 +866,7 @@ export function FleetMobileUsageFlow({
             Nova operação
           </button>
         )}
+        </div>
       </footer>
     </div>
   );

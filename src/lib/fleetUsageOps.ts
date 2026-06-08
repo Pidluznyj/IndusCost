@@ -16,6 +16,7 @@ import {
   applyCriticalChecklistOnCheckin,
   assertCompletedChecklistForPhase,
 } from "@/src/lib/fleetChecklistOps.js";
+import { recalculateVehicleOperationalStatus } from "@/src/lib/fleetVehicleStatusOps.js";
 
 export const USAGE_INCLUDE = {
   driver: { select: { id: true, name: true } },
@@ -160,10 +161,16 @@ export async function performCheckout(input: {
 
     await tx.fleetVehicle.update({
       where: { id: reservation.vehicleId },
-      data: { status: "IN_USE", currentKm: checkoutKm },
+      data: { currentKm: checkoutKm },
     });
 
     return { usage, reservation: resUpdated };
+  });
+
+  await recalculateVehicleOperationalStatus(reservation.vehicleId, {
+    trigger: "CHECKOUT",
+    userId: input.userId,
+    reason: "Retirada registrada — recalcular status operacional",
   });
 
   await writeFleetAuditLog({
@@ -274,18 +281,12 @@ export async function performCheckin(input: {
       include: RESERVATION_INCLUDE,
     });
 
-    let vehicleStatus: "AVAILABLE" | "BLOCKED" | "MAINTENANCE" = hasPending ? "BLOCKED" : "AVAILABLE";
-    if (criticalFail) vehicleStatus = "BLOCKED";
-
     await tx.fleetVehicle.update({
       where: { id: reservation.vehicleId },
-      data: {
-        currentKm: checkinKm,
-        status: vehicleStatus,
-      },
+      data: { currentKm: checkinKm },
     });
 
-    return { usage, reservation: resUpdated, vehicleStatus };
+    return { usage, reservation: resUpdated };
   });
 
   const criticalResult = await applyCriticalChecklistOnCheckin({
@@ -295,6 +296,34 @@ export async function performCheckin(input: {
     userId: input.userId,
     currentKm: checkinKm,
   });
+
+  const statusResult = await recalculateVehicleOperationalStatus(reservation.vehicleId, {
+    trigger: "CHECKIN",
+    userId: input.userId,
+    reason: hasPending
+      ? "Devolução com pendências — recalcular status operacional"
+      : "Devolução concluída — recalcular status operacional",
+  });
+
+  if (
+    manualPending &&
+    !criticalResult.blocked &&
+    (statusResult.nextStatus === "AVAILABLE" || statusResult.nextStatus === "RESERVED")
+  ) {
+    await prisma.fleetVehicle.update({
+      where: { id: reservation.vehicleId },
+      data: { status: "BLOCKED" },
+    });
+    await writeFleetAuditLog({
+      entityType: "FleetVehicle",
+      entityId: reservation.vehicleId,
+      action: "CHECKIN_PENDING_BLOCK",
+      oldValue: statusResult.nextStatus,
+      newValue: "BLOCKED",
+      reason: "Devolução marcada com pendência manual (sem manutenção automática)",
+      userId: input.userId,
+    });
+  }
 
   await writeFleetAuditLog({
     entityType: "FleetUsage",

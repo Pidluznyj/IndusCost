@@ -8,11 +8,16 @@ import {
   assertMaintenanceEditable,
   assertMaintenanceTransition,
   assertNonNegativeAmount,
+  assertReasonMinLength,
   assertReasonRequired,
+  buildMaintenanceCancelAuditEntry,
+  buildMaintenanceCancelNotes,
   maintenanceNeedsApproval,
   parseDecimalKm,
+  parseMaintenanceClosedAt,
   resolveMaintenanceVehicleStatus,
 } from "@/src/lib/fleetValidation.js";
+import { recalculateVehicleOperationalStatus } from "@/src/lib/fleetVehicleStatusOps.js";
 
 const MAINTENANCE_INCLUDE = {
   vehicle: {
@@ -128,44 +133,7 @@ export async function hasActiveBlockingMaintenance(
   return Boolean(row);
 }
 
-export async function syncVehicleStatusAfterMaintenance(vehicleId: string) {
-  const vehicle = await prisma.fleetVehicle.findUnique({ where: { id: vehicleId } });
-  if (!vehicle) return;
-  if (["IN_USE", "SOLD", "RETURNED", "INACTIVE"].includes(vehicle.status)) return;
-
-  const blocking = await prisma.fleetMaintenance.findFirst({
-    where: {
-      vehicleId,
-      blocksVehicle: true,
-      status: { notIn: ["COMPLETED", "CANCELED"] },
-    },
-    orderBy: { openedAt: "desc" },
-  });
-
-  if (blocking) {
-    const next = resolveMaintenanceVehicleStatus(blocking.priority, true) ?? "MAINTENANCE";
-    if (vehicle.status !== next) {
-      await prisma.fleetVehicle.update({ where: { id: vehicleId }, data: { status: next } });
-    }
-    return;
-  }
-
-  if (["MAINTENANCE", "BLOCKED"].includes(vehicle.status)) {
-    const activeRes = await prisma.fleetReservation.findFirst({
-      where: {
-        vehicleId,
-        status: { in: ["APPROVED", "IN_USE"] },
-      },
-    });
-    if (activeRes?.status === "IN_USE") {
-      await prisma.fleetVehicle.update({ where: { id: vehicleId }, data: { status: "IN_USE" } });
-    } else if (activeRes) {
-      await prisma.fleetVehicle.update({ where: { id: vehicleId }, data: { status: "RESERVED" } });
-    } else {
-      await prisma.fleetVehicle.update({ where: { id: vehicleId }, data: { status: "AVAILABLE" } });
-    }
-  }
-}
+export { syncVehicleStatusAfterMaintenance } from "@/src/lib/fleetVehicleStatusOps.js";
 
 export async function applyVehicleBlockForMaintenance(
   vehicleId: string,
@@ -360,7 +328,11 @@ export async function updateMaintenance(
       true
     );
   } else if (data.blocksVehicle === false && existing.blocksVehicle) {
-    await syncVehicleStatusAfterMaintenance(existing.vehicleId);
+    await recalculateVehicleOperationalStatus(existing.vehicleId, {
+      userId,
+      trigger: "MAINTENANCE_UNBLOCK",
+      reason: "Manutenção deixou de bloquear veículo",
+    });
   }
 
   await writeFleetAuditLog({
@@ -567,18 +539,25 @@ export async function completeMaintenance(
       }
     }
 
-    if (releaseVehicle) {
-      await syncVehicleStatusAfterMaintenance(existing.vehicleId);
-    }
-
     return { maintenance: m, costId };
   });
+
+  let vehicleStatusResult = null;
+  if (releaseVehicle) {
+    vehicleStatusResult = await recalculateVehicleOperationalStatus(existing.vehicleId, {
+      userId,
+      trigger: "MAINTENANCE_COMPLETE",
+      reason: `Manutenção concluída: ${serviceDone}`,
+    });
+  }
 
   await writeFleetAuditLog({
     entityType: "FleetMaintenance",
     entityId: id,
     action: "COMPLETE",
-    newValue: completedAt.toISOString(),
+    oldValue: existing.status,
+    newValue: "COMPLETED",
+    reason: serviceDone,
     userId,
   });
   if (updated.costId) {
@@ -591,42 +570,71 @@ export async function completeMaintenance(
     });
   }
 
-  return { maintenance: serializeMaintenance(updated.maintenance), costId: updated.costId };
+  return {
+    maintenance: serializeMaintenance(updated.maintenance),
+    costId: updated.costId,
+    vehicleStatus: vehicleStatusResult,
+  };
+}
+
+export type CancelMaintenanceInput = {
+  reason: string;
+  closedAt?: string | Date | null;
+  notes?: string | null;
+};
+
+export function buildMaintenanceCancelUpdate(
+  existing: { status: FleetMaintenanceStatus; notes: string | null; openedAt: Date },
+  input: CancelMaintenanceInput
+) {
+  assertMaintenanceEditable(existing.status);
+  const reason = assertReasonMinLength(input.reason, 5, "Motivo do cancelamento");
+  const closedAt = parseMaintenanceClosedAt(input.closedAt, existing.openedAt);
+  return {
+    status: "CANCELED" as const,
+    completedAt: closedAt,
+    notes: buildMaintenanceCancelNotes(existing.notes, reason, closedAt, input.notes),
+    reason,
+    closedAt,
+  };
 }
 
 export async function cancelMaintenance(
   id: string,
-  reason: string,
+  input: CancelMaintenanceInput | string,
   userId: string | null
 ) {
   const existing = await getMaintenanceOrThrow(id);
-  assertMaintenanceEditable(existing.status);
-  const r = assertReasonRequired(reason, "Motivo do cancelamento");
+  const payload: CancelMaintenanceInput =
+    typeof input === "string" ? { reason: input } : input;
+  const cancelData = buildMaintenanceCancelUpdate(existing, payload);
 
   const updated = await prisma.fleetMaintenance.update({
     where: { id },
     data: {
-      status: "CANCELED",
-      notes: existing.notes
-        ? `${existing.notes}\n[cancelado] ${r}`
-        : `[cancelado] ${r}`,
+      status: cancelData.status,
+      completedAt: cancelData.closedAt,
+      notes: cancelData.notes,
     },
     include: MAINTENANCE_INCLUDE,
   });
 
-  await syncVehicleStatusAfterMaintenance(existing.vehicleId);
-
-  await writeFleetAuditLog({
-    entityType: "FleetMaintenance",
-    entityId: id,
-    action: "CANCEL",
-    oldValue: existing.status,
-    newValue: "CANCELED",
-    reason: r,
+  const vehicleStatus = await recalculateVehicleOperationalStatus(existing.vehicleId, {
     userId,
+    trigger: "MAINTENANCE_CANCEL",
+    reason: cancelData.reason,
   });
 
-  return serializeMaintenance(updated);
+  await writeFleetAuditLog(
+    buildMaintenanceCancelAuditEntry({
+      entityId: id,
+      oldStatus: existing.status,
+      reason: cancelData.reason,
+      userId,
+    })
+  );
+
+  return { maintenance: serializeMaintenance(updated), vehicleStatus };
 }
 
 export async function generateMaintenanceCost(id: string, userId: string | null) {

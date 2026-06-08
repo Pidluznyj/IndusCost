@@ -20,6 +20,7 @@ export type AppModuleId =
   | "crm-commercial"
   | "simulations"
   | "reports"
+  | "finance"
   | "guide"
   | "settings";
 
@@ -48,6 +49,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "crm-commercial",
   "simulations",
   "reports",
+  "finance",
   "guide",
   "settings",
 ];
@@ -94,14 +96,11 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     case "simulations":
       return check.hasPermission("simulations.view") || check.hasPermission(LEGACY_COSTS_VIEW);
     case "taxes":
-      return check.hasPermission("taxes.view") || check.hasPermission("pricing.view");
+      return check.hasPermission("taxes.view");
     case "settings":
       return check.hasAnyPermission([...SETTINGS_MENU_PERMISSIONS]);
     case "maintenance":
-      return (
-        check.hasPermission("maintenance.view") ||
-        check.hasPermission("settings.view")
-      );
+      return check.hasPermission("maintenance.view");
     case "fleet": {
       const held = check.authUser?.effectivePermissions;
       if (held?.length) return evaluateFleetRouteAccess(held, "view");
@@ -109,6 +108,15 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     }
     case "reports":
       return check.hasPermission("reports.view") || check.hasPermission("dashboard.view");
+    case "finance":
+      return (
+        check.hasPermission("finance.view") ||
+        check.hasPermission("finance.accountsReceivable.view") ||
+        check.hasPermission("finance.accountsPayable.view") ||
+        check.hasPermission("reports.view") ||
+        check.hasPermission("settings.nomus.view") ||
+        check.hasPermission("settings.view")
+      );
     case "guide":
       return check.hasPermission("guide.view") || check.hasPermission("dashboard.view");
     default:
@@ -224,6 +232,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   "crm-commercial": "CRM Comercial",
   simulations: "Simulações",
   reports: "Relatórios",
+  finance: "Financeiro",
   guide: "Guia do Sistema",
   settings: "Configurações",
 };
@@ -251,14 +260,8 @@ export const PRODUCT_TAB_PERMISSIONS: Record<ProductTabId, string> = {
   history: "products.tab.info",
 };
 
-/** Abas visíveis no modal de produto (legado: só products.view → todas as abas). */
+/** Abas visíveis no modal de produto — exige permissão tab explícita. */
 export function getVisibleProductTabs(check: PermissionChecker): ProductTabId[] {
-  const hasAnyTabPerm = PRODUCT_TAB_IDS.some((id) =>
-    check.hasPermission(PRODUCT_TAB_PERMISSIONS[id])
-  );
-  if (!hasAnyTabPerm && check.hasPermission("products.view")) {
-    return [...PRODUCT_TAB_IDS];
-  }
   return PRODUCT_TAB_IDS.filter((id) => check.hasPermission(PRODUCT_TAB_PERMISSIONS[id]));
 }
 

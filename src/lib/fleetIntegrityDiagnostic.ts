@@ -560,15 +560,20 @@ export function runFleetIntegrityChecks(data: FleetIntegrityDataset): FleetInteg
 
     if (v.status === "MAINTENANCE" || v.status === "BLOCKED") {
       const blocking = openMaintenancesByVehicle.get(v.id) ?? [];
-      if (blocking.length === 0) {
+      const openUsage = data.usages.some(
+        (u) => u.vehicleId === v.id && u.status === "CHECKED_OUT" && u.checkinAt == null
+      );
+      if (blocking.length === 0 && !openUsage) {
         issues.push(
           issue({
             severity: "high",
             entity: "FleetVehicle",
             entityId: v.id,
-            code: "VEHICLE_MAINTENANCE_WITHOUT_BLOCKING_JOB",
-            message: `Veículo ${v.status} sem manutenção aberta com blocksVehicle=true.`,
-            suggestedFix: "Abrir manutenção bloqueante ou liberar status do veículo.",
+            code: "VEHICLE_STUCK_WITHOUT_ACTIVE_BLOCKER",
+            message: `Veículo ${v.status} sem manutenção bloqueante ativa nem uso em aberto.`,
+            suggestedFix:
+              "Executar recálculo do status operacional (POST /api/fleet/vehicles/:id/recalculate-status).",
+            safeAutoFix: true,
           })
         );
       }
