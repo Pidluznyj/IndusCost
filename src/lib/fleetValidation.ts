@@ -37,6 +37,31 @@ export const FLEET_ACTIVE_RESERVATION_STATUSES: FleetReservationStatus[] = [
   "IN_USE",
 ];
 
+/** Reservas que ainda ocupam agenda ou mantêm veículo RESERVED (ignora APPROVED já encerrada). */
+export const FLEET_CALENDAR_BLOCKING_RESERVATION_STATUSES: FleetReservationStatus[] = [
+  "REQUESTED",
+  "PENDING_APPROVAL",
+  "APPROVED",
+];
+
+export function buildActiveReservationWhere(
+  vehicleId: string,
+  options?: { excludeReservationId?: string; at?: Date }
+) {
+  const at = options?.at ?? new Date();
+  return {
+    vehicleId,
+    ...(options?.excludeReservationId ? { id: { not: options.excludeReservationId } } : {}),
+    OR: [
+      { status: "IN_USE" as FleetReservationStatus },
+      {
+        status: { in: FLEET_CALENDAR_BLOCKING_RESERVATION_STATUSES },
+        endDateTime: { gt: at },
+      },
+    ],
+  };
+}
+
 export function parseDecimalKm(value: unknown): number | null {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(String(value).replace(",", "."));

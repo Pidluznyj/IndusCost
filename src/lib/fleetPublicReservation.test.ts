@@ -350,6 +350,31 @@ describe("fleetPublicReservation requests list filter", () => {
   });
 });
 
+describe("fleetPublicReservation expired reservation release", () => {
+  it("recalculate ignores APPROVED reservations past endDateTime", () => {
+    const opsPath = join(process.cwd(), "src", "lib", "fleetVehicleStatusOps.ts");
+    const src = readFileSync(opsPath, "utf8");
+    assert.ok(src.includes('status: "APPROVED", endDateTime: { gt: now }'));
+  });
+
+  it("buildActiveReservationWhere excludes ended APPROVED from conflicts", async () => {
+    const { buildActiveReservationWhere } = await import("./fleetValidation.js");
+    const where = buildActiveReservationWhere("vehicle-1");
+    assert.ok(where.OR);
+    const orList = where.OR as Array<Record<string, unknown>>;
+    const approvedBranch = orList.find((b) => b.status && typeof b.status === "object");
+    assert.ok(approvedBranch);
+    assert.ok((approvedBranch as { endDateTime?: { gt: Date } }).endDateTime?.gt instanceof Date);
+  });
+
+  it("public approval recalculates vehicle status before validate", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes("PUBLIC_RESERVATION_APPROVE_PREP"));
+    assert.ok(src.includes("PUBLIC_RESERVATION_VEHICLE_CHECK"));
+  });
+});
+
 describe("fleetPublicReservation schedule overlap", () => {
   it("adjacent slots 12:00-15:00 and 15:00-18:00 do not overlap (half-open interval)", () => {
     const aStart = combineDateAndTimeLocal("2026-06-08", "12:00");

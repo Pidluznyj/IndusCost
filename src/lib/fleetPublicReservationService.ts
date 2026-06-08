@@ -11,9 +11,10 @@ import {
   assertReasonRequired,
   findReservationConflict,
   isVehicleReservable,
-  FLEET_ACTIVE_RESERVATION_STATUSES,
+  buildActiveReservationWhere,
   reservationPeriodsOverlap,
 } from "@/src/lib/fleetValidation.js";
+import { recalculateVehicleOperationalStatus } from "@/src/lib/fleetVehicleStatusOps.js";
 import {
   syncVehicleStatusAfterReservationChange,
   validateReservationFull,
@@ -249,6 +250,9 @@ async function listReservableVehicles(vehicleId?: string | null) {
 }
 
 async function assertPublicReservationVehicleOrThrow(vehicleId: string) {
+  await recalculateVehicleOperationalStatus(vehicleId, {
+    trigger: "PUBLIC_RESERVATION_VEHICLE_CHECK",
+  });
   const vehicle = await prisma.fleetVehicle.findUnique({
     where: { id: vehicleId },
     select: { id: true, brand: true, model: true, vehicleType: true, status: true, plate: true, notes: true },
@@ -295,11 +299,11 @@ async function loadDayConflicts(dateStr: string, vehicleId: string) {
     throw new FleetValidationError("Data inválida para verificação de disponibilidade.");
   }
 
+  const now = new Date();
   const [reservations, pendingRequests] = await Promise.all([
     prisma.fleetReservation.findMany({
       where: {
-        vehicleId,
-        status: { in: FLEET_ACTIVE_RESERVATION_STATUSES },
+        ...buildActiveReservationWhere(vehicleId, { at: now }),
         startDateTime: { lt: dayEnd },
         endDateTime: { gt: dayStart },
       },
@@ -332,11 +336,11 @@ async function loadRangeConflicts(from: string, days: number, vehicleId: string)
   const rangeEnd = combineDateAndTimeLocal(dates[dates.length - 1]!, "23:59");
   const dateObjs = dates.map((d) => parseLocalDateOnly(d)!).filter(Boolean);
 
+  const now = new Date();
   const [reservations, pendingRequests] = await Promise.all([
     prisma.fleetReservation.findMany({
       where: {
-        vehicleId,
-        status: { in: FLEET_ACTIVE_RESERVATION_STATUSES },
+        ...buildActiveReservationWhere(vehicleId, { at: now }),
         startDateTime: { lt: rangeEnd },
         endDateTime: { gt: rangeStart },
       },
@@ -1016,6 +1020,11 @@ export async function approvePublicReservationRequest(input: {
   const startDateTime = buildFleetReservationLocalDateTime(dateStr, existing.startTime);
   const endDateTime = buildFleetReservationLocalDateTime(dateStr, existing.endTime);
   assertDateRange(startDateTime, endDateTime, "Reserva");
+
+  await recalculateVehicleOperationalStatus(vehicleId, {
+    userId: input.reviewedByUserId,
+    trigger: "PUBLIC_RESERVATION_APPROVE_PREP",
+  });
 
   await validateReservationFull({
     vehicleId,

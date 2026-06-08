@@ -178,8 +178,15 @@ export async function recalculateVehicleOperationalStatus(
     orderBy: { openedAt: "desc" },
   });
 
+  const now = new Date();
   const approvedReservation = await prisma.fleetReservation.findFirst({
-    where: { vehicleId, status: "APPROVED" },
+    where: {
+      vehicleId,
+      OR: [
+        { status: "IN_USE" },
+        { status: "APPROVED", endDateTime: { gt: now } },
+      ],
+    },
     select: { id: true },
   });
 

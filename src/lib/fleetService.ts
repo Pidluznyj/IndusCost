@@ -15,7 +15,7 @@ import {
   isActiveVehicleStatus,
   isCnhValid,
   normalizePlate,
-  FLEET_ACTIVE_RESERVATION_STATUSES,
+  buildActiveReservationWhere,
   parseDecimalKm,
 } from "@/src/lib/fleetValidation.js";
 
@@ -91,11 +91,7 @@ export async function assertNoReservationOverlap(
   excludeReservationId?: string
 ) {
   const conflicts = await prisma.fleetReservation.findMany({
-    where: {
-      vehicleId,
-      status: { in: FLEET_ACTIVE_RESERVATION_STATUSES },
-      id: excludeReservationId ? { not: excludeReservationId } : undefined,
-    },
+    where: buildActiveReservationWhere(vehicleId, { excludeReservationId }),
     select: { id: true, startDateTime: true, endDateTime: true },
   });
   const conflict = findReservationConflict(conflicts, start, end, excludeReservationId);
