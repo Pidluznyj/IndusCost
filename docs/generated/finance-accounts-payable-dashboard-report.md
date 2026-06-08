@@ -83,6 +83,8 @@ Confirmação manual: `RODAR CONTAS A PAGAR NOMUS`
 
 Valores monetários arredondados a 2 casas; percentuais com `%`; datas `dd/mm/aaaa`; nunca expor `NaN`, `Infinity` ou `undefined`.
 
+**Sync Nomus (pós NOMUS-AP-LIVE-MAPPER-FIX):** a API `contasPagar` retorna campos `valorReceber`/`saldoReceber` com valores negativos; o mapper grava `balancePayable` e demais montantes como **positivos**. O dashboard assume valores positivos no stage local — rodar novo preview/apply no servidor após o fix antes de confiar nos KPIs.
+
 ## Cards (KPIs)
 
 1. Valor total a pagar (`totalPayableAmount`)

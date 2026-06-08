@@ -102,3 +102,20 @@ export function computePaginationPlan(options: AccountsPayableSyncCliOptions): {
   const lastPage = options.startPage + options.maxPages - 1;
   return { firstPage, lastPage };
 }
+
+export type AccountsPayablePageEnv = {
+  NOMUS_AP_SEND_PAGE_SIZE?: string;
+};
+
+/** Query params da página AP — live Nomus rejeita `tamanhoPagina` (HTTP 400). */
+export function buildAccountsPayablePageParams(
+  page: number,
+  pageSize: number,
+  env: AccountsPayablePageEnv = process.env
+): Record<string, string> {
+  const params: Record<string, string> = { pagina: String(page) };
+  if (env.NOMUS_AP_SEND_PAGE_SIZE === "1") {
+    params.tamanhoPagina = String(pageSize);
+  }
+  return params;
+}

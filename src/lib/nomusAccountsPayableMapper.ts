@@ -60,6 +60,13 @@ function toOptionalDecimal(value: unknown): Prisma.Decimal | null {
   return n == null ? null : new Prisma.Decimal(n);
 }
 
+/** Valores monetários AP: Nomus pode enviar negativos (campos *Receber*); dashboard usa positivo. */
+export function toOptionalPositiveDecimal(value: unknown): Prisma.Decimal | null {
+  const n = parseNomusOptionalMoney(value);
+  if (n == null) return null;
+  return new Prisma.Decimal(Math.abs(n));
+}
+
 function firstMoney(raw: JsonObject, keys: string[]): unknown {
   for (const key of keys) {
     if (raw[key] != null && raw[key] !== "") return raw[key];
@@ -99,12 +106,23 @@ export function mapNomusAccountsPayablePayload(raw: JsonObject): MapResult {
     modifiedAtNomus: parseNomusBrDateTime(raw.dataModificacao),
     settlementDate: parseNomusBrDate(raw.dataBaixa),
     paymentDate: parseNomusBrDate(raw.dataPagamento),
-    amountPayable: toOptionalDecimal(firstMoney(raw, ["valorPagar", "valorAPagar"])),
-    amountScheduled: toOptionalDecimal(
-      firstMoney(raw, ["valorPagarAgendado", "valorAgendado", "valorAPagarAgendado"])
+    amountPayable: toOptionalPositiveDecimal(
+      firstMoney(raw, ["valorPagar", "valorAPagar", "valorReceber"])
     ),
-    amountPaid: toOptionalDecimal(firstMoney(raw, ["valorPago", "valorAPago"])),
-    balancePayable: toOptionalDecimal(firstMoney(raw, ["saldoPagar", "saldoAPagar"])),
+    amountScheduled: toOptionalPositiveDecimal(
+      firstMoney(raw, [
+        "valorPagarAgendado",
+        "valorAgendado",
+        "valorAPagarAgendado",
+        "valorReceberAgendado",
+      ])
+    ),
+    amountPaid: toOptionalPositiveDecimal(
+      firstMoney(raw, ["valorPago", "valorAPago", "valorRecebido", "valorBaixadoSemNumerario"])
+    ),
+    balancePayable: toOptionalPositiveDecimal(
+      firstMoney(raw, ["saldoPagar", "saldoAPagar", "saldoReceber"])
+    ),
     description: asString(raw.descricaoLancamento),
     comments: asString(raw.comentarios),
     documentNumber: asString(raw.numeroDocumento ?? raw.numeroNotaFiscalOrigem),

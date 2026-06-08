@@ -5,6 +5,7 @@ import {
   disconnectAccountsPayableIntegrationPrisma,
 } from "@/src/lib/nomusAccountsPayableIntegrationRun.js";
 import {
+  buildAccountsPayablePageParams,
   computePaginationPlan,
   hasNextAccountsPayablePage,
   NOMUS_ACCOUNTS_PAYABLE_PAGE_SIZE,
@@ -46,10 +47,11 @@ async function fetchAccountsPayablePage(
   page: number,
   pageSize: number
 ): Promise<{ payload: unknown; items: JsonObject[] }> {
-  const url = buildNomusUrl(baseUrl, "contasPagar", {
-    pagina: String(page),
-    tamanhoPagina: String(pageSize),
-  });
+  const url = buildNomusUrl(
+    baseUrl,
+    "contasPagar",
+    buildAccountsPayablePageParams(page, pageSize, process.env)
+  );
   const payload = await fetchNomusJson(url, { logPrefix: LOG_PREFIX });
   const items = pickAccountsPayableArray(payload).filter(
     (item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item)

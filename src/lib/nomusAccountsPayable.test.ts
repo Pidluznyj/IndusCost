@@ -15,6 +15,7 @@ import {
   isAccountsPayableOpen,
 } from "./nomusAccountsPayableSummary.js";
 import {
+  buildAccountsPayablePageParams,
   hasNextAccountsPayablePage,
   pickAccountsPayableArray,
   shouldStopAccountsPayablePagination,
@@ -119,6 +120,30 @@ describe("nomusAccountsPayableMapper", () => {
     const changed = stableNomusPayloadHash({ ...samplePayload, saldoPagar: "4.000,00" });
     assert.notEqual(first, changed);
   });
+
+  it("maps live AP payload with receber-field names and negative amounts as positive", () => {
+    const livePayload = {
+      id: 16743,
+      nomePessoa: "PIZZA PACK COMERCIO DE EMBALAGENS LTDA",
+      dataVencimento: "05/08/2026",
+      saldoReceber: "-3.279,55",
+      valorReceber: "-3.279,55",
+      valorReceberAgendado: "-3.279,55",
+      valorRecebido: "0,00",
+    };
+
+    const mapped = mapNomusAccountsPayablePayload(livePayload);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+
+    assert.equal(mapped.row.amountPayable?.toNumber(), 3279.55);
+    assert.equal(mapped.row.balancePayable?.toNumber(), 3279.55);
+    assert.equal(mapped.row.amountScheduled?.toNumber(), 3279.55);
+    assert.equal(mapped.row.amountPaid?.toNumber(), 0);
+    assert.equal(mapped.row.rawPayload.saldoReceber, "-3.279,55");
+    assert.equal(mapped.row.rawPayload.valorReceber, "-3.279,55");
+    assert.equal(mapped.row.payloadHash, stableNomusPayloadHash(livePayload));
+  });
 });
 
 describe("nomusAccountsPayableSummary", () => {
@@ -181,6 +206,23 @@ describe("nomusAccountsPayableSyncLogic", () => {
   it("pickAccountsPayableArray reads contasPagar", () => {
     const arr = pickAccountsPayableArray({ contasPagar: [{ id: 1 }] });
     assert.equal(arr.length, 1);
+  });
+
+  it("default page params use pagina only (no tamanhoPagina)", () => {
+    const params = buildAccountsPayablePageParams(1, 50, {});
+    assert.equal(params.pagina, "1");
+    assert.equal(params.tamanhoPagina, undefined);
+
+    const url = buildNomusUrl("https://host/rest/", "contasPagar", params);
+    assert.equal(url.searchParams.get("pagina"), "1");
+    assert.equal(url.searchParams.get("tamanhoPagina"), null);
+    assert.doesNotMatch(url.search, /tamanhoPagina/);
+  });
+
+  it("sends tamanhoPagina only when NOMUS_AP_SEND_PAGE_SIZE=1", () => {
+    const params = buildAccountsPayablePageParams(2, 50, { NOMUS_AP_SEND_PAGE_SIZE: "1" });
+    assert.equal(params.pagina, "2");
+    assert.equal(params.tamanhoPagina, "50");
   });
 
   it("stops pagination when page has less than 50 items", () => {

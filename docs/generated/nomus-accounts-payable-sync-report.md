@@ -18,9 +18,10 @@ Persistir localmente (PostgreSQL) os títulos de **Contas a Pagar** vindos do No
 | Item | Valor |
 |------|--------|
 | Recurso | `contasPagar` |
-| URL | `{NOMUS_BASE_URL}contasPagar?pagina=N&tamanhoPagina=50` |
+| URL | `{NOMUS_BASE_URL}contasPagar?pagina=N` (**não** enviar `tamanhoPagina` — HTTP 400) |
 | Método | GET |
-| Paginação | `pagina` (1-based); página com **menos de 50** registros encerra a leitura |
+| Paginação | `pagina` (1-based); API retorna **50** por página; parada interna quando página tem **menos de 50** registros |
+| Opt-in page size | `NOMUS_AP_SEND_PAGE_SIZE=1` envia `tamanhoPagina` (apenas testes; padrão desligado) |
 | Autenticação | `NOMUS_AUTH_HEADER_NAME` + `NOMUS_AUTH_HEADER_VALUE` e/ou `NOMUS_TOKEN` (Bearer) |
 | Fallback envelope | `contas_pagar` |
 
@@ -51,10 +52,10 @@ Referência diagnóstica: `docs/generated/nomus-accounts-payable-api-diagnostic.
 | `modifiedAtNomus` | `dataModificacao` |
 | `settlementDate` | `dataBaixa` |
 | `paymentDate` | `dataPagamento` |
-| `amountPayable` | `valorPagar` |
-| `amountScheduled` | `valorPagarAgendado` |
-| `amountPaid` | `valorPago` |
-| `balancePayable` | `saldoPagar` |
+| `amountPayable` | `valorPagar` / `valorAPagar` / **`valorReceber`** (live; negativo → positivo) |
+| `amountScheduled` | `valorPagarAgendado` / `valorAgendado` / **`valorReceberAgendado`** |
+| `amountPaid` | `valorPago` / `valorAPago` / **`valorRecebido`** / `valorBaixadoSemNumerario` |
+| `balancePayable` | `saldoPagar` / `saldoAPagar` / **`saldoReceber`** |
 | `description` | `descricaoLancamento` |
 | `comments` | `comentarios` |
 | `documentNumber` | `numeroDocumento` |
@@ -72,6 +73,7 @@ Referência diagnóstica: `docs/generated/nomus-accounts-payable-api-diagnostic.
 ## Regras de parsing
 
 - Moeda BR: `"3.150,50"` → `Decimal` (reutiliza parser de Contas a Receber).
+- **Contas a Pagar (live):** valores em campos `*Receber*` vêm **negativos**; campos `amountPayable`, `balancePayable`, `amountScheduled`, `amountPaid` são gravados como **positivos** (`Math.abs`). `rawPayload` e `payloadHash` usam o JSON original sem normalização.
 - Data: `"29/07/2026"` → `Date` (meia-noite local).
 - Data/hora: `"03/06/2026 15:10:55"` → `Date`.
 - Boolean: `true`/`false` e strings comuns.
@@ -129,11 +131,11 @@ Cobre parser, mapper, summary, paginação, URL sem `/rest/rest` e redação de 
 
 ## Próximos passos (servidor)
 
-1. `npx prisma migrate deploy`
-2. `npm run sync:nomus:accounts-payable:preview`
-3. Validar amostra vs Nomus
-4. `npm run sync:nomus:accounts-payable:apply`
-5. `GET /api/nomus/accounts-payable/summary` para conferir totais
+1. `git pull origin main` (inclui fix NOMUS-AP-LIVE-MAPPER-FIX)
+2. `npm run sync:nomus:accounts-payable:preview` — confirmar `balancePayable` **positivo** no JSON de preview
+3. Validar amostra vs Nomus (campos `valorReceber` negativos no raw, positivos no model)
+4. **Somente após preview OK:** `npm run sync:nomus:accounts-payable:apply`
+5. `GET /api/nomus/accounts-payable/summary` e dashboard `/finance/accounts-payable` para conferir totais
 
 ## Próximos passos (produto)
 

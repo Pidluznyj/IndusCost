@@ -1,20 +1,21 @@
 # Diagnóstico read-only — API Nomus Contas a Pagar
 
-**Fase:** NOMUS-AP-API-DIAG-A  
-**Data:** 2026-06-05  
+**Fase:** NOMUS-AP-LIVE-MAPPER-FIX (atualização pós-probe servidor)  
+**Data:** 2026-06-07  
 **Branch:** `main`  
-**Escopo:** somente diagnóstico — sem model, migration, sync ou dashboard.
+**Escopo:** diagnóstico live confirmado + correção de sync/mapper (sem alterar Contas a Receber).
 
 ---
 
 ## 1. Resumo executivo
 
-| Item | Status nesta fase |
+| Item | Status |
 |---|---|
-| Documentação Postman (link informado) | Consultada — conteúdo da collection **não renderizou** via fetch automatizado (SPA). Referência mantida abaixo. |
-| Padrão Contas a Receber no IndusCost | **Confirmado** no código e em teste prévio no servidor (`GET …/rest/contasReceber?pagina=1` → 50 registros, HTTP 200). |
-| Endpoint Contas a Pagar | **Hipótese forte:** `contasPagar` (camelCase, mesma instância). **Fallback:** `contas_pagar` (integradores externos). **Teste live AP não executado neste workspace** (ausência de `NOMUS_*` no ambiente local). |
-| Gravação em banco | **Nenhuma** |
+| Endpoint Contas a Pagar | **Confirmado live** em `/opt/induscost`: `GET …/rest/contasPagar?pagina=1` → HTTP 200, **50 registros** |
+| Parâmetro `tamanhoPagina` | **Rejeitado** — `contasPagar?pagina=1&tamanhoPagina=50` → **HTTP 400** |
+| Campos financeiros reais | API retorna nomes de **Contas a Receber** (`valorReceber`, `saldoReceber`, `valorReceberAgendado`, `valorRecebido`) com **valores negativos** para representar saída/pagável |
+| Mapper IndusCost | Normaliza valores monetários AP para **positivo** (`Math.abs`) no model local; `rawPayload` e `payloadHash` preservam o original |
+| Apply real | **Pendente** — rodar novo preview no servidor antes de `apply` controlado |
 
 ---
 
@@ -51,31 +52,31 @@ Implementação de referência:
 - `src/lib/nomusAccountsReceivableSyncLogic.ts`
 - `src/lib/nomusRestClient.ts`
 
-### 3.2 Hipótese — Contas a Pagar (a confirmar no servidor)
+### 3.2 Confirmado — Contas a Pagar (probe servidor `/opt/induscost`)
 
-Com base na **mesma instância** que expõe `contasReceber` em camelCase:
+| Item | Valor confirmado |
+|---|---|
+| Recurso | `contasPagar` |
+| Método | `GET` |
+| URL válida | `{NOMUS_BASE_URL}contasPagar?pagina=1` |
+| URL inválida | `{NOMUS_BASE_URL}contasPagar?pagina=1&tamanhoPagina=50` → **HTTP 400** |
+| Tamanho de página | API retorna **50 registros** por página **sem** enviar `tamanhoPagina` |
+| Parada de paginação | Projeto usa regra interna: página com **menos de 50** itens encerra leitura |
 
-| Prioridade | Recurso | URL exemplo (sem token) |
-|---|---|---|
-| **1 (preferida)** | `contasPagar` | `{NOMUS_BASE_URL}contasPagar?pagina=1&tamanhoPagina=50` |
-| 2 (fallback) | `contas_pagar` | `{NOMUS_BASE_URL}contas_pagar?pagina=1&tamanhoPagina=50` |
-
-**Método esperado:** `GET`  
-**Paginação esperada:** `pagina`, `tamanhoPagina` — mesmo contrato de AR.
-
-> **Importante:** até rodar o probe no servidor (`/opt/induscost` com `.env` real), tratar `contasPagar` como **hipótese forte**, não como fato documentado.
+> **Diferença vs AR:** Contas a Receber aceita `tamanhoPagina`; Contas a Pagar **não** deve enviar esse parâmetro (opt-in apenas via `NOMUS_AP_SEND_PAGE_SIZE=1` para testes).
 
 ---
 
 ## 4. Teste read-only (procedimento servidor)
 
-### 4.1 Resultado nesta sessão (workspace local)
+### 4.1 Resultado live no servidor (`/opt/induscost`)
 
 | Teste | Resultado |
 |---|---|
-| `npx tsx` probe local | **Não executado** — `NOMUS_BASE_URL` ausente no ambiente de desenvolvimento (sem `.env`). |
-| Páginas lidas | **0** |
-| Registros AP | **0** |
+| `contasPagar?pagina=1` | HTTP **200**, **50** registros |
+| `contasPagar?pagina=1&tamanhoPagina=50` | HTTP **400** |
+| Páginas lidas (probe) | ≥ 1 |
+| Registros página 1 | 50 |
 
 ### 4.2 Comando recomendado no servidor
 
@@ -121,13 +122,13 @@ Se HTTP 404 em `contasPagar`, repetir com `contas_pagar`.
 | `tamanhoPagina` | Sim | Projeto usa 50 |
 | Filtros por vencimento/modificação/status | **Não usados** | Relatório AR: API sem filtro confiável documentado |
 
-### 5.2 Contas a Pagar — a confirmar
+### 5.2 Contas a Pagar — confirmado
 
-Testar no probe (mesma ordem):
-
-1. `pagina=1&tamanhoPagina=50` (baseline)
-2. Opcional: `pagina=2` se página 1 retornar 50 itens
-3. **Não assumir** filtros até resposta 200 com documentação ou experimento controlado
+| Parâmetro | Uso | Observação |
+|---|---|---|
+| `pagina` | **Sim** | Obrigatório; 1-based |
+| `tamanhoPagina` | **Não enviar** | Causa HTTP 400 na instância live |
+| Filtros por vencimento/modificação/status | **Não usados** | Mesma limitação de AR |
 
 Parâmetros candidatos (somente hipótese, **não confirmados** para AP):
 
@@ -187,10 +188,12 @@ Origem: mapper `nomusAccountsReceivableMapper.ts` + teste servidor histórico.
 | `dataBaixa` | ✅ / 🔶 | |
 | `dataPagamento` | ❓ | Campo específico AP — **não mapeado em AR**; verificar se existe além de `dataBaixa` |
 | `dataHoraCriacao`, `dataModificacao` | ✅ / 🔶 | |
-| `valorPagar` | 🔶 | Simétrico a `valorReceber` |
-| `saldoPagar` | 🔶 | Simétrico a `saldoReceber` |
-| `valorPago` | 🔶 | Simétrico a `valorRecebido` |
-| `valorAgendado` / `valorPagarAgendado` | 🔶 | Simétrico a `valorReceberAgendado` |
+| `valorReceber` (negativo) | ✅ live AP | Mapeado → `amountPayable` (positivo) |
+| `saldoReceber` (negativo) | ✅ live AP | Mapeado → `balancePayable` (positivo) |
+| `valorReceberAgendado` (negativo) | ✅ live AP | Mapeado → `amountScheduled` (positivo) |
+| `valorRecebido` | ✅ live AP | Mapeado → `amountPaid` (positivo) |
+| `valorBaixadoSemNumerario` | ✅ live AP | Fallback opcional de `amountPaid` |
+| `valorPagar` / `saldoPagar` / `valorPago` | 🔶 | Aceitos pelo mapper se API futura retornar |
 | `idContaBancaria`, `nomeContaBancaria` | ✅ / 🔶 | |
 | `idFormaPagamento`, `nomeFormaPagamento` | ✅ / 🔶 | |
 | `numeroDocumento` | ❓ | Não presente no mapper AR — verificar payload AP |
@@ -205,11 +208,28 @@ Origem: mapper `nomusAccountsReceivableMapper.ts` + teste servidor histórico.
 
 ## 8. Amostra segura
 
-### 8.1 Amostra real AP
+### 8.1 Amostra real AP (mascarada — servidor live)
 
-**Indisponível nesta fase** — teste live não executado.
+Campos do 1º registro confirmados: `classificacao`, `dataAgendamento`, `dataCompetencia`, `dataHoraCriacao`, `dataModificacao`, `dataVencimento`, `descricaoLancamento`, `id`, `idContaBancaria`, `idEmpresa`, `idFormaPagamento`, `idNfe`, `idPessoa`, `nomeContaBancaria`, `nomeEmpresa`, `nomeFormaPagamento`, `nomePessoa`, `numeroNotaFiscalOrigem`, `saldoReceber`, `status`, `tipo`, `valorReceber`, `valorReceberAgendado`, `valorRecebido`, `valorBaixadoSemNumerario`.
 
-### 8.2 Exemplo ilustrativo (simetria AR → AP, **não é resposta real**)
+Exemplo financeiro real (id 16743):
+
+```json
+{
+  "id": 16743,
+  "nomePessoa": "PIZZA PACK COMERCIO DE EMBALAGENS LTDA",
+  "dataVencimento": "05/08/2026",
+  "saldoReceber": "-3.279,55",
+  "valorReceber": "-3.279,55",
+  "valorReceberAgendado": "-3.279,55",
+  "valorRecebido": "0,00",
+  "valorBaixadoSemNumerario": "0"
+}
+```
+
+**Normalização local:** `amountPayable` / `balancePayable` / `amountScheduled` → `3279.55`; `amountPaid` → `0`. `rawPayload` mantém strings negativas.
+
+### 8.2 Exemplo ilustrativo (campos *Pagar* — se API futura retornar)
 
 ```json
 {
