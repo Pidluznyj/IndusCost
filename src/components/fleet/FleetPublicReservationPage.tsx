@@ -3,11 +3,34 @@ import { useParams } from "react-router-dom";
 import { Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
+import { formatCpfMask } from "@/src/lib/fleetCpfUtils";
 
 type PublicConfig = {
   title: string;
   instructions: string;
-  vehicles: { id: string; label: string }[];
+};
+
+type IdentifyFound = {
+  found: true;
+  driverId: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  department: string | null;
+  hasDriverLicense: boolean;
+  needsDriverLicense: boolean;
+  cnhStatus: "cadastrada" | "pendente" | "vencida";
+};
+
+type IdentifyResult = IdentifyFound | { found: false; needsRegistration: true };
+
+type PublicVehicle = {
+  id: string;
+  label: string;
+  brand: string;
+  model: string;
+  vehicleType: string | null;
+  category: string | null;
 };
 
 type PublicSlot = {
@@ -15,58 +38,26 @@ type PublicSlot = {
   end: string;
   label: string;
   available: boolean;
-  vehiclesAvailable: number;
+  status: "available" | "unavailable";
 };
 
-type Step = "welcome" | "identity" | "details" | "slots" | "review" | "success";
+type DayAvailability = {
+  date: string;
+  weekdayLabel: string;
+  slots: PublicSlot[];
+};
 
-const STEPS: Step[] = ["welcome", "identity", "details", "slots", "review"];
+type Step = "cpf" | "profile" | "vehicle" | "schedule" | "confirm" | "success";
+
+const STEPS: Step[] = ["cpf", "profile", "vehicle", "schedule", "confirm"];
 
 const STEP_LABELS: Record<Step, string> = {
-  welcome: "Início",
-  identity: "Identificação",
-  details: "Reserva",
-  slots: "Horário",
-  review: "Revisão",
+  cpf: "CPF",
+  profile: "Cadastro",
+  vehicle: "Veículo",
+  schedule: "Horário",
+  confirm: "Confirmação",
   success: "Enviado",
-};
-
-type FormState = {
-  requesterName: string;
-  requesterEmail: string;
-  requesterPhone: string;
-  requesterDepartment: string;
-  requesterEmployeeId: string;
-  responsibilityAccepted: boolean;
-  requestedDate: string;
-  reason: string;
-  destination: string;
-  notes: string;
-  passengersCount: string;
-  hasCargo: string;
-  cargoDescription: string;
-  vehicleId: string;
-  startTime: string;
-  endTime: string;
-};
-
-const EMPTY_FORM: FormState = {
-  requesterName: "",
-  requesterEmail: "",
-  requesterPhone: "",
-  requesterDepartment: "",
-  requesterEmployeeId: "",
-  responsibilityAccepted: false,
-  requestedDate: "",
-  reason: "",
-  destination: "",
-  notes: "",
-  passengersCount: "",
-  hasCargo: "",
-  cargoDescription: "",
-  vehicleId: "",
-  startTime: "",
-  endTime: "",
 };
 
 function todayIso() {
@@ -75,17 +66,49 @@ function todayIso() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function addDaysIso(base: string, days: number) {
+  const d = new Date(`${base}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function FleetPublicReservationPage() {
   const { token } = useParams<{ token: string }>();
-  const [step, setStep] = useState<Step>("welcome");
+  const [step, setStep] = useState<Step>("cpf");
   const [config, setConfig] = useState<PublicConfig | null>(null);
-  const [slots, setSlots] = useState<PublicSlot[]>([]);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
-  const [slotsLoading, setSlotsLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publicCode, setPublicCode] = useState<string | null>(null);
+
+  const [cpf, setCpf] = useState("");
+  const [driverId, setDriverId] = useState("");
+  const [identify, setIdentify] = useState<IdentifyResult | null>(null);
+  const [isNewRegistration, setIsNewRegistration] = useState(false);
+
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [department, setDepartment] = useState("");
+  const [cnhNumber, setCnhNumber] = useState("");
+  const [cnhCategory, setCnhCategory] = useState("");
+  const [cnhExpirationDate, setCnhExpirationDate] = useState("");
+
+  const [vehicles, setVehicles] = useState<PublicVehicle[]>([]);
+  const [vehicleId, setVehicleId] = useState("");
+
+  const [weekStart, setWeekStart] = useState(todayIso());
+  const [daysAvailability, setDaysAvailability] = useState<DayAvailability[]>([]);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+
+  const [reason, setReason] = useState("");
+  const [destination, setDestination] = useState("");
+  const [notes, setNotes] = useState("");
+  const [passengersCount, setPassengersCount] = useState("");
+  const [responsibilityAccepted, setResponsibilityAccepted] = useState(false);
 
   const stepIndex = STEPS.indexOf(step as (typeof STEPS)[number]);
 
@@ -111,62 +134,178 @@ export function FleetPublicReservationPage() {
     })();
   }, [token]);
 
-  const loadSlots = useCallback(async () => {
-    if (!token || !form.requestedDate) return;
-    setSlotsLoading(true);
-    setError(null);
-    try {
-      const q = new URLSearchParams({ date: form.requestedDate });
-      if (form.vehicleId) q.set("vehicleId", form.vehicleId);
-      const data = await fetchJsonOk<{ slots: PublicSlot[] }>(
-        `/api/public/fleet/reservation/${encodeURIComponent(token)}/availability?${q}`
-      );
-      setSlots(data.slots);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar horários.");
-      setSlots([]);
-    } finally {
-      setSlotsLoading(false);
-    }
-  }, [token, form.requestedDate, form.vehicleId]);
-
-  useEffect(() => {
-    if (step === "slots" && form.requestedDate) void loadSlots();
-  }, [step, form.requestedDate, form.vehicleId, loadSlots]);
+  const vehicleLabel = useMemo(
+    () => vehicles.find((v) => v.id === vehicleId)?.label ?? "—",
+    [vehicles, vehicleId]
+  );
 
   const selectedSlotLabel = useMemo(() => {
-    const hit = slots.find((s) => s.start === form.startTime && s.end === form.endTime);
-    return hit?.label ?? (form.startTime && form.endTime ? `${form.startTime}–${form.endTime}` : "—");
-  }, [slots, form.startTime, form.endTime]);
+    const day = daysAvailability.find((d) => d.date === selectedDate);
+    const slot = day?.slots.find((s) => s.start === startTime && s.end === endTime);
+    return slot?.label ?? (startTime && endTime ? `${startTime}–${endTime}` : "—");
+  }, [daysAvailability, selectedDate, startTime, endTime]);
 
-  const vehicleLabel = useMemo(() => {
-    if (!form.vehicleId) return "A definir pela frota";
-    return config?.vehicles.find((v) => v.id === form.vehicleId)?.label ?? "Veículo selecionado";
-  }, [config, form.vehicleId]);
+  const selectedDayLabel = useMemo(
+    () => daysAvailability.find((d) => d.date === selectedDate)?.weekdayLabel ?? selectedDate,
+    [daysAvailability, selectedDate]
+  );
 
-  const patch = (partial: Partial<FormState>) => setForm((f) => ({ ...f, ...partial }));
+  const loadVehicles = useCallback(async () => {
+    if (!token) return;
+    const data = await fetchJsonOk<{ vehicles: PublicVehicle[] }>(
+      `/api/public/fleet/reservation/${encodeURIComponent(token)}/vehicles`
+    );
+    setVehicles(data.vehicles);
+  }, [token]);
 
-  const canNext = (): boolean => {
-    if (step === "identity") {
-      return form.requesterName.trim().length >= 3 && form.responsibilityAccepted;
+  const loadAvailability = useCallback(async () => {
+    if (!token || !vehicleId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const q = new URLSearchParams({
+        vehicleId,
+        from: weekStart,
+        days: "7",
+      });
+      const data = await fetchJsonOk<{ dates: DayAvailability[] }>(
+        `/api/public/fleet/reservation/${encodeURIComponent(token)}/availability?${q}`
+      );
+      setDaysAvailability(data.dates);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao carregar horários.");
+      setDaysAvailability([]);
+    } finally {
+      setBusy(false);
     }
-    if (step === "details") {
-      return Boolean(form.requestedDate && form.reason.trim() && form.destination.trim());
+  }, [token, vehicleId, weekStart]);
+
+  useEffect(() => {
+    if (step === "schedule" && vehicleId) void loadAvailability();
+  }, [step, vehicleId, weekStart, loadAvailability]);
+
+  const submitIdentify = async () => {
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await fetchJsonOk<IdentifyResult>(
+        `/api/public/fleet/reservation/${encodeURIComponent(token)}/identify`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cpf }),
+        }
+      );
+      setIdentify(result);
+      if (result.found) {
+        setDriverId(result.driverId);
+        setName(result.name);
+        setPhone(result.phone ?? "");
+        setEmail(result.email ?? "");
+        setDepartment(result.department ?? "");
+        setIsNewRegistration(false);
+      } else {
+        setIsNewRegistration(true);
+        setDriverId("");
+      }
+      setStep("profile");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao consultar CPF.");
+    } finally {
+      setBusy(false);
     }
-    if (step === "slots") {
-      return Boolean(form.startTime && form.endTime);
-    }
-    return true;
   };
 
-  const goNext = () => {
-    if (!canNext()) {
-      setError("Preencha os campos obrigatórios.");
+  const submitRegister = async () => {
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await fetchJsonOk<{
+        driverId: string;
+        hasDriverLicense: boolean;
+        needsDriverLicense: boolean;
+      }>(`/api/public/fleet/reservation/${encodeURIComponent(token)}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cpf,
+          driverId: driverId || undefined,
+          name,
+          phone,
+          email: email || null,
+          department: department || null,
+          cnhNumber,
+          cnhCategory: cnhCategory || null,
+          cnhExpirationDate: cnhExpirationDate || null,
+        }),
+      });
+      setDriverId(result.driverId);
+      if (result.needsDriverLicense) {
+        setError("Informe os dados da CNH para continuar.");
+        return;
+      }
+      await loadVehicles();
+      setStep("vehicle");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar cadastro.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const continueFromProfile = async () => {
+    const needsCnh = isNewRegistration || (identify?.found === true && identify.needsDriverLicense);
+
+    if (needsCnh) {
+      await submitRegister();
       return;
     }
+    try {
+      await loadVehicles();
+      setStep("vehicle");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao carregar veículos.");
+    }
+  };
+
+  const submitRequest = async () => {
+    if (!token) return;
+    setBusy(true);
     setError(null);
-    const idx = STEPS.indexOf(step as (typeof STEPS)[number]);
-    if (idx >= 0 && idx < STEPS.length - 1) setStep(STEPS[idx + 1]!);
+    try {
+      const res = await fetchJsonOk<{ publicCode: string }>(
+        `/api/public/fleet/reservation/${encodeURIComponent(token)}/request`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cpf,
+            driverId,
+            requesterName: name,
+            requesterEmail: email || null,
+            requesterPhone: phone || null,
+            requesterDepartment: department || null,
+            responsibilityAccepted,
+            requestedDate: selectedDate,
+            startTime,
+            endTime,
+            reason: reason.trim(),
+            destination: destination.trim(),
+            notes: notes.trim() || null,
+            passengersCount: passengersCount ? Number(passengersCount) : null,
+            vehicleId,
+          }),
+        }
+      );
+      setPublicCode(res.publicCode);
+      setStep("success");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao enviar solicitação.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const goBack = () => {
@@ -175,47 +314,25 @@ export function FleetPublicReservationPage() {
     if (idx > 0) setStep(STEPS[idx - 1]!);
   };
 
-  const submit = async () => {
-    if (!token) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const body: Record<string, unknown> = {
-        requesterName: form.requesterName.trim(),
-        requesterEmail: form.requesterEmail.trim() || null,
-        requesterPhone: form.requesterPhone.trim() || null,
-        requesterDepartment: form.requesterDepartment.trim() || null,
-        requesterEmployeeId: form.requesterEmployeeId.trim() || null,
-        responsibilityAccepted: form.responsibilityAccepted,
-        requestedDate: form.requestedDate,
-        startTime: form.startTime,
-        endTime: form.endTime,
-        reason: form.reason.trim(),
-        destination: form.destination.trim(),
-        notes: form.notes.trim() || null,
-        vehicleId: form.vehicleId || null,
-      };
-      if (form.passengersCount) body.passengersCount = Number(form.passengersCount);
-      if (form.hasCargo === "yes") {
-        body.hasCargo = true;
-        body.cargoDescription = form.cargoDescription.trim() || null;
-      } else if (form.hasCargo === "no") body.hasCargo = false;
-
-      const res = await fetchJsonOk<{ publicCode: string }>(
-        `/api/public/fleet/reservation/${encodeURIComponent(token)}/request`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }
-      );
-      setPublicCode(res.publicCode);
-      setStep("success");
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao enviar solicitação.");
-    } finally {
-      setSubmitting(false);
+  const goNextFromVehicle = () => {
+    if (!vehicleId) {
+      setError("Selecione um veículo.");
+      return;
     }
+    setError(null);
+    setSelectedDate("");
+    setStartTime("");
+    setEndTime("");
+    setStep("schedule");
+  };
+
+  const goNextFromSchedule = () => {
+    if (!selectedDate || !startTime || !endTime) {
+      setError("Selecione um dia e período disponível.");
+      return;
+    }
+    setError(null);
+    setStep("confirm");
   };
 
   if (loading) {
@@ -240,21 +357,25 @@ export function FleetPublicReservationPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-100 to-white pb-24">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur px-4 py-3">
         <h1 className="text-lg font-semibold text-slate-900">{config?.title}</h1>
-        {step !== "success" && step !== "welcome" && (
-          <div className="mt-2 flex gap-1">
-            {STEPS.slice(1).map((s, i) => (
-              <div
-                key={s}
-                className={cn(
-                  "h-1 flex-1 rounded-full",
-                  i < stepIndex ? "bg-emerald-500" : i === stepIndex - 1 ? "bg-slate-800" : "bg-slate-200"
-                )}
-              />
-            ))}
-          </div>
-        )}
-        {step !== "success" && step !== "welcome" && (
-          <p className="mt-1 text-xs text-slate-500">{STEP_LABELS[step]}</p>
+        {step !== "success" && step !== "cpf" && (
+          <>
+            <div className="mt-2 flex gap-1">
+              {STEPS.slice(1).map((s, i) => (
+                <div
+                  key={s}
+                  className={cn(
+                    "h-1 flex-1 rounded-full",
+                    i < stepIndex - 1
+                      ? "bg-emerald-500"
+                      : i === stepIndex - 1
+                        ? "bg-slate-800"
+                        : "bg-slate-200"
+                  )}
+                />
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{STEP_LABELS[step]}</p>
+          </>
         )}
       </header>
 
@@ -265,129 +386,96 @@ export function FleetPublicReservationPage() {
           </div>
         )}
 
-        {step === "welcome" && (
-          <section className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        {step === "cpf" && (
+          <section className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-slate-700 leading-relaxed">{config?.instructions}</p>
             </div>
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">CPF *</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="000.000.000-00"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-4 text-lg tracking-wide"
+                value={cpf}
+                onChange={(e) => setCpf(formatCpfMask(e.target.value))}
+              />
+            </label>
             <button
               type="button"
-              onClick={() => setStep("identity")}
-              className="w-full rounded-2xl bg-slate-900 py-4 text-base font-semibold text-white"
+              disabled={busy || cpf.replace(/\D/g, "").length < 11}
+              onClick={() => void submitIdentify()}
+              className="w-full rounded-2xl bg-slate-900 py-4 text-base font-semibold text-white disabled:opacity-50"
             >
-              Começar
+              {busy ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : "Continuar"}
             </button>
           </section>
         )}
 
-        {step === "identity" && (
+        {step === "profile" && (
           <section className="space-y-4">
-            <Field label="Nome completo *" value={form.requesterName} onChange={(v) => patch({ requesterName: v })} />
-            <Field label="E-mail corporativo" value={form.requesterEmail} onChange={(v) => patch({ requesterEmail: v })} type="email" />
-            <Field label="Telefone / WhatsApp" value={form.requesterPhone} onChange={(v) => patch({ requesterPhone: v })} />
-            <Field label="Setor / departamento" value={form.requesterDepartment} onChange={(v) => patch({ requesterDepartment: v })} />
-            <Field label="Matrícula / ID interno" value={form.requesterEmployeeId} onChange={(v) => patch({ requesterEmployeeId: v })} />
-            <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm">
-              <input
-                type="checkbox"
-                className="mt-1 h-5 w-5"
-                checked={form.responsibilityAccepted}
-                onChange={(e) => patch({ responsibilityAccepted: e.target.checked })}
-              />
-              <span className="text-slate-700">
-                Declaro que utilizarei o veículo de forma responsável e seguirei as normas internas de frota.
-              </span>
-            </label>
-          </section>
-        )}
-
-        {step === "details" && (
-          <section className="space-y-4">
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">Data desejada *</span>
-              <input
-                type="date"
-                min={todayIso()}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base"
-                value={form.requestedDate}
-                onChange={(e) => patch({ requestedDate: e.target.value, startTime: "", endTime: "" })}
-              />
-            </label>
-            <Field label="Motivo da reserva *" value={form.reason} onChange={(v) => patch({ reason: v })} />
-            <Field label="Destino / local *" value={form.destination} onChange={(v) => patch({ destination: v })} />
-            <Field label="Observações" value={form.notes} onChange={(v) => patch({ notes: v })} multiline />
-            <Field label="Passageiros (opcional)" value={form.passengersCount} onChange={(v) => patch({ passengersCount: v })} type="number" />
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">Levar carga / material?</span>
-              <select
-                className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base"
-                value={form.hasCargo}
-                onChange={(e) => patch({ hasCargo: e.target.value })}
-              >
-                <option value="">Não informado</option>
-                <option value="no">Não</option>
-                <option value="yes">Sim</option>
-              </select>
-            </label>
-            {form.hasCargo === "yes" && (
-              <Field label="Descrição da carga" value={form.cargoDescription} onChange={(v) => patch({ cargoDescription: v })} />
-            )}
-            {config && config.vehicles.length > 0 && (
-              <label className="block text-sm">
-                <span className="font-medium text-slate-700">Veículo (opcional)</span>
-                <select
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base"
-                  value={form.vehicleId}
-                  onChange={(e) => patch({ vehicleId: e.target.value, startTime: "", endTime: "" })}
-                >
-                  <option value="">Qualquer veículo disponível</option>
-                  {config.vehicles.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </section>
-        )}
-
-        {step === "slots" && (
-          <section className="space-y-3">
-            <p className="text-sm text-slate-600">
-              Horários de 3 em 3 horas (06:00–20:00). Selecione um período livre.
-            </p>
-            {slotsLoading ? (
-              <div className="flex justify-center py-10">
-                <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
+            {identify?.found && !isNewRegistration && !identify.needsDriverLicense ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 space-y-2">
+                <h2 className="font-semibold text-emerald-900">Encontramos seu cadastro</h2>
+                <p className="text-emerald-800">{identify.name}</p>
+                {identify.phone && <p className="text-sm text-emerald-800">Tel: {identify.phone}</p>}
+                {identify.email && <p className="text-sm text-emerald-800">E-mail: {identify.email}</p>}
+                <p className="text-sm font-medium text-emerald-900">
+                  CNH: {identify.cnhStatus === "cadastrada" ? "CNH cadastrada" : identify.cnhStatus}
+                </p>
               </div>
-            ) : slots.length === 0 ? (
-              <p className="text-sm text-amber-700">Nenhum horário disponível para esta data.</p>
             ) : (
-              slots.map((slot) => {
-                const selected = form.startTime === slot.start && form.endTime === slot.end;
+              <>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h2 className="font-semibold text-slate-900">
+                    {identify?.found ? "Complete seus dados" : "Vamos fazer seu cadastro rápido"}
+                  </h2>
+                </div>
+                <Field label="CPF" value={cpf} onChange={() => {}} disabled />
+                <Field label="Nome completo *" value={name} onChange={setName} />
+                <Field label="Telefone / WhatsApp *" value={phone} onChange={setPhone} />
+                <Field label="E-mail" value={email} onChange={setEmail} type="email" />
+                <Field label="Setor / departamento" value={department} onChange={setDepartment} />
+                <Field label="Número da CNH *" value={cnhNumber} onChange={setCnhNumber} />
+                <Field label="Categoria da CNH" value={cnhCategory} onChange={setCnhCategory} />
+                <label className="block text-sm">
+                  <span className="font-medium text-slate-700">Validade da CNH</span>
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base"
+                    value={cnhExpirationDate}
+                    onChange={(e) => setCnhExpirationDate(e.target.value)}
+                  />
+                </label>
+              </>
+            )}
+          </section>
+        )}
+
+        {step === "vehicle" && (
+          <section className="space-y-3">
+            <p className="text-sm text-slate-600">Selecione o veículo desejado.</p>
+            {vehicles.length === 0 ? (
+              <p className="text-amber-700 text-sm">Nenhum veículo disponível no momento.</p>
+            ) : (
+              vehicles.map((v) => {
+                const selected = vehicleId === v.id;
                 return (
                   <button
-                    key={`${slot.start}-${slot.end}`}
+                    key={v.id}
                     type="button"
-                    disabled={!slot.available}
-                    onClick={() => patch({ startTime: slot.start, endTime: slot.end })}
+                    onClick={() => setVehicleId(v.id)}
                     className={cn(
                       "w-full rounded-2xl border px-4 py-4 text-left transition",
-                      !slot.available && "opacity-40 cursor-not-allowed border-slate-200 bg-slate-50",
-                      slot.available && !selected && "border-slate-200 bg-white hover:border-slate-400",
-                      selected && "border-emerald-600 bg-emerald-50 ring-2 ring-emerald-500"
+                      selected
+                        ? "border-emerald-600 bg-emerald-50 ring-2 ring-emerald-500"
+                        : "border-slate-200 bg-white hover:border-slate-400"
                     )}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-lg font-semibold text-slate-900">{slot.label}</span>
-                      {selected && <Check className="h-5 w-5 text-emerald-600" />}
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {slot.available
-                        ? `${slot.vehiclesAvailable} veículo(s) livre(s)`
-                        : "Indisponível"}
-                    </p>
+                    <p className="text-lg font-semibold text-slate-900">{v.label}</p>
+                    {v.category && <p className="text-xs text-slate-500 mt-1">{v.category}</p>}
                   </button>
                 );
               })
@@ -395,15 +483,100 @@ export function FleetPublicReservationPage() {
           </section>
         )}
 
-        {step === "review" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3 text-sm">
-            <Row label="Nome" value={form.requesterName} />
-            <Row label="Data" value={form.requestedDate} />
-            <Row label="Período" value={selectedSlotLabel} />
-            <Row label="Veículo" value={vehicleLabel} />
-            <Row label="Motivo" value={form.reason} />
-            <Row label="Destino" value={form.destination} />
-            {form.notes && <Row label="Observações" value={form.notes} />}
+        {step === "schedule" && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                onClick={() => setWeekStart((w) => addDaysIso(w, -7))}
+              >
+                ← Semana anterior
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                onClick={() => setWeekStart((w) => addDaysIso(w, 7))}
+              >
+                Próxima semana →
+              </button>
+            </div>
+            {busy ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
+              </div>
+            ) : (
+              daysAvailability.map((day) => (
+                <div key={day.date} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h3 className="font-semibold text-slate-900 mb-3">{day.weekdayLabel}</h3>
+                  <div className="grid gap-2">
+                    {day.slots.map((slot) => {
+                      const selected =
+                        selectedDate === day.date &&
+                        startTime === slot.start &&
+                        endTime === slot.end;
+                      return (
+                        <button
+                          key={`${day.date}-${slot.start}`}
+                          type="button"
+                          disabled={!slot.available}
+                          onClick={() => {
+                            setSelectedDate(day.date);
+                            setStartTime(slot.start);
+                            setEndTime(slot.end);
+                          }}
+                          className={cn(
+                            "rounded-xl border px-3 py-3 text-left text-sm transition",
+                            !slot.available && "opacity-40 cursor-not-allowed bg-slate-50",
+                            slot.available && !selected && "border-slate-200 hover:border-slate-400",
+                            selected && "border-emerald-600 bg-emerald-50 ring-2 ring-emerald-500"
+                          )}
+                        >
+                          <span className="font-medium">{slot.label}</span>
+                          <span className="block text-xs text-slate-500 mt-0.5">
+                            {slot.available ? "Disponível" : "Indisponível"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+        )}
+
+        {step === "confirm" && (
+          <section className="space-y-4">
+            <Field label="Motivo da reserva *" value={reason} onChange={setReason} multiline />
+            <Field label="Destino / local *" value={destination} onChange={setDestination} />
+            <Field label="Observações" value={notes} onChange={setNotes} multiline />
+            <Field
+              label="Passageiros (opcional)"
+              value={passengersCount}
+              onChange={setPassengersCount}
+              type="number"
+            />
+            <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 h-5 w-5"
+                checked={responsibilityAccepted}
+                onChange={(e) => setResponsibilityAccepted(e.target.checked)}
+              />
+              <span className="text-slate-700">
+                Declaro que utilizarei o veículo de forma responsável e seguirei as normas internas de frota.
+              </span>
+            </label>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3 text-sm">
+              <Row label="CPF" value={cpf} />
+              <Row label="Nome" value={name} />
+              <Row label="Veículo" value={vehicleLabel} />
+              <Row label="Dia" value={selectedDayLabel} />
+              <Row label="Período" value={selectedSlotLabel} />
+              <Row label="Motivo" value={reason} />
+              <Row label="Destino" value={destination} />
+            </div>
           </section>
         )}
 
@@ -423,7 +596,7 @@ export function FleetPublicReservationPage() {
         )}
       </main>
 
-      {step !== "welcome" && step !== "success" && (
+      {step !== "cpf" && step !== "success" && (
         <footer className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 py-3">
           <div className="mx-auto flex max-w-lg gap-3">
             <button
@@ -434,23 +607,44 @@ export function FleetPublicReservationPage() {
               <ChevronLeft className="h-4 w-4" />
               Voltar
             </button>
-            {step === "review" ? (
+            {step === "profile" && (
               <button
                 type="button"
-                disabled={submitting}
-                onClick={() => void submit()}
-                className="inline-flex flex-[2] items-center justify-center gap-1 rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                disabled={busy}
+                onClick={() => void continueFromProfile()}
+                className="inline-flex flex-[2] items-center justify-center rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enviar solicitação"}
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Continuar"}
               </button>
-            ) : (
+            )}
+            {step === "vehicle" && (
               <button
                 type="button"
-                onClick={goNext}
+                onClick={goNextFromVehicle}
                 className="inline-flex flex-[2] items-center justify-center gap-1 rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white"
               >
                 Continuar
                 <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+            {step === "schedule" && (
+              <button
+                type="button"
+                onClick={goNextFromSchedule}
+                className="inline-flex flex-[2] items-center justify-center gap-1 rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white"
+              >
+                Continuar
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+            {step === "confirm" && (
+              <button
+                type="button"
+                disabled={busy || !responsibilityAccepted || !reason.trim() || !destination.trim()}
+                onClick={() => void submitRequest()}
+                className="inline-flex flex-[2] items-center justify-center rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enviar solicitação"}
               </button>
             )}
           </div>
@@ -466,26 +660,30 @@ function Field({
   onChange,
   type = "text",
   multiline,
+  disabled,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
   multiline?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <label className="block text-sm">
       <span className="font-medium text-slate-700">{label}</span>
       {multiline ? (
         <textarea
-          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base min-h-[80px]"
+          disabled={disabled}
+          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base min-h-[80px] disabled:bg-slate-100"
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
         <input
           type={type}
-          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base"
+          disabled={disabled}
+          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base disabled:bg-slate-100"
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />

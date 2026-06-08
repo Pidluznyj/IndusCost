@@ -8,10 +8,13 @@ import {
   type FleetPaginatedMeta,
 } from "@/src/components/fleet/fleetUi";
 import type { FleetDriverRow } from "@/src/types/fleet";
+import { formatCpfMask } from "@/src/lib/fleetCpfUtils";
 
 type PublicRequestRow = {
   id: string;
   publicCode: string;
+  requesterCpf: string | null;
+  driverId: string | null;
   requesterName: string;
   requesterEmail: string | null;
   requesterPhone: string | null;
@@ -24,6 +27,15 @@ type PublicRequestRow = {
   notes: string | null;
   status: string;
   createdAt: string;
+  driver: {
+    id: string;
+    name: string;
+    cpf: string;
+    cnhNumber: string | null;
+    cnhCategory: string | null;
+    cnhExpirationDate: string | null;
+    status: string;
+  } | null;
   vehicle: { id: string; brand: string; model: string; plate: string | null } | null;
   fleetReservation: { id: string; status: string } | null;
 };
@@ -45,6 +57,15 @@ function formatDate(v: string) {
 function formatDt(v: string) {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? v : d.toLocaleString("pt-BR");
+}
+
+function cnhStatusLabel(row: PublicRequestRow): string {
+  const d = row.driver;
+  if (!d?.cnhNumber) return "CNH pendente";
+  if (!d.cnhExpirationDate) return "CNH cadastrada";
+  const exp = new Date(d.cnhExpirationDate);
+  if (exp.getTime() < Date.now()) return "CNH vencida";
+  return "CNH válida";
 }
 
 export function FleetPublicReservationRequestsTab() {
@@ -96,7 +117,7 @@ export function FleetPublicReservationRequestsTab() {
   const openDetail = async (row: PublicRequestRow) => {
     setDetail(row);
     setApproveVehicleId(row.vehicle?.id ?? "");
-    setApproveDriverId("");
+    setApproveDriverId(row.driverId ?? row.driver?.id ?? "");
     setRejectReason("");
     try {
       const [vRes, dRes] = await Promise.all([
@@ -191,6 +212,8 @@ export function FleetPublicReservationRequestsTab() {
               <tr>
                 <th className="px-3 py-2">Código</th>
                 <th className="px-3 py-2">Solicitante</th>
+                <th className="px-3 py-2">CPF</th>
+                <th className="px-3 py-2">CNH</th>
                 <th className="px-3 py-2">Data</th>
                 <th className="px-3 py-2">Período</th>
                 <th className="px-3 py-2">Veículo</th>
@@ -204,6 +227,10 @@ export function FleetPublicReservationRequestsTab() {
                 <tr key={row.id} className="border-t border-slate-100">
                   <td className="px-3 py-2 font-mono text-xs">{row.publicCode}</td>
                   <td className="px-3 py-2">{row.requesterName}</td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {row.requesterCpf ? formatCpfMask(row.requesterCpf) : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs">{cnhStatusLabel(row)}</td>
                   <td className="px-3 py-2">{formatDate(row.requestedDate)}</td>
                   <td className="px-3 py-2">
                     {row.startTime}–{row.endTime}
@@ -241,6 +268,15 @@ export function FleetPublicReservationRequestsTab() {
             <div className="text-sm space-y-2 text-slate-700">
               <p>
                 <strong>Solicitante:</strong> {detail.requesterName}
+              </p>
+              {detail.requesterCpf && (
+                <p>
+                  <strong>CPF:</strong> {formatCpfMask(detail.requesterCpf)}
+                </p>
+              )}
+              <p>
+                <strong>CNH:</strong> {cnhStatusLabel(detail)}
+                {detail.driver?.cnhCategory ? ` (${detail.driver.cnhCategory})` : ""}
               </p>
               {detail.requesterEmail && <p>E-mail: {detail.requesterEmail}</p>}
               {detail.requesterPhone && <p>Telefone: {detail.requesterPhone}</p>}

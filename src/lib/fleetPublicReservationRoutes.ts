@@ -5,11 +5,14 @@ import {
   createPublicReservationRequest,
   getPublicReservationAvailability,
   getPublicReservationConfig,
+  identifyPublicDriverByCpf,
+  listPublicReservationVehicles,
+  registerPublicDriver,
   type FleetPublicTokenFailure,
 } from "@/src/lib/fleetPublicReservationService.js";
 
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX_POST = 10;
+const RATE_MAX_POST = 15;
 const postHits = new Map<string, { count: number; resetAt: number }>();
 
 function clientKey(req: express.Request): string {
@@ -53,31 +56,102 @@ export function registerFleetPublicReservationRoutes(app: express.Express) {
     }
   });
 
+  app.post("/api/public/fleet/reservation/:token/identify", async (req, res) => {
+    try {
+      if (!checkPostRateLimit(req)) {
+        res.status(429).json({ error: "Muitas tentativas. Aguarde um momento." });
+        return;
+      }
+      const token = String(req.params.token ?? "");
+      const tokenResult = await getPublicReservationConfig(token);
+      if (tokenResult.ok === false) {
+        publicTokenStatus(tokenResult, res);
+        return;
+      }
+      const result = await identifyPublicDriverByCpf(req.body?.cpf);
+      res.json(result);
+    } catch (e) {
+      if (e instanceof FleetValidationError) {
+        res.status(400).json({ error: e.message });
+        return;
+      }
+      handleFleetRouteError(res, e, "POST public identify", req);
+    }
+  });
+
+  app.post("/api/public/fleet/reservation/:token/register", async (req, res) => {
+    try {
+      if (!checkPostRateLimit(req)) {
+        res.status(429).json({ error: "Muitas tentativas. Aguarde um momento." });
+        return;
+      }
+      const token = String(req.params.token ?? "");
+      const tokenResult = await getPublicReservationConfig(token);
+      if (tokenResult.ok === false) {
+        publicTokenStatus(tokenResult, res);
+        return;
+      }
+      const body = req.body ?? {};
+      const result = await registerPublicDriver({
+        cpf: body.cpf,
+        driverId: body.driverId,
+        name: body.name,
+        phone: body.phone,
+        email: body.email,
+        department: body.department,
+        cnhNumber: body.cnhNumber,
+        cnhCategory: body.cnhCategory,
+        cnhExpirationDate: body.cnhExpirationDate,
+      });
+      res.status(result.created ? 201 : 200).json(result);
+    } catch (e) {
+      if (e instanceof FleetValidationError) {
+        res.status(400).json({ error: e.message });
+        return;
+      }
+      handleFleetRouteError(res, e, "POST public register", req);
+    }
+  });
+
+  app.get("/api/public/fleet/reservation/:token/vehicles", async (req, res) => {
+    try {
+      const result = await listPublicReservationVehicles(String(req.params.token ?? ""));
+      if (result.ok === false) {
+        publicTokenStatus(result, res);
+        return;
+      }
+      res.json({ vehicles: result.vehicles });
+    } catch (e) {
+      handleFleetRouteError(res, e, "GET public vehicles", req);
+    }
+  });
+
   app.get("/api/public/fleet/reservation/:token/availability", async (req, res) => {
     try {
-      const date = String(req.query.date ?? "").trim();
-      const vehicleId = String(req.query.vehicleId ?? "").trim() || undefined;
+      const vehicleId = String(req.query.vehicleId ?? "").trim();
+      const from = String(req.query.from ?? req.query.date ?? "").trim();
+      const days = parseInt(String(req.query.days ?? "7"), 10);
       const result = await getPublicReservationAvailability(
         String(req.params.token ?? ""),
-        date,
-        vehicleId
+        vehicleId,
+        from,
+        Number.isFinite(days) ? days : 7
       );
       if (result.ok === false) {
         publicTokenStatus(result, res);
         return;
       }
       res.json({
-        date: result.date,
-        slots: result.slots.map((s) => ({
-          start: s.start,
-          end: s.end,
-          label: s.label,
-          available: s.available,
-          vehiclesAvailable: s.vehiclesAvailable,
-        })),
-        vehicles: result.vehicles,
+        vehicleId: result.vehicleId,
+        from: result.from,
+        days: result.days,
+        dates: result.dates,
       });
     } catch (e) {
+      if (e instanceof FleetValidationError) {
+        res.status(400).json({ error: e.message });
+        return;
+      }
       handleFleetRouteError(res, e, "GET public reservation availability", req);
     }
   });
@@ -91,11 +165,12 @@ export function registerFleetPublicReservationRoutes(app: express.Express) {
 
       const body = req.body ?? {};
       const result = await createPublicReservationRequest(String(req.params.token ?? ""), {
+        cpf: body.cpf,
+        driverId: body.driverId,
         requesterName: body.requesterName,
         requesterEmail: body.requesterEmail,
         requesterPhone: body.requesterPhone,
         requesterDepartment: body.requesterDepartment,
-        requesterEmployeeId: body.requesterEmployeeId,
         responsibilityAccepted: body.responsibilityAccepted,
         requestedDate: body.requestedDate,
         startTime: body.startTime,
@@ -104,8 +179,6 @@ export function registerFleetPublicReservationRoutes(app: express.Express) {
         destination: body.destination,
         notes: body.notes,
         passengersCount: body.passengersCount,
-        hasCargo: body.hasCargo,
-        cargoDescription: body.cargoDescription,
         vehicleId: body.vehicleId,
       });
 

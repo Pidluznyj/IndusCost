@@ -130,3 +130,39 @@ export function parseDateOnly(value: string): Date | null {
   const d = combineDateAndTimeLocal(value, "00:00");
   return Number.isNaN(d.getTime()) ? null : d;
 }
+
+const WEEKDAY_PT = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+export function formatDateYmd(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function formatWeekdayDateLabel(dateStr: string): string {
+  const d = parseDateOnly(dateStr);
+  if (!d) return dateStr;
+  const weekday = WEEKDAY_PT[d.getDay()] ?? "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${weekday}, ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+}
+
+/** Gera lista de datas YYYY-MM-DD a partir de `from` por `days` (máx. 14). */
+export function buildPublicDateRange(from: string, days: number): string[] {
+  const start = parseDateOnly(from);
+  if (!start) return [];
+  const count = Math.min(14, Math.max(1, Math.floor(days)));
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    out.push(formatDateYmd(d));
+  }
+  return out;
+}
+
+export function dateToYmdUtc(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}

@@ -1878,7 +1878,8 @@ model FleetDriver {
   createdAt          DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
 
-  reservations FleetReservation[]
+  reservations              FleetReservation[]
+  publicReservationRequests FleetPublicReservationRequest[]
   usages       FleetUsage[]
   fuelings     FleetFueling[]
   fines        FleetFine[]
@@ -1930,6 +1931,8 @@ model FleetReservation {
 model FleetPublicReservationRequest {
   id                     String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   publicCode             String                              @unique
+  requesterCpf           String?
+  driverId               String?                             @db.Uuid
   requesterName          String
   requesterEmail         String?
   requesterPhone         String?
@@ -1954,12 +1957,15 @@ model FleetPublicReservationRequest {
   createdAt              DateTime                            @default(now()) @db.Timestamptz(6)
   updatedAt              DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
 
+  driver           FleetDriver?      @relation(fields: [driverId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   vehicle          FleetVehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   fleetReservation FleetReservation? @relation(fields: [fleetReservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([status])
   @@index([requestedDate])
   @@index([vehicleId])
+  @@index([driverId])
+  @@index([requesterCpf])
   @@index([createdAt])
 }
 

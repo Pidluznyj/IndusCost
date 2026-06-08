@@ -18,12 +18,26 @@ import {
 } from "@/src/lib/fleetReservationOps.js";
 import {
   buildFleetPublicReservationSlots,
+  buildPublicDateRange,
   combineDateAndTimeLocal,
+  dateToYmdUtc,
   filterPastSlotsForToday,
+  formatWeekdayDateLabel,
   parseDateOnly,
   parseFleetPublicSlotConfig,
   type FleetPublicSlot,
 } from "@/src/lib/fleetPublicReservationSlots.js";
+import {
+  assertValidPublicCpf,
+  getPublicDriverOrThrow,
+  identifyPublicDriverByCpf,
+  registerPublicDriver,
+  type PublicRegisterInput,
+} from "@/src/lib/fleetPublicReservationDriverOps.js";
+import { maskCpfForDisplay } from "@/src/lib/fleetCpfUtils.js";
+
+export { identifyPublicDriverByCpf, registerPublicDriver };
+export type { PublicRegisterInput };
 
 export const FLEET_PUBLIC_SETTINGS_KEYS = [
   "publicReservationEnabled",
@@ -116,10 +130,32 @@ export function formatPublicVehicleLabel(vehicle: Pick<FleetVehicle, "brand" | "
   return type ? `${base} (${type})` : base;
 }
 
+export function serializePublicVehicle(
+  vehicle: Pick<FleetVehicle, "id" | "brand" | "model" | "vehicleType" | "notes">
+) {
+  return {
+    id: vehicle.id,
+    label: formatPublicVehicleLabel(vehicle),
+    brand: vehicle.brand,
+    model: vehicle.model,
+    vehicleType: vehicle.vehicleType,
+    category: vehicle.vehicleType,
+    nickname: vehicle.notes?.trim() || null,
+  };
+}
+
 async function listReservableVehicles(vehicleId?: string | null) {
   const vehicles = await prisma.fleetVehicle.findMany({
     where: vehicleId ? { id: vehicleId } : { status: { notIn: ["INACTIVE", "SOLD", "RETURNED"] } },
-    select: { id: true, brand: true, model: true, vehicleType: true, status: true, plate: true },
+    select: {
+      id: true,
+      brand: true,
+      model: true,
+      vehicleType: true,
+      status: true,
+      plate: true,
+      notes: true,
+    },
     orderBy: [{ brand: "asc" }, { model: "asc" }],
   });
   return vehicles.filter((v) => isVehicleReservable(v.status));
@@ -142,23 +178,22 @@ function findPublicRequestConflict<
   return existing.find((r) => {
     if (excludeId && r.id === excludeId) return false;
     if (vehicleId && r.vehicleId && r.vehicleId !== vehicleId) return false;
-    const rStart = combineDateAndTimeLocal(
-      r.requestedDate.toISOString().slice(0, 10),
-      r.startTime
-    );
-    const rEnd = combineDateAndTimeLocal(r.requestedDate.toISOString().slice(0, 10), r.endTime);
+    const rDate = dateToYmdUtc(r.requestedDate);
+    const rStart = combineDateAndTimeLocal(rDate, r.startTime);
+    const rEnd = combineDateAndTimeLocal(rDate, r.endTime);
     return reservationPeriodsOverlap(start, end, rStart, rEnd);
   });
 }
 
-async function loadDayConflicts(dateStr: string, vehicleIds: string[]) {
+async function loadDayConflicts(dateStr: string, vehicleId: string) {
   const dayStart = combineDateAndTimeLocal(dateStr, "00:00");
   const dayEnd = combineDateAndTimeLocal(dateStr, "23:59");
+  const requestedDate = parseDateOnly(dateStr);
 
   const [reservations, pendingRequests] = await Promise.all([
     prisma.fleetReservation.findMany({
       where: {
-        vehicleId: { in: vehicleIds },
+        vehicleId,
         status: { in: FLEET_ACTIVE_RESERVATION_STATUSES },
         startDateTime: { lt: dayEnd },
         endDateTime: { gt: dayStart },
@@ -168,8 +203,8 @@ async function loadDayConflicts(dateStr: string, vehicleIds: string[]) {
     prisma.fleetPublicReservationRequest.findMany({
       where: {
         status: { in: FLEET_PUBLIC_ACTIVE_REQUEST_STATUSES },
-        requestedDate: parseDateOnly(dateStr) ?? undefined,
-        OR: [{ vehicleId: null }, { vehicleId: { in: vehicleIds } }],
+        vehicleId,
+        requestedDate: requestedDate ?? undefined,
       },
       select: {
         id: true,
@@ -182,6 +217,43 @@ async function loadDayConflicts(dateStr: string, vehicleIds: string[]) {
   ]);
 
   return { reservations, pendingRequests };
+}
+
+async function loadRangeConflicts(from: string, days: number, vehicleId: string) {
+  const dates = buildPublicDateRange(from, days);
+  if (dates.length === 0) return { dates: [], reservations: [], pendingRequests: [] };
+
+  const rangeStart = combineDateAndTimeLocal(dates[0]!, "00:00");
+  const rangeEnd = combineDateAndTimeLocal(dates[dates.length - 1]!, "23:59");
+  const dateObjs = dates.map((d) => parseDateOnly(d)!).filter(Boolean);
+
+  const [reservations, pendingRequests] = await Promise.all([
+    prisma.fleetReservation.findMany({
+      where: {
+        vehicleId,
+        status: { in: FLEET_ACTIVE_RESERVATION_STATUSES },
+        startDateTime: { lt: rangeEnd },
+        endDateTime: { gt: rangeStart },
+      },
+      select: { id: true, vehicleId: true, startDateTime: true, endDateTime: true },
+    }),
+    prisma.fleetPublicReservationRequest.findMany({
+      where: {
+        status: { in: FLEET_PUBLIC_ACTIVE_REQUEST_STATUSES },
+        vehicleId,
+        requestedDate: { in: dateObjs },
+      },
+      select: {
+        id: true,
+        vehicleId: true,
+        requestedDate: true,
+        startTime: true,
+        endTime: true,
+      },
+    }),
+  ]);
+
+  return { dates, reservations, pendingRequests };
 }
 
 function vehicleHasSlotConflict(
@@ -225,83 +297,109 @@ export async function getPublicReservationConfig(
 }
 
 async function buildConfigPayload(settings: Record<string, string>) {
-
   const slotConfig = parseFleetPublicSlotConfig(settings);
-  const vehicles = await listReservableVehicles();
 
   return {
     title: settings.publicReservationTitle?.trim() || "Solicitar reserva de veículo",
     instructions:
       settings.publicReservationInstructions?.trim() ||
-      "Informe seus dados e escolha um horário disponível.",
+      "Informe seu CPF para identificação e escolha um horário disponível.",
     slotMinutes: slotConfig.slotMinutes,
     startHour: slotConfig.startHour,
     endHour: slotConfig.endHour,
-    vehicles: vehicles.map((v) => ({ id: v.id, label: formatPublicVehicleLabel(v) })),
   };
+}
+
+export async function listPublicReservationVehicles(token: string) {
+  const resolved = await resolvePublicToken(token);
+  if (resolved.ok === false) return resolved;
+
+  const vehicles = await listReservableVehicles();
+  return {
+    ok: true as const,
+    vehicles: vehicles.map((v) => serializePublicVehicle(v)),
+  };
+}
+
+function buildDaySlotsForVehicle(
+  dateStr: string,
+  vehicleId: string,
+  slotConfig: ReturnType<typeof parseFleetPublicSlotConfig>,
+  reservations: Awaited<ReturnType<typeof loadRangeConflicts>>["reservations"],
+  pendingRequests: Awaited<ReturnType<typeof loadRangeConflicts>>["pendingRequests"]
+) {
+  let slots = buildFleetPublicReservationSlots(slotConfig);
+  slots = filterPastSlotsForToday(slots, dateStr);
+  const dayReservations = reservations.filter((r) => r.vehicleId === vehicleId);
+  const dayPending = pendingRequests.filter(
+    (r) => dateToYmdUtc(r.requestedDate) === dateStr
+  );
+
+  return slots.map((slot) => {
+    const available = !vehicleHasSlotConflict(
+      vehicleId,
+      slot,
+      dateStr,
+      dayReservations,
+      dayPending
+    );
+    return { ...slot, available, status: available ? ("available" as const) : ("unavailable" as const) };
+  });
 }
 
 export async function getPublicReservationAvailability(
   token: string,
-  dateStr: string,
-  vehicleId?: string | null
+  vehicleId: string,
+  from: string,
+  days = 7
 ): Promise<
   FleetPublicTokenFailure | {
     ok: true;
-    date: string;
-    slots: Array<FleetPublicSlot & { available: boolean; vehiclesAvailable: number }>;
-    vehicles: { id: string; label: string }[];
+    vehicleId: string;
+    from: string;
+    days: number;
+    dates: Array<{
+      date: string;
+      weekdayLabel: string;
+      slots: Array<FleetPublicSlot & { available: boolean; status: "available" | "unavailable" }>;
+    }>;
   }
 > {
   const resolved = await resolvePublicToken(token);
   if (resolved.ok === false) return resolved;
 
-  const date = parseDateOnly(dateStr);
-  if (!date) throw new FleetValidationError("Data inválida. Use YYYY-MM-DD.");
+  const vid = vehicleId?.trim();
+  if (!vid) throw new FleetValidationError("Selecione um veículo.");
+
+  const vehicles = await listReservableVehicles(vid);
+  if (vehicles.length === 0) throw new FleetValidationError("Veículo indisponível para reserva.");
+
+  const fromDate = parseDateOnly(from);
+  if (!fromDate) throw new FleetValidationError("Data inicial inválida. Use YYYY-MM-DD.");
 
   const slotConfig = parseFleetPublicSlotConfig(resolved.settings);
-  let slots = buildFleetPublicReservationSlots(slotConfig);
-  slots = filterPastSlotsForToday(slots, dateStr);
-
-  const vehicles = await listReservableVehicles(vehicleId ?? undefined);
-  if (vehicleId && vehicles.length === 0) {
-    throw new FleetValidationError("Veículo indisponível para reserva.");
-  }
-
-  const vehicleIds = vehicles.map((v) => v.id);
-  const { reservations, pendingRequests } =
-    vehicleIds.length > 0
-      ? await loadDayConflicts(dateStr, vehicleIds)
-      : { reservations: [], pendingRequests: [] };
-
-  const slotAvailability = slots.map((slot) => {
-    const availableVehicles = vehicles.filter(
-      (v) => !vehicleHasSlotConflict(v.id, slot, dateStr, reservations, pendingRequests)
-    );
-    return {
-      ...slot,
-      available: availableVehicles.length > 0,
-      vehiclesAvailable: availableVehicles.length,
-    };
-  });
+  const { dates, reservations, pendingRequests } = await loadRangeConflicts(from, days, vid);
 
   return {
-    ok: true as const,
-    date: dateStr,
-    slots: slotAvailability,
-    vehicles: vehicles.map((v) => ({
-      id: v.id,
-      label: formatPublicVehicleLabel(v),
+    ok: true,
+    vehicleId: vid,
+    from,
+    days: dates.length,
+    dates: dates.map((dateStr) => ({
+      date: dateStr,
+      weekdayLabel: formatWeekdayDateLabel(dateStr),
+      slots: buildDaySlotsForVehicle(dateStr, vid, slotConfig, reservations, pendingRequests),
     })),
   };
 }
 
 export type CreatePublicReservationInput = {
+  cpf: string;
+  driverId: string;
   requesterName: string;
   requesterEmail?: string | null;
   requesterPhone?: string | null;
   requesterDepartment?: string | null;
-  requesterEmployeeId?: string | null;
   responsibilityAccepted?: boolean;
   requestedDate: string;
   startTime: string;
@@ -310,9 +408,7 @@ export type CreatePublicReservationInput = {
   destination: string;
   notes?: string | null;
   passengersCount?: number | null;
-  hasCargo?: boolean | null;
-  cargoDescription?: string | null;
-  vehicleId?: string | null;
+  vehicleId: string;
 };
 
 export async function createPublicReservationRequest(
@@ -335,15 +431,18 @@ export async function createPublicReservationRequest(
   const resolved = await resolvePublicToken(token);
   if (resolved.ok === false) return resolved;
 
-  const requesterName = sanitizeText(input.requesterName, NAME_MAX, true, "Nome completo");
-  const requesterEmail = sanitizeOptionalText(input.requesterEmail, 120);
-  const requesterPhone = sanitizeOptionalText(input.requesterPhone, 40);
-  const requesterDepartment = sanitizeOptionalText(input.requesterDepartment, 80);
-  const requesterEmployeeId = sanitizeOptionalText(input.requesterEmployeeId, 40);
+  const cpfDigits = assertValidPublicCpf(input.cpf);
+  const driverId = input.driverId?.trim();
+  if (!driverId) throw new FleetValidationError("Identificação do condutor é obrigatória.");
+
+  const driver = await getPublicDriverOrThrow(driverId, cpfDigits);
+  const requesterName = sanitizeText(input.requesterName || driver.name, NAME_MAX, true, "Nome completo");
+  const requesterEmail = sanitizeOptionalText(input.requesterEmail ?? driver.email, 120);
+  const requesterPhone = sanitizeOptionalText(input.requesterPhone ?? driver.phone, 40);
+  const requesterDepartment = sanitizeOptionalText(input.requesterDepartment ?? driver.unit, 80);
   const reason = sanitizeText(input.reason, TEXT_MAX, true, "Motivo");
   const destination = sanitizeText(input.destination, TEXT_MAX, true, "Destino");
   const notes = sanitizeOptionalText(input.notes);
-  const cargoDescription = sanitizeOptionalText(input.cargoDescription, 200);
 
   const dateStr = input.requestedDate?.trim();
   if (!dateStr || !parseDateOnly(dateStr)) {
@@ -362,30 +461,17 @@ export async function createPublicReservationRequest(
     throw new FleetValidationError("Período indisponível — horário já passou.");
   }
 
-  const vehicleId = input.vehicleId?.trim() || null;
-  if (vehicleId) {
-    const vehicles = await listReservableVehicles(vehicleId);
-    if (vehicles.length === 0) throw new FleetValidationError("Veículo indisponível.");
-  }
+  const vehicleId = input.vehicleId?.trim();
+  if (!vehicleId) throw new FleetValidationError("Selecione um veículo.");
 
-  const vehicles = await listReservableVehicles(vehicleId ?? undefined);
-  const vehicleIds = vehicles.map((v) => v.id);
-  if (vehicleIds.length === 0) {
-    throw new FleetValidationError("Nenhum veículo disponível para este período.");
-  }
+  const vehicles = await listReservableVehicles(vehicleId);
+  if (vehicles.length === 0) throw new FleetValidationError("Veículo indisponível.");
 
   const slot = allowedSlots.find((s) => s.start === startTime && s.end === endTime)!;
-  const { reservations, pendingRequests } = await loadDayConflicts(dateStr, vehicleIds);
+  const { reservations, pendingRequests } = await loadDayConflicts(dateStr, vehicleId);
 
-  if (vehicleId) {
-    if (vehicleHasSlotConflict(vehicleId, slot, dateStr, reservations, pendingRequests)) {
-      throw new FleetValidationError("Período indisponível para o veículo selecionado.");
-    }
-  } else {
-    const anyFree = vehicles.some(
-      (v) => !vehicleHasSlotConflict(v.id, slot, dateStr, reservations, pendingRequests)
-    );
-    if (!anyFree) throw new FleetValidationError("Período indisponível — sem veículos livres.");
+  if (vehicleHasSlotConflict(vehicleId, slot, dateStr, reservations, pendingRequests)) {
+    throw new FleetValidationError("Período indisponível para o veículo selecionado.");
   }
 
   let passengersCount: number | null = null;
@@ -397,19 +483,21 @@ export async function createPublicReservationRequest(
     passengersCount = Math.floor(n);
   }
 
-  const hasCargo = input.hasCargo == null ? null : Boolean(input.hasCargo);
-
   const responsibilityAccepted = input.responsibilityAccepted === true;
+  if (!responsibilityAccepted) {
+    throw new FleetValidationError("É necessário aceitar a responsabilidade de uso do veículo.");
+  }
 
   const publicCode = generatePublicReservationCode();
   const created = await prisma.fleetPublicReservationRequest.create({
     data: {
       publicCode,
+      requesterCpf: cpfDigits,
+      driverId,
       requesterName,
       requesterEmail,
       requesterPhone,
       requesterDepartment,
-      requesterEmployeeId,
       responsibilityAccepted,
       requestedDate: parseDateOnly(dateStr)!,
       startTime,
@@ -418,8 +506,6 @@ export async function createPublicReservationRequest(
       destination,
       notes,
       passengersCount,
-      hasCargo,
-      cargoDescription,
       vehicleId,
       status: "PENDING",
     },
@@ -456,6 +542,17 @@ export async function listPublicReservationRequests(query: {
       skip,
       take: limit,
       include: {
+        driver: {
+          select: {
+            id: true,
+            name: true,
+            cpf: true,
+            cnhNumber: true,
+            cnhCategory: true,
+            cnhExpirationDate: true,
+            status: true,
+          },
+        },
         vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true } },
         fleetReservation: { select: { id: true, status: true } },
       },
@@ -470,6 +567,17 @@ export async function getPublicReservationRequestOrThrow(id: string) {
   const row = await prisma.fleetPublicReservationRequest.findUnique({
     where: { id },
     include: {
+      driver: {
+        select: {
+          id: true,
+          name: true,
+          cpf: true,
+          cnhNumber: true,
+          cnhCategory: true,
+          cnhExpirationDate: true,
+          status: true,
+        },
+      },
       vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true } },
       fleetReservation: { select: { id: true, status: true } },
     },
@@ -490,12 +598,12 @@ export async function approvePublicReservationRequest(input: {
     throw new FleetValidationError("Somente solicitações pendentes podem ser aprovadas.");
   }
 
-  const vehicleId = input.vehicleId?.trim();
-  const driverId = input.driverId?.trim();
+  const vehicleId = input.vehicleId?.trim() || existing.vehicleId?.trim();
+  const driverId = input.driverId?.trim() || existing.driverId?.trim();
   if (!vehicleId) throw new FleetValidationError("Selecione o veículo para aprovar.");
   if (!driverId) throw new FleetValidationError("Selecione o motorista para aprovar.");
 
-  const dateStr = existing.requestedDate.toISOString().slice(0, 10);
+  const dateStr = dateToYmdUtc(existing.requestedDate);
   const startDateTime = combineDateAndTimeLocal(dateStr, existing.startTime);
   const endDateTime = combineDateAndTimeLocal(dateStr, existing.endTime);
   assertDateRange(startDateTime, endDateTime, "Reserva");
@@ -511,7 +619,7 @@ export async function approvePublicReservationRequest(input: {
   const vehicles = await listReservableVehicles(vehicleId);
   if (vehicles.length === 0) throw new FleetValidationError("Veículo indisponível.");
 
-  const { reservations, pendingRequests } = await loadDayConflicts(dateStr, [vehicleId]);
+  const { reservations, pendingRequests } = await loadDayConflicts(dateStr, vehicleId);
   const slot = { start: existing.startTime, end: existing.endTime, label: "", key: "" };
   if (vehicleHasSlotConflict(vehicleId, slot, dateStr, reservations, pendingRequests)) {
     throw new FleetValidationError("Conflito de agenda — período já ocupado para este veículo.");
@@ -532,6 +640,7 @@ export async function approvePublicReservationRequest(input: {
   const requesterNote = [
     `[Solicitação pública ${existing.publicCode}]`,
     `Solicitante: ${existing.requesterName}`,
+    existing.requesterCpf ? `CPF: ${maskCpfForDisplay(existing.requesterCpf)}` : null,
     existing.requesterEmail ? `E-mail: ${existing.requesterEmail}` : null,
     existing.requesterPhone ? `Tel: ${existing.requesterPhone}` : null,
     existing.requesterDepartment ? `Setor: ${existing.requesterDepartment}` : null,

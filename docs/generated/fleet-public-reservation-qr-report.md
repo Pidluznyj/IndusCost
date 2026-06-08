@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Permitir que colaboradores solicitem reserva de veículo por uma página pública/mobile (QR Code), sem login no ERP. A equipe de frota analisa, aprova ou rejeita no módulo interno.
+Permitir que colaboradores solicitem reserva de veículo por página pública/mobile (QR Code), sem login no ERP. Identificação por **CPF**, vínculo com cadastro de **motorista** (`FleetDriver`), seleção obrigatória de veículo e período. A equipe de frota aprova ou rejeita internamente.
 
 ## Rota pública (frontend)
 
@@ -10,108 +10,120 @@ Permitir que colaboradores solicitem reserva de veículo por uma página públic
 
 ## Token / QR Code
 
-- Token armazenado em `FleetSettings.publicReservationToken` (64 caracteres hex, `crypto.randomBytes(32)`).
-- Ativação: `FleetSettings.publicReservationEnabled = true`.
-- Regeneração: `POST /api/fleet/public-reservation/regenerate-token` (requer `fleet.settings.manage`).
-- QR Code: imagem via `api.qrserver.com` (sem dependência npm adicional). Painel em **Frota → Configurações → Link público / QR Code**.
-- Placas **não** são expostas nos endpoints públicos — apenas marca/modelo/tipo.
-
-## Regras de slots
-
-- Janela diária padrão: **06:00–20:00** (`publicReservationStartHour` / `publicReservationEndHour`).
-- Duração padrão: **3 horas** (`publicReservationSlotMinutes = 180`).
-- Slots fixos (padrão):
-  - 06:00–09:00
-  - 09:00–12:00
-  - 12:00–15:00
-  - 15:00–18:00
-  - **17:00–20:00** (último slot termina às 20:00)
-- **Não** existe slot 18:00–21:00.
-- Na data atual, slots cujo horário de término já passou são ocultados.
-
-## Conflito de agenda
-
-Overlap: `existing.start < requested.end AND existing.end > requested.start`.
-
-Considera:
-
-- `FleetReservation` em `REQUESTED`, `PENDING_APPROVAL`, `APPROVED`, `IN_USE`
-- `FleetPublicReservationRequest` em `PENDING`
-
-Ignora `REJECTED`, `CANCELLED`, reservas finalizadas.
+- Token em `FleetSettings.publicReservationToken` (64 hex, `crypto.randomBytes(32)`).
+- Ativação: `publicReservationEnabled = true`.
+- Regeneração interna: `POST /api/fleet/public-reservation/regenerate-token`.
+- QR Code: `api.qrserver.com` no painel **Frota → Configurações**.
+- Placas **não** expostas na API/tela pública.
 
 ## Fluxo do usuário (público)
 
-1. Escaneia QR / abre link
-2. Onboarding em etapas (identificação → dados → horário → revisão)
-3. `POST` cria solicitação com status **PENDING** e código `FRQ-XXXXXXXX`
-4. Tela de sucesso com código de acompanhamento
+### Etapa 1 — CPF (primeiro campo)
+
+- Máscara `000.000.000-00`, validação de dígitos verificadores.
+- `POST /identify` consulta `FleetDriver` por CPF normalizado (somente dígitos).
+- CPF inválido → erro 400; não grava cadastro.
+
+### Etapa 2 — Cadastro ou confirmação
+
+**CPF encontrado:**
+
+- Mensagem “Encontramos seu cadastro”.
+- Exibe nome, telefone/e-mail (mínimo necessário).
+- Se CNH cadastrada → status “CNH cadastrada” e segue.
+- Se falta CNH → formulário mínimo (número, categoria, validade) via `POST /register`.
+
+**CPF não encontrado:**
+
+- “Vamos fazer seu cadastro rápido”.
+- Cria registro em `FleetDriver` (status `PENDING`, nota `[Cadastro público QR]`).
+- Campos: nome, telefone obrigatórios; CNH obrigatória; e-mail/setor opcionais.
+- Não duplica CPF (validação `assertUniqueActiveDriverCpf`).
+
+### Etapa 3 — Seleção do carro (obrigatória)
+
+- `GET /vehicles` — marca, modelo, tipo/categoria; sem placa.
+
+### Etapa 4 — Dia e período
+
+- `GET /availability?vehicleId=&from=YYYY-MM-DD&days=7`
+- Navegação por semanas; rótulos “Segunda, 10/06”.
+- Slots de 3h: 06–09, 09–12, 12–15, 15–18, **17–20** (sem 18–21).
+- Dia atual: oculta slots já passados.
+- Status visual: disponível / indisponível / selecionado.
+
+### Etapa 5 — Motivo e confirmação
+
+- Motivo, destino, observações, passageiros opcional.
+- Aceite de responsabilidade obrigatório.
+- `POST /request` → status **PENDING**, código `FRQ-XXXXXXXX`.
+
+## Regras de slots
+
+- Janela: **06:00–20:00**; duração **180 min**.
+- Último slot: **17:00–20:00**.
+- Conflito por veículo: overlap `existing.start < requested.end AND existing.end > requested.start`.
+- Bloqueadores: reservas `REQUESTED|PENDING_APPROVAL|APPROVED|IN_USE` e solicitações `PENDING`.
+
+## Segurança
+
+- Todos os endpoints exigem token público válido e feature ativa.
+- CPF armazenado normalizado (11 dígitos).
+- Resposta de `/identify` mínima (sem dados de terceiros).
+- Rate limit em POST (identify, register, request): 15/min por IP.
+- Sanitização de textos; validação de slot na grade permitida e revalidação no POST final.
 
 ## Fluxo de aprovação (interno)
 
 - Aba **Frota → Solicitações QR**
-- Aprovar: exige veículo + motorista; valida conflito; cria `FleetReservation` **APPROVED** e vincula `fleetReservationId`
-- Rejeitar: exige motivo; status **REJECTED**
+- Exibe: CPF, nome, status CNH, veículo, dia/período, motivo, destino.
+- Aprovar: veículo + motorista (pré-preenchido se `driverId` na solicitação); valida conflito; cria `FleetReservation` **APPROVED**.
+- Rejeitar: motivo obrigatório.
 
-## Permissões
+## Permissões internas
 
 | Ação | Permissão |
 |------|-----------|
-| Ver solicitações / link | `fleet.reservations.view` (ou legado `fleet.view`) |
+| Ver solicitações / link | `fleet.reservations.view` |
 | Aprovar / rejeitar | `fleet.reservations.approve` |
-| Configurar token / parâmetros | `fleet.settings.manage` |
-| Página pública | Nenhuma (token válido + feature ativa) |
+| Token / parâmetros | `fleet.settings.manage` |
 
-## Endpoints
-
-### Públicos (sem login)
+## Endpoints públicos
 
 | Método | Rota |
 |--------|------|
 | GET | `/api/public/fleet/reservation/:token/config` |
-| GET | `/api/public/fleet/reservation/:token/availability?date=YYYY-MM-DD&vehicleId=` |
+| POST | `/api/public/fleet/reservation/:token/identify` |
+| POST | `/api/public/fleet/reservation/:token/register` |
+| GET | `/api/public/fleet/reservation/:token/vehicles` |
+| GET | `/api/public/fleet/reservation/:token/availability?vehicleId=&from=&days=7` |
 | POST | `/api/public/fleet/reservation/:token/request` |
 
-Token inválido ou desativado: **404** (inválido) ou **403** (desativado). POST com rate limit simples (10/min por IP).
+## Models / migrations
 
-### Internos (autenticados)
+- `FleetPublicReservationRequest` + `requesterCpf`, `driverId` → `FleetDriver`
+- Migrations: `20260609120000_*`, `20260610120000_fleet_public_reservation_cpf_driver`
+- Reutiliza **`FleetDriver`** — sem model duplicado de condutor.
 
-| Método | Rota |
-|--------|------|
-| GET | `/api/fleet/public-reservation/link` |
-| POST | `/api/fleet/public-reservation/regenerate-token` |
-| GET | `/api/fleet/public-reservation-requests` |
-| GET | `/api/fleet/public-reservation-requests/:id` |
-| PATCH | `/api/fleet/public-reservation-requests/:id/approve` |
-| PATCH | `/api/fleet/public-reservation-requests/:id/reject` |
-
-## Model / migration
-
-- Migration: `20260609120000_add_fleet_public_reservation_requests`
-- Model: `FleetPublicReservationRequest`
-- Enum: `FleetPublicReservationRequestStatus` (`PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`)
-- Settings seed: chaves `publicReservation*`
-
-## Validação no servidor (`/opt/induscost`)
+## Validação no servidor
 
 ```bash
 cd /opt/induscost
 git pull origin main
 npx prisma migrate deploy
 npx prisma generate
+npm run test:fleet
 npm run build
-sudo systemctl restart induscost   # ou serviço equivalente
+sudo systemctl restart induscost
 ```
 
-1. **Frota → Configurações**: gerar token, ativar `publicReservationEnabled`, salvar.
-2. Copiar link / imprimir QR.
-3. Abrir link no celular e enviar solicitação teste.
-4. **Frota → Solicitações QR**: aprovar com veículo/motorista ou rejeitar com motivo.
+1. Ativar token e `publicReservationEnabled`.
+2. Testar CPF existente e CPF novo no celular.
+3. Selecionar veículo, período, enviar solicitação.
+4. Aprovar em **Solicitações QR**.
 
-## Limitações (fase A)
+## Limitações
 
-- Sem aprovação automática
-- Sem notificação por e-mail/WhatsApp
-- QR via serviço externo (requer internet para gerar imagem no painel)
-- Rate limit em memória (single instance)
-- Solicitante externo não acompanha status pelo código (apenas confirmação inicial)
+- Cadastro público cria motorista `PENDING` (validação interna posterior).
+- Sem notificação automática ao solicitante.
+- Rate limit em memória (instância única).
