@@ -59,7 +59,10 @@ import {
 } from "./src/lib/materialDemandFilters.js";
 import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
 import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
-import { registerFleetPublicReservationRoutes } from "./src/lib/fleetPublicReservationRoutes.js";
+import {
+  registerFleetPublicReservationRoutes,
+  registerFleetPublicReservationShortLinkMiddleware,
+} from "./src/lib/fleetPublicReservationRoutes.js";
 import { registerAccessProfilesRoutes } from "./src/lib/accessProfilesRoutes.js";
 import {
   AccessProfileError,
@@ -14629,6 +14632,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       stack: process.env.NODE_ENV !== "production" ? err.stack : undefined
     });
   });
+
+  // Link curto da reserva pública (ex.: /reservar-carro → /public/fleet/reservation/:token)
+  registerFleetPublicReservationShortLinkMiddleware(app);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

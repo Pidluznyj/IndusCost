@@ -16,6 +16,8 @@ import {
   reportUsage,
 } from "@/src/lib/fleetManagementOps.js";
 import { loadFleetSettings } from "@/src/lib/fleetService.js";
+import { validatePublicReservationSlug } from "@/src/lib/fleetPublicReservationLink.js";
+import { FleetValidationError } from "@/src/lib/fleetValidation.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
   buildFleetListResponse,
@@ -122,7 +124,20 @@ export async function saveFleetSettingsWithAudit(
       continue;
     }
     const existing = await prisma.fleetSettings.findUnique({ where: { key } });
-    const value = typeof item.value === "string" ? item.value : String(item.value ?? "");
+    let value = typeof item.value === "string" ? item.value : String(item.value ?? "");
+
+    if (key === "publicReservationSlug") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        value = "";
+      } else {
+        const validated = validatePublicReservationSlug(trimmed);
+        if (validated.ok === false) {
+          throw new FleetValidationError(validated.message);
+        }
+        value = validated.slug;
+      }
+    }
     if (existing && existing.value === value) continue;
 
     const row = await prisma.fleetSettings.upsert({

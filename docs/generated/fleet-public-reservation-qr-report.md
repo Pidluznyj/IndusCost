@@ -10,6 +10,70 @@ Permitir que colaboradores solicitem reserva de veículo por página pública/mo
 - **Sem login** — rota registrada fora de `RequireAuth` no `App.tsx`.
 - Primeira tela: **CPF** (wizard inicia em etapa CPF).
 
+## Link curto/amigável e cópia do link
+
+### Link técnico (avançado)
+
+```
+http://192.168.100.5:3000/public/fleet/reservation/<TOKEN>
+```
+
+- Contém o token de 64 caracteres hex.
+- Continua válido mesmo com slug configurado.
+- Útil para diagnóstico ou quando o slug não estiver definido.
+
+### Link curto (recomendado para enviar)
+
+Setting `publicReservationSlug` (padrão: `reservar-carro`):
+
+```
+http://192.168.100.5:3000/reservar-carro
+```
+
+- Abre a mesma tela de CPF **sem login**.
+- O servidor redireciona (HTTP 302) para o link técnico com o token ativo.
+- Também aceita slug com barra, ex.: `r/frota` → `http://192.168.100.5:3000/r/frota`.
+
+### Base URL interna
+
+| Setting | Exemplo |
+|---------|---------|
+| `publicReservationBaseUrl` | `http://192.168.100.5:3000` |
+| `publicReservationSlug` | `reservar-carro` |
+
+### Painel Frota → Configurações → Reserva pública / QR Code
+
+- **Link curto** — copiar / abrir (prioridade no QR Code)
+- **Link técnico** — copiar / abrir / regenerar token
+- Copiar usa `navigator.clipboard` com fallback `execCommand("copy")`
+- Feedback: *"Link copiado."* ou mensagem para cópia manual
+
+### Endpoint de resolução (sem login)
+
+`GET /api/public/fleet/reservation-link/:slug` (suporta `/:slug/:sub` para `r/frota`)
+
+Resposta:
+
+```json
+{
+  "enabled": true,
+  "targetUrl": "/public/fleet/reservation/<TOKEN>",
+  "targetAbsoluteUrl": "http://192.168.100.5:3000/public/fleet/reservation/<TOKEN>"
+}
+```
+
+- Slug inválido → 400
+- Slug não configurado / token ausente → 404
+- Feature desativada → 403
+
+### Como validar no servidor
+
+1. Configure `publicReservationBaseUrl` e `publicReservationSlug`.
+2. Copie o **link curto** no painel e abra em outro dispositivo na mesma rede/VPN.
+3. Confirme redirecionamento para tela de CPF.
+4. Escaneie o QR Code — deve usar o link curto.
+5. Se necessário, use o link técnico para testar token diretamente.
+
 ## Link compartilhável (rede interna / VPN)
 
 Configure em **Frota → Configurações**:

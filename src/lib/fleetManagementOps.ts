@@ -207,6 +207,7 @@ export const FLEET_EDITABLE_SETTINGS_KEYS = [
   "manutencaoValorAprovacao",
   "publicReservationEnabled",
   "publicReservationBaseUrl",
+  "publicReservationSlug",
   "publicReservationToken",
   "publicReservationTitle",
   "publicReservationInstructions",

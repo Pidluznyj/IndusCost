@@ -46,8 +46,13 @@ import {
 import { FleetBusinessError } from "@/src/lib/fleetErrors.js";
 import { maskCpfForDisplay } from "@/src/lib/fleetCpfUtils.js";
 import {
+  buildPublicReservationShareLinks,
   buildPublicReservationUrl,
+  normalizePublicReservationSlug,
+  publicReservationPathMatchesSlug,
   resolvePublicReservationBaseUrl,
+  validatePublicReservationSlug,
+  FLEET_PUBLIC_RESERVATION_PATH,
 } from "@/src/lib/fleetPublicReservationLink.js";
 
 export { buildPublicReservationUrl } from "@/src/lib/fleetPublicReservationLink.js";
@@ -58,6 +63,7 @@ export type { PublicRegisterInput };
 export const FLEET_PUBLIC_SETTINGS_KEYS = [
   "publicReservationEnabled",
   "publicReservationBaseUrl",
+  "publicReservationSlug",
   "publicReservationToken",
   "publicReservationTitle",
   "publicReservationInstructions",
@@ -1046,13 +1052,82 @@ export async function getInternalPublicReservationLink(requestOrigin?: string) {
   const enabled = settings.publicReservationEnabled === "true";
   const baseUrl = resolvePublicReservationBaseUrl(settings, requestOrigin);
   const configuredBase = settings.publicReservationBaseUrl?.trim() || null;
+  const slug =
+    normalizePublicReservationSlug(settings.publicReservationSlug) ||
+    normalizePublicReservationSlug("reservar-carro");
+
+  const links = buildPublicReservationShareLinks({ token, baseUrl, slug });
 
   return {
     enabled,
     token: token || null,
     baseUrl,
     configuredBaseUrl: configuredBase,
-    url: token && baseUrl ? buildPublicReservationUrl(token, baseUrl) : null,
+    slug: links.slug,
+    shortPath: links.shortPath,
+    shortUrl: links.shortUrl,
+    technicalPath: links.technicalPath,
+    technicalUrl: links.technicalUrl,
+    url: links.shareUrl,
+    shareUrl: links.shareUrl,
     needsBaseUrlConfig: !baseUrl,
   };
+}
+
+export type PublicReservationSlugResolveFailure = {
+  ok: false;
+  reason: "disabled" | "not_found" | "invalid_slug";
+};
+
+export type PublicReservationSlugResolveSuccess = {
+  ok: true;
+  enabled: true;
+  targetPath: string;
+  targetUrl: string | null;
+};
+
+export async function resolvePublicReservationLinkBySlug(
+  slugParam: string,
+  requestOrigin?: string | null
+): Promise<PublicReservationSlugResolveFailure | PublicReservationSlugResolveSuccess> {
+  const validation = validatePublicReservationSlug(slugParam);
+  if (!validation.ok) {
+    return { ok: false, reason: "invalid_slug" };
+  }
+
+  const settings = await loadFleetSettings();
+  if (settings.publicReservationEnabled !== "true") {
+    return { ok: false, reason: "disabled" };
+  }
+
+  const configuredSlug = normalizePublicReservationSlug(settings.publicReservationSlug);
+  if (!configuredSlug || validation.slug !== configuredSlug) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const token = settings.publicReservationToken?.trim();
+  if (!token || token.length < 32) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const baseUrl = resolvePublicReservationBaseUrl(settings, requestOrigin);
+  const targetPath = `${FLEET_PUBLIC_RESERVATION_PATH}/${token}`;
+  const targetUrl = baseUrl ? `${baseUrl}${targetPath}` : targetPath;
+
+  return { ok: true, enabled: true, targetPath, targetUrl };
+}
+
+export async function tryPublicReservationShortLinkRedirect(
+  requestPath: string
+): Promise<string | null> {
+  const settings = await loadFleetSettings();
+  if (settings.publicReservationEnabled !== "true") return null;
+
+  const slug = normalizePublicReservationSlug(settings.publicReservationSlug);
+  if (!slug || !publicReservationPathMatchesSlug(requestPath, slug)) return null;
+
+  const token = settings.publicReservationToken?.trim();
+  if (!token || token.length < 32) return null;
+
+  return `${FLEET_PUBLIC_RESERVATION_PATH}/${token}`;
 }

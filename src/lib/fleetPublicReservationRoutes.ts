@@ -8,6 +8,8 @@ import {
   identifyPublicDriverByCpf,
   listPublicReservationVehicles,
   registerPublicDriver,
+  resolvePublicReservationLinkBySlug,
+  tryPublicReservationShortLinkRedirect,
   type FleetPublicTokenFailure,
 } from "@/src/lib/fleetPublicReservationService.js";
 
@@ -42,7 +44,65 @@ function publicTokenStatus(resolved: FleetPublicTokenFailure, res: express.Respo
   res.status(404).json({ error: "Link inválido ou expirado." });
 }
 
+export function registerFleetPublicReservationShortLinkMiddleware(app: express.Express) {
+  app.use(async (req, res, next) => {
+    try {
+      if (req.method !== "GET" && req.method !== "HEAD") return next();
+      if (req.path.startsWith("/api") || req.path.startsWith("/@") || req.path.startsWith("/src")) {
+        return next();
+      }
+      if (/\.[a-zA-Z0-9]{1,8}$/.test(req.path)) return next();
+
+      const target = await tryPublicReservationShortLinkRedirect(req.path);
+      if (!target) return next();
+
+      if (req.method === "HEAD") {
+        res.status(302).location(target).end();
+        return;
+      }
+      res.redirect(302, target);
+    } catch (e) {
+      next(e);
+    }
+  });
+}
+
 export function registerFleetPublicReservationRoutes(app: express.Express) {
+  const handleReservationLinkSlug = async (
+    req: express.Request,
+    res: express.Response
+  ): Promise<void> => {
+    try {
+      const slug = req.params.sub
+        ? `${String(req.params.slug ?? "")}/${String(req.params.sub ?? "")}`
+        : String(req.params.slug ?? "");
+      const origin = `${req.protocol}://${req.get("host") ?? ""}`;
+      const result = await resolvePublicReservationLinkBySlug(slug, origin);
+      if (result.ok === false) {
+        if (result.reason === "disabled") {
+          res.status(403).json({ error: "Solicitação pública desativada." });
+          return;
+        }
+        if (result.reason === "invalid_slug") {
+          res.status(400).json({ error: "Slug inválido." });
+          return;
+        }
+        res.status(404).json({ error: "Link não encontrado." });
+        return;
+      }
+      res.json({
+        enabled: true,
+        targetUrl: result.targetPath,
+        targetAbsoluteUrl: result.targetUrl,
+      });
+    } catch (e) {
+      handleFleetRouteError(res, e, "GET public reservation-link slug", req);
+    }
+  };
+
+  app.get("/api/public/fleet/reservation-link/:slug/:sub", handleReservationLinkSlug);
+  app.get("/api/public/fleet/reservation-link/:slug", handleReservationLinkSlug);
+
   app.get("/api/public/fleet/reservation/:token/config", async (req, res) => {
     try {
       const result = await getPublicReservationConfig(String(req.params.token ?? ""));
