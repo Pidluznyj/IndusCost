@@ -3,12 +3,15 @@ import { createFleetRouteGuards, type FleetAuthGuards } from "@/src/lib/fleetRou
 import { handleFleetRouteError } from "@/src/lib/fleetErrors.js";
 import { FleetValidationError } from "@/src/lib/fleetValidation.js";
 import {
+  approvePublicReservationDriver,
   approvePublicReservationRequest,
   ensurePublicReservationToken,
   getInternalPublicReservationLink,
   getPublicReservationRequestOrThrow,
   listPublicReservationRequests,
+  rejectPublicReservationDriver,
   rejectPublicReservationRequest,
+  serializePublicRequestDriver,
 } from "@/src/lib/fleetPublicReservationService.js";
 import { buildPublicReservationUrl } from "@/src/lib/fleetPublicReservationLink.js";
 
@@ -57,7 +60,13 @@ export function registerFleetPublicReservationInternalRoutes(
       const page = parseInt(String(req.query.page ?? "1"), 10);
       const limit = parseInt(String(req.query.limit ?? "25"), 10);
       const result = await listPublicReservationRequests({ status, page, limit });
-      res.json(result);
+      res.json({
+        ...result,
+        items: result.items.map((item) => ({
+          ...item,
+          driver: serializePublicRequestDriver(item.driver),
+        })),
+      });
     } catch (e) {
       handleFleetRouteError(res, e, "GET public-reservation-requests", req);
     }
@@ -68,11 +77,65 @@ export function registerFleetPublicReservationInternalRoutes(
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
       const request = await getPublicReservationRequestOrThrow(id);
-      res.json({ request });
+      res.json({ request: { ...request, driver: serializePublicRequestDriver(request.driver) } });
     } catch (e) {
       handleFleetRouteError(res, e, "GET public-reservation-request", req);
     }
   });
+
+  app.post(
+    "/api/fleet/public-reservation-requests/:id/approve-driver",
+    ...g.reservationsApprove,
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+        const user = await getCurrentAppUser(req);
+        const result = await approvePublicReservationDriver({
+          id,
+          reviewedByUserId: user?.id ?? null,
+          reviewedByLabel: user?.email ?? user?.name ?? null,
+        });
+        res.json({
+          request: {
+            ...result.request,
+            driver: serializePublicRequestDriver(result.request.driver),
+          },
+        });
+      } catch (e) {
+        handleFleetRouteError(res, e, "POST approve public request driver", req);
+      }
+    }
+  );
+
+  app.post(
+    "/api/fleet/public-reservation-requests/:id/reject-driver",
+    ...g.reservationsApprove,
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+        const user = await getCurrentAppUser(req);
+        const result = await rejectPublicReservationDriver({
+          id,
+          reason: req.body?.reason,
+          reviewedByUserId: user?.id ?? null,
+        });
+        res.json({
+          request: {
+            ...result.request,
+            driver: serializePublicRequestDriver(result.request.driver),
+          },
+        });
+      } catch (e) {
+        if (e instanceof FleetValidationError && e.message.includes("Motivo")) {
+          res.status(400).json({ error: e.message });
+          return;
+        }
+        handleFleetRouteError(res, e, "POST reject public request driver", req);
+      }
+    }
+  );
 
   app.patch(
     "/api/fleet/public-reservation-requests/:id/approve",

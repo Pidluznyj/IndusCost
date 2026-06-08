@@ -6,6 +6,7 @@ import {
   FleetValidationError,
   assertDateRange,
   assertDriverAuthorizedForReservation,
+  computeCnhStatus,
   assertReasonRequired,
   findReservationConflict,
   isVehicleReservable,
@@ -29,11 +30,17 @@ import {
 } from "@/src/lib/fleetPublicReservationSlots.js";
 import {
   assertValidPublicCpf,
+  driverNeedsPublicApproval,
+  driverPublicApprovalStatus,
   getPublicDriverOrThrow,
   identifyPublicDriverByCpf,
+  publicRequestAwaitingDriverApproval,
+  publicRequestAwaitingReservationApproval,
   registerPublicDriver,
+  resolveInitialPublicRequestStatus,
   type PublicRegisterInput,
 } from "@/src/lib/fleetPublicReservationDriverOps.js";
+import { FleetBusinessError } from "@/src/lib/fleetErrors.js";
 import { maskCpfForDisplay } from "@/src/lib/fleetCpfUtils.js";
 import {
   buildPublicReservationUrl,
@@ -56,7 +63,50 @@ export const FLEET_PUBLIC_SETTINGS_KEYS = [
   "publicReservationEndHour",
 ] as const;
 
-export const FLEET_PUBLIC_ACTIVE_REQUEST_STATUSES: FleetPublicReservationRequestStatus[] = ["PENDING"];
+export const FLEET_PUBLIC_ACTIVE_REQUEST_STATUSES: FleetPublicReservationRequestStatus[] = [
+  "PENDING",
+  "PENDING_DRIVER_APPROVAL",
+  "PENDING_RESERVATION_APPROVAL",
+];
+
+export const FLEET_PUBLIC_PENDING_REVIEW_STATUSES: FleetPublicReservationRequestStatus[] = [
+  "PENDING",
+  "PENDING_DRIVER_APPROVAL",
+  "PENDING_RESERVATION_APPROVAL",
+];
+
+export function serializePublicRequestDriver(
+  driver: {
+    id: string;
+    name: string;
+    cpf: string;
+    cnhNumber: string | null;
+    cnhCategory: string | null;
+    cnhExpirationDate: Date | null;
+    status: string;
+    createdFromPublicReservation?: boolean;
+    publicRegistrationRejectionReason?: string | null;
+  } | null
+) {
+  if (!driver) return null;
+  return {
+    ...driver,
+    approvalStatus: driverPublicApprovalStatus({
+      status: driver.status as "AUTHORIZED" | "PENDING" | "BLOCKED" | "INACTIVE",
+      cnhNumber: driver.cnhNumber,
+      cnhExpirationDate: driver.cnhExpirationDate,
+      createdFromPublicReservation: driver.createdFromPublicReservation ?? false,
+      publicRegistrationRejectionReason: driver.publicRegistrationRejectionReason ?? null,
+    }),
+    needsPublicApproval: driverNeedsPublicApproval({
+      status: driver.status as "AUTHORIZED" | "PENDING" | "BLOCKED" | "INACTIVE",
+      cnhNumber: driver.cnhNumber,
+      cnhExpirationDate: driver.cnhExpirationDate,
+      createdFromPublicReservation: driver.createdFromPublicReservation ?? false,
+      publicRegistrationRejectionReason: driver.publicRegistrationRejectionReason ?? null,
+    }),
+  };
+}
 
 export type FleetPublicTokenFailure = { ok: false; reason: "disabled" | "invalid" };
 export type FleetPublicTokenSuccess = { ok: true; settings: Record<string, string> };
@@ -427,6 +477,8 @@ export async function createPublicReservationRequest(
       endTime: string;
       createdAt: Date;
     };
+    requiresDriverApproval: boolean;
+    successMessage: string;
   }
 > {
   const resolved = await resolvePublicToken(token);
@@ -489,6 +541,8 @@ export async function createPublicReservationRequest(
     throw new FleetValidationError("É necessário aceitar a responsabilidade de uso do veículo.");
   }
 
+  const initialStatus = resolveInitialPublicRequestStatus(driver);
+  const requiresDriverApproval = initialStatus === "PENDING_DRIVER_APPROVAL";
   const publicCode = generatePublicReservationCode();
   const created = await prisma.fleetPublicReservationRequest.create({
     data: {
@@ -508,7 +562,7 @@ export async function createPublicReservationRequest(
       notes,
       passengersCount,
       vehicleId,
-      status: "PENDING",
+      status: initialStatus,
     },
     select: {
       id: true,
@@ -521,7 +575,16 @@ export async function createPublicReservationRequest(
     },
   });
 
-  return { ok: true as const, request: created };
+  const successMessage = requiresDriverApproval
+    ? "Sua solicitação foi enviada. Primeiro validaremos seu cadastro de motorista e depois a reserva do veículo."
+    : "Sua solicitação foi enviada e será analisada pela equipe responsável.";
+
+  return {
+    ok: true as const,
+    request: created,
+    requiresDriverApproval,
+    successMessage,
+  };
 }
 
 export async function listPublicReservationRequests(query: {
@@ -548,10 +611,14 @@ export async function listPublicReservationRequests(query: {
             id: true,
             name: true,
             cpf: true,
+            phone: true,
+            email: true,
             cnhNumber: true,
             cnhCategory: true,
             cnhExpirationDate: true,
             status: true,
+            createdFromPublicReservation: true,
+            publicRegistrationRejectionReason: true,
           },
         },
         vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true } },
@@ -573,10 +640,14 @@ export async function getPublicReservationRequestOrThrow(id: string) {
           id: true,
           name: true,
           cpf: true,
+          phone: true,
+          email: true,
           cnhNumber: true,
           cnhCategory: true,
           cnhExpirationDate: true,
           status: true,
+          createdFromPublicReservation: true,
+          publicRegistrationRejectionReason: true,
         },
       },
       vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true } },
@@ -587,6 +658,160 @@ export async function getPublicReservationRequestOrThrow(id: string) {
   return row;
 }
 
+const DRIVER_SELECT = {
+  id: true,
+  name: true,
+  cpf: true,
+  phone: true,
+  email: true,
+  cnhNumber: true,
+  cnhCategory: true,
+  cnhExpirationDate: true,
+  status: true,
+  createdFromPublicReservation: true,
+  publicRegistrationRejectionReason: true,
+} as const;
+
+function assertDriverReadyForPublicReservationApproval(
+  driver: NonNullable<Awaited<ReturnType<typeof getPublicReservationRequestOrThrow>>["driver"]>
+): void {
+  if (driverNeedsPublicApproval(driver)) {
+    throw new FleetBusinessError(
+      "Aprove o cadastro do motorista antes de aprovar a reserva.",
+      { httpStatus: 409, code: "FLEET_DRIVER_APPROVAL_REQUIRED" }
+    );
+  }
+  assertDriverAuthorizedForReservation(driver, { requireAuthorized: true });
+}
+
+export async function approvePublicReservationDriver(input: {
+  id: string;
+  reviewedByUserId: string | null;
+  reviewedByLabel: string | null;
+}) {
+  const existing = await getPublicReservationRequestOrThrow(input.id);
+  if (!publicRequestAwaitingDriverApproval(existing.status)) {
+    throw new FleetValidationError(
+      "Somente solicitações aguardando aprovação do motorista podem ser aprovadas nesta etapa."
+    );
+  }
+  if (!existing.driverId || !existing.driver) {
+    throw new FleetValidationError("Motorista da solicitação não encontrado.");
+  }
+
+  const driver = existing.driver;
+  if (!driver.cnhNumber?.trim()) {
+    throw new FleetValidationError("CNH do motorista é obrigatória para aprovação.");
+  }
+  if (computeCnhStatus(driver.cnhExpirationDate, 0) === "EXPIRED") {
+    throw new FleetValidationError("CNH vencida — regularize antes de aprovar o motorista.");
+  }
+
+  const reviewedAt = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.fleetDriver.update({
+      where: { id: driver.id },
+      data: {
+        status: "AUTHORIZED",
+        publicRegistrationReviewedAt: reviewedAt,
+        publicRegistrationReviewedByUserId: input.reviewedByUserId,
+        publicRegistrationRejectionReason: null,
+      },
+    });
+
+    const updated = await tx.fleetPublicReservationRequest.update({
+      where: { id: existing.id },
+      data: { status: "PENDING_RESERVATION_APPROVAL" },
+      include: {
+        driver: { select: DRIVER_SELECT },
+        vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true } },
+        fleetReservation: { select: { id: true, status: true } },
+      },
+    });
+
+    return updated;
+  });
+
+  await writeFleetAuditLog({
+    entityType: "FleetPublicReservationRequest",
+    entityId: existing.id,
+    action: "APPROVE_DRIVER",
+    oldValue: "PENDING_DRIVER_APPROVAL",
+    newValue: "PENDING_RESERVATION_APPROVAL",
+    userId: input.reviewedByUserId,
+  });
+
+  await writeFleetAuditLog({
+    entityType: "FleetDriver",
+    entityId: driver.id,
+    action: "PUBLIC_REGISTER_APPROVE",
+    oldValue: driver.status,
+    newValue: "AUTHORIZED",
+    userId: input.reviewedByUserId,
+  });
+
+  return { request: result };
+}
+
+export async function rejectPublicReservationDriver(input: {
+  id: string;
+  reason: string;
+  reviewedByUserId: string | null;
+}) {
+  const existing = await getPublicReservationRequestOrThrow(input.id);
+  if (!publicRequestAwaitingDriverApproval(existing.status)) {
+    throw new FleetValidationError(
+      "Somente solicitações aguardando aprovação do motorista podem ser rejeitadas nesta etapa."
+    );
+  }
+  if (!existing.driverId || !existing.driver) {
+    throw new FleetValidationError("Motorista da solicitação não encontrado.");
+  }
+
+  const reason = assertReasonRequired(input.reason, "Motivo da rejeição do motorista");
+  const reviewedAt = new Date();
+  const driver = existing.driver;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.fleetDriver.update({
+      where: { id: driver.id },
+      data: {
+        status: "BLOCKED",
+        publicRegistrationReviewedAt: reviewedAt,
+        publicRegistrationReviewedByUserId: input.reviewedByUserId,
+        publicRegistrationRejectionReason: reason,
+      },
+    });
+
+    return tx.fleetPublicReservationRequest.update({
+      where: { id: existing.id },
+      data: {
+        status: "REJECTED",
+        reviewComment: reason,
+        reviewedByUserId: input.reviewedByUserId,
+        reviewedAt,
+      },
+      include: {
+        driver: { select: DRIVER_SELECT },
+        vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true } },
+        fleetReservation: { select: { id: true, status: true } },
+      },
+    });
+  });
+
+  await writeFleetAuditLog({
+    entityType: "FleetPublicReservationRequest",
+    entityId: existing.id,
+    action: "REJECT_DRIVER",
+    oldValue: "PENDING_DRIVER_APPROVAL",
+    newValue: "REJECTED",
+    reason,
+    userId: input.reviewedByUserId,
+  });
+
+  return { request: updated };
+}
+
 export async function approvePublicReservationRequest(input: {
   id: string;
   vehicleId: string;
@@ -595,14 +820,29 @@ export async function approvePublicReservationRequest(input: {
   reviewedByLabel: string | null;
 }) {
   const existing = await getPublicReservationRequestOrThrow(input.id);
-  if (existing.status !== "PENDING") {
-    throw new FleetValidationError("Somente solicitações pendentes podem ser aprovadas.");
+  if (publicRequestAwaitingDriverApproval(existing.status)) {
+    throw new FleetBusinessError(
+      "Aprove o cadastro do motorista antes de aprovar a reserva.",
+      { httpStatus: 409, code: "FLEET_DRIVER_APPROVAL_REQUIRED" }
+    );
+  }
+  if (!publicRequestAwaitingReservationApproval(existing.status)) {
+    throw new FleetValidationError("Somente solicitações aguardando aprovação da reserva podem ser aprovadas.");
   }
 
   const vehicleId = input.vehicleId?.trim() || existing.vehicleId?.trim();
   const driverId = input.driverId?.trim() || existing.driverId?.trim();
   if (!vehicleId) throw new FleetValidationError("Selecione o veículo para aprovar.");
   if (!driverId) throw new FleetValidationError("Selecione o motorista para aprovar.");
+
+  const driverRow =
+    existing.driver ??
+    (await prisma.fleetDriver.findUnique({
+      where: { id: driverId },
+      select: DRIVER_SELECT,
+    }));
+  if (!driverRow) throw new FleetValidationError("Motorista não encontrado.");
+  assertDriverReadyForPublicReservationApproval(driverRow);
 
   const dateStr = dateToYmdUtc(existing.requestedDate);
   const startDateTime = combineDateAndTimeLocal(dateStr, existing.startTime);
@@ -694,7 +934,7 @@ export async function approvePublicReservationRequest(input: {
     entityType: "FleetPublicReservationRequest",
     entityId: existing.id,
     action: "APPROVE",
-    oldValue: "PENDING",
+    oldValue: existing.status,
     newValue: "APPROVED",
     userId: input.reviewedByUserId,
   });
@@ -708,8 +948,13 @@ export async function rejectPublicReservationRequest(input: {
   reviewedByUserId: string | null;
 }) {
   const existing = await getPublicReservationRequestOrThrow(input.id);
-  if (existing.status !== "PENDING") {
-    throw new FleetValidationError("Somente solicitações pendentes podem ser rejeitadas.");
+  if (publicRequestAwaitingDriverApproval(existing.status)) {
+    throw new FleetValidationError(
+      "Rejeite o cadastro do motorista nesta etapa — a solicitação ainda aguarda aprovação do condutor."
+    );
+  }
+  if (!publicRequestAwaitingReservationApproval(existing.status)) {
+    throw new FleetValidationError("Somente solicitações aguardando aprovação da reserva podem ser rejeitadas.");
   }
 
   const reason = assertReasonRequired(input.reason, "Motivo da rejeição");
@@ -732,7 +977,7 @@ export async function rejectPublicReservationRequest(input: {
     entityType: "FleetPublicReservationRequest",
     entityId: existing.id,
     action: "REJECT",
-    oldValue: "PENDING",
+    oldValue: existing.status,
     newValue: "REJECTED",
     reason,
     userId: input.reviewedByUserId,

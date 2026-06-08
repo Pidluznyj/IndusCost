@@ -190,8 +190,8 @@ export function registerFleetPublicReservationRoutes(app: express.Express) {
       res.status(201).json({
         publicCode: result.request.publicCode,
         status: result.request.status,
-        message:
-          "Sua solicitação foi enviada e será analisada pela equipe responsável.",
+        requiresDriverApproval: result.requiresDriverApproval,
+        message: result.successMessage,
       });
     } catch (e) {
       if (e instanceof FleetValidationError) {

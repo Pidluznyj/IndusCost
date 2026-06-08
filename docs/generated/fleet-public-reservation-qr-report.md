@@ -88,14 +88,14 @@ Não há consulta pública por CPF nesta fase.
 
 - Motivo, destino, observações, passageiros opcional.
 - Aceite de responsabilidade obrigatório.
-- `POST /request` → status **PENDING**, código `FRQ-XXXXXXXX`.
+- `POST /request` → código `FRQ-XXXXXXXX`; status inicial conforme cadastro do motorista (ver **Aprovação em duas etapas**).
 
 ## Regras de slots
 
 - Janela: **06:00–20:00**; duração **180 min**.
 - Último slot: **17:00–20:00**.
 - Conflito por veículo: overlap `existing.start < requested.end AND existing.end > requested.start`.
-- Bloqueadores: reservas `REQUESTED|PENDING_APPROVAL|APPROVED|IN_USE` e solicitações `PENDING`.
+- Bloqueadores: reservas `REQUESTED|PENDING_APPROVAL|APPROVED|IN_USE` e solicitações `PENDING_DRIVER_APPROVAL|PENDING_RESERVATION_APPROVAL|PENDING` (legado).
 
 ## Segurança
 
@@ -105,20 +105,80 @@ Não há consulta pública por CPF nesta fase.
 - Rate limit em POST (identify, register, request): 15/min por IP.
 - Sanitização de textos; validação de slot na grade permitida e revalidação no POST final.
 
-## Fluxo de aprovação (interno)
+## Aprovação em duas etapas
+
+Quando o motorista precisa de validação interna, a solicitação **não** vai direto para aprovação do veículo.
+
+### Quando exige aprovação do motorista (`PENDING_DRIVER_APPROVAL`)
+
+- Motorista recém-cadastrado pelo fluxo público (`FleetDriver.status = PENDING`, `createdFromPublicReservation = true`).
+- Motorista existente com `status` diferente de `AUTHORIZED`.
+- CNH ausente, incompleta ou vencida.
+
+### Quando vai direto para aprovação da reserva (`PENDING_RESERVATION_APPROVAL`)
+
+- CPF já cadastrado, motorista `AUTHORIZED`, CNH válida.
+
+### Status da solicitação (`FleetPublicReservationRequestStatus`)
+
+| Status | Significado |
+|--------|-------------|
+| `PENDING_DRIVER_APPROVAL` | Aguardando validação do cadastro/CNH do motorista |
+| `PENDING_RESERVATION_APPROVAL` | Motorista ok; aguardando aprovação do veículo/período |
+| `PENDING` | Legado — migrado para `PENDING_RESERVATION_APPROVAL` |
+| `APPROVED` | Reserva criada (`FleetReservation`) |
+| `REJECTED` | Rejeitada (motorista ou reserva) |
+| `CANCELLED` | Cancelada |
+
+### Status do motorista (`FleetDriver`)
+
+Reutiliza `FleetDriver.status` (`PENDING` / `AUTHORIZED` / `BLOCKED`). Campos adicionais:
+
+- `createdFromPublicReservation` — `true` para cadastro via QR público
+- `publicRegistrationReviewedAt`, `publicRegistrationReviewedByUserId`, `publicRegistrationRejectionReason`
+
+Motoristas existentes antes da migration permanecem como estavam (em geral `AUTHORIZED`); `createdFromPublicReservation` default `false`.
+
+### Fluxo de aprovação (interno)
+
+1. **Etapa 1 — Motorista** (somente se `PENDING_DRIVER_APPROVAL`):
+   - `POST /api/fleet/public-reservation-requests/:id/approve-driver` → motorista `AUTHORIZED`, solicitação → `PENDING_RESERVATION_APPROVAL`
+   - `POST /api/fleet/public-reservation-requests/:id/reject-driver` (motivo obrigatório) → motorista `BLOCKED`, solicitação → `REJECTED`
+2. **Etapa 2 — Reserva** (se `PENDING_RESERVATION_APPROVAL`):
+   - `PATCH .../approve` — valida motorista aprovado, conflito de agenda; cria `FleetReservation` **APPROVED**
+   - `PATCH .../reject` — motivo obrigatório
+
+Tentar aprovar reserva com motorista pendente retorna **409** com mensagem: *"Aprove o cadastro do motorista antes de aprovar a reserva."*
+
+### Mensagens no fluxo público
+
+- Motorista recém-cadastrado / pendente: *"Primeiro validaremos seu cadastro de motorista e depois a reserva do veículo."*
+- Motorista já aprovado: *"Sua solicitação foi enviada e será analisada pela equipe responsável."*
+
+## Fluxo de aprovação (interno) — UI
 
 - Aba **Frota → Solicitações QR**
-- Exibe: CPF, nome, status CNH, veículo, dia/período, motivo, destino.
-- Aprovar: veículo + motorista (pré-preenchido se `driverId` na solicitação); valida conflito; cria `FleetReservation` **APPROVED**.
-- Rejeitar: motivo obrigatório.
+- Badge **Aguardando aprovação do motorista** ou **Aguardando aprovação da reserva**
+- Exibe: CPF, nome, telefone/e-mail, CNH, veículo, dia/período, motivo, destino
+- Etapa 1: botões **Aprovar motorista** / **Rejeitar motorista**
+- Etapa 2: **Aprovar reserva** / **Rejeitar reserva** (desabilitado enquanto motorista pendente)
 
 ## Permissões internas
 
 | Ação | Permissão |
 |------|-----------|
 | Ver solicitações / link | `fleet.reservations.view` |
-| Aprovar / rejeitar | `fleet.reservations.approve` |
+| Aprovar / rejeitar motorista e reserva | `fleet.reservations.approve` |
 | Token / parâmetros | `fleet.settings.manage` |
+
+## Endpoints internos (aprovação)
+
+| Método | Rota |
+|--------|------|
+| POST | `/api/fleet/public-reservation-requests/:id/approve-driver` |
+| POST | `/api/fleet/public-reservation-requests/:id/reject-driver` |
+| PATCH | `/api/fleet/public-reservation-requests/:id/approve` |
+| PATCH | `/api/fleet/public-reservation-requests/:id/reject` |
 
 ## Endpoints públicos
 
@@ -134,7 +194,7 @@ Não há consulta pública por CPF nesta fase.
 ## Models / migrations
 
 - `FleetPublicReservationRequest` + `requesterCpf`, `driverId` → `FleetDriver`
-- Migrations: `20260609120000_*`, `20260610120000_fleet_public_reservation_cpf_driver`
+- Migrations: `20260609120000_*`, `20260610120000_fleet_public_reservation_cpf_driver`, `20260612120000_fleet_public_driver_approval`
 - Reutiliza **`FleetDriver`** — sem model duplicado de condutor.
 
 ## Validação no servidor

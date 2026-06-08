@@ -1,9 +1,59 @@
-import type { FleetDriver } from "@prisma/client";
+import type { FleetDriver, FleetPublicReservationRequestStatus } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import { assertUniqueActiveDriverCpf, writeFleetAuditLog } from "@/src/lib/fleetService.js";
 import { normalizeCpf } from "@/src/lib/fleetDriverOps.js";
 import { FleetValidationError, computeCnhStatus } from "@/src/lib/fleetValidation.js";
 import { isValidCpf, normalizeCpfDigits } from "@/src/lib/fleetCpfUtils.js";
+
+export type DriverPublicApprovalStatus = "APPROVED" | "PENDING_REVIEW" | "REJECTED";
+
+export type DriverPublicApprovalFields = Pick<
+  FleetDriver,
+  | "status"
+  | "cnhNumber"
+  | "cnhExpirationDate"
+  | "createdFromPublicReservation"
+  | "publicRegistrationRejectionReason"
+>;
+
+export function driverPublicApprovalStatus(
+  driver: DriverPublicApprovalFields
+): DriverPublicApprovalStatus {
+  if (driver.status === "BLOCKED" && driver.publicRegistrationRejectionReason?.trim()) {
+    return "REJECTED";
+  }
+  if (driverNeedsPublicApproval(driver)) return "PENDING_REVIEW";
+  return "APPROVED";
+}
+
+/** Motorista precisa de aprovação interna antes de liberar aprovação da reserva. */
+export function driverNeedsPublicApproval(driver: DriverPublicApprovalFields): boolean {
+  if (driver.status === "BLOCKED" || driver.status === "INACTIVE") return true;
+  if (!driverHasCnhRegistered(driver)) return true;
+  if (computeCnhStatus(driver.cnhExpirationDate, 0) === "EXPIRED") return true;
+  if (driver.status !== "AUTHORIZED") return true;
+  return false;
+}
+
+export function resolveInitialPublicRequestStatus(
+  driver: DriverPublicApprovalFields
+): FleetPublicReservationRequestStatus {
+  return driverNeedsPublicApproval(driver)
+    ? "PENDING_DRIVER_APPROVAL"
+    : "PENDING_RESERVATION_APPROVAL";
+}
+
+export function publicRequestAwaitingReservationApproval(
+  status: FleetPublicReservationRequestStatus
+): boolean {
+  return status === "PENDING_RESERVATION_APPROVAL" || status === "PENDING";
+}
+
+export function publicRequestAwaitingDriverApproval(
+  status: FleetPublicReservationRequestStatus
+): boolean {
+  return status === "PENDING_DRIVER_APPROVAL";
+}
 
 export function assertValidPublicCpf(cpf: unknown): string {
   const raw = typeof cpf === "string" ? cpf.trim() : "";
@@ -124,12 +174,14 @@ export async function registerPublicDriver(input: PublicRegisterInput): Promise<
       throw new FleetValidationError("Informe os dados da CNH para continuar.");
     }
 
+    const hadCnhGap = driverNeedsCnhData(existing) || computeCnhStatus(existing.cnhExpirationDate, 0) === "EXPIRED";
     const updated = await prisma.fleetDriver.update({
       where: { id: existing.id },
       data: {
         cnhNumber,
         cnhCategory: cnhCategory ?? existing.cnhCategory,
         cnhExpirationDate: cnhExpirationDate ?? existing.cnhExpirationDate,
+        ...(hadCnhGap && existing.status === "AUTHORIZED" ? { status: "PENDING" as const } : {}),
       },
     });
 
@@ -172,6 +224,7 @@ export async function registerPublicDriver(input: PublicRegisterInput): Promise<
       cnhCategory,
       cnhExpirationDate,
       status: "PENDING",
+      createdFromPublicReservation: true,
       notes: "[Cadastro público QR — aguardando validação interna]",
     },
   });

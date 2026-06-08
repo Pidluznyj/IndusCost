@@ -1705,6 +1705,8 @@ enum FleetReservationStatus {
 
 enum FleetPublicReservationRequestStatus {
   PENDING
+  PENDING_DRIVER_APPROVAL
+  PENDING_RESERVATION_APPROVAL
   APPROVED
   REJECTED
   CANCELLED
@@ -1873,10 +1875,14 @@ model FleetDriver {
   email              String?
   unit               String?
   costCenter         String?
-  status             FleetDriverStatus @default(PENDING)
-  notes              String?
-  createdAt          DateTime          @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+  status                            FleetDriverStatus @default(PENDING)
+  createdFromPublicReservation      Boolean           @default(false)
+  publicRegistrationReviewedAt      DateTime?         @db.Timestamptz(6)
+  publicRegistrationReviewedByUserId String?          @db.Uuid
+  publicRegistrationRejectionReason String?
+  notes                             String?
+  createdAt                         DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt                         DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
 
   reservations              FleetReservation[]
   publicReservationRequests FleetPublicReservationRequest[]
@@ -1949,7 +1955,7 @@ model FleetPublicReservationRequest {
   hasCargo               Boolean?
   cargoDescription       String?
   vehicleId              String?                             @db.Uuid
-  status                 FleetPublicReservationRequestStatus @default(PENDING)
+  status                 FleetPublicReservationRequestStatus @default(PENDING_RESERVATION_APPROVAL)
   reviewComment          String?
   reviewedByUserId       String?                             @db.Uuid
   reviewedAt             DateTime?                           @db.Timestamptz(6)

@@ -37,8 +37,18 @@ import {
 import {
   driverHasCnhRegistered,
   driverNeedsCnhData,
+  driverNeedsPublicApproval,
+  driverPublicApprovalStatus,
   publicCnhStatusLabel,
+  publicRequestAwaitingDriverApproval,
+  publicRequestAwaitingReservationApproval,
+  resolveInitialPublicRequestStatus,
 } from "./fleetPublicReservationDriverOps.js";
+import {
+  FLEET_PUBLIC_ACTIVE_REQUEST_STATUSES,
+  FLEET_PUBLIC_PENDING_REVIEW_STATUSES,
+  serializePublicRequestDriver,
+} from "./fleetPublicReservationService.js";
 
 describe("fleetCpfUtils", () => {
   it("validates valid and invalid CPF", () => {
@@ -52,6 +62,98 @@ describe("fleetCpfUtils", () => {
     assert.equal(normalizeCpfDigits("111.444.777-35"), "11144477735");
     assert.equal(formatCpfMask("11144477735"), "111.444.777-35");
     assert.equal(maskCpfForDisplay("11144477735"), "***.***.***-35");
+  });
+});
+
+describe("fleetPublicReservation two-step driver approval", () => {
+  const authorizedDriver = {
+    status: "AUTHORIZED" as const,
+    cnhNumber: "123456",
+    cnhExpirationDate: new Date("2099-06-01"),
+    createdFromPublicReservation: false,
+    publicRegistrationRejectionReason: null,
+  };
+
+  const pendingPublicDriver = {
+    status: "PENDING" as const,
+    cnhNumber: "123456",
+    cnhExpirationDate: new Date("2099-06-01"),
+    createdFromPublicReservation: true,
+    publicRegistrationRejectionReason: null,
+  };
+
+  it("authorized driver with valid CNH goes straight to reservation approval", () => {
+    assert.equal(driverNeedsPublicApproval(authorizedDriver), false);
+    assert.equal(resolveInitialPublicRequestStatus(authorizedDriver), "PENDING_RESERVATION_APPROVAL");
+    assert.equal(driverPublicApprovalStatus(authorizedDriver), "APPROVED");
+  });
+
+  it("new public driver starts PENDING_REVIEW and request PENDING_DRIVER_APPROVAL", () => {
+    assert.equal(driverNeedsPublicApproval(pendingPublicDriver), true);
+    assert.equal(resolveInitialPublicRequestStatus(pendingPublicDriver), "PENDING_DRIVER_APPROVAL");
+    assert.equal(driverPublicApprovalStatus(pendingPublicDriver), "PENDING_REVIEW");
+  });
+
+  it("existing drivers default (not from public) with AUTHORIZED are not blocked", () => {
+    const legacy = { ...authorizedDriver, createdFromPublicReservation: false };
+    assert.equal(driverNeedsPublicApproval(legacy), false);
+    assert.equal(driverPublicApprovalStatus(legacy), "APPROVED");
+  });
+
+  it("driver with expired CNH needs approval", () => {
+    const expired = {
+      ...authorizedDriver,
+      cnhExpirationDate: new Date("2000-01-01"),
+    };
+    assert.equal(driverNeedsPublicApproval(expired), true);
+    assert.equal(resolveInitialPublicRequestStatus(expired), "PENDING_DRIVER_APPROVAL");
+  });
+
+  it("public request status helpers distinguish driver vs reservation stages", () => {
+    assert.equal(publicRequestAwaitingDriverApproval("PENDING_DRIVER_APPROVAL"), true);
+    assert.equal(publicRequestAwaitingDriverApproval("PENDING_RESERVATION_APPROVAL"), false);
+    assert.equal(publicRequestAwaitingReservationApproval("PENDING_RESERVATION_APPROVAL"), true);
+    assert.equal(publicRequestAwaitingReservationApproval("PENDING"), true);
+  });
+
+  it("active request statuses include both approval stages", () => {
+    assert.ok(FLEET_PUBLIC_ACTIVE_REQUEST_STATUSES.includes("PENDING_DRIVER_APPROVAL"));
+    assert.ok(FLEET_PUBLIC_ACTIVE_REQUEST_STATUSES.includes("PENDING_RESERVATION_APPROVAL"));
+    assert.equal(FLEET_PUBLIC_PENDING_REVIEW_STATUSES.length, 3);
+  });
+
+  it("serializePublicRequestDriver returns approval fields without NaN/undefined", () => {
+    const serialized = serializePublicRequestDriver({
+      id: "d1",
+      name: "João",
+      cpf: "11144477735",
+      cnhNumber: "99",
+      cnhCategory: "B",
+      cnhExpirationDate: new Date("2099-01-01"),
+      status: "PENDING",
+      createdFromPublicReservation: true,
+      publicRegistrationRejectionReason: null,
+    });
+    assert.equal(serialized?.approvalStatus, "PENDING_REVIEW");
+    assert.equal(serialized?.needsPublicApproval, true);
+    assert.equal(String(serialized?.name), "João");
+    assert.ok(!String(serialized?.approvalStatus).includes("undefined"));
+    assert.ok(!String(serialized?.approvalStatus).includes("NaN"));
+  });
+
+  it("internal routes expose approve-driver and reject-driver POST endpoints", () => {
+    const routesPath = join(process.cwd(), "src", "lib", "fleetPublicReservationInternalRoutes.ts");
+    const src = readFileSync(routesPath, "utf8");
+    assert.ok(src.includes("/approve-driver"));
+    assert.ok(src.includes("/reject-driver"));
+    assert.ok(src.includes("g.reservationsApprove"));
+  });
+
+  it("approve reservation route blocks driver-pending with business error message", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes("Aprove o cadastro do motorista antes de aprovar a reserva."));
+    assert.ok(src.includes("FLEET_DRIVER_APPROVAL_REQUIRED"));
   });
 });
 

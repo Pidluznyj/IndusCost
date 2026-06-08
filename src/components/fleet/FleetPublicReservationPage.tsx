@@ -82,6 +82,9 @@ export function FleetPublicReservationPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publicCode, setPublicCode] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState(
+    "Sua solicitação foi enviada e será analisada pela equipe responsável."
+  );
 
   const [cpf, setCpf] = useState("");
   const [driverId, setDriverId] = useState("");
@@ -276,7 +279,7 @@ export function FleetPublicReservationPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetchJsonOk<{ publicCode: string }>(
+      const res = await fetchJsonOk<{ publicCode: string; message?: string }>(
         `/api/public/fleet/reservation/${encodeURIComponent(token)}/request`,
         {
           method: "POST",
@@ -301,6 +304,9 @@ export function FleetPublicReservationPage() {
         }
       );
       setPublicCode(res.publicCode);
+      if (res.message?.trim()) {
+        setSuccessMessage(res.message.trim());
+      }
       setStep("success");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao enviar solicitação.");
@@ -587,9 +593,7 @@ export function FleetPublicReservationPage() {
               <Check className="h-8 w-8" />
             </div>
             <h2 className="text-xl font-semibold text-emerald-900">Solicitação enviada</h2>
-            <p className="text-emerald-800">
-              Sua solicitação foi enviada e será analisada pela equipe responsável.
-            </p>
+            <p className="text-emerald-800">{successMessage}</p>
             {publicCode && (
               <p className="text-sm font-mono font-semibold text-emerald-900">Código: {publicCode}</p>
             )}
