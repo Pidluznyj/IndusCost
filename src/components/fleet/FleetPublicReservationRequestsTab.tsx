@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Check, Eye, Loader2, RefreshCw, UserCheck, UserX, X } from "lucide-react";
+import { Check, Clock, Eye, Loader2, RefreshCw, UserCheck, UserX, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useFleetPermissions } from "@/src/components/fleet/fleetPermissions";
 import {
@@ -28,6 +28,7 @@ type PublicRequestRow = {
   notes: string | null;
   status: string;
   createdAt: string;
+  reviewComment?: string | null;
   driver: {
     id: string;
     name: string;
@@ -48,6 +49,18 @@ type PublicRequestRow = {
 };
 
 type VehicleOption = { id: string; brand: string; model: string; plate: string | null };
+
+type ApprovalHistoryEntry = {
+  id: string;
+  actionLabel: string;
+  stageLabel: string;
+  actorName: string | null;
+  actorEmail: string | null;
+  comment: string | null;
+  rejectionReason: string | null;
+  summary: string;
+  createdAtLabel: string;
+};
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "Aguardando aprovação da reserva",
@@ -101,6 +114,8 @@ export function FleetPublicReservationRequestsTab() {
   const [rejectReason, setRejectReason] = useState("");
   const [driverRejectReason, setDriverRejectReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [history, setHistory] = useState<ApprovalHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const load = useCallback(async (page = 1) => {
     setLoading(true);
@@ -133,12 +148,28 @@ export function FleetPublicReservationRequestsTab() {
     void load(1);
   }, [canView, load]);
 
+  const loadHistory = useCallback(async (requestId: string) => {
+    setHistoryLoading(true);
+    try {
+      const data = await fetchJsonOk<{ items: ApprovalHistoryEntry[] }>(
+        `/api/fleet/public-reservation-requests/${requestId}/history`
+      );
+      setHistory(data.items ?? []);
+    } catch {
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   const openDetail = async (row: PublicRequestRow) => {
     setDetail(row);
     setApproveVehicleId(row.vehicle?.id ?? "");
     setApproveDriverId(row.driverId ?? row.driver?.id ?? "");
     setRejectReason("");
     setDriverRejectReason("");
+    setHistory([]);
+    void loadHistory(row.id);
     try {
       const [vRes, dRes] = await Promise.all([
         fetchJsonOk<{ items: VehicleOption[] }>("/api/fleet/vehicles?limit=200"),
@@ -386,6 +417,56 @@ export function FleetPublicReservationRequestsTab() {
                 <strong>Destino:</strong> {detail.destination}
               </p>
               {detail.notes && <p>Obs.: {detail.notes}</p>}
+              {detail.status === "REJECTED" && detail.reviewComment?.trim() && (
+                <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-red-900">
+                  <strong>Motivo da rejeição:</strong> {detail.reviewComment.trim()}
+                </p>
+              )}
+            </div>
+
+            <div className="border-t border-slate-200 pt-4 space-y-2">
+              <h4 className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                <Clock className="h-4 w-4" />
+                Histórico de aprovações
+              </h4>
+              {historyLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                </div>
+              ) : history.length === 0 ? (
+                <p className="text-sm text-slate-600">Nenhuma decisão registrada ainda.</p>
+              ) : (
+                <ul className="space-y-3 text-sm">
+                  {history.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 space-y-1"
+                    >
+                      <p className="font-medium text-slate-800">
+                        {entry.summary || entry.actionLabel}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {entry.createdAtLabel || "—"} · {entry.stageLabel || "—"} ·{" "}
+                        {entry.actionLabel || "—"}
+                      </p>
+                      {(entry.actorName || entry.actorEmail) && (
+                        <p className="text-xs text-slate-600">
+                          Usuário: {entry.actorName || entry.actorEmail}
+                        </p>
+                      )}
+                      {entry.rejectionReason?.trim() && (
+                        <p className="text-xs text-red-800">
+                          Motivo: {entry.rejectionReason.trim()}
+                        </p>
+                      )}
+                      {entry.comment?.trim() &&
+                        entry.comment.trim() !== (entry.rejectionReason?.trim() ?? "") && (
+                          <p className="text-xs text-slate-600">{entry.comment.trim()}</p>
+                        )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {detailAwaitingDriver && canApproveReservations && (

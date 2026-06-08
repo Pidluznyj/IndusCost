@@ -61,6 +61,15 @@ import {
   FLEET_PUBLIC_PENDING_REVIEW_STATUSES,
   serializePublicRequestDriver,
 } from "./fleetPublicReservationService.js";
+import {
+  APPROVAL_ACTION_LABELS,
+  APPROVAL_STAGE_LABELS,
+  buildApprovalHistorySummary,
+  buildPublicReservationHistoryDetails,
+  recordFleetPublicReservationApprovalHistory,
+  serializeApprovalHistoryEntry,
+} from "./fleetPublicReservationApprovalHistory.js";
+import { assertReasonRequired } from "./fleetValidation.js";
 
 describe("fleetCpfUtils", () => {
   it("validates valid and invalid CPF", () => {
@@ -546,5 +555,245 @@ describe("fleetPublicReservation public token responses", () => {
     assert.ok(src.includes('resolved.reason === "disabled"'));
     assert.ok(src.includes("res.status(403)"));
     assert.ok(src.includes("res.status(404)"));
+  });
+});
+
+describe("fleetPublicReservation approval history", () => {
+  const baseRequest = {
+    publicCode: "QR-ABC",
+    requesterCpf: "11144477735",
+    requesterName: "Maria Silva",
+    requesterEmail: "maria@example.com",
+    requesterPhone: "11999990000",
+    requesterDepartment: "TI",
+    requestedDate: parseLocalDateOnly("2026-06-08")!,
+    startTime: "09:00",
+    endTime: "12:00",
+    reason: "Visita cliente",
+    destination: "Campinas",
+    notes: null,
+    driver: {
+      id: "d1",
+      name: "Maria Silva",
+      status: "PENDING",
+      cnhNumber: "123456",
+      cnhExpirationDate: new Date("2099-06-01"),
+    },
+    vehicle: {
+      id: "v1",
+      brand: "Fiat",
+      model: "Uno",
+      vehicleType: "Hatch",
+      status: "AVAILABLE",
+    },
+  };
+
+  it("approve driver flow records DRIVER_APPROVED in service transaction", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes('action: "DRIVER_APPROVED"'));
+    assert.ok(src.includes('stage: "DRIVER_REGISTRATION"'));
+    assert.ok(src.includes("recordFleetPublicReservationApprovalHistory"));
+  });
+
+  it("reject driver flow records DRIVER_REJECTED with rejectionReason", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes('action: "DRIVER_REJECTED"'));
+    assert.ok(src.includes("rejectionReason: reason"));
+  });
+
+  it("reject driver without reason fails via assertReasonRequired", () => {
+    assert.throws(
+      () => assertReasonRequired("", "Motivo da rejeição do motorista"),
+      /obrigatório/
+    );
+  });
+
+  it("approve reservation flow records RESERVATION_APPROVED with fleetReservationId", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes('action: "RESERVATION_APPROVED"'));
+    assert.ok(src.includes("fleetReservationId: reservation.id"));
+  });
+
+  it("reject reservation flow records RESERVATION_REJECTED with rejectionReason", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    assert.ok(src.includes('action: "RESERVATION_REJECTED"'));
+    assert.ok(src.includes('stage: "VEHICLE_RESERVATION"'));
+  });
+
+  it("reject reservation without reason fails via assertReasonRequired", () => {
+    assert.throws(() => assertReasonRequired("   ", "Motivo da rejeição"), /obrigatório/);
+  });
+
+  it("history preserves actorUserId and name/email snapshot fields", () => {
+    const serialized = serializeApprovalHistoryEntry({
+      id: "h1",
+      action: "DRIVER_APPROVED",
+      stage: "DRIVER_REGISTRATION",
+      statusBefore: "PENDING_DRIVER_APPROVAL",
+      statusAfter: "PENDING_RESERVATION_APPROVAL",
+      actorUserId: "u1",
+      actorNameSnapshot: "João",
+      actorEmailSnapshot: "joao@corp.com",
+      driverId: "d1",
+      vehicleId: null,
+      fleetReservationId: null,
+      comment: null,
+      rejectionReason: null,
+      detailsJson: { requesterName: "Maria" },
+      createdAt: new Date("2026-06-08T14:30:00"),
+    });
+    assert.equal(serialized.actorUserId, "u1");
+    assert.equal(serialized.actorName, "João");
+    assert.equal(serialized.actorEmail, "joao@corp.com");
+  });
+
+  it("history records statusBefore and statusAfter", () => {
+    const serialized = serializeApprovalHistoryEntry({
+      id: "h2",
+      action: "RESERVATION_REJECTED",
+      stage: "VEHICLE_RESERVATION",
+      statusBefore: "PENDING_RESERVATION_APPROVAL",
+      statusAfter: "REJECTED",
+      actorUserId: "u2",
+      actorNameSnapshot: "Maria",
+      actorEmailSnapshot: null,
+      driverId: "d1",
+      vehicleId: "v1",
+      fleetReservationId: null,
+      comment: "Indisponível",
+      rejectionReason: "veículo indisponível",
+      detailsJson: null,
+      createdAt: new Date("2026-06-08T15:20:00"),
+    });
+    assert.equal(serialized.statusBefore, "PENDING_RESERVATION_APPROVAL");
+    assert.equal(serialized.statusAfter, "REJECTED");
+  });
+
+  it("history list orders createdAt ascending in listPublicReservationApprovalHistory", () => {
+    const historyPath = join(process.cwd(), "src", "lib", "fleetPublicReservationApprovalHistory.ts");
+    const src = readFileSync(historyPath, "utf8");
+    assert.ok(src.includes('orderBy: { createdAt: "asc" }'));
+  });
+
+  it("history endpoint requires fleet.reservations.view guard", async () => {
+    const routesPath = join(process.cwd(), "src", "lib", "fleetPublicReservationInternalRoutes.ts");
+    const src = readFileSync(routesPath, "utf8");
+    assert.ok(src.includes("/history"));
+    assert.ok(src.includes("...g.view"));
+    const { evaluateFleetRouteAccess } = await import("./fleetPermissionResolve.js");
+    assert.equal(evaluateFleetRouteAccess(["fleet.reservations.view"], "view"), true);
+    assert.equal(evaluateFleetRouteAccess([], "view"), false);
+  });
+
+  it("detailsJson masks CPF and does not include public token", () => {
+    const details = buildPublicReservationHistoryDetails(baseRequest) as Record<string, unknown>;
+    assert.equal(details.requesterCpf, "***.***.***-35");
+    assert.equal("publicReservationToken" in details, false);
+    assert.equal("token" in details, false);
+    assert.equal(details.requesterName, "Maria Silva");
+  });
+
+  it("serialized history omits undefined NaN and null strings in labels", () => {
+    const serialized = serializeApprovalHistoryEntry({
+      id: "h3",
+      action: "DRIVER_APPROVED",
+      stage: "DRIVER_REGISTRATION",
+      statusBefore: "PENDING_DRIVER_APPROVAL",
+      statusAfter: "PENDING_RESERVATION_APPROVAL",
+      actorUserId: "u1",
+      actorNameSnapshot: "João",
+      actorEmailSnapshot: null,
+      driverId: "d1",
+      vehicleId: null,
+      fleetReservationId: null,
+      comment: null,
+      rejectionReason: null,
+      detailsJson: { foo: undefined as unknown as null },
+      createdAt: new Date("2026-06-08T14:30:00"),
+    });
+    const json = JSON.stringify(serialized);
+    assert.ok(!json.includes("undefined"));
+    assert.ok(!json.includes("NaN"));
+    assert.equal(serialized.actorEmail, null);
+    assert.match(serialized.createdAtLabel, /08\/06\/2026/);
+  });
+
+  it("buildApprovalHistorySummary formats Portuguese messages", () => {
+    const approved = buildApprovalHistorySummary({
+      action: "DRIVER_APPROVED",
+      actorName: "João",
+      actorEmail: null,
+      createdAtLabel: "08/06/2026, 14:30",
+      rejectionReason: null,
+    });
+    assert.match(approved, /Motorista aprovado por João/);
+    assert.match(approved, /08\/06\/2026/);
+
+    const rejected = buildApprovalHistorySummary({
+      action: "RESERVATION_REJECTED",
+      actorName: "Maria",
+      actorEmail: null,
+      createdAtLabel: "08/06/2026, 15:20",
+      rejectionReason: "veículo indisponível",
+    });
+    assert.match(rejected, /Reserva rejeitada por Maria/);
+    assert.match(rejected, /Motivo: veículo indisponível/);
+  });
+
+  it("recordFleetPublicReservationApprovalHistory rejects reject action without reason", async () => {
+    await assert.rejects(
+      () =>
+        recordFleetPublicReservationApprovalHistory({
+          publicReservationRequestId: "00000000-0000-4000-8000-000000000001",
+          action: "DRIVER_REJECTED",
+          stage: "DRIVER_REGISTRATION",
+          statusBefore: "PENDING_DRIVER_APPROVAL",
+          statusAfter: "REJECTED",
+          actor: { userId: "u1", name: "Test", email: null },
+          rejectionReason: "",
+        }),
+      /Motivo da rejeição/
+    );
+  });
+
+  it("history remains after FleetReservation — cascade only on request delete", () => {
+    const schemaPath = join(process.cwd(), "prisma", "schema.prisma");
+    const src = readFileSync(schemaPath, "utf8");
+    assert.ok(src.includes("model FleetPublicReservationApprovalHistory"));
+    assert.ok(src.includes("onDelete: Cascade"));
+    assert.ok(src.includes("fleetReservationId"));
+  });
+
+  it("approval history UI section exists in Solicitações QR tab", () => {
+    const tabPath = join(
+      process.cwd(),
+      "src",
+      "components",
+      "fleet",
+      "FleetPublicReservationRequestsTab.tsx"
+    );
+    const src = readFileSync(tabPath, "utf8");
+    assert.ok(src.includes("Histórico de aprovações"));
+    assert.ok(src.includes("Nenhuma decisão registrada ainda."));
+    assert.ok(src.includes("/history"));
+  });
+
+  it("action and stage labels are defined for all enum values", () => {
+    assert.equal(APPROVAL_ACTION_LABELS.DRIVER_APPROVED, "Motorista aprovado");
+    assert.equal(APPROVAL_STAGE_LABELS.DRIVER_REGISTRATION, "Cadastro do motorista");
+    assert.equal(APPROVAL_ACTION_LABELS.RESERVATION_REJECTED, "Reserva rejeitada");
+  });
+
+  it("failed approval by conflict does not record RESERVATION_BLOCKED", () => {
+    const servicePath = join(process.cwd(), "src", "lib", "fleetPublicReservationService.ts");
+    const src = readFileSync(servicePath, "utf8");
+    const conflictIdx = src.indexOf("Conflito de agenda");
+    const blockedIdx = src.indexOf('action: "RESERVATION_BLOCKED"');
+    assert.ok(conflictIdx >= 0);
+    assert.equal(blockedIdx, -1);
   });
 });

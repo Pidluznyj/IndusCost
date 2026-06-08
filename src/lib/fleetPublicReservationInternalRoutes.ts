@@ -7,6 +7,7 @@ import {
   approvePublicReservationRequest,
   ensurePublicReservationToken,
   getInternalPublicReservationLink,
+  getPublicReservationApprovalHistory,
   getPublicReservationRequestOrThrow,
   listPublicReservationRequests,
   rejectPublicReservationDriver,
@@ -81,6 +82,17 @@ export function registerFleetPublicReservationInternalRoutes(
     }
   });
 
+  app.get("/api/fleet/public-reservation-requests/:id/history", ...g.view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const items = await getPublicReservationApprovalHistory(id);
+      res.json({ items });
+    } catch (e) {
+      handleFleetRouteError(res, e, "GET public-reservation-request history", req);
+    }
+  });
+
   app.post(
     "/api/fleet/public-reservation-requests/:id/approve-driver",
     ...g.reservationsApprove,
@@ -93,6 +105,11 @@ export function registerFleetPublicReservationInternalRoutes(
           id,
           reviewedByUserId: user?.id ?? null,
           reviewedByLabel: user?.email ?? user?.name ?? null,
+          actor: {
+            userId: user?.id ?? null,
+            name: user?.name ?? null,
+            email: user?.email ?? null,
+          },
         });
         res.json({
           request: {
@@ -118,6 +135,11 @@ export function registerFleetPublicReservationInternalRoutes(
           id,
           reason: req.body?.reason,
           reviewedByUserId: user?.id ?? null,
+          actor: {
+            userId: user?.id ?? null,
+            name: user?.name ?? null,
+            email: user?.email ?? null,
+          },
         });
         res.json({
           request: {
@@ -149,6 +171,11 @@ export function registerFleetPublicReservationInternalRoutes(
           driverId: String(req.body?.driverId ?? ""),
           reviewedByUserId: user?.id ?? null,
           reviewedByLabel: user?.email ?? user?.name ?? null,
+          actor: {
+            userId: user?.id ?? null,
+            name: user?.name ?? null,
+            email: user?.email ?? null,
+          },
         });
         res.json(result);
       } catch (e) {
@@ -169,6 +196,11 @@ export function registerFleetPublicReservationInternalRoutes(
           id,
           reason: req.body?.reason,
           reviewedByUserId: user?.id ?? null,
+          actor: {
+            userId: user?.id ?? null,
+            name: user?.name ?? null,
+            email: user?.email ?? null,
+          },
         });
         res.json({ request: updated });
       } catch (e) {

@@ -219,6 +219,73 @@ Tentar aprovar reserva com motorista pendente retorna **409** com mensagem: *"Ap
 - Motorista recém-cadastrado / pendente: *"Primeiro validaremos seu cadastro de motorista e depois a reserva do veículo."*
 - Motorista já aprovado: *"Sua solicitação foi enviada e será analisada pela equipe responsável."*
 
+## Histórico de aprovações
+
+Cada aprovação ou rejeição de motorista/reserva gera registro imutável em `FleetPublicReservationApprovalHistory`. O histórico **não é apagado** quando a solicitação muda de status e **permanece** após a criação da `FleetReservation`.
+
+### Model / tabela
+
+| Campo | Descrição |
+|-------|-----------|
+| `publicReservationRequestId` | Solicitação QR vinculada |
+| `action` | `DRIVER_APPROVED`, `DRIVER_REJECTED`, `RESERVATION_APPROVED`, `RESERVATION_REJECTED`, … |
+| `stage` | `DRIVER_REGISTRATION`, `VEHICLE_RESERVATION`, `SYSTEM` |
+| `statusBefore` / `statusAfter` | Status da solicitação no momento da ação |
+| `actorUserId` | Usuário interno que decidiu |
+| `actorNameSnapshot` / `actorEmailSnapshot` | Snapshot preservado se o usuário mudar depois |
+| `driverId`, `vehicleId`, `fleetReservationId` | Vínculos opcionais |
+| `rejectionReason` | Obrigatório em rejeições |
+| `detailsJson` | Snapshot da solicitação (CPF mascarado, motorista, veículo, período, motivo/destino) |
+| `createdAt` | Data/hora da decisão |
+
+Migration: `20260614120000_fleet_public_reservation_approval_history`
+
+### Ações registradas
+
+| Fluxo | Ação | Etapa |
+|-------|------|-------|
+| Aprovar motorista | `DRIVER_APPROVED` | `DRIVER_REGISTRATION` |
+| Rejeitar motorista | `DRIVER_REJECTED` | `DRIVER_REGISTRATION` |
+| Aprovar reserva | `RESERVATION_APPROVED` | `VEHICLE_RESERVATION` |
+| Rejeitar reserva | `RESERVATION_REJECTED` | `VEHICLE_RESERVATION` |
+
+**Não registrado:** tentativas de aprovação que falham por conflito de agenda ou veículo indisponível (erro 409/422 antes da transação). Essas falhas não são decisões — apenas bloqueios técnicos.
+
+### Endpoint interno
+
+`GET /api/fleet/public-reservation-requests/:id/history`
+
+Resposta: `{ items: [...] }` ordenado do **mais antigo para o mais recente** (`createdAt asc`).
+
+### Permissões
+
+| Ação | Permissão |
+|------|-----------|
+| Consultar histórico | `fleet.reservations.view` (fallback `fleet.manage`) |
+| Aprovar / rejeitar | `fleet.reservations.approve` |
+
+Usuário público **não** acessa este endpoint.
+
+### Regras de rejeição
+
+- Motivo obrigatório em `reject-driver` e `reject`.
+- Motivo gravado em `rejectionReason`, `reviewComment` da solicitação e exibido na UI.
+
+### UI — Frota → Solicitações QR → Detalhes
+
+Seção **Histórico de aprovações** com linha do tempo. Campos: data/hora, etapa, ação, usuário, comentário, motivo da rejeição.
+
+Exemplos:
+
+- *Motorista aprovado por João em 08/06/2026, 14:30*
+- *Motorista rejeitado por Maria em 08/06/2026, 14:42 — Motivo: CNH vencida*
+- *Reserva aprovada por João em 08/06/2026, 15:10*
+- *Reserva rejeitada por Maria em 08/06/2026, 15:20 — Motivo: veículo indisponível*
+
+Se vazio: *"Nenhuma decisão registrada ainda."*
+
+`detailsJson` **não** inclui token público, senha ou dados sensíveis indevidos; CPF é mascarado.
+
 ## Fluxo de aprovação (interno) — UI
 
 - Aba **Frota → Solicitações QR**
@@ -226,6 +293,7 @@ Tentar aprovar reserva com motorista pendente retorna **409** com mensagem: *"Ap
 - Exibe: CPF, nome, telefone/e-mail, CNH, veículo, dia/período, motivo, destino
 - Etapa 1: botões **Aprovar motorista** / **Rejeitar motorista**
 - Etapa 2: **Aprovar reserva** / **Rejeitar reserva** (desabilitado enquanto motorista pendente)
+- Detalhe: **Histórico de aprovações** e motivo da rejeição quando `REJECTED`
 
 ## Permissões internas
 
@@ -239,6 +307,7 @@ Tentar aprovar reserva com motorista pendente retorna **409** com mensagem: *"Ap
 
 | Método | Rota |
 |--------|------|
+| GET | `/api/fleet/public-reservation-requests/:id/history` |
 | POST | `/api/fleet/public-reservation-requests/:id/approve-driver` |
 | POST | `/api/fleet/public-reservation-requests/:id/reject-driver` |
 | PATCH | `/api/fleet/public-reservation-requests/:id/approve` |
@@ -258,7 +327,8 @@ Tentar aprovar reserva com motorista pendente retorna **409** com mensagem: *"Ap
 ## Models / migrations
 
 - `FleetPublicReservationRequest` + `requesterCpf`, `driverId` → `FleetDriver`
-- Migrations: `20260609120000_*`, `20260610120000_fleet_public_reservation_cpf_driver`, `20260612120000_fleet_public_driver_approval`
+- `FleetPublicReservationApprovalHistory` — histórico de decisões
+- Migrations: `20260609120000_*`, `20260610120000_fleet_public_reservation_cpf_driver`, `20260612120000_fleet_public_driver_approval`, `20260614120000_fleet_public_reservation_approval_history`
 - Reutiliza **`FleetDriver`** — sem model duplicado de condutor.
 
 ## Validação no servidor

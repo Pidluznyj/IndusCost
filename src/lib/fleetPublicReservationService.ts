@@ -46,6 +46,12 @@ import {
 import { FleetBusinessError } from "@/src/lib/fleetErrors.js";
 import { maskCpfForDisplay } from "@/src/lib/fleetCpfUtils.js";
 import {
+  buildPublicReservationHistoryDetails,
+  recordFleetPublicReservationApprovalHistory,
+  listPublicReservationApprovalHistory,
+  type ApprovalHistoryActor,
+} from "@/src/lib/fleetPublicReservationApprovalHistory.js";
+import {
   buildPublicReservationShareLinks,
   buildPublicReservationUrl,
   normalizePublicReservationSlug,
@@ -729,10 +735,61 @@ function assertDriverReadyForPublicReservationApproval(
   assertDriverAuthorizedForReservation(driver, { requireAuthorized: true });
 }
 
+function approvalHistoryActor(input: {
+  reviewedByUserId: string | null;
+  actor?: ApprovalHistoryActor;
+  reviewedByLabel?: string | null;
+}): ApprovalHistoryActor {
+  if (input.actor) return input.actor;
+  return {
+    userId: input.reviewedByUserId,
+    name: input.reviewedByLabel ?? null,
+    email: null,
+  };
+}
+
+function requestHistorySnapshot(
+  existing: Awaited<ReturnType<typeof getPublicReservationRequestOrThrow>>
+) {
+  return buildPublicReservationHistoryDetails({
+    publicCode: existing.publicCode,
+    requesterCpf: existing.requesterCpf,
+    requesterName: existing.requesterName,
+    requesterEmail: existing.requesterEmail,
+    requesterPhone: existing.requesterPhone,
+    requesterDepartment: existing.requesterDepartment,
+    requestedDate: existing.requestedDate,
+    startTime: existing.startTime,
+    endTime: existing.endTime,
+    reason: existing.reason,
+    destination: existing.destination,
+    notes: existing.notes,
+    driver: existing.driver
+      ? {
+          id: existing.driver.id,
+          name: existing.driver.name,
+          status: existing.driver.status,
+          cnhNumber: existing.driver.cnhNumber,
+          cnhExpirationDate: existing.driver.cnhExpirationDate,
+        }
+      : null,
+    vehicle: existing.vehicle
+      ? {
+          id: existing.vehicle.id,
+          brand: existing.vehicle.brand,
+          model: existing.vehicle.model,
+          vehicleType: existing.vehicle.vehicleType,
+          status: existing.vehicle.status ?? null,
+        }
+      : null,
+  });
+}
+
 export async function approvePublicReservationDriver(input: {
   id: string;
   reviewedByUserId: string | null;
   reviewedByLabel: string | null;
+  actor?: ApprovalHistoryActor;
 }) {
   const existing = await getPublicReservationRequestOrThrow(input.id);
   if (!publicRequestAwaitingDriverApproval(existing.status)) {
@@ -776,6 +833,21 @@ export async function approvePublicReservationDriver(input: {
       },
     });
 
+    await recordFleetPublicReservationApprovalHistory(
+      {
+        publicReservationRequestId: existing.id,
+        action: "DRIVER_APPROVED",
+        stage: "DRIVER_REGISTRATION",
+        statusBefore: existing.status,
+        statusAfter: "PENDING_RESERVATION_APPROVAL",
+        actor: approvalHistoryActor(input),
+        driverId: driver.id,
+        vehicleId: existing.vehicleId,
+        detailsJson: requestHistorySnapshot(existing),
+      },
+      tx
+    );
+
     return updated;
   });
 
@@ -804,6 +876,7 @@ export async function rejectPublicReservationDriver(input: {
   id: string;
   reason: string;
   reviewedByUserId: string | null;
+  actor?: ApprovalHistoryActor;
 }) {
   const existing = await getPublicReservationRequestOrThrow(input.id);
   if (!publicRequestAwaitingDriverApproval(existing.status)) {
@@ -830,7 +903,7 @@ export async function rejectPublicReservationDriver(input: {
       },
     });
 
-    return tx.fleetPublicReservationRequest.update({
+    const updated = await tx.fleetPublicReservationRequest.update({
       where: { id: existing.id },
       data: {
         status: "REJECTED",
@@ -846,6 +919,25 @@ export async function rejectPublicReservationDriver(input: {
         fleetReservation: { select: { id: true, status: true } },
       },
     });
+
+    await recordFleetPublicReservationApprovalHistory(
+      {
+        publicReservationRequestId: existing.id,
+        action: "DRIVER_REJECTED",
+        stage: "DRIVER_REGISTRATION",
+        statusBefore: existing.status,
+        statusAfter: "REJECTED",
+        actor: approvalHistoryActor(input),
+        driverId: driver.id,
+        vehicleId: existing.vehicleId,
+        rejectionReason: reason,
+        comment: reason,
+        detailsJson: requestHistorySnapshot(existing),
+      },
+      tx
+    );
+
+    return updated;
   });
 
   await writeFleetAuditLog({
@@ -867,6 +959,7 @@ export async function approvePublicReservationRequest(input: {
   driverId: string;
   reviewedByUserId: string | null;
   reviewedByLabel: string | null;
+  actor?: ApprovalHistoryActor;
 }) {
   const existing = await getPublicReservationRequestOrThrow(input.id);
   if (publicRequestAwaitingDriverApproval(existing.status)) {
@@ -982,6 +1075,26 @@ export async function approvePublicReservationRequest(input: {
       },
     });
 
+    await recordFleetPublicReservationApprovalHistory(
+      {
+        publicReservationRequestId: existing.id,
+        action: "RESERVATION_APPROVED",
+        stage: "VEHICLE_RESERVATION",
+        statusBefore: existing.status,
+        statusAfter: "APPROVED",
+        actor: approvalHistoryActor(input),
+        driverId,
+        vehicleId,
+        fleetReservationId: reservation.id,
+        detailsJson: requestHistorySnapshot({
+          ...existing,
+          vehicleId,
+          vehicle: updated.vehicle ?? existing.vehicle,
+        }),
+      },
+      tx
+    );
+
     return { reservation, request: updated };
   });
 
@@ -1006,6 +1119,7 @@ export async function rejectPublicReservationRequest(input: {
   id: string;
   reason: string;
   reviewedByUserId: string | null;
+  actor?: ApprovalHistoryActor;
 }) {
   const existing = await getPublicReservationRequestOrThrow(input.id);
   if (publicRequestAwaitingDriverApproval(existing.status)) {
@@ -1019,18 +1133,39 @@ export async function rejectPublicReservationRequest(input: {
 
   const reason = assertReasonRequired(input.reason, "Motivo da rejeição");
 
-  const updated = await prisma.fleetPublicReservationRequest.update({
-    where: { id: existing.id },
-    data: {
-      status: "REJECTED",
-      reviewComment: reason,
-      reviewedByUserId: input.reviewedByUserId,
-      reviewedAt: new Date(),
-    },
-    include: {
-      vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true } },
-      fleetReservation: { select: { id: true, status: true } },
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.fleetPublicReservationRequest.update({
+      where: { id: existing.id },
+      data: {
+        status: "REJECTED",
+        reviewComment: reason,
+        reviewedByUserId: input.reviewedByUserId,
+        reviewedAt: new Date(),
+      },
+      include: {
+        vehicle: { select: { id: true, brand: true, model: true, vehicleType: true, plate: true, status: true } },
+        fleetReservation: { select: { id: true, status: true } },
+      },
+    });
+
+    await recordFleetPublicReservationApprovalHistory(
+      {
+        publicReservationRequestId: existing.id,
+        action: "RESERVATION_REJECTED",
+        stage: "VEHICLE_RESERVATION",
+        statusBefore: existing.status,
+        statusAfter: "REJECTED",
+        actor: approvalHistoryActor(input),
+        driverId: existing.driverId,
+        vehicleId: existing.vehicleId,
+        rejectionReason: reason,
+        comment: reason,
+        detailsJson: requestHistorySnapshot(existing),
+      },
+      tx
+    );
+
+    return row;
   });
 
   await writeFleetAuditLog({
@@ -1045,6 +1180,13 @@ export async function rejectPublicReservationRequest(input: {
 
   return updated;
 }
+
+export async function getPublicReservationApprovalHistory(requestId: string) {
+  await getPublicReservationRequestOrThrow(requestId);
+  return listPublicReservationApprovalHistory(requestId);
+}
+
+export { listPublicReservationApprovalHistory };
 
 export async function getInternalPublicReservationLink(requestOrigin?: string) {
   const settings = await loadFleetSettings();
