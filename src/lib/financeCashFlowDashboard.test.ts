@@ -200,22 +200,6 @@ describe("financeCashFlowDashboard", () => {
     assert.equal(payload.cards.hasInitialBankBalance, false);
   });
 
-  it("calendário diário agrega entradas e saídas no dia de vencimento", () => {
-    const payload = buildFinanceCashFlowDashboard(
-      [arRow({ balanceReceivable: 1500, dueDate: new Date(2026, 5, 15) })],
-      [apRow({ balancePayable: 600, dueDate: new Date(2026, 5, 15) })],
-      { viewMode: "projected", dateBase: "due", status: "all", year: 2026, month: 6 },
-      REF
-    );
-    assert.equal(payload.dailyCalendar.length, 30);
-    const day15 = payload.dailyCalendar.find((d) => d.date === "2026-06-15");
-    assert.ok(day15);
-    assert.equal(day15!.inflowAmount, 1500);
-    assert.equal(day15!.outflowAmount, 600);
-    assert.equal(day15!.netFlowAmount, 900);
-    assert.equal(day15!.hasMovement, true);
-  });
-
   it("vencidos impactam caixa", () => {
     const payload = buildFinanceCashFlowDashboard(
       [arRow({ dueDate: new Date(2026, 4, 1), balanceReceivable: 200 })],

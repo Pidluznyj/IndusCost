@@ -31,7 +31,6 @@ export type FinanceCashFlowDashboardCards = {
   overduePayableAmount: number;
   outflowToInflowPercent: number | null;
   negativeBalanceMonthsCount: number;
-  negativeBalanceDaysCount: number;
   arRecords: number;
   apRecords: number;
   lastSyncAt: string | null;
@@ -58,17 +57,6 @@ export type FinanceCashFlowPartySummary = {
   percentOfTotal: number;
 };
 
-export type FinanceCashFlowDailyPoint = {
-  date: string;
-  day: number;
-  weekday: number;
-  inflowAmount: number;
-  outflowAmount: number;
-  netFlowAmount: number;
-  overdueCount: number;
-  hasMovement: boolean;
-};
-
 export type FinanceCashFlowCriticalMovement = {
   side: "inflow" | "outflow";
   externalId: number;
@@ -92,7 +80,6 @@ export type FinanceCashFlowDashboardPayload = {
   };
   cards: FinanceCashFlowDashboardCards;
   monthlySeries: FinanceCashFlowMonthlyPoint[];
-  dailyCalendar: FinanceCashFlowDailyPoint[];
   topCustomers: FinanceCashFlowPartySummary[];
   topSuppliers: FinanceCashFlowPartySummary[];
   largestProjectedInflows: FinanceCashFlowCriticalMovement[];

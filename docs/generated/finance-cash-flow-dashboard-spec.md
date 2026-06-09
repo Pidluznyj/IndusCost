@@ -175,42 +175,10 @@ Tooltip: entrada, saída, líquido, acumulado.
 
 ---
 
-## 10. Visual Control Room aplicado ao Fluxo de Caixa
+## 10. Pendências (fases posteriores)
 
-**Data:** 2026-06-09  
-**Commit:** `style(finance): apply control room design to cash flow dashboard`
-
-Identidade **Earthy Swiss Brutalist** — escopo exclusivo da tela Fluxo de Caixa (`FinanceCashFlowShell` + `finance-control-room.css`).
-
-| Token | Valor | Uso |
-|-------|-------|-----|
-| Background | `#FDFDFC` | Shell da página |
-| Surface | `#F5F5F4` | Cards secundários |
-| Texto | `#1C1917` / `#57534E` | Títulos / captions |
-| Entrada | `#2C5530` (moss) | KPIs, barras, listas + |
-| Saída | `#B64230` (terracotta) | KPIs, barras, listas − |
-| Alerta | `#D07722` (amber) | Vencidos, dias críticos |
-| Acumulado | `#1C1917` (ink) | Linha do gráfico |
-
-Tipografia: **Outfit** (títulos), **IBM Plex Sans** (UI), **JetBrains Mono** (valores/datas).
-
-Componentes dedicados em `src/components/finance/cash-flow/`:
-
-- Header executivo sticky (`FinanceCashFlowHeader`)
-- Filtros densos com chips e `data-testid` (`FinanceCashFlowFilterPanel`)
-- KPIs mono (`FinanceCashFlowKpiCard`)
-- Gráfico com altura fixa 300px (`FinanceCashFlowMonthlyChart`)
-- Calendário diário (`FinanceCashFlowCalendar` + `dailyCalendar` no payload)
-- Listas analíticas e tabela crítica (`FinanceCashFlowDetailTable`)
-
-Abas: underline ink/stone (`FinanceCashFlowTabs`). AR/AP/Billing **não** migrados nesta fase.
-
----
-
-## 11. Pendências (fases posteriores)
-
-1. ~~Calendário diário de caixa~~ (Visão Geral — implementado na fase Control Room)
-2. ~~Tabela detalhada consolidada AR/AP~~ (resumo crítico na Visão Geral)
+1. Calendário diário de caixa
+2. Tabela detalhada consolidada AR/AP
 3. Saldo bancário inicial configurável
 4. Centro de custo / classificação (quando disponível no Nomus)
 5. Integração contextual com Faturamento (link diagnóstico, sem misturar fontes)

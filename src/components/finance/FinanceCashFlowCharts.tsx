@@ -5,7 +5,6 @@ import {
   ComposedChart,
   Legend,
   Line,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,41 +15,35 @@ import {
   formatFinanceCurrency,
   formatFinanceCurrencyCompact,
 } from "@/src/lib/financeAccountsReceivableFormat";
-import {
-  CONTROL_ROOM_COLORS,
-  FINANCE_CASH_FLOW_CHART_HEIGHT,
-  controlRoomCardClass,
-  controlRoomCaptionClass,
-} from "@/src/lib/financeControlRoomTheme";
-import { FinanceCashFlowEmptyState } from "@/src/components/finance/cash-flow/FinanceCashFlowEmptyState";
-import { cn } from "@/src/lib/utils";
+import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
+import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
 
-function CashFlowTooltip({
-  active,
-  payload,
-  label,
+function ChartCard({
+  title,
+  subtitle,
+  children,
+  empty,
 }: {
-  active?: boolean;
-  payload?: Array<{ name?: string; value?: number; color?: string }>;
-  label?: string;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  empty?: boolean;
 }) {
-  if (!active || !payload?.length) return null;
-  const byName = Object.fromEntries(payload.map((p) => [p.name, p.value]));
-  const inflow = byName.Entradas ?? 0;
-  const outflowRaw = byName.Saídas;
-  const outflow = outflowRaw != null ? Math.abs(outflowRaw) : 0;
-  const accumulated = byName["Saldo acumulado"];
-  const net = inflow - outflow;
-
+  if (empty) {
+    return (
+      <FinanceBiEmptyState
+        title={title}
+        description={subtitle ?? "Sem dados para exibir com os filtros aplicados."}
+      />
+    );
+  }
   return (
-    <div className="rounded-md border border-[#D6D3D1] bg-[#FDFDFC] px-3 py-2 shadow-none font-mono text-[10px] text-[#1C1917]">
-      <p className="font-ui font-semibold mb-1">Mês: {label}</p>
-      <p className="text-[#2C5530]">Entradas: {formatFinanceCurrency(inflow)}</p>
-      <p className="text-[#B64230]">Saídas: {formatFinanceCurrency(outflow)}</p>
-      <p className="text-[#1C1917]">Líquido: {formatFinanceCurrency(net)}</p>
-      {accumulated != null ? (
-        <p className="text-[#1C1917]">Acumulado: {formatFinanceCurrency(accumulated)}</p>
-      ) : null}
+    <div className={`${financeBiCardClass} p-5 space-y-3 min-h-[340px] flex flex-col`}>
+      <div>
+        <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
+        {subtitle ? <p className="text-[11px] text-[#6B7280] mt-0.5">{subtitle}</p> : null}
+      </div>
+      <div className="flex-1 min-h-[280px]">{children}</div>
     </div>
   );
 }
@@ -77,75 +70,46 @@ export function FinanceCashFlowMonthlyChart({
       (d.outflowPositive == null || d.outflowPositive === 0)
   );
 
-  if (empty) {
-    return (
-      <FinanceCashFlowEmptyState
-        title="Fluxo de Caixa e Saldo Acumulado"
-        description="Sem movimentos para os filtros aplicados."
-      />
-    );
-  }
-
   return (
-    <div
-      data-testid="cash-flow-main-chart"
-      className={cn(controlRoomCardClass, "p-4 space-y-2 flex flex-col")}
-      style={{ minHeight: FINANCE_CASH_FLOW_CHART_HEIGHT + 72 }}
+    <ChartCard
+      title="Fluxo de Caixa e Saldo Acumulado por Mês"
+      subtitle={`${viewModeLabel} — barras verdes = entradas, vermelhas = saídas, linha azul = saldo acumulado`}
+      empty={empty}
     >
-      <div>
-        <h3 className="font-ui text-sm font-semibold text-[#1C1917]">
-          Fluxo de Caixa e Saldo Acumulado
-        </h3>
-        <p className={controlRoomCaptionClass}>
-          {viewModeLabel} · barras moss = entradas · terracotta = saídas · linha ink = acumulado
-        </p>
-      </div>
-      <div style={{ height: FINANCE_CASH_FLOW_CHART_HEIGHT, width: "100%" }}>
-        <ResponsiveContainer width="100%" height={FINANCE_CASH_FLOW_CHART_HEIGHT}>
-          <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="2 4" stroke={CONTROL_ROOM_COLORS.border} />
-            <ReferenceLine y={0} stroke={CONTROL_ROOM_COLORS.borderStrong} strokeWidth={1} />
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 10, fill: CONTROL_ROOM_COLORS.textSecondary, fontFamily: "JetBrains Mono" }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fontSize: 10, fill: CONTROL_ROOM_COLORS.textSecondary, fontFamily: "JetBrains Mono" }}
-              tickFormatter={(v: number) => formatFinanceCurrencyCompact(Math.abs(v))}
-              width={84}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip content={<CashFlowTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 10, fontFamily: "IBM Plex Sans" }} />
-            <Bar
-              dataKey="inflow"
-              name="Entradas"
-              fill={CONTROL_ROOM_COLORS.inflow}
-              radius={[2, 2, 0, 0]}
-              maxBarSize={28}
-            />
-            <Bar
-              dataKey="outflow"
-              name="Saídas"
-              fill={CONTROL_ROOM_COLORS.outflow}
-              radius={[2, 2, 0, 0]}
-              maxBarSize={28}
-            />
-            <Line
-              type="monotone"
-              dataKey="accumulated"
-              name="Saldo acumulado"
-              stroke={CONTROL_ROOM_COLORS.ink}
-              strokeWidth={2}
-              dot={{ r: 2, fill: CONTROL_ROOM_COLORS.ink }}
-              connectNulls={false}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+          <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6B7280" }} axisLine={false} tickLine={false} />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#6B7280" }}
+            tickFormatter={(v: number) => formatFinanceCurrencyCompact(Math.abs(v))}
+            width={80}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip
+            formatter={(value: number, name: string) => {
+              if (value == null) return "—";
+              const abs = Math.abs(value);
+              if (name === "outflow") return formatFinanceCurrency(abs);
+              return formatFinanceCurrency(value);
+            }}
+            labelFormatter={(label) => `Mês: ${label}`}
+          />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="inflow" name="Entradas" fill="#059669" radius={[4, 4, 0, 0]} maxBarSize={32} />
+          <Bar dataKey="outflow" name="Saídas" fill="#DC2626" radius={[4, 4, 0, 0]} maxBarSize={32} />
+          <Line
+            type="monotone"
+            dataKey="accumulated"
+            name="Saldo acumulado"
+            stroke="#2563EB"
+            strokeWidth={2}
+            dot={{ r: 3, fill: "#2563EB" }}
+            connectNulls={false}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </ChartCard>
   );
 }
