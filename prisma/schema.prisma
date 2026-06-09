@@ -1384,6 +1384,72 @@ model NomusAccountsPayable {
   @@index([payloadHash])
 }
 
+enum NomusNfeBillingClassification {
+  LOGISTICS_NOT_REVENUE
+  INTERCOMPANY
+  MARKET_REVENUE
+}
+
+/// NF-e Nomus sincronizada via `/rest/nfes` — fonte oficial futura do Financeiro > Faturamento.
+model NomusNfe {
+  id String @id @default(uuid())
+
+  externalId Int @unique
+
+  chave  String?
+  numero String?
+  serie  String?
+
+  status         Int?
+  tipoOperacao   Int?
+  tipoEmissao    Int?
+  finalidade     Int?
+  isFornecedor   Int?
+  ambiente       Int?
+  cnpjEmitente   String?
+  protocolo      String?
+  recibo         String?
+
+  dataProcessamento DateTime?
+  horaProcessamento String?
+
+  xmlRaw                  String? @db.Text
+  xmlCancelamento         String? @db.Text
+  justificativaCancelamento String? @db.Text
+
+  xmlNatOp       String?
+  xmlDhEmi       DateTime?
+  xmlTpNF        Int?
+  xmlDestCnpjCpf String?
+  xmlVProd       Decimal? @db.Decimal(20, 2)
+  xmlVDesc       Decimal? @db.Decimal(20, 2)
+  xmlVNF         Decimal? @db.Decimal(20, 2)
+  valorLiquido   Decimal? @db.Decimal(20, 2)
+
+  billingClassification NomusNfeBillingClassification?
+  isFiscalBilling       Boolean @default(false)
+  isMarketSale          Boolean @default(false)
+
+  xmlQualityAlert String?
+
+  rawPayload  Json
+  payloadHash String
+
+  syncedAt  DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dataProcessamento])
+  @@index([xmlDhEmi])
+  @@index([status])
+  @@index([billingClassification])
+  @@index([isMarketSale])
+  @@index([numero])
+  @@index([xmlDestCnpjCpf])
+  @@index([syncedAt])
+  @@index([payloadHash])
+}
+
 enum NomusOptionalPricingSelectionMode {
   EXACTLY_ONE
   OPTIONAL_ONE

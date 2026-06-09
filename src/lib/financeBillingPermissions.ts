@@ -28,3 +28,8 @@ export const FINANCE_BILLING_VIEW_PERMISSIONS = [
   "settings.nomus.view",
   "settings.view",
 ] as const;
+
+/** Alinhado ao Admin (`settings.nomus.sync` apenas). */
+export function canRunFinanceBillingNfeSync(auth: FinanceBillingPermissionCheck): boolean {
+  return auth.hasPermission("settings.nomus.sync");
+}

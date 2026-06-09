@@ -91,6 +91,11 @@ import {
   NomusAccountsPayableSyncConflictError,
   startNomusAccountsPayableSyncApply,
 } from "./src/lib/nomusAccountsPayableSyncRunner.js";
+import {
+  getNomusNfesSyncStatus,
+  NomusNfesSyncConflictError,
+  startNomusNfesSyncApply,
+} from "./src/lib/nomusNfesSyncRunner.js";
 import { resolveProductBomUsage, type BomUsageSearchKind } from "./src/lib/productBomUsage.js";
 import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
@@ -233,7 +238,8 @@ type NomusSyncTarget =
   | "proposals"
   | "sales-orders"
   | "accounts-receivable"
-  | "accounts-payable";
+  | "accounts-payable"
+  | "nfes";
 type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
 
 const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
@@ -244,11 +250,13 @@ const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
   "sales-orders",
   "accounts-receivable",
   "accounts-payable",
+  "nfes",
 ];
 const NOMUS_HEALTH_STALE_MS: Record<NomusSyncTarget, number> = {
   "sales-orders": 2 * 60 * 60 * 1000,
   "accounts-receivable": 2 * 60 * 60 * 1000,
   "accounts-payable": 2 * 60 * 60 * 1000,
+  nfes: 2 * 60 * 60 * 1000,
   customers: 26 * 60 * 60 * 1000,
   products: 26 * 60 * 60 * 1000,
   "bom-components": 30 * 60 * 60 * 1000,
@@ -386,6 +394,14 @@ function parseNomusSyncFileName(fileName: string): { kind: NomusSyncKind; mode: 
       kind: "runner",
       target: "accounts-payable",
       mode: apMatch[1].toLowerCase() as NomusSyncMode,
+    };
+  }
+  const nfeMatch = /^runner-nfes_(apply|dry)_.+\.log$/i.exec(fileName);
+  if (nfeMatch) {
+    return {
+      kind: "runner",
+      target: "nfes",
+      mode: nfeMatch[1].toLowerCase() as NomusSyncMode,
     };
   }
   const m =
@@ -1005,6 +1021,7 @@ async function startServer() {
       "sales-orders": "Pedidos de venda",
       "accounts-receivable": "Contas a receber",
       "accounts-payable": "Contas a pagar",
+      nfes: "NF-e / Faturamento",
     };
     const select = {
       createdAt: true,
@@ -7780,6 +7797,48 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         console.error("POST /api/settings/nomus-sync/accounts-payable-run:", error);
         return res.status(500).json({
           error: "Não foi possível iniciar a sincronização de Contas a Pagar. Verifique logs do servidor.",
+        });
+      }
+    }
+  );
+
+  const nomusNfeSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
+  const nomusNfeSyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+
+  app.get(
+    "/api/settings/nomus-sync/nfes-status",
+    requireBootstrapOrAnyPermission([...nomusNfeSyncViewPermissions]),
+    async (_req, res) => {
+      try {
+        const status = await getNomusNfesSyncStatus();
+        return res.json(status);
+      } catch (error) {
+        console.error("GET /api/settings/nomus-sync/nfes-status:", error);
+        return res.status(500).json({
+          error: "Erro ao consultar status de NF-e Nomus.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/settings/nomus-sync/nfes-run",
+    requireBootstrapOrAnyPermission([...nomusNfeSyncManagePermissions]),
+    async (_req, res) => {
+      try {
+        const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
+        const result = await startNomusNfesSyncApply(projectRoot);
+        return res.status(202).json(result);
+      } catch (error) {
+        if (error instanceof NomusNfesSyncConflictError) {
+          return res.status(409).json({
+            error: error.message,
+            message: "Já existe uma sincronização de NF-e em andamento. Aguarde finalizar.",
+          });
+        }
+        console.error("POST /api/settings/nomus-sync/nfes-run:", error);
+        return res.status(500).json({
+          error: "Não foi possível iniciar a sincronização de NF-e. Verifique logs do servidor.",
         });
       }
     }
