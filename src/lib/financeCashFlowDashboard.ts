@@ -28,6 +28,7 @@ import {
 } from "./financeAccountsPayableDashboard.js";
 import type {
   FinanceCashFlowCriticalMovement,
+  FinanceCashFlowDailyPoint,
   FinanceCashFlowDashboardFiltersApplied,
   FinanceCashFlowDashboardPayload,
   FinanceCashFlowDateBase,
@@ -518,6 +519,148 @@ export function buildFinanceCashFlowMonthlySeries(
   return points;
 }
 
+type DayBucket = {
+  inflow: number;
+  outflow: number;
+  overdueCount: number;
+};
+
+function formatIsoDateLocal(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function buildDailyBuckets(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  seriesYear: number,
+  seriesMonth: number,
+  referenceDate: Date
+): Map<string, DayBucket> {
+  const buckets = new Map<string, DayBucket>();
+  const daysInMonth = new Date(seriesYear, seriesMonth, 0).getDate();
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const key = `${seriesYear}-${String(seriesMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    buckets.set(key, { inflow: 0, outflow: 0, overdueCount: 0 });
+  }
+
+  const modes: boolean[] =
+    filters.viewMode === "combined"
+      ? [true, false]
+      : filters.viewMode === "projected"
+        ? [true]
+        : [false];
+
+  const ref = startOfLocalDay(referenceDate);
+
+  for (const projected of modes) {
+    for (const row of arRows) {
+      if (!shouldIncludeArMovement(row, projected, referenceDate)) continue;
+      const amount = resolveArAmount(row, projected);
+      if (amount <= 0) continue;
+      const date = resolveArMovementDate(row, filters.dateBase, projected);
+      if (!date || date.getFullYear() !== seriesYear || date.getMonth() + 1 !== seriesMonth) continue;
+      const key = formatIsoDateLocal(startOfLocalDay(date));
+      const bucket = buckets.get(key);
+      if (!bucket) continue;
+      bucket.inflow += amount;
+      if (
+        projected &&
+        isFinanceArOpen(row) &&
+        classifyFinanceArTitle(row, referenceDate) === "overdue" &&
+        row.dueDate &&
+        formatIsoDateLocal(startOfLocalDay(row.dueDate)) === key
+      ) {
+        bucket.overdueCount += 1;
+      }
+    }
+
+    for (const row of apRows) {
+      if (!shouldIncludeApMovement(row, projected, referenceDate)) continue;
+      const amount = resolveApAmount(row, projected);
+      if (amount <= 0) continue;
+      const date = resolveApMovementDate(row, filters.dateBase, projected);
+      if (!date || date.getFullYear() !== seriesYear || date.getMonth() + 1 !== seriesMonth) continue;
+      const key = formatIsoDateLocal(startOfLocalDay(date));
+      const bucket = buckets.get(key);
+      if (!bucket) continue;
+      bucket.outflow += amount;
+      if (
+        projected &&
+        isFinanceApOpen(row) &&
+        classifyFinanceApTitle(row, referenceDate) === "overdue" &&
+        row.dueDate &&
+        formatIsoDateLocal(startOfLocalDay(row.dueDate)) === key
+      ) {
+        bucket.overdueCount += 1;
+      }
+    }
+  }
+
+  return buckets;
+}
+
+export function buildFinanceCashFlowDailyCalendar(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date
+): FinanceCashFlowDailyPoint[] {
+  const seriesYear = filters.year ?? referenceDate.getFullYear();
+  const seriesMonth = filters.month ?? referenceDate.getMonth() + 1;
+  const buckets = buildDailyBuckets(arRows, apRows, filters, seriesYear, seriesMonth, referenceDate);
+  const nullFutureRealized = filters.viewMode === "realized";
+  const anchorMonth = referenceDate.getMonth() + 1;
+  const daysInMonth = new Date(seriesYear, seriesMonth, 0).getDate();
+  const points: FinanceCashFlowDailyPoint[] = [];
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const date = new Date(seriesYear, seriesMonth - 1, day);
+    const key = formatIsoDateLocal(date);
+    const bucket = buckets.get(key) ?? { inflow: 0, outflow: 0, overdueCount: 0 };
+    const future =
+      nullFutureRealized &&
+      isFutureMonth(seriesYear, seriesMonth, seriesYear, anchorMonth);
+
+    if (future) {
+      points.push({
+        date: key,
+        day,
+        weekday: date.getDay(),
+        inflowAmount: 0,
+        outflowAmount: 0,
+        netFlowAmount: 0,
+        overdueCount: 0,
+        hasMovement: false,
+      });
+      continue;
+    }
+
+    const inflow = roundMoney(bucket.inflow);
+    const outflow = roundMoney(bucket.outflow);
+    const net = roundMoney(inflow - outflow);
+    points.push({
+      date: key,
+      day,
+      weekday: date.getDay(),
+      inflowAmount: inflow,
+      outflowAmount: outflow,
+      netFlowAmount: net,
+      overdueCount: bucket.overdueCount,
+      hasMovement: inflow > 0 || outflow > 0 || bucket.overdueCount > 0,
+    });
+  }
+
+  return points;
+}
+
+function countNegativeBalanceDays(points: FinanceCashFlowDailyPoint[]): number {
+  return points.filter((p) => p.hasMovement && p.netFlowAmount < 0).length;
+}
+
 function buildPartySummaries(
   rows: Array<{ key: string; personName: string | null; personCnpj: string | null; amount: number }>,
   limit: number
@@ -697,6 +840,12 @@ export function buildFinanceCashFlowDashboard(
     filters,
     referenceDate
   );
+  const dailyCalendar = buildFinanceCashFlowDailyCalendar(
+    filteredAr,
+    filteredAp,
+    filters,
+    referenceDate
+  );
   const period = sumPeriodAmounts(monthlySeries, filters.month);
 
   let totalReceivableOpen = 0;
@@ -788,12 +937,14 @@ export function buildFinanceCashFlowDashboard(
       outflowToInflowPercent:
         period.inflow > 0 ? roundMoney(safeRatio(period.outflow, period.inflow) * 100) : null,
       negativeBalanceMonthsCount: period.negativeMonths,
+      negativeBalanceDaysCount: countNegativeBalanceDays(dailyCalendar),
       arRecords: filteredAr.length,
       apRecords: filteredAp.length,
       lastSyncAt: lastSync?.toISOString() ?? null,
       hasInitialBankBalance: false,
     },
     monthlySeries,
+    dailyCalendar,
     topCustomers: buildPartySummaries(customerRows, 10),
     topSuppliers: buildPartySummaries(supplierRows, 10),
     largestProjectedInflows: critical.largestInflows,
@@ -817,6 +968,11 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
   for (const p of payload.monthlySeries) {
     for (const v of [p.inflowAmount, p.outflowAmount, p.netFlowAmount, p.accumulatedBalance]) {
       if (v != null && !Number.isFinite(v)) return false;
+    }
+  }
+  for (const d of payload.dailyCalendar) {
+    for (const v of [d.inflowAmount, d.outflowAmount, d.netFlowAmount]) {
+      if (!Number.isFinite(v)) return false;
     }
   }
   return true;

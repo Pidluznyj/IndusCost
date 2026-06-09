@@ -8,7 +8,6 @@ import {
   RefreshCw,
   Scale,
   TrendingDown,
-  TrendingUp,
   Wallet,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -31,7 +30,6 @@ import {
   type FinanceCashFlowUiFilters,
 } from "@/src/lib/financeCashFlowDashboardTypes";
 import {
-  displayFinanceText,
   formatFinanceCurrency,
   formatFinanceCurrencyCompact,
   formatFinanceDateTime,
@@ -42,13 +40,22 @@ import {
   canViewFinanceCashFlow,
 } from "@/src/lib/financeCashFlowPermissions";
 import { FinanceCashFlowMonthlyChart } from "@/src/components/finance/FinanceCashFlowCharts";
-import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
-import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
-import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
-import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceCashFlowCalendar } from "@/src/components/finance/cash-flow/FinanceCashFlowCalendar";
+import {
+  FinanceCashFlowCriticalList,
+  FinanceCashFlowPartyList,
+} from "@/src/components/finance/cash-flow/FinanceCashFlowAnalyticLists";
+import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
+import { FinanceCashFlowFilterPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowFilterPanel";
+import { FinanceCashFlowHeader } from "@/src/components/finance/cash-flow/FinanceCashFlowHeader";
+import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
+import { FinanceCashFlowScopeBanner } from "@/src/components/finance/cash-flow/FinanceCashFlowScopeBanner";
+import { FinanceCashFlowShell } from "@/src/components/finance/cash-flow/FinanceCashFlowShell";
+import { FinanceCashFlowTabs } from "@/src/components/finance/cash-flow/FinanceCashFlowTabs";
 import { buildFinanceCashFlowFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
+import { countActiveCashFlowFilters } from "@/src/lib/financeCashFlowPageUi";
+import { controlRoomFieldClass, controlRoomLabelClass } from "@/src/lib/financeControlRoomTheme";
 import {
   FINANCE_CASH_FLOW_COMBINED_SCOPE,
   FINANCE_CASH_FLOW_NOT_BILLING_SCOPE,
@@ -56,16 +63,7 @@ import {
   FINANCE_CASH_FLOW_SYNC_SCOPE,
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
-import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
-
-function filterFieldClass() {
-  return "w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827] focus:outline-none focus:ring-2 focus:ring-primary/30";
-}
-
-function labelClass() {
-  return "text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]";
-}
 
 export function FinanceCashFlowPage() {
   const auth = useAuth();
@@ -96,6 +94,7 @@ export function FinanceCashFlowPage() {
   const hasPendingFilterChanges = appliedQuery !== draftQuery;
   const filterStatus = resolveFinanceBiFilterStatus(appliedQuery, hasPendingFilterChanges);
   const filtersActive = appliedQuery.length > 0;
+  const activeFilterCount = countActiveCashFlowFilters(appliedFilters);
 
   const loadDashboard = useCallback(async () => {
     if (!canView) return;
@@ -172,9 +171,16 @@ export function FinanceCashFlowPage() {
     FINANCE_CASH_FLOW_VIEW_OPTIONS.find((o) => o.value === appliedFilters.viewMode)?.label ??
     "Previsto";
 
+  const calendarMonthLabel = useMemo(() => {
+    const year = appliedFilters.year || String(new Date().getFullYear());
+    const monthOpt = FINANCE_CASH_FLOW_MONTH_OPTIONS.find((m) => m.value === appliedFilters.month);
+    const monthName = monthOpt?.value ? monthOpt.label : "Todos os meses";
+    return `${monthName} / ${year}`;
+  }, [appliedFilters.month, appliedFilters.year]);
+
   if (!canView) {
     return (
-      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+      <div className="rounded-md border border-[#E7E5E4] bg-[#F5F5F4] p-4 text-sm text-[#57534E]">
         Sem permissão para Fluxo de Caixa.
       </div>
     );
@@ -183,21 +189,21 @@ export function FinanceCashFlowPage() {
   const cards = payload?.cards;
 
   return (
-    <FinanceBiDashboardShell>
-      <FinanceBiExecutiveHeader
-        eyebrow="Financeiro"
+    <FinanceCashFlowShell>
+      <FinanceCashFlowHeader
         title="Fluxo de Caixa"
         subtitle={
           <>
             Entradas de <strong>Contas a Receber</strong> e saídas de{" "}
-            <strong>Contas a Pagar</strong> — {FINANCE_CASH_FLOW_NOT_BILLING_SCOPE}
+            <strong>Contas a Pagar</strong>
           </>
         }
+        scopePill={FINANCE_CASH_FLOW_NOT_BILLING_SCOPE}
         filterStatus={filterStatus}
         meta={[
           {
             label: "Fonte",
-            value: "NomusAccountsReceivable + NomusAccountsPayable",
+            value: "Nomus AR + Nomus AP",
           },
           {
             label: "Última sync",
@@ -212,7 +218,7 @@ export function FinanceCashFlowPage() {
             onClick: () => void loadDashboard(),
             disabled: loading,
             loading,
-            icon: <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />,
+            icon: <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />,
             variant: "outline",
           },
           ...(canExport
@@ -220,10 +226,11 @@ export function FinanceCashFlowPage() {
                 {
                   id: "export",
                   label: "Exportar",
+                  testId: "cash-flow-export-btn",
                   onClick: () => void handleExport(),
                   disabled: exporting || loading,
                   loading: exporting,
-                  icon: <Download className="h-4 w-4" />,
+                  icon: <Download className="h-3.5 w-3.5" />,
                   variant: "accent" as const,
                 },
               ]
@@ -231,23 +238,24 @@ export function FinanceCashFlowPage() {
         ]}
       />
 
-      <FinanceFilterScopeBanner active={filtersActive} />
+      <FinanceCashFlowScopeBanner active={filtersActive} />
 
-      <FinanceBiFilterPanel
+      <FinanceCashFlowFilterPanel
         expanded={showAdvancedFilters}
         onToggle={() => setShowAdvancedFilters((v) => !v)}
         filterStatus={filterStatus}
+        activeFilterCount={activeFilterCount}
         chips={chips}
         onApply={handleApplyFilters}
         onClear={handleClearFilters}
         applyDisabled={!hasPendingFilterChanges}
         hint={hasPendingFilterChanges ? "Alterações pendentes — clique em Aplicar." : undefined}
         alwaysVisible={
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-            <label className="space-y-1">
-              <span className={labelClass()}>Ano</span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            <label className="space-y-0.5">
+              <span className={controlRoomLabelClass}>Ano</span>
               <select
-                className={filterFieldClass()}
+                className={controlRoomFieldClass}
                 value={draftFilters.year}
                 onChange={(e) => setDraftFilters((f) => ({ ...f, year: e.target.value }))}
               >
@@ -258,10 +266,10 @@ export function FinanceCashFlowPage() {
                 ))}
               </select>
             </label>
-            <label className="space-y-1">
-              <span className={labelClass()}>Mês</span>
+            <label className="space-y-0.5">
+              <span className={controlRoomLabelClass}>Mês</span>
               <select
-                className={filterFieldClass()}
+                className={controlRoomFieldClass}
                 value={draftFilters.month}
                 onChange={(e) => setDraftFilters((f) => ({ ...f, month: e.target.value }))}
               >
@@ -272,19 +280,19 @@ export function FinanceCashFlowPage() {
                 ))}
               </select>
             </label>
-            <label className="space-y-1">
-              <span className={labelClass()}>Empresa</span>
+            <label className="space-y-0.5">
+              <span className={controlRoomLabelClass}>Empresa</span>
               <input
-                className={filterFieldClass()}
+                className={controlRoomFieldClass}
                 value={draftFilters.companyName}
                 onChange={(e) => setDraftFilters((f) => ({ ...f, companyName: e.target.value }))}
                 placeholder="Filtrar empresa"
               />
             </label>
-            <label className="space-y-1">
-              <span className={labelClass()}>Visão</span>
+            <label className="space-y-0.5">
+              <span className={controlRoomLabelClass}>Visão</span>
               <select
-                className={filterFieldClass()}
+                className={controlRoomFieldClass}
                 value={draftFilters.viewMode}
                 onChange={(e) =>
                   setDraftFilters((f) => ({
@@ -300,29 +308,10 @@ export function FinanceCashFlowPage() {
                 ))}
               </select>
             </label>
-            <label className="space-y-1">
-              <span className={labelClass()}>Data base</span>
+            <label className="space-y-0.5">
+              <span className={controlRoomLabelClass}>Status</span>
               <select
-                className={filterFieldClass()}
-                value={draftFilters.dateBase}
-                onChange={(e) =>
-                  setDraftFilters((f) => ({
-                    ...f,
-                    dateBase: e.target.value as FinanceCashFlowUiFilters["dateBase"],
-                  }))
-                }
-              >
-                {FINANCE_CASH_FLOW_DATE_BASE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className={labelClass()}>Status</span>
-              <select
-                className={filterFieldClass()}
+                className={controlRoomFieldClass}
                 value={draftFilters.status}
                 onChange={(e) =>
                   setDraftFilters((f) => ({
@@ -341,53 +330,72 @@ export function FinanceCashFlowPage() {
           </div>
         }
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 px-5 py-4">
-          <label className="space-y-1">
-            <span className={labelClass()}>Cliente</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <label className="space-y-0.5">
+            <span className={controlRoomLabelClass}>Cliente</span>
             <input
-              className={filterFieldClass()}
+              className={controlRoomFieldClass}
               value={draftFilters.customerName}
               onChange={(e) => setDraftFilters((f) => ({ ...f, customerName: e.target.value }))}
             />
           </label>
-          <label className="space-y-1">
-            <span className={labelClass()}>Fornecedor</span>
+          <label className="space-y-0.5">
+            <span className={controlRoomLabelClass}>Fornecedor</span>
             <input
-              className={filterFieldClass()}
+              className={controlRoomFieldClass}
               value={draftFilters.supplierName}
               onChange={(e) => setDraftFilters((f) => ({ ...f, supplierName: e.target.value }))}
             />
           </label>
-          <label className="space-y-1">
-            <span className={labelClass()}>CNPJ/CPF</span>
+          <label className="space-y-0.5">
+            <span className={controlRoomLabelClass}>CNPJ/CPF</span>
             <input
-              className={filterFieldClass()}
+              className={controlRoomFieldClass}
               value={draftFilters.personCnpj}
               onChange={(e) => setDraftFilters((f) => ({ ...f, personCnpj: e.target.value }))}
             />
           </label>
-          <label className="space-y-1">
-            <span className={labelClass()}>Forma de pagamento</span>
+          <label className="space-y-0.5">
+            <span className={controlRoomLabelClass}>Forma de pagamento</span>
             <input
-              className={filterFieldClass()}
+              className={controlRoomFieldClass}
               value={draftFilters.paymentMethodName}
               onChange={(e) =>
                 setDraftFilters((f) => ({ ...f, paymentMethodName: e.target.value }))
               }
             />
           </label>
-          <label className="space-y-1">
-            <span className={labelClass()}>Conta bancária</span>
+          <label className="space-y-0.5">
+            <span className={controlRoomLabelClass}>Conta bancária</span>
             <input
-              className={filterFieldClass()}
+              className={controlRoomFieldClass}
               value={draftFilters.bankAccountName}
               onChange={(e) => setDraftFilters((f) => ({ ...f, bankAccountName: e.target.value }))}
             />
           </label>
-          <label className="space-y-1">
-            <span className={labelClass()}>NF emitida?</span>
+          <label className="space-y-0.5">
+            <span className={controlRoomLabelClass}>Data base</span>
             <select
-              className={filterFieldClass()}
+              className={controlRoomFieldClass}
+              value={draftFilters.dateBase}
+              onChange={(e) =>
+                setDraftFilters((f) => ({
+                  ...f,
+                  dateBase: e.target.value as FinanceCashFlowUiFilters["dateBase"],
+                }))
+              }
+            >
+              {FINANCE_CASH_FLOW_DATE_BASE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-0.5">
+            <span className={controlRoomLabelClass}>NF emitida?</span>
+            <select
+              className={controlRoomFieldClass}
               value={draftFilters.invoiceIssued}
               onChange={(e) => setDraftFilters((f) => ({ ...f, invoiceIssued: e.target.value }))}
             >
@@ -399,58 +407,51 @@ export function FinanceCashFlowPage() {
             </select>
           </label>
         </div>
-      </FinanceBiFilterPanel>
+      </FinanceCashFlowFilterPanel>
 
-      <nav className="flex flex-wrap gap-2 border-b border-[#E5E7EB] pb-2">
-        {FINANCE_CASH_FLOW_TABS.map((tab) => {
-          const enabled = PHASE1_FINANCE_CASH_FLOW_TABS.includes(tab.id);
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              disabled={!enabled}
-              onClick={() => enabled && setActiveTab(tab.id)}
-              className={cn(
-                "rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
-                activeTab === tab.id && enabled
-                  ? "bg-primary text-primary-foreground"
-                  : enabled
-                    ? "text-muted-foreground hover:bg-accent"
-                    : "text-muted-foreground/50 cursor-not-allowed"
-              )}
-              title={enabled ? undefined : "Disponível em fase posterior"}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </nav>
+      <FinanceCashFlowTabs
+        tabs={FINANCE_CASH_FLOW_TABS}
+        activeTab={activeTab}
+        onChange={setActiveTab}
+        isEnabled={(id) => PHASE1_FINANCE_CASH_FLOW_TABS.includes(id)}
+      />
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+        <div className="rounded-md border border-[#B64230]/30 bg-[#F9EBE8] px-3 py-2 text-sm text-[#B64230]">
           {error}
         </div>
       ) : null}
 
       {loading && !payload ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-12 justify-center">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Carregando fluxo de caixa…
+        <div className="space-y-3 py-4">
+          <div className="cr-skeleton h-24 rounded-md" />
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="cr-skeleton h-20 rounded-md" />
+            ))}
+          </div>
+          <div className="cr-skeleton h-72 rounded-md" />
+          <p className="font-mono text-[10px] text-[#57534E] text-center">
+            Aguardando dados de Contas a Receber/Pagar…
+          </p>
         </div>
       ) : null}
 
       {payload && activeTab === "overview" ? (
-        <div className="space-y-6">
-          <section className={financeBiSectionClass}>
-            <h2 className="text-sm font-bold text-[#111827] px-1 mb-3">Resumo executivo</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3">
-              <FinanceBiKpiCard
+        <div className="space-y-4">
+          <section>
+            <h2 className="font-ui text-xs font-bold uppercase tracking-[0.12em] text-[#57534E] mb-2 px-0.5">
+              Resumo executivo
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
+              <FinanceCashFlowKpiCard
+                testId="kpi-net-balance"
                 label="Saldo líquido"
                 value={formatFinanceCurrency(cards?.netFlowAmount ?? 0)}
                 sub={withAppliedFilterSub(viewModeLabel, filtersActive)}
                 icon={Scale}
                 colorClass={
-                  cards && cards.netFlowAmount < 0 ? "text-[#DC2626]" : "text-[#059669]"
+                  cards && cards.netFlowAmount < 0 ? "text-[#B64230]" : "text-[#2C5530]"
                 }
                 scopeNote={
                   appliedFilters.viewMode === "combined"
@@ -458,45 +459,48 @@ export function FinanceCashFlowPage() {
                     : undefined
                 }
               />
-              <FinanceBiKpiCard
+              <FinanceCashFlowKpiCard
+                testId="kpi-total-inflow"
                 label="Total a receber"
                 value={formatFinanceCurrency(cards?.totalReceivableOpen ?? 0)}
                 sub={withAppliedFilterSub("Títulos AR em aberto", filtersActive)}
                 icon={ArrowDownRight}
-                colorClass="text-[#059669]"
+                colorClass="text-[#2C5530]"
               />
-              <FinanceBiKpiCard
+              <FinanceCashFlowKpiCard
+                testId="kpi-total-outflow"
                 label="Total a pagar"
                 value={formatFinanceCurrency(cards?.totalPayableOpen ?? 0)}
                 sub={withAppliedFilterSub("Títulos AP em aberto", filtersActive)}
                 icon={ArrowUpRight}
-                colorClass="text-[#DC2626]"
+                colorClass="text-[#B64230]"
               />
-              <FinanceBiKpiCard
+              <FinanceCashFlowKpiCard
+                testId="kpi-accumulated-balance"
                 label="Saldo acumulado"
                 value={formatFinanceCurrency(cards?.accumulatedBalance ?? 0)}
                 sub="No período filtrado"
                 icon={Wallet}
-                colorClass="text-[#2563EB]"
+                colorClass="text-[#1C1917]"
                 scopeNote={FINANCE_CASH_FLOW_PROJECTED_BALANCE_SCOPE}
               />
-              <FinanceBiKpiCard
-                label="Meses com saldo negativo"
-                value={String(cards?.negativeBalanceMonthsCount ?? 0)}
-                sub="Fluxo líquido mensal < 0"
+              <FinanceCashFlowKpiCard
+                label="Dias negativos"
+                value={String(cards?.negativeBalanceDaysCount ?? 0)}
+                sub={`${cards?.negativeBalanceMonthsCount ?? 0} mês(es) líquido < 0`}
                 icon={TrendingDown}
                 colorClass={
-                  cards && cards.negativeBalanceMonthsCount > 0
-                    ? "text-[#D97706]"
-                    : "text-[#6B7280]"
+                  cards && cards.negativeBalanceDaysCount > 0
+                    ? "text-[#D07722]"
+                    : "text-[#57534E]"
                 }
               />
-              <FinanceBiKpiCard
+              <FinanceCashFlowKpiCard
                 label="Vencidos no caixa"
                 value={formatFinanceCurrency(cards?.overdueCashImpact ?? 0)}
                 sub={`AR ${formatFinanceCurrencyCompact(cards?.overdueReceivableAmount ?? 0)} · AP ${formatFinanceCurrencyCompact(cards?.overduePayableAmount ?? 0)}`}
                 icon={AlertTriangle}
-                colorClass="text-[#D97706]"
+                colorClass="text-[#D07722]"
               />
             </div>
           </section>
@@ -506,121 +510,52 @@ export function FinanceCashFlowPage() {
             viewModeLabel={viewModeLabel}
           />
 
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <PartyList
+          <FinanceCashFlowCalendar points={payload.dailyCalendar} monthLabel={calendarMonthLabel} />
+
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            <FinanceCashFlowPartyList
               title="Top clientes por entrada"
               subtitle="Saldo em aberto AR — filtros aplicados"
               items={payload.topCustomers}
               emptyLabel="Nenhum cliente com saldo em aberto."
+              inflow
             />
-            <PartyList
+            <FinanceCashFlowPartyList
               title="Top fornecedores por saída"
               subtitle="Saldo em aberto AP — filtros aplicados"
               items={payload.topSuppliers}
               emptyLabel="Nenhum fornecedor com saldo em aberto."
+              inflow={false}
             />
           </section>
 
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CriticalList
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            <FinanceCashFlowCriticalList
               title="Maiores entradas previstas"
               items={payload.largestProjectedInflows}
             />
-            <CriticalList
+            <FinanceCashFlowCriticalList
               title="Maiores saídas previstas"
               items={payload.largestProjectedOutflows}
               outflow
             />
           </section>
 
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CriticalList title="Vencidos a receber" items={payload.overdueReceivables} />
-            <CriticalList title="Pagamentos vencidos" items={payload.overduePayables} outflow />
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            <FinanceCashFlowCriticalList title="Vencidos a receber" items={payload.overdueReceivables} />
+            <FinanceCashFlowCriticalList
+              title="Pagamentos vencidos"
+              items={payload.overduePayables}
+              outflow
+            />
           </section>
+
+          <FinanceCashFlowDetailTable
+            inflows={[...payload.largestProjectedInflows, ...payload.overdueReceivables]}
+            outflows={[...payload.largestProjectedOutflows, ...payload.overduePayables]}
+          />
         </div>
       ) : null}
-    </FinanceBiDashboardShell>
-  );
-}
-
-function PartyList({
-  title,
-  subtitle,
-  items,
-  emptyLabel,
-}: {
-  title: string;
-  subtitle: string;
-  items: FinanceCashFlowDashboardPayload["topCustomers"];
-  emptyLabel: string;
-}) {
-  return (
-    <div className={`${financeBiCardClass} p-5 space-y-3`}>
-      <div>
-        <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
-        <p className="text-[11px] text-[#6B7280]">{subtitle}</p>
-      </div>
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((item, idx) => (
-            <li
-              key={`${item.personCnpj ?? item.personName ?? idx}`}
-              className="flex items-center justify-between gap-2 text-sm"
-            >
-              <span className="truncate font-medium">{displayFinanceText(item.personName)}</span>
-              <span className="shrink-0 font-semibold text-[#111827]">
-                {formatFinanceCurrency(item.amount)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function CriticalList({
-  title,
-  items,
-  outflow = false,
-}: {
-  title: string;
-  items: FinanceCashFlowDashboardPayload["largestProjectedInflows"];
-  outflow?: boolean;
-}) {
-  return (
-    <div className={`${financeBiCardClass} p-5 space-y-3`}>
-      <div className="flex items-center gap-2">
-        {outflow ? (
-          <TrendingDown className="h-4 w-4 text-red-600" />
-        ) : (
-          <TrendingUp className="h-4 w-4 text-emerald-600" />
-        )}
-        <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
-      </div>
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum título nesta categoria.</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.slice(0, 5).map((item) => (
-            <li key={`${item.side}-${item.externalId}`} className="text-sm space-y-0.5">
-              <div className="flex justify-between gap-2">
-                <span className="font-medium truncate">{displayFinanceText(item.personName)}</span>
-                <span className={cn("shrink-0 font-semibold", outflow && "text-red-700")}>
-                  {outflow ? "−" : "+"}
-                  {formatFinanceCurrency(item.amount)}
-                </span>
-              </div>
-              <p className="text-[11px] text-[#6B7280]">
-                Venc. {item.dueDate ? new Date(item.dueDate).toLocaleDateString("pt-BR") : "—"}
-                {item.daysOverdue > 0 ? ` · ${item.daysOverdue}d atraso` : ""}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    </FinanceCashFlowShell>
   );
 }
