@@ -1,3 +1,8 @@
+/** Data mínima de emissão fiscal (xmlDhEmi) para sync NF-e — janela fixa Power BI. */
+export const NOMUS_NFES_SYNC_CUTOFF_DATE = "2025-01-01";
+
+export const NOMUS_NFES_SYNC_WINDOW_LABEL = "from_2025_01_01" as const;
+
 export const NOMUS_NFE_SYNC_SCRIPT_NAME = "runNomusNfesSync.sh";
 export const NOMUS_NFE_SYNC_MODE = "apply" as const;
 export const NOMUS_NFE_SYNC_CONFIRM_PHRASE = "RODAR NFES NOMUS";

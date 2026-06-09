@@ -1,4 +1,5 @@
 import { NomusNfeBillingClassification } from "@prisma/client";
+import { NOMUS_NFES_SYNC_CUTOFF_DATE } from "@/src/lib/nomusNfesSyncConstants.js";
 
 /** CNPJs do grupo econômico (Power BI validado). */
 export const NOMUS_NFE_GROUP_CNPJS = [
@@ -22,7 +23,7 @@ export const NOMUS_NFE_PRODUCTION_ENV = 1;
 export const NOMUS_NFE_SAIDA_TIPO_OPERACAO = 1;
 export const NOMUS_NFE_CLIENT_ISSUED = 0;
 export const NOMUS_NFE_XML_SAIDA_TPNF = 1;
-export const NOMUS_NFE_XML_CUTOFF = new Date("2024-01-01T00:00:00");
+export const NOMUS_NFE_XML_CUTOFF = new Date(`${NOMUS_NFES_SYNC_CUTOFF_DATE}T00:00:00`);
 
 function normalizeNatOp(value: string | null | undefined): string {
   return (value ?? "")

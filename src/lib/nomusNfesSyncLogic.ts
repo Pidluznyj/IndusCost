@@ -7,12 +7,22 @@ import {
   NOMUS_NFE_SAIDA_TIPO_OPERACAO,
   NOMUS_NFE_STATUS_CANCELLED,
 } from "@/src/lib/nomusNfeClassification.js";
+import {
+  NOMUS_NFES_SYNC_CUTOFF_DATE,
+  NOMUS_NFES_SYNC_WINDOW_LABEL,
+} from "@/src/lib/nomusNfesSyncConstants.js";
 
 export type JsonObject = Record<string, unknown>;
 
 export const NOMUS_NFES_PAGE_SIZE = 50;
 export const NOMUS_NFES_RESOURCE = "nfes" as const;
-export const NOMUS_NFES_INITIAL_CUTOFF = "2024-01-01";
+
+/** Alias legado — mesmo valor que {@link NOMUS_NFES_SYNC_CUTOFF_DATE}. */
+export const NOMUS_NFES_INITIAL_CUTOFF = NOMUS_NFES_SYNC_CUTOFF_DATE;
+
+/**
+ * @deprecated Janela móvel de 60 dias removida — sync usa corte fixo desde 2025-01-01.
+ */
 export const NOMUS_NFES_INCREMENTAL_OVERLAP_DAYS = 60;
 
 export type NfesSyncCliOptions = {
@@ -21,6 +31,40 @@ export type NfesSyncCliOptions = {
   maxPages: number;
   singlePage: number | null;
 };
+
+export type NfesSyncCutoffEnv = {
+  NOMUS_NFE_CUTOFF_DATE?: string;
+};
+
+export function parseNfesSyncCutoffDate(env: NfesSyncCutoffEnv = process.env): Date {
+  const raw = (env.NOMUS_NFE_CUTOFF_DATE ?? "").trim() || NOMUS_NFES_SYNC_CUTOFF_DATE;
+  const parsed = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date(`${NOMUS_NFES_SYNC_CUTOFF_DATE}T00:00:00`);
+  }
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+/**
+ * Corte fiscal fixo para sync NF-e (xmlDhEmi).
+ * `incremental` não altera mais a janela — sempre desde {@link NOMUS_NFES_SYNC_CUTOFF_DATE}.
+ * Override opcional: `NOMUS_NFE_CUTOFF_DATE=YYYY-MM-DD`.
+ */
+export function resolveNfesSyncCutoffDate(
+  _incremental?: boolean,
+  _now?: Date,
+  env: NfesSyncCutoffEnv = process.env
+): Date {
+  return parseNfesSyncCutoffDate(env);
+}
+
+export function formatNfesSyncCutoffIso(cutoff: Date = resolveNfesSyncCutoffDate()): string {
+  const y = cutoff.getFullYear();
+  const m = String(cutoff.getMonth() + 1).padStart(2, "0");
+  const d = String(cutoff.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 export function parseNfesSyncCli(argv: string[]): NfesSyncCliOptions & {
   incremental: boolean;
@@ -55,7 +99,9 @@ export function parseNfesSyncCli(argv: string[]): NfesSyncCliOptions & {
     maxPages = 1;
   }
 
-  const syncStrategy = incremental ? "incremental_overlap_upsert" : "full_initial_or_manual";
+  const syncStrategy = incremental
+    ? `scheduled_${NOMUS_NFES_SYNC_WINDOW_LABEL}_upsert`
+    : `manual_${NOMUS_NFES_SYNC_WINDOW_LABEL}`;
 
   return { mode, startPage, maxPages, singlePage, incremental, syncStrategy };
 }
@@ -143,18 +189,8 @@ function parseDataProcessamento(raw: JsonObject): Date | null {
   return parseNomusBrDate(value.trim());
 }
 
-export function resolveNfesSyncCutoffDate(incremental: boolean, now: Date = new Date()): Date {
-  if (!incremental) {
-    return new Date(`${NOMUS_NFES_INITIAL_CUTOFF}T00:00:00`);
-  }
-  const cutoff = new Date(now);
-  cutoff.setDate(cutoff.getDate() - NOMUS_NFES_INCREMENTAL_OVERLAP_DAYS);
-  cutoff.setHours(0, 0, 0, 0);
-  return cutoff;
-}
-
 /**
- * @deprecated Não usar como pré-filtro de sync — descartava ~99% das NFes antes do parse XML.
+ * @deprecated Não usar como pré-filtro de sync — descartava a maior parte das NFes antes do parse XML.
  * A elegibilidade fiscal segue regras Power BI pós-mapeamento em `nomusNfeBillingEligibility.ts`.
  * Mantido para compatibilidade de testes legados.
  */

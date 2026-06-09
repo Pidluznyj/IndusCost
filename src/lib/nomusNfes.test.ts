@@ -25,12 +25,15 @@ import {
 } from "./nomusNfeXmlParser.js";
 import {
   buildNfesPageParams,
+  formatNfesSyncCutoffIso,
   hasNextNfesPage,
+  parseNfesSyncCutoffDate,
   passesNfesSyncLocalFilter,
   pickNfesArray,
   resolveNfesSyncCutoffDate,
   shouldStopNfesPagination,
 } from "./nomusNfesSyncLogic.js";
+import { NOMUS_NFES_SYNC_CUTOFF_DATE } from "./nomusNfesSyncConstants.js";
 import { buildNomusUrl, redactHeadersForLog } from "./nomusRestClient.js";
 
 const SAMPLE_XML = `<?xml version="1.0"?>
@@ -38,7 +41,7 @@ const SAMPLE_XML = `<?xml version="1.0"?>
   <infNFe>
     <ide>
       <natOp>VENDA MERCADO EXTERNO</natOp>
-      <dhEmi>2024-06-15T10:00:00-03:00</dhEmi>
+      <dhEmi>2025-06-15T10:00:00-03:00</dhEmi>
       <tpNF>1</tpNF>
     </ide>
     <dest><CNPJ>12345678000199</CNPJ></dest>
@@ -47,9 +50,14 @@ const SAMPLE_XML = `<?xml version="1.0"?>
 </NFe>`;
 
 const JUNE_2026_XML = SAMPLE_XML.replace(
-  "2024-06-15T10:00:00-03:00",
+  "2025-06-15T10:00:00-03:00",
   "2026-06-10T14:30:00-03:00"
 ).replace("1000.00", "245000.00").replace("50.00", "0.00").replace("950.00", "245000.00");
+
+const CUTOFF_DAY_XML = SAMPLE_XML.replace(
+  "2025-06-15T10:00:00-03:00",
+  "2025-01-01T08:00:00-03:00"
+);
 
 const LOGISTICS_XML = SAMPLE_XML.replace("VENDA MERCADO EXTERNO", "REMESSA PARA CONSERTO");
 
@@ -61,7 +69,7 @@ function baseRaw(overrides: Record<string, unknown> = {}) {
     tipoOperacao: 1,
     isFornecedor: 0,
     ambiente: 1,
-    dataProcessamento: "15/06/2024",
+    dataProcessamento: "15/06/2025",
     xml: SAMPLE_XML,
     ...overrides,
   };
@@ -171,13 +179,21 @@ describe("nomusNfeBillingEligibility", () => {
     assert.equal(evaluateNfeBillingDiscardReason(mapped.row), "tpnf_nao_saida");
   });
 
-  it("dhEmi antes de 2024 descarta por data", () => {
-    const oldXml = SAMPLE_XML.replace("2024-06-15", "2023-06-15");
+  it("dhEmi antes de 2025-01-01 descarta por data", () => {
+    const oldXml = SAMPLE_XML.replace("2025-06-15", "2024-06-15");
     const mapped = mapNomusNfePayload(baseRaw({ xml: oldXml }));
     assert.equal(mapped.ok, true);
     if (!mapped.ok) return;
     assert.equal(mapped.row.isMarketSale, false);
     assert.equal(evaluateNfeBillingDiscardReason(mapped.row), "data_xml_antes_corte");
+  });
+
+  it("dhEmi em 2025-01-01 pode ser elegível", () => {
+    const mapped = mapNomusNfePayload(baseRaw({ xml: CUTOFF_DAY_XML }));
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.isMarketSale, true);
+    assert.equal(evaluateNfeBillingDiscardReason(mapped.row), null);
   });
 
   it("logística → isMarketSale=false", () => {
@@ -277,7 +293,7 @@ describe("nomusNfeClassification", () => {
       isFornecedor: 0,
       ambiente: 1,
       xmlTpNF: 1,
-      xmlDhEmi: new Date("2024-06-15"),
+      xmlDhEmi: new Date("2025-06-15"),
       billingClassification: NomusNfeBillingClassification.MARKET_REVENUE,
     });
     assert.equal(flags.isMarketSale, false);
@@ -290,7 +306,7 @@ describe("nomusNfeClassification", () => {
       isFornecedor: 0,
       ambiente: 1,
       xmlTpNF: 0,
-      xmlDhEmi: new Date("2024-06-15"),
+      xmlDhEmi: new Date("2025-06-15"),
       billingClassification: NomusNfeBillingClassification.MARKET_REVENUE,
     });
     assert.equal(flags.isFiscalBilling, false);
@@ -303,7 +319,7 @@ describe("nomusNfeClassification", () => {
       isFornecedor: 0,
       ambiente: 2,
       xmlTpNF: 1,
-      xmlDhEmi: new Date("2024-06-15"),
+      xmlDhEmi: new Date("2025-06-15"),
       billingClassification: NomusNfeBillingClassification.MARKET_REVENUE,
     });
     assert.equal(flags.isFiscalBilling, false);
@@ -351,7 +367,7 @@ describe("nomusNfesSyncLogic", () => {
     const cutoff = resolveNfesSyncCutoffDate(false);
     assert.equal(
       passesNfesSyncLocalFilter(
-        { id: 1, tipoOperacao: 1, isFornecedor: 0, ambiente: 1, status: 1, dataProcessamento: "02/01/2024" },
+        { id: 1, tipoOperacao: 1, isFornecedor: 0, ambiente: 1, status: 1, dataProcessamento: "02/01/2025" },
         cutoff
       ).pass,
       true
@@ -362,9 +378,31 @@ describe("nomusNfesSyncLogic", () => {
     );
   });
 
-  it("incremental cutoff is recent", () => {
+  it("cutoff padrão é 2025-01-01", () => {
+    assert.equal(NOMUS_NFES_SYNC_CUTOFF_DATE, "2025-01-01");
+    assert.equal(formatNfesSyncCutoffIso(resolveNfesSyncCutoffDate()), "2025-01-01");
+    assert.equal(NOMUS_NFE_XML_CUTOFF.toISOString().slice(0, 10), "2025-01-01");
+  });
+
+  it("NOMUS_NFE_INCREMENTAL=1 usa 2025-01-01, não janela de 60 dias", () => {
     const cutoff = resolveNfesSyncCutoffDate(true, new Date("2026-05-28T12:00:00Z"));
-    assert.ok(cutoff.getFullYear() >= 2026);
+    assert.equal(formatNfesSyncCutoffIso(cutoff), "2025-01-01");
+    assert.notEqual(cutoff.getMonth(), 2);
+  });
+
+  it("NOMUS_NFE_INCREMENTAL=0 usa 2025-01-01", () => {
+    const cutoff = resolveNfesSyncCutoffDate(false);
+    assert.equal(formatNfesSyncCutoffIso(cutoff), "2025-01-01");
+  });
+
+  it("NOMUS_NFE_CUTOFF_DATE override por env", () => {
+    const cutoff = parseNfesSyncCutoffDate({ NOMUS_NFE_CUTOFF_DATE: "2026-03-01" });
+    assert.equal(formatNfesSyncCutoffIso(cutoff), "2026-03-01");
+  });
+
+  it("buildNfesPageParams não envia filtro de data à API", () => {
+    assert.deepEqual(buildNfesPageParams(1, 50), { pagina: "1" });
+    assert.ok(!Object.keys(buildNfesPageParams(1, 50)).some((k) => k.includes("data") || k.includes("corte")));
   });
 });
 

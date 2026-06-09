@@ -16,7 +16,7 @@ describe("nomusNfesSyncLogParse", () => {
     const content = `STARTED_AT=2026-05-28T10:00:00+00:00
 FINISHED_AT=2026-05-28T10:05:00+00:00
 EXIT_CODE=0
-{"summary":{"pagesRead":2,"recordsRead":80,"mapped":75,"syncStrategy":"incremental_overlap_upsert"},"applied":{"created":1,"updated":2,"unchanged":72,"errors":0}}
+{"summary":{"pagesRead":2,"recordsRead":80,"mapped":75,"syncStrategy":"scheduled_from_2025_01_01_upsert","syncWindow":"from_2025_01_01","cutoffDate":"2025-01-01"},"applied":{"created":1,"updated":2,"unchanged":72,"errors":0}}
 `;
     const parsed = parseNfeRunnerLogContent(content);
     assert.equal(parsed.status, "success");

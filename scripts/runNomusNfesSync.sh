@@ -58,7 +58,10 @@ export NOMUS_NFE_RUNNER_LOG="$RUN_LOG"
 
 echo "NOMUS_SYNC_LOG_DIR=$NOMUS_SYNC_LOG_DIR"
 echo "NOMUS_NFE_INCREMENTAL=$NOMUS_NFE_INCREMENTAL"
-echo "SYNC_STRATEGY=incremental_overlap_upsert"
+echo "NOMUS_NFE_CUTOFF_DATE=${NOMUS_NFE_CUTOFF_DATE:-2025-01-01}"
+echo "SYNC_STRATEGY=scheduled_from_2025_01_01_upsert"
+echo "SYNC_WINDOW=from_2025_01_01"
+echo "SCHEDULE_HINT=cron: 0 */2 * * * (a cada 2 horas)"
 
 echo
 echo "=== EXECUÇÃO ==="

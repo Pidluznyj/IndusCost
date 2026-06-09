@@ -12,6 +12,7 @@ import {
 import {
   buildNfesPageParams,
   computeNfesPaginationPlan,
+  formatNfesSyncCutoffIso,
   hasNextNfesPage,
   NOMUS_NFES_PAGE_SIZE,
   parseNfesSyncCli,
@@ -19,6 +20,7 @@ import {
   resolveNfesSyncCutoffDate,
   type JsonObject,
 } from "@/src/lib/nomusNfesSyncLogic.js";
+import { NOMUS_NFES_SYNC_WINDOW_LABEL } from "@/src/lib/nomusNfesSyncConstants.js";
 import { mapNomusNfePayload, type MappedNomusNfe } from "@/src/lib/nomusNfeMapper.js";
 import {
   buildNomusUrl,
@@ -254,8 +256,9 @@ async function main(): Promise<void> {
     )
   );
 
+  const syncCutoff = resolveNfesSyncCutoffDate(options.incremental);
   console.warn(
-    `${LOG_PREFIX} modo=${options.mode} incremental=${options.incremental} strategy=${options.syncStrategy} startPage=${options.startPage} maxPages=${options.maxPages}`
+    `${LOG_PREFIX} modo=${options.mode} incremental=${options.incremental} strategy=${options.syncStrategy} syncWindow=${NOMUS_NFES_SYNC_WINDOW_LABEL} cutoffDate=${formatNfesSyncCutoffIso(syncCutoff)} startPage=${options.startPage} maxPages=${options.maxPages}`
   );
   console.warn(`${LOG_PREFIX} auth headers (redigidos): ${JSON.stringify(headers)}`);
 
@@ -309,8 +312,9 @@ async function main(): Promise<void> {
 
   const summary = {
     syncStrategy: options.syncStrategy,
+    syncWindow: NOMUS_NFES_SYNC_WINDOW_LABEL,
     incremental: options.incremental,
-    cutoffDate: fetched.cutoffDate.toISOString(),
+    cutoffDate: formatNfesSyncCutoffIso(fetched.cutoffDate),
     pagesRead: fetched.pagesRead,
     recordsRead: fetched.recordsRead,
     mapped: fetched.rows.length,
