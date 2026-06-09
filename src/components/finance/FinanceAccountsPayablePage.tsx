@@ -75,6 +75,8 @@ import {
   FinanceApTabNav,
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { cn } from "@/src/lib/utils";
+import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { withAppliedFilterSub } from "@/src/lib/financeFilterScope";
 
 function ExecKpiCard({
   icon: Icon,
@@ -824,17 +826,20 @@ export function FinanceAccountsPayablePage() {
         ) : null}
       </section>
 
+      <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <ExecKpiCard
           icon={Wallet}
           label="Obrigações em Aberto"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
-          sub={
+          sub={withAppliedFilterSub(
             cards?.openTitlesCount != null
               ? `${formatFinanceInteger(cards.openTitlesCount)} título${cards.openTitlesCount !== 1 ? "s" : ""} em aberto`
-              : undefined
-          }
-          hint="Soma dos saldos com balancePayable > 0"
+              : undefined,
+            Boolean(filtersActive)
+          )}
+          hint="Soma dos saldos com balancePayable > 0 (filtros aplicados)"
           colorClass="text-blue-600 dark:text-blue-400"
           bgClass="bg-white dark:bg-card"
           loading={loading}
@@ -843,8 +848,11 @@ export function FinanceAccountsPayablePage() {
           icon={Landmark}
           label="Pago no Mês"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.paidThisMonthAmount)}
-          sub="Liquidações com data de pagamento no mês corrente"
-          hint="Soma de amountPaid onde paymentDate está no mês atual"
+          sub={withAppliedFilterSub(
+            "Liquidações com data de pagamento no mês corrente (dentre títulos filtrados)",
+            Boolean(filtersActive)
+          )}
+          hint="Soma de amountPaid no mês atual, respeitando filtros aplicados"
           colorClass="text-green-600 dark:text-green-400"
           bgClass="bg-white dark:bg-card"
           loading={loading}
@@ -853,12 +861,13 @@ export function FinanceAccountsPayablePage() {
           icon={TrendingDown}
           label="% em Atraso"
           value={loading ? "…" : formatFinancePercent(cards?.overduePercent)}
-          sub={
+          sub={withAppliedFilterSub(
             cards?.overdueSuppliersCount != null
               ? `${formatFinanceInteger(cards.overdueSuppliersCount)} fornecedor${cards.overdueSuppliersCount !== 1 ? "es" : ""} em atraso`
-              : undefined
-          }
-          hint="Saldo vencido ÷ saldo total em aberto × 100"
+              : undefined,
+            Boolean(filtersActive)
+          )}
+          hint="Saldo vencido ÷ saldo total em aberto × 100 (filtros aplicados)"
           trend={overdueTrend}
           trendLabel={
             cards?.overduePercent != null
@@ -883,12 +892,13 @@ export function FinanceAccountsPayablePage() {
           icon={ShieldAlert}
           label="Vencido > 30 Dias"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueOver30DaysAmount)}
-          sub={
+          sub={withAppliedFilterSub(
             cards?.overdueOver30DaysCount != null
               ? `${formatFinanceInteger(cards.overdueOver30DaysCount)} título${cards.overdueOver30DaysCount !== 1 ? "s" : ""}`
-              : undefined
-          }
-          hint="Soma de saldos com vencimento há mais de 30 dias"
+              : undefined,
+            Boolean(filtersActive)
+          )}
+          hint="Soma de saldos vencidos há mais de 30 dias (filtros aplicados)"
           colorClass={
             (cards?.overdueOver30DaysAmount ?? 0) > 0
               ? "text-red-600 dark:text-red-400"

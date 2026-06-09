@@ -66,6 +66,23 @@ describe("financeBillingPageFilters", () => {
     assert.ok(types.includes('"comparison"'));
   });
 
+  it("telas rotulam exceções YTD, multi-ano e comparativo", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceBillingPage.tsx"),
+      "utf8"
+    );
+    const views = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes("loadingComparison"));
+    assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE"));
+    assert.ok(page.includes("FINANCE_SYNC_GLOBAL_SCOPE"));
+    assert.ok(views.includes("FINANCE_BILLING_YTD_SCOPE"));
+    assert.ok(views.includes("FINANCE_BILLING_MULTI_YEAR_SCOPE"));
+    assert.ok(views.includes("FINANCE_BILLING_PROJECTION_SCOPE"));
+  });
+
   it("navegação entre seções não usa paths relativos perigosos", () => {
     const nav = readFileSync(join(process.cwd(), "src", "lib", "financeNavigation.ts"), "utf8");
     assert.ok(nav.includes('billing: "/finance/billing"'));

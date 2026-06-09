@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildFinanceApDashboardQuery,
+  buildFinanceApExportQuery,
   createDefaultFinanceApUiFilters,
   hasPendingFinanceApFilterChanges,
   isDefaultFinanceApUiFilters,
@@ -61,6 +62,21 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.equal(isDefaultFinanceApUiFilters(defaults, REF), true);
     const cleared = normalizeFinanceApUiFilters(defaults);
     assert.equal(buildFinanceApDashboardQuery(cleared), "year=2026");
+  });
+
+  it("página exibe banner e KPIs com escopo de filtros aplicados", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes("FinanceFilterScopeBanner"));
+    assert.ok(page.includes("withAppliedFilterSub"));
+    const applied = normalizeFinanceApUiFilters({
+      ...createDefaultFinanceApUiFilters(REF),
+      status: "open",
+    });
+    const qs = buildFinanceApDashboardQuery(applied);
+    assert.equal(buildFinanceApExportQuery(applied), qs);
   });
 
   it("aplicar filtros monta query com ano, mês e documento", () => {

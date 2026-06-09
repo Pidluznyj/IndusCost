@@ -4,6 +4,8 @@ import type { FinanceBillingComparisonPayload } from "@/src/lib/financeBillingNf
 import { formatFinanceCurrency, formatFinancePercent } from "@/src/lib/financeAccountsPayableFormat";
 import { FinanceBillingSourceBadge } from "@/src/components/finance/billing/FinanceBillingSourceBadge";
 import { cn } from "@/src/lib/utils";
+import { FinanceFilterScopeNote } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { FINANCE_BILLING_COMPARISON_SCOPE } from "@/src/lib/financeFilterScope";
 
 function comparisonStatus(
   salesOrder: number,
@@ -50,6 +52,9 @@ export function FinanceBillingComparisonPanel({
             <h3 className="text-sm font-bold text-foreground">
               Comparativo SalesOrder × NomusNfe ({comparison.year})
             </h3>
+            <FinanceFilterScopeNote className="mt-0.5">
+              {FINANCE_BILLING_COMPARISON_SCOPE}
+            </FinanceFilterScopeNote>
             <p className="text-[11px] text-muted-foreground mt-0.5">{comparison.note}</p>
           </div>
           <FinanceBillingSourceBadge variant={nfeEmpty ? "warning" : "diagnostic"} />

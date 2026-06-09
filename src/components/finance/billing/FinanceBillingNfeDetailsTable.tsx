@@ -4,6 +4,8 @@ import type { FinanceBillingNfeListPayload } from "@/src/lib/financeBillingNfeLi
 import { formatFinanceCurrency, formatFinanceDateTime } from "@/src/lib/financeAccountsPayableFormat";
 import { FinanceBillingSourceBadge } from "@/src/components/finance/billing/FinanceBillingSourceBadge";
 import { cn } from "@/src/lib/utils";
+import { FinanceFilterScopeNote } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { FINANCE_BILLING_NFE_LIST_SCOPE } from "@/src/lib/financeFilterScope";
 
 function classificationBadge(cls: string | null) {
   if (!cls) return "bg-muted text-muted-foreground";
@@ -36,9 +38,9 @@ export function FinanceBillingNfeDetailsTable({
           <h3 className="text-sm font-bold text-foreground">
             Detalhado NF-e ({nfeList?.total ?? 0})
           </h3>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            Listagem de auditoria — NF-e sincronizadas do Nomus
-          </p>
+          <FinanceFilterScopeNote className="mt-0.5">
+            {FINANCE_BILLING_NFE_LIST_SCOPE}
+          </FinanceFilterScopeNote>
         </div>
         <div className="flex items-center gap-2">
           <FinanceBillingSourceBadge variant="diagnostic" />

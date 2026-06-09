@@ -44,6 +44,10 @@ import {
 import { FinanceBillingComparisonPanel } from "@/src/components/finance/billing/FinanceBillingComparisonPanel";
 import { FinanceBillingNfeDetailsTable } from "@/src/components/finance/billing/FinanceBillingNfeDetailsTable";
 import { cn } from "@/src/lib/utils";
+import {
+  FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
+  FINANCE_SYNC_GLOBAL_SCOPE,
+} from "@/src/lib/financeFilterScope";
 
 export function FinanceBillingPage() {
   const auth = useAuth();
@@ -87,6 +91,7 @@ export function FinanceBillingPage() {
   const [comparison, setComparison] = useState<FinanceBillingComparisonPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingNfe, setLoadingNfe] = useState(false);
+  const [loadingComparison, setLoadingComparison] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nfeError, setNfeError] = useState<string | null>(null);
 
@@ -142,6 +147,7 @@ export function FinanceBillingPage() {
     abortComparisonRef.current?.abort();
     const controller = new AbortController();
     abortComparisonRef.current = controller;
+    setLoadingComparison(true);
     try {
       const url = `/api/finance/billing/comparison?year=${encodeURIComponent(appliedYear)}`;
       const payload = await fetchJsonOk<FinanceBillingComparisonPayload>(url, {
@@ -152,6 +158,8 @@ export function FinanceBillingPage() {
       setComparison(payload);
     } catch {
       /* comparativo é opcional */
+    } finally {
+      if (!controller.signal.aborted) setLoadingComparison(false);
     }
   }, [appliedYear]);
 
@@ -258,10 +266,13 @@ export function FinanceBillingPage() {
       <FinanceBillingNfeSyncPanel
         canRun={canRunSync}
         onSyncFinished={() => {
+          void loadDashboard();
           void loadNfeList();
           void loadComparison();
         }}
       />
+
+      <p className="text-[11px] text-muted-foreground">{FINANCE_SYNC_GLOBAL_SCOPE}</p>
 
       {error ? (
         <FinanceApErrorBanner
@@ -301,10 +312,7 @@ export function FinanceBillingPage() {
         </button>
         {showFilters ? (
           <div className="border-t border-border/50 p-5 space-y-4 bg-background/50">
-            <p className="text-[11px] text-muted-foreground">
-              Ano afeta o painel executivo (SalesOrder). Demais filtros aplicam-se à listagem NF-e
-              diagnóstica.
-            </p>
+            <p className="text-[11px] text-muted-foreground">{FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
               <FilterField label="Ano">
                 <select
@@ -456,7 +464,10 @@ export function FinanceBillingPage() {
             />
           ) : null}
           {activeTab === "comparison" ? (
-            <FinanceBillingComparisonPanel comparison={comparison} loading={loading} />
+            <FinanceBillingComparisonPanel
+              comparison={comparison}
+              loading={loadingComparison}
+            />
           ) : null}
         </div>
       </div>

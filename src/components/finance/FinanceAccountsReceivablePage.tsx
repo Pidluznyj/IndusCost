@@ -73,6 +73,8 @@ import {
   FinanceArTabNav,
 } from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 import { cn } from "@/src/lib/utils";
+import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { withAppliedFilterSub } from "@/src/lib/financeFilterScope";
 
 /* ─────────────────────────────────────────────────────────────────
    EXECUTIVE KPI CARD
@@ -590,8 +592,11 @@ export function FinanceAccountsReceivablePage() {
     setTitlesQualityAlert(null);
   };
 
-  const handleFilterInvoiceIssued = (value: "all" | "yes" | "no") =>
-    setDraftFilters((f) => ({ ...f, invoiceIssued: value }));
+  const handleFilterInvoiceIssued = (value: "all" | "yes" | "no") => {
+    const nextDraft = { ...draftFilters, invoiceIssued: value };
+    setDraftFilters(nextDraft);
+    setAppliedFilters(normalizeFinanceArUiFilters(nextDraft));
+  };
 
   const cards = data?.cards;
   const filtersActive =
@@ -831,18 +836,21 @@ export function FinanceAccountsReceivablePage() {
         ) : null}
       </section>
 
+      <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
+
       {/* ─── KPI CARDS ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <ExecKpiCard
           icon={Wallet}
           label="Carteira em Aberto"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
-          sub={
+          sub={withAppliedFilterSub(
             cards?.openTitlesCount != null
               ? `${formatFinanceInteger(cards.openTitlesCount)} título${cards.openTitlesCount !== 1 ? "s" : ""} em aberto`
-              : undefined
-          }
-          hint="Soma dos saldos com balanceReceivable > 0"
+              : undefined,
+            Boolean(filtersActive)
+          )}
+          hint="Soma dos saldos com balanceReceivable > 0 (filtros aplicados)"
           colorClass="text-blue-600 dark:text-blue-400"
           bgClass="bg-white dark:bg-card"
           loading={loading}
@@ -851,8 +859,11 @@ export function FinanceAccountsReceivablePage() {
           icon={TrendingUp}
           label="Recebido no Mês"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.receivedThisMonthAmount)}
-          sub="Baixas com dataBaixa no mês corrente"
-          hint="Soma de amountReceived onde settlementDate está no mês atual"
+          sub={withAppliedFilterSub(
+            "Baixas com dataBaixa no mês corrente (dentre títulos filtrados)",
+            Boolean(filtersActive)
+          )}
+          hint="Soma de amountReceived no mês atual, respeitando filtros aplicados"
           colorClass="text-green-600 dark:text-green-400"
           bgClass="bg-white dark:bg-card"
           loading={loading}
@@ -861,12 +872,13 @@ export function FinanceAccountsReceivablePage() {
           icon={TrendingDown}
           label="% Inadimplência"
           value={loading ? "…" : formatFinancePercent(cards?.delinquencyRate)}
-          sub={
+          sub={withAppliedFilterSub(
             cards?.overdueCustomersCount != null
               ? `${formatFinanceInteger(cards.overdueCustomersCount)} cliente${cards.overdueCustomersCount !== 1 ? "s" : ""} em atraso`
-              : undefined
-          }
-          hint="Saldo vencido ÷ saldo total em aberto × 100"
+              : undefined,
+            Boolean(filtersActive)
+          )}
+          hint="Saldo vencido ÷ saldo total em aberto × 100 (filtros aplicados)"
           trend={delinquencyTrend}
           trendLabel={
             cards?.delinquencyRate != null
@@ -891,12 +903,13 @@ export function FinanceAccountsReceivablePage() {
           icon={ShieldAlert}
           label="Vencido > 30 Dias"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueOver30DaysAmount)}
-          sub={
+          sub={withAppliedFilterSub(
             cards?.overdueOver30DaysCount != null
               ? `${formatFinanceInteger(cards.overdueOver30DaysCount)} título${cards.overdueOver30DaysCount !== 1 ? "s" : ""}`
-              : undefined
-          }
-          hint="Soma de saldos com vencimento há mais de 30 dias (aging > 30 dias)"
+              : undefined,
+            Boolean(filtersActive)
+          )}
+          hint="Soma de saldos vencidos há mais de 30 dias (filtros aplicados)"
           colorClass={
             (cards?.overdueOver30DaysAmount ?? 0) > 0
               ? "text-red-600 dark:text-red-400"
