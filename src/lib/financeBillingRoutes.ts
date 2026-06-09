@@ -4,6 +4,10 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { buildFinanceBillingDashboard } from "@/src/lib/financeBillingDashboard.js";
 import { buildFinanceBillingNfeComparison } from "@/src/lib/financeBillingNfeComparison.js";
 import { buildFinanceBillingNfeList } from "@/src/lib/financeBillingNfeList.js";
+import {
+  buildFinanceBillingNfeExportCsv,
+  financeBillingNfeExportFilename,
+} from "@/src/lib/financeBillingNfeExport.js";
 import { FINANCE_BILLING_VIEW_PERMISSIONS } from "@/src/lib/financeBillingPermissions.js";
 import {
   getNomusNfesSyncStatus,
@@ -47,6 +51,28 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     } catch (error) {
       console.error("GET /api/finance/billing/nfes", error);
       return res.status(500).json({ error: "Não foi possível listar NF-e sincronizadas." });
+    }
+  });
+
+  app.get("/api/finance/billing/export", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const payload = await buildFinanceBillingNfeList({
+        ...req.query,
+        format: "csv",
+        limit: "10000",
+      });
+      const csv = buildFinanceBillingNfeExportCsv(payload.items);
+      const filename = financeBillingNfeExportFilename(payload.filters.year);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(csv);
+    } catch (error) {
+      console.error("GET /api/finance/billing/export", error);
+      return res.status(500).json({ error: "Não foi possível exportar NF-e do faturamento." });
     }
   });
 

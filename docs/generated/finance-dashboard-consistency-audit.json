@@ -4,7 +4,7 @@
     "branch": "main",
     "auditDate": "2026-06-09",
     "scope": ["accounts-receivable", "accounts-payable", "billing"],
-    "commitMessage": "feat(finance): improve receivables BI dashboard experience",
+    "commitMessage": "feat(finance): improve payables and billing BI dashboards",
     "accountsReceivableLoadStrategy": "buildFinanceArPrismaWhere + filterFinanceArRows"
   },
   "officialSources": {
@@ -110,6 +110,15 @@
         "builder": "buildFinanceBillingNfeComparison",
         "sources": ["SalesOrder", "NomusNfe"],
         "filters": ["year"]
+      },
+      {
+        "method": "GET",
+        "path": "/api/finance/billing/export",
+        "builder": "buildFinanceBillingNfeExportCsv",
+        "source": "NomusNfe",
+        "filters": ["year", "month", "customerCnpj", "documentNumber", "classification", "status"],
+        "usesAppliedFilters": true,
+        "scopeLabel": "FINANCE_BILLING_NFE_EXPORT_SCOPE"
       }
     ]
   },
@@ -134,7 +143,8 @@
       "draftNfeFilters": "draftNfeFilters",
       "appliedNfeFilters": "appliedNfeFilters",
       "dashboardQueryBuilder": "buildFinanceBillingDashboardQuery",
-      "nfeQueryBuilder": "buildFinanceBillingNfeQuery"
+      "nfeQueryBuilder": "buildFinanceBillingNfeQuery",
+      "exportQueryBuilder": "buildFinanceBillingExportQuery"
     }
   },
   "metricsMatrix": {
@@ -214,6 +224,7 @@
         "filtersApplied": "all",
         "exception": true,
         "exceptionJustification": "Mês calendário atual",
+        "scopeLabel": "FINANCE_AP_PAID_THIS_MONTH_SCOPE",
         "frontend": "FinanceAccountsPayablePage — ExecKpiCard"
       },
       {
@@ -293,7 +304,11 @@
     "FINANCE_SYNC_GLOBAL_SCOPE": "Status de sincronização — indicador global, não afetado pelos filtros financeiros.",
     "FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE": "Portfolio NF — aplica filtro de NF emitida imediatamente (sem aguardar Aplicar).",
     "FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE": "Recebido no mês — calendário atual (mês/ano de hoje), não o filtro de vencimento. Dentre títulos filtrados.",
-    "FINANCE_AR_LAST_SYNC_FILTERED_SCOPE": "Última sync — MAX(syncedAt) entre os registros filtrados, não a sync global Nomus."
+    "FINANCE_AR_LAST_SYNC_FILTERED_SCOPE": "Última sync — MAX(syncedAt) entre os registros filtrados, não a sync global Nomus.",
+    "FINANCE_AP_PAID_THIS_MONTH_SCOPE": "Pago no mês — calendário atual (mês/ano de hoje), não o filtro de vencimento. Dentre títulos filtrados.",
+    "FINANCE_AP_DEFAULT_YEAR_SCOPE": "Ano corrente aplicado por padrão quando nenhum período é informado — limpe filtros para ver todos os anos (period=all).",
+    "FINANCE_AP_LAST_SYNC_FILTERED_SCOPE": "Última sync — MAX(syncedAt) entre os registros filtrados, não a sync global Nomus.",
+    "FINANCE_BILLING_NFE_EXPORT_SCOPE": "Export CSV — listagem NF-e com filtros NF-e aplicados (ano, mês, CNPJ, NF, classificação, status)."
   },
   "issuesFound": [
     {
@@ -317,7 +332,8 @@
       "severity": "low",
       "screen": "accounts-payable",
       "description": "Default year injection when no period filter",
-      "status": "documented"
+      "status": "labeled",
+      "fix": "FINANCE_AP_DEFAULT_YEAR_SCOPE on header and filter panel"
     },
     {
       "id": "BILL-001",
@@ -332,7 +348,8 @@
       "severity": "medium",
       "screen": "billing",
       "description": "No CSV export endpoint",
-      "status": "pending"
+      "status": "fixed",
+      "fix": "GET /api/finance/billing/export — buildFinanceBillingNfeExportCsv"
     },
     {
       "id": "BILL-003",
@@ -346,7 +363,8 @@
       "severity": "low",
       "screen": "billing",
       "description": "Comparison load errors swallowed silently",
-      "status": "pending"
+      "status": "fixed",
+      "fix": "comparisonError state + FinanceBillingComparisonPanel error/retry UI"
     },
     {
       "id": "AP-002",
@@ -365,7 +383,13 @@
     "buildFinanceArPrismaWhere for AR performance",
     "financeAccountsReceivableCalculationAudit.test.ts",
     "AR executive BI UX: 6 KPIs, primary filters always visible",
-    "finance-dashboard-consistency-audit.md/json generated"
+    "finance-dashboard-consistency-audit.md/json generated",
+    "AP executive BI UX: 6 KPIs, primary/advanced filters, scope labels",
+    "financeAccountsPayableCalculationAudit.test.ts",
+    "Billing executive BI UX: 6 KPIs, export CSV, comparison error UI",
+    "financeBillingCalculationAudit.test.ts",
+    "financeBillingNfeExport.test.ts",
+    "GET /api/finance/billing/export endpoint"
   ],
   "testsExecuted": [
     "npm run test:finance:accounts-receivable",
@@ -385,16 +409,18 @@
     "src/lib/financeAccountsReceivableDashboard.test.ts",
     "src/lib/financeAccountsPayableDashboard.test.ts",
     "src/lib/financeBillingDashboard.test.ts",
-    "src/lib/financeBillingChartData.test.ts"
+    "src/lib/financeBillingChartData.test.ts",
+    "src/lib/financeAccountsReceivableCalculationAudit.test.ts",
+    "src/lib/financeAccountsPayableCalculationAudit.test.ts",
+    "src/lib/financeBillingCalculationAudit.test.ts",
+    "src/lib/financeBillingNfeExport.test.ts"
   ],
   "recommendationsPending": [
-    "Add Prisma pre-filter for AR dashboard",
-    "Implement billing CSV export",
     "Show FINANCE_SYNC_GLOBAL_SCOPE on AR/AP sync panels",
     "Show FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE on invoice portfolio",
-    "Surface comparison load errors in UI",
     "Unify year parsers across billing endpoints",
     "Decide global vs filtered lastSyncAt semantics",
-    "Migrate official billing source to NomusNfe only after validation"
+    "Migrate official billing source to NomusNfe only after validation",
+    "Add Prisma pre-filter for AP dashboard if scale requires"
   ]
 }

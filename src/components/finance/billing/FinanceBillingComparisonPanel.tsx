@@ -30,13 +30,35 @@ function StatusIcon({ status }: { status: ReturnType<typeof comparisonStatus> })
 export function FinanceBillingComparisonPanel({
   comparison,
   loading,
+  error,
+  onRetry,
 }: {
   comparison: FinanceBillingComparisonPayload | null;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }) {
-  if (loading && !comparison) {
+  if (loading && !comparison && !error) {
     return (
-      <div className="rounded-2xl border border-border/70 bg-card p-6 animate-pulse h-48" />
+      <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 animate-pulse h-48" />
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] p-5 space-y-3">
+        <p className="text-sm font-semibold text-[#991B1B]">Falha ao carregar comparativo</p>
+        <p className="text-xs text-[#6B7280]">{error}</p>
+        {onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="text-xs font-semibold text-[#2563EB] hover:underline"
+          >
+            Tentar novamente
+          </button>
+        ) : null}
+      </div>
     );
   }
 

@@ -143,12 +143,19 @@ function buildPrismaWhere(filters: FinanceBillingNfeFilters): Prisma.NomusNfeWhe
   return where;
 }
 
+function resolveNfeListLimit(query: Record<string, unknown>): number {
+  const raw = Number.parseInt(String(query.limit ?? "50"), 10);
+  const isExport = String(query.format ?? "").toLowerCase() === "csv";
+  const max = isExport ? 10000 : 200;
+  return Math.min(max, Math.max(1, Number.isFinite(raw) ? raw : isExport ? 10000 : 50));
+}
+
 export async function buildFinanceBillingNfeList(
   query: Record<string, unknown>
 ): Promise<FinanceBillingNfeListPayload> {
   const filters = parseFinanceBillingNfeFilters(query);
   const where = buildPrismaWhere(filters);
-  const limit = Math.min(200, Math.max(1, Number.parseInt(String(query.limit ?? "50"), 10) || 50));
+  const limit = resolveNfeListLimit(query);
 
   const [total, rows] = await Promise.all([
     prisma.nomusNfe.count({ where }),

@@ -41,6 +41,19 @@ export const FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE =
 export const FINANCE_AR_LAST_SYNC_FILTERED_SCOPE =
   "Última sync — MAX(syncedAt) entre os registros filtrados, não a sync global Nomus." as const;
 
+/** Contas a Pagar — exceções e defaults explícitos na UI. */
+export const FINANCE_AP_PAID_THIS_MONTH_SCOPE =
+  "Pago no mês — calendário atual (mês/ano de hoje), não o filtro de vencimento. Dentre títulos filtrados." as const;
+
+export const FINANCE_AP_DEFAULT_YEAR_SCOPE =
+  "Ano corrente aplicado por padrão quando nenhum período é informado — limpe filtros para ver todos os anos (period=all)." as const;
+
+export const FINANCE_AP_LAST_SYNC_FILTERED_SCOPE =
+  "Última sync — MAX(syncedAt) entre os registros filtrados, não a sync global Nomus." as const;
+
+export const FINANCE_BILLING_NFE_EXPORT_SCOPE =
+  "Export CSV — listagem NF-e com filtros NF-e aplicados (ano, mês, CNPJ, NF, classificação, status)." as const;
+
 export function withAppliedFilterSub(
   sub: string | undefined,
   filtersActive: boolean

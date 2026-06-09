@@ -23,6 +23,8 @@ import {
   formatFinanceInteger,
   formatFinanceMonthLabel,
 } from "@/src/lib/financeAccountsPayableFormat";
+import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
+import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
 
 function ChartCard({
   title,
@@ -35,32 +37,34 @@ function ChartCard({
   children: React.ReactNode;
   empty?: boolean;
 }) {
+  if (empty) {
+    return (
+      <FinanceBiEmptyState
+        title={title}
+        description={subtitle ?? "Sem dados para exibir com os filtros aplicados."}
+      />
+    );
+  }
   return (
-    <div className="rounded-2xl border border-border/70 bg-white dark:bg-card shadow-sm p-5 space-y-3 min-h-[300px] flex flex-col">
+    <div className={`${financeBiCardClass} p-5 space-y-3 min-h-[300px] flex flex-col`}>
       <div>
-        <h3 className="text-sm font-bold text-foreground">{title}</h3>
-        {subtitle ? <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p> : null}
+        <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
+        {subtitle ? <p className="text-[11px] text-[#6B7280] mt-0.5">{subtitle}</p> : null}
       </div>
-      {empty ? (
-        <p className="text-sm text-muted-foreground flex-1 flex items-center justify-center">
-          Sem dados para exibir com os filtros atuais.
-        </p>
-      ) : (
-        <div className="flex-1 min-h-[230px]">{children}</div>
-      )}
+      <div className="flex-1 min-h-[230px]">{children}</div>
     </div>
   );
 }
 
 const AGING_BUCKET_COLORS: Record<string, string> = {
-  upcoming: "#22c55e",
-  dueToday: "#f59e0b",
-  overdue1to7: "#fb923c",
-  overdue8to15: "#f97316",
-  overdue16to30: "#ea580c",
-  overdue31to60: "#ef4444",
-  overdue61to90: "#dc2626",
-  overdue90plus: "#991b1b",
+  upcoming: "#059669",
+  dueToday: "#D97706",
+  overdue1to7: "#FB923C",
+  overdue8to15: "#F97316",
+  overdue16to30: "#EA580C",
+  overdue31to60: "#DC2626",
+  overdue61to90: "#B91C1C",
+  overdue90plus: "#991B1B",
 };
 
 export function FinanceApAgingChart({ buckets }: { buckets: FinanceApAgingBucket[] }) {
@@ -76,15 +80,15 @@ export function FinanceApAgingChart({ buckets }: { buckets: FinanceApAgingBucket
   return (
     <ChartCard
       title="Aging de Contas a Pagar"
-      subtitle="Saldo em aberto por faixa — verde a vencer, vermelho em atraso"
+      subtitle="Saldo em aberto por faixa de vencimento — filtros aplicados"
       empty={empty}
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 64, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
           <XAxis
             type="number"
-            tick={{ fontSize: 11 }}
+            tick={{ fontSize: 11, fill: "#6B7280" }}
             tickFormatter={(v: number) => formatFinanceCurrencyCompact(v)}
             axisLine={false}
             tickLine={false}
@@ -93,34 +97,34 @@ export function FinanceApAgingChart({ buckets }: { buckets: FinanceApAgingBucket
             type="category"
             dataKey="label"
             width={130}
-            tick={{ fontSize: 10, fill: "#6b7280" }}
+            tick={{ fontSize: 10, fill: "#6B7280" }}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip
-            cursor={{ fill: "rgba(0,0,0,0.04)" }}
+            cursor={{ fill: "rgba(37,99,235,0.04)" }}
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
               const entry = payload[0];
               const d = data.find((x) => x.label === label);
               return (
-                <div className="rounded-xl border border-border bg-white dark:bg-card shadow-lg p-3 text-xs min-w-[180px]">
-                  <p className="font-bold text-foreground mb-1">{label}</p>
-                  <p className="text-muted-foreground">
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-xs min-w-[180px]">
+                  <p className="font-bold text-[#111827] mb-1">{label}</p>
+                  <p className="text-[#6B7280]">
                     Valor:{" "}
-                    <span className="font-bold text-foreground">
+                    <span className="font-bold text-[#111827]">
                       {formatFinanceCurrency(entry.value as number)}
                     </span>
                   </p>
                   {d ? (
                     <>
-                      <p className="text-muted-foreground">
+                      <p className="text-[#6B7280]">
                         Títulos:{" "}
-                        <span className="font-bold text-foreground">{formatFinanceInteger(d.count)}</span>
+                        <span className="font-bold text-[#111827]">{formatFinanceInteger(d.count)}</span>
                       </p>
-                      <p className="text-muted-foreground">
+                      <p className="text-[#6B7280]">
                         % carteira:{" "}
-                        <span className="font-bold text-foreground">{d.percent.toFixed(1)}%</span>
+                        <span className="font-bold text-[#111827]">{d.percent.toFixed(1)}%</span>
                       </p>
                     </>
                   ) : null}
@@ -128,9 +132,9 @@ export function FinanceApAgingChart({ buckets }: { buckets: FinanceApAgingBucket
               );
             }}
           />
-          <Bar dataKey="amount" name="Valor" radius={[0, 6, 6, 0]} maxBarSize={28}>
+          <Bar dataKey="amount" name="Valor" radius={[0, 4, 4, 0]} maxBarSize={24}>
             {data.map((entry) => (
-              <Cell key={entry.key} fill={AGING_BUCKET_COLORS[entry.key] ?? "#94a3b8"} />
+              <Cell key={entry.key} fill={AGING_BUCKET_COLORS[entry.key] ?? "#94A3B8"} />
             ))}
           </Bar>
         </BarChart>
@@ -150,16 +154,16 @@ export function FinanceApMonthlyScheduleChart({ rows }: { rows: FinanceApMonthly
   const empty = data.length === 0;
 
   return (
-    <ChartCard title="Agenda mensal de vencimentos" subtitle="Distribuição por mês de vencimento" empty={empty}>
+    <ChartCard title="Agenda mensal de vencimentos" subtitle="Distribuição por mês — filtros aplicados" empty={empty}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" />
-          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatFinanceCurrencyCompact(v)} width={72} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6B7280" }} />
+          <YAxis tickFormatter={(v) => formatFinanceCurrencyCompact(v)} width={72} tick={{ fontSize: 11, fill: "#6B7280" }} />
           <Tooltip formatter={(value: number) => formatFinanceCurrency(value)} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="overdue" name="Vencido" stackId="a" fill="#ef4444" />
-          <Bar dataKey="upcoming" name="A vencer" stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="overdue" name="Vencido" stackId="a" fill="#DC2626" />
+          <Bar dataKey="upcoming" name="A vencer" stackId="a" fill="#059669" radius={[4, 4, 0, 0]} />
         </ComposedChart>
       </ResponsiveContainer>
     </ChartCard>
@@ -169,71 +173,45 @@ export function FinanceApMonthlyScheduleChart({ rows }: { rows: FinanceApMonthly
 export function FinanceApTopDebtorsChart({ rows }: { rows: FinanceApTopDebtor[] }) {
   const top5 = (rows ?? []).slice(0, 5);
   const data = top5.map((r) => ({
-    label: (r.personName ?? r.personCnpj ?? "Fornecedor").slice(0, 22),
+    key: r.personCnpj ?? r.personName ?? "fornecedor",
+    label: (r.personName ?? r.personCnpj ?? "Fornecedor").slice(0, 28),
     totalOpenAmount: r.totalOpenAmount,
     overdueAmount: r.overdueAmount,
-    upcomingAmount: r.upcomingAmount,
     percentOfPortfolio: r.percentOfPortfolio,
   }));
   const empty = data.length === 0;
+  const maxAmount = Math.max(...data.map((d) => d.totalOpenAmount), 1);
 
   return (
     <ChartCard
-      title="Top 5 Fornecedores — Maior Exposição"
-      subtitle="Saldo em aberto e vencido por fornecedor — agrupado por CNPJ"
+      title="Maior Exposição por Fornecedor (Top 5)"
+      subtitle="Ranking horizontal por saldo em aberto — agrupado por CNPJ"
       empty={empty}
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-          <XAxis
-            dataKey="label"
-            tick={{ fontSize: 10, fill: "#6b7280" }}
-            interval={0}
-            angle={-15}
-            textAnchor="end"
-            height={52}
-            axisLine={false}
-            tickLine={false}
-          />
-          <YAxis
-            tickFormatter={(v: number) => formatFinanceCurrencyCompact(v)}
-            tick={{ fontSize: 11 }}
-            width={72}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip
-            cursor={{ fill: "rgba(0,0,0,0.04)" }}
-            content={({ active, payload, label }) => {
-              if (!active || !payload?.length) return null;
-              const d = data.find((x) => x.label === label);
-              return (
-                <div className="rounded-xl border border-border bg-white dark:bg-card shadow-lg p-3 text-xs min-w-[200px]">
-                  <p className="font-bold text-foreground mb-1 truncate">{label}</p>
-                  {payload.map((p) => (
-                    <p key={String(p.dataKey)} className="text-muted-foreground">
-                      {p.name}:{" "}
-                      <span className="font-bold text-foreground">
-                        {formatFinanceCurrency(p.value as number)}
-                      </span>
-                    </p>
-                  ))}
-                  {d ? (
-                    <p className="text-muted-foreground mt-1">
-                      % carteira:{" "}
-                      <span className="font-bold text-foreground">{d.percentOfPortfolio.toFixed(1)}%</span>
-                    </p>
-                  ) : null}
-                </div>
-              );
-            }}
-          />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="totalOpenAmount" name="Em aberto" fill="#1e40af" radius={[4, 4, 0, 0]} maxBarSize={32} />
-          <Bar dataKey="overdueAmount" name="Vencido" fill="#dc2626" radius={[4, 4, 0, 0]} maxBarSize={32} />
-        </BarChart>
-      </ResponsiveContainer>
+      <div className="space-y-3 py-1">
+        {data.map((d) => (
+          <div key={d.key} className="space-y-1">
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="font-semibold text-[#111827] truncate" title={d.label}>
+                {d.label}
+              </span>
+              <span className="tabular-nums font-bold text-[#111827] shrink-0">
+                {formatFinanceCurrencyCompact(d.totalOpenAmount)}
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-[#F3F4F6] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[#2563EB]"
+                style={{ width: `${Math.max(4, (d.totalOpenAmount / maxAmount) * 100)}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-[#6B7280]">
+              <span>Vencido: {formatFinanceCurrencyCompact(d.overdueAmount)}</span>
+              <span>{d.percentOfPortfolio.toFixed(1)}% da carteira</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </ChartCard>
   );
 }
@@ -248,16 +226,16 @@ export function FinanceApPaymentMethodChart({ rows }: { rows: FinanceApPaymentSu
   const empty = data.length === 0;
 
   return (
-    <ChartCard title="Resumo por forma de pagamento" subtitle="Saldo em aberto e vencido" empty={empty}>
+    <ChartCard title="Resumo por forma de pagamento" subtitle="Saldo em aberto e vencido — filtros aplicados" empty={empty}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 48 }}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={56} />
-          <YAxis tickFormatter={(v) => formatFinanceCurrencyCompact(v)} tick={{ fontSize: 11 }} width={72} />
+        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
+          <XAxis type="number" tickFormatter={(v: number) => formatFinanceCurrencyCompact(v)} tick={{ fontSize: 11, fill: "#6B7280" }} axisLine={false} tickLine={false} />
+          <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
           <Tooltip formatter={(value: number) => formatFinanceCurrency(value)} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="openAmount" name="Em aberto" fill="#1e40af" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="overdueAmount" name="Vencido" fill="#ef4444" radius={[4, 4, 0, 0]} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="openAmount" name="Em aberto" fill="#2563EB" radius={[0, 4, 4, 0]} maxBarSize={20} />
+          <Bar dataKey="overdueAmount" name="Vencido" fill="#DC2626" radius={[0, 4, 4, 0]} maxBarSize={20} />
         </BarChart>
       </ResponsiveContainer>
     </ChartCard>

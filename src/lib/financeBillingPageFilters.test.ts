@@ -82,6 +82,10 @@ describe("financeBillingPageFilters", () => {
     );
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceBiFilterPanel"));
+    assert.ok(page.includes("alwaysVisible"));
+    assert.ok(page.includes("Resumo executivo"));
+    assert.ok(page.includes("buildFinanceBillingExportQuery"));
+    assert.ok(page.includes("comparisonError"));
     assert.ok(page.includes("loadingComparison"));
     assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE"));
     assert.ok(page.includes("FINANCE_SYNC_GLOBAL_SCOPE"));

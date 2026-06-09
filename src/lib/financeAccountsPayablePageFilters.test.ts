@@ -30,7 +30,7 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(page.includes("hasPendingFinanceApFilterChanges"));
     assert.ok(page.includes("resolveFinanceBiFilterStatus"));
     assert.ok(!page.includes("useDebouncedValue"));
-    assert.ok(page.includes("showFilters"));
+    assert.ok(page.includes("showAdvancedFilters"));
   });
 
   it("página possui estrutura executiva do dashboard", () => {
@@ -43,7 +43,8 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(page.includes("Vencido > 30 Dias"));
     assert.ok(page.includes("Centro de Ações"));
     assert.ok(page.includes("Títulos Críticos"));
-    assert.ok(page.includes("Análise Detalhada"));
+    assert.ok(page.includes("Análise detalhada"));
+    assert.ok(page.includes("Resumo executivo"));
     assert.ok(page.includes("FinanceApAgingChart"));
     assert.ok(page.includes("FinanceApTopDebtorsChart"));
     assert.ok(page.includes("Atualizar"));
@@ -76,6 +77,9 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(page.includes("FinanceFilterScopeBanner"));
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceBiFilterPanel"));
+    assert.ok(page.includes("alwaysVisible"));
+    assert.ok(page.includes("FINANCE_AP_PAID_THIS_MONTH_SCOPE"));
+    assert.ok(page.includes("Resumo executivo"));
     assert.ok(page.includes("withAppliedFilterSub"));
     const applied = normalizeFinanceApUiFilters({
       ...createDefaultFinanceApUiFilters(REF),

@@ -48,6 +48,11 @@ export function buildFinanceBillingNfeQuery(filters: FinanceBillingNfeDraftFilte
   return params.toString();
 }
 
+export function buildFinanceBillingExportQuery(filters: FinanceBillingNfeDraftFilters): string {
+  const qs = buildFinanceBillingNfeQuery(filters);
+  return qs ? `${qs}&format=csv&limit=10000` : "format=csv&limit=10000";
+}
+
 export const FINANCE_BILLING_MONTH_OPTIONS = [
   { value: "", label: "Todos os meses" },
   { value: "1", label: "Janeiro" },

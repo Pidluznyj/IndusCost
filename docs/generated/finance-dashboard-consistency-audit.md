@@ -18,11 +18,20 @@ Auditoria técnica dos três menus financeiros para validar fontes oficiais, fó
 | Faturamento executivo | `SalesOrder` + NF raw Nomus | ✅ Ano aplicado | YTD, multi-ano, projeção, comparativo, recentes |
 | Faturamento NF-e | `NomusNfe` (diagnóstico) | ✅ Filtros NF-e aplicados | Fonte em validação |
 
-**Correções nesta auditoria:**
+**Correções nesta auditoria (fase AR):**
 - Label AP `paidGreaterThanPayable`: "Valor pago maior que valor original" (antes copiava AR).
 - Rótulo `FINANCE_BILLING_RECENT_ORDERS_SCOPE` em faturamentos recentes.
 - Testes de export corrigidos (`format=csv` além dos filtros do dashboard).
 - Suite `financeDashboardConsistencyAudit.test.ts` com cobertura transversal.
+
+**Correções nesta fase (AP + Billing BI):**
+- AP: UX BI executivo — resumo 6 KPIs, filtros principais visíveis, filtros avançados colapsáveis, chips, aging/ranking/action center.
+- AP: rótulos `FINANCE_AP_PAID_THIS_MONTH_SCOPE`, `FINANCE_AP_DEFAULT_YEAR_SCOPE`, `FINANCE_AP_LAST_SYNC_FILTERED_SCOPE`.
+- AP: auditoria de cálculos (`financeAccountsPayableCalculationAudit`).
+- Billing: UX BI executivo — resumo 6 KPIs, filtros principais visíveis, export CSV no header.
+- Billing: **BILL-002** — `GET /api/finance/billing/export` (CSV NF-e com filtros aplicados).
+- Billing: **BILL-004** — erro visível no comparativo (`comparisonError` + retry).
+- Billing: auditoria de cálculos (`financeBillingCalculationAudit`).
 
 ---
 
@@ -63,13 +72,14 @@ Auditoria técnica dos três menus financeiros para validar fontes oficiais, fó
 | `GET /api/finance/billing/dashboard` | `buildFinanceBillingDashboard` → `buildBillingDashboardTab` | `SalesOrder` |
 | `GET /api/finance/billing/nfes` | `buildFinanceBillingNfeList` | `NomusNfe` |
 | `GET /api/finance/billing/comparison` | `buildFinanceBillingNfeComparison` | `SalesOrder` + `NomusNfe` |
+| `GET /api/finance/billing/export` | `buildFinanceBillingNfeExportCsv` | `NomusNfe` |
 | `GET/POST` sync NF-e | `nomusNfesSync` | Global |
 
 **Dashboard filtros:** `year` apenas.
 
 **NF-e filtros:** `year`, `month`, `customerCnpj`, `documentNumber`, `classification`, `status`, `limit`.
 
-**Export:** não implementado (diferente de AR/AP).
+**Export CSV:** listagem NF-e com filtros NF-e aplicados (`FINANCE_BILLING_NFE_EXPORT_SCOPE`).
 
 ---
 
@@ -109,7 +119,12 @@ Espelha AR com diferenças:
 | Empresas | `companySummary` | Limite 50 |
 | Total a pagar | `totalPayableAmount` | Inclui liquidados (Σ `amountPayable`) |
 
-**Frontend:** `FinanceAccountsPayablePage.tsx` — mesmo padrão draft/applied.
+**Frontend:** `FinanceAccountsPayablePage.tsx` — resumo executivo 6 KPIs, filtros principais (ano, mês, status, fornecedor, CNPJ), avançados colapsáveis, chips, banner de escopo.
+
+**Exceções rotuladas AP:**
+- `FINANCE_AP_PAID_THIS_MONTH_SCOPE` — pago no mês (calendário atual)
+- `FINANCE_AP_DEFAULT_YEAR_SCOPE` — ano corrente injetado por padrão
+- `FINANCE_AP_LAST_SYNC_FILTERED_SCOPE` — última sync entre filtrados
 
 ---
 
@@ -163,6 +178,10 @@ Espelha AR com diferenças:
 | `FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE` | Recebido no mês — calendário atual | KPI AR |
 | `FINANCE_AR_LAST_SYNC_FILTERED_SCOPE` | Última sync entre filtrados | Header AR |
 | `FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE` | Portfolio NF imediato | Constante (UI pendente) |
+| `FINANCE_AP_PAID_THIS_MONTH_SCOPE` | Pago no mês — calendário atual | KPI AP |
+| `FINANCE_AP_DEFAULT_YEAR_SCOPE` | Ano corrente padrão | Header/filtros AP |
+| `FINANCE_AP_LAST_SYNC_FILTERED_SCOPE` | Última sync entre filtrados | Header AP |
+| `FINANCE_BILLING_NFE_EXPORT_SCOPE` | Export CSV NF-e filtrado | Header Billing |
 
 ---
 
@@ -176,8 +195,8 @@ Espelha AR com diferenças:
 | 2 | `receivedThisMonth`/`paidThisMonth` usam mês calendário atual | AR/AP | **Rotulado** em AR (`FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE`) |
 | 3 | `lastSyncAt` no header = max das linhas filtradas | AR/AP | **Rotulado** em AR |
 | 4 | Faturamentos recentes ignoram ano | Billing | **Rotulado** |
-| 5 | Sem export CSV em Faturamento | Billing | Pendente (feature gap) |
-| 6 | Erros de comparison engolidos silenciosamente | Billing | Pendente (UX) |
+| 5 | Sem export CSV em Faturamento | Billing | **Corrigido** — `GET /api/finance/billing/export` |
+| 6 | Erros de comparison engolidos silenciosamente | Billing | **Corrigido** — `comparisonError` + retry na UI |
 | 7 | Divergência SO vs NomusNfe (data + mercado) | Billing | Documentado no comparativo |
 
 ### Corrigidos nesta auditoria
@@ -190,6 +209,9 @@ Espelha AR com diferenças:
 | C4 | Teste classification NF-e (`market` vs `MARKET_REVENUE`) |
 | C5 | AR: Prisma pre-filter + auditoria de cálculos (`financeAccountsReceivableCalculationAudit`) |
 | C6 | AR: UX BI executivo — resumo 6 KPIs, filtros principais visíveis |
+| C7 | AP: UX BI executivo + auditoria de cálculos |
+| C8 | Billing: UX BI executivo + export CSV + erro comparativo visível |
+| C9 | Rótulos AP (`FINANCE_AP_*`) e export (`FINANCE_BILLING_NFE_EXPORT_SCOPE`) |
 
 ---
 
@@ -203,7 +225,7 @@ Espelha AR com diferenças:
 | Action center | payload filtrado | payload filtrado | N/A |
 | Títulos críticos | payload filtrado | payload filtrado | N/A |
 | Abas detalhadas | payload + `appliedFilters` | payload + `appliedFilters` | NF-e: `appliedNfeFilters` |
-| Export CSV | `appliedFilters` | `appliedFilters` | N/A |
+| Export CSV | `appliedFilters` | `appliedFilters` | `appliedNfeFilters` |
 | Formulário filtros | `draftFilters` | `draftFilters` | `draftYear` + `draftNfeFilters` |
 
 ---
@@ -224,8 +246,12 @@ npm run build
 - `src/lib/financeDashboardConsistencyAudit.test.ts`
 - `src/lib/financeFilterCompliance.test.ts` (export + classification)
 - `src/lib/financeAccountsReceivablePageFilters.test.ts`
+- `src/lib/financeAccountsReceivableCalculationAudit.test.ts`
 - `src/lib/financeAccountsPayablePageFilters.test.ts`
+- `src/lib/financeAccountsPayableCalculationAudit.test.ts`
 - `src/lib/financeBillingPageFilters.test.ts`
+- `src/lib/financeBillingCalculationAudit.test.ts`
+- `src/lib/financeBillingNfeExport.test.ts`
 
 **Cobertura mínima validada:**
 - Filtro mês → cards, aging, ranking, críticos
@@ -242,14 +268,15 @@ npm run build
 ## 10. Recomendações pendentes
 
 1. ~~**AR:** adicionar Prisma pre-filter~~ — implementado; monitorar escala em produção.
-2. **Billing:** implementar export CSV com filtros NF-e ou ano.
+2. ~~**Billing:** implementar export CSV com filtros NF-e~~ — implementado.
 3. **Billing:** rotular `receivedThisMonth` equivalente se adicionado; manter recent orders label.
 4. **AR/AP:** exibir `FINANCE_SYNC_GLOBAL_SCOPE` no painel de sync.
 5. **AR:** rotular portfolio NF com `FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE`.
-6. **Billing:** exibir erro quando comparison falha (não catch vazio).
+6. ~~**Billing:** exibir erro quando comparison falha~~ — implementado.
 7. **Billing:** alinhar parsers de ano (executive 2020…current+1 vs 2000–2100).
 8. **Unificar:** `lastSyncAt` global vs filtrado — decidir e documentar.
 9. **Migrar fonte oficial** para NomusNfe somente após validação completa do comparativo.
+10. **AP:** Prisma pre-filter (espelhar AR) se escala exigir.
 
 ---
 
