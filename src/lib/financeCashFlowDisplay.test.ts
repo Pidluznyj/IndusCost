@@ -28,6 +28,27 @@ describe("financeCashFlowDisplay", () => {
     assert.equal(tone.statusLabel, "Déficit projetado");
   });
 
+  it("empty state quando série vazia ou só null", () => {
+    assert.equal(cashFlowMonthlySeriesHasData([]), false);
+    assert.equal(
+      cashFlowMonthlySeriesHasData([
+        {
+          year: 2026,
+          month: 8,
+          monthLabel: "Ago",
+          inflowAmount: null,
+          outflowAmount: null,
+          netFlowAmount: null,
+          accumulatedBalance: null,
+          status: null,
+          inflowCount: 0,
+          outflowCount: 0,
+        },
+      ]),
+      false
+    );
+  });
+
   it("série mensal com apenas líquido conta como dados", () => {
     assert.equal(
       cashFlowMonthlySeriesHasData([

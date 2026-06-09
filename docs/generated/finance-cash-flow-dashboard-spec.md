@@ -3,7 +3,7 @@
 **Projeto:** IndusCost  
 **Branch:** `main`  
 **Data:** 2026-06-09  
-**Fase:** 3 — Painel CFO e insights determinísticos
+**Fase:** 4 — Validação final e fechamento (3 fases encadeadas concluídas)
 
 ---
 
@@ -342,11 +342,60 @@ Linhas `mensal` mantêm colunas originais + `cenario_base_liquido`, `conservador
 
 ## 14. Pendências (fases posteriores)
 
-1. Calendário diário de caixa
-2. Tabela detalhada consolidada AR/AP
-3. Saldo bancário inicial configurável
-4. Centro de custo / classificação (quando disponível no Nomus)
-5. Integração contextual com Faturamento (link diagnóstico, sem misturar fontes)
+1. Tabela detalhada consolidada AR/AP (aba Detalhado)
+2. Saldo bancário inicial configurável
+3. Centro de custo / classificação (quando disponível no Nomus)
+4. Integração contextual com Faturamento (link diagnóstico, sem misturar fontes)
+
+## 15. Validação final (auditoria)
+
+### 15.1 Perguntas que a tela deve responder
+
+| Pergunta | Onde |
+|----------|------|
+| Quanto tenho a receber / pagar? | Hero + KPIs (`totalReceivableOpen`, `totalPayableOpen`) |
+| Posição líquida? | Hero `netCashPosition` |
+| Sobra ou falta dinheiro? | Status superávit/déficit + necessidade de caixa |
+| Meses negativos? | KPI + gráfico + forecast |
+| Necessidade de caixa? | KPI + painel cenários + CFO |
+| Clientes/fornecedores críticos? | Top listas + CFO |
+| Vencidos a cobrar/pagar? | Listas + CFO alertas |
+| Cenários base/conservador/crítico? | Gráfico cenários + export |
+| Plano de ação? | `operationalRecommendations` + `executiveInsights.recommendedActions` |
+
+### 15.2 Layout rejeitado (Control Room)
+
+Commits neutralizados: `525fa83`, `e6e2c1a`. Rollback: `6e674a1`.
+
+**Não recriar:** `finance-control-room.css`, `financeControlRoomTheme.ts`, `cash-flow-page-formatted.html`.
+
+Padrão visual atual: **BI executivo** (`FinanceBiDashboardShell`), não Control Room.
+
+### 15.3 Limitações explícitas
+
+- Fluxo projetado depende de vencimentos AR/AP Nomus.
+- **Não substitui** saldo bancário real (`hasInitialBankBalance: false`).
+- Cenários conservador/crítico são simulações — não alteram dados oficiais.
+- Fluxo de caixa **≠** faturamento (fonte: AR/AP, não SalesOrder/NF-e).
+
+### 15.4 Testes executados na validação
+
+| Comando | Resultado |
+|---------|-----------|
+| `npx prisma validate` | OK |
+| `npm run test:finance:cash-flow` | 67 testes |
+| `npm run test:finance:navigation` | 17 testes |
+| `npm run test:finance:accounts-receivable` | 119 testes |
+| `npm run test:finance:accounts-payable` | 107 testes |
+| `npm run test:finance:billing` | 49 testes |
+| `npm run test:finance:billing-nfes` | 10 testes |
+| `npm run test:nomus:accounts-receivable` | 23 testes |
+| `npm run test:nomus:accounts-payable` | 30 testes |
+| `npm run test:nomus:nfes` | 44 testes |
+| `npm run lint` | OK |
+| `npm run build` | OK |
+
+Suíte cash-flow cobre: posição líquida, necessidade de caixa, gráfico positivo/negativo, empty state, cenários, CFO score, recomendações, export, filtros, NaN/Infinity, ausência de Control Room.
 
 ---
 
