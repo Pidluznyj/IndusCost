@@ -54,13 +54,15 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(page.includes("FinanceBiExecutiveHeader"));
     assert.ok(page.includes("FinanceCashFlowKpiCard"));
     assert.ok(page.includes("FinanceCashFlowNetPositionHero"));
-    assert.ok(page.includes("computeCashFlowNetPosition"));
+    assert.ok(page.includes("netCashPosition"));
+    assert.ok(page.includes("executiveReading"));
+    assert.ok(page.includes("kpi-cash-need"));
     assert.ok(page.includes("Fluxo de Caixa"));
     assert.ok(page.includes("draftFilters"));
     assert.ok(page.includes("appliedFilters"));
     assert.ok(page.includes('data-testid="cash-flow-page"'));
     assert.ok(page.includes('data-testid="cash-flow-filters"'));
-    assert.ok(page.includes('testId="kpi-net-balance"'));
+    assert.ok(page.includes('testId="kpi-cash-need"'));
     assert.ok(hero.includes('data-testid="kpi-net-position"'));
     assert.ok(page.includes("Resumo executivo"));
     assert.ok(charts.includes("FINANCE_CASH_FLOW_CHART_HEIGHT"));

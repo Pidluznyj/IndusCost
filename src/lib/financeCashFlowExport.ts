@@ -13,7 +13,7 @@ export function buildFinanceCashFlowExportCsv(
   payload: FinanceCashFlowDashboardPayload
 ): string {
   const lines: string[] = [
-    "tipo,ano,mes,entradas,saidas,fluxo_liquido,saldo_acumulado,qtd_entradas,qtd_saidas",
+    "tipo,ano,mes,entradas,saidas,fluxo_liquido,saldo_acumulado,status_mes,qtd_entradas,qtd_saidas",
   ];
   for (const p of payload.monthlySeries) {
     lines.push(
@@ -25,6 +25,7 @@ export function buildFinanceCashFlowExportCsv(
         csvEscape(p.outflowAmount),
         csvEscape(p.netFlowAmount),
         csvEscape(p.accumulatedBalance),
+        csvEscape(p.status),
         csvEscape(p.inflowCount),
         csvEscape(p.outflowCount),
       ].join(",")

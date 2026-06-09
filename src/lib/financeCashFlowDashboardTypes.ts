@@ -19,6 +19,9 @@ export type FinanceCashFlowDashboardFiltersApplied = {
   invoiceIssued?: string;
 };
 
+export type NetCashPositionStatus = "surplus" | "deficit";
+export type FinanceCashFlowMonthlyNetStatus = "positive" | "negative";
+
 export type FinanceCashFlowDashboardCards = {
   totalReceivableOpen: number;
   totalPayableOpen: number;
@@ -31,6 +34,16 @@ export type FinanceCashFlowDashboardCards = {
   overduePayableAmount: number;
   outflowToInflowPercent: number | null;
   negativeBalanceMonthsCount: number;
+  /** Posição líquida de caixa = totalReceivableOpen − totalPayableOpen. */
+  netCashPosition: number;
+  netCashPositionStatus: NetCashPositionStatus;
+  netCashPositionAbs: number;
+  netCashPositionLabel: string;
+  /** totalReceivableOpen / totalPayableOpen — null quando pagar = 0 e receber > 0. */
+  cashCoverageRatio: number | null;
+  /** Valor necessário para zerar déficit; 0 em superávit. */
+  cashNeedAmount: number;
+  cashNeedLabel: string;
   arRecords: number;
   apRecords: number;
   lastSyncAt: string | null;
@@ -45,6 +58,8 @@ export type FinanceCashFlowMonthlyPoint = {
   outflowAmount: number | null;
   netFlowAmount: number | null;
   accumulatedBalance: number | null;
+  /** positive | negative — null em meses futuros sem dado (modo realizado). */
+  status: FinanceCashFlowMonthlyNetStatus | null;
   inflowCount: number;
   outflowCount: number;
 };
@@ -79,6 +94,8 @@ export type FinanceCashFlowDashboardPayload = {
     outflows: "NomusAccountsPayable";
   };
   cards: FinanceCashFlowDashboardCards;
+  /** Frases determinísticas para leitura gerencial do caixa. */
+  executiveReading: string[];
   monthlySeries: FinanceCashFlowMonthlyPoint[];
   topCustomers: FinanceCashFlowPartySummary[];
   topSuppliers: FinanceCashFlowPartySummary[];

@@ -39,6 +39,7 @@ describe("financeCashFlowDisplay", () => {
           outflowAmount: 0,
           netFlowAmount: 500,
           accumulatedBalance: 500,
+          status: "positive",
           inflowCount: 0,
           outflowCount: 0,
         },
@@ -57,6 +58,7 @@ describe("financeCashFlowDisplay", () => {
         outflowAmount: 400,
         netFlowAmount: 600,
         accumulatedBalance: 1200,
+        status: "positive",
         inflowCount: 2,
         outflowCount: 1,
       },
@@ -68,12 +70,15 @@ describe("financeCashFlowDisplay", () => {
         outflowAmount: 800,
         netFlowAmount: -600,
         accumulatedBalance: 600,
+        status: "negative",
         inflowCount: 1,
         outflowCount: 3,
       },
     ]);
     assert.ok(rows[0]!.netPosition > 0);
+    assert.equal(rows[0]!.status, "positive");
     assert.ok(rows[1]!.netPosition < 0);
+    assert.equal(rows[1]!.status, "negative");
   });
 
   it("KPI compacto preserva valor completo para tooltip", () => {
@@ -94,7 +99,8 @@ describe("financeCashFlowDisplay", () => {
     assert.ok(charts.includes("FINANCE_CASH_FLOW_CHART_HEIGHT"));
     assert.ok(charts.includes("cash-flow-main-chart"));
     assert.ok(charts.includes("Posição Líquida Mensal"));
-    assert.ok(page.includes("computeCashFlowNetPosition"));
+    assert.ok(page.includes("netCashPosition"));
     assert.ok(page.includes("FinanceCashFlowNetPositionHero"));
+    assert.ok(page.includes("FinanceCashFlowExecutiveReading"));
   });
 });

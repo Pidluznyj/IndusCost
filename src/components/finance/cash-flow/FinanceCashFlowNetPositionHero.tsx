@@ -11,10 +11,14 @@ export function FinanceCashFlowNetPositionHero({
   posicaoLiquida,
   receivableOpen,
   payableOpen,
+  statusLabel,
+  coverageRatio,
 }: {
   posicaoLiquida: number;
   receivableOpen: number;
   payableOpen: number;
+  statusLabel?: string;
+  coverageRatio?: number | null;
 }) {
   const tone = resolveCashFlowNetPositionTone(posicaoLiquida);
   const value = formatCashFlowKpiDisplay(posicaoLiquida);
@@ -58,8 +62,16 @@ export function FinanceCashFlowNetPositionHero({
               tone.isSurplus ? "text-[#059669]" : "text-[#DC2626]"
             )}
           >
-            {tone.statusLabel}
+            {statusLabel ?? tone.statusLabel}
           </p>
+          {coverageRatio != null ? (
+            <p className="text-[11px] text-[#6B7280]">
+              Cobertura receber/pagar:{" "}
+              <span className="font-semibold text-[#111827] tabular-nums">
+                {coverageRatio.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}×
+              </span>
+            </p>
+          ) : null}
           <p className="text-[11px] text-[#6B7280] leading-relaxed max-w-2xl">
             Total a receber em aberto menos total a pagar em aberto — indica se o caixa projetado
             fecha com sobra ou falta.

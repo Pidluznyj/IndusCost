@@ -36,6 +36,11 @@ import type {
   FinanceCashFlowStatusFilter,
   FinanceCashFlowViewMode,
 } from "./financeCashFlowDashboardTypes.js";
+import {
+  buildCashFlowExecutiveReading,
+  buildNetCashPositionMetrics,
+  resolveMonthlyNetStatus,
+} from "./financeCashFlowIntelligence.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
   constructor(message: string) {
@@ -491,6 +496,7 @@ export function buildFinanceCashFlowMonthlySeries(
         outflowAmount: null,
         netFlowAmount: null,
         accumulatedBalance: null,
+        status: null,
         inflowCount: 0,
         outflowCount: 0,
       });
@@ -510,6 +516,7 @@ export function buildFinanceCashFlowMonthlySeries(
       outflowAmount: outflow,
       netFlowAmount: net,
       accumulatedBalance: accumulated,
+      status: resolveMonthlyNetStatus(net),
       inflowCount: bucket.inflowCount,
       outflowCount: bucket.outflowCount,
     });
@@ -752,6 +759,12 @@ export function buildFinanceCashFlowDashboard(
 
   const critical = buildCriticalMovements(filteredAr, filteredAp, referenceDate);
 
+  const totalReceivableRounded = roundMoney(totalReceivableOpen);
+  const totalPayableRounded = roundMoney(totalPayableOpen);
+  const netPosition = buildNetCashPositionMetrics(totalReceivableRounded, totalPayableRounded);
+  const topCustomers = buildPartySummaries(customerRows, 10);
+  const topSuppliers = buildPartySummaries(supplierRows, 10);
+
   const filtersApplied: FinanceCashFlowDashboardFiltersApplied = {
     year: filters.year,
     month: filters.month,
@@ -776,8 +789,8 @@ export function buildFinanceCashFlowDashboard(
       outflows: "NomusAccountsPayable",
     },
     cards: {
-      totalReceivableOpen: roundMoney(totalReceivableOpen),
-      totalPayableOpen: roundMoney(totalPayableOpen),
+      totalReceivableOpen: totalReceivableRounded,
+      totalPayableOpen: totalPayableRounded,
       inflowAmount: period.inflow,
       outflowAmount: period.outflow,
       netFlowAmount: period.net,
@@ -788,14 +801,33 @@ export function buildFinanceCashFlowDashboard(
       outflowToInflowPercent:
         period.inflow > 0 ? roundMoney(safeRatio(period.outflow, period.inflow) * 100) : null,
       negativeBalanceMonthsCount: period.negativeMonths,
+      netCashPosition: netPosition.netCashPosition,
+      netCashPositionStatus: netPosition.netCashPositionStatus,
+      netCashPositionAbs: netPosition.netCashPositionAbs,
+      netCashPositionLabel: netPosition.netCashPositionLabel,
+      cashCoverageRatio: netPosition.cashCoverageRatio,
+      cashNeedAmount: netPosition.cashNeedAmount,
+      cashNeedLabel: netPosition.cashNeedLabel,
       arRecords: filteredAr.length,
       apRecords: filteredAp.length,
       lastSyncAt: lastSync?.toISOString() ?? null,
       hasInitialBankBalance: false,
     },
+    executiveReading: buildCashFlowExecutiveReading({
+      cards: {
+        netCashPosition: netPosition.netCashPosition,
+        netCashPositionAbs: netPosition.netCashPositionAbs,
+        netCashPositionStatus: netPosition.netCashPositionStatus,
+        overdueReceivableAmount: roundMoney(overdueReceivable),
+        overduePayableAmount: roundMoney(overduePayable),
+        negativeBalanceMonthsCount: period.negativeMonths,
+      },
+      topCustomer: topCustomers[0],
+      topSupplier: topSuppliers[0],
+    }),
     monthlySeries,
-    topCustomers: buildPartySummaries(customerRows, 10),
-    topSuppliers: buildPartySummaries(supplierRows, 10),
+    topCustomers,
+    topSuppliers,
     largestProjectedInflows: critical.largestInflows,
     largestProjectedOutflows: critical.largestOutflows,
     overdueReceivables: critical.overdueReceivables,
@@ -812,8 +844,17 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
     payload.cards.netFlowAmount,
     payload.cards.accumulatedBalance,
     payload.cards.overdueCashImpact,
+    payload.cards.netCashPosition,
+    payload.cards.netCashPositionAbs,
+    payload.cards.cashNeedAmount,
   ];
   if (!nums.every((n) => Number.isFinite(n))) return false;
+  if (
+    payload.cards.cashCoverageRatio != null &&
+    !Number.isFinite(payload.cards.cashCoverageRatio)
+  ) {
+    return false;
+  }
   for (const p of payload.monthlySeries) {
     for (const v of [p.inflowAmount, p.outflowAmount, p.netFlowAmount, p.accumulatedBalance]) {
       if (v != null && !Number.isFinite(v)) return false;

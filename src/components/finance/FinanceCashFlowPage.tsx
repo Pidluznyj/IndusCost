@@ -3,13 +3,12 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  CircleDollarSign,
   Download,
   Loader2,
   RefreshCw,
-  Scale,
   TrendingDown,
   TrendingUp,
-  Wallet,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -42,22 +41,18 @@ import {
 } from "@/src/lib/financeCashFlowPermissions";
 import { FinanceCashFlowMonthlyChart } from "@/src/components/finance/FinanceCashFlowCharts";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
+import { FinanceCashFlowExecutiveReading } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveReading";
 import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
 import { FinanceCashFlowNetPositionHero } from "@/src/components/finance/cash-flow/FinanceCashFlowNetPositionHero";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import {
-  computeCashFlowNetPosition,
-  formatCashFlowKpiDisplay,
-} from "@/src/lib/financeCashFlowDisplay";
+import { formatCashFlowKpiDisplay } from "@/src/lib/financeCashFlowDisplay";
 import { buildFinanceCashFlowFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
-  FINANCE_CASH_FLOW_COMBINED_SCOPE,
   FINANCE_CASH_FLOW_NOT_BILLING_SCOPE,
-  FINANCE_CASH_FLOW_PROJECTED_BALANCE_SCOPE,
   FINANCE_CASH_FLOW_SYNC_SCOPE,
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
@@ -186,14 +181,12 @@ export function FinanceCashFlowPage() {
   }
 
   const cards = payload?.cards;
-  const posicaoLiquida = computeCashFlowNetPosition(
-    cards?.totalReceivableOpen ?? 0,
-    cards?.totalPayableOpen ?? 0
-  );
-  const netBalanceKpi = formatCashFlowKpiDisplay(cards?.netFlowAmount ?? 0);
+  const isDeficit = cards?.netCashPositionStatus === "deficit";
   const receivableKpi = formatCashFlowKpiDisplay(cards?.totalReceivableOpen ?? 0);
   const payableKpi = formatCashFlowKpiDisplay(cards?.totalPayableOpen ?? 0);
-  const accumulatedKpi = formatCashFlowKpiDisplay(cards?.accumulatedBalance ?? 0);
+  const cashNeedKpi = formatCashFlowKpiDisplay(
+    isDeficit ? (cards?.cashNeedAmount ?? 0) : (cards?.netCashPositionAbs ?? 0)
+  );
   const overdueKpi = formatCashFlowKpiDisplay(cards?.overdueCashImpact ?? 0);
   const overdueArKpi = formatCashFlowKpiDisplay(cards?.overdueReceivableAmount ?? 0);
   const overdueApKpi = formatCashFlowKpiDisplay(cards?.overduePayableAmount ?? 0);
@@ -469,28 +462,14 @@ export function FinanceCashFlowPage() {
             </div>
             <div className="p-5 space-y-4">
               <FinanceCashFlowNetPositionHero
-                posicaoLiquida={posicaoLiquida}
+                posicaoLiquida={cards?.netCashPosition ?? 0}
                 receivableOpen={cards?.totalReceivableOpen ?? 0}
                 payableOpen={cards?.totalPayableOpen ?? 0}
+                statusLabel={cards?.netCashPositionLabel}
+                coverageRatio={cards?.cashCoverageRatio}
               />
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3">
-                <FinanceCashFlowKpiCard
-                  testId="kpi-net-balance"
-                  label="Saldo líquido"
-                  value={netBalanceKpi.display}
-                  valueFull={netBalanceKpi.full}
-                  sub={withAppliedFilterSub(viewModeLabel, filtersActive)}
-                  icon={Scale}
-                  featured
-                  colorClass={
-                    cards && cards.netFlowAmount < 0 ? "text-[#DC2626]" : "text-[#059669]"
-                  }
-                  scopeNote={
-                    appliedFilters.viewMode === "combined"
-                      ? FINANCE_CASH_FLOW_COMBINED_SCOPE
-                      : undefined
-                  }
-                />
+              <FinanceCashFlowExecutiveReading lines={payload.executiveReading} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-3">
                 <FinanceCashFlowKpiCard
                   testId="kpi-total-inflow"
                   label="Total a receber"
@@ -510,14 +489,18 @@ export function FinanceCashFlowPage() {
                   colorClass="text-[#DC2626]"
                 />
                 <FinanceCashFlowKpiCard
-                  testId="kpi-accumulated-balance"
-                  label="Saldo acumulado"
-                  value={accumulatedKpi.display}
-                  valueFull={accumulatedKpi.full}
-                  sub="No período filtrado"
-                  icon={Wallet}
-                  colorClass="text-[#111827]"
-                  scopeNote={FINANCE_CASH_FLOW_PROJECTED_BALANCE_SCOPE}
+                  testId="kpi-cash-need"
+                  label={cards?.cashNeedLabel ?? "Necessidade de caixa"}
+                  value={cashNeedKpi.display}
+                  valueFull={cashNeedKpi.full}
+                  sub={
+                    isDeficit
+                      ? "Valor para zerar o déficit projetado"
+                      : "Excesso de recebíveis sobre pagáveis"
+                  }
+                  icon={CircleDollarSign}
+                  featured
+                  colorClass={isDeficit ? "text-[#DC2626]" : "text-[#059669]"}
                 />
                 <FinanceCashFlowKpiCard
                   testId="kpi-negative-months"
@@ -619,7 +602,7 @@ function PartyList({
         <p className="text-sm text-muted-foreground">{emptyLabel}</p>
       ) : (
         <ul className="space-y-2">
-          {items.map((item, idx) => (
+          {items.slice(0, 6).map((item, idx) => (
             <li
               key={`${item.personCnpj ?? item.personName ?? idx}`}
               className="flex items-center justify-between gap-2 text-sm"

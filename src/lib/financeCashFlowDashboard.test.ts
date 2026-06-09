@@ -211,4 +211,62 @@ describe("financeCashFlowDashboard", () => {
     assert.equal(payload.cards.overduePayableAmount, 100);
     assert.equal(payload.cards.overdueCashImpact, 300);
   });
+
+  it("netCashPosition = receber aberto − pagar aberto", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [arRow({ balanceReceivable: 1200 })],
+      [apRow({ balancePayable: 450 })],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF
+    );
+    assert.equal(payload.cards.netCashPosition, 750);
+    assert.equal(payload.cards.netCashPositionStatus, "surplus");
+    assert.equal(payload.cards.netCashPositionLabel, "Superávit projetado");
+    assert.equal(payload.cards.cashNeedAmount, 0);
+    assert.equal(payload.cards.cashNeedLabel, "Folga projetada");
+  });
+
+  it("déficit projeta necessidade de caixa", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [arRow({ balanceReceivable: 300 })],
+      [apRow({ balancePayable: 900 })],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF
+    );
+    assert.equal(payload.cards.netCashPosition, -600);
+    assert.equal(payload.cards.netCashPositionStatus, "deficit");
+    assert.equal(payload.cards.cashNeedAmount, 600);
+    assert.equal(payload.cards.cashNeedLabel, "Necessidade de caixa");
+  });
+
+  it("série mensal marca status positivo e negativo", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [arRow({ balanceReceivable: 2000, dueDate: new Date(2026, 0, 10) })],
+      [apRow({ balancePayable: 700, dueDate: new Date(2026, 0, 12) })],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF
+    );
+    const jan = payload.monthlySeries.find((p) => p.month === 1);
+    assert.equal(jan?.status, "positive");
+
+    const negative = buildFinanceCashFlowDashboard(
+      [arRow({ balanceReceivable: 200, dueDate: new Date(2026, 1, 10) })],
+      [apRow({ balancePayable: 900, dueDate: new Date(2026, 1, 12) })],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF
+    );
+    const fev = negative.monthlySeries.find((p) => p.month === 2);
+    assert.equal(fev?.status, "negative");
+  });
+
+  it("executiveReading é determinístico e não vazio", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [arRow({ balanceReceivable: 500 })],
+      [apRow({ balancePayable: 900 })],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF
+    );
+    assert.ok(payload.executiveReading.length > 0);
+    assert.ok(payload.executiveReading.some((l) => l.includes("déficit")));
+  });
 });

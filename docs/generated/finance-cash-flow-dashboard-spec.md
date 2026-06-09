@@ -92,34 +92,75 @@ Armazenados como **positivos** no payload (`outflowAmount`). Na UI, exibidos com
 
 ---
 
-## 4. KPIs — Resumo executivo
+## 4. Motor gerencial de posição líquida e necessidade de caixa
 
-| KPI | Campo | Fórmula |
-|-----|-------|---------|
-| Saldo líquido | `cards.netFlowAmount` | entradas − saídas no período filtrado |
-| Total a receber | `cards.totalReceivableOpen` | Σ `balanceReceivable` aberto AR |
-| Total a pagar | `cards.totalPayableOpen` | Σ `balancePayable` aberto AP |
-| Saldo acumulado | `cards.accumulatedBalance` | Σ fluxo líquido até mês limite |
-| Vencidos impactando caixa | `cards.overdueCashImpact` | overdue AR + overdue AP |
-| % saídas / entradas | `cards.outflowToInflowPercent` | outflow ÷ inflow × 100 |
+### 4.1 Posição líquida de caixa (carteira em aberto)
+
+```
+netCashPosition = totalReceivableOpen - totalPayableOpen
+netCashPositionAbs = |netCashPosition|
+netCashPositionStatus = surplus  (se >= 0)
+                      | deficit  (se < 0)
+netCashPositionLabel = "Superávit projetado" | "Déficit projetado"
+```
+
+| Campo | Regra |
+|-------|-------|
+| `cashCoverageRatio` | `totalReceivableOpen / totalPayableOpen` quando pagar > 0; `null` se pagar = 0 |
+| `cashNeedAmount` | `netCashPositionAbs` em déficit; `0` em superávit |
+| `cashNeedLabel` | `"Necessidade de caixa"` \| `"Folga projetada"` |
+
+Implementação: `buildNetCashPositionMetrics` em `financeCashFlowIntelligence.ts`.
+
+### 4.2 Série mensal para gráfico principal
+
+Por mês (`monthlySeries[]`):
+
+| Campo | Regra |
+|-------|-------|
+| `inflowAmount` | AR no mês |
+| `outflowAmount` | AP no mês (positivo no payload) |
+| `netFlowAmount` | inflow − outflow |
+| `accumulatedBalance` | acumulado do fluxo líquido |
+| `status` | `positive` se net ≥ 0; `negative` se net < 0; `null` em meses futuros sem dado (realizado) |
+
+### 4.3 Leitura executiva (`executiveReading`)
+
+Frases determinísticas geradas por `buildCashFlowExecutiveReading` — sem LLM externo. Cobre déficit/folga, vencidos AR/AP, meses negativos e concentração (> 40% em cliente/fornecedor).
 
 ---
 
-## 5. Gráfico principal
+## 5. KPIs — Resumo executivo (UI)
 
-**Título:** Fluxo de Caixa e Saldo Acumulado por Mês
+| KPI | Campo |
+|-----|-------|
+| Posição líquida de caixa | `cards.netCashPosition` + hero |
+| Total a receber | `cards.totalReceivableOpen` |
+| Total a pagar | `cards.totalPayableOpen` |
+| Necessidade / Folga de caixa | `cards.cashNeedLabel` + `cashNeedAmount` ou `netCashPositionAbs` |
+| Meses com saldo negativo | `cards.negativeBalanceMonthsCount` |
+| Vencidos no caixa | `cards.overdueCashImpact` |
+
+Campos auxiliares de período: `netFlowAmount`, `accumulatedBalance`, `outflowToInflowPercent`.
+
+---
+
+## 6. Gráfico principal
+
+**Título:** Posição Líquida Mensal — Receber x Pagar
 
 | Série | Visual | Campo |
 |-------|--------|-------|
-| Entradas | Barras verdes | `monthlySeries[].inflowAmount` |
-| Saídas | Barras vermelhas | `monthlySeries[].outflowAmount` |
+| Posição líquida | Barras verdes acima / vermelhas abaixo do zero | `monthlySeries[].netFlowAmount` |
 | Saldo acumulado | Linha azul | `monthlySeries[].accumulatedBalance` |
 
-Tooltip: entrada, saída, líquido, acumulado.
+Altura fixa `FINANCE_CASH_FLOW_CHART_HEIGHT = 280` — evita colapso do `ResponsiveContainer`.
+
+Tooltip: mês, a receber, a pagar, posição líquida, saldo acumulado.
 
 ---
 
-## 6. Filtros
+## 7. Filtros
 
 ### Principais (sempre visíveis)
 
@@ -141,7 +182,7 @@ Tooltip: entrada, saída, líquido, acumulado.
 
 ---
 
-## 7. Abas internas
+## 8. Abas internas
 
 | Aba | Fase |
 |-----|------|
@@ -155,7 +196,7 @@ Tooltip: entrada, saída, líquido, acumulado.
 
 ---
 
-## 8. API
+## 9. API
 
 | Endpoint | Builder | Fonte |
 |----------|---------|-------|
@@ -164,7 +205,7 @@ Tooltip: entrada, saída, líquido, acumulado.
 
 ---
 
-## 9. Exceções rotuladas
+## 10. Exceções rotuladas
 
 | Constante | Texto |
 |-----------|-------|
@@ -175,7 +216,7 @@ Tooltip: entrada, saída, líquido, acumulado.
 
 ---
 
-## 10. Pendências (fases posteriores)
+## 11. Pendências (fases posteriores)
 
 1. Calendário diário de caixa
 2. Tabela detalhada consolidada AR/AP

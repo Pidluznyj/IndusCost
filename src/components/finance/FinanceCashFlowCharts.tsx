@@ -91,7 +91,11 @@ export function FinanceCashFlowMonthlyChart({
             {data.map((entry) => (
               <Cell
                 key={`net-${entry.name}`}
-                fill={entry.netPosition >= 0 ? FINANCE_BI_COLORS.success : FINANCE_BI_COLORS.risk}
+                fill={
+                  entry.status === "negative" || entry.netPosition < 0
+                    ? FINANCE_BI_COLORS.risk
+                    : FINANCE_BI_COLORS.success
+                }
               />
             ))}
           </Bar>

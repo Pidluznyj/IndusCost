@@ -39,6 +39,7 @@ export type CashFlowNetPositionChartRow = {
   payable: number;
   netPosition: number;
   accumulated: number | null;
+  status: "positive" | "negative" | null;
 };
 
 export function buildCashFlowNetPositionChartRows(
@@ -48,12 +49,15 @@ export function buildCashFlowNetPositionChartRows(
     const receivable = p.inflowAmount ?? 0;
     const payable = p.outflowAmount ?? 0;
     const netPosition = p.netFlowAmount ?? receivable - payable;
+    const status =
+      p.status ?? (p.netFlowAmount == null ? null : p.netFlowAmount >= 0 ? "positive" : "negative");
     return {
       name: p.monthLabel,
       receivable,
       payable,
       netPosition,
       accumulated: p.accumulatedBalance,
+      status,
     };
   });
 }
