@@ -48,6 +48,12 @@ import {
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
   FINANCE_SYNC_GLOBAL_SCOPE,
 } from "@/src/lib/financeFilterScope";
+import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
+import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
+import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
+import { buildFinanceBillingFilterChips } from "@/src/lib/financeBiFilterChips";
+import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
+import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 
 export function FinanceBillingPage() {
   const auth = useAuth();
@@ -204,64 +210,73 @@ export function FinanceBillingPage() {
     appliedNfeFilters.classification !== "all" ||
     appliedNfeFilters.status !== "all";
 
+  const filterStatus = useMemo(
+    () => resolveFinanceBiFilterStatus(Boolean(filtersActive), hasPendingFilterChanges),
+    [filtersActive, hasPendingFilterChanges]
+  );
+
+  const handleRemoveBillingChip = useCallback(
+    (id: string) => {
+      if (id === "year") return;
+      const nextNfe = { ...appliedNfeFilters };
+      if (id === "month") nextNfe.month = "";
+      else if (id === "customerCnpj") nextNfe.customerCnpj = "";
+      else if (id === "documentNumber") nextNfe.documentNumber = "";
+      else if (id === "classification") nextNfe.classification = "all";
+      else if (id === "status") nextNfe.status = "all";
+      setAppliedNfeFilters(nextNfe);
+      setDraftNfeFilters(nextNfe);
+    },
+    [appliedNfeFilters]
+  );
+
+  const appliedFilterChips = useMemo(
+    () => buildFinanceBillingFilterChips(appliedYear, appliedNfeFilters, handleRemoveBillingChip),
+    [appliedYear, appliedNfeFilters, handleRemoveBillingChip]
+  );
+
   return (
-    <div className="space-y-5 pb-10 min-h-screen">
-      {/* Header */}
-      <header className="rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card/90 to-card/60 p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0 space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Financeiro · Mercado
-            </p>
-            <h1 className="text-2xl font-extrabold tracking-tight text-foreground">Faturamento</h1>
-            <p className="text-sm text-muted-foreground max-w-2xl">
-              Painel executivo de faturamento de mercado. Comparativo {comparisonLabel}.
-            </p>
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <FinanceBillingSourceBadge variant="official" />
-              <FinanceBillingSourceBadge variant="diagnostic" />
-            </div>
-            <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground pt-1">
-              <div>
-                <dt className="inline">Período: </dt>
-                <dd className="inline font-semibold text-foreground">
-                  {data?.periodLabel ?? (loading ? "…" : "—")}
-                </dd>
-              </div>
-              <div>
-                <dt className="inline">Último faturamento: </dt>
-                <dd className="inline font-semibold text-foreground">
-                  {data?.lastInvoicedAt
-                    ? formatFinanceDateTime(data.lastInvoicedAt)
-                    : loading
-                      ? "…"
-                      : "—"}
-                </dd>
-              </div>
-              <div>
-                <dt className="inline">Atualizado: </dt>
-                <dd className="inline font-semibold text-foreground">
-                  {data ? formatFinanceDateTime(data.generatedAt) : loading ? "…" : "—"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          <button
-            type="button"
-            onClick={handleRefreshAll}
-            disabled={loading}
-            aria-busy={loading}
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50 shrink-0"
-          >
-            {loading ? (
+    <FinanceBiDashboardShell>
+      <FinanceBiExecutiveHeader
+        eyebrow="Financeiro · Mercado"
+        title="Faturamento"
+        subtitle={`Painel executivo de faturamento de mercado (SalesOrder). Comparativo ${comparisonLabel}.`}
+        filterStatus={filterStatus}
+        meta={[
+          { label: "Período", value: data?.periodLabel ?? (loading ? "…" : "—") },
+          {
+            label: "Último faturamento",
+            value: data?.lastInvoicedAt
+              ? formatFinanceDateTime(data.lastInvoicedAt)
+              : loading
+                ? "…"
+                : "—",
+          },
+          {
+            label: "Atualizado",
+            value: data ? formatFinanceDateTime(data.generatedAt) : loading ? "…" : "—",
+          },
+        ]}
+        actions={[
+          {
+            id: "refresh",
+            label: "Atualizar painel",
+            onClick: handleRefreshAll,
+            disabled: loading,
+            loading,
+            icon: loading ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            Atualizar painel
-          </button>
+            ),
+          },
+        ]}
+      >
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <FinanceBillingSourceBadge variant="official" />
+          <FinanceBillingSourceBadge variant="diagnostic" />
         </div>
-      </header>
+      </FinanceBiExecutiveHeader>
 
       <FinanceBillingNfeSyncPanel
         canRun={canRunSync}
@@ -282,38 +297,17 @@ export function FinanceBillingPage() {
         />
       ) : null}
 
-      {/* Filtros colapsáveis */}
-      <section className="rounded-2xl border border-border/70 bg-card/50 overflow-hidden shadow-sm">
-        <button
-          type="button"
-          onClick={() => setShowFilters((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-muted/30 transition-colors"
-        >
-          <div className="flex items-center gap-2.5">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-semibold text-foreground">Filtros</span>
-            <span className="text-xs text-muted-foreground">Ano: {appliedYear}</span>
-            {filtersActive ? (
-              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
-                NF-e ativos
-              </span>
-            ) : null}
-            {hasPendingFilterChanges ? (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                Não aplicados
-              </span>
-            ) : null}
-          </div>
-          {showFilters ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </button>
-        {showFilters ? (
-          <div className="border-t border-border/50 p-5 space-y-4 bg-background/50">
-            <p className="text-[11px] text-muted-foreground">{FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <FinanceBiFilterPanel
+        expanded={showFilters}
+        onToggle={() => setShowFilters((v) => !v)}
+        filterStatus={filterStatus}
+        chips={appliedFilterChips}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        applyDisabled={!hasPendingFilterChanges || loading}
+        hint={FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
               <FilterField label="Ano">
                 <select
                   value={draftYear}
@@ -396,32 +390,10 @@ export function FinanceBillingPage() {
                   <option value="cancelled">Cancelada</option>
                 </select>
               </FilterField>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleApplyFilters}
-                disabled={!hasPendingFilterChanges || loading}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-              >
-                <Filter className="h-3.5 w-3.5" />
-                Aplicar filtros
-              </button>
-              <button
-                type="button"
-                onClick={handleClearFilters}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-semibold hover:bg-accent"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Limpar filtros
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </section>
+        </div>
+      </FinanceBiFilterPanel>
 
-      {/* Tabs internas */}
-      <div className="rounded-2xl border border-border/70 bg-card/50 overflow-hidden shadow-sm">
+      <div className={financeBiSectionClass}>
         <nav className="flex flex-wrap gap-1 p-2 border-b border-border/50 bg-background/30">
           {FINANCE_BILLING_TABS.map((tab) => (
             <button
@@ -471,7 +443,7 @@ export function FinanceBillingPage() {
           ) : null}
         </div>
       </div>
-    </div>
+    </FinanceBiDashboardShell>
   );
 }
 

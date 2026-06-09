@@ -15,13 +15,19 @@ describe("financeAccountsReceivablePageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivablePage.tsx"),
       "utf8"
     );
-    assert.ok(page.includes("Aplicar filtros"));
-    assert.ok(page.includes("Limpar filtros"));
+    const filterPanel = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "bi", "FinanceBiFilterPanel.tsx"),
+      "utf8"
+    );
+    assert.ok(filterPanel.includes("Aplicar filtros"));
+    assert.ok(filterPanel.includes("Limpar"));
     assert.ok(page.includes("draftFilters"));
     assert.ok(page.includes("appliedFilters"));
     assert.ok(page.includes("FinanceFilterScopeBanner"));
+    assert.ok(page.includes("FinanceBiDashboardShell"));
+    assert.ok(page.includes("FinanceBiFilterPanel"));
+    assert.ok(page.includes("resolveFinanceBiFilterStatus"));
     assert.ok(page.includes("withAppliedFilterSub"));
-    assert.ok(page.includes("Não aplicados"));
     assert.ok(!page.includes("useDebouncedValue"));
   });
 

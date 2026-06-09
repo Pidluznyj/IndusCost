@@ -19,13 +19,17 @@ describe("financeAccountsPayablePageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
       "utf8"
     );
-    assert.ok(page.includes("Aplicar filtros"));
-    assert.ok(page.includes("Limpar filtros"));
+    const filterPanel = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "bi", "FinanceBiFilterPanel.tsx"),
+      "utf8"
+    );
+    assert.ok(filterPanel.includes("Aplicar filtros"));
+    assert.ok(filterPanel.includes("Limpar"));
     assert.ok(page.includes("draftFilters"));
     assert.ok(page.includes("appliedFilters"));
     assert.ok(page.includes("hasPendingFinanceApFilterChanges"));
+    assert.ok(page.includes("resolveFinanceBiFilterStatus"));
     assert.ok(!page.includes("useDebouncedValue"));
-    assert.ok(page.includes("Não aplicados"));
     assert.ok(page.includes("showFilters"));
   });
 
@@ -70,6 +74,8 @@ describe("financeAccountsPayablePageFilters", () => {
       "utf8"
     );
     assert.ok(page.includes("FinanceFilterScopeBanner"));
+    assert.ok(page.includes("FinanceBiDashboardShell"));
+    assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("withAppliedFilterSub"));
     const applied = normalizeFinanceApUiFilters({
       ...createDefaultFinanceApUiFilters(REF),

@@ -76,76 +76,13 @@ import {
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { cn } from "@/src/lib/utils";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
+import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
+import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
+import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { buildFinanceApFilterChips } from "@/src/lib/financeBiFilterChips";
+import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { withAppliedFilterSub } from "@/src/lib/financeFilterScope";
-
-function ExecKpiCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  hint,
-  trend,
-  trendLabel,
-  colorClass = "text-foreground",
-  bgClass = "bg-card",
-  loading = false,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  sub?: string;
-  hint?: string;
-  trend?: "up" | "down" | "neutral";
-  trendLabel?: string;
-  colorClass?: string;
-  bgClass?: string;
-  loading?: boolean;
-}) {
-  return (
-    <div
-      className={cn("rounded-2xl border border-border/70 p-5 space-y-3 shadow-sm", bgClass)}
-      title={hint}
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          {label}
-        </span>
-        <span className="h-9 w-9 rounded-xl bg-muted/60 flex items-center justify-center">
-          <Icon className={cn("h-4 w-4", colorClass)} />
-        </span>
-      </div>
-      {loading ? (
-        <div className="h-8 w-32 animate-pulse rounded-lg bg-muted" />
-      ) : (
-        <p className={cn("text-3xl font-extrabold tracking-tight leading-none", colorClass)}>
-          {value}
-        </p>
-      )}
-      <div className="flex items-center justify-between min-h-[1.25rem]">
-        {sub ? <span className="text-[11px] text-muted-foreground">{sub}</span> : <span />}
-        {trend && trendLabel ? (
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
-              trend === "up"
-                ? "bg-red-50 text-red-700"
-                : trend === "down"
-                  ? "bg-green-50 text-green-700"
-                  : "bg-muted text-muted-foreground"
-            )}
-          >
-            {trend === "up" ? (
-              <TrendingUp className="h-2.5 w-2.5" />
-            ) : trend === "down" ? (
-              <TrendingDown className="h-2.5 w-2.5" />
-            ) : null}
-            {trendLabel}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 type ActionItem = {
   id: string;
@@ -594,6 +531,26 @@ export function FinanceAccountsPayablePage() {
   const cards = data?.cards;
   const filtersActive = !isDefaultFinanceApUiFilters(appliedFilters);
 
+  const filterStatus = useMemo(
+    () => resolveFinanceBiFilterStatus(filtersActive, hasPendingFilterChanges),
+    [filtersActive, hasPendingFilterChanges]
+  );
+
+  const handleRemoveFilterChip = useCallback((field: keyof FinanceApUiFilters) => {
+    const next: FinanceApUiFilters = { ...appliedFilters };
+    if (field === "status" || field === "suspendPayment") next[field] = "all";
+    else if (field === "year") next[field] = String(new Date().getFullYear());
+    else next[field] = "";
+    const normalized = normalizeFinanceApUiFilters(next);
+    setDraftFilters(normalized);
+    setAppliedFilters(normalized);
+  }, [appliedFilters]);
+
+  const appliedFilterChips = useMemo(
+    () => buildFinanceApFilterChips(appliedFilters, handleRemoveFilterChip),
+    [appliedFilters, handleRemoveFilterChip]
+  );
+
   const overdueTrend: "up" | "down" | "neutral" =
     cards?.overduePercent != null
       ? cards.overduePercent > 15
@@ -604,73 +561,60 @@ export function FinanceAccountsPayablePage() {
       : "neutral";
 
   return (
-    <div className="space-y-5 pb-10 min-h-screen">
-      <header className="rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card/90 to-card/60 p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0 space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Financeiro · Contas a Pagar
-            </p>
-            <h1 className="text-2xl font-extrabold tracking-tight text-foreground">
-              Contas a Pagar
-            </h1>
-            <p className="text-sm text-muted-foreground max-w-2xl">
-              Controle de obrigações, fornecedores críticos e agenda de pagamentos.{" "}
-              {cards?.totalRecords != null ? (
-                <span className="font-semibold text-foreground">
-                  {formatFinanceInteger(cards.totalRecords)} registros filtrados.
-                </span>
-              ) : null}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <dl className="hidden lg:flex gap-4 text-xs mr-2">
-              <div>
-                <dt className="text-muted-foreground">Última sync</dt>
-                <dd className="font-semibold text-foreground tabular-nums">
-                  {formatFinanceDateTime(cards?.lastSyncAt)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Calculado em</dt>
-                <dd className="font-semibold text-foreground tabular-nums">
-                  {data ? formatFinanceDateTime(data.generatedAt) : loading ? "…" : "—"}
-                </dd>
-              </div>
-            </dl>
-            <button
-              type="button"
-              onClick={() => void loadDashboard()}
-              disabled={loading}
-              aria-busy={loading}
-              className="inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
-            >
-              {loading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
-              )}
-              Atualizar
-            </button>
-            {canExport ? (
-              <button
-                type="button"
-                onClick={() => void handleExport()}
-                disabled={exporting || loading}
-                aria-busy={exporting}
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
-              >
-                {exporting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5" />
-                )}
-                Exportar CSV
-              </button>
+    <FinanceBiDashboardShell>
+      <FinanceBiExecutiveHeader
+        eyebrow="Financeiro · Contas a Pagar"
+        title="Contas a Pagar"
+        subtitle={
+          <>
+            Controle de obrigações — fonte oficial NomusAccountsPayable.{" "}
+            {cards?.totalRecords != null ? (
+              <span className="font-semibold text-[#111827]">
+                {formatFinanceInteger(cards.totalRecords)} registros filtrados.
+              </span>
             ) : null}
-          </div>
-        </div>
-      </header>
+          </>
+        }
+        filterStatus={filterStatus}
+        meta={[
+          { label: "Última sync", value: formatFinanceDateTime(cards?.lastSyncAt) },
+          {
+            label: "Calculado em",
+            value: data ? formatFinanceDateTime(data.generatedAt) : loading ? "…" : "—",
+          },
+        ]}
+        actions={[
+          {
+            id: "refresh",
+            label: "Atualizar",
+            onClick: () => void loadDashboard(),
+            disabled: loading,
+            loading,
+            icon: loading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            ),
+          },
+          ...(canExport
+            ? [
+                {
+                  id: "export",
+                  label: "Exportar CSV",
+                  onClick: () => void handleExport(),
+                  disabled: exporting || loading,
+                  loading: exporting,
+                  variant: "accent" as const,
+                  icon: exporting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  ),
+                },
+              ]
+            : []),
+        ]}
+      />
 
       <FinanceAccountsPayableSyncPanel
         canRun={canRunSync}
@@ -691,35 +635,16 @@ export function FinanceAccountsPayablePage() {
         <FinanceApSuccessBanner message={exportSuccess} onDismiss={() => setExportSuccess(null)} />
       ) : null}
 
-      <section className="rounded-2xl border border-border/70 bg-card/50 overflow-hidden shadow-sm">
-        <button
-          type="button"
-          onClick={() => setShowFilters((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-muted/30 transition-colors"
-        >
-          <div className="flex items-center gap-2.5">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-semibold text-foreground">Filtros</span>
-            {filtersActive ? (
-              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
-                Ativos
-              </span>
-            ) : null}
-            {hasPendingFilterChanges ? (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                Não aplicados
-              </span>
-            ) : null}
-          </div>
-          {showFilters ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </button>
-        {showFilters ? (
-          <div className="border-t border-border/50 p-5 space-y-4 bg-background/50">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 rounded-xl border border-border/40 bg-card/60 p-4">
+      <FinanceBiFilterPanel
+        expanded={showFilters}
+        onToggle={() => setShowFilters((v) => !v)}
+        filterStatus={filterStatus}
+        chips={appliedFilterChips}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        applyDisabled={!hasPendingFilterChanges || loading}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 rounded-xl border border-[#E5E7EB] bg-white p-4">
               <p className="col-span-full text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 Período de vencimento
               </p>
@@ -802,34 +727,13 @@ export function FinanceAccountsPayablePage() {
                 value={draftFilters.bankAccountName}
                 onChange={(v) => setDraftFilters((f) => ({ ...f, bankAccountName: v }))}
               />
-            </div>
-            <div className="flex items-center gap-3 pt-1">
-              <button
-                type="button"
-                onClick={handleApplyFilters}
-                disabled={!hasPendingFilterChanges || loading}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-              >
-                <Filter className="h-3.5 w-3.5" />
-                Aplicar filtros
-              </button>
-              <button
-                type="button"
-                onClick={handleClearFilters}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-semibold hover:bg-accent"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Limpar filtros
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </section>
+        </div>
+      </FinanceBiFilterPanel>
 
       <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <ExecKpiCard
+        <FinanceBiKpiCard
           icon={Wallet}
           label="Obrigações em Aberto"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
@@ -841,10 +745,9 @@ export function FinanceAccountsPayablePage() {
           )}
           hint="Soma dos saldos com balancePayable > 0 (filtros aplicados)"
           colorClass="text-blue-600 dark:text-blue-400"
-          bgClass="bg-white dark:bg-card"
           loading={loading}
         />
-        <ExecKpiCard
+        <FinanceBiKpiCard
           icon={Landmark}
           label="Pago no Mês"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.paidThisMonthAmount)}
@@ -854,10 +757,9 @@ export function FinanceAccountsPayablePage() {
           )}
           hint="Soma de amountPaid no mês atual, respeitando filtros aplicados"
           colorClass="text-green-600 dark:text-green-400"
-          bgClass="bg-white dark:bg-card"
           loading={loading}
         />
-        <ExecKpiCard
+        <FinanceBiKpiCard
           icon={TrendingDown}
           label="% em Atraso"
           value={loading ? "…" : formatFinancePercent(cards?.overduePercent)}
@@ -885,10 +787,9 @@ export function FinanceAccountsPayablePage() {
                 ? "text-amber-600 dark:text-amber-400"
                 : "text-green-600 dark:text-green-400"
           }
-          bgClass="bg-white dark:bg-card"
           loading={loading}
         />
-        <ExecKpiCard
+        <FinanceBiKpiCard
           icon={ShieldAlert}
           label="Vencido > 30 Dias"
           value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueOver30DaysAmount)}
@@ -904,7 +805,6 @@ export function FinanceAccountsPayablePage() {
               ? "text-red-600 dark:text-red-400"
               : "text-foreground"
           }
-          bgClass="bg-white dark:bg-card"
           loading={loading}
         />
       </div>
@@ -1007,7 +907,7 @@ export function FinanceAccountsPayablePage() {
           </div>
         </div>
       </div>
-    </div>
+    </FinanceBiDashboardShell>
   );
 }
 

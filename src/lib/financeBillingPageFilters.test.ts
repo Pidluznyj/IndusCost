@@ -29,9 +29,14 @@ describe("financeBillingPageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceBillingPage.tsx"),
       "utf8"
     );
+    const filterPanel = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "bi", "FinanceBiFilterPanel.tsx"),
+      "utf8"
+    );
     const mod = readFileSync(join(process.cwd(), "src", "components", "FinanceModule.tsx"), "utf8");
-    assert.ok(page.includes("Aplicar filtros"));
-    assert.ok(page.includes("Limpar filtros"));
+    assert.ok(filterPanel.includes("Aplicar filtros"));
+    assert.ok(filterPanel.includes("Limpar"));
+    assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("draftYear"));
     assert.ok(page.includes("appliedYear"));
     assert.ok(page.includes("FINANCE_BILLING_TABS"));
@@ -75,6 +80,8 @@ describe("financeBillingPageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
       "utf8"
     );
+    assert.ok(page.includes("FinanceBiDashboardShell"));
+    assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("loadingComparison"));
     assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE"));
     assert.ok(page.includes("FINANCE_SYNC_GLOBAL_SCOPE"));

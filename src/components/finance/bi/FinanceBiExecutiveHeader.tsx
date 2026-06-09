@@ -1,0 +1,88 @@
+import React from "react";
+import {
+  financeBiEyebrowClass,
+  financeBiHeaderClass,
+  financeBiMetaLabelClass,
+  financeBiMetaValueClass,
+  financeBiSubtitleClass,
+  financeBiTitleClass,
+  financeBiButtonAccentClass,
+  financeBiButtonOutlineClass,
+} from "@/src/lib/financeBiDashboardTheme";
+import type { FinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
+import { FinanceBiFilterStatusBadge } from "@/src/components/finance/bi/FinanceBiFilterStatusBadge";
+import { cn } from "@/src/lib/utils";
+
+export type FinanceBiHeaderMeta = { label: string; value: React.ReactNode };
+export type FinanceBiHeaderAction = {
+  id: string;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  icon?: React.ReactNode;
+  variant?: "outline" | "accent";
+};
+
+export function FinanceBiExecutiveHeader({
+  eyebrow,
+  title,
+  subtitle,
+  meta = [],
+  filterStatus,
+  actions = [],
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: React.ReactNode;
+  meta?: FinanceBiHeaderMeta[];
+  filterStatus?: FinanceBiFilterStatus;
+  actions?: FinanceBiHeaderAction[];
+  children?: React.ReactNode;
+}) {
+  return (
+    <header className={financeBiHeaderClass}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={financeBiEyebrowClass}>{eyebrow}</p>
+            {filterStatus ? <FinanceBiFilterStatusBadge status={filterStatus} /> : null}
+          </div>
+          <h1 className={financeBiTitleClass}>{title}</h1>
+          {subtitle ? <p className={financeBiSubtitleClass}>{subtitle}</p> : null}
+          {children}
+          {meta.length > 0 ? (
+            <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs pt-1">
+              {meta.map((item) => (
+                <div key={item.label}>
+                  <dt className={`inline ${financeBiMetaLabelClass}`}>{item.label}: </dt>
+                  <dd className={`inline ${financeBiMetaValueClass}`}>{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+        </div>
+        {actions.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {actions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                onClick={action.onClick}
+                disabled={action.disabled}
+                aria-busy={action.loading}
+                className={cn(
+                  action.variant === "accent" ? financeBiButtonAccentClass : financeBiButtonOutlineClass
+                )}
+              >
+                {action.icon}
+                {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </header>
+  );
+}
