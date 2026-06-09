@@ -3,7 +3,7 @@
 **Projeto:** IndusCost  
 **Branch:** `main`  
 **Data:** 2026-06-09  
-**Fase:** 1 — Visão Geral (KPIs + gráfico mensal)
+**Fase:** 2 — Previsão de caixa e cenários gerenciais
 
 ---
 
@@ -160,7 +160,77 @@ Tooltip: mês, a receber, a pagar, posição líquida, saldo acumulado.
 
 ---
 
-## 7. Filtros
+## 7. Previsão de caixa (`cashForecast`)
+
+Motor: `financeCashFlowForecast.ts` → `buildCashFlowForecast`.
+
+### 7.1 Horizontes
+
+| Horizonte | Meses | Campo |
+|-----------|-------|-------|
+| Mês atual | 1 | `horizons.currentMonth` |
+| Próximos 3 meses | 3 | `horizons.next3Months` |
+| Próximos 6 meses | 6 | `horizons.next6Months` |
+| Próximos 12 meses | 12 | `horizons.next12Months` |
+
+Buckets rolantes a partir do mês de referência (12 pontos em `monthlyPoints`).
+
+### 7.2 Premissas — cenário base
+
+| Regra | Detalhe |
+|-------|---------|
+| Data prevista | `dueDate` (vencimento) no modo `projected` |
+| Data realizada | `settlementDate` (AR) / `paymentDate ?? settlementDate` (AP) no modo `realized` |
+| Valor previsto | `balanceReceivable` / `balancePayable` (títulos abertos) |
+| Valor realizado | `amountReceived` / `amountPaid` |
+| Filtros | Mesmos de AR/AP aplicados antes do cálculo |
+| Meses futuros (realizado) | `null` — evita zero falso |
+
+Métricas por horizonte: `projectedInflow`, `projectedOutflow`, `projectedNet`, `projectedAccumulated`, `worstMonth`, `bestMonth`, `negativeMonthsCount`, `firstNegativeMonth`, `maxCashNeed`, `maxCashSurplus`.
+
+### 7.3 Cenário conservador (`conservativeScenario`)
+
+**Rótulo:** *Cenário conservador — estimativa, não altera dados oficiais.*
+
+| Premissa | Fator |
+|----------|-------|
+| Recebíveis em aberto | 80% (`CONSERVATIVE_OPEN_RECEIVABLE_FACTOR`) |
+| Vencidos a receber | 50% (`CONSERVATIVE_OVERDUE_RECEIVABLE_FACTOR`) |
+| Contas a pagar | 100% |
+
+Métricas: `projectedInflowConservative`, `projectedOutflow`, `projectedNetConservative`, `cashNeedConservative`, `deltaVsBase`.
+
+### 7.4 Cenário crítico (`stressScenario`)
+
+**Rótulo:** *Cenário crítico — simulação gerencial.*
+
+| Premissa | Fator |
+|----------|-------|
+| Recebíveis em aberto | 60% (`STRESS_OPEN_RECEIVABLE_FACTOR`) |
+| Vencidos a receber | 30% (`STRESS_OVERDUE_RECEIVABLE_FACTOR`) |
+| Contas a pagar | 100% (vencidos a pagar permanecem imediatos) |
+
+Métricas: `projectedInflowStress`, `projectedOutflowStress`, `projectedNetStress`, `cashNeedStress`, `monthsAtRiskStress`.
+
+### 7.5 Gráfico de cenários
+
+**Título:** Previsão de caixa por cenário — `scenarioChartPoints[]` com `base`, `conservative`, `stress` por mês (fluxo líquido). Verde = positivo; vermelho = negativo.
+
+### 7.6 Necessidade de caixa (painel UI)
+
+Compara necessidade no cenário base (`cards.cashNeedAmount` ou `maxCashNeed` do horizonte), conservador e crítico; destaca mês de maior pressão e valores vencidos AR/AP.
+
+### 7.7 Recomendações operacionais (`operationalRecommendations`)
+
+Regras determinísticas em `buildCashFlowOperationalRecommendations`: cobrança de vencidos, negociação com fornecedor, mês de pressão, déficit, concentração de cliente vencido.
+
+### 7.8 Limitações
+
+O fluxo de caixa **projetado** depende dos vencimentos de AR/AP sincronizados do Nomus. **Não substitui** saldo bancário real nem previsão de faturamento. Cenários conservador e crítico são simulações visuais — não alteram dados oficiais.
+
+---
+
+## 8. Filtros
 
 ### Principais (sempre visíveis)
 
@@ -182,7 +252,7 @@ Tooltip: mês, a receber, a pagar, posição líquida, saldo acumulado.
 
 ---
 
-## 8. Abas internas
+## 9. Abas internas
 
 | Aba | Fase |
 |-----|------|
@@ -196,7 +266,7 @@ Tooltip: mês, a receber, a pagar, posição líquida, saldo acumulado.
 
 ---
 
-## 9. API
+## 10. API
 
 | Endpoint | Builder | Fonte |
 |----------|---------|-------|
@@ -205,7 +275,7 @@ Tooltip: mês, a receber, a pagar, posição líquida, saldo acumulado.
 
 ---
 
-## 10. Exceções rotuladas
+## 11. Exceções rotuladas
 
 | Constante | Texto |
 |-----------|-------|
@@ -216,7 +286,11 @@ Tooltip: mês, a receber, a pagar, posição líquida, saldo acumulado.
 
 ---
 
-## 11. Pendências (fases posteriores)
+## 12. Export CSV estendido
+
+Linhas `mensal` mantêm colunas originais + `cenario_base_liquido`, `conservador_liquido`, `critico_liquido`. Linhas resumo: `necessidade_caixa` (base/conservador/crítico) e `horizonte_12m`.
+
+## 13. Pendências (fases posteriores)
 
 1. Calendário diário de caixa
 2. Tabela detalhada consolidada AR/AP

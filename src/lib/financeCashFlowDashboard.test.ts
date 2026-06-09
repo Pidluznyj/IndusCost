@@ -269,4 +269,18 @@ describe("financeCashFlowDashboard", () => {
     assert.ok(payload.executiveReading.length > 0);
     assert.ok(payload.executiveReading.some((l) => l.includes("déficit")));
   });
+
+  it("cashForecast com horizontes e cenários no payload", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [arRow({ balanceReceivable: 2000, dueDate: new Date(2026, 5, 10) })],
+      [apRow({ balancePayable: 1500, dueDate: new Date(2026, 5, 20) })],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF
+    );
+    assert.ok(payload.cashForecast.horizons.next3Months);
+    assert.ok(payload.conservativeScenario.cashNeedConservative >= 0);
+    assert.ok(payload.stressScenario.cashNeedStress >= 0);
+    assert.equal(payload.scenarioChartPoints.length, 12);
+    assert.equal(financeCashFlowMetricsAreFinite(payload), true);
+  });
 });

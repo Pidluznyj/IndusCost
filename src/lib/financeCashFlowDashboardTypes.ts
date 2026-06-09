@@ -1,5 +1,12 @@
 /** Tipos do payload GET /api/finance/cash-flow/dashboard */
 
+import type {
+  FinanceCashFlowCashForecast,
+  FinanceCashFlowConservativeScenario,
+  FinanceCashFlowScenarioChartPoint,
+  FinanceCashFlowStressScenario,
+} from "./financeCashFlowForecast.js";
+
 export type FinanceCashFlowViewMode = "projected" | "realized" | "combined";
 export type FinanceCashFlowDateBase = "due" | "settlement" | "issue";
 export type FinanceCashFlowStatusFilter = "all" | "open" | "settled" | "overdue";
@@ -96,6 +103,13 @@ export type FinanceCashFlowDashboardPayload = {
   cards: FinanceCashFlowDashboardCards;
   /** Frases determinísticas para leitura gerencial do caixa. */
   executiveReading: string[];
+  /** Previsão de caixa por horizonte (mês atual, 3, 6 e 12 meses). */
+  cashForecast: FinanceCashFlowCashForecast;
+  conservativeScenario: FinanceCashFlowConservativeScenario;
+  stressScenario: FinanceCashFlowStressScenario;
+  scenarioChartPoints: FinanceCashFlowScenarioChartPoint[];
+  /** Recomendações operacionais determinísticas. */
+  operationalRecommendations: string[];
   monthlySeries: FinanceCashFlowMonthlyPoint[];
   topCustomers: FinanceCashFlowPartySummary[];
   topSuppliers: FinanceCashFlowPartySummary[];

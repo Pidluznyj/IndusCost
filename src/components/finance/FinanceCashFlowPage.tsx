@@ -40,6 +40,9 @@ import {
   canViewFinanceCashFlow,
 } from "@/src/lib/financeCashFlowPermissions";
 import { FinanceCashFlowMonthlyChart } from "@/src/components/finance/FinanceCashFlowCharts";
+import { FinanceCashFlowCashNeedPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowCashNeedPanel";
+import { FinanceCashFlowScenarioChart } from "@/src/components/finance/cash-flow/FinanceCashFlowScenarioChart";
+import { FinanceCashFlowRecommendations } from "@/src/components/finance/cash-flow/FinanceCashFlowRecommendations";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
 import { FinanceCashFlowExecutiveReading } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveReading";
 import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
@@ -531,6 +534,25 @@ export function FinanceCashFlowPage() {
             points={payload.monthlySeries}
             viewModeLabel={viewModeLabel}
           />
+
+          <section className={financeBiSectionClass}>
+            <div className="px-5 py-4 border-b border-[#E5E7EB]">
+              <h2 className="text-sm font-bold text-[#111827]">Previsão e cenários de caixa</h2>
+              <p className="text-[11px] text-[#6B7280] mt-0.5">
+                Horizonte de 12 meses a partir do mês de referência — filtros aplicados
+              </p>
+            </div>
+            <div className="p-5 space-y-4">
+              <FinanceCashFlowScenarioChart points={payload.scenarioChartPoints} />
+              <FinanceCashFlowCashNeedPanel
+                cards={payload.cards}
+                cashForecast={payload.cashForecast}
+                conservativeScenario={payload.conservativeScenario}
+                stressScenario={payload.stressScenario}
+              />
+              <FinanceCashFlowRecommendations lines={payload.operationalRecommendations} />
+            </div>
+          </section>
 
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CriticalList

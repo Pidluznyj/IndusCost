@@ -33,6 +33,9 @@ describe("financeCashFlowExport", () => {
     );
     const csv = buildFinanceCashFlowExportCsv(payload);
     assert.ok(csv.includes("tipo,ano,mes,entradas,saidas"));
+    assert.ok(csv.includes("cenario_base_liquido,conservador_liquido,critico_liquido"));
     assert.ok(csv.includes("mensal,2026,1"));
+    assert.ok(csv.includes("necessidade_caixa"));
+    assert.ok(csv.includes("horizonte_12m"));
   });
 });

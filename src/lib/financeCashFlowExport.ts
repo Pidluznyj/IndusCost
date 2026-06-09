@@ -13,9 +13,18 @@ export function buildFinanceCashFlowExportCsv(
   payload: FinanceCashFlowDashboardPayload
 ): string {
   const lines: string[] = [
-    "tipo,ano,mes,entradas,saidas,fluxo_liquido,saldo_acumulado,status_mes,qtd_entradas,qtd_saidas",
+    "tipo,ano,mes,entradas,saidas,fluxo_liquido,saldo_acumulado,status_mes,qtd_entradas,qtd_saidas,cenario_base_liquido,conservador_liquido,critico_liquido",
   ];
   for (const p of payload.monthlySeries) {
+    const forecast = payload.cashForecast.monthlyPoints.find(
+      (f) => f.year === p.year && f.month === p.month
+    );
+    const cons = payload.conservativeScenario.monthlyPoints.find(
+      (f) => f.year === p.year && f.month === p.month
+    );
+    const stress = payload.stressScenario.monthlyPoints.find(
+      (f) => f.year === p.year && f.month === p.month
+    );
     lines.push(
       [
         csvEscape("mensal"),
@@ -28,9 +37,49 @@ export function buildFinanceCashFlowExportCsv(
         csvEscape(p.status),
         csvEscape(p.inflowCount),
         csvEscape(p.outflowCount),
+        csvEscape(forecast?.projectedNet ?? null),
+        csvEscape(cons?.projectedNet ?? null),
+        csvEscape(stress?.projectedNet ?? null),
       ].join(",")
     );
   }
+
+  const h12 = payload.cashForecast.horizons.next12Months;
+  lines.push(
+    [
+      csvEscape("necessidade_caixa"),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(payload.cards.cashNeedAmount),
+      csvEscape(payload.conservativeScenario.cashNeedConservative),
+      csvEscape(payload.stressScenario.cashNeedStress),
+    ].join(",")
+  );
+  lines.push(
+    [
+      csvEscape("horizonte_12m"),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(h12.projectedInflow),
+      csvEscape(h12.projectedOutflow),
+      csvEscape(h12.projectedNet),
+      csvEscape(h12.projectedAccumulated),
+      csvEscape(h12.worstMonth?.monthLabel ?? ""),
+      csvEscape(h12.negativeMonthsCount),
+      csvEscape(h12.maxCashNeed),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+    ].join(",")
+  );
+
   return `${lines.join("\n")}\n`;
 }
 

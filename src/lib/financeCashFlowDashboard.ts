@@ -41,6 +41,13 @@ import {
   buildNetCashPositionMetrics,
   resolveMonthlyNetStatus,
 } from "./financeCashFlowIntelligence.js";
+import {
+  buildCashFlowForecast,
+  buildCashFlowOperationalRecommendations,
+  buildConservativeScenario,
+  buildScenarioChartPoints,
+  buildStressScenario,
+} from "./financeCashFlowForecast.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
   constructor(message: string) {
@@ -780,6 +787,33 @@ export function buildFinanceCashFlowDashboard(
     invoiceIssued: filters.invoiceIssued,
   };
 
+  const cashForecast = buildCashFlowForecast(filteredAr, filteredAp, filters, referenceDate);
+  const conservativeScenario = buildConservativeScenario(
+    filteredAr,
+    filteredAp,
+    filters,
+    referenceDate,
+    cashForecast.horizons.next12Months
+  );
+  const stressScenario = buildStressScenario(filteredAr, filteredAp, filters, referenceDate);
+  const scenarioChartPoints = buildScenarioChartPoints(
+    cashForecast.monthlyPoints,
+    conservativeScenario.monthlyPoints,
+    stressScenario.monthlyPoints
+  );
+  const operationalRecommendations = buildCashFlowOperationalRecommendations({
+    cards: {
+      netCashPositionAbs: netPosition.netCashPositionAbs,
+      netCashPositionStatus: netPosition.netCashPositionStatus,
+      cashNeedAmount: netPosition.cashNeedAmount,
+    },
+    cashForecast,
+    conservativeScenario,
+    overdueReceivables: critical.overdueReceivables,
+    overduePayables: critical.overduePayables,
+    topSupplier: topSuppliers[0],
+  });
+
   return {
     generatedAt: new Date().toISOString(),
     referenceDate: referenceDate.toISOString(),
@@ -813,6 +847,11 @@ export function buildFinanceCashFlowDashboard(
       lastSyncAt: lastSync?.toISOString() ?? null,
       hasInitialBankBalance: false,
     },
+    cashForecast,
+    conservativeScenario,
+    stressScenario,
+    scenarioChartPoints,
+    operationalRecommendations,
     executiveReading: buildCashFlowExecutiveReading({
       cards: {
         netCashPosition: netPosition.netCashPosition,
@@ -857,6 +896,46 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
   }
   for (const p of payload.monthlySeries) {
     for (const v of [p.inflowAmount, p.outflowAmount, p.netFlowAmount, p.accumulatedBalance]) {
+      if (v != null && !Number.isFinite(v)) return false;
+    }
+  }
+  for (const h of Object.values(payload.cashForecast.horizons)) {
+    for (const v of [
+      h.projectedInflow,
+      h.projectedOutflow,
+      h.projectedNet,
+      h.projectedAccumulated,
+      h.maxCashNeed,
+      h.maxCashSurplus,
+    ]) {
+      if (!Number.isFinite(v)) return false;
+    }
+  }
+  for (const p of payload.cashForecast.monthlyPoints) {
+    for (const v of [
+      p.projectedInflow,
+      p.projectedOutflow,
+      p.projectedNet,
+      p.projectedAccumulated,
+    ]) {
+      if (v != null && !Number.isFinite(v)) return false;
+    }
+  }
+  for (const v of [
+    payload.conservativeScenario.projectedInflowConservative,
+    payload.conservativeScenario.projectedOutflow,
+    payload.conservativeScenario.projectedNetConservative,
+    payload.conservativeScenario.cashNeedConservative,
+    payload.conservativeScenario.deltaVsBase,
+    payload.stressScenario.projectedInflowStress,
+    payload.stressScenario.projectedOutflowStress,
+    payload.stressScenario.projectedNetStress,
+    payload.stressScenario.cashNeedStress,
+  ]) {
+    if (!Number.isFinite(v)) return false;
+  }
+  for (const p of payload.scenarioChartPoints) {
+    for (const v of [p.base, p.conservative, p.stress]) {
       if (v != null && !Number.isFinite(v)) return false;
     }
   }
