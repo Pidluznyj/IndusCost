@@ -543,6 +543,10 @@ export function buildFinanceAccountsPayableDashboard(
   let dueNext30DaysAmount = 0;
   let paidThisMonthAmount = 0;
   let lastSyncAt: Date | null = null;
+  let overdueOver30DaysAmount = 0;
+  let overdueOver30DaysCount = 0;
+  let avgDaysOverdueTotalWeightedDays = 0;
+  let avgDaysOverdueTotalBalance = 0;
 
   let totalPayableAmount = 0;
 
@@ -655,6 +659,15 @@ export function buildFinanceAccountsPayableDashboard(
     if (status === "overdue") {
       overdueAmount += balance;
       overdueSuppliers.add(supplierKey);
+      const daysO = computeDaysOverdue(row.dueDate, today);
+      if (daysO > 30) {
+        overdueOver30DaysAmount += balance;
+        overdueOver30DaysCount += 1;
+      }
+      if (daysO > 0 && balance > 0) {
+        avgDaysOverdueTotalWeightedDays += daysO * balance;
+        avgDaysOverdueTotalBalance += balance;
+      }
     } else if (status === "dueToday") {
       dueTodayAmount += balance;
     } else if (status === "upcoming") {
@@ -780,6 +793,10 @@ export function buildFinanceAccountsPayableDashboard(
   }
 
   const overduePercent = safeRatio(overdueAmount, totalOpenAmount);
+  const avgDaysOverdue =
+    avgDaysOverdueTotalBalance > 0
+      ? roundMoney(avgDaysOverdueTotalWeightedDays / avgDaysOverdueTotalBalance)
+      : null;
 
   const agingBuckets = AGING_BUCKET_DEFS.map((def) => {
     const bucket = agingAcc.get(def.key)!;
@@ -928,6 +945,9 @@ export function buildFinanceAccountsPayableDashboard(
       dueNext30DaysAmount: roundMoney(dueNext30DaysAmount),
       overdueSuppliersCount: overdueSuppliers.size,
       overduePercent: roundMoney(overduePercent * 100),
+      overdueOver30DaysAmount: roundMoney(overdueOver30DaysAmount),
+      overdueOver30DaysCount,
+      avgDaysOverdue,
       topSupplier: topSuppliersList[0]
         ? {
             personName: topSuppliersList[0].personName,

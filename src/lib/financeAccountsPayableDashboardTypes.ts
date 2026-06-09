@@ -31,6 +31,9 @@ export type FinanceApDashboardCards = {
   dueNext30DaysAmount: number;
   overdueSuppliersCount: number;
   overduePercent: number;
+  overdueOver30DaysAmount: number;
+  overdueOver30DaysCount: number;
+  avgDaysOverdue: number | null;
   topSupplier: {
     personName: string | null;
     personCnpj: string | null;

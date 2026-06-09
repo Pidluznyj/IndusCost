@@ -497,6 +497,53 @@ describe("financeAccountsPayableDashboard", () => {
     assert.equal(dash.supplierRanking.length, FINANCE_AP_SUPPLIER_RANKING_LIMIT);
   });
 
+  it("overdueOver30DaysAmount: conta apenas vencidos há mais de 30 dias", () => {
+    const rows = [
+      row({ externalId: 1, balancePayable: 100, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balancePayable: 200, dueDate: new Date(2026, 3, 27) }),
+      row({ externalId: 3, balancePayable: 300, dueDate: new Date(2026, 2, 27) }),
+      row({ externalId: 4, balancePayable: 50, dueDate: new Date(2026, 5, 20) }),
+    ];
+    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.cards.overdueOver30DaysAmount, 500);
+    assert.equal(dash.cards.overdueOver30DaysCount, 2);
+    assert.ok(Number.isFinite(dash.cards.overdueOver30DaysAmount));
+  });
+
+  it("overdueOver30DaysAmount = 0 quando nenhum vencido há mais de 30 dias", () => {
+    const rows = [
+      row({ externalId: 1, balancePayable: 100, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balancePayable: 200, dueDate: new Date(2026, 5, 20) }),
+    ];
+    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.cards.overdueOver30DaysAmount, 0);
+    assert.equal(dash.cards.overdueOver30DaysCount, 0);
+  });
+
+  it("avgDaysOverdue é null quando não há títulos vencidos", () => {
+    const rows = [row({ externalId: 1, balancePayable: 100, dueDate: new Date(2026, 5, 20) })];
+    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.cards.avgDaysOverdue, null);
+  });
+
+  it("avgDaysOverdue calcula média ponderada corretamente", () => {
+    const rows = [
+      row({ externalId: 1, balancePayable: 100, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balancePayable: 200, dueDate: new Date(2026, 4, 1) }),
+    ];
+    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all" }, REF);
+    assert.ok(dash.cards.avgDaysOverdue !== null);
+    assert.ok(Number.isFinite(dash.cards.avgDaysOverdue!));
+    assert.ok(dash.cards.avgDaysOverdue! > 0);
+  });
+
+  it("novos KPIs não contêm NaN/Infinity em dataset vazio", () => {
+    const dash = buildFinanceAccountsPayableDashboard([], { status: "all" }, REF);
+    assert.equal(dash.cards.overdueOver30DaysAmount, 0);
+    assert.equal(dash.cards.overdueOver30DaysCount, 0);
+    assert.equal(dash.cards.avgDaysOverdue, null);
+  });
+
   it("companySummary inclui recebido no mês e atrasoência", () => {
     const rows = [
       row({

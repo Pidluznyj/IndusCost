@@ -13,13 +13,9 @@ import {
 const REF = new Date(2026, 5, 6, 12, 0, 0, 0);
 
 describe("financeAccountsPayablePageFilters", () => {
-  it("página possui botões Aplicar e Limpar filtros no padrão de Contas a Receber", () => {
+  it("página possui botões Aplicar e Limpar filtros no padrão executivo", () => {
     const page = readFileSync(
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
-      "utf8"
-    );
-    const receivable = readFileSync(
-      join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivablePage.tsx"),
       "utf8"
     );
     assert.ok(page.includes("Aplicar filtros"));
@@ -28,8 +24,25 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(page.includes("appliedFilters"));
     assert.ok(page.includes("hasPendingFinanceApFilterChanges"));
     assert.ok(!page.includes("useDebouncedValue"));
-    assert.ok(receivable.includes("Aplicar filtros"));
-    assert.ok(page.includes("Há alterações nos filtros ainda não aplicadas."));
+    assert.ok(page.includes("Não aplicados"));
+    assert.ok(page.includes("showFilters"));
+  });
+
+  it("página possui estrutura executiva do dashboard", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes("Obrigações em Aberto"));
+    assert.ok(page.includes("Pago no Mês"));
+    assert.ok(page.includes("Vencido > 30 Dias"));
+    assert.ok(page.includes("Centro de Ações"));
+    assert.ok(page.includes("Títulos Críticos"));
+    assert.ok(page.includes("Análise Detalhada"));
+    assert.ok(page.includes("FinanceApAgingChart"));
+    assert.ok(page.includes("FinanceApTopDebtorsChart"));
+    assert.ok(page.includes("Atualizar"));
+    assert.ok(page.includes("Exportar CSV"));
   });
 
   it("alterar rascunho não altera query aplicada até aplicar manualmente", () => {
