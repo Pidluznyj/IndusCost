@@ -66,8 +66,16 @@ describe("financeAccountsPayablePageFilters", () => {
 
   it("FinanceModule mantém rotas absolutas após alinhamento de filtros", () => {
     const mod = readFileSync(join(process.cwd(), "src", "components", "FinanceModule.tsx"), "utf8");
-    assert.ok(mod.includes('path: FINANCE_SECTION_PATHS["accounts-receivable"]'));
-    assert.ok(mod.includes('path: FINANCE_SECTION_PATHS["accounts-payable"]'));
+    const nav = readFileSync(join(process.cwd(), "src", "lib", "financeNavigation.ts"), "utf8");
+    assert.ok(mod.includes("FINANCE_SECTIONS"));
+    assert.ok(mod.includes("to={section.path}"));
+    assert.ok(mod.includes('path="accounts-payable"'));
+    assert.ok(mod.includes("resolveFinanceCanonicalPath"));
+    assert.ok(!mod.includes('to: "accounts-receivable"'));
     assert.ok(!mod.includes('to: "accounts-payable"'));
+    assert.ok(!mod.includes('to: "billing"'));
+    assert.ok(nav.includes('"/finance/accounts-receivable"'));
+    assert.ok(nav.includes('"/finance/accounts-payable"'));
+    assert.ok(nav.includes('"/finance/billing"'));
   });
 });
