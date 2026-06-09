@@ -7,6 +7,7 @@ import "./index.css";
 import "./reports-print.css";
 import "./material-demand-print.css";
 import "./proposal-print.css";
+import "./cnpj-intelligence-print.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

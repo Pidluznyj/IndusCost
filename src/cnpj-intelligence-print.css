@@ -1,0 +1,220 @@
+/**
+ * Impressão — Consulta CNPJ / Inteligência Comercial.
+ * Portal em document.body; body.cnpj-intelligence-printing esconde #root.
+ */
+
+.cnpj-intelligence-print-only {
+  display: none;
+}
+
+@media screen {
+  .cnpj-intelligence-print-only {
+    display: none !important;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  body.cnpj-intelligence-printing #cnpj-intelligence-print-root,
+  body.cnpj-intelligence-printing #cnpj-intelligence-print-root * {
+    visibility: visible !important;
+  }
+
+  #cnpj-intelligence-print-root {
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    color: #111 !important;
+    box-sizing: border-box;
+    transform: none !important;
+  }
+
+  .cnpj-intelligence-no-print,
+  .cnpj-intelligence-screen-only {
+    display: none !important;
+  }
+
+  .cnpj-intelligence-print-only {
+    display: block !important;
+  }
+
+  .cnpj-intelligence-print-report {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 10pt;
+    line-height: 1.45;
+    color: #111 !important;
+  }
+
+  .cnpj-intelligence-print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 14px;
+  }
+
+  .cnpj-intelligence-print-header {
+    border-bottom: 1px solid #cbd5e1;
+    padding-bottom: 10px;
+    margin-bottom: 16px;
+  }
+
+  .cnpj-intelligence-print-brand {
+    font-size: 9pt;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #475569;
+    margin: 0 0 4px;
+  }
+
+  .cnpj-intelligence-print-title {
+    font-size: 16pt;
+    font-weight: 700;
+    margin: 0 0 6px;
+    color: #0f172a;
+  }
+
+  .cnpj-intelligence-print-meta {
+    font-size: 9pt;
+    color: #64748b;
+    margin: 0 0 10px;
+  }
+
+  .cnpj-intelligence-print-section-title {
+    font-size: 11pt;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: #0f172a;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 4px;
+  }
+
+  .cnpj-intelligence-print-lead {
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+
+  .cnpj-intelligence-print-note {
+    font-size: 9pt;
+    color: #64748b;
+    margin: 6px 0 0;
+  }
+
+  .cnpj-intelligence-print-list {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 9pt;
+  }
+
+  .cnpj-intelligence-print-insight {
+    margin-bottom: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .cnpj-intelligence-print-insight-title {
+    font-weight: 600;
+    margin: 0 0 2px;
+  }
+
+  .cnpj-intelligence-print-alert {
+    margin: 4px 0;
+    padding: 4px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 9pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .cnpj-intelligence-print-risk {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: #f8fafc !important;
+  }
+
+  .cnpj-intelligence-print-ident-table,
+  .cnpj-intelligence-print-kv-table,
+  .cnpj-intelligence-print-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .cnpj-intelligence-print-ident-table th,
+  .cnpj-intelligence-print-kv-table th,
+  .cnpj-intelligence-print-data-table th {
+    text-align: left;
+    font-weight: 600;
+    color: #334155;
+    padding: 4px 8px 4px 0;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+
+  .cnpj-intelligence-print-ident-table td,
+  .cnpj-intelligence-print-kv-table td,
+  .cnpj-intelligence-print-data-table td {
+    padding: 4px 8px;
+    vertical-align: top;
+    color: #0f172a;
+  }
+
+  .cnpj-intelligence-print-data-table thead th {
+    border-bottom: 1px solid #94a3b8;
+    padding: 6px 8px;
+    background: #f1f5f9 !important;
+  }
+
+  .cnpj-intelligence-print-data-table tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .cnpj-intelligence-print-data-table tbody td {
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .cnpj-intelligence-print-footer {
+    margin-top: 18px;
+    padding-top: 10px;
+    border-top: 1px solid #cbd5e1;
+    font-size: 8.5pt;
+    color: #64748b;
+  }
+
+  .cnpj-intelligence-print-footer p {
+    margin: 2px 0;
+  }
+}

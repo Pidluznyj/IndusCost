@@ -9,7 +9,8 @@
    * Esconde o app (#root) para não aparecer sidebar "IndusCost" nem o shell.
    */
   body.np-report-printing #root,
-  body.material-demand-printing #root {
+  body.material-demand-printing #root,
+  body.cnpj-intelligence-printing #root {
     display: none !important;
   }
   body * {
@@ -26,7 +27,9 @@
   #pricing-simulator-print-portal,
   #pricing-simulator-print-portal *,
   #pricing-simulator-print-root,
-  #pricing-simulator-print-root * {
+  #pricing-simulator-print-root *,
+  #cnpj-intelligence-print-root,
+  #cnpj-intelligence-print-root * {
     visibility: visible !important;
   }
   /* Aba Relatórios: único bloco absoluto na página */

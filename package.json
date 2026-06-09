@@ -81,7 +81,7 @@
     "test:fleet": "tsx --test src/lib/fleetValidation.test.ts src/lib/fleetIntegrityDiagnostic.test.ts src/lib/fleetErrors.test.ts src/lib/fleetVehicleStatusOps.test.ts src/lib/fleetPublicReservation.test.ts src/lib/fleetPublicVehicleChecklist.test.ts src/lib/fleetReservationsCleanup.test.ts src/lib/fleetNavigation.test.ts",
     "test:guide": "tsx --test src/lib/systemGuide.test.ts",
     "test:dashboard": "tsx --test src/lib/executiveDashboardHelpers.test.ts src/lib/executiveDashboardYear.test.ts src/lib/executiveDashboardChartSeries.test.ts src/lib/executiveDashboardChartTheme.test.ts src/lib/salesFunnelDashboardRules.test.ts src/lib/groupCompanyCustomer.test.ts",
-    "test:company-intelligence": "tsx --test src/lib/companyIntelligence.test.ts",
+    "test:company-intelligence": "tsx --test src/lib/companyIntelligence.test.ts src/components/customers/CnpjCommercialIntelligencePrintReport.test.tsx",
     "test:customers": "tsx --test src/lib/customerListQuery.test.ts",
     "fleet:integrity:diagnostic": "tsx scripts/fleetIntegrityDiagnostic.ts",
     "backup:pre-deploy": "bash scripts/backupDatabaseBeforeDeploy.sh",
