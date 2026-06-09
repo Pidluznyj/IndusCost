@@ -35,6 +35,12 @@ export type FinanceArDashboardCards = {
   delinquencyRate: number;
   overdueCustomersCount: number;
   lastSyncAt: string | null;
+  /** Saldo vencido há mais de 30 dias (soma aging overdue31to60 + overdue61to90 + overdue90plus). */
+  overdueOver30DaysAmount: number;
+  /** Quantidade de títulos vencidos há mais de 30 dias. */
+  overdueOver30DaysCount: number;
+  /** Dias médios de atraso ponderados por saldo (apenas títulos vencidos com saldo > 0). Null quando não há títulos vencidos. */
+  avgDaysOverdue: number | null;
 };
 
 export type FinanceArAgingBucket = {

@@ -473,4 +473,60 @@ describe("financeAccountsReceivableDashboard", () => {
     assert.equal(dash.companySummary[0]?.receivedThisMonthAmount, 500);
     assert.ok(Number.isFinite(dash.companySummary[0]?.delinquencyRate ?? NaN));
   });
+
+  // ── Novos KPIs executivos ──
+
+  it("overdueOver30DaysAmount: conta apenas vencidos há mais de 30 dias", () => {
+    // REF = 06/06/2026, overdue1 = 5 dias atraso, overdue2 = 40 dias, overdue3 = 70 dias
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 1) }), // 5 dias overdue
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 3, 27) }), // ~40 dias overdue
+      row({ externalId: 3, balanceReceivable: 300, dueDate: new Date(2026, 2, 27) }), // ~71 dias overdue
+      row({ externalId: 4, balanceReceivable: 50, dueDate: new Date(2026, 5, 20) }), // upcoming
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.cards.overdueOver30DaysAmount, 500);
+    assert.equal(dash.cards.overdueOver30DaysCount, 2);
+    assert.ok(Number.isFinite(dash.cards.overdueOver30DaysAmount));
+  });
+
+  it("overdueOver30DaysAmount = 0 quando nenhum vencido há mais de 30 dias", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 1) }), // 5 dias
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 20) }), // upcoming
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.cards.overdueOver30DaysAmount, 0);
+    assert.equal(dash.cards.overdueOver30DaysCount, 0);
+  });
+
+  it("avgDaysOverdue é null quando não há títulos vencidos", () => {
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 20) }),
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.equal(dash.cards.avgDaysOverdue, null);
+  });
+
+  it("avgDaysOverdue calcula média ponderada corretamente", () => {
+    // REF = 06/06/2026
+    // overdue1: dueDate 01/06 → 5 dias, balance 100
+    // overdue2: dueDate 01/05 → 36 dias, balance 200
+    // avg = (5*100 + 36*200) / (100+200) = (500 + 7200) / 300 = 7700/300 ≈ 25.67
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 1) }),
+      row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 4, 1) }),
+    ];
+    const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);
+    assert.ok(dash.cards.avgDaysOverdue !== null);
+    assert.ok(Number.isFinite(dash.cards.avgDaysOverdue!));
+    assert.ok(dash.cards.avgDaysOverdue! > 0);
+  });
+
+  it("novo payload não contém NaN/Infinity nos campos novos (empty dataset)", () => {
+    const dash = buildFinanceAccountsReceivableDashboard([], { status: "all" }, REF);
+    assert.equal(dash.cards.overdueOver30DaysAmount, 0);
+    assert.equal(dash.cards.overdueOver30DaysCount, 0);
+    assert.equal(dash.cards.avgDaysOverdue, null);
+  });
 });
