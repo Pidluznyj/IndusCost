@@ -34,10 +34,36 @@ describe("financeBillingPageFilters", () => {
     assert.ok(page.includes("Limpar filtros"));
     assert.ok(page.includes("draftYear"));
     assert.ok(page.includes("appliedYear"));
-    assert.ok(page.includes("ExecutiveBillingTab"));
+    assert.ok(page.includes("FINANCE_BILLING_TABS"));
+    assert.ok(page.includes("FinanceBillingOverviewView"));
+    assert.ok(page.includes("FinanceBillingAccumulatedView"));
+    assert.ok(page.includes("FinanceBillingMonthlyView"));
+    assert.ok(page.includes("FinanceBillingProjectionView"));
+    assert.ok(page.includes("FinanceBillingComparisonPanel"));
+    assert.ok(page.includes("FinanceBillingNfeDetailsTable"));
+    const views = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
+      "utf8"
+    );
+    assert.ok(views.includes("FinanceBillingMonthlyComparisonChart"));
+    assert.ok(views.includes("FinanceBillingAccumulatedChart"));
+    assert.ok(views.includes("FinanceBillingProjectionChart"));
     assert.ok(mod.includes('path="billing"'));
     assert.ok(mod.includes("to={section.path}"));
     assert.ok(!mod.includes('to: "billing"'));
+  });
+
+  it("tela possui tabs internas de faturamento", () => {
+    const types = readFileSync(
+      join(process.cwd(), "src", "lib", "financeBillingDashboardTypes.ts"),
+      "utf8"
+    );
+    assert.ok(types.includes('"overview"'));
+    assert.ok(types.includes('"accumulated"'));
+    assert.ok(types.includes('"monthly"'));
+    assert.ok(types.includes('"projection"'));
+    assert.ok(types.includes('"nfe-details"'));
+    assert.ok(types.includes('"comparison"'));
   });
 
   it("navegação entre seções não usa paths relativos perigosos", () => {

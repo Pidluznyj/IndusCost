@@ -1,10 +1,16 @@
 import { Prisma } from "@prisma/client";
 import { billingMarketCustomerFilterSql } from "@/src/lib/billingMarketCustomerSql.js";
 import {
+  buildAccumulatedSeriesPoints,
   buildChartSeriesConfig,
   buildCumulativeFromMonthlySeries,
   buildMonthlySeriesPoints,
 } from "@/src/lib/executiveDashboardChartSeries.js";
+import {
+  buildBillingMultiYearMonthlyPoints,
+  buildBillingMultiYearSummaries,
+} from "@/src/lib/financeBillingChartData.js";
+import { resolveFinanceBillingComparisonYears } from "@/src/lib/financeBillingChartTheme.js";
 import type { ExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
@@ -264,6 +270,9 @@ export async function buildBillingDashboardTab(
     999
   );
 
+  const comparisonYears = resolveFinanceBillingComparisonYears(year, 3);
+  const extraYears = comparisonYears.filter((y) => y !== year && y !== yearCtx.previousYear);
+
   const [
     monthAgg,
     yearAgg,
@@ -275,6 +284,7 @@ export async function buildBillingDashboardTab(
     previousYearMonthly,
     recentInvoiced,
     topCustomers,
+    ...extraYearMonthlies
   ] = await Promise.all([
     queryMarketBillingInPeriod(monthStart, monthEnd),
     queryMarketBillingInPeriod(yearStart, yearEnd),
@@ -286,7 +296,15 @@ export async function buildBillingDashboardTab(
     queryMonthlyMarketBilling(yearCtx.previousYear),
     queryRecentMarketInvoicedOrders(),
     queryTopMarketCustomersInPeriod(yearStart, yearEnd),
+    ...extraYears.map((y) => queryMonthlyMarketBilling(y)),
   ]);
+
+  const yearMaps = new Map<number, Map<number, number>>();
+  yearMaps.set(year, currentYearMonthly);
+  yearMaps.set(yearCtx.previousYear, previousYearMonthly);
+  extraYears.forEach((y, idx) => {
+    yearMaps.set(y, extraYearMonthlies[idx] ?? new Map());
+  });
 
   const ticketAvg = computeTicketAverage(monthAgg.net, monthAgg.count);
   const yearWorkdaysElapsed = countWorkdaysElapsedInYear(ref);
@@ -367,6 +385,24 @@ export async function buildBillingDashboardTab(
     { projectedMonthValue: projectedMonth, projectionMonth: yearCtx.ytdMonthLimit }
   );
 
+  const accumulatedEvolution = buildAccumulatedSeriesPoints(yearCtx, monthlySeries, {
+    dailyAverageYtd: dailyAvgYtd,
+  });
+
+  const multiYearMonthly = buildBillingMultiYearMonthlyPoints(
+    year,
+    yearMaps,
+    yearCtx.ytdMonthLimit,
+    yearCtx.isSelectedYearCurrent
+  );
+
+  const multiYearSummary = buildBillingMultiYearSummaries(
+    year,
+    yearMaps,
+    yearCtx.ytdMonthLimit,
+    yearCtx.isSelectedYearCurrent
+  );
+
   return {
     available: true,
     source:
@@ -381,6 +417,9 @@ export async function buildBillingDashboardTab(
     monthlySeries,
     chartSeries: buildChartSeriesConfig("billing", yearCtx),
     cumulativeBilling: toCumulativeBillingPoints(monthlySeries),
+    accumulatedEvolution,
+    multiYearMonthly,
+    multiYearSummary,
     recentInvoicedOrders: recentInvoiced,
     topCustomers,
     intercompanyExclusionApplied: true,

@@ -1,3 +1,8 @@
+import type {
+  BillingMultiYearMonthlyPoint,
+  BillingMultiYearSummary,
+} from "./financeBillingChartData.js";
+
 /** Tipos do dashboard gerencial (GET /api/dashboard/executive-summary). */
 
 export type ExecutiveMetricValue = number | null;
@@ -313,6 +318,12 @@ export type BillingDashboardTab = ExecutiveSectionBase & {
   monthlySeries: DashboardMonthlySeriesPoint[];
   chartSeries: DashboardChartSeriesConfig;
   cumulativeBilling: DashboardCumulativeChartPoint[];
+  /** Série acumulada enriquecida com meta e projeção (YTD). */
+  accumulatedEvolution: SalesOrdersAccumulatedPoint[];
+  /** Comparação mensal multi-ano (até 3 anos). */
+  multiYearMonthly: BillingMultiYearMonthlyPoint[];
+  /** Resumo por ano para cards executivos. */
+  multiYearSummary: BillingMultiYearSummary[];
   recentInvoicedOrders: RecentInvoicedOrderRow[];
   topCustomers: BillingTopCustomerRow[];
   intercompanyExclusionApplied: boolean;

@@ -47,6 +47,14 @@ export function billingTabMetricsAreFinite(tab: BillingDashboardTab): boolean {
       p.differenceToTarget,
     ]),
     ...tab.cumulativeBilling.flatMap((p) => [p.currentYear, p.previousYear]),
+    ...tab.accumulatedEvolution.flatMap((p) => [
+      p.currentYearAccumulated,
+      p.projectedAccumulated,
+      p.differenceToTarget,
+      p.achievementPercent,
+    ]),
+    ...tab.multiYearMonthly.flatMap((p) => Object.values(p.values)),
+    ...tab.multiYearSummary.flatMap((s) => [s.yearTotal, s.ytdTotal, s.currentMonthValue]),
     ...tab.topCustomers.map((c) => c.totalNetValue),
     ...tab.recentInvoicedOrders.map((o) => o.totalNetValue),
   ];

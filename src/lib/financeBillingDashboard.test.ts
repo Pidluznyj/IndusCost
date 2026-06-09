@@ -107,6 +107,31 @@ function minimalBillingTab(): BillingDashboardTab {
       },
     },
     cumulativeBilling: [{ month: 6, label: "Jun", currentYear: 1000, previousYear: 800 }],
+    accumulatedEvolution: [
+      {
+        month: 6,
+        monthLabel: "Jun",
+        periodLabel: "Jun/2026",
+        previousYearAccumulated: 800,
+        currentYearAccumulated: 1000,
+        accumulatedTarget: 1040,
+        projectedAccumulated: 1100,
+        differenceToTarget: -40,
+        achievementPercent: 96,
+      },
+    ],
+    multiYearMonthly: [
+      {
+        month: 6,
+        monthLabel: "jun",
+        values: { 2025: 800, 2026: 1000 },
+        targetValue: 1040,
+      },
+    ],
+    multiYearSummary: [
+      { year: 2025, yearTotal: 8000, currentMonthValue: 800, ytdTotal: 4000 },
+      { year: 2026, yearTotal: 1000, currentMonthValue: 1000, ytdTotal: 1000 },
+    ],
     recentInvoicedOrders: [],
     topCustomers: [],
     intercompanyExclusionApplied: true,

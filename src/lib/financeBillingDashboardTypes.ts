@@ -37,3 +37,14 @@ export function hasPendingFinanceBillingYearChange(
 ): boolean {
   return draftYear.trim() !== appliedYear.trim();
 }
+
+export const FINANCE_BILLING_TABS = [
+  { id: "overview", label: "Visão Geral" },
+  { id: "accumulated", label: "Acumulado NF-e" },
+  { id: "monthly", label: "Mês a Mês" },
+  { id: "projection", label: "Projeção" },
+  { id: "nfe-details", label: "Detalhado NF-e" },
+  { id: "comparison", label: "Comparativo" },
+] as const;
+
+export type FinanceBillingTabId = (typeof FINANCE_BILLING_TABS)[number]["id"];
