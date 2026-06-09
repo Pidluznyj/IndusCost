@@ -5,21 +5,9 @@ import { describe, it } from "node:test";
 import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
+  EMPTY_FINANCE_AR_UI_FILTERS,
   normalizeFinanceArUiFilters,
 } from "./financeAccountsReceivableDashboardTypes.js";
-
-const EMPTY = {
-  year: "",
-  month: "",
-  status: "all" as const,
-  companyName: "",
-  personName: "",
-  personCnpj: "",
-  dueDateFrom: "",
-  dueDateTo: "",
-  documentQuery: "",
-  invoiceIssued: "all" as const,
-};
 
 describe("financeAccountsReceivablePageFilters", () => {
   it("página possui draft/applied e banner de escopo de filtros", () => {
@@ -47,8 +35,11 @@ describe("financeAccountsReceivablePageFilters", () => {
   });
 
   it("alterar rascunho não altera query aplicada até aplicar manualmente", () => {
-    const defaults = normalizeFinanceArUiFilters(EMPTY);
-    const draft = normalizeFinanceArUiFilters({ ...EMPTY, personName: "Cliente X" });
+    const defaults = normalizeFinanceArUiFilters(EMPTY_FINANCE_AR_UI_FILTERS);
+    const draft = normalizeFinanceArUiFilters({
+      ...EMPTY_FINANCE_AR_UI_FILTERS,
+      personName: "Cliente X",
+    });
     assert.notEqual(
       buildFinanceArDashboardQuery(draft),
       buildFinanceArDashboardQuery(defaults)
@@ -63,7 +54,7 @@ describe("financeAccountsReceivablePageFilters", () => {
 
   it("export usa mesma query dos filtros aplicados", () => {
     const applied = normalizeFinanceArUiFilters({
-      ...EMPTY,
+      ...EMPTY_FINANCE_AR_UI_FILTERS,
       year: "2026",
       month: "6",
       status: "overdue",

@@ -16,6 +16,7 @@ import {
 import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
+  EMPTY_FINANCE_AR_UI_FILTERS,
   normalizeFinanceArUiFilters,
 } from "./financeAccountsReceivableDashboardTypes.js";
 import {
@@ -86,6 +87,7 @@ describe("financeFilterCompliance", () => {
     assert.ok(views.includes("FINANCE_BILLING_YTD_SCOPE"));
     assert.ok(views.includes("FINANCE_BILLING_MULTI_YEAR_SCOPE"));
     assert.ok(views.includes("FINANCE_BILLING_PROJECTION_SCOPE"));
+    assert.ok(views.includes("FinanceFilterScopeNote"));
 
     const comparison = readFileSync(
       join(
@@ -116,16 +118,11 @@ describe("financeFilterCompliance", () => {
 
   it("queries AR/AP refletem filtros aplicados (ano, mês, status)", () => {
     const arApplied = normalizeFinanceArUiFilters({
+      ...EMPTY_FINANCE_AR_UI_FILTERS,
       year: "2026",
       month: "6",
       status: "overdue",
-      companyName: "",
       personName: "Cliente",
-      personCnpj: "",
-      dueDateFrom: "",
-      dueDateTo: "",
-      documentQuery: "",
-      invoiceIssued: "all",
     });
     const arQs = buildFinanceArDashboardQuery(arApplied);
     assert.ok(arQs.includes("year=2026"));
@@ -172,8 +169,9 @@ describe("financeFilterCompliance", () => {
       join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
       "utf8"
     );
-    assert.ok(views.includes(FINANCE_BILLING_YTD_SCOPE));
+    assert.ok(views.includes("FINANCE_BILLING_YTD_SCOPE"));
+    assert.ok(views.includes("FinanceBillingAccumulatedView"));
     assert.ok(views.includes("Acumulado YTD"));
-    assert.ok(views.includes(FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE));
+    assert.ok(views.includes("FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE"));
   });
 });

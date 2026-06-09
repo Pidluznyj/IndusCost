@@ -258,17 +258,20 @@ export const FINANCE_AR_MONTH_OPTIONS = [
 ] as const;
 
 /** Se mês informado sem ano, usa o ano corrente para evitar erro 400 na API. */
-export function normalizeFinanceArUiFilters(filters: FinanceArUiFilters): FinanceArUiFilters {
-  const year = filters.year.trim();
-  const month = filters.month.trim();
+export function normalizeFinanceArUiFilters(
+  filters: Partial<FinanceArUiFilters> & Pick<FinanceArUiFilters, "status">
+): FinanceArUiFilters {
+  const merged: FinanceArUiFilters = { ...EMPTY_FINANCE_AR_UI_FILTERS, ...filters };
+  const year = merged.year.trim();
+  const month = merged.month.trim();
   if (month && !year) {
-    return { ...filters, year: String(new Date().getFullYear()), month };
+    return { ...merged, year: String(new Date().getFullYear()), month };
   }
-  return filters;
+  return merged;
 }
 
 export function buildFinanceArTitlesQuery(
-  filters: FinanceArUiFilters,
+  filters: Partial<FinanceArUiFilters> & Pick<FinanceArUiFilters, "status">,
   extras?: {
     page?: number;
     limit?: number;
@@ -314,26 +317,32 @@ export type FinanceArDataQualityAlertKey =
   | "overdueOver60Days"
   | "overdueOver90Days";
 
-export function buildFinanceArExportQuery(filters: FinanceArUiFilters): string {
+export function buildFinanceArExportQuery(
+  filters: Partial<FinanceArUiFilters> & Pick<FinanceArUiFilters, "status">
+): string {
   const q = buildFinanceArDashboardQuery(filters);
   return q ? `${q}&format=csv` : "format=csv";
 }
 
-export function buildFinanceArDashboardQuery(filters: FinanceArUiFilters): string {
+export function buildFinanceArDashboardQuery(
+  filters: Partial<FinanceArUiFilters> & Pick<FinanceArUiFilters, "status">
+): string {
   const normalized = normalizeFinanceArUiFilters(filters);
   const q = new URLSearchParams();
-  if (normalized.companyName.trim()) q.set("companyName", normalized.companyName.trim());
-  if (normalized.personName.trim()) q.set("personName", normalized.personName.trim());
-  if (normalized.personCnpj.trim()) q.set("personCnpj", normalized.personCnpj.trim());
+  if (normalized.companyName?.trim()) q.set("companyName", normalized.companyName.trim());
+  if (normalized.personName?.trim()) q.set("personName", normalized.personName.trim());
+  if (normalized.personCnpj?.trim()) q.set("personCnpj", normalized.personCnpj.trim());
   if (normalized.status !== "all") q.set("status", normalized.status);
-  if (normalized.year.trim()) q.set("year", normalized.year.trim());
-  if (normalized.month.trim()) q.set("month", normalized.month.trim());
-  if (normalized.dueDateFrom.trim()) q.set("dueDateFrom", normalized.dueDateFrom.trim());
-  if (normalized.dueDateTo.trim()) q.set("dueDateTo", normalized.dueDateTo.trim());
+  if (normalized.year?.trim()) q.set("year", normalized.year.trim());
+  if (normalized.month?.trim()) q.set("month", normalized.month.trim());
+  if (normalized.dueDateFrom?.trim()) q.set("dueDateFrom", normalized.dueDateFrom.trim());
+  if (normalized.dueDateTo?.trim()) q.set("dueDateTo", normalized.dueDateTo.trim());
   if (normalized.invoiceIssued !== "all") q.set("invoiceIssued", normalized.invoiceIssued);
-  if (normalized.paymentMethodName.trim()) {
+  if (normalized.paymentMethodName?.trim()) {
     q.set("paymentMethodName", normalized.paymentMethodName.trim());
   }
-  if (normalized.bankAccountName.trim()) q.set("bankAccountName", normalized.bankAccountName.trim());
+  if (normalized.bankAccountName?.trim()) {
+    q.set("bankAccountName", normalized.bankAccountName.trim());
+  }
   return q.toString();
 }

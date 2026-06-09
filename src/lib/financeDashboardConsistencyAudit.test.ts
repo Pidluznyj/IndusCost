@@ -15,6 +15,7 @@ import {
 import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
+  EMPTY_FINANCE_AR_UI_FILTERS,
   normalizeFinanceArUiFilters,
 } from "./financeAccountsReceivableDashboardTypes.js";
 import {
@@ -129,10 +130,10 @@ describe("financeDashboardConsistencyAudit — Contas a Receber", () => {
     assert.ok(dash.criticalTitles.every((t) => (t.daysOverdue ?? 0) > 0));
   });
 
-  it("filtro por CNPJ afeta cards", () => {
+  it("filtro por CNPJ afeta cards (substring no CNPJ formatado)", () => {
     const dash = buildFinanceAccountsReceivableDashboard(
       rows,
-      { status: "all", personCnpj: "22222222000122" },
+      { status: "all", personCnpj: "22.222.222/0001-22" },
       REF
     );
     assert.equal(dash.cards.totalRecords, 1);
@@ -141,16 +142,10 @@ describe("financeDashboardConsistencyAudit — Contas a Receber", () => {
 
   it("export CSV usa filtros aplicados (não draft) e inclui format=csv", () => {
     const applied = normalizeFinanceArUiFilters({
+      ...EMPTY_FINANCE_AR_UI_FILTERS,
       year: "2026",
       month: "6",
       status: "overdue",
-      companyName: "",
-      personName: "",
-      personCnpj: "",
-      dueDateFrom: "",
-      dueDateTo: "",
-      documentQuery: "",
-      invoiceIssued: "all",
     });
     const dashQs = buildFinanceArDashboardQuery(applied);
     const exportQs = buildFinanceArExportQuery(applied);
@@ -280,8 +275,10 @@ describe("financeDashboardConsistencyAudit — Faturamento", () => {
       join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
       "utf8"
     );
-    assert.ok(views.includes(FINANCE_BILLING_YTD_SCOPE));
+    assert.ok(views.includes("FINANCE_BILLING_YTD_SCOPE"));
+    assert.ok(views.includes("FinanceFilterScopeNote"));
     assert.ok(views.includes("Acumulado YTD"));
+    assert.equal(FINANCE_BILLING_YTD_SCOPE.includes("YTD"), true);
   });
 
   it("exceção faturamentos recentes rotulada", () => {
@@ -289,8 +286,9 @@ describe("financeDashboardConsistencyAudit — Faturamento", () => {
       join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
       "utf8"
     );
-    assert.ok(views.includes(FINANCE_BILLING_RECENT_ORDERS_SCOPE));
+    assert.ok(views.includes("FINANCE_BILLING_RECENT_ORDERS_SCOPE"));
     assert.ok(views.includes("Faturamentos recentes"));
+    assert.equal(FINANCE_BILLING_RECENT_ORDERS_SCOPE.includes("globalmente"), true);
   });
 
   it("guarda billingTabMetricsAreFinite existe para validar NaN/Infinity", () => {
