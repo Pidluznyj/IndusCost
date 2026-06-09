@@ -628,6 +628,10 @@ export default function App() {
           }
         />
         <Route
+          path="finance"
+          element={<Navigate to="/finance/accounts-receivable" replace />}
+        />
+        <Route
           path="finance/*"
           element={
             <ModulePageShell

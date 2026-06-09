@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -9,14 +9,23 @@ import {
   canViewFinanceAccountsPayable,
 } from "@/src/lib/financeAccountsPayablePermissions";
 import { canViewFinanceAccountsReceivable } from "@/src/lib/financeAccountsReceivablePermissions";
+import {
+  FINANCE_SECTIONS,
+  getFinanceDefaultPath,
+  isFinanceCanonicalPath,
+  resolveFinanceCanonicalPath,
+  type FinanceSectionId,
+} from "@/src/lib/financeNavigation";
 
-const FINANCE_SECTIONS = [
-  { id: "accounts-receivable", label: "Contas a Receber", to: "accounts-receivable" },
-  { id: "accounts-payable", label: "Contas a Pagar", to: "accounts-payable" },
-] as const;
+function FinanceCanonicalRedirect() {
+  const location = useLocation();
+  const target = resolveFinanceCanonicalPath(location.pathname);
+  return <Navigate to={target} replace />;
+}
 
 export function FinanceModule() {
   const auth = useAuth();
+  const location = useLocation();
   const canViewAccountsReceivable = canViewFinanceAccountsReceivable(auth);
   const canViewAccountsPayable = canViewFinanceAccountsPayable(auth);
 
@@ -26,7 +35,11 @@ export function FinanceModule() {
     return false;
   });
 
-  const defaultSection = visibleSections[0]?.to ?? "accounts-receivable";
+  const defaultPath = visibleSections[0]?.path ?? getFinanceDefaultPath();
+
+  if (!isFinanceCanonicalPath(location.pathname)) {
+    return <FinanceCanonicalRedirect />;
+  }
 
   if (visibleSections.length === 0) {
     return (
@@ -36,13 +49,31 @@ export function FinanceModule() {
     );
   }
 
+  const sectionRoutes: Record<FinanceSectionId, React.ReactNode> = {
+    "accounts-receivable": canViewAccountsReceivable ? (
+      <FinanceAccountsReceivablePage />
+    ) : (
+      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+        Sem permissão para Contas a Receber.
+      </div>
+    ),
+    "accounts-payable": canViewAccountsPayable ? (
+      <FinanceAccountsPayablePage />
+    ) : (
+      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+        Sem permissão para Contas a Pagar.
+      </div>
+    ),
+  };
+
   return (
     <div className="space-y-6">
       <nav className="flex flex-wrap gap-2 border-b border-border pb-3">
         {visibleSections.map((section) => (
           <NavLink
             key={section.id}
-            to={section.to}
+            to={section.path}
+            end
             className={({ isActive }) =>
               cn(
                 "inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
@@ -58,32 +89,10 @@ export function FinanceModule() {
       </nav>
 
       <Routes>
-        <Route index element={<Navigate to={defaultSection} replace />} />
-        <Route
-          path="accounts-receivable"
-          element={
-            canViewAccountsReceivable ? (
-              <FinanceAccountsReceivablePage />
-            ) : (
-              <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-                Sem permissão para Contas a Receber.
-              </div>
-            )
-          }
-        />
-        <Route
-          path="accounts-payable"
-          element={
-            canViewAccountsPayable ? (
-              <FinanceAccountsPayablePage />
-            ) : (
-              <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-                Sem permissão para Contas a Pagar.
-              </div>
-            )
-          }
-        />
-        <Route path="*" element={<Navigate to={defaultSection} replace />} />
+        <Route index element={<Navigate to={defaultPath} replace />} />
+        <Route path="accounts-receivable" element={sectionRoutes["accounts-receivable"]} />
+        <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
+        <Route path="*" element={<FinanceCanonicalRedirect />} />
       </Routes>
     </div>
   );
