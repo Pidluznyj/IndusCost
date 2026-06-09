@@ -2,48 +2,50 @@ import React from "react";
 import {
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import type { FinanceCashFlowMonthlyPoint } from "@/src/lib/financeCashFlowDashboardTypes";
+import { formatFinanceCurrency, formatFinanceCurrencyCompact } from "@/src/lib/financeAccountsReceivableFormat";
+import { FINANCE_BI_COLORS } from "@/src/lib/financeBiDashboardTheme";
 import {
-  formatFinanceCurrency,
-  formatFinanceCurrencyCompact,
-} from "@/src/lib/financeAccountsReceivableFormat";
-import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
-import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
+  buildCashFlowNetPositionChartRows,
+  cashFlowMonthlySeriesHasData,
+} from "@/src/lib/financeCashFlowDisplay";
+import {
+  FINANCE_CASH_FLOW_CHART_HEIGHT,
+  FinanceCashFlowChartShell,
+} from "@/src/components/finance/cash-flow/FinanceCashFlowChartShell";
 
-function ChartCard({
-  title,
-  subtitle,
-  children,
-  empty,
+function NetPositionTooltip({
+  active,
+  payload,
+  label,
 }: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  empty?: boolean;
+  active?: boolean;
+  payload?: Array<{ payload?: Record<string, number> }>;
+  label?: string;
 }) {
-  if (empty) {
-    return (
-      <FinanceBiEmptyState
-        title={title}
-        description={subtitle ?? "Sem dados para exibir com os filtros aplicados."}
-      />
-    );
-  }
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+
   return (
-    <div className={`${financeBiCardClass} p-5 space-y-3 min-h-[340px] flex flex-col`}>
-      <div>
-        <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
-        {subtitle ? <p className="text-[11px] text-[#6B7280] mt-0.5">{subtitle}</p> : null}
-      </div>
-      <div className="flex-1 min-h-[280px]">{children}</div>
+    <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 shadow-sm text-[11px] text-[#111827]">
+      <p className="font-semibold mb-1">Mês: {label}</p>
+      <p className="text-[#059669]">A receber: {formatFinanceCurrency(row.receivable)}</p>
+      <p className="text-[#DC2626]">A pagar: {formatFinanceCurrency(row.payable)}</p>
+      <p className="text-[#111827]">Posição líquida: {formatFinanceCurrency(row.netPosition)}</p>
+      {row.accumulated != null ? (
+        <p className="text-[#2563EB]">Acumulado: {formatFinanceCurrency(row.accumulated)}</p>
+      ) : null}
     </div>
   );
 }
@@ -55,61 +57,55 @@ export function FinanceCashFlowMonthlyChart({
   points: FinanceCashFlowMonthlyPoint[];
   viewModeLabel: string;
 }) {
-  const data = points.map((p) => ({
-    name: p.monthLabel,
-    inflow: p.inflowAmount,
-    outflow: p.outflowAmount != null ? -p.outflowAmount : null,
-    outflowPositive: p.outflowAmount,
-    net: p.netFlowAmount,
-    accumulated: p.accumulatedBalance,
-  }));
-
-  const empty = data.every(
-    (d) =>
-      (d.inflow == null || d.inflow === 0) &&
-      (d.outflowPositive == null || d.outflowPositive === 0)
-  );
+  const data = buildCashFlowNetPositionChartRows(points);
+  const empty = !cashFlowMonthlySeriesHasData(points);
 
   return (
-    <ChartCard
-      title="Fluxo de Caixa e Saldo Acumulado por Mês"
-      subtitle={`${viewModeLabel} — barras verdes = entradas, vermelhas = saídas, linha azul = saldo acumulado`}
+    <FinanceCashFlowChartShell
+      testId="cash-flow-main-chart"
+      title="Posição Líquida Mensal — Receber x Pagar"
+      subtitle={`${viewModeLabel} · barras verdes acima do zero · vermelhas abaixo · linha = saldo acumulado`}
       empty={empty}
+      emptyDescription="Sem movimentos para os filtros aplicados."
     >
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={FINANCE_CASH_FLOW_CHART_HEIGHT}>
         <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-          <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-          <YAxis
-            tick={{ fontSize: 11, fill: "#6B7280" }}
-            tickFormatter={(v: number) => formatFinanceCurrencyCompact(Math.abs(v))}
-            width={80}
+          <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
+          <ReferenceLine y={0} stroke={FINANCE_BI_COLORS.textSecondary} strokeWidth={1.5} />
+          <XAxis
+            dataKey="name"
+            tick={{ fontSize: 10, fill: FINANCE_BI_COLORS.textSecondary }}
             axisLine={false}
             tickLine={false}
           />
-          <Tooltip
-            formatter={(value: number, name: string) => {
-              if (value == null) return "—";
-              const abs = Math.abs(value);
-              if (name === "outflow") return formatFinanceCurrency(abs);
-              return formatFinanceCurrency(value);
-            }}
-            labelFormatter={(label) => `Mês: ${label}`}
+          <YAxis
+            tick={{ fontSize: 10, fill: FINANCE_BI_COLORS.textSecondary }}
+            tickFormatter={(v: number) => formatFinanceCurrencyCompact(v)}
+            width={84}
+            axisLine={false}
+            tickLine={false}
           />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="inflow" name="Entradas" fill="#059669" radius={[4, 4, 0, 0]} maxBarSize={32} />
-          <Bar dataKey="outflow" name="Saídas" fill="#DC2626" radius={[4, 4, 0, 0]} maxBarSize={32} />
+          <Tooltip content={<NetPositionTooltip />} />
+          <Legend wrapperStyle={{ fontSize: 10 }} />
+          <Bar dataKey="netPosition" name="Posição líquida" maxBarSize={36} radius={[3, 3, 0, 0]}>
+            {data.map((entry) => (
+              <Cell
+                key={`net-${entry.name}`}
+                fill={entry.netPosition >= 0 ? FINANCE_BI_COLORS.success : FINANCE_BI_COLORS.risk}
+              />
+            ))}
+          </Bar>
           <Line
             type="monotone"
             dataKey="accumulated"
             name="Saldo acumulado"
-            stroke="#2563EB"
+            stroke={FINANCE_BI_COLORS.primary}
             strokeWidth={2}
-            dot={{ r: 3, fill: "#2563EB" }}
+            dot={{ r: 2, fill: FINANCE_BI_COLORS.primary }}
             connectNulls={false}
           />
         </ComposedChart>
       </ResponsiveContainer>
-    </ChartCard>
+    </FinanceCashFlowChartShell>
   );
 }

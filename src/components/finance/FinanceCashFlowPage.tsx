@@ -33,7 +33,6 @@ import {
 import {
   displayFinanceText,
   formatFinanceCurrency,
-  formatFinanceCurrencyCompact,
   formatFinanceDateTime,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeCashFlowExportFilename } from "@/src/lib/financeCashFlowExport";
@@ -42,11 +41,17 @@ import {
   canViewFinanceCashFlow,
 } from "@/src/lib/financeCashFlowPermissions";
 import { FinanceCashFlowMonthlyChart } from "@/src/components/finance/FinanceCashFlowCharts";
+import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
+import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
+import { FinanceCashFlowNetPositionHero } from "@/src/components/finance/cash-flow/FinanceCashFlowNetPositionHero";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import {
+  computeCashFlowNetPosition,
+  formatCashFlowKpiDisplay,
+} from "@/src/lib/financeCashFlowDisplay";
 import { buildFinanceCashFlowFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
@@ -181,23 +186,35 @@ export function FinanceCashFlowPage() {
   }
 
   const cards = payload?.cards;
+  const posicaoLiquida = computeCashFlowNetPosition(
+    cards?.totalReceivableOpen ?? 0,
+    cards?.totalPayableOpen ?? 0
+  );
+  const netBalanceKpi = formatCashFlowKpiDisplay(cards?.netFlowAmount ?? 0);
+  const receivableKpi = formatCashFlowKpiDisplay(cards?.totalReceivableOpen ?? 0);
+  const payableKpi = formatCashFlowKpiDisplay(cards?.totalPayableOpen ?? 0);
+  const accumulatedKpi = formatCashFlowKpiDisplay(cards?.accumulatedBalance ?? 0);
+  const overdueKpi = formatCashFlowKpiDisplay(cards?.overdueCashImpact ?? 0);
+  const overdueArKpi = formatCashFlowKpiDisplay(cards?.overdueReceivableAmount ?? 0);
+  const overdueApKpi = formatCashFlowKpiDisplay(cards?.overduePayableAmount ?? 0);
 
   return (
     <FinanceBiDashboardShell>
+      <div data-testid="cash-flow-page" className="contents">
       <FinanceBiExecutiveHeader
-        eyebrow="Financeiro"
+        eyebrow="Financeiro · Fluxo de Caixa"
         title="Fluxo de Caixa"
         subtitle={
           <>
             Entradas de <strong>Contas a Receber</strong> e saídas de{" "}
-            <strong>Contas a Pagar</strong> — {FINANCE_CASH_FLOW_NOT_BILLING_SCOPE}
+            <strong>Contas a Pagar</strong> — visão gerencial de caixa projetado.
           </>
         }
         filterStatus={filterStatus}
         meta={[
           {
             label: "Fonte",
-            value: "NomusAccountsReceivable + NomusAccountsPayable",
+            value: "Contas a Receber + Contas a Pagar",
           },
           {
             label: "Última sync",
@@ -233,6 +250,7 @@ export function FinanceCashFlowPage() {
 
       <FinanceFilterScopeBanner active={filtersActive} />
 
+      <div data-testid="cash-flow-filters">
       <FinanceBiFilterPanel
         expanded={showAdvancedFilters}
         onToggle={() => setShowAdvancedFilters((v) => !v)}
@@ -400,6 +418,7 @@ export function FinanceCashFlowPage() {
           </label>
         </div>
       </FinanceBiFilterPanel>
+      </div>
 
       <nav className="flex flex-wrap gap-2 border-b border-[#E5E7EB] pb-2">
         {FINANCE_CASH_FLOW_TABS.map((tab) => {
@@ -442,62 +461,86 @@ export function FinanceCashFlowPage() {
       {payload && activeTab === "overview" ? (
         <div className="space-y-6">
           <section className={financeBiSectionClass}>
-            <h2 className="text-sm font-bold text-[#111827] px-1 mb-3">Resumo executivo</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3">
-              <FinanceBiKpiCard
-                label="Saldo líquido"
-                value={formatFinanceCurrency(cards?.netFlowAmount ?? 0)}
-                sub={withAppliedFilterSub(viewModeLabel, filtersActive)}
-                icon={Scale}
-                colorClass={
-                  cards && cards.netFlowAmount < 0 ? "text-[#DC2626]" : "text-[#059669]"
-                }
-                scopeNote={
-                  appliedFilters.viewMode === "combined"
-                    ? FINANCE_CASH_FLOW_COMBINED_SCOPE
-                    : undefined
-                }
+            <div className="px-5 py-4 border-b border-[#E5E7EB]">
+              <h2 className="text-sm font-bold text-[#111827]">Resumo executivo</h2>
+              <p className="text-[11px] text-[#6B7280] mt-0.5">
+                Posição líquida em destaque — entradas, saídas e riscos no período filtrado
+              </p>
+            </div>
+            <div className="p-5 space-y-4">
+              <FinanceCashFlowNetPositionHero
+                posicaoLiquida={posicaoLiquida}
+                receivableOpen={cards?.totalReceivableOpen ?? 0}
+                payableOpen={cards?.totalPayableOpen ?? 0}
               />
-              <FinanceBiKpiCard
-                label="Total a receber"
-                value={formatFinanceCurrency(cards?.totalReceivableOpen ?? 0)}
-                sub={withAppliedFilterSub("Títulos AR em aberto", filtersActive)}
-                icon={ArrowDownRight}
-                colorClass="text-[#059669]"
-              />
-              <FinanceBiKpiCard
-                label="Total a pagar"
-                value={formatFinanceCurrency(cards?.totalPayableOpen ?? 0)}
-                sub={withAppliedFilterSub("Títulos AP em aberto", filtersActive)}
-                icon={ArrowUpRight}
-                colorClass="text-[#DC2626]"
-              />
-              <FinanceBiKpiCard
-                label="Saldo acumulado"
-                value={formatFinanceCurrency(cards?.accumulatedBalance ?? 0)}
-                sub="No período filtrado"
-                icon={Wallet}
-                colorClass="text-[#2563EB]"
-                scopeNote={FINANCE_CASH_FLOW_PROJECTED_BALANCE_SCOPE}
-              />
-              <FinanceBiKpiCard
-                label="Meses com saldo negativo"
-                value={String(cards?.negativeBalanceMonthsCount ?? 0)}
-                sub="Fluxo líquido mensal < 0"
-                icon={TrendingDown}
-                colorClass={
-                  cards && cards.negativeBalanceMonthsCount > 0
-                    ? "text-[#D97706]"
-                    : "text-[#6B7280]"
-                }
-              />
-              <FinanceBiKpiCard
-                label="Vencidos no caixa"
-                value={formatFinanceCurrency(cards?.overdueCashImpact ?? 0)}
-                sub={`AR ${formatFinanceCurrencyCompact(cards?.overdueReceivableAmount ?? 0)} · AP ${formatFinanceCurrencyCompact(cards?.overduePayableAmount ?? 0)}`}
-                icon={AlertTriangle}
-                colorClass="text-[#D97706]"
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3">
+                <FinanceCashFlowKpiCard
+                  testId="kpi-net-balance"
+                  label="Saldo líquido"
+                  value={netBalanceKpi.display}
+                  valueFull={netBalanceKpi.full}
+                  sub={withAppliedFilterSub(viewModeLabel, filtersActive)}
+                  icon={Scale}
+                  featured
+                  colorClass={
+                    cards && cards.netFlowAmount < 0 ? "text-[#DC2626]" : "text-[#059669]"
+                  }
+                  scopeNote={
+                    appliedFilters.viewMode === "combined"
+                      ? FINANCE_CASH_FLOW_COMBINED_SCOPE
+                      : undefined
+                  }
+                />
+                <FinanceCashFlowKpiCard
+                  testId="kpi-total-inflow"
+                  label="Total a receber"
+                  value={receivableKpi.display}
+                  valueFull={receivableKpi.full}
+                  sub={withAppliedFilterSub("Títulos AR em aberto", filtersActive)}
+                  icon={ArrowDownRight}
+                  colorClass="text-[#059669]"
+                />
+                <FinanceCashFlowKpiCard
+                  testId="kpi-total-outflow"
+                  label="Total a pagar"
+                  value={payableKpi.display}
+                  valueFull={payableKpi.full}
+                  sub={withAppliedFilterSub("Títulos AP em aberto", filtersActive)}
+                  icon={ArrowUpRight}
+                  colorClass="text-[#DC2626]"
+                />
+                <FinanceCashFlowKpiCard
+                  testId="kpi-accumulated-balance"
+                  label="Saldo acumulado"
+                  value={accumulatedKpi.display}
+                  valueFull={accumulatedKpi.full}
+                  sub="No período filtrado"
+                  icon={Wallet}
+                  colorClass="text-[#111827]"
+                  scopeNote={FINANCE_CASH_FLOW_PROJECTED_BALANCE_SCOPE}
+                />
+                <FinanceCashFlowKpiCard
+                  testId="kpi-negative-months"
+                  label="Meses com saldo negativo"
+                  value={String(cards?.negativeBalanceMonthsCount ?? 0)}
+                  sub="Fluxo líquido mensal < 0"
+                  icon={TrendingDown}
+                  colorClass={
+                    cards && cards.negativeBalanceMonthsCount > 0
+                      ? "text-[#D97706]"
+                      : "text-[#6B7280]"
+                  }
+                />
+                <FinanceCashFlowKpiCard
+                  testId="kpi-overdue-cash"
+                  label="Vencidos no caixa"
+                  value={overdueKpi.display}
+                  valueFull={overdueKpi.full}
+                  sub={`AR ${overdueArKpi.display} · AP ${overdueApKpi.display}`}
+                  icon={AlertTriangle}
+                  colorClass="text-[#D97706]"
+                />
+              </div>
             </div>
           </section>
 
@@ -505,21 +548,6 @@ export function FinanceCashFlowPage() {
             points={payload.monthlySeries}
             viewModeLabel={viewModeLabel}
           />
-
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <PartyList
-              title="Top clientes por entrada"
-              subtitle="Saldo em aberto AR — filtros aplicados"
-              items={payload.topCustomers}
-              emptyLabel="Nenhum cliente com saldo em aberto."
-            />
-            <PartyList
-              title="Top fornecedores por saída"
-              subtitle="Saldo em aberto AP — filtros aplicados"
-              items={payload.topSuppliers}
-              emptyLabel="Nenhum fornecedor com saldo em aberto."
-            />
-          </section>
 
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CriticalList
@@ -537,8 +565,31 @@ export function FinanceCashFlowPage() {
             <CriticalList title="Vencidos a receber" items={payload.overdueReceivables} />
             <CriticalList title="Pagamentos vencidos" items={payload.overduePayables} outflow />
           </section>
+
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <PartyList
+              title="Top clientes por entrada"
+              subtitle="Saldo em aberto AR — filtros aplicados"
+              items={payload.topCustomers}
+              emptyLabel="Nenhum cliente com saldo em aberto."
+              inflow
+            />
+            <PartyList
+              title="Top fornecedores por saída"
+              subtitle="Saldo em aberto AP — filtros aplicados"
+              items={payload.topSuppliers}
+              emptyLabel="Nenhum fornecedor com saldo em aberto."
+              outflow
+            />
+          </section>
+
+          <FinanceCashFlowDetailTable
+            inflows={[...payload.largestProjectedInflows, ...payload.overdueReceivables]}
+            outflows={[...payload.largestProjectedOutflows, ...payload.overduePayables]}
+          />
         </div>
       ) : null}
+      </div>
     </FinanceBiDashboardShell>
   );
 }
@@ -548,11 +599,15 @@ function PartyList({
   subtitle,
   items,
   emptyLabel,
+  inflow = true,
+  outflow = false,
 }: {
   title: string;
   subtitle: string;
   items: FinanceCashFlowDashboardPayload["topCustomers"];
   emptyLabel: string;
+  inflow?: boolean;
+  outflow?: boolean;
 }) {
   return (
     <div className={`${financeBiCardClass} p-5 space-y-3`}>
@@ -569,8 +624,14 @@ function PartyList({
               key={`${item.personCnpj ?? item.personName ?? idx}`}
               className="flex items-center justify-between gap-2 text-sm"
             >
-              <span className="truncate font-medium">{displayFinanceText(item.personName)}</span>
-              <span className="shrink-0 font-semibold text-[#111827]">
+              <span className="truncate font-medium text-[#111827]">{displayFinanceText(item.personName)}</span>
+              <span
+                className={cn(
+                  "shrink-0 font-bold tabular-nums text-right",
+                  outflow ? "text-[#DC2626]" : inflow ? "text-[#059669]" : "text-[#111827]"
+                )}
+              >
+                {outflow ? "−" : inflow ? "+" : ""}
                 {formatFinanceCurrency(item.amount)}
               </span>
             </li>
@@ -608,7 +669,12 @@ function CriticalList({
             <li key={`${item.side}-${item.externalId}`} className="text-sm space-y-0.5">
               <div className="flex justify-between gap-2">
                 <span className="font-medium truncate">{displayFinanceText(item.personName)}</span>
-                <span className={cn("shrink-0 font-semibold", outflow && "text-red-700")}>
+                <span
+                  className={cn(
+                    "shrink-0 font-bold tabular-nums text-right",
+                    outflow ? "text-[#DC2626]" : "text-[#059669]"
+                  )}
+                >
                   {outflow ? "−" : "+"}
                   {formatFinanceCurrency(item.amount)}
                 </span>
