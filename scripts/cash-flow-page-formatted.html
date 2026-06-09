@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fluxo de Caixa — IndusCost</title>
+</head>
+<body>
+<div class="space-y-6">
+<nav class="flex flex-wrap gap-2 border-b border-border pb-3">
+  <a class="inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold bg-primary text-primary-foreground" href="#">Fluxo de Caixa</a>
+  <a class="inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-accent" href="#">Contas a Receber</a>
+  <a class="inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-accent" href="#">Contas a Pagar</a>
+  <a class="inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-accent" href="#">Faturamento</a>
+</nav>
+<div class="min-h-screen space-y-5 pb-10 bg-[#F9FAFB] text-[#111827]">
+<header class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-6">
+<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+<div class="min-w-0 space-y-2">
+<div class="flex flex-wrap items-center gap-2">
+<p class="text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">Financeiro</p>
+<span class="rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">
+</span>
+</div>
+<h1 class="text-2xl font-extrabold tracking-tight text-[#111827]">Fluxo de Caixa</h1>
+<p class="text-sm text-[#6B7280] max-w-2xl">Entradas de <strong>Contas a Receber</strong> e saídas de <strong>Contas a Pagar</strong> — Fluxo de caixa ≠ faturamento — entradas/saídas de AR/AP, não SalesOrder.</p>
+<dl class="flex flex-wrap gap-x-5 gap-y-1 text-xs pt-1">
+<div class="inline-flex items-center gap-1">
+<dt class="inline text-[#6B7280]">Fonte: </dt>
+<dd class="inline font-semibold text-[#111827] tabular-nums">NomusAccountsReceivable + NomusAccountsPayable</dd>
+</div>
+<div class="inline-flex items-center gap-1">
+<dt class="inline text-[#6B7280]">Última sync<span title="Última sync — MAX(syncedAt) entre registros AR/AP carregados, não sync global Nomus." class="inline-flex cursor-help text-[#6B7280] hover:text-[#2563EB]" aria-label="Última sync — MAX(syncedAt) entre registros AR/AP carregados, não sync global Nomus." role="img">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info h-3.5 w-3.5" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="M12 16v-4">
+</path>
+<path d="M12 8h.01">
+</path>
+</svg>
+</span>: </dt>
+<dd class="inline font-semibold text-[#111827] tabular-nums">09/06/2026 14:30</dd>
+</div>
+</dl>
+</div>
+<div class="flex flex-wrap items-center gap-2 shrink-0">
+<button type="button" class="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50">Atualizar</button>
+<button type="button" class="inline-flex h-9 items-center gap-2 rounded-lg border border-[#2563EB]/30 bg-[#2563EB]/5 px-3 text-xs font-semibold text-[#2563EB] hover:bg-[#2563EB]/10 disabled:opacity-50">Exportar</button>
+</div>
+</div>
+</header>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none border-[#2563EB]/20 bg-[#2563EB]/5 px-4 py-2.5 flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-funnel h-3.5 w-3.5 text-[#2563EB] shrink-0" aria-hidden="true">
+<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z">
+</path>
+</svg>
+<p class="text-[11px] font-medium text-[#111827]">Indicadores abaixo refletem os filtros aplicados.</p>
+</div>
+<div class="space-y-3">
+<section class="rounded-xl border border-[#E5E7EB] bg-white/80 dark:bg-card/80 shadow-none overflow-hidden">
+<div class="px-5 py-4 border-b border-[#E5E7EB] space-y-4">
+<div class="flex items-center gap-2.5 min-w-0">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-funnel h-4 w-4 text-[#6B7280] shrink-0" aria-hidden="true">
+<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z">
+</path>
+</svg>
+<span class="text-sm font-semibold text-[#111827]">Filtros</span>
+<span class="rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">
+</span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+<label class="space-y-1">
+<span class="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">Ano</span>
+<select class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827]">
+<option>2027</option>
+<option>2026</option>
+<option>2025</option>
+<option>2024</option>
+<option>2023</option>
+<option>2022</option>
+<option>2021</option>
+</select>
+</label>
+<label class="space-y-1">
+<span class="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">Mês</span>
+<select class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827]">
+<option>Todos</option>
+<option>Janeiro</option>
+<option>Fevereiro</option>
+<option>Março</option>
+<option>Abril</option>
+<option>Maio</option>
+<option>Junho</option>
+<option>Julho</option>
+<option>Agosto</option>
+<option>Setembro</option>
+<option>Outubro</option>
+<option>Novembro</option>
+<option>Dezembro</option>
+</select>
+</label>
+<label class="space-y-1">
+<span class="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">Empresa</span>
+<input class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827]" placeholder="Filtrar empresa"/>
+</label>
+<label class="space-y-1">
+<span class="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">Visão</span>
+<select class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827]">
+<option>Previsto</option>
+<option>Realizado</option>
+<option>Previsto x Realizado</option>
+</select>
+</label>
+<label class="space-y-1">
+<span class="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">Data base</span>
+<select class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827]">
+<option>Vencimento</option>
+<option>Baixa</option>
+<option>Emissão</option>
+</select>
+</label>
+<label class="space-y-1">
+<span class="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">Status</span>
+<select class="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827]">
+<option>Todos</option>
+<option>Aberto</option>
+<option>Pago/Baixado</option>
+<option>Vencido</option>
+</select>
+</label>
+</div>
+</div>
+<button type="button" class="w-full flex items-center justify-between px-5 py-3.5 hover:bg-[#F9FAFB] transition-colors">
+<div class="flex items-center gap-2.5 min-w-0">
+<span class="text-sm font-semibold text-[#111827]">Filtros avançados</span>
+</div>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-4 w-4 text-[#6B7280] shrink-0" aria-hidden="true">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+<div class="border-t border-[#E5E7EB] px-5 py-4 flex items-center gap-3 bg-white">
+<button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#2563EB] px-4 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-funnel h-3.5 w-3.5" aria-hidden="true">
+<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z">
+</path>
+</svg>Aplicar filtros</button>
+<button type="button" class="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-rotate-ccw h-3.5 w-3.5" aria-hidden="true">
+<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8">
+</path>
+<path d="M3 3v5h5">
+</path>
+</svg>Limpar</button>
+</div>
+</section>
+</div>
+<nav class="flex flex-wrap gap-2 border-b border-[#E5E7EB] pb-2">
+<button type="button" class="rounded-lg px-3 py-2 text-sm font-semibold bg-primary text-primary-foreground">Visão Geral</button>
+<button type="button" disabled="" class="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground/50 cursor-not-allowed">Calendário</button>
+<button type="button" disabled="" class="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground/50 cursor-not-allowed">Acumulado</button>
+<button type="button" disabled="" class="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground/50 cursor-not-allowed">Detalhado</button>
+<button type="button" disabled="" class="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground/50 cursor-not-allowed">Entradas</button>
+<button type="button" disabled="" class="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground/50 cursor-not-allowed">Saídas</button>
+<button type="button" disabled="" class="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground/50 cursor-not-allowed">Risco de Caixa</button>
+</nav>
+<div class="space-y-6">
+<section class="rounded-xl border border-[#E5E7EB] bg-white/80 dark:bg-card/80 shadow-none overflow-hidden">
+<h2 class="text-sm font-bold text-[#111827] px-1 mb-3">Resumo executivo</h2>
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3">
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center justify-between gap-2">
+<span class="text-[11px] font-bold uppercase tracking-widest text-[#6B7280] flex items-center gap-1.5">Saldo líquido</span>
+<span class="h-9 w-9 rounded-lg bg-[#F9FAFB] border border-[#E5E7EB] flex items-center justify-center shrink-0">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-scale h-4 w-4 text-[#059669]" aria-hidden="true">
+<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z">
+</path>
+<path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z">
+</path>
+<path d="M7 21h10">
+</path>
+<path d="M12 3v18">
+</path>
+<path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2">
+</path>
+</svg>
+</span>
+</div>
+<p class="text-3xl font-extrabold tracking-tight leading-none text-[#059669]">R$ 70.000,00</p>
+<div class="flex items-center justify-between min-h-[1.25rem] gap-2">
+<span class="text-[11px] text-[#6B7280]">Previsto</span>
+</div>
+</div>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center justify-between gap-2">
+<span class="text-[11px] font-bold uppercase tracking-widest text-[#6B7280] flex items-center gap-1.5">Total a receber</span>
+<span class="h-9 w-9 rounded-lg bg-[#F9FAFB] border border-[#E5E7EB] flex items-center justify-center shrink-0">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-down-right h-4 w-4 text-[#059669]" aria-hidden="true">
+<path d="m7 7 10 10">
+</path>
+<path d="M17 7v10H7">
+</path>
+</svg>
+</span>
+</div>
+<p class="text-3xl font-extrabold tracking-tight leading-none text-[#059669]">R$ 245.000,00</p>
+<div class="flex items-center justify-between min-h-[1.25rem] gap-2">
+<span class="text-[11px] text-[#6B7280]">Títulos AR em aberto</span>
+</div>
+</div>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center justify-between gap-2">
+<span class="text-[11px] font-bold uppercase tracking-widest text-[#6B7280] flex items-center gap-1.5">Total a pagar</span>
+<span class="h-9 w-9 rounded-lg bg-[#F9FAFB] border border-[#E5E7EB] flex items-center justify-center shrink-0">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-right h-4 w-4 text-[#DC2626]" aria-hidden="true">
+<path d="M7 7h10v10">
+</path>
+<path d="M7 17 17 7">
+</path>
+</svg>
+</span>
+</div>
+<p class="text-3xl font-extrabold tracking-tight leading-none text-[#DC2626]">R$ 175.000,00</p>
+<div class="flex items-center justify-between min-h-[1.25rem] gap-2">
+<span class="text-[11px] text-[#6B7280]">Títulos AP em aberto</span>
+</div>
+</div>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center justify-between gap-2">
+<span class="text-[11px] font-bold uppercase tracking-widest text-[#6B7280] flex items-center gap-1.5">Saldo acumulado</span>
+<span class="h-9 w-9 rounded-lg bg-[#F9FAFB] border border-[#E5E7EB] flex items-center justify-center shrink-0">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wallet h-4 w-4 text-[#2563EB]" aria-hidden="true">
+<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1">
+</path>
+<path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4">
+</path>
+</svg>
+</span>
+</div>
+<p class="text-[10px] text-[#6B7280] leading-snug">Saldo projetado — não considera saldo bancário inicial.</p>
+<p class="text-3xl font-extrabold tracking-tight leading-none text-[#2563EB]">R$ 70.000,00</p>
+<div class="flex items-center justify-between min-h-[1.25rem] gap-2">
+<span class="text-[11px] text-[#6B7280]">No período filtrado</span>
+</div>
+</div>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center justify-between gap-2">
+<span class="text-[11px] font-bold uppercase tracking-widest text-[#6B7280] flex items-center gap-1.5">Meses com saldo negativo</span>
+<span class="h-9 w-9 rounded-lg bg-[#F9FAFB] border border-[#E5E7EB] flex items-center justify-center shrink-0">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-down h-4 w-4 text-[#D97706]" aria-hidden="true">
+<path d="M16 17h6v-6">
+</path>
+<path d="m22 17-8.5-8.5-5 5L2 7">
+</path>
+</svg>
+</span>
+</div>
+<p class="text-3xl font-extrabold tracking-tight leading-none text-[#D97706]">1</p>
+<div class="flex items-center justify-between min-h-[1.25rem] gap-2">
+<span class="text-[11px] text-[#6B7280]">Fluxo líquido mensal &lt; 0</span>
+</div>
+</div>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center justify-between gap-2">
+<span class="text-[11px] font-bold uppercase tracking-widest text-[#6B7280] flex items-center gap-1.5">Vencidos no caixa</span>
+<span class="h-9 w-9 rounded-lg bg-[#F9FAFB] border border-[#E5E7EB] flex items-center justify-center shrink-0">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle-alert h-4 w-4 text-[#D97706]" aria-hidden="true">
+<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+</path>
+<path d="M12 9v4">
+</path>
+<path d="M12 17h.01">
+</path>
+</svg>
+</span>
+</div>
+<p class="text-3xl font-extrabold tracking-tight leading-none text-[#D97706]">R$ 18.500,00</p>
+<div class="flex items-center justify-between min-h-[1.25rem] gap-2">
+<span class="text-[11px] text-[#6B7280]">AR R$ 12k · AP R$ 6,5k</span>
+</div>
+</div>
+</div>
+</section>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3 min-h-[340px] flex flex-col">
+<div>
+<h3 class="text-sm font-bold text-[#111827]">Fluxo de Caixa e Saldo Acumulado por Mês</h3>
+<p class="text-[11px] text-[#6B7280] mt-0.5">Previsto — barras verdes = entradas, vermelhas = saídas, linha azul = saldo acumulado</p>
+</div>
+<div class="flex-1 min-h-[280px]">
+<div class="recharts-responsive-container" style="width:100%;height:100%;min-width:0">
+<div style="width:0;height:0;overflow:visible">
+</div>
+</div>
+</div>
+</div>
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div>
+<h3 class="text-sm font-bold text-[#111827]">Top clientes por entrada</h3>
+<p class="text-[11px] text-[#6B7280]">Saldo em aberto AR — filtros aplicados</p>
+</div>
+<ul class="space-y-2">
+<li class="flex items-center justify-between gap-2 text-sm">
+<span class="truncate font-medium">Cliente Alpha Ltda</span>
+<span class="shrink-0 font-semibold text-[#111827]">R$ 45.000</span>
+</li>
+<li class="flex items-center justify-between gap-2 text-sm">
+<span class="truncate font-medium">Cliente Beta S.A.</span>
+<span class="shrink-0 font-semibold text-[#111827]">R$ 32.000</span>
+</li>
+</ul>
+</div>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div>
+<h3 class="text-sm font-bold text-[#111827]">Top fornecedores por sa├¡da</h3>
+<p class="text-[11px] text-[#6B7280]">Saldo em aberto AP — filtros aplicados</p>
+</div>
+<ul class="space-y-2">
+<li class="flex items-center justify-between gap-2 text-sm">
+<span class="truncate font-medium">Fornecedor X</span>
+<span class="shrink-0 font-semibold text-[#111827]">R$ 28.000</span>
+</li>
+<li class="flex items-center justify-between gap-2 text-sm">
+<span class="truncate font-medium">Fornecedor Y</span>
+<span class="shrink-0 font-semibold text-[#111827]">R$ 19.500</span>
+</li>
+</ul>
+</div>
+</section>
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up h-4 w-4 text-emerald-600" aria-hidden="true">
+<path d="M16 7h6v6">
+</path>
+<path d="m22 7-8.5 8.5-5-5L2 17">
+</path>
+</svg>
+<h3 class="text-sm font-bold text-[#111827]">Maiores entradas previstas</h3>
+</div>
+<ul class="space-y-2">
+<li class="text-sm space-y-0.5">
+<div class="flex justify-between gap-2">
+<span class="font-medium truncate">Cliente Alpha</span>
+<span class="shrink-0 font-semibold ">+R$ 18.000</span>
+</div>
+<p class="text-[11px] text-[#6B7280]">Venc. 14/06/2026</p>
+</li>
+</ul>
+</div>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-down h-4 w-4 text-red-600" aria-hidden="true">
+<path d="M16 17h6v-6">
+</path>
+<path d="m22 17-8.5-8.5-5 5L2 7">
+</path>
+</svg>
+<h3 class="text-sm font-bold text-[#111827]">Maiores saídas previstas</h3>
+</div>
+<ul class="space-y-2">
+<li class="text-sm space-y-0.5">
+<div class="flex justify-between gap-2">
+<span class="font-medium truncate">Fornecedor X</span>
+<span class="shrink-0 font-semibold text-red-700">−R$ 12.000</span>
+</div>
+<p class="text-[11px] text-[#6B7280]">Venc. 09/06/2026</p>
+</li>
+</ul>
+</div>
+</section>
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up h-4 w-4 text-emerald-600" aria-hidden="true">
+<path d="M16 7h6v6">
+</path>
+<path d="m22 7-8.5 8.5-5-5L2 17">
+</path>
+</svg>
+<h3 class="text-sm font-bold text-[#111827]">Vencidos a receber</h3>
+</div>
+<ul class="space-y-2">
+<li class="text-sm space-y-0.5">
+<div class="flex justify-between gap-2">
+<span class="font-medium truncate">Cliente Alpha</span>
+<span class="shrink-0 font-semibold ">+R$ 18.000</span>
+</div>
+<p class="text-[11px] text-[#6B7280]">Venc. 14/06/2026</p>
+</li>
+</ul>
+</div>
+<div class="rounded-xl border border-[#E5E7EB] bg-white dark:bg-card shadow-none p-5 space-y-3">
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-down h-4 w-4 text-red-600" aria-hidden="true">
+<path d="M16 17h6v-6">
+</path>
+<path d="m22 17-8.5-8.5-5 5L2 7">
+</path>
+</svg>
+<h3 class="text-sm font-bold text-[#111827]">Pagamentos vencidos</h3>
+</div>
+<ul class="space-y-2">
+<li class="text-sm space-y-0.5">
+<div class="flex justify-between gap-2">
+<span class="font-medium truncate">Fornecedor X</span>
+<span class="shrink-0 font-semibold text-red-700">−R$ 12.000</span>
+</div>
+<p class="text-[11px] text-[#6B7280]">Venc. 09/06/2026</p>
+</li>
+</ul>
+</div>
+</section>
+</div>
+</div>
+</div>
+</body>
+</html>
