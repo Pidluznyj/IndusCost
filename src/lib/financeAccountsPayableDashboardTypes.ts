@@ -258,6 +258,16 @@ export function formatFinanceApPeriodLabel(
   return "Todos os períodos";
 }
 
+export function hasPendingFinanceApFilterChanges(
+  draft: FinanceApUiFilters,
+  applied: FinanceApUiFilters
+): boolean {
+  return (
+    buildFinanceApDashboardQuery(normalizeFinanceApUiFilters(draft)) !==
+    buildFinanceApDashboardQuery(normalizeFinanceApUiFilters(applied))
+  );
+}
+
 export function isDefaultFinanceApUiFilters(
   filters: FinanceApUiFilters,
   referenceDate = new Date()
