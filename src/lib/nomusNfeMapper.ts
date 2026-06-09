@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { parseNomusBrDate, parseNomusBrDateTime } from "@/src/lib/nomusAccountsPayableParser.js";
+import { normalizeNomusBooleanInt } from "@/src/lib/nomusNfeBillingEligibility.js";
 import {
   classifyNomusNfeBilling,
   computeNomusNfeFiscalFlags,
@@ -90,15 +91,20 @@ export function mapNomusNfePayload(raw: JsonObject): MapNfeResult {
   });
 
   const status = toInt(raw.status);
-  const tipoOperacao = toInt(raw.tipoOperacao ?? raw.tipo_operacao);
-  const isFornecedor = toInt(raw.isFornecedor ?? raw.is_fornecedor);
-  const ambiente = toInt(raw.ambiente);
+  const tipoOperacao =
+    normalizeNomusBooleanInt(raw.tipoOperacao ?? raw.tipo_operacao) ??
+    toInt(raw.tipoOperacao ?? raw.tipo_operacao);
+  const isFornecedor =
+    normalizeNomusBooleanInt(raw.isFornecedor ?? raw.is_fornecedor) ??
+    toInt(raw.isFornecedor ?? raw.is_fornecedor);
+  const ambiente = normalizeNomusBooleanInt(raw.ambiente) ?? toInt(raw.ambiente);
   const fiscalFlags = computeNomusNfeFiscalFlags({
     status,
     tipoOperacao,
     isFornecedor,
     ambiente,
     xmlTpNF: parsedXml.tpNF,
+    xmlDhEmi: parsedXml.dhEmi,
     billingClassification,
   });
 

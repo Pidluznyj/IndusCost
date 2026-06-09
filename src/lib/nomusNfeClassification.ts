@@ -22,6 +22,7 @@ export const NOMUS_NFE_PRODUCTION_ENV = 1;
 export const NOMUS_NFE_SAIDA_TIPO_OPERACAO = 1;
 export const NOMUS_NFE_CLIENT_ISSUED = 0;
 export const NOMUS_NFE_XML_SAIDA_TPNF = 1;
+export const NOMUS_NFE_XML_CUTOFF = new Date("2024-01-01T00:00:00");
 
 function normalizeNatOp(value: string | null | undefined): string {
   return (value ?? "")
@@ -67,17 +68,26 @@ export function computeNomusNfeFiscalFlags(input: {
   isFornecedor: number | null;
   ambiente: number | null;
   xmlTpNF: number | null;
+  xmlDhEmi: Date | null;
   billingClassification: NomusNfeBillingClassification;
 }): { isFiscalBilling: boolean; isMarketSale: boolean } {
-  const production = input.ambiente === NOMUS_NFE_PRODUCTION_ENV;
-  const saida =
-    input.tipoOperacao === NOMUS_NFE_SAIDA_TIPO_OPERACAO &&
-    input.xmlTpNF === NOMUS_NFE_XML_SAIDA_TPNF;
-  const clientIssued = input.isFornecedor === NOMUS_NFE_CLIENT_ISSUED;
-  const notCancelled = input.status !== NOMUS_NFE_STATUS_CANCELLED;
   const market = input.billingClassification === NomusNfeBillingClassification.MARKET_REVENUE;
 
-  const fiscalBase = production && saida && clientIssued && notCancelled;
+  // Power BI: XML é fonte primária para saída e data de emissão.
+  const xmlSaida = input.xmlTpNF === NOMUS_NFE_XML_SAIDA_TPNF;
+  const xmlDateOk =
+    input.xmlDhEmi != null && input.xmlDhEmi.getTime() >= NOMUS_NFE_XML_CUTOFF.getTime();
+  const notCancelled = input.status !== NOMUS_NFE_STATUS_CANCELLED;
+
+  // Campos da API só bloqueiam quando explicitamente inválidos — ausência não descarta.
+  const production =
+    input.ambiente == null || input.ambiente === NOMUS_NFE_PRODUCTION_ENV;
+  const clientIssued =
+    input.isFornecedor == null || input.isFornecedor === NOMUS_NFE_CLIENT_ISSUED;
+  const apiSaida =
+    input.tipoOperacao == null || input.tipoOperacao === NOMUS_NFE_SAIDA_TIPO_OPERACAO;
+
+  const fiscalBase = xmlSaida && xmlDateOk && notCancelled && production && clientIssued && apiSaida;
   return {
     isFiscalBilling: fiscalBase,
     isMarketSale: fiscalBase && market,

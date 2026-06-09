@@ -153,7 +153,11 @@ export function resolveNfesSyncCutoffDate(incremental: boolean, now: Date = new 
   return cutoff;
 }
 
-/** Filtro local alinhado ao Power BI: saída, produção, emitida pelo cliente, período e status útil. */
+/**
+ * @deprecated Não usar como pré-filtro de sync — descartava ~99% das NFes antes do parse XML.
+ * A elegibilidade fiscal segue regras Power BI pós-mapeamento em `nomusNfeBillingEligibility.ts`.
+ * Mantido para compatibilidade de testes legados.
+ */
 export function passesNfesSyncLocalFilter(
   raw: JsonObject,
   cutoffDate: Date
