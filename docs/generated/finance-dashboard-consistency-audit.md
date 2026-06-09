@@ -24,6 +24,12 @@ Auditoria técnica dos três menus financeiros para validar fontes oficiais, fó
 - Testes de export corrigidos (`format=csv` além dos filtros do dashboard).
 - Suite `financeDashboardConsistencyAudit.test.ts` com cobertura transversal.
 
+**Correções fase billing charts + previsão:**
+- Gráficos Acumulado/Mês/Projeção: altura explícita Recharts (causa raiz containers vazios).
+- Nova aba **Carteira Prevista** com previsão por `expectedDeliveryDate`.
+- Cards Projeção com valores legíveis (sem truncamento).
+- Empty state NF-e: "Aguardando sincronização de NF-e Nomus."
+
 **Correções nesta fase (AP + Billing BI):**
 - AP: UX BI executivo — resumo 6 KPIs, filtros principais visíveis, filtros avançados colapsáveis, chips, aging/ranking/action center.
 - AP: rótulos `FINANCE_AP_PAID_THIS_MONTH_SCOPE`, `FINANCE_AP_DEFAULT_YEAR_SCOPE`, `FINANCE_AP_LAST_SYNC_FILTERED_SCOPE`.

@@ -43,6 +43,7 @@ export const FINANCE_BILLING_TABS = [
   { id: "accumulated", label: "Acumulado NF-e" },
   { id: "monthly", label: "Mês a Mês" },
   { id: "projection", label: "Projeção" },
+  { id: "forecast", label: "Carteira Prevista" },
   { id: "nfe-details", label: "Detalhado NF-e" },
   { id: "comparison", label: "Comparativo" },
 ] as const;

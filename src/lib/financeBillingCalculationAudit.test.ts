@@ -98,6 +98,26 @@ function minimalTab(): BillingDashboardTab {
     recentInvoicedOrders: [],
     intercompanyExclusionApplied: true,
     marketBillingNote: "test",
+    forecast: {
+      dateField: "expectedDeliveryDate",
+      portfolioAmount: 200,
+      monthForecastAmount: 100,
+      overdueAmount: 50,
+      overdueCount: 1,
+      ordersWithoutDateCount: 0,
+      note: "test",
+      formatted: {
+        portfolioAmount: "R$ 200",
+        monthForecastAmount: "R$ 100",
+        overdueAmount: "R$ 50",
+        overdueCount: "1",
+      },
+      monthlyComparison: [
+        { month: 6, monthLabel: "Jun", realized: 1000, forecast: 100, difference: 900 },
+      ],
+      dailySeries: [],
+      orders: [],
+    },
   };
 }
 
@@ -117,6 +137,12 @@ describe("financeBillingCalculationAudit", () => {
     assert.ok(page.includes("comparisonError"));
     assert.ok(page.includes("FINANCE_BILLING_YTD_SCOPE"));
     assert.ok(page.includes("FINANCE_BILLING_PROJECTION_SCOPE"));
+    assert.ok(page.includes("FinanceBillingForecastView"));
+    const views = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
+      "utf8"
+    );
+    assert.ok(views.includes("FINANCE_BILLING_FORECAST_SCOPE"));
     const panel = readFileSync(
       join(
         process.cwd(),

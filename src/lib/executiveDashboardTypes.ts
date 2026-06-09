@@ -2,6 +2,7 @@ import type {
   BillingMultiYearMonthlyPoint,
   BillingMultiYearSummary,
 } from "./financeBillingChartData.js";
+import type { BillingForecastBlock } from "./financeBillingForecast.js";
 
 /** Tipos do dashboard gerencial (GET /api/dashboard/executive-summary). */
 
@@ -328,6 +329,8 @@ export type BillingDashboardTab = ExecutiveSectionBase & {
   topCustomers: BillingTopCustomerRow[];
   intercompanyExclusionApplied: boolean;
   marketBillingNote: string;
+  /** Previsão por data prevista de entrega (pedidos não faturados). */
+  forecast: BillingForecastBlock;
 };
 
 export type ExecutiveDashboardPermissions = {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   FINANCE_BILLING_COMPARISON_SCOPE,
+  FINANCE_BILLING_FORECAST_SCOPE,
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
   FINANCE_BILLING_MULTI_YEAR_SCOPE,
   FINANCE_BILLING_NFE_LIST_SCOPE,
@@ -47,6 +48,7 @@ describe("financeFilterCompliance", () => {
     assert.match(FINANCE_BILLING_MULTI_YEAR_SCOPE, /multi-ano|histórico/i);
     assert.match(FINANCE_BILLING_COMPARISON_SCOPE, /Comparativo/i);
     assert.match(FINANCE_BILLING_PROJECTION_SCOPE, /Projeção/i);
+    assert.match(FINANCE_BILLING_FORECAST_SCOPE, /expectedDeliveryDate|previsão/i);
     assert.match(FINANCE_SYNC_GLOBAL_SCOPE, /global/i);
     assert.match(FINANCE_FILTER_APPLIED_SCOPE, /filtros aplicados/i);
   });

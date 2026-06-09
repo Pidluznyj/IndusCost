@@ -57,6 +57,12 @@ export function billingTabMetricsAreFinite(tab: BillingDashboardTab): boolean {
     ...tab.multiYearSummary.flatMap((s) => [s.yearTotal, s.ytdTotal, s.currentMonthValue]),
     ...tab.topCustomers.map((c) => c.totalNetValue),
     ...tab.recentInvoicedOrders.map((o) => o.totalNetValue),
+    tab.forecast.portfolioAmount,
+    tab.forecast.monthForecastAmount,
+    tab.forecast.overdueAmount,
+    ...tab.forecast.monthlyComparison.flatMap((p) => [p.realized, p.forecast, p.difference]),
+    ...tab.forecast.dailySeries.flatMap((p) => [p.realized, p.forecast, p.difference]),
+    ...tab.forecast.orders.map((o) => o.totalNetValue),
   ];
   return numericValues.every((v) => v == null || Number.isFinite(v));
 }

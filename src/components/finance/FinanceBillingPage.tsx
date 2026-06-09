@@ -44,6 +44,7 @@ import { FinanceBillingSourceBadge } from "@/src/components/finance/billing/Fina
 import {
   FinanceBillingAccumulatedView,
   FinanceBillingMonthlyView,
+  FinanceBillingForecastView,
   FinanceBillingOverviewView,
   FinanceBillingProjectionView,
 } from "@/src/components/finance/billing/FinanceBillingExecutiveViews";
@@ -558,6 +559,9 @@ export function FinanceBillingPage() {
           ) : null}
           {activeTab === "projection" ? (
             <FinanceBillingProjectionView data={data} loading={loading} />
+          ) : null}
+          {activeTab === "forecast" ? (
+            <FinanceBillingForecastView data={data} loading={loading} />
           ) : null}
           {activeTab === "nfe-details" ? (
             <FinanceBillingNfeDetailsTable

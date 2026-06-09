@@ -14,15 +14,21 @@ import { FinanceBillingSourceBadge } from "@/src/components/finance/billing/Fina
 import { FinanceBillingMonthlyComparisonChart } from "@/src/components/finance/billing/FinanceBillingMonthlyComparisonChart";
 import { FinanceBillingAccumulatedChart } from "@/src/components/finance/billing/FinanceBillingAccumulatedChart";
 import { FinanceBillingProjectionChart } from "@/src/components/finance/billing/FinanceBillingProjectionChart";
+import {
+  FinanceBillingForecastDailyChart,
+  FinanceBillingForecastMonthlyChart,
+} from "@/src/components/finance/billing/FinanceBillingForecastCharts";
 import { ExecutiveTargetPanel } from "@/src/components/dashboard/ExecutiveDashboardCharts";
 import { FinanceFilterScopeNote } from "@/src/components/finance/FinanceFilterScopeBanner";
 import {
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
+  FINANCE_BILLING_FORECAST_SCOPE,
   FINANCE_BILLING_MULTI_YEAR_SCOPE,
   FINANCE_BILLING_PROJECTION_SCOPE,
   FINANCE_BILLING_RECENT_ORDERS_SCOPE,
   FINANCE_BILLING_YTD_SCOPE,
 } from "@/src/lib/financeFilterScope";
+import { formatFinanceCurrency, formatFinanceDate } from "@/src/lib/financeAccountsReceivableFormat";
 
 /* ─── Visão Geral ─────────────────────────────────────────────── */
 export function FinanceBillingOverviewView({
@@ -276,18 +282,20 @@ export function FinanceBillingProjectionView({
         <FinanceBillingSourceBadge variant="official" />
         <FinanceFilterScopeNote>{FINANCE_BILLING_PROJECTION_SCOPE}</FinanceFilterScopeNote>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-4">
         <FinanceBillingExecutiveCard
           label="Média diária YTD"
           value={tab.projection.formatted.dailyAverage}
           sub={tab.projection.ytdDailyAverageHint}
           loading={loading}
+          valueClassName="text-lg sm:text-xl lg:text-2xl break-words"
         />
         <FinanceBillingExecutiveCard
           label="Faturado realizado"
           value={tab.realizedVsProjected.formatted.realized}
           sub="Mês corrente"
           loading={loading}
+          valueClassName="text-lg sm:text-xl lg:text-2xl break-words"
         />
         <FinanceBillingExecutiveCard
           label="Projeção do mês"
@@ -295,12 +303,14 @@ export function FinanceBillingProjectionView({
           sub={`${tab.projection.workdaysInMonth} dias úteis`}
           loading={loading}
           colorClass="text-blue-700"
+          valueClassName="text-lg sm:text-xl lg:text-2xl break-words"
         />
         <FinanceBillingExecutiveCard
-          label="Meta do ano"
-          value={tab.yearComparison.formatted.annualTarget}
-          sub={`Base: ${tab.yearComparison.formatted.previousYearTotal}`}
+          label="Meta do mês"
+          value={tab.target.formatted.target}
+          sub={`% ating.: ${tab.target.formatted.achievementPercent}`}
           loading={loading}
+          valueClassName="text-lg sm:text-xl lg:text-2xl break-words"
         />
         <FinanceBillingExecutiveCard
           label="Projeção anual"
@@ -308,6 +318,7 @@ export function FinanceBillingProjectionView({
           sub={`${tab.projection.workdaysInYear} dias úteis`}
           loading={loading}
           colorClass="text-blue-700"
+          valueClassName="text-lg sm:text-xl lg:text-2xl break-words"
         />
       </div>
 
@@ -335,6 +346,108 @@ export function FinanceBillingProjectionView({
             </div>
           ))}
         </div>
+      </section>
+    </div>
+  );
+}
+
+/* ─── Carteira Prevista ───────────────────────────────────────── */
+export function FinanceBillingForecastView({
+  data,
+  loading,
+}: {
+  data: FinanceBillingDashboardPayload | null;
+  loading: boolean;
+}) {
+  const tab = data?.tab;
+  const forecast = tab?.forecast;
+  if (!forecast) return null;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <FinanceBillingSourceBadge variant="official" />
+        <FinanceFilterScopeNote className="flex-1">{FINANCE_BILLING_FORECAST_SCOPE}</FinanceFilterScopeNote>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{forecast.note}</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <FinanceBillingExecutiveCard
+          label="Carteira prevista a faturar"
+          value={forecast.formatted.portfolioAmount}
+          sub={`Ano ${data?.selectedYear ?? ""} — pedidos abertos`}
+          loading={loading}
+          valueClassName="text-lg sm:text-xl lg:text-2xl break-words"
+        />
+        <FinanceBillingExecutiveCard
+          label="Previsto no mês"
+          value={forecast.formatted.monthForecastAmount}
+          sub={tab?.periodLabel}
+          loading={loading}
+          colorClass="text-blue-700"
+          valueClassName="text-lg sm:text-xl lg:text-2xl break-words"
+        />
+        <FinanceBillingExecutiveCard
+          label="Atrasado para faturar"
+          value={forecast.formatted.overdueAmount}
+          sub={`${forecast.formatted.overdueCount} pedido(s)`}
+          loading={loading}
+          colorClass="text-red-700"
+          valueClassName="text-lg sm:text-xl lg:text-2xl break-words"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <FinanceBillingForecastMonthlyChart
+          points={forecast.monthlyComparison}
+          selectedYear={data?.selectedYear ?? new Date().getFullYear()}
+        />
+        <FinanceBillingForecastDailyChart
+          points={forecast.dailySeries}
+          monthLabel={tab?.periodLabel ?? ""}
+        />
+      </div>
+
+      <section className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
+        <h3 className="text-sm font-bold mb-3">Pedidos previstos para faturamento</h3>
+        {forecast.orders.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nenhum pedido em aberto com data prevista no ano selecionado.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-muted-foreground text-left">
+                  <th className="pb-2 pr-2">Pedido</th>
+                  <th className="pb-2 pr-2">Cliente</th>
+                  <th className="pb-2 pr-2">Data prevista</th>
+                  <th className="pb-2 pr-2">Valor</th>
+                  <th className="pb-2 pr-2">Status</th>
+                  <th className="pb-2 pr-2">Atraso</th>
+                  <th className="pb-2">NF vinc.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {forecast.orders.map((o) => (
+                  <tr key={o.orderId} className="border-b border-border/40">
+                    <td className="py-2 pr-2 font-medium">{o.orderCode}</td>
+                    <td className="py-2 pr-2">{o.customerName}</td>
+                    <td className="py-2 pr-2">
+                      {o.expectedDeliveryDate ? formatFinanceDate(o.expectedDeliveryDate) : "—"}
+                    </td>
+                    <td className="py-2 pr-2">{formatFinanceCurrency(o.totalNetValue)}</td>
+                    <td className="py-2 pr-2">{o.status}</td>
+                    <td className="py-2 pr-2">
+                      {o.daysOverdue > 0 ? `${o.daysOverdue}d` : "—"}
+                    </td>
+                    <td className="py-2">{o.hasLinkedNfe ? "Sim" : "Não"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

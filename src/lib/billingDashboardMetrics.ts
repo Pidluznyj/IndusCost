@@ -49,6 +49,7 @@ import {
   orderIsInvoicedSql,
   toPgDateYmd,
 } from "@/src/lib/salesOrderInvoicingSql.js";
+import { buildBillingForecastBlock } from "@/src/lib/financeBillingForecast.js";
 import type {
   BillingDashboardTab,
   BillingProjectionBlock,
@@ -403,6 +404,8 @@ export async function buildBillingDashboardTab(
     yearCtx.isSelectedYearCurrent
   );
 
+  const forecast = await buildBillingForecastBlock(yearCtx, currentYearMonthly);
+
   return {
     available: true,
     source:
@@ -424,5 +427,6 @@ export async function buildBillingDashboardTab(
     topCustomers,
     intercompanyExclusionApplied: true,
     marketBillingNote: MARKET_BILLING_NOTE,
+    forecast,
   };
 }

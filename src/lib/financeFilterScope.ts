@@ -67,6 +67,9 @@ export const FINANCE_CASH_FLOW_NOT_BILLING_SCOPE =
 export const FINANCE_CASH_FLOW_COMBINED_SCOPE =
   "Modo combinado — soma previsto (aberto) e realizado (baixado) no período." as const;
 
+export const FINANCE_BILLING_FORECAST_SCOPE =
+  "Previsão de faturamento — pedidos não faturados por SalesOrder.expectedDeliveryDate (dataEntregaPadrao Nomus). Não é faturamento realizado." as const;
+
 export function withAppliedFilterSub(
   sub: string | undefined,
   filtersActive: boolean

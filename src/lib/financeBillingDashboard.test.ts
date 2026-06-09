@@ -136,6 +136,24 @@ function minimalBillingTab(): BillingDashboardTab {
     topCustomers: [],
     intercompanyExclusionApplied: true,
     marketBillingNote: "nota",
+    forecast: {
+      dateField: "expectedDeliveryDate",
+      portfolioAmount: 0,
+      monthForecastAmount: 0,
+      overdueAmount: 0,
+      overdueCount: 0,
+      ordersWithoutDateCount: 0,
+      note: "nota",
+      formatted: {
+        portfolioAmount: "R$ 0",
+        monthForecastAmount: "R$ 0",
+        overdueAmount: "R$ 0",
+        overdueCount: "0",
+      },
+      monthlyComparison: [],
+      dailySeries: [],
+      orders: [],
+    },
   };
 }
 

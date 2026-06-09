@@ -61,10 +61,13 @@ export function FinanceBillingNfeDetailsTable({
 
       {!loading && nfeList && nfeList.items.length === 0 ? (
         <div className="p-8 text-center space-y-2">
-          <p className="text-sm font-semibold text-foreground">Nenhuma NF-e para os filtros.</p>
+          <p className="text-sm font-semibold text-foreground">
+            Aguardando sincronização de NF-e Nomus.
+          </p>
           <p className="text-xs text-muted-foreground">
-            Execute a sincronização de NF-e ou ajuste os filtros. A tabela NomusNfe pode estar vazia
-            ou em validação.
+            A listagem diagnóstica NomusNfe está vazia para os filtros aplicados. Execute a
+            sincronização de NF-e ou ajuste ano/mês/cliente. O dashboard oficial continua em
+            SalesOrder.
           </p>
         </div>
       ) : null}

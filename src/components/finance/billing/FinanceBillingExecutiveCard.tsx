@@ -8,6 +8,7 @@ export function FinanceBillingExecutiveCard({
   hint,
   scopeNote,
   colorClass = "text-[#111827]",
+  valueClassName,
   loading = false,
 }: {
   label: string;
@@ -16,6 +17,7 @@ export function FinanceBillingExecutiveCard({
   hint?: string;
   scopeNote?: string;
   colorClass?: string;
+  valueClassName?: string;
   loading?: boolean;
 }) {
   return (
@@ -26,6 +28,7 @@ export function FinanceBillingExecutiveCard({
       hint={hint}
       scopeNote={scopeNote}
       colorClass={colorClass}
+      valueClassName={valueClassName}
       loading={loading}
     />
   );
