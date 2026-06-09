@@ -70,7 +70,8 @@ describe("financeAccountsReceivablePageFilters", () => {
       invoiceIssued: "yes",
     });
     const qs = buildFinanceArDashboardQuery(applied);
-    assert.equal(buildFinanceArExportQuery(applied), qs);
+    assert.ok(buildFinanceArExportQuery(applied).includes(qs));
+    assert.ok(buildFinanceArExportQuery(applied).includes("format=csv"));
     assert.ok(qs.includes("year=2026"));
     assert.ok(qs.includes("month=6"));
     assert.ok(qs.includes("status=overdue"));

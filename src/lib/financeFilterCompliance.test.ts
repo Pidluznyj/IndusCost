@@ -132,7 +132,8 @@ describe("financeFilterCompliance", () => {
     assert.ok(arQs.includes("month=6"));
     assert.ok(arQs.includes("status=overdue"));
     assert.ok(arQs.includes("personName=Cliente"));
-    assert.equal(buildFinanceArExportQuery(arApplied), arQs);
+    assert.ok(buildFinanceArExportQuery(arApplied).includes(arQs));
+    assert.ok(buildFinanceArExportQuery(arApplied).includes("format=csv"));
 
     const apApplied = normalizeFinanceApUiFilters({
       ...createDefaultFinanceApUiFilters(REF),
@@ -145,7 +146,8 @@ describe("financeFilterCompliance", () => {
     assert.ok(apQs.includes("month=6"));
     assert.ok(apQs.includes("status=open"));
     assert.ok(apQs.includes("personName=Fornecedor"));
-    assert.equal(buildFinanceApExportQuery(apApplied), apQs);
+    assert.ok(buildFinanceApExportQuery(apApplied).includes(apQs));
+    assert.ok(buildFinanceApExportQuery(apApplied).includes("format=csv"));
   });
 
   it("Faturamento: dashboard por ano e NF-e por filtros aplicados", () => {
@@ -155,13 +157,13 @@ describe("financeFilterCompliance", () => {
       month: "3",
       customerCnpj: "12345678000190",
       documentNumber: "123",
-      classification: "MARKET_REVENUE",
+      classification: "market",
       status: "authorized",
     });
     assert.ok(nfeQs.includes("year=2025"));
     assert.ok(nfeQs.includes("month=3"));
     assert.ok(nfeQs.includes("customerCnpj"));
-    assert.ok(nfeQs.includes("classification=MARKET_REVENUE"));
+    assert.ok(nfeQs.includes("classification=market"));
     assert.ok(nfeQs.includes("status=authorized"));
   });
 

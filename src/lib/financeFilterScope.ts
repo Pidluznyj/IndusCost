@@ -28,6 +28,12 @@ export const FINANCE_BILLING_COMPARISON_SCOPE =
 export const FINANCE_SYNC_GLOBAL_SCOPE =
   "Status de sincronização — indicador global, não afetado pelos filtros financeiros." as const;
 
+export const FINANCE_BILLING_RECENT_ORDERS_SCOPE =
+  "Faturamentos recentes — últimos pedidos globalmente, não limitado ao ano selecionado." as const;
+
+export const FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE =
+  "Portfolio NF — aplica filtro de NF emitida imediatamente (sem aguardar Aplicar)." as const;
+
 export function withAppliedFilterSub(
   sub: string | undefined,
   filtersActive: boolean

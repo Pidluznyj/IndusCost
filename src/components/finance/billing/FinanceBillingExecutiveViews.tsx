@@ -20,6 +20,7 @@ import {
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
   FINANCE_BILLING_MULTI_YEAR_SCOPE,
   FINANCE_BILLING_PROJECTION_SCOPE,
+  FINANCE_BILLING_RECENT_ORDERS_SCOPE,
   FINANCE_BILLING_YTD_SCOPE,
 } from "@/src/lib/financeFilterScope";
 
@@ -132,12 +133,15 @@ export function FinanceBillingOverviewView({
             )}
           </section>
           <section className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
-            <div className="flex justify-between mb-3">
+            <div className="flex justify-between mb-1">
               <h3 className="text-sm font-bold">Faturamentos recentes</h3>
               <Link to="/sales-orders" className="text-xs font-bold text-primary hover:underline">
                 Ver pedidos
               </Link>
             </div>
+            <FinanceFilterScopeNote className="mb-3">
+              {FINANCE_BILLING_RECENT_ORDERS_SCOPE}
+            </FinanceFilterScopeNote>
             {tab.recentInvoicedOrders.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum faturamento recente.</p>
             ) : (

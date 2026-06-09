@@ -111,7 +111,7 @@ const ALERT_DEFS: Array<{
   { key: "negativeBalance", label: "Títulos com saldo negativo", severity: "critical", includeAmount: true },
   {
     key: "paidGreaterThanPayable",
-    label: "Valor recebido maior que valor original",
+    label: "Valor pago maior que valor original",
     severity: "critical",
     includeAmount: true,
   },

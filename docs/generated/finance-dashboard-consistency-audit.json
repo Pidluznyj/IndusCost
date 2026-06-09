@@ -1,0 +1,392 @@
+{
+  "meta": {
+    "project": "IndusCost",
+    "branch": "main",
+    "auditDate": "2026-06-09",
+    "scope": ["accounts-receivable", "accounts-payable", "billing"],
+    "commitMessage": "test(finance): audit dashboard calculations and filters"
+  },
+  "officialSources": {
+    "accountsReceivable": "NomusAccountsReceivable",
+    "accountsPayable": "NomusAccountsPayable",
+    "billingExecutive": "SalesOrder + nomusRawResponse.nfes",
+    "billingDiagnostic": "NomusNfe"
+  },
+  "endpoints": {
+    "accountsReceivable": [
+      {
+        "method": "GET",
+        "path": "/api/finance/accounts-receivable/dashboard",
+        "builder": "buildFinanceAccountsReceivableDashboard",
+        "source": "NomusAccountsReceivable",
+        "filters": [
+          "companyName",
+          "personName",
+          "personCnpj",
+          "status",
+          "year",
+          "month",
+          "dueDateFrom",
+          "dueDateTo",
+          "paymentMethodName",
+          "bankAccountName",
+          "invoiceIssued"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/api/finance/accounts-receivable/titles",
+        "builder": "buildFinanceArTitlesPayload",
+        "source": "NomusAccountsReceivable",
+        "extraFilters": ["page", "limit", "sortBy", "sortDirection", "search", "overdueOnly", "qualityAlert"]
+      },
+      {
+        "method": "GET",
+        "path": "/api/finance/accounts-receivable/export",
+        "builder": "buildFinanceArExportCsv",
+        "source": "NomusAccountsReceivable",
+        "usesAppliedFilters": true,
+        "notes": "Appends format=csv in UI query; backend ignores format param"
+      }
+    ],
+    "accountsPayable": [
+      {
+        "method": "GET",
+        "path": "/api/finance/accounts-payable/dashboard",
+        "builder": "buildFinanceAccountsPayableDashboard",
+        "source": "NomusAccountsPayable",
+        "filters": [
+          "companyName",
+          "personName",
+          "personCnpj",
+          "status",
+          "year",
+          "month",
+          "dueDateFrom",
+          "dueDateTo",
+          "paymentMethodName",
+          "bankAccountName",
+          "documentQuery",
+          "suspendPayment",
+          "period=all"
+        ],
+        "defaultYearInjection": true
+      },
+      {
+        "method": "GET",
+        "path": "/api/finance/accounts-payable/titles",
+        "builder": "buildFinanceApTitlesPayload",
+        "source": "NomusAccountsPayable",
+        "extraFilters": ["page", "limit", "sortBy", "sortDirection", "search", "overdueOnly", "qualityAlert"]
+      },
+      {
+        "method": "GET",
+        "path": "/api/finance/accounts-payable/export",
+        "builder": "buildFinanceApExportCsv",
+        "source": "NomusAccountsPayable",
+        "usesAppliedFilters": true
+      }
+    ],
+    "billing": [
+      {
+        "method": "GET",
+        "path": "/api/finance/billing/dashboard",
+        "builder": "buildFinanceBillingDashboard",
+        "motor": "buildBillingDashboardTab",
+        "source": "SalesOrder",
+        "filters": ["year"]
+      },
+      {
+        "method": "GET",
+        "path": "/api/finance/billing/nfes",
+        "builder": "buildFinanceBillingNfeList",
+        "source": "NomusNfe",
+        "filters": ["year", "month", "customerCnpj", "documentNumber", "classification", "status", "limit"]
+      },
+      {
+        "method": "GET",
+        "path": "/api/finance/billing/comparison",
+        "builder": "buildFinanceBillingNfeComparison",
+        "sources": ["SalesOrder", "NomusNfe"],
+        "filters": ["year"]
+      }
+    ]
+  },
+  "filterModel": {
+    "accountsReceivable": {
+      "draftState": "draftFilters",
+      "appliedState": "appliedFilters",
+      "dashboardQueryBuilder": "buildFinanceArDashboardQuery",
+      "exportQueryBuilder": "buildFinanceArExportQuery",
+      "defaultFilters": "EMPTY_FINANCE_AR_UI_FILTERS"
+    },
+    "accountsPayable": {
+      "draftState": "draftFilters",
+      "appliedState": "appliedFilters",
+      "dashboardQueryBuilder": "buildFinanceApDashboardQuery",
+      "exportQueryBuilder": "buildFinanceApExportQuery",
+      "defaultFilters": "createDefaultFinanceApUiFilters (current year)"
+    },
+    "billing": {
+      "draftYear": "draftYear",
+      "appliedYear": "appliedYear",
+      "draftNfeFilters": "draftNfeFilters",
+      "appliedNfeFilters": "appliedNfeFilters",
+      "dashboardQueryBuilder": "buildFinanceBillingDashboardQuery",
+      "nfeQueryBuilder": "buildFinanceBillingNfeQuery"
+    }
+  },
+  "metricsMatrix": {
+    "accountsReceivable": [
+      {
+        "name": "Títulos em Aberto",
+        "field": "cards.totalOpenAmount",
+        "source": "NomusAccountsReceivable",
+        "formula": "SUM(balanceReceivable) WHERE balanceReceivable > 0",
+        "filtersApplied": "all",
+        "exception": false,
+        "frontend": "FinanceAccountsReceivablePage — ExecKpiCard"
+      },
+      {
+        "name": "Recebido no Mês",
+        "field": "cards.receivedThisMonthAmount",
+        "source": "NomusAccountsReceivable",
+        "formula": "SUM(amountReceived) WHERE settlementDate in current calendar month",
+        "filtersApplied": "all",
+        "exception": true,
+        "exceptionJustification": "Mês de referência é calendário atual, não filtro mês/ano",
+        "frontend": "FinanceAccountsReceivablePage — ExecKpiCard"
+      },
+      {
+        "name": "Aging buckets",
+        "field": "agingBuckets",
+        "source": "NomusAccountsReceivable",
+        "formula": "8 buckets by days overdue on open titles with dueDate",
+        "filtersApplied": "all",
+        "exception": false,
+        "frontend": "FinanceArAgingChart"
+      },
+      {
+        "name": "Top devedores",
+        "field": "topDebtors",
+        "source": "NomusAccountsReceivable",
+        "formula": "Top 10 customers by open balance",
+        "filtersApplied": "all",
+        "exception": false,
+        "frontend": "FinanceArTopDebtorsChart"
+      },
+      {
+        "name": "Títulos críticos",
+        "field": "criticalTitles",
+        "source": "NomusAccountsReceivable",
+        "formula": "Top 20 open titles by daysOverdue DESC",
+        "filtersApplied": "all",
+        "exception": false,
+        "frontend": "FinanceAccountsReceivablePage — highlight + action center"
+      },
+      {
+        "name": "Última sync",
+        "field": "cards.lastSyncAt",
+        "source": "NomusAccountsReceivable",
+        "formula": "MAX(syncedAt) among filtered rows",
+        "filtersApplied": "filtered subset",
+        "exception": true,
+        "exceptionJustification": "Não é indicador global de sync ERP",
+        "frontend": "FinanceAccountsReceivablePage — header"
+      }
+    ],
+    "accountsPayable": [
+      {
+        "name": "Obrigações em Aberto",
+        "field": "cards.totalOpenAmount",
+        "source": "NomusAccountsPayable",
+        "formula": "SUM(balancePayable) WHERE balancePayable > 0",
+        "filtersApplied": "all",
+        "exception": false,
+        "frontend": "FinanceAccountsPayablePage — ExecKpiCard"
+      },
+      {
+        "name": "Pago no Mês",
+        "field": "cards.paidThisMonthAmount",
+        "source": "NomusAccountsPayable",
+        "formula": "SUM(amountPaid) WHERE paymentDate/settlementDate in current month",
+        "filtersApplied": "all",
+        "exception": true,
+        "exceptionJustification": "Mês calendário atual",
+        "frontend": "FinanceAccountsPayablePage — ExecKpiCard"
+      },
+      {
+        "name": "Ranking fornecedores",
+        "field": "supplierRanking",
+        "source": "NomusAccountsPayable",
+        "formula": "Top 100 suppliers by open balance",
+        "filtersApplied": "all",
+        "exception": false,
+        "frontend": "FinanceAccountsPayablePage — aba fornecedores"
+      }
+    ],
+    "billing": [
+      {
+        "name": "Faturamento ano",
+        "field": "multiYearSummary.yearTotal",
+        "source": "SalesOrder",
+        "formula": "SUM monthly billing for 12 months",
+        "filtersApplied": ["year"],
+        "exception": false,
+        "frontend": "FinanceBillingOverviewView"
+      },
+      {
+        "name": "Acumulado YTD",
+        "field": "multiYearSummary.ytdTotal",
+        "source": "SalesOrder",
+        "formula": "SUM months <= ytdMonthLimit",
+        "filtersApplied": ["year"],
+        "exception": true,
+        "exceptionJustification": "YTD — respeita ano, não mês NF-e",
+        "scopeLabel": "FINANCE_BILLING_YTD_SCOPE",
+        "frontend": "FinanceBillingAccumulatedView"
+      },
+      {
+        "name": "Faturamentos recentes",
+        "field": "recentInvoicedOrders",
+        "source": "SalesOrder",
+        "formula": "Last 15 invoiced orders globally ORDER BY invoice_date DESC",
+        "filtersApplied": [],
+        "exception": true,
+        "exceptionJustification": "Não limitado ao ano selecionado",
+        "scopeLabel": "FINANCE_BILLING_RECENT_ORDERS_SCOPE",
+        "frontend": "FinanceBillingOverviewView"
+      },
+      {
+        "name": "Comparativo SO x NomusNfe",
+        "field": "comparison.months",
+        "source": "SalesOrder + NomusNfe",
+        "formula": "Monthly totals per source; diff and %",
+        "filtersApplied": ["year"],
+        "exception": true,
+        "exceptionJustification": "Ignora filtros NF-e diagnósticos",
+        "scopeLabel": "FINANCE_BILLING_COMPARISON_SCOPE",
+        "frontend": "FinanceBillingComparisonPanel"
+      },
+      {
+        "name": "Listagem NF-e",
+        "field": "nfeList.items",
+        "source": "NomusNfe",
+        "formula": "Filtered query on NomusNfe table",
+        "filtersApplied": ["year", "month", "customerCnpj", "documentNumber", "classification", "status"],
+        "exception": false,
+        "scopeLabel": "FINANCE_BILLING_NFE_LIST_SCOPE",
+        "frontend": "FinanceBillingNfeDetailsTable"
+      }
+    ]
+  },
+  "scopeLabels": {
+    "FINANCE_FILTER_APPLIED_SCOPE": "Indicadores abaixo refletem os filtros aplicados.",
+    "FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE": "Painel executivo — filtrado pelo ano selecionado (SalesOrder).",
+    "FINANCE_BILLING_YTD_SCOPE": "YTD — respeita o ano selecionado, mas não o mês nem filtros de NF-e.",
+    "FINANCE_BILLING_MULTI_YEAR_SCOPE": "Comparativo histórico multi-ano — não limitado ao mês nem a filtros de cliente/NF-e.",
+    "FINANCE_BILLING_PROJECTION_SCOPE": "Projeção anual — baseada no ano selecionado; não aplica filtros de NF-e diagnóstica.",
+    "FINANCE_BILLING_COMPARISON_SCOPE": "Comparativo diagnóstico — apenas o ano selecionado; ignora filtros de NF-e.",
+    "FINANCE_BILLING_NFE_LIST_SCOPE": "Listagem NF-e — respeita ano, mês, cliente/CNPJ, NF, classificação e status aplicados.",
+    "FINANCE_BILLING_RECENT_ORDERS_SCOPE": "Faturamentos recentes — últimos pedidos globalmente, não limitado ao ano selecionado.",
+    "FINANCE_SYNC_GLOBAL_SCOPE": "Status de sincronização — indicador global, não afetado pelos filtros financeiros.",
+    "FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE": "Portfolio NF — aplica filtro de NF emitida imediatamente (sem aguardar Aplicar)."
+  },
+  "issuesFound": [
+    {
+      "id": "AR-001",
+      "severity": "medium",
+      "screen": "accounts-receivable",
+      "description": "Full table load without Prisma where clause",
+      "status": "pending"
+    },
+    {
+      "id": "AR-002",
+      "severity": "low",
+      "screen": "accounts-receivable",
+      "description": "receivedThisMonthAmount uses current calendar month not filter month",
+      "status": "documented"
+    },
+    {
+      "id": "AP-001",
+      "severity": "low",
+      "screen": "accounts-payable",
+      "description": "Default year injection when no period filter",
+      "status": "documented"
+    },
+    {
+      "id": "BILL-001",
+      "severity": "low",
+      "screen": "billing",
+      "description": "recentInvoicedOrders not year-scoped",
+      "status": "fixed",
+      "fix": "FINANCE_BILLING_RECENT_ORDERS_SCOPE label added"
+    },
+    {
+      "id": "BILL-002",
+      "severity": "medium",
+      "screen": "billing",
+      "description": "No CSV export endpoint",
+      "status": "pending"
+    },
+    {
+      "id": "BILL-003",
+      "severity": "low",
+      "screen": "billing",
+      "description": "SO vs NomusNfe date and market exclusion rules differ",
+      "status": "documented"
+    },
+    {
+      "id": "BILL-004",
+      "severity": "low",
+      "screen": "billing",
+      "description": "Comparison load errors swallowed silently",
+      "status": "pending"
+    },
+    {
+      "id": "AP-002",
+      "severity": "low",
+      "screen": "accounts-payable",
+      "description": "paidGreaterThanPayable label copied from AR",
+      "status": "fixed",
+      "fix": "Changed to Valor pago maior que valor original"
+    }
+  ],
+  "correctionsMade": [
+    "AP data quality label paidGreaterThanPayable",
+    "FINANCE_BILLING_RECENT_ORDERS_SCOPE in FinanceBillingExecutiveViews",
+    "Export test assertions include format=csv",
+    "financeDashboardConsistencyAudit.test.ts created",
+    "finance-dashboard-consistency-audit.md/json generated"
+  ],
+  "testsExecuted": [
+    "npm run test:finance:accounts-receivable",
+    "npm run test:finance:accounts-payable",
+    "npm run test:finance:billing",
+    "npm run test:finance:billing-nfes",
+    "npm run test:finance:navigation",
+    "npm run lint",
+    "npm run build"
+  ],
+  "testFiles": [
+    "src/lib/financeDashboardConsistencyAudit.test.ts",
+    "src/lib/financeFilterCompliance.test.ts",
+    "src/lib/financeAccountsReceivablePageFilters.test.ts",
+    "src/lib/financeAccountsPayablePageFilters.test.ts",
+    "src/lib/financeBillingPageFilters.test.ts",
+    "src/lib/financeAccountsReceivableDashboard.test.ts",
+    "src/lib/financeAccountsPayableDashboard.test.ts",
+    "src/lib/financeBillingDashboard.test.ts",
+    "src/lib/financeBillingChartData.test.ts"
+  ],
+  "recommendationsPending": [
+    "Add Prisma pre-filter for AR dashboard",
+    "Implement billing CSV export",
+    "Show FINANCE_SYNC_GLOBAL_SCOPE on AR/AP sync panels",
+    "Show FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE on invoice portfolio",
+    "Surface comparison load errors in UI",
+    "Unify year parsers across billing endpoints",
+    "Decide global vs filtered lastSyncAt semantics",
+    "Migrate official billing source to NomusNfe only after validation"
+  ]
+}

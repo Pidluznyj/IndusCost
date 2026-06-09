@@ -76,7 +76,8 @@ describe("financeAccountsPayablePageFilters", () => {
       status: "open",
     });
     const qs = buildFinanceApDashboardQuery(applied);
-    assert.equal(buildFinanceApExportQuery(applied), qs);
+    assert.ok(buildFinanceApExportQuery(applied).includes(qs));
+    assert.ok(buildFinanceApExportQuery(applied).includes("format=csv"));
   });
 
   it("aplicar filtros monta query com ano, mês e documento", () => {
