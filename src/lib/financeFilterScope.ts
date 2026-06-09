@@ -34,6 +34,13 @@ export const FINANCE_BILLING_RECENT_ORDERS_SCOPE =
 export const FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE =
   "Portfolio NF — aplica filtro de NF emitida imediatamente (sem aguardar Aplicar)." as const;
 
+/** Recebido no mês usa calendário atual — exceção explícita na UI AR. */
+export const FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE =
+  "Recebido no mês — calendário atual (mês/ano de hoje), não o filtro de vencimento. Dentre títulos filtrados." as const;
+
+export const FINANCE_AR_LAST_SYNC_FILTERED_SCOPE =
+  "Última sync — MAX(syncedAt) entre os registros filtrados, não a sync global Nomus." as const;
+
 export function withAppliedFilterSub(
   sub: string | undefined,
   filtersActive: boolean

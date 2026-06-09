@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildFinanceAccountsReceivableDashboard,
+  buildFinanceArPrismaWhere,
   classifyFinanceArTitle,
   computeDaysOverdue,
   filterFinanceArRows,
@@ -528,5 +529,33 @@ describe("financeAccountsReceivableDashboard", () => {
     assert.equal(dash.cards.overdueOver30DaysAmount, 0);
     assert.equal(dash.cards.overdueOver30DaysCount, 0);
     assert.equal(dash.cards.avgDaysOverdue, null);
+  });
+
+  it("buildFinanceArPrismaWhere aplica intervalo de vencimento por ano/mês", () => {
+    const where = buildFinanceArPrismaWhere({ status: "all", year: 2026, month: 6 }, REF);
+    const and = (where as { AND?: Array<{ dueDate?: { gte?: Date; lt?: Date } }> }).AND;
+    assert.ok(and?.length);
+    const due = and?.find((clause) => clause.dueDate)?.dueDate;
+    assert.equal(due?.gte?.getFullYear(), 2026);
+    assert.equal(due?.gte?.getMonth(), 5);
+    assert.equal(due?.lt?.getMonth(), 6);
+  });
+
+  it("buildFinanceArPrismaWhere retorna conjunto vazio para intervalo inválido", () => {
+    const where = buildFinanceArPrismaWhere(
+      {
+        status: "all",
+        dueDateFrom: new Date(2026, 5, 10),
+        dueDateTo: new Date(2026, 5, 1),
+      },
+      REF
+    );
+    assert.deepEqual(where, { externalId: -1 });
+  });
+
+  it("buildFinanceArPrismaWhere pré-filtra status overdue", () => {
+    const where = buildFinanceArPrismaWhere({ status: "overdue" }, REF);
+    const and = (where as { AND?: unknown[] }).AND;
+    assert.ok(Array.isArray(and) && and.length >= 2);
   });
 });

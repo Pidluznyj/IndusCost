@@ -40,7 +40,7 @@ Auditoria técnica dos três menus financeiros para validar fontes oficiais, fó
 
 **Titles extras:** `page`, `limit`, `sortBy`, `sortDirection`, `search`, `overdueOnly`, `qualityAlert`.
 
-**Estratégia de carga:** `findMany` sem `where` → filtro em memória (`filterFinanceArRows`).
+**Estratégia de carga:** `buildFinanceArPrismaWhere` + `findMany` → `filterFinanceArRows` em memória (paridade).
 
 ### 2.2 Contas a Pagar
 
@@ -78,7 +78,7 @@ Auditoria técnica dos três menus financeiros para validar fontes oficiais, fó
 | Métrica (UI) | Campo payload | Fonte | Fórmula | Filtros | Exceção |
 |--------------|---------------|-------|---------|---------|---------|
 | Títulos em Aberto | `cards.totalOpenAmount` | NomusAR | Σ `balanceReceivable` onde > 0 | Todos | — |
-| Recebido no Mês | `cards.receivedThisMonthAmount` | NomusAR | Σ `amountReceived` com `settlementDate` no mês corrente | Todos | Mês = calendário atual, não filtro mês |
+| Recebido no Mês | `cards.receivedThisMonthAmount` | NomusAR | Σ `amountReceived` com `settlementDate` no mês corrente | Todos | **Rotulado:** `FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE` |
 | % Inadimplência | `cards.delinquencyRate` | NomusAR | overdue ÷ open × 100 | Todos | — |
 | Vencido > 30 Dias | `cards.overdueOver30DaysAmount` | NomusAR | Σ saldo open com aging > 30d | Todos | — |
 | Aging (8 faixas) | `agingBuckets` | NomusAR | Agrupa open por dias de atraso | Todos | Sem `dueDate` excluído |
@@ -88,7 +88,7 @@ Auditoria técnica dos três menus financeiros para validar fontes oficiais, fó
 | Títulos Críticos | `criticalTitles` | NomusAR | Top 20 overdue | Todos | Limite 20 |
 | Agenda / cronograma | `scheduleBuckets`, `monthlyDueSchedule` | NomusAR | Agrupa por vencimento | Todos | — |
 | Qualidade de dados | `dataQualitySummary` | NomusAR | 9 regras de anomalia | Todos | — |
-| Última sync (header) | `cards.lastSyncAt` | NomusAR | MAX `syncedAt` nas linhas filtradas | Filtrado | Não é sync global |
+| Última sync (header) | `cards.lastSyncAt` | NomusAR | MAX `syncedAt` nas linhas filtradas | Filtrado | **Rotulado:** `FINANCE_AR_LAST_SYNC_FILTERED_SCOPE` |
 | Export CSV | arquivo | NomusAR | Mesmas linhas filtradas | `appliedFilters` | `format=csv` ignorado no backend |
 
 **Frontend:** `FinanceAccountsReceivablePage.tsx` — `draftFilters` / `appliedFilters`; banner `FinanceFilterScopeBanner`.
@@ -160,6 +160,8 @@ Espelha AR com diferenças:
 | `FINANCE_BILLING_NFE_LIST_SCOPE` | Listagem NF-e filtrada | NF-e details |
 | `FINANCE_BILLING_RECENT_ORDERS_SCOPE` | Recentes — global | Overview |
 | `FINANCE_SYNC_GLOBAL_SCOPE` | Sync global | Billing sync panel |
+| `FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE` | Recebido no mês — calendário atual | KPI AR |
+| `FINANCE_AR_LAST_SYNC_FILTERED_SCOPE` | Última sync entre filtrados | Header AR |
 | `FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE` | Portfolio NF imediato | Constante (UI pendente) |
 
 ---
@@ -170,9 +172,9 @@ Espelha AR com diferenças:
 
 | # | Problema | Tela | Status |
 |---|----------|------|--------|
-| 1 | AR carrega tabela inteira sem Prisma where | AR | Pendente (performance) |
-| 2 | `receivedThisMonth`/`paidThisMonth` usam mês calendário atual | AR/AP | Documentado (exceção implícita) |
-| 3 | `lastSyncAt` no header = max das linhas filtradas | AR/AP | Documentado |
+| 1 | AR carrega tabela inteira sem Prisma where | AR | **Corrigido** — `buildFinanceArPrismaWhere` |
+| 2 | `receivedThisMonth`/`paidThisMonth` usam mês calendário atual | AR/AP | **Rotulado** em AR (`FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE`) |
+| 3 | `lastSyncAt` no header = max das linhas filtradas | AR/AP | **Rotulado** em AR |
 | 4 | Faturamentos recentes ignoram ano | Billing | **Rotulado** |
 | 5 | Sem export CSV em Faturamento | Billing | Pendente (feature gap) |
 | 6 | Erros de comparison engolidos silenciosamente | Billing | Pendente (UX) |
@@ -186,6 +188,8 @@ Espelha AR com diferenças:
 | C2 | Rótulo faturamentos recentes |
 | C3 | Testes export com `format=csv` |
 | C4 | Teste classification NF-e (`market` vs `MARKET_REVENUE`) |
+| C5 | AR: Prisma pre-filter + auditoria de cálculos (`financeAccountsReceivableCalculationAudit`) |
+| C6 | AR: UX BI executivo — resumo 6 KPIs, filtros principais visíveis |
 
 ---
 
@@ -237,7 +241,7 @@ npm run build
 
 ## 10. Recomendações pendentes
 
-1. **AR:** adicionar Prisma pre-filter por período/status para escala.
+1. ~~**AR:** adicionar Prisma pre-filter~~ — implementado; monitorar escala em produção.
 2. **Billing:** implementar export CSV com filtros NF-e ou ano.
 3. **Billing:** rotular `receivedThisMonth` equivalente se adicionado; manter recent orders label.
 4. **AR/AP:** exibir `FINANCE_SYNC_GLOBAL_SCOPE` no painel de sync.

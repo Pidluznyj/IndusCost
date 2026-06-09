@@ -11,9 +11,14 @@ import {
 } from "@/src/lib/financeBiDashboardTheme";
 import type { FinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { FinanceBiFilterStatusBadge } from "@/src/components/finance/bi/FinanceBiFilterStatusBadge";
+import { FinanceBiCalcTooltip } from "@/src/components/finance/bi/FinanceBiCalcTooltip";
 import { cn } from "@/src/lib/utils";
 
-export type FinanceBiHeaderMeta = { label: string; value: React.ReactNode };
+export type FinanceBiHeaderMeta = {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+};
 export type FinanceBiHeaderAction = {
   id: string;
   label: string;
@@ -55,8 +60,11 @@ export function FinanceBiExecutiveHeader({
           {meta.length > 0 ? (
             <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs pt-1">
               {meta.map((item) => (
-                <div key={item.label}>
-                  <dt className={`inline ${financeBiMetaLabelClass}`}>{item.label}: </dt>
+                <div key={item.label} className="inline-flex items-center gap-1">
+                  <dt className={`inline ${financeBiMetaLabelClass}`}>
+                    {item.label}
+                    {item.hint ? <FinanceBiCalcTooltip rule={item.hint} /> : null}:{" "}
+                  </dt>
                   <dd className={`inline ${financeBiMetaValueClass}`}>{item.value}</dd>
                 </div>
               ))}

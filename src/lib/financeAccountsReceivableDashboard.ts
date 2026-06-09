@@ -370,6 +370,96 @@ function isDueInRange(dueDate: Date | null, from: Date, to: Date): boolean {
   return due >= from.getTime() && due <= to.getTime();
 }
 
+function pushFinanceArPrismaContains(
+  and: Prisma.NomusAccountsReceivableWhereInput[],
+  field: "companyName" | "personName" | "personCnpj" | "paymentMethodName" | "bankAccountName",
+  value: string | undefined
+) {
+  const trimmed = value?.trim();
+  if (!trimmed) return;
+  and.push({ [field]: { contains: trimmed, mode: "insensitive" } });
+}
+
+function financeArNotSuspendedClause(): Prisma.NomusAccountsReceivableWhereInput {
+  return { OR: [{ suspendCollection: false }, { suspendCollection: null }] };
+}
+
+/** Pré-filtro seguro no banco — complementa `filterFinanceArRows` em memória. */
+export function buildFinanceArPrismaWhere(
+  filters: FinanceArDashboardFilters,
+  referenceDate: Date = new Date()
+): Prisma.NomusAccountsReceivableWhereInput {
+  const and: Prisma.NomusAccountsReceivableWhereInput[] = [];
+  const { from, toExclusive, empty } = resolveFinanceArDueDateBounds(filters);
+  if (empty) return { externalId: -1 };
+  if (from != null || toExclusive != null) {
+    const dueDate: Prisma.DateTimeNullableFilter = {};
+    if (from != null) dueDate.gte = from;
+    if (toExclusive != null) dueDate.lt = toExclusive;
+    and.push({ dueDate });
+  }
+
+  pushFinanceArPrismaContains(and, "companyName", filters.companyName);
+  pushFinanceArPrismaContains(and, "personName", filters.personName);
+  pushFinanceArPrismaContains(and, "personCnpj", filters.personCnpj);
+  pushFinanceArPrismaContains(and, "paymentMethodName", filters.paymentMethodName);
+  pushFinanceArPrismaContains(and, "bankAccountName", filters.bankAccountName);
+
+  const openStatuses = new Set<FinanceArTitleStatus>([
+    "open",
+    "overdue",
+    "dueToday",
+    "upcoming",
+    "suspended",
+  ]);
+  if (openStatuses.has(filters.status)) {
+    and.push({ balanceReceivable: { gt: 0 } });
+  } else if (filters.status === "settled") {
+    and.push({ OR: [{ balanceReceivable: { lte: 0 } }, { balanceReceivable: null }] });
+  }
+
+  if (filters.status === "suspended") {
+    and.push({ suspendCollection: true });
+  }
+
+  const today = startOfLocalDay(referenceDate);
+  const tomorrow = startOfLocalDay(addLocalDays(referenceDate, 1));
+  if (filters.status === "overdue") {
+    and.push(financeArNotSuspendedClause());
+    and.push({ dueDate: { lt: today } });
+  } else if (filters.status === "dueToday") {
+    and.push(financeArNotSuspendedClause());
+    and.push({ dueDate: { gte: today, lt: tomorrow } });
+  } else if (filters.status === "upcoming") {
+    and.push(financeArNotSuspendedClause());
+    and.push({ dueDate: { gte: tomorrow } });
+  }
+
+  const invoiceFilter = filters.invoiceIssued ?? "all";
+  if (invoiceFilter === "yes") {
+    and.push({
+      OR: [
+        { sourceInvoiceId: { not: null } },
+        {
+          AND: [
+            { sourceInvoiceNumber: { not: null } },
+            { NOT: { sourceInvoiceNumber: "" } },
+          ],
+        },
+      ],
+    });
+  } else if (invoiceFilter === "no") {
+    and.push({
+      AND: [
+        { sourceInvoiceId: null },
+        { OR: [{ sourceInvoiceNumber: null }, { sourceInvoiceNumber: "" }] },
+      ],
+    });
+  }
+
+  return and.length > 0 ? { AND: and } : {};
+}
+
 export function filterFinanceArRows(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,

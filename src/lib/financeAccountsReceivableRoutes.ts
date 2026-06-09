@@ -3,9 +3,11 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   buildFinanceAccountsReceivableDashboard,
+  buildFinanceArPrismaWhere,
   FinanceArFilterParseError,
   mapPrismaRowToFinanceArDashboardRow,
   parseFinanceArDashboardFilters,
+  type FinanceArDashboardFilters,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import {
   buildFinanceArExportCsv,
@@ -44,9 +46,12 @@ const FINANCE_AR_DASHBOARD_SELECT = {
   ...FINANCE_AR_TITLE_SELECT,
 } as const;
 
-async function loadFinanceArRows() {
+async function loadFinanceArRows(filters: FinanceArDashboardFilters) {
+  const where = buildFinanceArPrismaWhere(filters);
   const rows = await prisma.nomusAccountsReceivable.findMany({
+    where,
     select: FINANCE_AR_DASHBOARD_SELECT,
+    orderBy: { dueDate: "asc" },
   });
   return rows.map(mapPrismaRowToFinanceArDashboardRow);
 }
@@ -95,11 +100,8 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
 
       const filters = parseFinanceArFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
-      const rows = await loadFinanceArRows();
-      const payload = buildFinanceAccountsReceivableDashboard(
-        rows,
-        filters
-      );
+      const rows = await loadFinanceArRows(filters);
+      const payload = buildFinanceAccountsReceivableDashboard(rows, filters);
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/dashboard", error);
@@ -117,7 +119,9 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const query = parseFinanceArTitlesOrRespond(res, req.query as Record<string, unknown>);
       if (!query) return;
       const rows = await prisma.nomusAccountsReceivable.findMany({
+        where: buildFinanceArPrismaWhere(query.filters),
         select: FINANCE_AR_TITLE_SELECT,
+        orderBy: { dueDate: "asc" },
       });
       const mapped = rows.map(mapPrismaRowToFinanceArTitleRow);
       const payload = buildFinanceArTitlesPayload(mapped, query);
@@ -137,7 +141,7 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
 
       const filters = parseFinanceArFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
-      const rows = await loadFinanceArRows();
+      const rows = await loadFinanceArRows(filters);
       const csv = buildFinanceArExportCsv(rows, filters);
       const filename = financeArExportFilename();
       res.setHeader("Content-Type", "text/csv; charset=utf-8");

@@ -26,6 +26,8 @@ describe("financeAccountsReceivablePageFilters", () => {
     assert.ok(page.includes("FinanceFilterScopeBanner"));
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceBiFilterPanel"));
+    assert.ok(page.includes("alwaysVisible"));
+    assert.ok(page.includes("FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE"));
     assert.ok(page.includes("resolveFinanceBiFilterStatus"));
     assert.ok(page.includes("withAppliedFilterSub"));
     assert.ok(!page.includes("useDebouncedValue"));

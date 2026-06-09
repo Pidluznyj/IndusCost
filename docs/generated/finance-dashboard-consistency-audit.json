@@ -4,7 +4,8 @@
     "branch": "main",
     "auditDate": "2026-06-09",
     "scope": ["accounts-receivable", "accounts-payable", "billing"],
-    "commitMessage": "test(finance): audit dashboard calculations and filters"
+    "commitMessage": "feat(finance): improve receivables BI dashboard experience",
+    "accountsReceivableLoadStrategy": "buildFinanceArPrismaWhere + filterFinanceArRows"
   },
   "officialSources": {
     "accountsReceivable": "NomusAccountsReceivable",
@@ -290,7 +291,9 @@
     "FINANCE_BILLING_NFE_LIST_SCOPE": "Listagem NF-e — respeita ano, mês, cliente/CNPJ, NF, classificação e status aplicados.",
     "FINANCE_BILLING_RECENT_ORDERS_SCOPE": "Faturamentos recentes — últimos pedidos globalmente, não limitado ao ano selecionado.",
     "FINANCE_SYNC_GLOBAL_SCOPE": "Status de sincronização — indicador global, não afetado pelos filtros financeiros.",
-    "FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE": "Portfolio NF — aplica filtro de NF emitida imediatamente (sem aguardar Aplicar)."
+    "FINANCE_AR_PORTFOLIO_IMMEDIATE_SCOPE": "Portfolio NF — aplica filtro de NF emitida imediatamente (sem aguardar Aplicar).",
+    "FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE": "Recebido no mês — calendário atual (mês/ano de hoje), não o filtro de vencimento. Dentre títulos filtrados.",
+    "FINANCE_AR_LAST_SYNC_FILTERED_SCOPE": "Última sync — MAX(syncedAt) entre os registros filtrados, não a sync global Nomus."
   },
   "issuesFound": [
     {
@@ -298,14 +301,16 @@
       "severity": "medium",
       "screen": "accounts-receivable",
       "description": "Full table load without Prisma where clause",
-      "status": "pending"
+      "status": "fixed",
+      "fix": "buildFinanceArPrismaWhere in dashboard, export and titles routes"
     },
     {
       "id": "AR-002",
       "severity": "low",
       "screen": "accounts-receivable",
       "description": "receivedThisMonthAmount uses current calendar month not filter month",
-      "status": "documented"
+      "status": "labeled",
+      "fix": "FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE on KPI card"
     },
     {
       "id": "AP-001",
@@ -357,6 +362,9 @@
     "FINANCE_BILLING_RECENT_ORDERS_SCOPE in FinanceBillingExecutiveViews",
     "Export test assertions include format=csv",
     "financeDashboardConsistencyAudit.test.ts created",
+    "buildFinanceArPrismaWhere for AR performance",
+    "financeAccountsReceivableCalculationAudit.test.ts",
+    "AR executive BI UX: 6 KPIs, primary filters always visible",
     "finance-dashboard-consistency-audit.md/json generated"
   ],
   "testsExecuted": [
