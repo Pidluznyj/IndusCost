@@ -48,6 +48,12 @@ import {
   buildScenarioChartPoints,
   buildStressScenario,
 } from "./financeCashFlowForecast.js";
+import {
+  buildCashFlowDailyCalendar,
+  buildCashFlowExecutiveInsights,
+  buildCashHealthScore,
+  cashFlowCfoMetricsAreFinite,
+} from "./financeCashFlowCfoDiagnostics.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
   constructor(message: string) {
@@ -814,13 +820,13 @@ export function buildFinanceCashFlowDashboard(
     topSupplier: topSuppliers[0],
   });
 
-  return {
+  const partialPayload = {
     generatedAt: new Date().toISOString(),
     referenceDate: referenceDate.toISOString(),
     filtersApplied,
     sources: {
-      inflows: "NomusAccountsReceivable",
-      outflows: "NomusAccountsPayable",
+      inflows: "NomusAccountsReceivable" as const,
+      outflows: "NomusAccountsPayable" as const,
     },
     cards: {
       totalReceivableOpen: totalReceivableRounded,
@@ -845,13 +851,41 @@ export function buildFinanceCashFlowDashboard(
       arRecords: filteredAr.length,
       apRecords: filteredAp.length,
       lastSyncAt: lastSync?.toISOString() ?? null,
-      hasInitialBankBalance: false,
+      hasInitialBankBalance: false as const,
     },
     cashForecast,
     conservativeScenario,
     stressScenario,
     scenarioChartPoints,
     operationalRecommendations,
+    topCustomers,
+    topSuppliers,
+    largestProjectedInflows: critical.largestInflows,
+    largestProjectedOutflows: critical.largestOutflows,
+    overdueReceivables: critical.overdueReceivables,
+    overduePayables: critical.overduePayables,
+    monthlySeries,
+  };
+
+  const cashHealthScore = buildCashHealthScore(partialPayload);
+  const executiveInsights = buildCashFlowExecutiveInsights(
+    partialPayload,
+    filteredAr,
+    filteredAp,
+    referenceDate
+  );
+  const dailyCalendar = buildCashFlowDailyCalendar(
+    filteredAr,
+    filteredAp,
+    filters,
+    referenceDate
+  );
+
+  return {
+    ...partialPayload,
+    cashHealthScore,
+    executiveInsights,
+    dailyCalendar,
     executiveReading: buildCashFlowExecutiveReading({
       cards: {
         netCashPosition: netPosition.netCashPosition,
@@ -864,13 +898,6 @@ export function buildFinanceCashFlowDashboard(
       topCustomer: topCustomers[0],
       topSupplier: topSuppliers[0],
     }),
-    monthlySeries,
-    topCustomers,
-    topSuppliers,
-    largestProjectedInflows: critical.largestInflows,
-    largestProjectedOutflows: critical.largestOutflows,
-    overdueReceivables: critical.overdueReceivables,
-    overduePayables: critical.overduePayables,
   };
 }
 
@@ -939,6 +966,16 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
       if (v != null && !Number.isFinite(v)) return false;
     }
   }
+  if (!Number.isFinite(payload.cashHealthScore.score)) return false;
+  for (const v of Object.values(payload.cashHealthScore.components)) {
+    if (!Number.isFinite(v)) return false;
+  }
+  for (const d of payload.dailyCalendar) {
+    for (const v of [d.inflowAmount, d.outflowAmount, d.netAmount]) {
+      if (!Number.isFinite(v)) return false;
+    }
+  }
+  if (!cashFlowCfoMetricsAreFinite(payload.executiveInsights)) return false;
   return true;
 }
 

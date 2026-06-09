@@ -3,7 +3,7 @@
 **Projeto:** IndusCost  
 **Branch:** `main`  
 **Data:** 2026-06-09  
-**Fase:** 2 — Previsão de caixa e cenários gerenciais
+**Fase:** 3 — Painel CFO e insights determinísticos
 
 ---
 
@@ -230,7 +230,57 @@ O fluxo de caixa **projetado** depende dos vencimentos de AR/AP sincronizados do
 
 ---
 
-## 8. Filtros
+## 8. Painel CFO e insights determinísticos
+
+Motor: `financeCashFlowCfoDiagnostics.ts` — **sem IA externa**, sem alterar dados oficiais.
+
+### 8.1 Score de saúde do caixa (`cashHealthScore`)
+
+Escala **0–100** (evitar falsa precisão — score composto, não índice bancário).
+
+| Componente | Peso | Regra |
+|------------|------|-------|
+| Posição líquida | 25 | Superávit = 25; déficit penalizado por \|net\| / max(receber, pagar) |
+| Meses negativos | 15 | 15 × max(0, 1 − meses/6) |
+| Vencidos AR | 15 | 15 × max(0, 1 − vencidosAR / receber aberto) |
+| Vencidos AP | 15 | 15 × max(0, 1 − vencidosAP / pagar aberto) |
+| Concentração cliente | 10 | Pleno &lt; 40%; reduz acima (`CFO_CONCENTRATION_ALERT_PERCENT`) |
+| Concentração fornecedor | 10 | Idem |
+| Necessidade conservadora | 5 | 5 × max(0, 1 − need / receber aberto) |
+| Tendência 3 meses | 5 | Líquido 3m ≥ 0 → 5; mês atual positivo → 2 |
+
+| Faixa | Classificação |
+|-------|---------------|
+| 80–100 | Saudável |
+| 60–79 | Atenção |
+| 40–59 | Risco |
+| 0–39 | Crítico |
+
+### 8.2 Insights executivos (`executiveInsights`)
+
+`buildCashFlowExecutiveInsights(payload, arRows, apRows, referenceDate)` retorna:
+
+- `summary`, `riskLevel`
+- `alerts[]`, `opportunities[]`, `recommendedActions[]` (top 5 por impacto), `watchItems[]`
+- `diagnostics`: saúde, risco 30/60/90 dias, pressão de pagamentos, oportunidade de cobrança, concentração
+
+Cada item: `title`, `description`, `severity` (info/warning/critical/success), `relatedAmount`, `relatedEntity`, `suggestedAction`.
+
+### 8.3 Calendário diário (`dailyCalendar`)
+
+Agrupamento por dia no mês filtrado (ou mês de referência): entrada, saída, líquido, status positivo/negativo, destaque de grandes movimentos.
+
+### 8.4 Abas UI
+
+| Aba | Conteúdo |
+|-----|----------|
+| Visão Geral | Diagnóstico CFO + resumo + previsão |
+| Calendário | Grade diária com mini resumo |
+| Risco de Caixa | Score, cenários, concentração, ações, tabela crítica |
+
+---
+
+## 9. Filtros
 
 ### Principais (sempre visíveis)
 
@@ -252,21 +302,21 @@ O fluxo de caixa **projetado** depende dos vencimentos de AR/AP sincronizados do
 
 ---
 
-## 9. Abas internas
+## 10. Abas internas
 
 | Aba | Fase |
 |-----|------|
-| Visão Geral | **1 — implementada** |
-| Calendário | 2 — planejada |
-| Acumulado | 2 — planejada |
-| Detalhado | 2 — planejada |
-| Entradas | 2 — planejada |
-| Saídas | 2 — planejada |
-| Risco de Caixa | 2 — planejada |
+| Visão Geral | **implementada** |
+| Calendário | **implementada** |
+| Risco de Caixa | **implementada** |
+| Acumulado | planejada |
+| Detalhado | planejada |
+| Entradas | planejada |
+| Saídas | planejada |
 
 ---
 
-## 10. API
+## 11. API
 
 | Endpoint | Builder | Fonte |
 |----------|---------|-------|
@@ -275,7 +325,7 @@ O fluxo de caixa **projetado** depende dos vencimentos de AR/AP sincronizados do
 
 ---
 
-## 11. Exceções rotuladas
+## 12. Exceções rotuladas
 
 | Constante | Texto |
 |-----------|-------|
@@ -286,11 +336,11 @@ O fluxo de caixa **projetado** depende dos vencimentos de AR/AP sincronizados do
 
 ---
 
-## 12. Export CSV estendido
+## 13. Export CSV estendido
 
 Linhas `mensal` mantêm colunas originais + `cenario_base_liquido`, `conservador_liquido`, `critico_liquido`. Linhas resumo: `necessidade_caixa` (base/conservador/crítico) e `horizonte_12m`.
 
-## 13. Pendências (fases posteriores)
+## 14. Pendências (fases posteriores)
 
 1. Calendário diário de caixa
 2. Tabela detalhada consolidada AR/AP

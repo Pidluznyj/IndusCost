@@ -6,6 +6,11 @@ import type {
   FinanceCashFlowScenarioChartPoint,
   FinanceCashFlowStressScenario,
 } from "./financeCashFlowForecast.js";
+import type {
+  CashHealthScore,
+  FinanceCashFlowDailyPoint,
+  FinanceCashFlowExecutiveInsights,
+} from "./financeCashFlowCfoDiagnostics.js";
 
 export type FinanceCashFlowViewMode = "projected" | "realized" | "combined";
 export type FinanceCashFlowDateBase = "due" | "settlement" | "issue";
@@ -110,6 +115,12 @@ export type FinanceCashFlowDashboardPayload = {
   scenarioChartPoints: FinanceCashFlowScenarioChartPoint[];
   /** Recomendações operacionais determinísticas. */
   operationalRecommendations: string[];
+  /** Score composto de saúde do caixa (0–100). */
+  cashHealthScore: CashHealthScore;
+  /** Diagnóstico CFO: alertas, oportunidades, plano de ação. */
+  executiveInsights: FinanceCashFlowExecutiveInsights;
+  /** Calendário diário do mês filtrado (ou mês de referência). */
+  dailyCalendar: FinanceCashFlowDailyPoint[];
   monthlySeries: FinanceCashFlowMonthlyPoint[];
   topCustomers: FinanceCashFlowPartySummary[];
   topSuppliers: FinanceCashFlowPartySummary[];
@@ -187,7 +198,11 @@ export const FINANCE_CASH_FLOW_TABS = [
 
 export type FinanceCashFlowTabId = (typeof FINANCE_CASH_FLOW_TABS)[number]["id"];
 
-export const PHASE1_FINANCE_CASH_FLOW_TABS: FinanceCashFlowTabId[] = ["overview"];
+export const PHASE1_FINANCE_CASH_FLOW_TABS: FinanceCashFlowTabId[] = [
+  "overview",
+  "calendar",
+  "risk",
+];
 
 export function createDefaultFinanceCashFlowUiFilters(
   referenceYear = new Date().getFullYear()

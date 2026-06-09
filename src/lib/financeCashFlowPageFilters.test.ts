@@ -25,9 +25,10 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(q.includes("year=2026"));
   });
 
-  it("fase 1 só ativa aba Visão Geral", () => {
-    assert.deepEqual(PHASE1_FINANCE_CASH_FLOW_TABS, ["overview"]);
+  it("abas ativas incluem visão geral, calendário e risco", () => {
+    assert.deepEqual(PHASE1_FINANCE_CASH_FLOW_TABS, ["overview", "calendar", "risk"]);
     assert.ok(FINANCE_CASH_FLOW_TABS.some((t) => t.id === "calendar"));
+    assert.ok(FINANCE_CASH_FLOW_TABS.some((t) => t.id === "risk"));
   });
 
   it("FinanceCashFlowPage usa padrão BI executivo e posição líquida", () => {
@@ -65,6 +66,9 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(page.includes('testId="kpi-cash-need"'));
     assert.ok(hero.includes('data-testid="kpi-net-position"'));
     assert.ok(page.includes("Resumo executivo"));
+    assert.ok(page.includes("FinanceCashFlowCfoPanel"));
+    assert.ok(page.includes("FinanceCashFlowRiskTab"));
+    assert.ok(page.includes("FinanceCashFlowCalendar"));
     assert.ok(charts.includes("FINANCE_CASH_FLOW_CHART_HEIGHT"));
     assert.ok(charts.includes("cash-flow-main-chart"));
     assert.ok(!page.includes("financeControlRoomTheme"));

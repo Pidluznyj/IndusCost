@@ -40,7 +40,10 @@ import {
   canViewFinanceCashFlow,
 } from "@/src/lib/financeCashFlowPermissions";
 import { FinanceCashFlowMonthlyChart } from "@/src/components/finance/FinanceCashFlowCharts";
+import { FinanceCashFlowCalendar } from "@/src/components/finance/cash-flow/FinanceCashFlowCalendar";
 import { FinanceCashFlowCashNeedPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowCashNeedPanel";
+import { FinanceCashFlowCfoPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowCfoPanel";
+import { FinanceCashFlowRiskTab } from "@/src/components/finance/cash-flow/FinanceCashFlowRiskTab";
 import { FinanceCashFlowScenarioChart } from "@/src/components/finance/cash-flow/FinanceCashFlowScenarioChart";
 import { FinanceCashFlowRecommendations } from "@/src/components/finance/cash-flow/FinanceCashFlowRecommendations";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
@@ -530,6 +533,8 @@ export function FinanceCashFlowPage() {
             </div>
           </section>
 
+          <FinanceCashFlowCfoPanel insights={payload.executiveInsights} />
+
           <FinanceCashFlowMonthlyChart
             points={payload.monthlySeries}
             viewModeLabel={viewModeLabel}
@@ -594,6 +599,23 @@ export function FinanceCashFlowPage() {
           />
         </div>
       ) : null}
+
+      {payload && activeTab === "calendar" ? (
+        <FinanceCashFlowCalendar
+          days={payload.dailyCalendar}
+          monthLabel={
+            appliedFilters.month
+              ? (FINANCE_CASH_FLOW_MONTH_OPTIONS.find((o) => o.value === appliedFilters.month)
+                  ?.label ?? "Mês selecionado")
+              : new Date(payload.referenceDate).toLocaleDateString("pt-BR", {
+                  month: "long",
+                  year: "numeric",
+                })
+          }
+        />
+      ) : null}
+
+      {payload && activeTab === "risk" ? <FinanceCashFlowRiskTab payload={payload} /> : null}
       </div>
     </FinanceBiDashboardShell>
   );
