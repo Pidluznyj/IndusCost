@@ -15,6 +15,7 @@ import {
 
 describe("financeNavigation", () => {
   it("expõe rotas canônicas absolutas", () => {
+    assert.equal(getFinanceSectionPath("cash-flow"), "/finance/cash-flow");
     assert.equal(getFinanceSectionPath("accounts-receivable"), "/finance/accounts-receivable");
     assert.equal(getFinanceSectionPath("accounts-payable"), "/finance/accounts-payable");
     assert.equal(getFinanceSectionPath("billing"), "/finance/billing");
@@ -26,6 +27,7 @@ describe("financeNavigation", () => {
   });
 
   it("identifica paths canônicos vs aninhados", () => {
+    assert.equal(isFinanceCanonicalPath("/finance/cash-flow"), true);
     assert.equal(isFinanceCanonicalPath("/finance/accounts-receivable"), true);
     assert.equal(isFinanceCanonicalPath("/finance/accounts-payable"), true);
     assert.equal(isFinanceCanonicalPath("/finance/billing"), true);
@@ -85,6 +87,7 @@ describe("financeNavigation", () => {
     assert.ok(!mod.includes('to: "accounts-receivable"'));
     assert.ok(!mod.includes('to: "accounts-payable"'));
     assert.ok(!mod.includes('to={defaultSection}'));
+    assert.ok(nav.includes('"/finance/cash-flow"'));
     assert.ok(nav.includes('"/finance/accounts-receivable"'));
     assert.ok(nav.includes('"/finance/accounts-payable"'));
     assert.ok(nav.includes('"/finance/billing"'));

@@ -60,6 +60,7 @@
     "test:finance:accounts-payable": "tsx --test src/lib/financeAccountsPayableDashboard.test.ts src/lib/financeAccountsPayableCalculationAudit.test.ts src/lib/financeAccountsPayableFormat.test.ts src/lib/financeAccountsPayableActions.test.ts src/lib/financeAccountsPayableTitles.test.ts src/lib/financeAccountsPayableDataQuality.test.ts src/lib/financeAccountsPayableExport.test.ts src/lib/financeAccountsPayableSyncRun.test.ts src/lib/financeAccountsPayablePermissions.test.ts src/lib/financeAccountsPayablePageFilters.test.ts src/lib/financeFilterCompliance.test.ts src/lib/financeDashboardConsistencyAudit.test.ts",
     "test:finance:navigation": "tsx --test src/lib/financeNavigation.test.ts src/lib/financeBillingPageFilters.test.ts src/lib/financeBiDashboardUx.test.ts",
     "test:finance:billing": "tsx --test src/lib/financeBillingDashboard.test.ts src/lib/financeBillingCalculationAudit.test.ts src/lib/financeBillingChartData.test.ts src/lib/financeBillingPermissions.test.ts src/lib/financeBillingPageFilters.test.ts src/lib/financeFilterCompliance.test.ts src/lib/financeDashboardConsistencyAudit.test.ts",
+    "test:finance:cash-flow": "tsx --test src/lib/financeCashFlowDashboard.test.ts src/lib/financeCashFlowPageFilters.test.ts src/lib/financeCashFlowExport.test.ts",
     "test:nomus:maintenance-smoke": "tsx scripts/nomusMaintenanceSmokeTestV1.ts",
     "test:nomus:engineering-cockpit-smoke": "tsx scripts/nomusEngineeringOperationsCockpitSmokeTestV1.ts",
     "test:nomus:engineering-release-check": "tsx scripts/nomusEngineeringReleaseCheckV1.ts",

@@ -6,11 +6,13 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { FinanceAccountsReceivablePage } from "@/src/components/finance/FinanceAccountsReceivablePage";
 import { FinanceAccountsPayablePage } from "@/src/components/finance/FinanceAccountsPayablePage";
 import { FinanceBillingPage } from "@/src/components/finance/FinanceBillingPage";
+import { FinanceCashFlowPage } from "@/src/components/finance/FinanceCashFlowPage";
 import {
   canViewFinanceAccountsPayable,
 } from "@/src/lib/financeAccountsPayablePermissions";
 import { canViewFinanceAccountsReceivable } from "@/src/lib/financeAccountsReceivablePermissions";
 import { canViewFinanceBilling } from "@/src/lib/financeBillingPermissions";
+import { canViewFinanceCashFlow } from "@/src/lib/financeCashFlowPermissions";
 import {
   FINANCE_SECTIONS,
   getFinanceDefaultPath,
@@ -31,8 +33,10 @@ export function FinanceModule() {
   const canViewAccountsReceivable = canViewFinanceAccountsReceivable(auth);
   const canViewAccountsPayable = canViewFinanceAccountsPayable(auth);
   const canViewBilling = canViewFinanceBilling(auth);
+  const canViewCashFlow = canViewFinanceCashFlow(auth);
 
   const visibleSections = FINANCE_SECTIONS.filter((section) => {
+    if (section.id === "cash-flow") return canViewCashFlow;
     if (section.id === "accounts-receivable") return canViewAccountsReceivable;
     if (section.id === "accounts-payable") return canViewAccountsPayable;
     if (section.id === "billing") return canViewBilling;
@@ -54,6 +58,13 @@ export function FinanceModule() {
   }
 
   const sectionRoutes: Record<FinanceSectionId, React.ReactNode> = {
+    "cash-flow": canViewCashFlow ? (
+      <FinanceCashFlowPage />
+    ) : (
+      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+        Sem permissão para Fluxo de Caixa.
+      </div>
+    ),
     "accounts-receivable": canViewAccountsReceivable ? (
       <FinanceAccountsReceivablePage />
     ) : (
@@ -101,6 +112,7 @@ export function FinanceModule() {
 
       <Routes>
         <Route index element={<Navigate to={defaultPath} replace />} />
+        <Route path="cash-flow" element={sectionRoutes["cash-flow"]} />
         <Route path="accounts-receivable" element={sectionRoutes["accounts-receivable"]} />
         <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
         <Route path="billing" element={sectionRoutes.billing} />

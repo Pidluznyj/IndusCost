@@ -54,6 +54,19 @@ export const FINANCE_AP_LAST_SYNC_FILTERED_SCOPE =
 export const FINANCE_BILLING_NFE_EXPORT_SCOPE =
   "Export CSV — listagem NF-e com filtros NF-e aplicados (ano, mês, CNPJ, NF, classificação, status)." as const;
 
+/** Fluxo de Caixa — exceções e fontes. */
+export const FINANCE_CASH_FLOW_PROJECTED_BALANCE_SCOPE =
+  "Saldo projetado — não considera saldo bancário inicial." as const;
+
+export const FINANCE_CASH_FLOW_SYNC_SCOPE =
+  "Última sync — MAX(syncedAt) entre registros AR/AP carregados, não sync global Nomus." as const;
+
+export const FINANCE_CASH_FLOW_NOT_BILLING_SCOPE =
+  "Fluxo de caixa ≠ faturamento — entradas/saídas de AR/AP, não SalesOrder." as const;
+
+export const FINANCE_CASH_FLOW_COMBINED_SCOPE =
+  "Modo combinado — soma previsto (aberto) e realizado (baixado) no período." as const;
+
 export function withAppliedFilterSub(
   sub: string | undefined,
   filtersActive: boolean

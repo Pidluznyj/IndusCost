@@ -3,6 +3,7 @@
 export const FINANCE_BASE_PATH = "/finance" as const;
 
 export const FINANCE_SECTION_IDS = [
+  "cash-flow",
   "accounts-receivable",
   "accounts-payable",
   "billing",
@@ -11,6 +12,7 @@ export const FINANCE_SECTION_IDS = [
 export type FinanceSectionId = (typeof FINANCE_SECTION_IDS)[number];
 
 export const FINANCE_SECTION_PATHS: Record<FinanceSectionId, string> = {
+  "cash-flow": "/finance/cash-flow",
   "accounts-receivable": "/finance/accounts-receivable",
   "accounts-payable": "/finance/accounts-payable",
   billing: "/finance/billing",
@@ -25,6 +27,11 @@ export type FinanceSectionDef = {
 };
 
 export const FINANCE_SECTIONS: FinanceSectionDef[] = [
+  {
+    id: "cash-flow",
+    label: "Fluxo de Caixa",
+    path: FINANCE_SECTION_PATHS["cash-flow"],
+  },
   {
     id: "accounts-receivable",
     label: "Contas a Receber",

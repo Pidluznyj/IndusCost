@@ -11,6 +11,14 @@ import {
   type FinanceApUiFilters,
 } from "./financeAccountsPayableDashboardTypes.js";
 import type { FinanceBillingNfeDraftFilters } from "./financeBillingNfeFiltersTypes.js";
+import {
+  FINANCE_CASH_FLOW_DATE_BASE_OPTIONS,
+  FINANCE_CASH_FLOW_INVOICE_OPTIONS,
+  FINANCE_CASH_FLOW_MONTH_OPTIONS,
+  FINANCE_CASH_FLOW_STATUS_OPTIONS,
+  FINANCE_CASH_FLOW_VIEW_OPTIONS,
+  type FinanceCashFlowUiFilters,
+} from "./financeCashFlowDashboardTypes.js";
 
 export type FinanceBiFilterChip = {
   id: string;
@@ -126,6 +134,57 @@ export function buildFinanceBillingFilterChips(
     push("classification", `Classif.: ${nfeFilters.classification}`);
   }
   if (nfeFilters.status !== "all") push("status", `Status NF-e: ${nfeFilters.status}`);
+
+  return chips;
+}
+
+export function buildFinanceCashFlowFilterChips(
+  filters: FinanceCashFlowUiFilters,
+  onRemoveField?: (field: keyof FinanceCashFlowUiFilters) => void
+): FinanceBiFilterChip[] {
+  const chips: FinanceBiFilterChip[] = [];
+  const push = (id: keyof FinanceCashFlowUiFilters, label: string) => {
+    chips.push({
+      id,
+      label,
+      onRemove: onRemoveField ? () => onRemoveField(id) : undefined,
+    });
+  };
+
+  if (filters.year.trim()) push("year", `Ano: ${filters.year}`);
+  if (filters.month.trim()) {
+    push("month", `Mês: ${optionLabel(FINANCE_CASH_FLOW_MONTH_OPTIONS, filters.month)}`);
+  }
+  if (filters.companyName.trim()) push("companyName", `Empresa: ${filters.companyName.trim()}`);
+  if (filters.viewMode !== "projected") {
+    push("viewMode", `Visão: ${optionLabel(FINANCE_CASH_FLOW_VIEW_OPTIONS, filters.viewMode)}`);
+  }
+  if (filters.dateBase !== "due") {
+    push(
+      "dateBase",
+      `Data: ${optionLabel(FINANCE_CASH_FLOW_DATE_BASE_OPTIONS, filters.dateBase)}`
+    );
+  }
+  if (filters.status !== "all") {
+    push("status", `Status: ${optionLabel(FINANCE_CASH_FLOW_STATUS_OPTIONS, filters.status)}`);
+  }
+  if (filters.customerName.trim()) push("customerName", `Cliente: ${filters.customerName.trim()}`);
+  if (filters.supplierName.trim()) {
+    push("supplierName", `Fornecedor: ${filters.supplierName.trim()}`);
+  }
+  if (filters.personCnpj.trim()) push("personCnpj", `CNPJ: ${filters.personCnpj.trim()}`);
+  if (filters.paymentMethodName.trim()) {
+    push("paymentMethodName", `Pagamento: ${filters.paymentMethodName.trim()}`);
+  }
+  if (filters.bankAccountName.trim()) {
+    push("bankAccountName", `Conta: ${filters.bankAccountName.trim()}`);
+  }
+  if (filters.invoiceIssued !== "all") {
+    push(
+      "invoiceIssued",
+      `NF: ${optionLabel(FINANCE_CASH_FLOW_INVOICE_OPTIONS, filters.invoiceIssued)}`
+    );
+  }
 
   return chips;
 }
