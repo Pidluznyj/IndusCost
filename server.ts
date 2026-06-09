@@ -75,6 +75,7 @@ import { registerNomusAccountsReceivableRoutes } from "./src/lib/nomusAccountsRe
 import { registerNomusAccountsPayableRoutes } from "./src/lib/nomusAccountsPayableRoutes.js";
 import { registerFinanceAccountsReceivableRoutes } from "./src/lib/financeAccountsReceivableRoutes.js";
 import { registerFinanceAccountsPayableRoutes } from "./src/lib/financeAccountsPayableRoutes.js";
+import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js";
 import {
   getNomusDailySyncStatus,
   NomusDailySyncConflictError,
@@ -14602,6 +14603,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerFinanceAccountsPayableRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerFinanceBillingRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,

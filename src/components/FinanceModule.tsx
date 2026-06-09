@@ -5,10 +5,12 @@ import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FinanceAccountsReceivablePage } from "@/src/components/finance/FinanceAccountsReceivablePage";
 import { FinanceAccountsPayablePage } from "@/src/components/finance/FinanceAccountsPayablePage";
+import { FinanceBillingPage } from "@/src/components/finance/FinanceBillingPage";
 import {
   canViewFinanceAccountsPayable,
 } from "@/src/lib/financeAccountsPayablePermissions";
 import { canViewFinanceAccountsReceivable } from "@/src/lib/financeAccountsReceivablePermissions";
+import { canViewFinanceBilling } from "@/src/lib/financeBillingPermissions";
 import {
   FINANCE_SECTIONS,
   getFinanceDefaultPath,
@@ -28,10 +30,12 @@ export function FinanceModule() {
   const location = useLocation();
   const canViewAccountsReceivable = canViewFinanceAccountsReceivable(auth);
   const canViewAccountsPayable = canViewFinanceAccountsPayable(auth);
+  const canViewBilling = canViewFinanceBilling(auth);
 
   const visibleSections = FINANCE_SECTIONS.filter((section) => {
     if (section.id === "accounts-receivable") return canViewAccountsReceivable;
     if (section.id === "accounts-payable") return canViewAccountsPayable;
+    if (section.id === "billing") return canViewBilling;
     return false;
   });
 
@@ -64,6 +68,13 @@ export function FinanceModule() {
         Sem permissão para Contas a Pagar.
       </div>
     ),
+    billing: canViewBilling ? (
+      <FinanceBillingPage />
+    ) : (
+      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+        Sem permissão para Faturamento.
+      </div>
+    ),
   };
 
   return (
@@ -92,6 +103,7 @@ export function FinanceModule() {
         <Route index element={<Navigate to={defaultPath} replace />} />
         <Route path="accounts-receivable" element={sectionRoutes["accounts-receivable"]} />
         <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
+        <Route path="billing" element={sectionRoutes.billing} />
         <Route path="*" element={<FinanceCanonicalRedirect />} />
       </Routes>
     </div>

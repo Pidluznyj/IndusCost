@@ -2,13 +2,18 @@
 
 export const FINANCE_BASE_PATH = "/finance" as const;
 
-export const FINANCE_SECTION_IDS = ["accounts-receivable", "accounts-payable"] as const;
+export const FINANCE_SECTION_IDS = [
+  "accounts-receivable",
+  "accounts-payable",
+  "billing",
+] as const;
 
 export type FinanceSectionId = (typeof FINANCE_SECTION_IDS)[number];
 
 export const FINANCE_SECTION_PATHS: Record<FinanceSectionId, string> = {
   "accounts-receivable": "/finance/accounts-receivable",
   "accounts-payable": "/finance/accounts-payable",
+  billing: "/finance/billing",
 };
 
 export const FINANCE_DEFAULT_SECTION: FinanceSectionId = "accounts-receivable";
@@ -30,6 +35,11 @@ export const FINANCE_SECTIONS: FinanceSectionDef[] = [
     label: "Contas a Pagar",
     path: FINANCE_SECTION_PATHS["accounts-payable"],
   },
+  {
+    id: "billing",
+    label: "Faturamento",
+    path: FINANCE_SECTION_PATHS.billing,
+  },
 ];
 
 export function getFinanceSectionPath(sectionId: FinanceSectionId): string {
@@ -44,14 +54,11 @@ export function isFinanceSectionId(value: string): value is FinanceSectionId {
   return (FINANCE_SECTION_IDS as readonly string[]).includes(value);
 }
 
-/** URL canônica: /finance, /finance/accounts-receivable ou /finance/accounts-payable. */
+/** URL canônica do módulo Financeiro. */
 export function isFinanceCanonicalPath(pathname: string): boolean {
   const normalized = pathname.replace(/\/+$/, "") || "/";
-  return (
-    normalized === FINANCE_BASE_PATH ||
-    normalized === FINANCE_SECTION_PATHS["accounts-receivable"] ||
-    normalized === FINANCE_SECTION_PATHS["accounts-payable"]
-  );
+  if (normalized === FINANCE_BASE_PATH) return true;
+  return FINANCE_SECTION_IDS.some((id) => normalized === FINANCE_SECTION_PATHS[id]);
 }
 
 /** Detecta paths aninhados como /finance/accounts-receivable/accounts-payable/... */

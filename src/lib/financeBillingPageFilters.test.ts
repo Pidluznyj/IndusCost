@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+import {
+  FINANCE_SECTION_PATHS,
+  FINANCE_SECTIONS,
+  getFinanceSectionPath,
+  isFinanceCanonicalPath,
+} from "./financeNavigation.js";
+
+describe("financeBillingPageFilters", () => {
+  it("rota /finance/billing é canônica e absoluta", () => {
+    assert.equal(getFinanceSectionPath("billing"), "/finance/billing");
+    assert.equal(isFinanceCanonicalPath("/finance/billing"), true);
+    assert.ok(FINANCE_SECTION_PATHS.billing.startsWith("/finance/"));
+  });
+
+  it("aba Faturamento aparece na navegação Financeiro", () => {
+    const sections = FINANCE_SECTIONS.map((s) => s.id);
+    assert.ok(sections.includes("billing"));
+    const billing = FINANCE_SECTIONS.find((s) => s.id === "billing");
+    assert.equal(billing?.label, "Faturamento");
+    assert.equal(billing?.path, "/finance/billing");
+  });
+
+  it("FinanceBillingPage possui Aplicar e Limpar filtros", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceBillingPage.tsx"),
+      "utf8"
+    );
+    const mod = readFileSync(join(process.cwd(), "src", "components", "FinanceModule.tsx"), "utf8");
+    assert.ok(page.includes("Aplicar filtros"));
+    assert.ok(page.includes("Limpar filtros"));
+    assert.ok(page.includes("draftYear"));
+    assert.ok(page.includes("appliedYear"));
+    assert.ok(page.includes("ExecutiveBillingTab"));
+    assert.ok(mod.includes('path="billing"'));
+    assert.ok(mod.includes("to={section.path}"));
+    assert.ok(!mod.includes('to: "billing"'));
+  });
+
+  it("navegação entre seções não usa paths relativos perigosos", () => {
+    const nav = readFileSync(join(process.cwd(), "src", "lib", "financeNavigation.ts"), "utf8");
+    assert.ok(nav.includes('billing: "/finance/billing"'));
+    assert.ok(!nav.includes('to: "accounts-payable"'));
+  });
+});
