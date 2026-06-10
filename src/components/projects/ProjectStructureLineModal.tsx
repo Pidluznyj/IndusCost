@@ -17,6 +17,7 @@ type Props = {
   error?: string | null;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => Promise<void>;
+  onOpenProductSimulation?: (productId: string) => void;
 };
 
 export function ProjectStructureLineModal({
@@ -27,6 +28,7 @@ export function ProjectStructureLineModal({
   error,
   onClose,
   onSubmit,
+  onOpenProductSimulation,
 }: Props) {
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
@@ -201,6 +203,15 @@ export function ProjectStructureLineModal({
                   </button>
                 ))}
           </div>
+          {sourceType === "EXISTING_PRODUCT" && selectedProductId && onOpenProductSimulation ? (
+            <button
+              type="button"
+              className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 hover:bg-amber-100"
+              onClick={() => onOpenProductSimulation(selectedProductId)}
+            >
+              Abrir editor de simulação (BOM / processos / custo)
+            </button>
+          ) : null}
         </div>
       ) : null}
 

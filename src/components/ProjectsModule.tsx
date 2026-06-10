@@ -40,6 +40,7 @@ import { ProjectMoldFormModal } from "@/src/components/projects/ProjectMoldFormM
 import { ProjectSimulatedItemFormModal } from "@/src/components/projects/ProjectSimulatedItemFormModal";
 import { ProjectSimulatedProductFormModal } from "@/src/components/projects/ProjectSimulatedProductFormModal";
 import { ProjectStructureLineEditModal } from "@/src/components/projects/ProjectStructureLineEditModal";
+import { ProjectProductSimulationPanel } from "@/src/components/projects/ProjectProductSimulationPanel";
 import { ProjectStructureLineModal } from "@/src/components/projects/ProjectStructureLineModal";
 import { MOLD_CHARGE_MODE_OPTIONS, structureLineTypeLabel } from "@/src/lib/projectsUiUtils";
 import type {
@@ -501,6 +502,8 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
   const [laborModalOpen, setLaborModalOpen] = useState(false);
   const [laborModalMode, setLaborModalMode] = useState<"create" | "edit">("create");
   const [editingLaborLine, setEditingLaborLine] = useState<ProjectStructureLineRow | null>(null);
+  const [simulationProductId, setSimulationProductId] = useState<string | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -817,6 +820,10 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
           }}
           onEditLine={(line) => {
             setModalError(null);
+            if (line.existingProductId && line.sourceType === "EXISTING_PRODUCT") {
+              setSimulationProductId(line.existingProductId);
+              return;
+            }
             if (line.unitSnapshot === "HH" || (line.sourceType === "MANUAL" && (line.lineType === "PROCESS" || line.lineType === "SERVICE"))) {
               setLaborModalMode("edit");
               setEditingLaborLine(line);
@@ -832,6 +839,11 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
               label: line.descriptionSnapshot,
             })
           }
+          onOpenProductSimulation={(productId) => {
+            setSimulationError(null);
+            setSimulationProductId(productId);
+            setStructureModalSource(null);
+          }}
         />
       ) : null}
 
@@ -1228,6 +1240,65 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
         onConfirm={handleDelete}
       />
 
+      <ProjectProductSimulationPanel
+        open={simulationProductId != null}
+        projectId={projectId}
+        productId={simulationProductId ?? ""}
+        structureLines={detail.structureLines}
+        costBreakdown={detail.costBreakdown}
+        saving={saving}
+        error={simulationError}
+        onClose={() => {
+          setSimulationProductId(null);
+          setSimulationError(null);
+        }}
+        onReload={load}
+        onImportSnapshot={async (options) => {
+          if (!simulationProductId) return;
+          setSaving(true);
+          setSimulationError(null);
+          try {
+            await fetchJsonOk(`/api/projects/${projectId}/import-product-snapshot`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                productId: simulationProductId,
+                includeBom: options.includeBom,
+                includeRouting: options.includeRouting,
+              }),
+            });
+            await load();
+          } catch (e) {
+            setSimulationError(e instanceof Error ? e.message : "Erro ao importar snapshot.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+        onSaveToProject={async ({ linePatches }) => {
+          setSaving(true);
+          setSimulationError(null);
+          try {
+            for (const patch of linePatches) {
+              await fetchJsonOk(`/api/projects/${projectId}/structure-lines/${patch.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  quantity: patch.quantity,
+                  lossPercent: patch.lossPercent,
+                  unitCost: patch.unitCost,
+                }),
+              });
+            }
+            await load();
+          } catch (e) {
+            setSimulationError(e instanceof Error ? e.message : "Erro ao salvar no projeto.");
+            throw e;
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+
       <ProjectStructureLineModal
         open={structureModalSource != null}
         sourceType={structureModalSource}
@@ -1235,6 +1306,12 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
         saving={saving}
         error={modalError}
         onClose={() => setStructureModalSource(null)}
+        onOpenProductSimulation={(productId) => {
+          setModalError(null);
+          setStructureModalSource(null);
+          setSimulationError(null);
+          setSimulationProductId(productId);
+        }}
         onSubmit={async (body) => {
           setSaving(true);
           setModalError(null);
@@ -1324,6 +1401,7 @@ function StructureTab({
   onAddLabor,
   onEditLine,
   onDeleteLine,
+  onOpenProductSimulation,
 }: {
   detail: ProjectDetail;
   canManage: boolean;
@@ -1331,6 +1409,7 @@ function StructureTab({
   onAddLabor: () => void;
   onEditLine: (line: ProjectStructureLineRow) => void;
   onDeleteLine: (line: ProjectStructureLineRow) => void;
+  onOpenProductSimulation: (productId: string) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -1344,6 +1423,18 @@ function StructureTab({
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("EXISTING_PRODUCT")}>
               + Produto existente
             </button>
+            {detail.structureLines.some((l) => l.existingProductId) ? (
+              <button
+                type="button"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-950"
+                onClick={() => {
+                  const pid = detail.structureLines.find((l) => l.existingProductId)?.existingProductId;
+                  if (pid) onOpenProductSimulation(pid);
+                }}
+              >
+                Editar simulação do produto
+              </button>
+            ) : null}
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("SIMULATED_ITEM")}>
               + Item simulado
             </button>

@@ -27,6 +27,10 @@ import {
   PROJECTS_VIEW_PERMISSIONS,
 } from "@/src/lib/projectsPermissions.js";
 import {
+  importProductSnapshotToProject,
+  loadOfficialProductSnapshot,
+} from "@/src/lib/projectsProductSnapshot.js";
+import {
   buildStructureLineTotal,
   copyVersionFromCurrent,
   createProjectWithVersion,
@@ -236,6 +240,46 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
     } catch (e: unknown) {
       console.error("GET /api/projects/lookup/products", e);
       res.status(500).json({ error: "Erro na busca de produtos." });
+    }
+  });
+
+  app.get("/api/projects/lookup/products/:productId/snapshot", ...lookup, async (req, res) => {
+    try {
+      if (!isUuid(req.params.productId)) {
+        return res.status(400).json({ error: "ID de produto inválido." });
+      }
+      const snapshot = await loadOfficialProductSnapshot(req.params.productId);
+      if (!snapshot) return res.status(404).json({ error: "Produto não encontrado." });
+      res.json(snapshot);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/products/:productId/snapshot", e);
+      res.status(500).json({ error: "Erro ao carregar snapshot do produto." });
+    }
+  });
+
+  app.post("/api/projects/:id/import-product-snapshot", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const body = req.body ?? {};
+      const productId = typeof body.productId === "string" ? body.productId : "";
+      if (!isUuid(productId)) return res.status(400).json({ error: "productId inválido." });
+
+      const result = await importProductSnapshotToProject(req.params.id, productId, {
+        includeBom: body.includeBom !== false,
+        includeRouting: body.includeRouting === true,
+        replaceExisting: body.replaceExisting === true,
+      });
+      const detail = await loadProjectDetail(req.params.id);
+      res.status(201).json({
+        createdCount: result.createdCount,
+        lineIds: result.lineIds,
+        project: detail,
+      });
+    } catch (e: unknown) {
+      console.error("POST /api/projects/:id/import-product-snapshot", e);
+      res.status(500).json({
+        error: e instanceof Error ? e.message : "Erro ao importar snapshot do produto.",
+      });
     }
   });
 
