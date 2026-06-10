@@ -25,6 +25,29 @@ export type FinanceCashFlowYtdTrendDirection = "improving" | "worsening" | "stab
 
 export type FinanceCashFlowYtdReceivedDirection = "up" | "down" | "stable" | "no_previous";
 
+export type FinanceCashFlowExecutiveYtdReceivableTotals = {
+  /** Soma amountReceivable da carteira YTD (vencimento no ano, saneada). */
+  totalAmount: number;
+  /** Soma amountReceived dos títulos da carteira YTD — distinto de Recebido YTD por liquidação. */
+  receivedAmount: number;
+  /** Soma balanceReceivable da carteira YTD. */
+  openAmount: number;
+};
+
+export type FinanceCashFlowExecutiveYtdPayableTotals = {
+  /** Soma amountPayable da carteira YTD (vencimento no ano, saneada). */
+  totalAmount: number;
+  /** Soma amountPaid dos títulos da carteira YTD. */
+  paidAmount: number;
+  /** Soma balancePayable da carteira YTD. */
+  openAmount: number;
+};
+
+export type FinanceCashFlowExecutiveYtdTotals = {
+  receivable: FinanceCashFlowExecutiveYtdReceivableTotals;
+  payable: FinanceCashFlowExecutiveYtdPayableTotals;
+};
+
 export type FinanceCashFlowExecutiveYtdReceived = {
   currentAmount: number;
   previousAmount: number;
@@ -67,6 +90,8 @@ export type FinanceCashFlowExecutiveYtd = {
   overdueCashImpact: number;
   negativeMonthsCount: number;
   received: FinanceCashFlowExecutiveYtdReceived;
+  /** Totais consolidados da carteira AR/AP YTD (Power BI — distinto de caixa por liquidação). */
+  totals: FinanceCashFlowExecutiveYtdTotals;
   trend: {
     direction: FinanceCashFlowYtdTrendDirection;
     label: string;
@@ -359,6 +384,43 @@ function countNegativeMonths(series: FinanceCashFlowExecutiveYtdTrendPoint[]): n
   return series.filter((p) => p.net != null && p.net < 0).length;
 }
 
+/** Totais da carteira YTD a partir de linhas já filtradas (ano YTD, saneamento, sem mês). */
+export function buildExecutiveYtdCarteiraTotals(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[]
+): FinanceCashFlowExecutiveYtdTotals {
+  let arTotal = 0;
+  let arReceived = 0;
+  let arOpen = 0;
+  for (const row of arRows) {
+    arTotal += row.amountReceivable > 0 ? row.amountReceivable : 0;
+    arReceived += row.amountReceived > 0 ? row.amountReceived : 0;
+    arOpen += row.balanceReceivable > 0 ? row.balanceReceivable : 0;
+  }
+
+  let apTotal = 0;
+  let apPaid = 0;
+  let apOpen = 0;
+  for (const row of apRows) {
+    apTotal += row.amountPayable > 0 ? row.amountPayable : 0;
+    apPaid += row.amountPaid > 0 ? row.amountPaid : 0;
+    apOpen += row.balancePayable > 0 ? row.balancePayable : 0;
+  }
+
+  return {
+    receivable: {
+      totalAmount: roundMoney(arTotal),
+      receivedAmount: roundMoney(arReceived),
+      openAmount: roundMoney(arOpen),
+    },
+    payable: {
+      totalAmount: roundMoney(apTotal),
+      paidAmount: roundMoney(apPaid),
+      openAmount: roundMoney(apOpen),
+    },
+  };
+}
+
 export function buildFinanceCashFlowExecutiveYtd(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -410,6 +472,7 @@ export function buildFinanceCashFlowExecutiveYtd(
   const receivable = roundMoney(totalReceivableOpen);
   const payable = roundMoney(totalPayableOpen);
   const net = buildNetCashPositionMetrics(receivable, payable);
+  const totals = buildExecutiveYtdCarteiraTotals(arRows, apRows);
 
   return {
     year,
@@ -428,6 +491,7 @@ export function buildFinanceCashFlowExecutiveYtd(
     overdueCashImpact: roundMoney(overdueReceivable + overduePayable),
     negativeMonthsCount: countNegativeMonths(monthlyNetSeries),
     received,
+    totals,
     trend: {
       direction: trendMeta.direction,
       label: trendMeta.label,
@@ -442,6 +506,8 @@ export function buildCashFlowExecutiveYtdReading(
   const lines: string[] = [];
   const { trend } = executiveYtd;
 
+  const { totals } = executiveYtd;
+
   if (executiveYtd.netCashPosition < 0) {
     lines.push(
       `No acumulado do ano, a carteira projetada indica déficit de ${formatFinanceCurrency(executiveYtd.cashNeedAmount)}.`
@@ -450,6 +516,31 @@ export function buildCashFlowExecutiveYtdReading(
     lines.push(
       `No acumulado do ano, a carteira projetada indica folga de ${formatFinanceCurrency(executiveYtd.cashSurplusAmount)}.`
     );
+  }
+
+  if (totals.receivable.totalAmount > 0 || totals.receivable.openAmount > 0) {
+    lines.push(
+      `No YTD, a carteira soma ${formatFinanceCurrency(totals.receivable.totalAmount)} a receber, com ${formatFinanceCurrency(totals.receivable.openAmount)} ainda em aberto.`
+    );
+  }
+
+  if (totals.payable.totalAmount > 0 || totals.payable.openAmount > 0) {
+    lines.push(
+      `No YTD, as obrigações somam ${formatFinanceCurrency(totals.payable.totalAmount)} a pagar, com ${formatFinanceCurrency(totals.payable.openAmount)} ainda em aberto.`
+    );
+  }
+
+  const openNet = roundMoney(totals.receivable.openAmount - totals.payable.openAmount);
+  if (openNet !== 0 && (totals.receivable.openAmount > 0 || totals.payable.openAmount > 0)) {
+    if (openNet < 0) {
+      lines.push(
+        `O saldo aberto líquido da carteira YTD indica déficit de ${formatFinanceCurrency(Math.abs(openNet))}.`
+      );
+    } else {
+      lines.push(
+        `O saldo aberto líquido da carteira YTD indica superávit de ${formatFinanceCurrency(openNet)}.`
+      );
+    }
   }
 
   if (executiveYtd.overdueReceivableAmount > 0) {
@@ -500,7 +591,7 @@ export function buildCashFlowExecutiveYtdReading(
     lines.push("A tendência dos últimos meses está estável no saldo acumulado.");
   }
 
-  return lines;
+  return lines.slice(0, 6);
 }
 
 export function executiveYtdMetricsAreFinite(ytd: FinanceCashFlowExecutiveYtd): boolean {
@@ -517,6 +608,12 @@ export function executiveYtdMetricsAreFinite(ytd: FinanceCashFlowExecutiveYtd): 
     ytd.received.currentAmount,
     ytd.received.previousAmount,
     ytd.received.deltaAmount,
+    ytd.totals.receivable.totalAmount,
+    ytd.totals.receivable.receivedAmount,
+    ytd.totals.receivable.openAmount,
+    ytd.totals.payable.totalAmount,
+    ytd.totals.payable.paidAmount,
+    ytd.totals.payable.openAmount,
   ];
   if (!nums.every((n) => Number.isFinite(n))) return false;
   if (ytd.cashCoverageRatio != null && !Number.isFinite(ytd.cashCoverageRatio)) return false;

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildCashFlowExecutiveYtdReading,
+  buildExecutiveYtdCarteiraTotals,
   buildFinanceCashFlowExecutiveYtd,
   buildYtdDashboardFilters,
   buildYtdReceivedComparison,
@@ -416,6 +417,156 @@ describe("financeCashFlowExecutiveYtd", () => {
         (l) => l.includes("Recebido YTD") && l.includes("2025")
       )
     );
+  });
+
+  it("totais AR somam amountReceivable, amountReceived e balanceReceivable", () => {
+    const ar = [
+      arRow({
+        externalId: 1,
+        amountReceivable: 1000,
+        amountReceived: 400,
+        balanceReceivable: 600,
+      }),
+      arRow({
+        externalId: 2,
+        amountReceivable: 500,
+        amountReceived: 500,
+        balanceReceivable: 0,
+      }),
+    ];
+    const totals = buildExecutiveYtdCarteiraTotals(ar, []);
+    assert.equal(totals.receivable.totalAmount, 1500);
+    assert.equal(totals.receivable.receivedAmount, 900);
+    assert.equal(totals.receivable.openAmount, 600);
+  });
+
+  it("totais AP somam amountPayable, amountPaid e balancePayable", () => {
+    const ap = [
+      apRow({
+        externalId: 1,
+        amountPayable: 800,
+        amountPaid: 300,
+        balancePayable: 500,
+      }),
+    ];
+    const totals = buildExecutiveYtdCarteiraTotals([], ap);
+    assert.equal(totals.payable.totalAmount, 800);
+    assert.equal(totals.payable.paidAmount, 300);
+    assert.equal(totals.payable.openAmount, 500);
+  });
+
+  it("títulos saneados não entram nos totais YTD", () => {
+    const rows = [
+      arRow({ externalId: 1, amountReceivable: 1000, balanceReceivable: 1000 }),
+      arRow({
+        externalId: 2,
+        personName: "Koppetel Comercio de Plasticos LTDA",
+        personCnpj: "14.055.501/0001-80",
+        amountReceivable: 9000,
+        balanceReceivable: 9000,
+      }),
+      arRow({
+        externalId: 3,
+        amountReceivable: 200,
+        amountReceived: 0,
+        balanceReceivable: 0,
+      }),
+    ];
+    const ytdAr = filterCashFlowArRows(rows, filters, REF);
+    const totals = buildExecutiveYtdCarteiraTotals(ytdAr, []);
+    assert.equal(totals.receivable.totalAmount, 1000);
+  });
+
+  it("filtro de mês não altera totais YTD", () => {
+    const rows = [arRow({ amountReceivable: 2000, balanceReceivable: 1500 })];
+    const withMonth = buildFinanceCashFlowDashboard(
+      rows,
+      [apRow()],
+      { ...filters, month: 3 },
+      REF
+    );
+    const withoutMonth = buildFinanceCashFlowDashboard(rows, [apRow()], filters, REF);
+    assert.deepEqual(withMonth.executiveYtd.totals, withoutMonth.executiveYtd.totals);
+  });
+
+  it("filtro de empresa altera totais YTD", () => {
+    const rows = [
+      arRow({ externalId: 1, companyName: "Empresa A", amountReceivable: 100 }),
+      arRow({ externalId: 2, companyName: "Empresa B", amountReceivable: 200 }),
+    ];
+    const filtered = buildFinanceCashFlowDashboard(
+      rows,
+      [apRow()],
+      { ...filters, companyName: "Empresa A" },
+      REF
+    );
+    assert.equal(filtered.executiveYtd.totals.receivable.totalAmount, 100);
+  });
+
+  it("payload totals finitos e distintos de recebido por liquidação", () => {
+    const rows = [
+      arRow({
+        amountReceivable: 1000,
+        amountReceived: 200,
+        balanceReceivable: 800,
+        settlementDate: new Date(2026, 1, 1),
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(rows, [apRow()], filters, REF);
+    assert.equal(payload.executiveYtd.totals.receivable.receivedAmount, 200);
+    assert.ok(payload.executiveYtd.received.currentAmount >= 0);
+    assert.equal(financeCashFlowMetricsAreFinite(payload), true);
+  });
+
+  it("componente Totais financeiros YTD na página", () => {
+    const panel = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowYtdTotalsPanel.tsx"
+      ),
+      "utf8"
+    );
+    const summary = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowYtdSummary.tsx"
+      ),
+      "utf8"
+    );
+    assert.ok(panel.includes("Totais financeiros YTD"));
+    assert.ok(panel.includes("A RECEBER"));
+    assert.ok(panel.includes("A PAGAR"));
+    assert.ok(panel.includes("Valor a receber"));
+    assert.ok(panel.includes("Valor recebido"));
+    assert.ok(panel.includes("Valor em aberto receber"));
+    assert.ok(panel.includes("Valor a pagar total"));
+    assert.ok(panel.includes("Valor pago"));
+    assert.ok(panel.includes("Valor em aberto pagar"));
+    assert.ok(panel.includes("title={value.full}"));
+    assert.ok(summary.includes("FinanceCashFlowYtdTotalsPanel"));
+  });
+
+  it("leitura executiva menciona carteira a receber e a pagar", () => {
+    const ytdAr = filterCashFlowArRows(
+      [arRow({ amountReceivable: 1000, balanceReceivable: 600 })],
+      filters,
+      REF
+    );
+    const ytdAp = filterCashFlowApRows([apRow({ amountPayable: 400, balancePayable: 200 })], filters, REF);
+    const series = buildFinanceCashFlowMonthlySeries(ytdAr, ytdAp, filters, REF);
+    const ytd = buildFinanceCashFlowExecutiveYtd(ytdAr, ytdAp, series, ytdAr, filters, REF);
+    const lines = buildCashFlowExecutiveYtdReading(ytd);
+    assert.ok(lines.some((l) => l.includes("carteira soma") && l.includes("a receber")));
+    assert.ok(lines.some((l) => l.includes("obrigações somam") && l.includes("a pagar")));
+    assert.ok(lines.length <= 6);
   });
 
   it("série mensal YTD de recebido não retorna NaN/Infinity", () => {

@@ -275,7 +275,24 @@ Posição líquida, pagar em aberto, necessidade/folga, vencidos, meses negativo
 
 Tendência: compara saldo acumulado do último mês válido com o de 3 meses antes; menos de 4 meses com dado → “Dados insuficientes”.
 
-### 8.5 Visual
+### 8.5 Totais financeiros YTD (`executiveYtd.totals`)
+
+Bloco compacto **Totais financeiros YTD** — carteira saneada com vencimento no ano selecionado (sem filtro de mês).
+
+| Lado | Campo | Origem |
+|------|-------|--------|
+| A RECEBER | Valor a receber | Σ `amountReceivable` |
+| A RECEBER | Valor recebido | Σ `amountReceived` (carteira — **não** liquidação no período) |
+| A RECEBER | Valor em aberto | Σ `balanceReceivable` |
+| A PAGAR | Valor a pagar total | Σ `amountPayable` |
+| A PAGAR | Valor pago | Σ `amountPaid` |
+| A PAGAR | Valor em aberto | Σ `balancePayable` |
+
+- **Recebido YTD** (card separado) = caixa por `settlementDate` no período YTD.
+- **Valor recebido** (totais) = soma dos recebidos nos títulos da carteira do ano.
+- Usa saneamento gerencial (`bfaadab`); filtro de mês não altera o topo.
+
+### 8.6 Visual
 
 Cards compactos (`min-h` baixo, fonte menor) em grid de 6 colunas no desktop:
 
@@ -288,13 +305,13 @@ Cards compactos (`min-h` baixo, fonte menor) em grid de 6 colunas no desktop:
 
 Mini gráfico “Tendência YTD do caixa”: barras líquido + linha acumulado + linha tracejada **recebido acumulado ano anterior**; tooltip com recebido mensal/acumulado e acumulado do ano anterior.
 
-### 8.6 Limitação
+### 8.7 Limitação
 
 YTD é visão gerencial baseada em AR/AP Nomus — **não substitui saldo bancário real**.
 
 ---
 
-## 8.7 Saneamento financeiro gerencial
+## 8.8 Saneamento financeiro gerencial
 
 Motor central: `financeInternalGroupExclusions.ts` — aplicado nos filtros de AR, AP e Fluxo de Caixa.
 
