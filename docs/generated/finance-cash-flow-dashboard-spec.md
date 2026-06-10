@@ -294,6 +294,29 @@ YTD é visão gerencial baseada em AR/AP Nomus — **não substitui saldo bancá
 
 ---
 
+## 8.7 Saneamento financeiro gerencial
+
+Motor central: `financeInternalGroupExclusions.ts` — aplicado nos filtros de AR, AP e Fluxo de Caixa.
+
+| Regra | Critério | Campos |
+|-------|----------|--------|
+| **Intercompany** | Contraparte é empresa do grupo (Lazarios, Koppetel, SM) | `personName`, `personCnpj` — **não** `companyName` |
+| **Título fantasma AR** | `amountReceivable > 0` e `amountReceived = 0` e `balanceReceivable = 0` | Power BI “Ocultar” |
+| **Agenda pedido de compra AP** | `description` inicia com `PEDIDO DE COMPRA` (case/trim normalizados) | Power BI “Ignorar Agenda Pagar” |
+
+Empresas internas (CNPJ):
+
+- `72.569.510/0001-95` — Lazarios Comercio de Plasticos LTDA  
+- `14.055.501/0001-80` — Koppetel Comercio de Plasticos LTDA  
+- `55.717.719/0001-30` — Sm Comercio de Plasticos LTDA - SM  
+
+- Dados **brutos permanecem no banco** — exclusão só na visão gerencial (dashboards, export CSV gerencial, YTD, CFO, cenários).
+- Payload opcional: `dataSanitization` com contadores por tipo de exclusão.
+- UI: nota discreta + chip “Visão gerencial saneada” no Fluxo de Caixa.
+- **Faturamento** não é alterado nesta fase; saneamento intercompany em NF-e/pedidos será tratado em fase futura se necessário.
+
+---
+
 ## 9. Painel CFO e insights determinísticos
 
 Motor: `financeCashFlowCfoDiagnostics.ts` — **sem IA externa**, sem alterar dados oficiais.

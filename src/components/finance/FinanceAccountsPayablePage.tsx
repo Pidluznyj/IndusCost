@@ -75,7 +75,10 @@ import {
   FinanceApTabNav,
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { cn } from "@/src/lib/utils";
-import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
+import {
+  FinanceFilterScopeBanner,
+  FinanceManagementSanitizationNote,
+} from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
@@ -745,6 +748,7 @@ export function FinanceAccountsPayablePage() {
       </FinanceBiFilterPanel>
 
       <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
+      <FinanceManagementSanitizationNote dataSanitization={data?.dataSanitization} />
 
       <section className={financeBiSectionClass}>
         <div className="px-5 py-4 border-b border-[#E5E7EB]">

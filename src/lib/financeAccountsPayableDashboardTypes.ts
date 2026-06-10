@@ -1,5 +1,7 @@
 /** Tipos do payload GET /api/finance/accounts-payable/dashboard */
 
+import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+
 export const FINANCE_AP_SUPPLIER_RANKING_LIMIT = 100;
 export const FINANCE_AP_COMPANY_SUMMARY_LIMIT = 50;
 
@@ -170,6 +172,7 @@ export type FinanceApDashboardPayload = {
   criticalTitles: FinanceApCriticalTitle[];
   dataQualityAlerts: FinanceApDataQualityAlerts;
   dataQualitySummary: FinanceApDataQualityAlertItem[];
+  dataSanitization: FinanceDataSanitization;
 };
 
 export type FinanceApUiFilters = {

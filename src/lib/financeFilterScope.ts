@@ -67,6 +67,13 @@ export const FINANCE_CASH_FLOW_NOT_BILLING_SCOPE =
 export const FINANCE_CASH_FLOW_COMBINED_SCOPE =
   "Modo combinado — soma previsto (aberto) e realizado (baixado) no período." as const;
 
+/** Saneamento gerencial AR/AP/Cash Flow — dados brutos preservados no banco. */
+export const FINANCE_MANAGEMENT_SANITIZATION_SCOPE =
+  "Movimentações internas do grupo, títulos fantasma e agendas de pedido de compra são desconsiderados da visão gerencial." as const;
+
+export const FINANCE_CASH_FLOW_SANITIZED_SCOPE =
+  "Visão gerencial saneada." as const;
+
 export const FINANCE_BILLING_FORECAST_SCOPE =
   "Previsão de faturamento — pedidos não faturados por SalesOrder.expectedDeliveryDate (dataEntregaPadrao Nomus). Não é faturamento realizado." as const;
 

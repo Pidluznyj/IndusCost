@@ -38,7 +38,10 @@ import { FinanceCashFlowScenarioChart } from "@/src/components/finance/cash-flow
 import { FinanceCashFlowRecommendations } from "@/src/components/finance/cash-flow/FinanceCashFlowRecommendations";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
-import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
+import {
+  FinanceFilterScopeBanner,
+  FinanceManagementSanitizationNote,
+} from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
@@ -229,6 +232,7 @@ export function FinanceCashFlowPage() {
       />
 
       <FinanceFilterScopeBanner active={filtersActive} />
+      <FinanceManagementSanitizationNote dataSanitization={payload?.dataSanitization} />
 
       <div data-testid="cash-flow-filters">
       <FinanceBiFilterPanel

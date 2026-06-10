@@ -12,6 +12,7 @@ import type {
   FinanceCashFlowExecutiveYtdReceived,
 } from "@/src/lib/financeCashFlowExecutiveYtd";
 import { formatCashFlowKpiDisplay } from "@/src/lib/financeCashFlowDisplay";
+import { FINANCE_CASH_FLOW_SANITIZED_SCOPE } from "@/src/lib/financeFilterScope";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceCashFlowYtdTrendChart } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdTrendChart";
 import { cn } from "@/src/lib/utils";
@@ -126,6 +127,13 @@ export function FinanceCashFlowYtdSummary({
               Análises abaixo: filtros aplicados
             </span>
           ) : null}
+          <span
+            data-testid="cash-flow-sanitized-scope-chip"
+            className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2 py-0.5 text-[10px] font-semibold text-[#166534]"
+            title={FINANCE_CASH_FLOW_SANITIZED_SCOPE}
+          >
+            {FINANCE_CASH_FLOW_SANITIZED_SCOPE}
+          </span>
         </div>
         <p className="text-[11px] text-[#6B7280]">
           {executiveYtd.isCurrentYear

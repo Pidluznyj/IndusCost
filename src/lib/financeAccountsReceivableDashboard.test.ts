@@ -45,7 +45,13 @@ describe("financeAccountsReceivableDashboard", () => {
       row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 1) }), // overdue
       row({ externalId: 2, balanceReceivable: 200, dueDate: new Date(2026, 5, 6) }), // due today
       row({ externalId: 3, balanceReceivable: 300, dueDate: new Date(2026, 5, 20) }), // upcoming
-      row({ externalId: 4, balanceReceivable: 0, dueDate: new Date(2026, 4, 1) }), // settled
+      row({
+        externalId: 4,
+        balanceReceivable: 0,
+        amountReceivable: 1000,
+        amountReceived: 1000,
+        dueDate: new Date(2026, 4, 1),
+      }), // settled (não fantasma)
     ];
 
     const dash = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF);

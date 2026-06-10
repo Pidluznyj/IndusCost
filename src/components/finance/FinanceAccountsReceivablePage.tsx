@@ -73,7 +73,10 @@ import {
   FinanceArTabNav,
 } from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 import { cn } from "@/src/lib/utils";
-import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
+import {
+  FinanceFilterScopeBanner,
+  FinanceManagementSanitizationNote,
+} from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
@@ -738,6 +741,7 @@ export function FinanceAccountsReceivablePage() {
       </FinanceBiFilterPanel>
 
       <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
+      <FinanceManagementSanitizationNote dataSanitization={data?.dataSanitization} />
 
       {/* ─── RESUMO EXECUTIVO ─── */}
       <section className={financeBiSectionClass}>

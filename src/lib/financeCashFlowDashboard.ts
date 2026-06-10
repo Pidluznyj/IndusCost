@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import {
   classifyFinanceArTitle,
+  countFinanceArSanitizationInScope,
   decimalFieldToNumber,
   filterFinanceArRows,
   isFinanceArOpen,
@@ -17,6 +18,7 @@ import {
 } from "./financeAccountsReceivableDashboard.js";
 import {
   classifyFinanceApTitle,
+  countFinanceApSanitizationInScope,
   filterFinanceApRows,
   isFinanceApOpen,
   mapPrismaRowToFinanceApDashboardRow,
@@ -26,6 +28,7 @@ import {
   type FinanceApDashboardRow,
   FinanceApFilterParseError,
 } from "./financeAccountsPayableDashboard.js";
+import { mergeFinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import type {
   FinanceCashFlowCriticalMovement,
   FinanceCashFlowDashboardFiltersApplied,
@@ -826,10 +829,16 @@ export function buildFinanceCashFlowDashboard(
     topSupplier: topSuppliers[0],
   });
 
+  const dataSanitization = mergeFinanceDataSanitization(
+    countFinanceArSanitizationInScope(arRows, toArLoadFilters(filters), referenceDate),
+    countFinanceApSanitizationInScope(apRows, toApLoadFilters(filters), referenceDate)
+  );
+
   const partialPayload = {
     generatedAt: new Date().toISOString(),
     referenceDate: referenceDate.toISOString(),
     filtersApplied,
+    dataSanitization,
     sources: {
       inflows: "NomusAccountsReceivable" as const,
       outflows: "NomusAccountsPayable" as const,

@@ -6,6 +6,12 @@ import {
   trackFinanceArDataQualityRow,
 } from "./financeAccountsReceivableDataQuality.js";
 import { buildCustomerSuggestedAction } from "./financeAccountsReceivableActions.js";
+import {
+  isFinanceArExcludedFromManagement,
+  isFinanceArGhostTitle,
+  isFinanceInternalGroupPerson,
+  type FinanceDataSanitization,
+} from "./financeInternalGroupExclusions.js";
 
 export type FinanceArTitleStatus =
   | "open"
@@ -460,52 +466,98 @@ export function buildFinanceArPrismaWhere(
   return and.length > 0 ? { AND: and } : {};
 }
 
-export function filterFinanceArRows(
-  rows: FinanceArDashboardRow[],
+export function matchesFinanceArDashboardFilters(
+  row: FinanceArDashboardRow,
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
-): FinanceArDashboardRow[] {
+  referenceDate: Date
+): boolean {
   const today = startOfLocalDay(referenceDate);
   const companyFilter = normalizeFilterText(filters.companyName);
   const personFilter = normalizeFilterText(filters.personName);
   const cnpjFilter = normalizeFilterText(filters.personCnpj);
   const paymentFilter = normalizeFilterText(filters.paymentMethodName);
   const bankFilter = normalizeFilterText(filters.bankAccountName);
-  const { from: dueFrom, toExclusive: dueToExclusive, empty } =
+
+  if (!textMatchesFilter(row.companyName, companyFilter)) return false;
+  if (!textMatchesFilter(row.personName, personFilter)) return false;
+  if (!textMatchesFilter(row.personCnpj, cnpjFilter)) return false;
+  if (!textMatchesFilter(row.paymentMethodName, paymentFilter)) return false;
+  if (!textMatchesFilter(row.bankAccountName, bankFilter)) return false;
+
+  const { from: dueFrom, toExclusive: dueToExclusive } =
     resolveFinanceArDueDateBounds(filters);
+
+  if (dueFrom && (!row.dueDate || startOfLocalDay(row.dueDate).getTime() < dueFrom.getTime())) {
+    return false;
+  }
+  if (
+    dueToExclusive &&
+    (!row.dueDate || startOfLocalDay(row.dueDate).getTime() >= dueToExclusive.getTime())
+  ) {
+    return false;
+  }
+
+  const invoiceFilter = filters.invoiceIssued ?? "all";
+  if (invoiceFilter !== "all") {
+    const hasInvoice = hasFinanceArSourceInvoice(row);
+    if (invoiceFilter === "yes" && !hasInvoice) return false;
+    if (invoiceFilter === "no" && hasInvoice) return false;
+  }
+
+  if (filters.status === "all") return true;
+  const status = classifyFinanceArTitle(row, today);
+  if (filters.status === "open") return isFinanceArOpen(row);
+  if (filters.status === "settled") return isFinanceArSettled(row);
+  if (filters.status === "suspended") return status === "suspended";
+  return status === filters.status;
+}
+
+export function countFinanceArSanitizationInScope(
+  rows: FinanceArDashboardRow[],
+  filters: FinanceArDashboardFilters,
+  referenceDate: Date = new Date()
+): Pick<
+  FinanceDataSanitization,
+  "ignoredInternalGroupReceivables" | "ignoredGhostReceivables"
+> {
+  const { empty } = resolveFinanceArDueDateBounds(filters);
+  if (empty) {
+    return { ignoredInternalGroupReceivables: 0, ignoredGhostReceivables: 0 };
+  }
+
+  let ignoredInternalGroupReceivables = 0;
+  let ignoredGhostReceivables = 0;
+
+  for (const row of rows) {
+    if (!matchesFinanceArDashboardFilters(row, filters, referenceDate)) continue;
+    if (
+      isFinanceInternalGroupPerson({
+        personName: row.personName,
+        personCnpj: row.personCnpj,
+      })
+    ) {
+      ignoredInternalGroupReceivables += 1;
+    } else if (isFinanceArGhostTitle(row)) {
+      ignoredGhostReceivables += 1;
+    }
+  }
+
+  return { ignoredInternalGroupReceivables, ignoredGhostReceivables };
+}
+
+export function filterFinanceArRows(
+  rows: FinanceArDashboardRow[],
+  filters: FinanceArDashboardFilters,
+  referenceDate: Date = new Date()
+): FinanceArDashboardRow[] {
+  const { empty } = resolveFinanceArDueDateBounds(filters);
   if (empty) return [];
 
-  return rows.filter((row) => {
-    if (!textMatchesFilter(row.companyName, companyFilter)) return false;
-    if (!textMatchesFilter(row.personName, personFilter)) return false;
-    if (!textMatchesFilter(row.personCnpj, cnpjFilter)) return false;
-    if (!textMatchesFilter(row.paymentMethodName, paymentFilter)) return false;
-    if (!textMatchesFilter(row.bankAccountName, bankFilter)) return false;
-
-    if (dueFrom && (!row.dueDate || startOfLocalDay(row.dueDate).getTime() < dueFrom.getTime())) {
-      return false;
-    }
-    if (
-      dueToExclusive &&
-      (!row.dueDate || startOfLocalDay(row.dueDate).getTime() >= dueToExclusive.getTime())
-    ) {
-      return false;
-    }
-
-    const invoiceFilter = filters.invoiceIssued ?? "all";
-    if (invoiceFilter !== "all") {
-      const hasInvoice = hasFinanceArSourceInvoice(row);
-      if (invoiceFilter === "yes" && !hasInvoice) return false;
-      if (invoiceFilter === "no" && hasInvoice) return false;
-    }
-
-    if (filters.status === "all") return true;
-    const status = classifyFinanceArTitle(row, today);
-    if (filters.status === "open") return isFinanceArOpen(row);
-    if (filters.status === "settled") return isFinanceArSettled(row);
-    if (filters.status === "suspended") return status === "suspended";
-    return status === filters.status;
-  });
+  return rows.filter(
+    (row) =>
+      matchesFinanceArDashboardFilters(row, filters, referenceDate) &&
+      !isFinanceArExcludedFromManagement(row)
+  );
 }
 
 export function buildFinanceAccountsReceivableDashboard(
@@ -973,5 +1025,10 @@ export function buildFinanceAccountsReceivableDashboard(
     criticalTitles,
     dataQualityAlerts: financeArDataQualityAlertsLegacy(dataQualityAcc),
     dataQualitySummary: buildFinanceArDataQualitySummary(dataQualityAcc),
+    dataSanitization: {
+      ...countFinanceArSanitizationInScope(rows, filters, referenceDate),
+      ignoredInternalGroupPayables: 0,
+      ignoredPurchaseOrderAgendaPayables: 0,
+    },
   };
 }

@@ -7,6 +7,12 @@ import {
 } from "./financeAccountsPayableDataQuality.js";
 import { buildSupplierSuggestedAction } from "./financeAccountsPayableActions.js";
 import {
+  isFinanceApExcludedFromManagement,
+  isFinanceApPurchaseOrderAgenda,
+  isFinanceInternalGroupPerson,
+  type FinanceDataSanitization,
+} from "./financeInternalGroupExclusions.js";
+import {
   FINANCE_AP_COMPANY_SUMMARY_LIMIT,
   FINANCE_AP_SUPPLIER_RANKING_LIMIT,
 } from "./financeAccountsPayableDashboardTypes.js";
@@ -465,58 +471,107 @@ function isDueInRange(dueDate: Date | null, from: Date, to: Date): boolean {
   return due >= from.getTime() && due <= to.getTime();
 }
 
-export function filterFinanceApRows(
-  rows: FinanceApDashboardRow[],
+export function matchesFinanceApDashboardFilters(
+  row: FinanceApDashboardRow,
   filters: FinanceApDashboardFilters,
-  referenceDate: Date = new Date()
-): FinanceApDashboardRow[] {
+  referenceDate: Date
+): boolean {
   const today = startOfLocalDay(referenceDate);
   const companyFilter = normalizeFilterText(filters.companyName);
   const personFilter = normalizeFilterText(filters.personName);
   const cnpjFilter = normalizeFilterText(filters.personCnpj);
   const paymentFilter = normalizeFilterText(filters.paymentMethodName);
   const bankFilter = normalizeFilterText(filters.bankAccountName);
-  const { from: dueFrom, toExclusive: dueToExclusive, empty } =
+
+  if (!textMatchesFilter(row.companyName, companyFilter)) return false;
+  if (!textMatchesFilter(row.personName, personFilter)) return false;
+  if (!textMatchesFilter(row.personCnpj, cnpjFilter)) return false;
+  if (!textMatchesFilter(row.paymentMethodName, paymentFilter)) return false;
+  if (!textMatchesFilter(row.bankAccountName, bankFilter)) return false;
+
+  const { from: dueFrom, toExclusive: dueToExclusive } =
     resolveFinanceApDueDateBounds(filters);
+
+  if (dueFrom && (!row.dueDate || startOfLocalDay(row.dueDate).getTime() < dueFrom.getTime())) {
+    return false;
+  }
+  if (
+    dueToExclusive &&
+    (!row.dueDate || startOfLocalDay(row.dueDate).getTime() >= dueToExclusive.getTime())
+  ) {
+    return false;
+  }
+
+  const documentFilter = normalizeFilterText(filters.documentQuery);
+  if (documentFilter) {
+    const docText = `${row.documentNumber ?? ""} ${row.sourceInvoiceId ?? ""}`.toLowerCase();
+    if (!docText.includes(documentFilter)) return false;
+  }
+
+  const suspendFilter = filters.suspendPayment ?? "all";
+  if (suspendFilter !== "all") {
+    const suspended = row.suspendPayment === true;
+    if (suspendFilter === "yes" && !suspended) return false;
+    if (suspendFilter === "no" && suspended) return false;
+  }
+
+  if (filters.status === "all") return true;
+  const status = classifyFinanceApTitle(row, today);
+  if (filters.status === "open") return isFinanceApOpen(row);
+  if (filters.status === "settled") return isFinanceApSettled(row);
+  if (filters.status === "suspended") return status === "suspended";
+  return status === filters.status;
+}
+
+export function countFinanceApSanitizationInScope(
+  rows: FinanceApDashboardRow[],
+  filters: FinanceApDashboardFilters,
+  referenceDate: Date = new Date()
+): Pick<
+  FinanceDataSanitization,
+  "ignoredInternalGroupPayables" | "ignoredPurchaseOrderAgendaPayables"
+> {
+  const { empty } = resolveFinanceApDueDateBounds(filters);
+  if (empty) {
+    return {
+      ignoredInternalGroupPayables: 0,
+      ignoredPurchaseOrderAgendaPayables: 0,
+    };
+  }
+
+  let ignoredInternalGroupPayables = 0;
+  let ignoredPurchaseOrderAgendaPayables = 0;
+
+  for (const row of rows) {
+    if (!matchesFinanceApDashboardFilters(row, filters, referenceDate)) continue;
+    if (
+      isFinanceInternalGroupPerson({
+        personName: row.personName,
+        personCnpj: row.personCnpj,
+      })
+    ) {
+      ignoredInternalGroupPayables += 1;
+    } else if (isFinanceApPurchaseOrderAgenda(row)) {
+      ignoredPurchaseOrderAgendaPayables += 1;
+    }
+  }
+
+  return { ignoredInternalGroupPayables, ignoredPurchaseOrderAgendaPayables };
+}
+
+export function filterFinanceApRows(
+  rows: FinanceApDashboardRow[],
+  filters: FinanceApDashboardFilters,
+  referenceDate: Date = new Date()
+): FinanceApDashboardRow[] {
+  const { empty } = resolveFinanceApDueDateBounds(filters);
   if (empty) return [];
 
-  return rows.filter((row) => {
-    if (!textMatchesFilter(row.companyName, companyFilter)) return false;
-    if (!textMatchesFilter(row.personName, personFilter)) return false;
-    if (!textMatchesFilter(row.personCnpj, cnpjFilter)) return false;
-    if (!textMatchesFilter(row.paymentMethodName, paymentFilter)) return false;
-    if (!textMatchesFilter(row.bankAccountName, bankFilter)) return false;
-
-    if (dueFrom && (!row.dueDate || startOfLocalDay(row.dueDate).getTime() < dueFrom.getTime())) {
-      return false;
-    }
-    if (
-      dueToExclusive &&
-      (!row.dueDate || startOfLocalDay(row.dueDate).getTime() >= dueToExclusive.getTime())
-    ) {
-      return false;
-    }
-
-    const documentFilter = normalizeFilterText(filters.documentQuery);
-    if (documentFilter) {
-      const docText = `${row.documentNumber ?? ""} ${row.sourceInvoiceId ?? ""}`.toLowerCase();
-      if (!docText.includes(documentFilter)) return false;
-    }
-
-    const suspendFilter = filters.suspendPayment ?? "all";
-    if (suspendFilter !== "all") {
-      const suspended = row.suspendPayment === true;
-      if (suspendFilter === "yes" && !suspended) return false;
-      if (suspendFilter === "no" && suspended) return false;
-    }
-
-    if (filters.status === "all") return true;
-    const status = classifyFinanceApTitle(row, today);
-    if (filters.status === "open") return isFinanceApOpen(row);
-    if (filters.status === "settled") return isFinanceApSettled(row);
-    if (filters.status === "suspended") return status === "suspended";
-    return status === filters.status;
-  });
+  return rows.filter(
+    (row) =>
+      matchesFinanceApDashboardFilters(row, filters, referenceDate) &&
+      !isFinanceApExcludedFromManagement(row)
+  );
 }
 
 export function buildFinanceAccountsPayableDashboard(
@@ -967,5 +1022,10 @@ export function buildFinanceAccountsPayableDashboard(
     criticalTitles,
     dataQualityAlerts: financeApDataQualityAlertsLegacy(dataQualityAcc),
     dataQualitySummary: buildFinanceApDataQualitySummary(dataQualityAcc),
+    dataSanitization: {
+      ignoredInternalGroupReceivables: 0,
+      ignoredGhostReceivables: 0,
+      ...countFinanceApSanitizationInScope(rows, filters, referenceDate),
+    },
   };
 }

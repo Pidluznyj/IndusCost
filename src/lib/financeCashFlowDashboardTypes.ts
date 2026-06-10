@@ -12,6 +12,7 @@ import type {
   FinanceCashFlowExecutiveInsights,
 } from "./financeCashFlowCfoDiagnostics.js";
 import type { FinanceCashFlowExecutiveYtd } from "./financeCashFlowExecutiveYtd.js";
+import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 
 export type FinanceCashFlowViewMode = "projected" | "realized" | "combined";
 export type FinanceCashFlowDateBase = "due" | "settlement" | "issue";
@@ -133,6 +134,8 @@ export type FinanceCashFlowDashboardPayload = {
   largestProjectedOutflows: FinanceCashFlowCriticalMovement[];
   overdueReceivables: FinanceCashFlowCriticalMovement[];
   overduePayables: FinanceCashFlowCriticalMovement[];
+  /** Registros excluídos da visão gerencial (intercompany, fantasma, agenda PC). */
+  dataSanitization: FinanceDataSanitization;
 };
 
 export type FinanceCashFlowUiFilters = {
