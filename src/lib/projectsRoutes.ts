@@ -462,6 +462,23 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
+  app.delete("/api/projects/:id/simulated-products/:simulatedProductId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.simulatedProductId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectSimulatedProduct.findFirst({
+        where: { id: req.params.simulatedProductId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Produto simulado não encontrado." });
+      await prisma.projectSimulatedProduct.delete({ where: { id: req.params.simulatedProductId } });
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      console.error("DELETE simulated-products", e);
+      res.status(500).json({ error: "Erro ao excluir produto simulado." });
+    }
+  });
+
   app.post("/api/projects/:id/simulated-items", ...manage, async (req, res) => {
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
@@ -543,6 +560,27 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
     } catch (e: unknown) {
       console.error("PATCH simulated-items", e);
       res.status(500).json({ error: "Erro ao atualizar item simulado." });
+    }
+  });
+
+  app.delete("/api/projects/:id/simulated-items/:simulatedItemId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.simulatedItemId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectSimulatedItem.findFirst({
+        where: { id: req.params.simulatedItemId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Item simulado não encontrado." });
+      await prisma.projectSimulatedItem.delete({ where: { id: req.params.simulatedItemId } });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if (!("error" in ctx) && ctx.version) {
+        await recalculateAndPersistVersionCosts(ctx.version.id);
+      }
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      console.error("DELETE simulated-items", e);
+      res.status(500).json({ error: "Erro ao excluir item simulado." });
     }
   });
 
@@ -641,10 +679,25 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
         body.lossPercent != null ? (optNum(body.lossPercent) ?? 0) : dec(existing.lossPercent) ?? 0;
       const totalCost = buildStructureLineTotal(quantity, unitCost, lossPercent);
 
+      const descriptionSnapshot =
+        body.descriptionSnapshot != null
+          ? String(body.descriptionSnapshot).trim()
+          : body.description != null
+            ? String(body.description).trim()
+            : undefined;
+      const unitSnapshot =
+        body.unitSnapshot != null
+          ? String(body.unitSnapshot).trim()
+          : body.unit != null
+            ? String(body.unit).trim()
+            : undefined;
+
       const row = await prisma.projectStructureLine.update({
         where: { id: req.params.lineId },
         data: {
           ...(body.lineType != null ? { lineType: body.lineType } : {}),
+          ...(descriptionSnapshot != null ? { descriptionSnapshot } : {}),
+          ...(unitSnapshot != null ? { unitSnapshot } : {}),
           ...(body.quantity != null ? { quantity } : {}),
           ...(body.lossPercent != null ? { lossPercent } : {}),
           ...(body.unitCost != null ? { unitCostSnapshot: unitCost } : {}),
@@ -692,11 +745,10 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
       const constructionCost = optNum(body.constructionCost) ?? 0;
       const chargeMode = body.chargeMode ?? "CHARGED_SEPARATELY";
       const amortizationQuantity = optNum(body.amortizationQuantity);
-      const amortizedCostPerUnit = resolveMoldAmortizedCost(
-        constructionCost,
-        chargeMode,
-        amortizationQuantity
-      );
+      const amortizedCostPerUnit =
+        body.amortizedCostPerUnit != null
+          ? optNum(body.amortizedCostPerUnit)
+          : resolveMoldAmortizedCost(constructionCost, chargeMode, amortizationQuantity);
 
       const row = await prisma.projectMold.create({
         data: {
@@ -748,11 +800,10 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
         body.amortizationQuantity !== undefined
           ? optNum(body.amortizationQuantity)
           : dec(existing.amortizationQuantity);
-      const amortizedCostPerUnit = resolveMoldAmortizedCost(
-        constructionCost,
-        chargeMode,
-        amortizationQuantity
-      );
+      const amortizedCostPerUnit =
+        body.amortizedCostPerUnit != null
+          ? optNum(body.amortizedCostPerUnit)
+          : resolveMoldAmortizedCost(constructionCost, chargeMode, amortizationQuantity);
 
       const row = await prisma.projectMold.update({
         where: { id: req.params.moldId },
@@ -790,6 +841,24 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
     } catch (e: unknown) {
       console.error("PATCH molds", e);
       res.status(500).json({ error: "Erro ao atualizar molde." });
+    }
+  });
+
+  app.delete("/api/projects/:id/molds/:moldId", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.moldId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      const existing = await prisma.projectMold.findFirst({
+        where: { id: req.params.moldId, projectId: req.params.id },
+      });
+      if (!existing) return res.status(404).json({ error: "Molde não encontrado." });
+      await prisma.projectMold.delete({ where: { id: req.params.moldId } });
+      await recalculateAndPersistVersionCosts(existing.versionId);
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      console.error("DELETE molds", e);
+      res.status(500).json({ error: "Erro ao excluir molde." });
     }
   });
 }

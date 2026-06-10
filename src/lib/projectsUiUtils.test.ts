@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildLaborLinePayload,
   buildMoldPayloadFromForm,
+  calculateLaborLineTotal,
   parseProjectsNumberInput,
   suggestAmortizedCostPerUnit,
 } from "./projectsUiUtils.js";
@@ -36,6 +38,19 @@ describe("projectsUiUtils", () => {
     });
     assert.equal(payload.amortizedCostPerUnit, 5);
     assert.equal(Number.isFinite(payload.constructionCost), true);
+  });
+
+  it("linha HH calcula custo total corretamente", () => {
+    const payload = buildLaborLinePayload({
+      description: "Hora-homem",
+      hours: "4",
+      hourlyRate: "100",
+      lossPercent: "0",
+      notes: "",
+    });
+    const total = calculateLaborLineTotal(payload.quantity, payload.unitCost, payload.lossPercent);
+    assert.equal(total, 400);
+    assert.equal(Number.isFinite(total), true);
   });
 
   it("modal de molde possui campos essenciais no componente", async () => {

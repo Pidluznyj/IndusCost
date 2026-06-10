@@ -7,7 +7,8 @@ import {
   parseProjectsNumberInput,
   suggestAmortizedCostPerUnit,
 } from "@/src/lib/projectsUiUtils";
-import type { ProjectMoldChargeMode, ProjectMoldOwnership } from "@/src/types/projects";
+import { moldRowToForm } from "@/src/lib/projectsUiUtils";
+import type { ProjectMoldChargeMode, ProjectMoldOwnership, ProjectMoldRow } from "@/src/types/projects";
 
 const EMPTY_FORM = {
   name: "",
@@ -29,18 +30,29 @@ const EMPTY_FORM = {
 
 type Props = {
   open: boolean;
+  mode?: "create" | "edit";
+  initial?: ProjectMoldRow | null;
   saving: boolean;
   error: string | null;
   onClose: () => void;
   onSubmit: (payload: ReturnType<typeof buildMoldPayloadFromForm>) => Promise<void>;
 };
 
-export function ProjectMoldFormModal({ open, saving, error, onClose, onSubmit }: Props) {
+export function ProjectMoldFormModal({
+  open,
+  mode = "create",
+  initial,
+  saving,
+  error,
+  onClose,
+  onSubmit,
+}: Props) {
   const [form, setForm] = useState(EMPTY_FORM);
 
   useEffect(() => {
-    if (open) setForm(EMPTY_FORM);
-  }, [open]);
+    if (!open) return;
+    setForm(initial ? moldRowToForm(initial) : EMPTY_FORM);
+  }, [open, initial]);
 
   const suggestedAmort = useMemo(() => {
     const construction = parseProjectsNumberInput(form.constructionCost);
@@ -65,7 +77,7 @@ export function ProjectMoldFormModal({ open, saving, error, onClose, onSubmit }:
 
   return (
     <ProjectModalShell
-      title="Adicionar molde / ferramental"
+      title={mode === "create" ? "Adicionar molde / ferramental" : "Editar molde / ferramental"}
       subtitle="Dados do ferramental para simulação de custo. Não cria cadastro oficial."
       onClose={onClose}
       wide

@@ -10,7 +10,7 @@ function collectFiles(dir: string, acc: string[] = []): string[] {
     const full = join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) collectFiles(full, acc);
-    else if (/\.(tsx?|jsx?)$/.test(entry)) acc.push(full);
+    else if (/\.(tsx?|jsx?)$/.test(entry) && !/\.test\.(tsx?|jsx?)$/.test(entry)) acc.push(full);
   }
   return acc;
 }
@@ -31,8 +31,8 @@ describe("projectsNativeDialogs", () => {
         // ignore
       }
     }
-    const libFiles = collectFiles(join(process.cwd(), "src", "lib"), []).filter((f) =>
-      /projects/i.test(f)
+    const libFiles = collectFiles(join(process.cwd(), "src", "lib"), []).filter(
+      (f) => /projects/i.test(f) && !/\.test\.(tsx?|jsx?)$/.test(f)
     );
     for (const file of [...files, ...libFiles]) {
       const content = readFileSync(file, "utf8");
@@ -49,5 +49,12 @@ describe("projectsNativeDialogs", () => {
     assert.match(mod, /ProjectMoldFormModal/);
     assert.match(mod, /setMoldModalOpen\(true\)/);
     assert.equal(mod.includes("window.prompt"), false);
+  });
+
+  it("exclusão não usa confirm nativo", () => {
+    const mod = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
+    assert.match(mod, /ProjectDeleteConfirmModal/);
+    assert.equal(mod.includes("window.confirm"), false);
+    assert.equal(/\bconfirm\s*\(/.test(mod), false);
   });
 });

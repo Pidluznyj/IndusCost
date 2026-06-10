@@ -1,5 +1,13 @@
-import { calculateAmortizedMoldCostPerUnit, toFiniteNumber } from "@/src/lib/projectsCalculations.js";
-import type { ProjectMoldChargeMode } from "@/src/types/projects.js";
+import {
+  calculateAmortizedMoldCostPerUnit,
+  calculateStructureLineTotalCost,
+  toFiniteNumber,
+} from "@/src/lib/projectsCalculations.js";
+import type {
+  ProjectMoldChargeMode,
+  ProjectMoldRow,
+  ProjectStructureLineRow,
+} from "@/src/types/projects.js";
 
 export function parseProjectsNumberInput(value: string): number | null {
   const trimmed = value.trim();
@@ -93,4 +101,63 @@ export function buildMoldPayloadFromForm(form: {
     ownership: form.ownership,
     notes: form.notes.trim() || null,
   };
+}
+
+export function moldRowToForm(mold: ProjectMoldRow) {
+  return {
+    name: mold.name,
+    moldType: mold.moldType ?? "",
+    cavities: mold.cavities != null ? String(mold.cavities) : "",
+    estimatedLifeCycles: mold.estimatedLifeCycles != null ? String(mold.estimatedLifeCycles) : "",
+    supplierName: mold.supplierName ?? "",
+    constructionCost: formatProjectsNumberInput(mold.constructionCost),
+    maintenanceCost: formatProjectsNumberInput(mold.maintenanceCost),
+    changeCost: formatProjectsNumberInput(mold.changeCost),
+    leadTimeDays: mold.leadTimeDays != null ? String(mold.leadTimeDays) : "",
+    chargeMode: mold.chargeMode,
+    amortizationQuantity: formatProjectsNumberInput(mold.amortizationQuantity),
+    amortizedCostPerUnit: formatProjectsNumberInput(mold.amortizedCostPerUnit),
+    amortizedManual: mold.amortizedCostPerUnit != null,
+    ownership: mold.ownership,
+    notes: mold.notes ?? "",
+  };
+}
+
+export function isLaborStructureLine(line: Pick<ProjectStructureLineRow, "sourceType" | "unitSnapshot" | "lineType">) {
+  return (
+    line.sourceType === "MANUAL" &&
+    (line.unitSnapshot === "HH" || line.lineType === "PROCESS" || line.lineType === "SERVICE")
+  );
+}
+
+export function structureLineTypeLabel(line: Pick<ProjectStructureLineRow, "sourceType" | "unitSnapshot" | "lineType">) {
+  if (isLaborStructureLine(line)) return "HH / Mão de obra";
+  return line.lineType;
+}
+
+export function buildLaborLinePayload(form: {
+  description: string;
+  hours: string;
+  hourlyRate: string;
+  lossPercent: string;
+  notes: string;
+}) {
+  const quantity = parseProjectsNumberInput(form.hours) ?? 0;
+  const unitCost = parseProjectsNumberInput(form.hourlyRate) ?? 0;
+  const lossPercent = parseProjectsNumberInput(form.lossPercent) ?? 0;
+  return {
+    sourceType: "MANUAL" as const,
+    lineType: "PROCESS" as const,
+    description: form.description.trim() || "Hora-homem",
+    unit: "HH",
+    quantity,
+    unitCost,
+    lossPercent,
+    notes: form.notes.trim() || null,
+  };
+}
+
+export function calculateLaborLineTotal(hours: number, hourlyRate: number, lossPercent = 0) {
+  const total = calculateStructureLineTotalCost(hours, hourlyRate, lossPercent);
+  return Number.isFinite(total) ? total : 0;
 }

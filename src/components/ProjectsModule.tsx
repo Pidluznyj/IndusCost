@@ -7,9 +7,11 @@ import {
   ChevronRight,
   FolderKanban,
   Loader2,
+  Pencil,
   Plus,
   Search,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -32,15 +34,23 @@ import {
   projectCommercialOwnerSelectionToPayload,
   type ProjectCommercialOwnerSelection,
 } from "@/src/components/projects/ProjectCommercialOwnerLookupField";
+import { ProjectDeleteConfirmModal } from "@/src/components/projects/ProjectDeleteConfirmModal";
+import { ProjectLaborLineModal } from "@/src/components/projects/ProjectLaborLineModal";
 import { ProjectMoldFormModal } from "@/src/components/projects/ProjectMoldFormModal";
-import { ProjectSimpleDescriptionModal } from "@/src/components/projects/ProjectSimpleDescriptionModal";
+import { ProjectSimulatedItemFormModal } from "@/src/components/projects/ProjectSimulatedItemFormModal";
+import { ProjectSimulatedProductFormModal } from "@/src/components/projects/ProjectSimulatedProductFormModal";
+import { ProjectStructureLineEditModal } from "@/src/components/projects/ProjectStructureLineEditModal";
 import { ProjectStructureLineModal } from "@/src/components/projects/ProjectStructureLineModal";
+import { MOLD_CHARGE_MODE_OPTIONS, structureLineTypeLabel } from "@/src/lib/projectsUiUtils";
 import type {
   ProjectDashboardPayload,
   ProjectDetail,
   ProjectListResponse,
-  ProjectSimulatedItemType,
+  ProjectMoldRow,
+  ProjectSimulatedItemRow,
+  ProjectSimulatedProductRow,
   ProjectStatus,
+  ProjectStructureLineRow,
   ProjectStructureSourceType,
   ProjectType,
 } from "@/src/types/projects";
@@ -67,6 +77,50 @@ const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
   CANCELLED: "Cancelado",
   CONVERTED: "Convertido",
 };
+
+const MOLD_CHARGE_LABEL = Object.fromEntries(
+  MOLD_CHARGE_MODE_OPTIONS.map((o) => [o.value, o.label])
+) as Record<string, string>;
+
+type DeleteTarget =
+  | { kind: "product"; id: string; label: string }
+  | { kind: "item"; id: string; label: string }
+  | { kind: "structure"; id: string; label: string }
+  | { kind: "mold"; id: string; label: string };
+
+function RowActions({
+  canManage,
+  onEdit,
+  onDelete,
+}: {
+  canManage: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  if (!canManage) return null;
+  return (
+    <td className="px-3 py-2">
+      <div className="flex justify-end gap-1">
+        <button
+          type="button"
+          title="Editar"
+          onClick={onEdit}
+          className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          title="Excluir"
+          onClick={onDelete}
+          className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </td>
+  );
+}
 
 const SOURCE_BADGE: Record<ProjectStructureSourceType, { label: string; className: string }> = {
   EXISTING_PRODUCT: { label: "Existente", className: "bg-blue-100 text-blue-800" },
@@ -430,12 +484,28 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [moldModalOpen, setMoldModalOpen] = useState(false);
+  const [moldModalMode, setMoldModalMode] = useState<"create" | "edit">("create");
+  const [editingMold, setEditingMold] = useState<ProjectMoldRow | null>(null);
   const [moldModalError, setMoldModalError] = useState<string | null>(null);
   const [productModalOpen, setProductModalOpen] = useState(false);
+  const [productModalMode, setProductModalMode] = useState<"create" | "edit">("create");
+  const [editingProduct, setEditingProduct] = useState<ProjectSimulatedProductRow | null>(null);
   const [itemModalOpen, setItemModalOpen] = useState(false);
+  const [itemModalMode, setItemModalMode] = useState<"create" | "edit">("create");
+  const [editingItem, setEditingItem] = useState<ProjectSimulatedItemRow | null>(null);
   const [structureModalSource, setStructureModalSource] =
     useState<ProjectStructureSourceType | null>(null);
+  const [editingStructureLine, setEditingStructureLine] = useState<ProjectStructureLineRow | null>(
+    null
+  );
+  const [laborModalOpen, setLaborModalOpen] = useState(false);
+  const [laborModalMode, setLaborModalMode] = useState<"create" | "edit">("create");
+  const [editingLaborLine, setEditingLaborLine] = useState<ProjectStructureLineRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notesStatus, setNotesStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -443,6 +513,8 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
     try {
       const data = await fetchJsonOk<ProjectDetail>(`/api/projects/${projectId}`);
       setDetail(data);
+      setNotesDraft(data.notes ?? "");
+      setNotesStatus("idle");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao carregar projeto.");
     } finally {
@@ -463,10 +535,48 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
         body: JSON.stringify(body),
       });
       setDetail(data);
+      return data;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar.");
+      const message = e instanceof Error ? e.message : "Erro ao salvar.";
+      setError(message);
+      throw e;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setSaving(true);
+    setDeleteError(null);
+    try {
+      const base = `/api/projects/${projectId}`;
+      if (deleteTarget.kind === "product") {
+        await fetchJsonOk(`${base}/simulated-products/${deleteTarget.id}`, { method: "DELETE" });
+      } else if (deleteTarget.kind === "item") {
+        await fetchJsonOk(`${base}/simulated-items/${deleteTarget.id}`, { method: "DELETE" });
+      } else if (deleteTarget.kind === "structure") {
+        await fetchJsonOk(`${base}/structure-lines/${deleteTarget.id}`, { method: "DELETE" });
+      } else if (deleteTarget.kind === "mold") {
+        await fetchJsonOk(`${base}/molds/${deleteTarget.id}`, { method: "DELETE" });
+      }
+      setDeleteTarget(null);
+      await load();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Erro ao excluir.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveNotes = async () => {
+    setNotesStatus("saving");
+    try {
+      await patchProject({ notes: notesDraft });
+      setNotesStatus("saved");
+      window.setTimeout(() => setNotesStatus("idle"), 2000);
+    } catch {
+      setNotesStatus("error");
     }
   };
 
@@ -658,9 +768,12 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
         <EntitySection
           title="Produtos simulados"
           canManage={canManage}
+          isEmpty={detail.simulatedProducts.length === 0}
           empty="Nenhum produto simulado."
           onAddClick={() => {
             setModalError(null);
+            setProductModalMode("create");
+            setEditingProduct(null);
             setProductModalOpen(true);
           }}
           rows={detail.simulatedProducts.map((p) => (
@@ -670,9 +783,21 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
               <td className="px-3 py-2">{p.unit}</td>
               <td className="px-3 py-2">{p.expectedVolume ?? "—"}</td>
               <td className="px-3 py-2">{p.batchSize ?? "—"}</td>
+              <RowActions
+                canManage={canManage}
+                onEdit={() => {
+                  setModalError(null);
+                  setProductModalMode("edit");
+                  setEditingProduct(p);
+                  setProductModalOpen(true);
+                }}
+                onDelete={() =>
+                  setDeleteTarget({ kind: "product", id: p.id, label: p.description })
+                }
+              />
             </tr>
           ))}
-          headers={["Código prov.", "Descrição", "Un.", "Volume", "Lote"]}
+          headers={["Código prov.", "Descrição", "Un.", "Volume", "Lote", ""]}
         />
       ) : null}
 
@@ -684,6 +809,29 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
             setModalError(null);
             setStructureModalSource(sourceType);
           }}
+          onAddLabor={() => {
+            setModalError(null);
+            setLaborModalMode("create");
+            setEditingLaborLine(null);
+            setLaborModalOpen(true);
+          }}
+          onEditLine={(line) => {
+            setModalError(null);
+            if (line.unitSnapshot === "HH" || (line.sourceType === "MANUAL" && (line.lineType === "PROCESS" || line.lineType === "SERVICE"))) {
+              setLaborModalMode("edit");
+              setEditingLaborLine(line);
+              setLaborModalOpen(true);
+            } else {
+              setEditingStructureLine(line);
+            }
+          }}
+          onDeleteLine={(line) =>
+            setDeleteTarget({
+              kind: "structure",
+              id: line.id,
+              label: line.descriptionSnapshot,
+            })
+          }
         />
       ) : null}
 
@@ -691,9 +839,12 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
         <EntitySection
           title="Itens simulados (não viram cadastro oficial)"
           canManage={canManage}
+          isEmpty={detail.simulatedItems.length === 0}
           empty="Nenhum item simulado."
           onAddClick={() => {
             setModalError(null);
+            setItemModalMode("create");
+            setEditingItem(null);
             setItemModalOpen(true);
           }}
           rows={detail.simulatedItems.map((i) => (
@@ -707,9 +858,21 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
               <td className="px-3 py-2">{i.itemType}</td>
               <td className="px-3 py-2">{formatMoney(i.quotedUnitCost ?? i.estimatedUnitCost)}</td>
               <td className="px-3 py-2">{i.requiresQuotation ? "Sim" : "Não"}</td>
+              <RowActions
+                canManage={canManage}
+                onEdit={() => {
+                  setModalError(null);
+                  setItemModalMode("edit");
+                  setEditingItem(i);
+                  setItemModalOpen(true);
+                }}
+                onDelete={() =>
+                  setDeleteTarget({ kind: "item", id: i.id, label: i.description })
+                }
+              />
             </tr>
           ))}
-          headers={["Origem", "Descrição", "Tipo", "Custo", "Cotação?"]}
+          headers={["Origem", "Descrição", "Tipo", "Custo", "Cotação?", ""]}
         />
       ) : null}
 
@@ -717,22 +880,35 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
         <EntitySection
           title="Molde / Ferramental"
           canManage={canManage}
+          isEmpty={detail.molds.length === 0}
           empty="Nenhum molde cadastrado."
           onAddClick={() => {
             setMoldModalError(null);
+            setMoldModalMode("create");
+            setEditingMold(null);
             setMoldModalOpen(true);
           }}
           rows={detail.molds.map((m) => (
             <tr key={m.id} className="border-b border-border/60">
               <td className="px-3 py-2">{m.name}</td>
-              <td className="px-3 py-2">{m.chargeMode}</td>
+              <td className="px-3 py-2">{MOLD_CHARGE_LABEL[m.chargeMode] ?? m.chargeMode}</td>
               <td className="px-3 py-2">{formatMoney(m.constructionCost)}</td>
               <td className="px-3 py-2">{m.amortizationQuantity ?? "—"}</td>
               <td className="px-3 py-2">{formatMoney(m.amortizedCostPerUnit)}</td>
               <td className="px-3 py-2">{m.ownership}</td>
+              <RowActions
+                canManage={canManage}
+                onEdit={() => {
+                  setMoldModalError(null);
+                  setMoldModalMode("edit");
+                  setEditingMold(m);
+                  setMoldModalOpen(true);
+                }}
+                onDelete={() => setDeleteTarget({ kind: "mold", id: m.id, label: m.name })}
+              />
             </tr>
           ))}
-          headers={["Nome", "Cobrança", "Construção", "Qtd amort.", "Custo/un.", "Propriedade"]}
+          headers={["Nome", "Cobrança", "Construção", "Qtd amort.", "Custo/un.", "Propriedade", ""]}
         />
       ) : null}
 
@@ -802,15 +978,34 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
 
       {tab === "notes" ? (
         <div className="rounded-xl border border-border bg-card p-5">
-          <h4 className="font-semibold">Observações técnicas e comerciais</h4>
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="font-semibold">Observações técnicas e comerciais</h4>
+            {canManage ? (
+              <div className="flex items-center gap-2">
+                {notesStatus === "saved" ? (
+                  <span className="text-xs text-emerald-700">Salvo</span>
+                ) : null}
+                {notesStatus === "error" ? (
+                  <span className="text-xs text-destructive">Erro ao salvar</span>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={saving || notesStatus === "saving"}
+                  onClick={() => void saveNotes()}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                >
+                  {notesStatus === "saving" ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            ) : null}
+          </div>
           {canManage ? (
             <textarea
               className="mt-3 min-h-[160px] w-full rounded-lg border border-border px-3 py-2 text-sm"
-              defaultValue={detail.notes ?? ""}
-              onBlur={(e) => {
-                if (e.target.value !== (detail.notes ?? "")) {
-                  patchProject({ notes: e.target.value });
-                }
+              value={notesDraft}
+              onChange={(e) => {
+                setNotesDraft(e.target.value);
+                setNotesStatus("idle");
               }}
             />
           ) : (
@@ -823,19 +1018,33 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
 
       <ProjectMoldFormModal
         open={moldModalOpen}
+        mode={moldModalMode}
+        initial={editingMold}
         saving={saving}
         error={moldModalError}
-        onClose={() => setMoldModalOpen(false)}
+        onClose={() => {
+          setMoldModalOpen(false);
+          setEditingMold(null);
+        }}
         onSubmit={async (payload) => {
           setSaving(true);
           setMoldModalError(null);
           try {
-            await fetchJsonOk(`/api/projects/${projectId}/molds`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
-            });
+            if (moldModalMode === "edit" && editingMold) {
+              await fetchJsonOk(`/api/projects/${projectId}/molds/${editingMold.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+            } else {
+              await fetchJsonOk(`/api/projects/${projectId}/molds`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+            }
             setMoldModalOpen(false);
+            setEditingMold(null);
             await load();
           } catch (e) {
             setMoldModalError(e instanceof Error ? e.message : "Erro ao salvar molde.");
@@ -845,64 +1054,178 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
         }}
       />
 
-      <ProjectSimpleDescriptionModal
+      <ProjectSimulatedProductFormModal
         open={productModalOpen}
-        title="Adicionar produto simulado"
-        label="Descrição"
-        placeholder="Descrição do produto simulado"
-        submitLabel="Adicionar"
+        mode={productModalMode}
+        initial={editingProduct}
         saving={saving}
         error={modalError}
-        onClose={() => setProductModalOpen(false)}
-        onSubmit={async (description) => {
+        onClose={() => {
+          setProductModalOpen(false);
+          setEditingProduct(null);
+        }}
+        onSubmit={async (payload) => {
           setSaving(true);
           setModalError(null);
           try {
-            await fetchJsonOk(`/api/projects/${projectId}/simulated-products`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ description }),
-            });
+            if (productModalMode === "edit" && editingProduct) {
+              await fetchJsonOk(
+                `/api/projects/${projectId}/simulated-products/${editingProduct.id}`,
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload),
+                }
+              );
+            } else {
+              await fetchJsonOk(`/api/projects/${projectId}/simulated-products`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+            }
             setProductModalOpen(false);
+            setEditingProduct(null);
             await load();
           } catch (e) {
-            setModalError(e instanceof Error ? e.message : "Erro ao adicionar produto.");
+            setModalError(e instanceof Error ? e.message : "Erro ao salvar produto.");
           } finally {
             setSaving(false);
           }
         }}
       />
 
-      <ProjectSimpleDescriptionModal
+      <ProjectSimulatedItemFormModal
         open={itemModalOpen}
-        title="Adicionar item simulado"
-        subtitle="Item permanece apenas neste projeto — não vira cadastro oficial."
-        label="Descrição"
-        placeholder="Descrição do item simulado"
-        submitLabel="Adicionar"
+        mode={itemModalMode}
+        initial={editingItem}
         saving={saving}
         error={modalError}
-        onClose={() => setItemModalOpen(false)}
-        onSubmit={async (description) => {
+        onClose={() => {
+          setItemModalOpen(false);
+          setEditingItem(null);
+        }}
+        onSubmit={async (payload) => {
           setSaving(true);
           setModalError(null);
           try {
-            await fetchJsonOk(`/api/projects/${projectId}/simulated-items`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                description,
-                itemType: "RAW_MATERIAL" as ProjectSimulatedItemType,
-              }),
-            });
+            if (itemModalMode === "edit" && editingItem) {
+              await fetchJsonOk(`/api/projects/${projectId}/simulated-items/${editingItem.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+            } else {
+              await fetchJsonOk(`/api/projects/${projectId}/simulated-items`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+            }
             setItemModalOpen(false);
+            setEditingItem(null);
             await load();
           } catch (e) {
-            setModalError(e instanceof Error ? e.message : "Erro ao adicionar item.");
+            setModalError(e instanceof Error ? e.message : "Erro ao salvar item.");
           } finally {
             setSaving(false);
           }
         }}
+      />
+
+      <ProjectLaborLineModal
+        open={laborModalOpen}
+        mode={laborModalMode}
+        initial={editingLaborLine}
+        saving={saving}
+        error={modalError}
+        onClose={() => {
+          setLaborModalOpen(false);
+          setEditingLaborLine(null);
+        }}
+        onSubmit={async (body) => {
+          setSaving(true);
+          setModalError(null);
+          try {
+            await fetchJsonOk(`/api/projects/${projectId}/structure-lines`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            setLaborModalOpen(false);
+            await load();
+          } catch (e) {
+            setModalError(e instanceof Error ? e.message : "Erro ao adicionar HH.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+        onSubmitEdit={
+          laborModalMode === "edit" && editingLaborLine
+            ? async (body) => {
+                setSaving(true);
+                setModalError(null);
+                try {
+                  await fetchJsonOk(
+                    `/api/projects/${projectId}/structure-lines/${editingLaborLine.id}`,
+                    {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    }
+                  );
+                  setLaborModalOpen(false);
+                  setEditingLaborLine(null);
+                  await load();
+                } catch (e) {
+                  setModalError(e instanceof Error ? e.message : "Erro ao salvar HH.");
+                } finally {
+                  setSaving(false);
+                }
+              }
+            : undefined
+        }
+      />
+
+      <ProjectStructureLineEditModal
+        open={editingStructureLine != null}
+        line={editingStructureLine}
+        saving={saving}
+        error={modalError}
+        onClose={() => setEditingStructureLine(null)}
+        onSubmit={async (body) => {
+          if (!editingStructureLine) return;
+          setSaving(true);
+          setModalError(null);
+          try {
+            await fetchJsonOk(
+              `/api/projects/${projectId}/structure-lines/${editingStructureLine.id}`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              }
+            );
+            setEditingStructureLine(null);
+            await load();
+          } catch (e) {
+            setModalError(e instanceof Error ? e.message : "Erro ao salvar linha.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+
+      <ProjectDeleteConfirmModal
+        open={deleteTarget != null}
+        itemLabel={deleteTarget?.label}
+        saving={saving}
+        error={deleteError}
+        onClose={() => {
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+        onConfirm={handleDelete}
       />
 
       <ProjectStructureLineModal
@@ -939,6 +1262,7 @@ function EntitySection({
   headers,
   rows,
   empty,
+  isEmpty,
   canManage,
   onAddClick,
 }: {
@@ -946,6 +1270,7 @@ function EntitySection({
   headers: string[];
   rows: React.ReactNode;
   empty: string;
+  isEmpty?: boolean;
   canManage: boolean;
   onAddClick?: () => void;
 }) {
@@ -975,11 +1300,18 @@ function EntitySection({
               ))}
             </tr>
           </thead>
-          <tbody>{rows}</tbody>
+          <tbody>
+            {isEmpty ? (
+              <tr>
+                <td colSpan={headers.length} className="px-4 py-8 text-center text-muted-foreground">
+                  {empty}
+                </td>
+              </tr>
+            ) : (
+              rows
+            )}
+          </tbody>
         </table>
-        {!rows ? (
-          <p className="px-4 py-8 text-center text-muted-foreground">{empty}</p>
-        ) : null}
       </div>
     </div>
   );
@@ -989,10 +1321,16 @@ function StructureTab({
   detail,
   canManage,
   onAddLine,
+  onAddLabor,
+  onEditLine,
+  onDeleteLine,
 }: {
   detail: ProjectDetail;
   canManage: boolean;
   onAddLine: (sourceType: ProjectStructureSourceType) => void;
+  onAddLabor: () => void;
+  onEditLine: (line: ProjectStructureLineRow) => void;
+  onDeleteLine: (line: ProjectStructureLineRow) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -1012,6 +1350,9 @@ function StructureTab({
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("MANUAL")}>
               + Manual
             </button>
+            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={onAddLabor}>
+              + HH / Mão de obra
+            </button>
           </div>
         ) : null}
       </div>
@@ -1027,6 +1368,7 @@ function StructureTab({
               <th className="px-3 py-2">Perda</th>
               <th className="px-3 py-2">Custo un.</th>
               <th className="px-3 py-2">Total</th>
+              {canManage ? <th className="px-3 py-2" /> : null}
             </tr>
           </thead>
           <tbody>
@@ -1039,19 +1381,24 @@ function StructureTab({
                       {badge.label}
                     </span>
                   </td>
-                  <td className="px-3 py-2">{line.lineType}</td>
+                  <td className="px-3 py-2">{structureLineTypeLabel(line)}</td>
                   <td className="px-3 py-2">{line.descriptionSnapshot}</td>
                   <td className="px-3 py-2">{line.quantity}</td>
                   <td className="px-3 py-2">{line.unitSnapshot}</td>
                   <td className="px-3 py-2">{formatPercent(line.lossPercent)}</td>
                   <td className="px-3 py-2">{formatMoney(line.unitCostSnapshot)}</td>
                   <td className="px-3 py-2">{formatMoney(line.totalCost)}</td>
+                  <RowActions
+                    canManage={canManage}
+                    onEdit={() => onEditLine(line)}
+                    onDelete={() => onDeleteLine(line)}
+                  />
                 </tr>
               );
             })}
             {!detail.structureLines.length ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={canManage ? 9 : 8} className="px-4 py-8 text-center text-muted-foreground">
                   Nenhuma linha de estrutura.
                 </td>
               </tr>
