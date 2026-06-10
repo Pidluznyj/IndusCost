@@ -113,6 +113,8 @@ export const PERMISSION_TEMPLATES: Record<
       "opex.view",
       "simulations.view",
       "simulations.create",
+      "projects.view",
+      "projects.manage",
     ],
   },
   system_admin: {

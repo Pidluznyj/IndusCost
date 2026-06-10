@@ -25,6 +25,11 @@ describe("modulePermissions — alinhamento UI/API (INT-008, INT-009, INT-010)",
     assert.equal(canAccessModule("taxes", checker(["taxes.view"])), true);
   });
 
+  it("projects.view abre módulo Projetos", () => {
+    assert.equal(canAccessModule("projects", checker(["settings.view"])), false);
+    assert.equal(canAccessModule("projects", checker(["projects.view"])), true);
+  });
+
   it("INT-008: só products.view não mostra abas cost/composition", () => {
     const tabs = getVisibleProductTabs(checker(["products.view"]));
     assert.equal(tabs.includes("cost"), false);

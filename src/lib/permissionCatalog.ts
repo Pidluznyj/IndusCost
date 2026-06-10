@@ -36,6 +36,7 @@ const PRC = "Precificação / Impostos";
 const OPS = "Custos / Operação";
 const SYS = "Configurações / Sistema";
 const MNT = "Manutenção";
+const PRJ = "Projetos";
 const FLT = "Gestão de Frota";
 
 const FIN = "Financeiro";
@@ -706,6 +707,48 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "settings.operational.view",
     requires: ["settings.view", "settings.operational.view"],
     risk: "sensitive",
+  }),
+
+  // —— Projetos ——
+  perm({
+    key: "projects.view",
+    label: "Projetos",
+    group: PRJ,
+    module: "projects",
+    description: "Acessar orçamentos técnicos e simulações de novos produtos, componentes e moldes.",
+    type: "menu",
+  }),
+  perm({
+    key: "projects.manage",
+    label: "Projetos — Gerenciar",
+    group: PRJ,
+    module: "projects",
+    description: "Criar e editar projetos, versões, estruturas simuladas e moldes.",
+    type: "action",
+    parentKey: "projects.view",
+    requires: ["projects.view"],
+  }),
+  perm({
+    key: "projects.approve",
+    label: "Projetos — Aprovar",
+    group: PRJ,
+    module: "projects",
+    description: "Aprovar orçamentos técnicos de projetos.",
+    type: "action",
+    parentKey: "projects.view",
+    requires: ["projects.view"],
+    risk: "sensitive",
+  }),
+  perm({
+    key: "projects.convert",
+    label: "Projetos — Converter em cadastro oficial",
+    group: PRJ,
+    module: "projects",
+    description: "Converter projeto aprovado em produto, componente, BOM e roteiro oficiais (ação futura).",
+    type: "action",
+    parentKey: "projects.view",
+    requires: ["projects.view", "projects.manage"],
+    risk: "critical",
   }),
 
   // —— Manutenção ——

@@ -118,6 +118,7 @@ model Material {
   MaterialPriceHistory MaterialPriceHistory[]
   ProductBOM           ProductBOM[]
   PurchaseRequestItem  PurchaseRequestItem[]
+  ProjectStructureLine ProjectStructureLine[]
 }
 
 model MaterialPriceHistory {
@@ -157,7 +158,8 @@ model Product {
   ProductRouting     ProductRouting[]
   ProposalItem       ProposalItem[]
   SalesOrderItem     SalesOrderItem[]
-  PriceTableItem     PriceTableItem[]
+  PriceTableItem         PriceTableItem[]
+  ProjectStructureLine   ProjectStructureLine[]
 
   @@index([type], map: "idx_Product_type")
   @@index([isNomusControlled], map: "idx_Product_isNomusControlled")
@@ -2433,4 +2435,248 @@ model FleetSettings {
   description String?
   updatedBy   String?
   updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+// —— Projetos (orçamentos técnicos / simulações) ——
+
+enum ProjectType {
+  NEW_PRODUCT
+  NEW_COMPONENT
+  MOLD
+  PRODUCT_CHANGE
+  PRODUCT_WITH_NEW_COMPONENT
+  FULL_DEVELOPMENT
+  QUICK_ESTIMATE
+}
+
+enum ProjectStatus {
+  DRAFT
+  TECHNICAL_ANALYSIS
+  WAITING_QUOTATION
+  WAITING_INTERNAL_APPROVAL
+  SENT_TO_CUSTOMER
+  NEGOTIATION
+  APPROVED
+  REJECTED
+  CANCELLED
+  CONVERTED
+}
+
+enum ProjectSimulatedItemType {
+  RAW_MATERIAL
+  COMPONENT
+  FINISHED_PRODUCT
+  PACKAGING
+  SERVICE
+  MOLD
+  TOOLING
+  OUTSOURCED_PROCESS
+  OTHER
+}
+
+enum ProjectStructureSourceType {
+  EXISTING_PRODUCT
+  EXISTING_MATERIAL
+  SIMULATED_ITEM
+  MANUAL
+}
+
+enum ProjectStructureLineType {
+  RAW_MATERIAL
+  COMPONENT
+  PACKAGING
+  SERVICE
+  PROCESS
+  MOLD_AMORTIZATION
+  OTHER
+}
+
+enum ProjectMoldChargeMode {
+  CHARGED_SEPARATELY
+  AMORTIZED_IN_PRODUCT
+  PARTIALLY_ABSORBED
+  INTERNAL_INVESTMENT
+}
+
+enum ProjectMoldOwnership {
+  CUSTOMER
+  COMPANY
+  SHARED
+  UNDEFINED
+}
+
+model Project {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number                Int           @unique @default(autoincrement())
+  code                  String        @unique
+  title                 String
+  customerName          String
+  customerDocument      String?
+  description           String?
+  projectType           ProjectType
+  status                ProjectStatus @default(DRAFT)
+  commercialOwner       String?
+  technicalOwner        String?
+  expectedMonthlyVolume Decimal?      @db.Decimal(20, 6)
+  targetPrice           Decimal?      @db.Decimal(20, 6)
+  targetMarginPercent   Decimal?      @db.Decimal(10, 6)
+  notes                 String?
+  createdAt             DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  versions          ProjectVersion[]
+  simulatedProducts ProjectSimulatedProduct[]
+  simulatedItems    ProjectSimulatedItem[]
+  structureLines    ProjectStructureLine[]
+  molds             ProjectMold[]
+
+  @@index([status])
+  @@index([projectType])
+  @@index([customerName])
+  @@index([updatedAt])
+}
+
+model ProjectVersion {
+  id                     String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId              String        @db.Uuid
+  versionNumber          Int
+  title                  String?
+  status                 ProjectStatus @default(DRAFT)
+  assumptionsJson        String?
+  totalEstimatedCost     Decimal?      @db.Decimal(20, 6)
+  totalMoldCost          Decimal?      @db.Decimal(20, 6)
+  totalAmortizedMoldCost Decimal?      @db.Decimal(20, 6)
+  unitCost               Decimal?      @db.Decimal(20, 6)
+  suggestedPrice         Decimal?      @db.Decimal(20, 6)
+  marginPercent          Decimal?      @db.Decimal(10, 6)
+  markupPercent          Decimal?      @db.Decimal(10, 6)
+  expectedVolume         Decimal?      @db.Decimal(20, 6)
+  notes                  String?
+  isCurrent              Boolean       @default(false)
+  createdAt              DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  project           Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  simulatedProducts ProjectSimulatedProduct[]
+  simulatedItems    ProjectSimulatedItem[]
+  structureLines    ProjectStructureLine[]
+  molds             ProjectMold[]
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId])
+  @@index([isCurrent])
+}
+
+model ProjectSimulatedProduct {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String    @db.Uuid
+  versionId       String    @db.Uuid
+  provisionalCode String?
+  description     String
+  unit            String    @default("UN")
+  estimatedWeight Decimal?  @db.Decimal(20, 6)
+  expectedVolume  Decimal?  @db.Decimal(20, 6)
+  batchSize       Decimal?  @db.Decimal(20, 6)
+  notes           String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  project        Project                @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  version        ProjectVersion         @relation(fields: [versionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  structureLines ProjectStructureLine[]
+
+  @@index([projectId])
+  @@index([versionId])
+}
+
+model ProjectSimulatedItem {
+  id                        String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId                 String                   @db.Uuid
+  versionId                 String                   @db.Uuid
+  provisionalCode           String?
+  description               String
+  itemType                  ProjectSimulatedItemType
+  unit                      String                   @default("UN")
+  estimatedUnitCost         Decimal?                 @db.Decimal(20, 6)
+  quotedUnitCost            Decimal?                 @db.Decimal(20, 6)
+  supplierName              String?
+  leadTimeDays              Int?
+  estimatedWeight           Decimal?                 @db.Decimal(20, 6)
+  lossPercent               Decimal?                 @default(0) @db.Decimal(10, 6)
+  requiresQuotation         Boolean                  @default(false)
+  requiresEngineeringReview Boolean                  @default(false)
+  canBecomeOfficial         Boolean                  @default(true)
+  notes                     String?
+  createdAt                 DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt                 DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+
+  project        Project                @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  version        ProjectVersion         @relation(fields: [versionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  structureLines ProjectStructureLine[]
+
+  @@index([projectId])
+  @@index([versionId])
+  @@index([itemType])
+}
+
+model ProjectStructureLine {
+  id                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId           String                     @db.Uuid
+  versionId           String                     @db.Uuid
+  simulatedProductId  String?                    @db.Uuid
+  lineType            ProjectStructureLineType
+  sourceType          ProjectStructureSourceType
+  existingProductId   String?                    @db.Uuid
+  existingMaterialId  String?                    @db.Uuid
+  simulatedItemId     String?                    @db.Uuid
+  descriptionSnapshot String
+  unitSnapshot        String
+  quantity            Decimal                    @db.Decimal(20, 6)
+  lossPercent         Decimal?                   @default(0) @db.Decimal(10, 6)
+  unitCostSnapshot    Decimal                    @db.Decimal(20, 6)
+  totalCost           Decimal                    @db.Decimal(20, 6)
+  supplierNameSnapshot String?
+  notes               String?
+  sortOrder           Int                        @default(0)
+  createdAt           DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  project          Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  version          ProjectVersion           @relation(fields: [versionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  simulatedProduct ProjectSimulatedProduct? @relation(fields: [simulatedProductId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  existingProduct  Product?                 @relation(fields: [existingProductId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  existingMaterial Material?                @relation(fields: [existingMaterialId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  simulatedItem    ProjectSimulatedItem?    @relation(fields: [simulatedItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([projectId])
+  @@index([versionId])
+  @@index([simulatedProductId])
+}
+
+model ProjectMold {
+  id                     String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId              String                @db.Uuid
+  versionId              String                @db.Uuid
+  name                   String
+  moldType               String?
+  cavities               Int?
+  estimatedLifeCycles    Int?
+  supplierName           String?
+  constructionCost       Decimal               @default(0) @db.Decimal(20, 6)
+  maintenanceCost        Decimal?              @db.Decimal(20, 6)
+  changeCost             Decimal?              @db.Decimal(20, 6)
+  leadTimeDays           Int?
+  chargeMode             ProjectMoldChargeMode @default(CHARGED_SEPARATELY)
+  amortizationQuantity   Decimal?              @db.Decimal(20, 6)
+  amortizedCostPerUnit   Decimal?              @db.Decimal(20, 6)
+  ownership              ProjectMoldOwnership  @default(UNDEFINED)
+  notes                  String?
+  createdAt              DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  version ProjectVersion @relation(fields: [versionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([projectId])
+  @@index([versionId])
 }

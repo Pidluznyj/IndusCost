@@ -19,6 +19,7 @@ import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
+import { ProjectsModule } from "./components/ProjectsModule";
 import { FleetModule } from "./components/FleetModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
 import { FleetPublicReservationPage } from "./components/fleet/FleetPublicReservationPage";
@@ -348,6 +349,39 @@ export default function App() {
               description="Controle de solicitações de manutenção predial/facilities, responsáveis, status e materiais."
             >
               <MaintenanceModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="projects"
+          element={
+            <ModulePageShell
+              title="Projetos"
+              description="Orçamentos técnicos, simulações de novos produtos, componentes e moldes."
+            >
+              <ProjectsModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="projects/:projectId"
+          element={
+            <ModulePageShell
+              title="Projetos"
+              description="Orçamentos técnicos, simulações de novos produtos, componentes e moldes."
+            >
+              <ProjectsModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="projects/:projectId/:tab"
+          element={
+            <ModulePageShell
+              title="Projetos"
+              description="Orçamentos técnicos, simulações de novos produtos, componentes e moldes."
+            >
+              <ProjectsModule />
             </ModulePageShell>
           }
         />
