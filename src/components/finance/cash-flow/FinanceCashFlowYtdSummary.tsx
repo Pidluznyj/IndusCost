@@ -7,7 +7,10 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import type { FinanceCashFlowExecutiveYtd } from "@/src/lib/financeCashFlowExecutiveYtd";
+import type {
+  FinanceCashFlowExecutiveYtd,
+  FinanceCashFlowExecutiveYtdReceived,
+} from "@/src/lib/financeCashFlowExecutiveYtd";
 import { formatCashFlowKpiDisplay } from "@/src/lib/financeCashFlowDisplay";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceCashFlowYtdTrendChart } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdTrendChart";
@@ -22,6 +25,7 @@ function CompactYtdCard({
   icon: Icon,
   colorClass,
   featured = false,
+  titleExtra,
 }: {
   testId: string;
   label: string;
@@ -31,11 +35,12 @@ function CompactYtdCard({
   icon: React.ElementType;
   colorClass: string;
   featured?: boolean;
+  titleExtra?: string;
 }) {
   return (
     <div
       data-testid={testId}
-      title={valueFull}
+      title={titleExtra ? `${valueFull}\n${titleExtra}` : valueFull}
       className={cn(
         "rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 min-h-[88px] flex flex-col justify-between",
         featured && "ring-1 ring-[#2563EB]/20 border-[#BFDBFE]"
@@ -55,7 +60,14 @@ function CompactYtdCard({
       >
         {value}
       </p>
-      <p className="text-[10px] text-[#6B7280] leading-snug mt-0.5">{sub}</p>
+      <p
+        className={cn(
+          "text-[10px] text-[#6B7280] leading-snug mt-0.5",
+          titleExtra && "whitespace-pre-line"
+        )}
+      >
+        {sub}
+      </p>
     </div>
   );
 }
@@ -74,6 +86,8 @@ export function FinanceCashFlowYtdSummary({
   const isDeficit = executiveYtd.netCashPosition < 0;
   const netKpi = formatCashFlowKpiDisplay(executiveYtd.netCashPosition);
   const receivableKpi = formatCashFlowKpiDisplay(executiveYtd.totalReceivableOpen);
+  const receivedKpi = formatCashFlowKpiDisplay(executiveYtd.received.currentAmount);
+  const receivedSub = formatReceivedComparisonSub(executiveYtd.received);
   const payableKpi = formatCashFlowKpiDisplay(executiveYtd.totalPayableOpen);
   const needKpi = formatCashFlowKpiDisplay(
     isDeficit ? executiveYtd.cashNeedAmount : executiveYtd.cashSurplusAmount
@@ -136,7 +150,7 @@ export function FinanceCashFlowYtdSummary({
       </div>
 
       <div className="p-4 space-y-3">
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
           <CompactYtdCard
             testId="ytd-kpi-net-position"
             label="Posição líquida YTD"
@@ -155,6 +169,22 @@ export function FinanceCashFlowYtdSummary({
             sub="Saldo AR em aberto"
             icon={ArrowDownRight}
             colorClass="text-[#059669]"
+          />
+          <CompactYtdCard
+            testId="ytd-kpi-received"
+            label="Recebido YTD"
+            value={receivedKpi.display}
+            valueFull={receivedKpi.full}
+            sub={receivedSub.short}
+            icon={
+              executiveYtd.received.direction === "up"
+                ? TrendingUp
+                : executiveYtd.received.direction === "down"
+                  ? TrendingDown
+                  : CircleDollarSign
+            }
+            colorClass={receivedComparisonColor(executiveYtd.received.direction)}
+            titleExtra={receivedSub.full}
           />
           <CompactYtdCard
             testId="ytd-kpi-payable"
@@ -225,6 +255,42 @@ export function FinanceCashFlowYtdSummary({
       </div>
     </section>
   );
+}
+
+function receivedComparisonColor(
+  direction: FinanceCashFlowExecutiveYtdReceived["direction"]
+): string {
+  if (direction === "up") return "text-[#059669]";
+  if (direction === "down") return "text-[#DC2626]";
+  return "text-[#2563EB]";
+}
+
+function formatReceivedComparisonSub(received: FinanceCashFlowExecutiveYtdReceived): {
+  short: string;
+  full: string;
+} {
+  const prev = formatCashFlowKpiDisplay(received.previousAmount);
+  const prevLine = `Mesmo período ${received.previousYear}: ${prev.display}`;
+
+  if (received.direction === "no_previous") {
+    return {
+      short: "Sem base no ano anterior",
+      full: `${prevLine}\nSem comparação percentual`,
+    };
+  }
+
+  const delta = formatCashFlowKpiDisplay(Math.abs(received.deltaAmount));
+  const sign = received.deltaAmount >= 0 ? "+" : "-";
+  const pct =
+    received.deltaPercent != null
+      ? `${received.deltaPercent >= 0 ? "+" : ""}${received.deltaPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`
+      : "";
+  const deltaLine = pct ? `${sign}${delta.display} · ${pct}` : `${sign}${delta.display}`;
+
+  return {
+    short: `${prevLine}\n${deltaLine}`,
+    full: `${prevLine} (${prev.full})\nVariação: ${sign}${delta.full}${pct ? ` · ${pct}` : ""}`,
+  };
 }
 
 function MiniStat({

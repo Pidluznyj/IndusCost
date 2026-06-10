@@ -6,8 +6,15 @@ import {
   buildCashFlowExecutiveYtdReading,
   buildFinanceCashFlowExecutiveYtd,
   buildYtdDashboardFilters,
+  buildYtdReceivedComparison,
+  filterArRowsForYtdReceived,
+  isArReceivedInPeriod,
+  resolvePreviousYtdComparableRange,
+  resolveReceivedComparisonDirection,
   resolveYtdDateRange,
   resolveYtdTrendDirection,
+  sumArReceivedInPeriod,
+  type FinanceCashFlowExecutiveYtdTrendPoint,
 } from "./financeCashFlowExecutiveYtd.js";
 import {
   buildFinanceCashFlowDashboard,
@@ -78,6 +85,20 @@ const filters = {
   year: 2026,
 };
 
+function trendPoint(
+  partial: Omit<
+    FinanceCashFlowExecutiveYtdTrendPoint,
+    "receivedInMonth" | "receivedAccumulated" | "previousYearReceivedAccumulated"
+  >
+): FinanceCashFlowExecutiveYtdTrendPoint {
+  return {
+    ...partial,
+    receivedInMonth: null,
+    receivedAccumulated: null,
+    previousYearReceivedAccumulated: null,
+  };
+}
+
 describe("financeCashFlowExecutiveYtd", () => {
   it("ano vigente usa 01/01 até hoje", () => {
     const range = resolveYtdDateRange(2026, REF);
@@ -123,32 +144,40 @@ describe("financeCashFlowExecutiveYtd", () => {
   it("tendência improving, worsening, stable e dados insuficientes", () => {
     assert.equal(
       resolveYtdTrendDirection([
-        { month: "1", monthLabel: "Jan", inflow: 100, outflow: 0, net: 100, accumulated: 100, status: "positive" },
+        trendPoint({
+          month: "1",
+          monthLabel: "Jan",
+          inflow: 100,
+          outflow: 0,
+          net: 100,
+          accumulated: 100,
+          status: "positive",
+        }),
       ]).label,
       "Dados insuficientes"
     );
 
     const improving = resolveYtdTrendDirection([
-      { month: "1", monthLabel: "Jan", inflow: 100, outflow: 50, net: 50, accumulated: 50, status: "positive" },
-      { month: "2", monthLabel: "Fev", inflow: 100, outflow: 50, net: 50, accumulated: 100, status: "positive" },
-      { month: "3", monthLabel: "Mar", inflow: 100, outflow: 50, net: 50, accumulated: 150, status: "positive" },
-      { month: "4", monthLabel: "Abr", inflow: 200, outflow: 50, net: 150, accumulated: 300, status: "positive" },
+      trendPoint({ month: "1", monthLabel: "Jan", inflow: 100, outflow: 50, net: 50, accumulated: 50, status: "positive" }),
+      trendPoint({ month: "2", monthLabel: "Fev", inflow: 100, outflow: 50, net: 50, accumulated: 100, status: "positive" }),
+      trendPoint({ month: "3", monthLabel: "Mar", inflow: 100, outflow: 50, net: 50, accumulated: 150, status: "positive" }),
+      trendPoint({ month: "4", monthLabel: "Abr", inflow: 200, outflow: 50, net: 150, accumulated: 300, status: "positive" }),
     ]);
     assert.equal(improving.direction, "improving");
 
     const worsening = resolveYtdTrendDirection([
-      { month: "1", monthLabel: "Jan", inflow: 200, outflow: 50, net: 150, accumulated: 150, status: "positive" },
-      { month: "2", monthLabel: "Fev", inflow: 50, outflow: 100, net: -50, accumulated: 100, status: "negative" },
-      { month: "3", monthLabel: "Mar", inflow: 50, outflow: 100, net: -50, accumulated: 50, status: "negative" },
-      { month: "4", monthLabel: "Abr", inflow: 50, outflow: 150, net: -100, accumulated: -50, status: "negative" },
+      trendPoint({ month: "1", monthLabel: "Jan", inflow: 200, outflow: 50, net: 150, accumulated: 150, status: "positive" }),
+      trendPoint({ month: "2", monthLabel: "Fev", inflow: 50, outflow: 100, net: -50, accumulated: 100, status: "negative" }),
+      trendPoint({ month: "3", monthLabel: "Mar", inflow: 50, outflow: 100, net: -50, accumulated: 50, status: "negative" }),
+      trendPoint({ month: "4", monthLabel: "Abr", inflow: 50, outflow: 150, net: -100, accumulated: -50, status: "negative" }),
     ]);
     assert.equal(worsening.direction, "worsening");
 
     const stable = resolveYtdTrendDirection([
-      { month: "1", monthLabel: "Jan", inflow: 100, outflow: 50, net: 50, accumulated: 50, status: "positive" },
-      { month: "2", monthLabel: "Fev", inflow: 100, outflow: 100, net: 0, accumulated: 50, status: "neutral" },
-      { month: "3", monthLabel: "Mar", inflow: 100, outflow: 100, net: 0, accumulated: 50, status: "neutral" },
-      { month: "4", monthLabel: "Abr", inflow: 100, outflow: 100, net: 0, accumulated: 50, status: "neutral" },
+      trendPoint({ month: "1", monthLabel: "Jan", inflow: 100, outflow: 50, net: 50, accumulated: 50, status: "positive" }),
+      trendPoint({ month: "2", monthLabel: "Fev", inflow: 100, outflow: 100, net: 0, accumulated: 50, status: "neutral" }),
+      trendPoint({ month: "3", monthLabel: "Mar", inflow: 100, outflow: 100, net: 0, accumulated: 50, status: "neutral" }),
+      trendPoint({ month: "4", monthLabel: "Abr", inflow: 100, outflow: 100, net: 0, accumulated: 50, status: "neutral" }),
     ]);
     assert.equal(stable.direction, "stable");
   });
@@ -157,7 +186,7 @@ describe("financeCashFlowExecutiveYtd", () => {
     const ytdAr = filterCashFlowArRows([arRow()], filters, REF);
     const ytdAp = filterCashFlowApRows([apRow()], filters, REF);
     const series = buildFinanceCashFlowMonthlySeries(ytdAr, ytdAp, filters, REF);
-    const ytd = buildFinanceCashFlowExecutiveYtd(ytdAr, ytdAp, series, filters, REF);
+    const ytd = buildFinanceCashFlowExecutiveYtd(ytdAr, ytdAp, series, [arRow()], filters, REF);
     const lines = buildCashFlowExecutiveYtdReading(ytd);
     assert.ok(lines.some((l) => l.includes("No acumulado do ano")));
   });
@@ -198,5 +227,219 @@ describe("financeCashFlowExecutiveYtd", () => {
     const kpi = formatCashFlowKpiDisplay(4_920_000);
     assert.ok(kpi.display.includes("Mi"));
     assert.ok(kpi.full.includes("4.920.000"));
+  });
+
+  it("recebido YTD usa settlementDate e amountReceived", () => {
+    const rows = [
+      arRow({
+        externalId: 1,
+        settlementDate: new Date(2026, 2, 10),
+        amountReceived: 1500,
+        balanceReceivable: 0,
+      }),
+      arRow({
+        externalId: 2,
+        dueDate: new Date(2026, 5, 1),
+        settlementDate: null,
+        amountReceived: 0,
+        balanceReceivable: 2000,
+      }),
+    ];
+    const range = resolveYtdDateRange(2026, REF);
+    const total = sumArReceivedInPeriod(rows, range.startDate, range.endDate);
+    assert.equal(total, 1500);
+    assert.equal(
+      isArReceivedInPeriod(rows[0]!, range.startDate, range.endDate),
+      true
+    );
+    assert.equal(
+      isArReceivedInPeriod(rows[1]!, range.startDate, range.endDate),
+      false
+    );
+  });
+
+  it("recebido YTD não usa vencimento nem saldo aberto", () => {
+    const row = arRow({
+      dueDate: new Date(2026, 0, 5),
+      settlementDate: null,
+      amountReceived: 0,
+      balanceReceivable: 9000,
+    });
+    const range = resolveYtdDateRange(2026, REF);
+    assert.equal(sumArReceivedInPeriod([row], range.startDate, range.endDate), 0);
+  });
+
+  it("comparação ano vigente usa mesmo dia/mês no ano anterior", () => {
+    const prev = resolvePreviousYtdComparableRange(2026, REF);
+    assert.equal(prev.previousYear, 2025);
+    assert.equal(prev.startDate.getFullYear(), 2025);
+    assert.equal(prev.startDate.getMonth(), 0);
+    assert.equal(prev.endDate.getFullYear(), 2025);
+    assert.equal(prev.endDate.getMonth(), REF.getMonth());
+    assert.equal(prev.endDate.getDate(), REF.getDate());
+  });
+
+  it("comparação ano passado usa ano fechado vs anterior fechado", () => {
+    const current = resolveYtdDateRange(2025, REF);
+    const prev = resolvePreviousYtdComparableRange(2025, REF);
+    assert.equal(current.isCurrentYear, false);
+    assert.equal(new Date(current.endDate).getMonth(), 11);
+    assert.equal(prev.endDate.getMonth(), 11);
+    assert.equal(prev.endDate.getDate(), 31);
+    assert.equal(prev.startDate.getFullYear(), 2024);
+  });
+
+  it("filtro de mês não altera recebido YTD", () => {
+    const rows = [
+      arRow({
+        externalId: 1,
+        settlementDate: new Date(2026, 2, 5),
+        amountReceived: 800,
+        balanceReceivable: 0,
+      }),
+    ];
+    const withMonth = buildYtdReceivedComparison(
+      rows,
+      { ...filters, month: 3 },
+      REF
+    );
+    const withoutMonth = buildYtdReceivedComparison(rows, filters, REF);
+    assert.equal(withMonth.currentAmount, withoutMonth.currentAmount);
+    assert.equal(withMonth.currentAmount, 800);
+  });
+
+  it("filtro de empresa afeta recebido YTD", () => {
+    const rows = [
+      arRow({
+        externalId: 1,
+        companyName: "Empresa A",
+        settlementDate: new Date(2026, 1, 1),
+        amountReceived: 100,
+        balanceReceivable: 0,
+      }),
+      arRow({
+        externalId: 2,
+        companyName: "Empresa B",
+        settlementDate: new Date(2026, 1, 2),
+        amountReceived: 200,
+        balanceReceivable: 0,
+      }),
+    ];
+    const filtered = filterArRowsForYtdReceived(
+      rows,
+      { ...filters, companyName: "Empresa A" },
+      REF
+    );
+    const range = resolveYtdDateRange(2026, REF);
+    assert.equal(sumArReceivedInPeriod(filtered, range.startDate, range.endDate), 100);
+  });
+
+  it("deltaAmount, deltaPercent e direction up/down/stable/no_previous", () => {
+    const rows = [
+      arRow({
+        externalId: 1,
+        settlementDate: new Date(2026, 1, 1),
+        amountReceived: 1200,
+        balanceReceivable: 0,
+      }),
+      arRow({
+        externalId: 2,
+        settlementDate: new Date(2025, 1, 1),
+        amountReceived: 1000,
+        balanceReceivable: 0,
+      }),
+    ];
+    const cmp = buildYtdReceivedComparison(rows, filters, REF);
+    assert.equal(cmp.currentAmount, 1200);
+    assert.equal(cmp.previousAmount, 1000);
+    assert.equal(cmp.deltaAmount, 200);
+    assert.equal(cmp.deltaPercent, 20);
+    assert.equal(cmp.direction, "up");
+
+    assert.equal(resolveReceivedComparisonDirection(0, 0, 0), "stable");
+    assert.equal(resolveReceivedComparisonDirection(500, 0, 500), "no_previous");
+    assert.equal(resolveReceivedComparisonDirection(900, 1000, -100), "down");
+    assert.equal(resolveReceivedComparisonDirection(1000, 1000, 0), "stable");
+  });
+
+  it("previousAmount zero não gera NaN/Infinity", () => {
+    const cmp = buildYtdReceivedComparison(
+      [
+        arRow({
+          settlementDate: new Date(2026, 0, 10),
+          amountReceived: 500,
+          balanceReceivable: 0,
+        }),
+      ],
+      filters,
+      REF
+    );
+    assert.equal(cmp.previousAmount, 0);
+    assert.equal(cmp.deltaPercent, null);
+    assert.equal(cmp.direction, "no_previous");
+    assert.equal(Number.isFinite(cmp.deltaAmount), true);
+  });
+
+  it("card Recebido YTD e leitura executiva com comparação", () => {
+    const summary = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowYtdSummary.tsx"
+      ),
+      "utf8"
+    );
+    assert.ok(summary.includes("ytd-kpi-received"));
+    assert.ok(summary.includes("Recebido YTD"));
+
+    const rows = [
+      arRow({
+        externalId: 1,
+        settlementDate: new Date(2026, 1, 1),
+        amountReceived: 1500,
+        balanceReceivable: 0,
+      }),
+      arRow({
+        externalId: 2,
+        settlementDate: new Date(2025, 1, 1),
+        amountReceived: 1000,
+        balanceReceivable: 0,
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(rows, [apRow()], filters, REF);
+    assert.ok(payload.executiveYtd.received);
+    assert.ok(
+      payload.executiveYtdReading.some(
+        (l) => l.includes("Recebido YTD") && l.includes("2025")
+      )
+    );
+  });
+
+  it("série mensal YTD de recebido não retorna NaN/Infinity", () => {
+    const rows = [
+      arRow({
+        settlementDate: new Date(2026, 0, 15),
+        amountReceived: 300,
+        balanceReceivable: 0,
+      }),
+      arRow({
+        settlementDate: new Date(2025, 0, 20),
+        amountReceived: 200,
+        balanceReceivable: 0,
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(rows, [apRow()], filters, REF);
+    for (const p of payload.executiveYtd.trend.monthlyNetSeries) {
+      for (const v of [
+        p.receivedInMonth,
+        p.receivedAccumulated,
+        p.previousYearReceivedAccumulated,
+      ]) {
+        if (v != null) assert.equal(Number.isFinite(v), true);
+      }
+    }
   });
 });

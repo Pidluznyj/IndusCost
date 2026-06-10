@@ -886,6 +886,7 @@ export function buildFinanceCashFlowDashboard(
     ytdAr,
     ytdAp,
     ytdMonthlySeries,
+    arRows,
     filters,
     referenceDate
   );

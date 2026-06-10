@@ -9,6 +9,10 @@ import {
   isFinanceApOpen,
 } from "./financeAccountsPayableDashboard.js";
 import { formatFinanceCurrency } from "./financeAccountsReceivableFormat.js";
+import {
+  filterFinanceArRows,
+  type FinanceArDashboardFilters,
+} from "./financeAccountsReceivableDashboard.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -19,6 +23,20 @@ import { buildNetCashPositionMetrics } from "./financeCashFlowIntelligence.js";
 
 export type FinanceCashFlowYtdTrendDirection = "improving" | "worsening" | "stable";
 
+export type FinanceCashFlowYtdReceivedDirection = "up" | "down" | "stable" | "no_previous";
+
+export type FinanceCashFlowExecutiveYtdReceived = {
+  currentAmount: number;
+  previousAmount: number;
+  previousYear: number;
+  deltaAmount: number;
+  deltaPercent: number | null;
+  direction: FinanceCashFlowYtdReceivedDirection;
+  currentPeriodLabel: string;
+  previousPeriodLabel: string;
+  comparisonLabel: string;
+};
+
 export type FinanceCashFlowExecutiveYtdTrendPoint = {
   month: string;
   monthLabel: string;
@@ -27,6 +45,9 @@ export type FinanceCashFlowExecutiveYtdTrendPoint = {
   net: number | null;
   accumulated: number | null;
   status: "positive" | "negative" | "neutral";
+  receivedInMonth: number | null;
+  receivedAccumulated: number | null;
+  previousYearReceivedAccumulated: number | null;
 };
 
 export type FinanceCashFlowExecutiveYtd = {
@@ -45,12 +66,219 @@ export type FinanceCashFlowExecutiveYtd = {
   overduePayableAmount: number;
   overdueCashImpact: number;
   negativeMonthsCount: number;
+  received: FinanceCashFlowExecutiveYtdReceived;
   trend: {
     direction: FinanceCashFlowYtdTrendDirection;
     label: string;
     monthlyNetSeries: FinanceCashFlowExecutiveYtdTrendPoint[];
   };
 };
+
+const RECEIVED_DELTA_STABLE_EPSILON = 0.01;
+
+function formatPtBrDate(d: Date): string {
+  return d.toLocaleDateString("pt-BR");
+}
+
+export function resolvePreviousYtdComparableRange(
+  year: number,
+  referenceDate: Date
+): { startDate: Date; endDate: Date; previousYear: number } {
+  const previousYear = year - 1;
+  const { isCurrentYear } = resolveYtdDateRange(year, referenceDate);
+  const prevStart = startOfLocalDay(new Date(previousYear, 0, 1));
+  const prevEnd = isCurrentYear
+    ? startOfLocalDay(
+        new Date(previousYear, referenceDate.getMonth(), referenceDate.getDate())
+      )
+    : startOfLocalDay(new Date(previousYear, 11, 31));
+  return { startDate: prevStart, endDate: prevEnd, previousYear };
+}
+
+function toReceivedArLoadFilters(
+  filters: FinanceCashFlowDashboardFilters
+): FinanceArDashboardFilters {
+  const status =
+    filters.status === "open"
+      ? "open"
+      : filters.status === "settled"
+        ? "settled"
+        : filters.status === "overdue"
+          ? "overdue"
+          : "all";
+  return {
+    companyName: filters.companyName,
+    personName: filters.customerName,
+    personCnpj: filters.personCnpj,
+    status,
+    paymentMethodName: filters.paymentMethodName,
+    bankAccountName: filters.bankAccountName,
+    invoiceIssued: filters.invoiceIssued,
+  };
+}
+
+export function filterArRowsForYtdReceived(
+  rows: FinanceCashFlowArRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date
+): FinanceCashFlowArRow[] {
+  const arFilters = toReceivedArLoadFilters(filters);
+  return filterFinanceArRows(rows, arFilters, referenceDate) as FinanceCashFlowArRow[];
+}
+
+export function isArReceivedInPeriod(
+  row: FinanceCashFlowArRow,
+  startDate: Date,
+  endDate: Date
+): boolean {
+  if (row.amountReceived <= 0 || row.settlementDate == null) return false;
+  const settled = startOfLocalDay(row.settlementDate).getTime();
+  const start = startOfLocalDay(startDate).getTime();
+  const end = startOfLocalDay(endDate).getTime();
+  return settled >= start && settled <= end;
+}
+
+export function sumArReceivedInPeriod(
+  rows: FinanceCashFlowArRow[],
+  startDate: Date,
+  endDate: Date
+): number {
+  let total = 0;
+  for (const row of rows) {
+    if (!isArReceivedInPeriod(row, startDate, endDate)) continue;
+    total += row.amountReceived;
+  }
+  return roundMoney(total);
+}
+
+function monthPeriodEnd(year: number, month: number, capDate: Date | null): Date {
+  if (
+    capDate &&
+    capDate.getFullYear() === year &&
+    capDate.getMonth() + 1 === month
+  ) {
+    return startOfLocalDay(capDate);
+  }
+  return startOfLocalDay(new Date(year, month, 0));
+}
+
+export function resolveReceivedComparisonDirection(
+  currentAmount: number,
+  previousAmount: number,
+  deltaAmount: number
+): FinanceCashFlowYtdReceivedDirection {
+  if (previousAmount === 0) {
+    if (currentAmount > 0) return "no_previous";
+    return "stable";
+  }
+  if (Math.abs(deltaAmount) < RECEIVED_DELTA_STABLE_EPSILON) return "stable";
+  if (deltaAmount > 0) return "up";
+  if (deltaAmount < 0) return "down";
+  return "stable";
+}
+
+export function buildYtdReceivedComparison(
+  rows: FinanceCashFlowArRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date
+): FinanceCashFlowExecutiveYtdReceived {
+  const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
+  const year = ytdFilters.year!;
+  const { startDate, endDate } = resolveYtdDateRange(year, referenceDate);
+  const { startDate: prevStart, endDate: prevEnd, previousYear } =
+    resolvePreviousYtdComparableRange(year, referenceDate);
+
+  const filteredRows = filterArRowsForYtdReceived(rows, ytdFilters, referenceDate);
+  const currentAmount = sumArReceivedInPeriod(filteredRows, startDate, endDate);
+  const previousAmount = sumArReceivedInPeriod(filteredRows, prevStart, prevEnd);
+  const deltaAmount = roundMoney(currentAmount - previousAmount);
+  const deltaPercent =
+    previousAmount > 0 ? roundMoney((deltaAmount / previousAmount) * 100) : null;
+  const direction = resolveReceivedComparisonDirection(
+    currentAmount,
+    previousAmount,
+    deltaAmount
+  );
+
+  const currentPeriodLabel = `${formatPtBrDate(startDate)} até ${formatPtBrDate(endDate)}`;
+  const previousPeriodLabel = `Mesmo período ${previousYear}: ${formatPtBrDate(prevStart)} até ${formatPtBrDate(prevEnd)}`;
+
+  return {
+    currentAmount,
+    previousAmount,
+    previousYear,
+    deltaAmount,
+    deltaPercent,
+    direction,
+    currentPeriodLabel,
+    previousPeriodLabel,
+    comparisonLabel: `vs mesmo período ${previousYear}`,
+  };
+}
+
+function buildReceivedMonthlyAccumulated(
+  rows: FinanceCashFlowArRow[],
+  seriesYear: number,
+  endMonth: number,
+  capDate: Date | null
+): Map<number, { monthAmount: number; accumulated: number }> {
+  const byMonth = new Map<number, { monthAmount: number; accumulated: number }>();
+  let accumulated = 0;
+  for (let m = 1; m <= endMonth; m += 1) {
+    const monthStart = startOfLocalDay(new Date(seriesYear, m - 1, 1));
+    const monthEnd = monthPeriodEnd(seriesYear, m, capDate);
+    const monthAmount = sumArReceivedInPeriod(rows, monthStart, monthEnd);
+    accumulated = roundMoney(accumulated + monthAmount);
+    byMonth.set(m, { monthAmount, accumulated });
+  }
+  return byMonth;
+}
+
+function enrichTrendWithReceived(
+  points: FinanceCashFlowExecutiveYtdTrendPoint[],
+  arRows: FinanceCashFlowArRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date
+): FinanceCashFlowExecutiveYtdTrendPoint[] {
+  const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
+  const year = ytdFilters.year!;
+  const { endDate, isCurrentYear } = resolveYtdDateRange(year, referenceDate);
+  const endMonth = isCurrentYear ? referenceDate.getMonth() + 1 : 12;
+  const capDate = isCurrentYear ? endDate : null;
+  const previousYear = year - 1;
+
+  const filteredRows = filterArRowsForYtdReceived(arRows, ytdFilters, referenceDate);
+  const currentByMonth = buildReceivedMonthlyAccumulated(
+    filteredRows,
+    year,
+    endMonth,
+    capDate
+  );
+  const prevCap =
+    isCurrentYear && capDate
+      ? startOfLocalDay(
+          new Date(previousYear, capDate.getMonth(), capDate.getDate())
+        )
+      : null;
+  const previousByMonth = buildReceivedMonthlyAccumulated(
+    filteredRows,
+    previousYear,
+    endMonth,
+    prevCap
+  );
+
+  return points.map((p) => {
+    const m = Number(p.month);
+    const current = currentByMonth.get(m);
+    const previous = previousByMonth.get(m);
+    return {
+      ...p,
+      receivedInMonth: current?.monthAmount ?? null,
+      receivedAccumulated: current?.accumulated ?? null,
+      previousYearReceivedAccumulated: previous?.accumulated ?? null,
+    };
+  });
+}
 
 export function resolveYtdDateRange(
   year: number,
@@ -105,6 +333,9 @@ function mapMonthlyToYtdTrend(
         net,
         accumulated: p.accumulatedBalance,
         status,
+        receivedInMonth: null,
+        receivedAccumulated: null,
+        previousYearReceivedAccumulated: null,
       };
     });
 }
@@ -132,6 +363,7 @@ export function buildFinanceCashFlowExecutiveYtd(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
   monthlySeries: FinanceCashFlowMonthlyPoint[],
+  allArRows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date
 ): FinanceCashFlowExecutiveYtd {
@@ -143,8 +375,14 @@ export function buildFinanceCashFlowExecutiveYtd(
   );
   const endMonth = isCurrentYear ? referenceDate.getMonth() + 1 : 12;
 
-  const monthlyNetSeries = mapMonthlyToYtdTrend(monthlySeries, endMonth);
+  const monthlyNetSeries = enrichTrendWithReceived(
+    mapMonthlyToYtdTrend(monthlySeries, endMonth),
+    allArRows,
+    filters,
+    referenceDate
+  );
   const trendMeta = resolveYtdTrendDirection(monthlyNetSeries);
+  const received = buildYtdReceivedComparison(allArRows, filters, referenceDate);
 
   let totalReceivableOpen = 0;
   let totalPayableOpen = 0;
@@ -189,6 +427,7 @@ export function buildFinanceCashFlowExecutiveYtd(
     overduePayableAmount: roundMoney(overduePayable),
     overdueCashImpact: roundMoney(overdueReceivable + overduePayable),
     negativeMonthsCount: countNegativeMonths(monthlyNetSeries),
+    received,
     trend: {
       direction: trendMeta.direction,
       label: trendMeta.label,
@@ -232,6 +471,25 @@ export function buildCashFlowExecutiveYtdReading(
     );
   }
 
+  const { received } = executiveYtd;
+  if (received.direction === "no_previous") {
+    lines.push(
+      "Não há base suficiente de recebido no ano anterior para comparação YTD."
+    );
+  } else if (received.direction === "up" && received.deltaPercent != null) {
+    lines.push(
+      `Recebido YTD está ${formatFinanceCurrency(received.deltaAmount)} acima do mesmo período de ${received.previousYear} (+${Math.abs(received.deltaPercent).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%).`
+    );
+  } else if (received.direction === "down" && received.deltaPercent != null) {
+    lines.push(
+      `Recebido YTD está ${formatFinanceCurrency(Math.abs(received.deltaAmount))} abaixo do mesmo período de ${received.previousYear} (${received.deltaPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%).`
+    );
+  } else if (received.direction === "stable" && received.previousAmount > 0) {
+    lines.push(
+      `Recebido YTD está estável em relação ao mesmo período de ${received.previousYear}.`
+    );
+  }
+
   if (trend.label === "Dados insuficientes") {
     lines.push("A tendência dos últimos meses ainda não pode ser calculada com segurança.");
   } else if (trend.direction === "improving") {
@@ -256,11 +514,28 @@ export function executiveYtdMetricsAreFinite(ytd: FinanceCashFlowExecutiveYtd): 
     ytd.overduePayableAmount,
     ytd.overdueCashImpact,
     ytd.negativeMonthsCount,
+    ytd.received.currentAmount,
+    ytd.received.previousAmount,
+    ytd.received.deltaAmount,
   ];
   if (!nums.every((n) => Number.isFinite(n))) return false;
   if (ytd.cashCoverageRatio != null && !Number.isFinite(ytd.cashCoverageRatio)) return false;
+  if (
+    ytd.received.deltaPercent != null &&
+    !Number.isFinite(ytd.received.deltaPercent)
+  ) {
+    return false;
+  }
   for (const p of ytd.trend.monthlyNetSeries) {
-    for (const v of [p.inflow, p.outflow, p.net, p.accumulated]) {
+    for (const v of [
+      p.inflow,
+      p.outflow,
+      p.net,
+      p.accumulated,
+      p.receivedInMonth,
+      p.receivedAccumulated,
+      p.previousYearReceivedAccumulated,
+    ]) {
       if (v != null && !Number.isFinite(v)) return false;
     }
   }

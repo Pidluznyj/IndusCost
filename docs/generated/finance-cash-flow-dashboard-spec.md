@@ -3,7 +3,7 @@
 **Projeto:** IndusCost  
 **Branch:** `main`  
 **Data:** 2026-06-09  
-**Fase:** 5 — Resumo Executivo YTD compacto
+**Fase:** 5.1 — Resumo Executivo YTD + Recebido comparativo
 
 ---
 
@@ -246,17 +246,49 @@ O **primeiro bloco** da aba Visão Geral é sempre **YTD (Year to Date)**, separ
 - Demais filtros (empresa, cliente, visão, etc.) continuam aplicados ao YTD
 - Chips na UI: **Topo: YTD** vs **Análises abaixo: filtros aplicados**
 
-### 8.2 Métricas YTD
+### 8.2 A Receber vs Recebido
 
-Posição líquida, receber/pagar em aberto, necessidade/folga, vencidos, meses negativos no ano e **tendência** (`improving` / `worsening` / `stable`).
+| Métrica | Significado | Fonte |
+|---------|-------------|-------|
+| **A Receber YTD** | Carteira AR **em aberto** (dinheiro ainda não recebido) | `balanceReceivable` de títulos abertos, com filtros YTD (sem mês) |
+| **Recebido YTD** | Títulos **efetivamente recebidos** no período YTD | `amountReceived` com `settlementDate` no intervalo YTD |
+
+- Recebido **não** usa vencimento (`dueDate`) nem saldo aberto.
+- Regra alinhada ao modo **realizado** do fluxo de caixa (`settlementDate` + `amountReceived > 0`).
+
+### 8.3 Comparação com ano anterior (`executiveYtd.received`)
+
+| Situação | Período atual | Período anterior |
+|----------|---------------|------------------|
+| Ano vigente | 01/01 até hoje | 01/01 do ano anterior até **mesmo dia/mês** |
+| Ano passado | 01/01–31/12 do ano | 01/01–31/12 do ano anterior |
+
+Campos: `currentAmount`, `previousAmount`, `deltaAmount`, `deltaPercent`, `direction` (`up` / `down` / `stable` / `no_previous`).
+
+- `deltaPercent = null` quando `previousAmount = 0` (sem base percentual).
+- Filtro de **mês não altera** recebido YTD nem a comparação no topo.
+- Demais filtros compatíveis (empresa, cliente, status, etc.) continuam aplicáveis.
+
+### 8.4 Demais métricas YTD
+
+Posição líquida, pagar em aberto, necessidade/folga, vencidos, meses negativos e **tendência** (`improving` / `worsening` / `stable`).
 
 Tendência: compara saldo acumulado do último mês válido com o de 3 meses antes; menos de 4 meses com dado → “Dados insuficientes”.
 
-### 8.3 Visual
+### 8.5 Visual
 
-Cards compactos (`min-h` baixo, fonte menor) + mini gráfico “Tendência YTD do caixa” (barras líquido + linha acumulado).
+Cards compactos (`min-h` baixo, fonte menor) em grid de 6 colunas no desktop:
 
-### 8.4 Limitação
+1. Posição líquida YTD  
+2. A receber YTD  
+3. **Recebido YTD** (com subtítulo vs mesmo período do ano anterior)  
+4. A pagar YTD  
+5. Necessidade/folga YTD  
+6. Tendência do ano  
+
+Mini gráfico “Tendência YTD do caixa”: barras líquido + linha acumulado + linha tracejada **recebido acumulado ano anterior**; tooltip com recebido mensal/acumulado e acumulado do ano anterior.
+
+### 8.6 Limitação
 
 YTD é visão gerencial baseada em AR/AP Nomus — **não substitui saldo bancário real**.
 

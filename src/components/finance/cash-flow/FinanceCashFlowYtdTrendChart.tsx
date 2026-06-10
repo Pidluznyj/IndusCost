@@ -41,6 +41,17 @@ function YtdTrendTooltip({
       {row.accumulated != null ? (
         <p className="text-[#2563EB]">Acumulado: {formatFinanceCurrency(row.accumulated)}</p>
       ) : null}
+      {row.receivedInMonth != null ? (
+        <p className="text-[#059669]">Recebido no mês: {formatFinanceCurrency(row.receivedInMonth)}</p>
+      ) : null}
+      {row.receivedAccumulated != null ? (
+        <p>Recebido acumulado: {formatFinanceCurrency(row.receivedAccumulated)}</p>
+      ) : null}
+      {row.previousYearReceivedAccumulated != null ? (
+        <p className="text-[#6B7280]">
+          Recebido acum. ano anterior: {formatFinanceCurrency(row.previousYearReceivedAccumulated)}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -109,6 +120,16 @@ export function FinanceCashFlowYtdTrendChart({
                 name="Acumulado"
                 stroke={FINANCE_BI_COLORS.primary}
                 strokeWidth={1.5}
+                dot={false}
+                connectNulls={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="previousYearReceivedAccumulated"
+                name="Recebido acum. ano ant."
+                stroke={FINANCE_BI_COLORS.textSecondary}
+                strokeWidth={1.25}
+                strokeDasharray="4 3"
                 dot={false}
                 connectNulls={false}
               />
