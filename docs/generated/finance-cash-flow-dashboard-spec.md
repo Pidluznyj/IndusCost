@@ -3,7 +3,7 @@
 **Projeto:** IndusCost  
 **Branch:** `main`  
 **Data:** 2026-06-09  
-**Fase:** 4 — Validação final e fechamento (3 fases encadeadas concluídas)
+**Fase:** 5 — Resumo Executivo YTD compacto
 
 ---
 
@@ -230,7 +230,39 @@ O fluxo de caixa **projetado** depende dos vencimentos de AR/AP sincronizados do
 
 ---
 
-## 8. Painel CFO e insights determinísticos
+## 8. Resumo Executivo YTD
+
+O **primeiro bloco** da aba Visão Geral é sempre **YTD (Year to Date)**, separado das análises filtradas abaixo.
+
+### 8.1 Regras de escopo
+
+| Situação | Período YTD |
+|----------|-------------|
+| Ano selecionado = ano vigente | 01/01 do ano até **hoje** (data de referência) |
+| Ano passado | 01/01 até **31/12** do ano (ano fechado) |
+
+- Campo payload: `executiveYtd` + `executiveYtdReading`
+- **Filtro de mês não altera o YTD do topo** — apenas as seções abaixo
+- Demais filtros (empresa, cliente, visão, etc.) continuam aplicados ao YTD
+- Chips na UI: **Topo: YTD** vs **Análises abaixo: filtros aplicados**
+
+### 8.2 Métricas YTD
+
+Posição líquida, receber/pagar em aberto, necessidade/folga, vencidos, meses negativos no ano e **tendência** (`improving` / `worsening` / `stable`).
+
+Tendência: compara saldo acumulado do último mês válido com o de 3 meses antes; menos de 4 meses com dado → “Dados insuficientes”.
+
+### 8.3 Visual
+
+Cards compactos (`min-h` baixo, fonte menor) + mini gráfico “Tendência YTD do caixa” (barras líquido + linha acumulado).
+
+### 8.4 Limitação
+
+YTD é visão gerencial baseada em AR/AP Nomus — **não substitui saldo bancário real**.
+
+---
+
+## 9. Painel CFO e insights determinísticos
 
 Motor: `financeCashFlowCfoDiagnostics.ts` — **sem IA externa**, sem alterar dados oficiais.
 
@@ -280,7 +312,7 @@ Agrupamento por dia no mês filtrado (ou mês de referência): entrada, saída, 
 
 ---
 
-## 9. Filtros
+## 10. Filtros
 
 ### Principais (sempre visíveis)
 
@@ -302,7 +334,7 @@ Agrupamento por dia no mês filtrado (ou mês de referência): entrada, saída, 
 
 ---
 
-## 10. Abas internas
+## 11. Abas internas
 
 | Aba | Fase |
 |-----|------|
@@ -316,7 +348,7 @@ Agrupamento por dia no mês filtrado (ou mês de referência): entrada, saída, 
 
 ---
 
-## 11. API
+## 12. API
 
 | Endpoint | Builder | Fonte |
 |----------|---------|-------|
@@ -325,7 +357,7 @@ Agrupamento por dia no mês filtrado (ou mês de referência): entrada, saída, 
 
 ---
 
-## 12. Exceções rotuladas
+## 13. Exceções rotuladas
 
 | Constante | Texto |
 |-----------|-------|
@@ -336,18 +368,18 @@ Agrupamento por dia no mês filtrado (ou mês de referência): entrada, saída, 
 
 ---
 
-## 13. Export CSV estendido
+## 14. Export CSV estendido
 
 Linhas `mensal` mantêm colunas originais + `cenario_base_liquido`, `conservador_liquido`, `critico_liquido`. Linhas resumo: `necessidade_caixa` (base/conservador/crítico) e `horizonte_12m`.
 
-## 14. Pendências (fases posteriores)
+## 15. Pendências (fases posteriores)
 
 1. Tabela detalhada consolidada AR/AP (aba Detalhado)
 2. Saldo bancário inicial configurável
 3. Centro de custo / classificação (quando disponível no Nomus)
 4. Integração contextual com Faturamento (link diagnóstico, sem misturar fontes)
 
-## 15. Validação final (auditoria)
+## 16. Validação final (auditoria)
 
 ### 15.1 Perguntas que a tela deve responder
 
@@ -383,7 +415,7 @@ Padrão visual atual: **BI executivo** (`FinanceBiDashboardShell`), não Control
 | Comando | Resultado |
 |---------|-----------|
 | `npx prisma validate` | OK |
-| `npm run test:finance:cash-flow` | 67 testes |
+| `npm run test:finance:cash-flow` | 76+ testes |
 | `npm run test:finance:navigation` | 17 testes |
 | `npm run test:finance:accounts-receivable` | 119 testes |
 | `npm run test:finance:accounts-payable` | 107 testes |

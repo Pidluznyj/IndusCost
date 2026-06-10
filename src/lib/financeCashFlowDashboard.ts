@@ -54,6 +54,12 @@ import {
   buildCashHealthScore,
   cashFlowCfoMetricsAreFinite,
 } from "./financeCashFlowCfoDiagnostics.js";
+import {
+  buildCashFlowExecutiveYtdReading,
+  buildFinanceCashFlowExecutiveYtd,
+  buildYtdDashboardFilters,
+  executiveYtdMetricsAreFinite,
+} from "./financeCashFlowExecutiveYtd.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
   constructor(message: string) {
@@ -867,6 +873,24 @@ export function buildFinanceCashFlowDashboard(
     monthlySeries,
   };
 
+  const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
+  const ytdAr = filterCashFlowArRows(arRows, ytdFilters, referenceDate);
+  const ytdAp = filterCashFlowApRows(apRows, ytdFilters, referenceDate);
+  const ytdMonthlySeries = buildFinanceCashFlowMonthlySeries(
+    ytdAr,
+    ytdAp,
+    ytdFilters,
+    referenceDate
+  );
+  const executiveYtd = buildFinanceCashFlowExecutiveYtd(
+    ytdAr,
+    ytdAp,
+    ytdMonthlySeries,
+    filters,
+    referenceDate
+  );
+  const executiveYtdReading = buildCashFlowExecutiveYtdReading(executiveYtd);
+
   const cashHealthScore = buildCashHealthScore(partialPayload);
   const executiveInsights = buildCashFlowExecutiveInsights(
     partialPayload,
@@ -883,6 +907,8 @@ export function buildFinanceCashFlowDashboard(
 
   return {
     ...partialPayload,
+    executiveYtd,
+    executiveYtdReading,
     cashHealthScore,
     executiveInsights,
     dailyCalendar,
@@ -976,6 +1002,7 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
     }
   }
   if (!cashFlowCfoMetricsAreFinite(payload.executiveInsights)) return false;
+  if (!executiveYtdMetricsAreFinite(payload.executiveYtd)) return false;
   return true;
 }
 

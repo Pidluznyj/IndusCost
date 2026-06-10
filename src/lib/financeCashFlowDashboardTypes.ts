@@ -11,6 +11,7 @@ import type {
   FinanceCashFlowDailyPoint,
   FinanceCashFlowExecutiveInsights,
 } from "./financeCashFlowCfoDiagnostics.js";
+import type { FinanceCashFlowExecutiveYtd } from "./financeCashFlowExecutiveYtd.js";
 
 export type FinanceCashFlowViewMode = "projected" | "realized" | "combined";
 export type FinanceCashFlowDateBase = "due" | "settlement" | "issue";
@@ -106,8 +107,12 @@ export type FinanceCashFlowDashboardPayload = {
     outflows: "NomusAccountsPayable";
   };
   cards: FinanceCashFlowDashboardCards;
-  /** Frases determinísticas para leitura gerencial do caixa. */
+  /** Frases determinísticas para leitura gerencial do caixa (período filtrado). */
   executiveReading: string[];
+  /** Resumo executivo YTD — topo da tela, independente do mês filtrado. */
+  executiveYtd: FinanceCashFlowExecutiveYtd;
+  /** Leitura executiva do bloco YTD. */
+  executiveYtdReading: string[];
   /** Previsão de caixa por horizonte (mês atual, 3, 6 e 12 meses). */
   cashForecast: FinanceCashFlowCashForecast;
   conservativeScenario: FinanceCashFlowConservativeScenario;

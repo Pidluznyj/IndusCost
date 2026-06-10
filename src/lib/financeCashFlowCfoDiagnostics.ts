@@ -457,7 +457,12 @@ function buildDiagnosticsBlocks(
 
 export type FinanceCashFlowInsightsInput = Omit<
   FinanceCashFlowDashboardPayload,
-  "executiveInsights" | "dailyCalendar" | "cashHealthScore" | "executiveReading"
+  | "executiveInsights"
+  | "dailyCalendar"
+  | "cashHealthScore"
+  | "executiveReading"
+  | "executiveYtd"
+  | "executiveYtdReading"
 >;
 
 export function buildCashFlowExecutiveInsights(

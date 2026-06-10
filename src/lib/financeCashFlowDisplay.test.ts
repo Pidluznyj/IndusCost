@@ -120,8 +120,7 @@ describe("financeCashFlowDisplay", () => {
     assert.ok(charts.includes("FINANCE_CASH_FLOW_CHART_HEIGHT"));
     assert.ok(charts.includes("cash-flow-main-chart"));
     assert.ok(charts.includes("Posição Líquida Mensal"));
-    assert.ok(page.includes("netCashPosition"));
-    assert.ok(page.includes("FinanceCashFlowNetPositionHero"));
-    assert.ok(page.includes("FinanceCashFlowExecutiveReading"));
+    assert.ok(page.includes("executiveYtd"));
+    assert.ok(page.includes("FinanceCashFlowYtdSummary"));
   });
 });

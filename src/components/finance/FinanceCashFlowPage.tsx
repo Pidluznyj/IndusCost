@@ -1,15 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
-  CircleDollarSign,
-  Download,
-  Loader2,
-  RefreshCw,
-  TrendingDown,
-  TrendingUp,
-} from "lucide-react";
+import { Download, Loader2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
@@ -47,20 +37,16 @@ import { FinanceCashFlowRiskTab } from "@/src/components/finance/cash-flow/Finan
 import { FinanceCashFlowScenarioChart } from "@/src/components/finance/cash-flow/FinanceCashFlowScenarioChart";
 import { FinanceCashFlowRecommendations } from "@/src/components/finance/cash-flow/FinanceCashFlowRecommendations";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
-import { FinanceCashFlowExecutiveReading } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveReading";
-import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
-import { FinanceCashFlowNetPositionHero } from "@/src/components/finance/cash-flow/FinanceCashFlowNetPositionHero";
+import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { formatCashFlowKpiDisplay } from "@/src/lib/financeCashFlowDisplay";
 import { buildFinanceCashFlowFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
   FINANCE_CASH_FLOW_NOT_BILLING_SCOPE,
   FINANCE_CASH_FLOW_SYNC_SCOPE,
-  withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
@@ -187,15 +173,10 @@ export function FinanceCashFlowPage() {
   }
 
   const cards = payload?.cards;
-  const isDeficit = cards?.netCashPositionStatus === "deficit";
-  const receivableKpi = formatCashFlowKpiDisplay(cards?.totalReceivableOpen ?? 0);
-  const payableKpi = formatCashFlowKpiDisplay(cards?.totalPayableOpen ?? 0);
-  const cashNeedKpi = formatCashFlowKpiDisplay(
-    isDeficit ? (cards?.cashNeedAmount ?? 0) : (cards?.netCashPositionAbs ?? 0)
+  const appliedFiltersLabel = useMemo(
+    () => chips.map((c) => c.label).join(" · "),
+    [chips]
   );
-  const overdueKpi = formatCashFlowKpiDisplay(cards?.overdueCashImpact ?? 0);
-  const overdueArKpi = formatCashFlowKpiDisplay(cards?.overdueReceivableAmount ?? 0);
-  const overdueApKpi = formatCashFlowKpiDisplay(cards?.overduePayableAmount ?? 0);
 
   return (
     <FinanceBiDashboardShell>
@@ -459,86 +440,29 @@ export function FinanceCashFlowPage() {
 
       {payload && activeTab === "overview" ? (
         <div className="space-y-6">
-          <section className={financeBiSectionClass}>
-            <div className="px-5 py-4 border-b border-[#E5E7EB]">
-              <h2 className="text-sm font-bold text-[#111827]">Resumo executivo</h2>
-              <p className="text-[11px] text-[#6B7280] mt-0.5">
-                Posição líquida em destaque — entradas, saídas e riscos no período filtrado
-              </p>
-            </div>
-            <div className="p-5 space-y-4">
-              <FinanceCashFlowNetPositionHero
-                posicaoLiquida={cards?.netCashPosition ?? 0}
-                receivableOpen={cards?.totalReceivableOpen ?? 0}
-                payableOpen={cards?.totalPayableOpen ?? 0}
-                statusLabel={cards?.netCashPositionLabel}
-                coverageRatio={cards?.cashCoverageRatio}
-              />
-              <FinanceCashFlowExecutiveReading lines={payload.executiveReading} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-3">
-                <FinanceCashFlowKpiCard
-                  testId="kpi-total-inflow"
-                  label="Total a receber"
-                  value={receivableKpi.display}
-                  valueFull={receivableKpi.full}
-                  sub={withAppliedFilterSub("Títulos AR em aberto", filtersActive)}
-                  icon={ArrowDownRight}
-                  colorClass="text-[#059669]"
-                />
-                <FinanceCashFlowKpiCard
-                  testId="kpi-total-outflow"
-                  label="Total a pagar"
-                  value={payableKpi.display}
-                  valueFull={payableKpi.full}
-                  sub={withAppliedFilterSub("Títulos AP em aberto", filtersActive)}
-                  icon={ArrowUpRight}
-                  colorClass="text-[#DC2626]"
-                />
-                <FinanceCashFlowKpiCard
-                  testId="kpi-cash-need"
-                  label={cards?.cashNeedLabel ?? "Necessidade de caixa"}
-                  value={cashNeedKpi.display}
-                  valueFull={cashNeedKpi.full}
-                  sub={
-                    isDeficit
-                      ? "Valor para zerar o déficit projetado"
-                      : "Excesso de recebíveis sobre pagáveis"
-                  }
-                  icon={CircleDollarSign}
-                  featured
-                  colorClass={isDeficit ? "text-[#DC2626]" : "text-[#059669]"}
-                />
-                <FinanceCashFlowKpiCard
-                  testId="kpi-negative-months"
-                  label="Meses com saldo negativo"
-                  value={String(cards?.negativeBalanceMonthsCount ?? 0)}
-                  sub="Fluxo líquido mensal < 0"
-                  icon={TrendingDown}
-                  colorClass={
-                    cards && cards.negativeBalanceMonthsCount > 0
-                      ? "text-[#D97706]"
-                      : "text-[#6B7280]"
-                  }
-                />
-                <FinanceCashFlowKpiCard
-                  testId="kpi-overdue-cash"
-                  label="Vencidos no caixa"
-                  value={overdueKpi.display}
-                  valueFull={overdueKpi.full}
-                  sub={`AR ${overdueArKpi.display} · AP ${overdueApKpi.display}`}
-                  icon={AlertTriangle}
-                  colorClass="text-[#D97706]"
-                />
-              </div>
-            </div>
-          </section>
+          <FinanceCashFlowYtdSummary
+            executiveYtd={payload.executiveYtd}
+            executiveYtdReading={payload.executiveYtdReading}
+            filtersActive={filtersActive}
+            appliedFiltersLabel={appliedFiltersLabel}
+          />
 
           <FinanceCashFlowCfoPanel insights={payload.executiveInsights} />
 
-          <FinanceCashFlowMonthlyChart
-            points={payload.monthlySeries}
-            viewModeLabel={viewModeLabel}
-          />
+          <section className={financeBiSectionClass}>
+            <div className="px-5 py-3 border-b border-[#E5E7EB]">
+              <h2 className="text-sm font-bold text-[#111827]">Fluxo mensal — período filtrado</h2>
+              <p className="text-[11px] text-[#6B7280] mt-0.5">
+                {viewModeLabel} · respeita filtros aplicados (mês, empresa, status, etc.)
+              </p>
+            </div>
+            <div className="p-4">
+              <FinanceCashFlowMonthlyChart
+                points={payload.monthlySeries}
+                viewModeLabel={viewModeLabel}
+              />
+            </div>
+          </section>
 
           <section className={financeBiSectionClass}>
             <div className="px-5 py-4 border-b border-[#E5E7EB]">

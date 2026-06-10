@@ -128,6 +128,8 @@ describe("financeCashFlowValidation — auditoria final", () => {
     assert.ok(payload.overdueReceivables.length > 0 || payload.overduePayables.length >= 0);
     assert.ok(payload.operationalRecommendations.length > 0);
     assert.ok(payload.dailyCalendar.length >= 0);
+    assert.ok(payload.executiveYtd.scopeLabel.length > 0);
+    assert.ok(payload.executiveYtdReading.length > 0);
   });
 
   it("export query usa filtros sem format isolado quebrado", () => {
