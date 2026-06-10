@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { calculateLaborLineTotal } from "./projectsUiUtils.js";
 import { calculateStructureLineTotalCost } from "./projectsCalculations.js";
@@ -19,5 +21,12 @@ describe("projectsProductSnapshot", () => {
     const total = calculateLaborLineTotal(hours, rate, 0);
     assert.equal(total, 63.75);
     assert.equal(Number.isNaN(total), false);
+  });
+
+  it("importação de BOM não usa Date.now em sortOrder (INT4)", () => {
+    const src = readFileSync(join(process.cwd(), "src", "lib", "projectsProductSnapshot.ts"), "utf8");
+    assert.equal(src.includes("Date.now()"), false);
+    assert.match(src, /sortCursor/);
+    assert.match(src, /orderBy: \{ sortOrder: "desc" \}/);
   });
 });

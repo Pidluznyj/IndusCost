@@ -154,7 +154,12 @@ export async function importProductSnapshotToProject(
   }
 
   const created: string[] = [];
-  const sortBase = Date.now();
+  const lastSort = await prisma.projectStructureLine.findFirst({
+    where: { projectId, versionId: ctx.version.id },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true },
+  });
+  let sortCursor = (lastSort?.sortOrder ?? 0) + 1;
 
   if (options.includeBom !== false) {
     for (let i = 0; i < snapshot.bomRows.length; i++) {
@@ -177,7 +182,7 @@ export async function importProductSnapshotToProject(
           notes: row.notes
             ? `${row.notes} | snapshot:${productId}`
             : `snapshot:${productId}`,
-          sortOrder: sortBase + i,
+          sortOrder: sortCursor++,
         },
       });
       created.push(line.id);
@@ -185,7 +190,6 @@ export async function importProductSnapshotToProject(
   }
 
   if (options.includeRouting) {
-    const offset = snapshot.bomRows.length;
     for (let i = 0; i < snapshot.routingRows.length; i++) {
       const row = snapshot.routingRows[i];
       if (row.hours <= 0) continue;
@@ -211,7 +215,7 @@ export async function importProductSnapshotToProject(
           ]
             .filter(Boolean)
             .join(" · "),
-          sortOrder: sortBase + offset + i,
+          sortOrder: sortCursor++,
         },
       });
       created.push(line.id);
