@@ -16,6 +16,12 @@ import {
   serializeCustomerLookupItem,
 } from "@/src/lib/projectsCustomerLookup.js";
 import {
+  buildCommercialOwnerSearchWhere,
+  COMMERCIAL_ROLES,
+  PROJECTS_COMMERCIAL_OWNER_LOOKUP_LIMIT,
+  serializeCommercialOwnerLookupItem,
+} from "@/src/lib/projectsCommercialOwnerLookup.js";
+import {
   PROJECTS_LOOKUP_PERMISSIONS,
   PROJECTS_MANAGE_PERMISSIONS,
   PROJECTS_VIEW_PERMISSIONS,
@@ -150,6 +156,36 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
     } catch (e: unknown) {
       console.error("GET /api/projects", e);
       res.status(500).json({ error: "Erro ao listar projetos." });
+    }
+  });
+
+  app.get("/api/projects/lookup/commercial-owners", ...lookup, async (req, res) => {
+    try {
+      const query = String(req.query.query ?? req.query.q ?? "").trim();
+      if (!query) {
+        return res.json({ rows: [] });
+      }
+      const searchWhere = buildCommercialOwnerSearchWhere(query);
+      const rows = await prisma.appUser.findMany({
+        where: {
+          isActive: true,
+          role: { in: COMMERCIAL_ROLES },
+          ...(searchWhere ?? {}),
+        },
+        take: PROJECTS_COMMERCIAL_OWNER_LOOKUP_LIMIT,
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          sellerResponsibleName: true,
+        },
+      });
+      res.json({ rows: rows.map(serializeCommercialOwnerLookupItem) });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/commercial-owners", e);
+      res.status(500).json({ error: "Erro na busca de responsáveis comerciais." });
     }
   });
 

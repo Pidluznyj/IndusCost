@@ -27,15 +27,20 @@ import {
   projectCustomerSelectionToPayload,
   type ProjectCustomerSelection,
 } from "@/src/components/projects/ProjectCustomerLookupField";
+import {
+  ProjectCommercialOwnerLookupField,
+  projectCommercialOwnerSelectionToPayload,
+  type ProjectCommercialOwnerSelection,
+} from "@/src/components/projects/ProjectCommercialOwnerLookupField";
+import { ProjectMoldFormModal } from "@/src/components/projects/ProjectMoldFormModal";
+import { ProjectSimpleDescriptionModal } from "@/src/components/projects/ProjectSimpleDescriptionModal";
+import { ProjectStructureLineModal } from "@/src/components/projects/ProjectStructureLineModal";
 import type {
   ProjectDashboardPayload,
   ProjectDetail,
   ProjectListResponse,
-  ProjectMoldChargeMode,
-  ProjectMoldOwnership,
   ProjectSimulatedItemType,
   ProjectStatus,
-  ProjectStructureLineType,
   ProjectStructureSourceType,
   ProjectType,
 } from "@/src/types/projects";
@@ -120,12 +125,13 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
   const [form, setForm] = useState({
     title: "",
     projectType: "NEW_PRODUCT" as ProjectType,
-    commercialOwner: "",
     technicalOwner: "",
     targetMarginPercent: "",
   });
   const [customerSelection, setCustomerSelection] = useState<ProjectCustomerSelection>(null);
   const [customerDraft, setCustomerDraft] = useState("");
+  const [commercialSelection, setCommercialSelection] = useState<ProjectCommercialOwnerSelection>(null);
+  const [commercialDraft, setCommercialDraft] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -163,6 +169,9 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
       };
     }
     if (!form.title.trim() || !customerPayload?.customerName) return;
+    const commercialOwner =
+      projectCommercialOwnerSelectionToPayload(commercialSelection)?.commercialOwner ??
+      (commercialDraft.trim() || null);
     setSaving(true);
     try {
       const created = await fetchJsonOk<ProjectDetail>("/api/projects", {
@@ -173,7 +182,7 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
           customerName: customerPayload.customerName,
           customerDocument: customerPayload.customerDocument,
           projectType: form.projectType,
-          commercialOwner: form.commercialOwner.trim() || null,
+          commercialOwner,
           technicalOwner: form.technicalOwner.trim() || null,
           targetMarginPercent: form.targetMarginPercent
             ? Number(form.targetMarginPercent)
@@ -255,6 +264,8 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
             onClick={() => {
               setCustomerSelection(null);
               setCustomerDraft("");
+              setCommercialSelection(null);
+              setCommercialDraft("");
               setCreateOpen(true);
             }}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
@@ -367,20 +378,18 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
                   </option>
                 ))}
               </select>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  className="rounded-lg border border-border px-3 py-2 text-sm"
-                  placeholder="Responsável comercial"
-                  value={form.commercialOwner}
-                  onChange={(e) => setForm((f) => ({ ...f, commercialOwner: e.target.value }))}
-                />
-                <input
-                  className="rounded-lg border border-border px-3 py-2 text-sm"
-                  placeholder="Responsável técnico"
-                  value={form.technicalOwner}
-                  onChange={(e) => setForm((f) => ({ ...f, technicalOwner: e.target.value }))}
-                />
-              </div>
+              <ProjectCommercialOwnerLookupField
+                value={commercialSelection}
+                onChange={setCommercialSelection}
+                onDraftChange={setCommercialDraft}
+                disabled={saving}
+              />
+              <input
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                placeholder="Responsável técnico (opcional)"
+                value={form.technicalOwner}
+                onChange={(e) => setForm((f) => ({ ...f, technicalOwner: e.target.value }))}
+              />
               <input
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                 placeholder="Margem alvo (%)"
@@ -420,6 +429,13 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [moldModalOpen, setMoldModalOpen] = useState(false);
+  const [moldModalError, setMoldModalError] = useState<string | null>(null);
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [itemModalOpen, setItemModalOpen] = useState(false);
+  const [structureModalSource, setStructureModalSource] =
+    useState<ProjectStructureSourceType | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -643,15 +659,9 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
           title="Produtos simulados"
           canManage={canManage}
           empty="Nenhum produto simulado."
-          onAdd={async () => {
-            const description = window.prompt("Descrição do produto simulado:");
-            if (!description?.trim()) return;
-            await fetchJsonOk(`/api/projects/${projectId}/simulated-products`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ description: description.trim() }),
-            });
-            await load();
+          onAddClick={() => {
+            setModalError(null);
+            setProductModalOpen(true);
           }}
           rows={detail.simulatedProducts.map((p) => (
             <tr key={p.id} className="border-b border-border/60">
@@ -667,7 +677,14 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
       ) : null}
 
       {tab === "structure" ? (
-        <StructureTab projectId={projectId} detail={detail} canManage={canManage} onReload={load} />
+        <StructureTab
+          detail={detail}
+          canManage={canManage}
+          onAddLine={(sourceType) => {
+            setModalError(null);
+            setStructureModalSource(sourceType);
+          }}
+        />
       ) : null}
 
       {tab === "items" ? (
@@ -675,18 +692,9 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
           title="Itens simulados (não viram cadastro oficial)"
           canManage={canManage}
           empty="Nenhum item simulado."
-          onAdd={async () => {
-            const description = window.prompt("Descrição do item simulado:");
-            if (!description?.trim()) return;
-            await fetchJsonOk(`/api/projects/${projectId}/simulated-items`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                description: description.trim(),
-                itemType: "RAW_MATERIAL" as ProjectSimulatedItemType,
-              }),
-            });
-            await load();
+          onAddClick={() => {
+            setModalError(null);
+            setItemModalOpen(true);
           }}
           rows={detail.simulatedItems.map((i) => (
             <tr key={i.id} className="border-b border-border/60">
@@ -710,22 +718,9 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
           title="Molde / Ferramental"
           canManage={canManage}
           empty="Nenhum molde cadastrado."
-          onAdd={async () => {
-            const name = window.prompt("Nome do molde:");
-            if (!name?.trim()) return;
-            const costStr = window.prompt("Custo de construção:", "0");
-            await fetchJsonOk(`/api/projects/${projectId}/molds`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: name.trim(),
-                constructionCost: Number(costStr) || 0,
-                chargeMode: "AMORTIZED_IN_PRODUCT" as ProjectMoldChargeMode,
-                amortizationQuantity: 10000,
-                ownership: "UNDEFINED" as ProjectMoldOwnership,
-              }),
-            });
-            await load();
+          onAddClick={() => {
+            setMoldModalError(null);
+            setMoldModalOpen(true);
           }}
           rows={detail.molds.map((m) => (
             <tr key={m.id} className="border-b border-border/60">
@@ -825,6 +820,116 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
           )}
         </div>
       ) : null}
+
+      <ProjectMoldFormModal
+        open={moldModalOpen}
+        saving={saving}
+        error={moldModalError}
+        onClose={() => setMoldModalOpen(false)}
+        onSubmit={async (payload) => {
+          setSaving(true);
+          setMoldModalError(null);
+          try {
+            await fetchJsonOk(`/api/projects/${projectId}/molds`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            setMoldModalOpen(false);
+            await load();
+          } catch (e) {
+            setMoldModalError(e instanceof Error ? e.message : "Erro ao salvar molde.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+
+      <ProjectSimpleDescriptionModal
+        open={productModalOpen}
+        title="Adicionar produto simulado"
+        label="Descrição"
+        placeholder="Descrição do produto simulado"
+        submitLabel="Adicionar"
+        saving={saving}
+        error={modalError}
+        onClose={() => setProductModalOpen(false)}
+        onSubmit={async (description) => {
+          setSaving(true);
+          setModalError(null);
+          try {
+            await fetchJsonOk(`/api/projects/${projectId}/simulated-products`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ description }),
+            });
+            setProductModalOpen(false);
+            await load();
+          } catch (e) {
+            setModalError(e instanceof Error ? e.message : "Erro ao adicionar produto.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+
+      <ProjectSimpleDescriptionModal
+        open={itemModalOpen}
+        title="Adicionar item simulado"
+        subtitle="Item permanece apenas neste projeto — não vira cadastro oficial."
+        label="Descrição"
+        placeholder="Descrição do item simulado"
+        submitLabel="Adicionar"
+        saving={saving}
+        error={modalError}
+        onClose={() => setItemModalOpen(false)}
+        onSubmit={async (description) => {
+          setSaving(true);
+          setModalError(null);
+          try {
+            await fetchJsonOk(`/api/projects/${projectId}/simulated-items`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                description,
+                itemType: "RAW_MATERIAL" as ProjectSimulatedItemType,
+              }),
+            });
+            setItemModalOpen(false);
+            await load();
+          } catch (e) {
+            setModalError(e instanceof Error ? e.message : "Erro ao adicionar item.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+
+      <ProjectStructureLineModal
+        open={structureModalSource != null}
+        sourceType={structureModalSource}
+        simulatedItems={detail.simulatedItems}
+        saving={saving}
+        error={modalError}
+        onClose={() => setStructureModalSource(null)}
+        onSubmit={async (body) => {
+          setSaving(true);
+          setModalError(null);
+          try {
+            await fetchJsonOk(`/api/projects/${projectId}/structure-lines`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            setStructureModalSource(null);
+            await load();
+          } catch (e) {
+            setModalError(e instanceof Error ? e.message : "Erro ao adicionar linha.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -835,35 +940,26 @@ function EntitySection({
   rows,
   empty,
   canManage,
-  onAdd,
+  onAddClick,
 }: {
   title: string;
   headers: string[];
   rows: React.ReactNode;
   empty: string;
   canManage: boolean;
-  onAdd: () => Promise<void>;
+  onAddClick?: () => void;
 }) {
-  const [adding, setAdding] = useState(false);
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="font-semibold">{title}</h4>
-        {canManage ? (
+        {canManage && onAddClick ? (
           <button
             type="button"
-            disabled={adding}
-            onClick={async () => {
-              setAdding(true);
-              try {
-                await onAdd();
-              } finally {
-                setAdding(false);
-              }
-            }}
+            onClick={onAddClick}
             className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm"
           >
-            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            <Plus className="h-4 w-4" />
             Adicionar
           </button>
         ) : null}
@@ -890,84 +986,30 @@ function EntitySection({
 }
 
 function StructureTab({
-  projectId,
   detail,
   canManage,
-  onReload,
+  onAddLine,
 }: {
-  projectId: string;
   detail: ProjectDetail;
   canManage: boolean;
-  onReload: () => Promise<void>;
+  onAddLine: (sourceType: ProjectStructureSourceType) => void;
 }) {
-  const addLine = async (sourceType: ProjectStructureSourceType) => {
-    let body: Record<string, unknown> = {
-      sourceType,
-      lineType: "RAW_MATERIAL" as ProjectStructureLineType,
-      quantity: 1,
-      lossPercent: 0,
-    };
-    if (sourceType === "MANUAL") {
-      const description = window.prompt("Descrição da linha manual:");
-      if (!description?.trim()) return;
-      const unitCost = Number(window.prompt("Custo unitário:", "0") ?? "0");
-      body = { ...body, description: description.trim(), unitCost };
-    } else if (sourceType === "EXISTING_MATERIAL") {
-      const q = window.prompt("Buscar material (código ou descrição):");
-      if (!q?.trim()) return;
-      const res = await fetchJsonOk<{ rows: { id: string; code: string; description: string }[] }>(
-        `/api/projects/lookup/materials?q=${encodeURIComponent(q.trim())}`
-      );
-      const pick = res.rows[0];
-      if (!pick) {
-        window.alert("Material não encontrado.");
-        return;
-      }
-      body = { ...body, existingMaterialId: pick.id, lineType: "RAW_MATERIAL" };
-    } else if (sourceType === "EXISTING_PRODUCT") {
-      const q = window.prompt("Buscar produto (SKU ou nome):");
-      if (!q?.trim()) return;
-      const res = await fetchJsonOk<{ rows: { id: string; sku: string; name: string }[] }>(
-        `/api/projects/lookup/products?q=${encodeURIComponent(q.trim())}`
-      );
-      const pick = res.rows[0];
-      if (!pick) {
-        window.alert("Produto não encontrado.");
-        return;
-      }
-      body = { ...body, existingProductId: pick.id, lineType: "COMPONENT" };
-    } else if (sourceType === "SIMULATED_ITEM") {
-      const item = detail.simulatedItems[0];
-      if (!item) {
-        window.alert("Cadastre um item simulado antes.");
-        return;
-      }
-      body = { ...body, simulatedItemId: item.id };
-    }
-    await fetchJsonOk(`/api/projects/${projectId}/structure-lines`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    await onReload();
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="font-semibold">Estrutura / BOM simulada</h4>
         {canManage ? (
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => addLine("EXISTING_MATERIAL")}>
+            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("EXISTING_MATERIAL")}>
               + Material existente
             </button>
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => addLine("EXISTING_PRODUCT")}>
+            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("EXISTING_PRODUCT")}>
               + Produto existente
             </button>
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => addLine("SIMULATED_ITEM")}>
+            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("SIMULATED_ITEM")}>
               + Item simulado
             </button>
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => addLine("MANUAL")}>
+            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("MANUAL")}>
               + Manual
             </button>
           </div>
