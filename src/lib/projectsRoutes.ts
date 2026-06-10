@@ -11,6 +11,12 @@ type AuthGuards = {
 };
 import { buildProjectsDashboard } from "@/src/lib/projectsDashboard.js";
 import {
+  buildProjectsCustomerLookupWhere,
+  PROJECTS_CUSTOMER_LOOKUP_LIMIT,
+  serializeCustomerLookupItem,
+} from "@/src/lib/projectsCustomerLookup.js";
+import {
+  PROJECTS_LOOKUP_PERMISSIONS,
   PROJECTS_MANAGE_PERMISSIONS,
   PROJECTS_VIEW_PERMISSIONS,
 } from "@/src/lib/projectsPermissions.js";
@@ -72,6 +78,7 @@ function optBool(value: unknown, fallback = false): boolean {
 
 export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
   const view = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_VIEW_PERMISSIONS])] as const;
+  const lookup = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_LOOKUP_PERMISSIONS])] as const;
   const manage = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_MANAGE_PERMISSIONS])] as const;
 
   app.get("/api/projects/dashboard", ...view, async (_req, res) => {
@@ -146,7 +153,34 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
-  app.get("/api/projects/lookup/products", ...view, async (req, res) => {
+  app.get("/api/projects/lookup/customers", ...lookup, async (req, res) => {
+    try {
+      const query = String(req.query.query ?? req.query.q ?? "").trim();
+      if (!query) {
+        return res.json({ rows: [] });
+      }
+      const rows = await prisma.customer.findMany({
+        where: {
+          status: "ACTIVE",
+          ...buildProjectsCustomerLookupWhere(query),
+        },
+        take: PROJECTS_CUSTOMER_LOOKUP_LIMIT,
+        orderBy: { companyName: "asc" },
+        select: {
+          id: true,
+          companyName: true,
+          tradeName: true,
+          taxId: true,
+        },
+      });
+      res.json({ rows: rows.map(serializeCustomerLookupItem) });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/customers", e);
+      res.status(500).json({ error: "Erro na busca de clientes." });
+    }
+  });
+
+  app.get("/api/projects/lookup/products", ...lookup, async (req, res) => {
     try {
       const q = String(req.query.q ?? "").trim();
       const rows = await prisma.product.findMany({
@@ -169,7 +203,7 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
-  app.get("/api/projects/lookup/materials", ...view, async (req, res) => {
+  app.get("/api/projects/lookup/materials", ...lookup, async (req, res) => {
     try {
       const q = String(req.query.q ?? "").trim();
       const rows = await prisma.material.findMany({
@@ -220,6 +254,10 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
       const body = req.body ?? {};
       const title = typeof body.title === "string" ? body.title.trim() : "";
       const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
+      const customerDocument =
+        body.customerDocument === undefined || body.customerDocument === null
+          ? null
+          : optStr(body.customerDocument);
       const projectType = body.projectType;
 
       if (!title) return res.status(400).json({ error: "Título é obrigatório." });
@@ -234,7 +272,7 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
       const project = await createProjectWithVersion({
         title,
         customerName,
-        customerDocument: optStr(body.customerDocument),
+        customerDocument,
         description: optStr(body.description),
         projectType,
         status: body.status,

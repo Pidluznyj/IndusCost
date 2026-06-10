@@ -5,6 +5,11 @@ export const PROJECTS_MANAGE_PERMISSIONS = ["projects.manage"] as const;
 export const PROJECTS_APPROVE_PERMISSIONS = ["projects.approve"] as const;
 export const PROJECTS_CONVERT_PERMISSIONS = ["projects.convert"] as const;
 
+export const PROJECTS_LOOKUP_PERMISSIONS = [
+  ...PROJECTS_VIEW_PERMISSIONS,
+  ...PROJECTS_MANAGE_PERMISSIONS,
+] as const;
+
 export function canViewProjects(check: PermissionChecker): boolean {
   return check.hasPermission("projects.view");
 }

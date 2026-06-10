@@ -4,6 +4,7 @@ import {
   canManageProjects,
   canViewProjects,
   isOfficialConversionEnabled,
+  PROJECTS_LOOKUP_PERMISSIONS,
 } from "./projectsPermissions.js";
 import type { PermissionChecker } from "./modulePermissions.js";
 
@@ -28,5 +29,10 @@ describe("projectsPermissions", () => {
 
   it("conversão oficial permanece desabilitada", () => {
     assert.equal(isOfficialConversionEnabled(), false);
+  });
+
+  it("lookup inclui projects.view e projects.manage", () => {
+    assert.ok(PROJECTS_LOOKUP_PERMISSIONS.includes("projects.view"));
+    assert.ok(PROJECTS_LOOKUP_PERMISSIONS.includes("projects.manage"));
   });
 });

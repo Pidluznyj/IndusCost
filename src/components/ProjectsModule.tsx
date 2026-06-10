@@ -22,6 +22,11 @@ import {
   type ProjectTabId,
 } from "@/src/lib/projectsNavigation";
 import { canManageProjects } from "@/src/lib/projectsPermissions";
+import {
+  ProjectCustomerLookupField,
+  projectCustomerSelectionToPayload,
+  type ProjectCustomerSelection,
+} from "@/src/components/projects/ProjectCustomerLookupField";
 import type {
   ProjectDashboardPayload,
   ProjectDetail,
@@ -114,12 +119,13 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     title: "",
-    customerName: "",
     projectType: "NEW_PRODUCT" as ProjectType,
     commercialOwner: "",
     technicalOwner: "",
     targetMarginPercent: "",
   });
+  const [customerSelection, setCustomerSelection] = useState<ProjectCustomerSelection>(null);
+  const [customerDraft, setCustomerDraft] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -149,7 +155,14 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim() || !form.customerName.trim()) return;
+    let customerPayload = projectCustomerSelectionToPayload(customerSelection);
+    if (!customerPayload && customerDraft.trim()) {
+      customerPayload = {
+        customerName: customerDraft.trim(),
+        customerDocument: null,
+      };
+    }
+    if (!form.title.trim() || !customerPayload?.customerName) return;
     setSaving(true);
     try {
       const created = await fetchJsonOk<ProjectDetail>("/api/projects", {
@@ -157,7 +170,8 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: form.title.trim(),
-          customerName: form.customerName.trim(),
+          customerName: customerPayload.customerName,
+          customerDocument: customerPayload.customerDocument,
           projectType: form.projectType,
           commercialOwner: form.commercialOwner.trim() || null,
           technicalOwner: form.technicalOwner.trim() || null,
@@ -238,7 +252,11 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
         {canManage ? (
           <button
             type="button"
-            onClick={() => setCreateOpen(true)}
+            onClick={() => {
+              setCustomerSelection(null);
+              setCustomerDraft("");
+              setCreateOpen(true);
+            }}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
             <Plus className="h-4 w-4" />
@@ -330,12 +348,11 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
               />
-              <input
-                required
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                placeholder="Cliente"
-                value={form.customerName}
-                onChange={(e) => setForm((f) => ({ ...f, customerName: e.target.value }))}
+              <ProjectCustomerLookupField
+                value={customerSelection}
+                onChange={setCustomerSelection}
+                onDraftChange={setCustomerDraft}
+                disabled={saving}
               />
               <select
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
