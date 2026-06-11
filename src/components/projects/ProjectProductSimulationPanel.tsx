@@ -414,17 +414,36 @@ export function ProjectProductSimulationPanel({
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <CostCard
-                  label="Custo industrial oficial (importado)"
+                  label="Custo oficial importado"
                   subtitle="Motor oficial getProductCostAnalysis"
                   value={costAnalysis.officialIndustrialCost}
                 />
                 <CostCard
-                  label="Custo industrial simulado do projeto"
-                  subtitle="Calculado a partir do snapshot editável deste produto no projeto."
+                  label="Custo simulado do projeto"
+                  subtitle="Oficial + variações manuais do snapshot."
                   value={costAnalysis.simulatedIndustrialCost}
                   highlight
                 />
-                <CostCard label="Diferença" value={costAnalysis.difference} />
+                <CostCard
+                  label="Diferença"
+                  subtitle="Simulado − oficial (somente alterações do projeto)"
+                  value={costAnalysis.difference}
+                />
+                <CostCard
+                  label="Variações do projeto"
+                  subtitle="Soma dos deltas manuais propagados"
+                  value={costAnalysis.totalProjectDelta}
+                />
+                <CostCard
+                  label="Parcela aberta na árvore (oficial)"
+                  subtitle="Soma dos itens de 1º nível no snapshot"
+                  value={costAnalysis.openTreeOfficialCost}
+                />
+                <CostCard
+                  label="Custo residual oficial preservado"
+                  subtitle="Motor oficial − parcela aberta na árvore"
+                  value={costAnalysis.preservedOfficialResidual}
+                />
                 <CostCard
                   label="Matéria-prima (projeto)"
                   subtitle="1º nível do snapshot (countsInSimulatedProductCost)"
@@ -444,9 +463,10 @@ export function ProjectProductSimulationPanel({
                 <CostCard label="Preço sugerido" value={costAnalysis.suggestedPrice} />
               </div>
               <p className="text-xs text-muted-foreground">
-                O custo simulado soma linhas de 1º nível do snapshot deste produto (componentes
-                diretos + processos), com custo dos filhos agregado por rollup. Materiais internos
-                entram no total do componente pai, sem dupla contagem.
+                Custo simulado = custo oficial importado + variações do projeto. O baseline oficial
+                é preservado (inclui processos, HH e custo residual não aberto na árvore). Só
+                alterações manuais no snapshot mudam o simulado; materiais internos propagam delta
+                ao pai sem dupla contagem.
               </p>
             </div>
           ) : null}

@@ -1,19 +1,39 @@
+import { officialLineTotal } from "@/src/lib/projectsEngineeringCostRollup.js";
 import type { ProjectStructureLineRow } from "@/src/types/projects.js";
 
 const EPSILON = 0.000001;
 
-/** Custo derivado por rollup sem edição manual do usuário. */
+/** Total simulado divergiu do oficial por delta propagado, sem edição manual direta. */
 export function isLineRecalculatedFromRollup(
   line: Pick<
     ProjectStructureLineRow,
-    "unitCostSnapshot" | "officialUnitCostSnapshot" | "isChangedFromOfficial"
-  >,
-  hasChildren: boolean
+    | "quantity"
+    | "lossPercent"
+    | "unitCostSnapshot"
+    | "totalCost"
+    | "officialQuantitySnapshot"
+    | "officialLossPercentSnapshot"
+    | "officialUnitCostSnapshot"
+    | "isChangedFromOfficial"
+  >
 ): boolean {
-  if (line.isChangedFromOfficial || !hasChildren) return false;
-  const official = line.officialUnitCostSnapshot;
-  if (official == null) return false;
-  return Math.abs(official - line.unitCostSnapshot) > EPSILON;
+  if (line.isChangedFromOfficial) return false;
+  const officialTotal = officialLineTotal({
+    id: "",
+    parentLineId: null,
+    snapshotRootProductId: null,
+    lineType: "",
+    quantity: line.quantity,
+    lossPercent: line.lossPercent ?? 0,
+    unitCostSnapshot: line.unitCostSnapshot,
+    totalCost: line.totalCost,
+    officialQuantitySnapshot: line.officialQuantitySnapshot,
+    officialLossPercentSnapshot: line.officialLossPercentSnapshot,
+    officialUnitCostSnapshot: line.officialUnitCostSnapshot,
+    countsInSimulatedProductCost: false,
+    isChangedFromOfficial: false,
+  });
+  return Math.abs(line.totalCost - officialTotal) > EPSILON;
 }
 
 export function resolveMissingCostReason(line: ProjectStructureLineRow): string | null {
@@ -45,12 +65,8 @@ export type StructureLineBadge = {
   title?: string;
 };
 
-export function resolveStructureLineBadges(
-  line: ProjectStructureLineRow,
-  options?: { hasChildren?: boolean }
-): StructureLineBadge[] {
+export function resolveStructureLineBadges(line: ProjectStructureLineRow): StructureLineBadge[] {
   const badges: StructureLineBadge[] = [];
-  const hasChildren = options?.hasChildren ?? false;
 
   if (line.sourceType === "EXISTING_MATERIAL" || line.sourceType === "EXISTING_PRODUCT") {
     badges.push({
@@ -67,7 +83,7 @@ export function resolveStructureLineBadges(
       className: "bg-amber-100 text-amber-900",
       title: "Editado manualmente no projeto",
     });
-  } else if (isLineRecalculatedFromRollup(line, hasChildren)) {
+  } else if (isLineRecalculatedFromRollup(line)) {
     badges.push({
       key: "recalculated",
       label: "Recalculado",

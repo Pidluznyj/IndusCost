@@ -5,14 +5,8 @@ import { resolveStructureLineBadges } from "@/src/lib/projectsStructureLineBadge
 import type { ProjectEngineeringTreeNode } from "@/src/lib/projectsEngineeringTree";
 import type { ProjectStructureLineRow } from "@/src/types/projects";
 
-function LineBadges({
-  line,
-  hasChildren,
-}: {
-  line: ProjectStructureLineRow;
-  hasChildren: boolean;
-}) {
-  const badges = resolveStructureLineBadges(line, { hasChildren });
+function LineBadges({ line }: { line: ProjectStructureLineRow }) {
+  const badges = resolveStructureLineBadges(line);
   return (
     <div className="mt-1 flex flex-wrap gap-1">
       {badges.map((badge) => (
@@ -104,7 +98,7 @@ const TreeRow: React.FC<{
                   Custo un.: {formatCurrency(node.line.unitCostSnapshot)} · Total:{" "}
                   {formatCurrency(node.line.totalCost)}
                 </p>
-                <LineBadges line={node.line} hasChildren={node.children.length > 0} />
+                <LineBadges line={node.line} />
               </>
             ) : null}
           </div>

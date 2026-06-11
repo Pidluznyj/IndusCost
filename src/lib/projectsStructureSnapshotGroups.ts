@@ -4,7 +4,10 @@ import {
   toFiniteNumber,
 } from "@/src/lib/projectsCalculations.js";
 import { buildProjectEngineeringTree, type ProjectEngineeringTreeNode } from "@/src/lib/projectsEngineeringTree.js";
-import { sumSimulatedRootProductCost, type EngineeringRollupLine } from "@/src/lib/projectsEngineeringCostRollup.js";
+import {
+  applyBaselineDeltaRollup,
+  type EngineeringRollupLine,
+} from "@/src/lib/projectsEngineeringCostRollup.js";
 import type { ProjectSimulatedProductRow, ProjectStructureLineRow } from "@/src/types/projects.js";
 
 export type ProjectStructureSnapshotGroupStatus =
@@ -157,9 +160,10 @@ export function buildProjectStructureSnapshotGroups(
   const snapshotGroups: ProjectStructureSnapshotGroup[] = [...snapshotRootIds].map((rootId) => {
     const groupLines = lines.filter((l) => lineBelongsToSnapshot(l, rootId));
     const rollupLines = groupLines.map(toRollupLine);
-    const simulatedCost = sumSimulatedRootProductCost(rollupLines);
+    const rollup = applyBaselineDeltaRollup(rollupLines);
     const officialCost = sumOfficialRootCost(groupLines);
-    const differenceAmount = simulatedCost - officialCost;
+    const simulatedCost = officialCost + rollup.totalProjectDelta;
+    const differenceAmount = rollup.totalProjectDelta;
     const differencePercent =
       officialCost > 0 ? sanitizeFinite((differenceAmount / officialCost) * 100) ?? 0 : 0;
 

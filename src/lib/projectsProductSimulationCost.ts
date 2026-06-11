@@ -1,16 +1,13 @@
 /**
  * Análise de custo da simulação de produto no projeto.
  *
- * Fontes por card:
- * - Custo industrial oficial: motor getProductCostAnalysis (engineering-snapshot API)
- * - Custo industrial simulado: sumSimulatedRootProductCost após recalculateEngineeringCostRollup
- * - Matéria-prima / Componentes / Serviços: buildCostBreakdown só nas linhas 1º nível do snapshot
- * - Custo unitário total (produto): industrial simulado + extras do snapshot (sem outros produtos do projeto)
+ * Regra: custo simulado = custo oficial do motor + deltas de alterações manuais.
+ * Pais com filhos preservam custo oficial completo (residual não aberto na árvore).
  */
-import { buildCostBreakdown } from "@/src/lib/projectsCalculations.js";
+import { buildCostBreakdown, sanitizeFinite } from "@/src/lib/projectsCalculations.js";
 import {
-  recalculateEngineeringCostRollup,
-  sumSimulatedRootProductCost,
+  applyBaselineDeltaRollup,
+  computeSimulatedProductIndustrialCost,
   type EngineeringRollupLine,
 } from "@/src/lib/projectsEngineeringCostRollup.js";
 import type { ProjectStructureLineRow } from "@/src/types/projects.js";
@@ -18,14 +15,19 @@ import type { ProjectStructureLineRow } from "@/src/types/projects.js";
 export type ProductSimulationCostBreakdown = {
   /** Motor oficial (totalIndustrialCost). */
   officialIndustrialCost: number | null;
-  /** Σ linhas 1º nível do snapshot após rollup bottom-up. */
+  /** officialIndustrialCost + totalProjectDelta. */
   simulatedIndustrialCost: number;
   difference: number | null;
+  /** Soma dos deltas manuais propagados (1º nível). */
+  totalProjectDelta: number;
+  /** Soma dos totais oficiais das linhas de 1º nível na árvore. */
+  openTreeOfficialCost: number;
+  /** Parcela do motor oficial não representada como linha de 1º nível. */
+  preservedOfficialResidual: number;
   rawMaterialCost: number;
   componentCost: number;
   serviceCost: number;
   packagingCost: number;
-  /** Soma industrial + HH/componentes/MP do snapshot deste produto. */
   unitCostTotal: number;
   suggestedPrice: number | null;
   targetMarginPercent: number | null;
@@ -80,30 +82,38 @@ export function computeProductSimulationCostAnalysis(
   }
 ): ProductSimulationCostBreakdown {
   const scoped = scopeLinesToSnapshot(productLines, options.snapshotRootProductId);
-  const rolled = recalculateEngineeringCostRollup(scoped.map(toRollupLine));
-  const simulatedIndustrialCost = sumSimulatedRootProductCost(rolled);
+  const rollupLines = scoped.map(toRollupLine);
+  const rolled = applyBaselineDeltaRollup(rollupLines);
 
-  const level0Lines = rolled.filter(
+  const official = options.officialIndustrialCost;
+  const industrial = computeSimulatedProductIndustrialCost(rollupLines, official);
+
+  const level0Lines = rolled.lines.filter(
     (l) => l.parentLineId == null && l.countsInSimulatedProductCost
   );
 
   const breakdown = buildCostBreakdown({
-    structureLines: level0Lines.map((l) => ({
-      lineType: l.lineType as ProjectStructureLineRow["lineType"],
-      quantity: l.quantity,
-      lossPercent: l.lossPercent,
-      unitCostSnapshot: l.unitCostSnapshot,
-      countsInSimulatedProductCost: true,
-    })),
+    structureLines: level0Lines.map((l) => {
+      const state = rolled.lineStates.get(l.id);
+      return {
+        lineType: l.lineType as ProjectStructureLineRow["lineType"],
+        quantity: l.quantity,
+        lossPercent: l.lossPercent,
+        unitCostSnapshot: state
+          ? state.simulatedTotal /
+            (l.quantity * (1 + (l.lossPercent ?? 0) / 100) || 1)
+          : l.unitCostSnapshot,
+        countsInSimulatedProductCost: true,
+      };
+    }),
     molds: [],
     targetMarginPercent: options.targetMarginPercent,
     targetPrice: options.targetPrice,
   });
 
-  const official = options.officialIndustrialCost;
   const difference =
     official != null && Number.isFinite(official)
-      ? simulatedIndustrialCost - official
+      ? sanitizeFinite(industrial.totalProjectDelta)
       : null;
 
   const other =
@@ -115,37 +125,25 @@ export function computeProductSimulationCostAnalysis(
 
   return {
     officialIndustrialCost: official,
-    simulatedIndustrialCost,
+    simulatedIndustrialCost: industrial.simulatedIndustrialCost,
     difference,
+    totalProjectDelta: industrial.totalProjectDelta,
+    openTreeOfficialCost: industrial.sumLevel0OfficialOpen,
+    preservedOfficialResidual: industrial.preservedOfficialResidual,
     rawMaterialCost: breakdown.rawMaterialCost,
     componentCost: breakdown.componentCost,
     serviceCost: breakdown.serviceCost,
     packagingCost: breakdown.packagingCost,
-    unitCostTotal: breakdown.unitCost,
+    unitCostTotal: industrial.simulatedIndustrialCost,
     suggestedPrice: breakdown.suggestedPrice,
     targetMarginPercent: breakdown.targetMarginPercent,
     parts: {
-      industrial: simulatedIndustrialCost,
+      industrial: industrial.simulatedIndustrialCost,
       rawMaterial: breakdown.rawMaterialCost,
       components: breakdown.componentCost,
       services: breakdown.serviceCost,
       packaging: breakdown.packagingCost,
       other: other > 0.000001 ? other : 0,
     },
-  };
-}
-
-/** Após import/rollup, alinha snapshots oficiais à linha para baseline isChangedFromOfficial=false. */
-export function engineeringRollupBaselinePatch(
-  line: EngineeringRollupLine
-): Pick<
-  EngineeringRollupLine,
-  "officialQuantitySnapshot" | "officialLossPercentSnapshot" | "officialUnitCostSnapshot" | "isChangedFromOfficial"
-> {
-  return {
-    officialQuantitySnapshot: line.quantity,
-    officialLossPercentSnapshot: line.lossPercent,
-    officialUnitCostSnapshot: line.unitCostSnapshot,
-    isChangedFromOfficial: false,
   };
 }

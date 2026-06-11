@@ -133,6 +133,7 @@ describe("projectsStructureSnapshotGroups", () => {
         snapshotRootProductId: ROOT_A,
         countsInSimulatedProductCost: true,
         unitCostSnapshot: 50,
+        officialUnitCostSnapshot: 50,
         totalCost: 50,
       }),
       line({

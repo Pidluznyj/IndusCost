@@ -31,8 +31,8 @@ function line(
     officialQuantitySnapshot: 1,
     officialLossPercentSnapshot: 0,
     officialUnitCostSnapshot: 10,
-    unitCostSnapshot: 12,
-    totalCost: 12,
+    unitCostSnapshot: 10,
+    totalCost: 10,
     costSource: "OFFICIAL_COST_ANALYSIS",
     isChangedFromOfficial: false,
     isMissingCost: false,
@@ -46,29 +46,35 @@ function line(
 
 describe("projectsStructureLineBadges", () => {
   it("Alterado só quando isChangedFromOfficial=true", () => {
-    const badges = resolveStructureLineBadges(line({ isChangedFromOfficial: true }), {
-      hasChildren: true,
-    });
+    const badges = resolveStructureLineBadges(line({ isChangedFromOfficial: true }));
     assert.ok(badges.some((b) => b.label === "Alterado"));
     assert.ok(!badges.some((b) => b.label === "Recalculado"));
   });
 
-  it("rollup técnico exibe Recalculado, não Alterado", () => {
+  it("rollup técnico exibe Recalculado quando total diverge sem flag manual", () => {
     const badges = resolveStructureLineBadges(
-      line({ officialUnitCostSnapshot: 10, unitCostSnapshot: 12, isChangedFromOfficial: false }),
-      { hasChildren: true }
+      line({
+        officialUnitCostSnapshot: 10,
+        unitCostSnapshot: 10,
+        totalCost: 11,
+        isChangedFromOfficial: false,
+      })
     );
     assert.ok(badges.some((b) => b.label === "Recalculado"));
     assert.ok(!badges.some((b) => b.label === "Alterado"));
   });
 
-  it("isLineRecalculatedFromRollup ignora folhas", () => {
+  it("isLineRecalculatedFromRollup detecta delta propagado no totalCost", () => {
     assert.equal(
       isLineRecalculatedFromRollup(
-        line({ officialUnitCostSnapshot: 1, unitCostSnapshot: 2, isChangedFromOfficial: false }),
-        false
+        line({
+          officialUnitCostSnapshot: 0.295645,
+          unitCostSnapshot: 0.295645,
+          totalCost: 0.305645,
+          isChangedFromOfficial: false,
+        })
       ),
-      false
+      true
     );
   });
 

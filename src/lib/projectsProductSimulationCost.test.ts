@@ -1,18 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { computeProductSimulationCostAnalysis } from "./projectsProductSimulationCost.js";
 import {
-  computeProductSimulationCostAnalysis,
-  engineeringRollupBaselinePatch,
-} from "./projectsProductSimulationCost.js";
-import {
+  applyBaselineDeltaRollup,
+  computeSimulatedProductIndustrialCost,
   recalculateEngineeringCostRollup,
-  rollupEngineeringSnapshotNode,
-  sumSimulatedRootProductCost,
   type EngineeringRollupLine,
 } from "./projectsEngineeringCostRollup.js";
 import type { ProjectStructureLineRow } from "@/src/types/projects.js";
 
 const ROOT = "612-03aa";
+const MOTOR_OFFICIAL = 1.309301;
 
 function structureLine(
   partial: Partial<ProjectStructureLineRow> & Pick<ProjectStructureLineRow, "id">
@@ -50,77 +48,41 @@ function structureLine(
   };
 }
 
-function rollupLine(
-  partial: Partial<EngineeringRollupLine> & Pick<EngineeringRollupLine, "id">
-): EngineeringRollupLine {
-  return {
-    parentLineId: null,
-    snapshotRootProductId: ROOT,
-    lineType: "COMPONENT",
-    quantity: 1,
-    lossPercent: 0,
-    unitCostSnapshot: 0,
-    totalCost: 0,
-    officialQuantitySnapshot: 1,
-    officialLossPercentSnapshot: 0,
-    officialUnitCostSnapshot: 0,
-    countsInSimulatedProductCost: false,
-    isChangedFromOfficial: false,
-    ...partial,
-  };
-}
-
-function imported612Fixture(): ProjectStructureLineRow[] {
+function imported61203Fixture(): ProjectStructureLineRow[] {
   const comp = structureLine({
     id: "comp-l0",
     parentLineId: null,
-    lineType: "COMPONENT",
-    quantity: 1,
-    unitCostSnapshot: 50,
-    totalCost: 50,
-    officialUnitCostSnapshot: 50,
+    unitCostSnapshot: 0.466661,
+    officialUnitCostSnapshot: 0.466661,
+    totalCost: 0.466661,
     countsInSimulatedProductCost: true,
   });
-  const mat1 = structureLine({
+  const nested = structureLine({
+    id: "comp-nested",
+    parentLineId: "comp-l0",
+    unitCostSnapshot: 0.295645,
+    officialUnitCostSnapshot: 0.295645,
+    totalCost: 0.295645,
+    countsInSimulatedProductCost: false,
+    level: 2,
+  });
+  const mat = structureLine({
     id: "mat-1",
-    parentLineId: "comp-l0",
+    parentLineId: "comp-nested",
     lineType: "RAW_MATERIAL",
-    quantity: 2,
-    unitCostSnapshot: 10,
-    totalCost: 20,
-    officialUnitCostSnapshot: 10,
+    unitCostSnapshot: 0.05,
+    officialUnitCostSnapshot: 0.05,
+    totalCost: 0.05,
     countsInSimulatedProductCost: false,
-    level: 2,
+    level: 3,
   });
-  const mat2 = structureLine({
-    id: "mat-2",
-    parentLineId: "comp-l0",
-    lineType: "RAW_MATERIAL",
-    quantity: 1,
-    unitCostSnapshot: 30,
-    totalCost: 30,
-    officialUnitCostSnapshot: 30,
-    countsInSimulatedProductCost: false,
-    level: 2,
-  });
-  const proc = structureLine({
-    id: "proc-l0",
-    parentLineId: null,
-    lineType: "PROCESS",
-    unitSnapshot: "HH",
-    quantity: 1,
-    unitCostSnapshot: 59.301,
-    totalCost: 59.301,
-    officialUnitCostSnapshot: 59.301,
-    countsInSimulatedProductCost: true,
-  });
-  return [comp, mat1, mat2, proc];
+  return [comp, nested, mat];
 }
 
 describe("projectsProductSimulationCost", () => {
   it("produto importado sem alteração: oficial = simulado e diferença = 0", () => {
-    const lines = imported612Fixture();
-    const rolled = recalculateEngineeringCostRollup(
+    const lines = imported61203Fixture();
+    recalculateEngineeringCostRollup(
       lines.map((l) => ({
         id: l.id,
         parentLineId: l.parentLineId,
@@ -134,94 +96,81 @@ describe("projectsProductSimulationCost", () => {
         officialLossPercentSnapshot: l.officialLossPercentSnapshot,
         officialUnitCostSnapshot: l.officialUnitCostSnapshot,
         countsInSimulatedProductCost: l.countsInSimulatedProductCost,
-        isChangedFromOfficial: l.isChangedFromOfficial,
+        isChangedFromOfficial: false,
       }))
     );
-    const baseline = rolled.map((l) => ({ ...l, ...engineeringRollupBaselinePatch(l) }));
-    const officialMotor = sumSimulatedRootProductCost(baseline);
 
-    const analysis = computeProductSimulationCostAnalysis(
-      baseline.map((l) => {
-        const row = lines.find((r) => r.id === l.id)!;
-        return {
-          ...row,
-          unitCostSnapshot: l.unitCostSnapshot,
-          totalCost: l.totalCost,
-          officialUnitCostSnapshot: l.officialUnitCostSnapshot!,
-          isChangedFromOfficial: false,
-        };
-      }),
-      { officialIndustrialCost: officialMotor }
-    );
+    const analysis = computeProductSimulationCostAnalysis(lines, {
+      officialIndustrialCost: MOTOR_OFFICIAL,
+      snapshotRootProductId: ROOT,
+    });
 
-    assert.ok(Math.abs(analysis.simulatedIndustrialCost - officialMotor) < 0.0001);
+    assert.ok(Math.abs(analysis.simulatedIndustrialCost - MOTOR_OFFICIAL) < 0.0001);
     assert.ok(analysis.difference != null && Math.abs(analysis.difference) < 0.0001);
+    assert.equal(analysis.totalProjectDelta, 0);
+    assert.ok(analysis.preservedOfficialResidual > 0.8);
   });
 
-  it("alterar material interno muda simulado e diferença; oficial do motor permanece", () => {
-    const lines = imported612Fixture();
-    const officialMotor = 109.301;
-    const edited = lines.map((l) =>
-      l.id === "mat-1" ? { ...l, unitCostSnapshot: 15, totalCost: 30, isChangedFromOfficial: true } : l
+  it("componente pai preserva custo oficial maior que soma dos filhos", () => {
+    const lines = imported61203Fixture();
+    const rollup = applyBaselineDeltaRollup(
+      lines.map((l) => ({
+        id: l.id,
+        parentLineId: l.parentLineId,
+        snapshotRootProductId: ROOT,
+        lineType: l.lineType,
+        quantity: l.quantity,
+        lossPercent: l.lossPercent ?? 0,
+        unitCostSnapshot: l.unitCostSnapshot,
+        totalCost: l.totalCost,
+        officialQuantitySnapshot: l.officialQuantitySnapshot,
+        officialLossPercentSnapshot: l.officialLossPercentSnapshot,
+        officialUnitCostSnapshot: l.officialUnitCostSnapshot,
+        countsInSimulatedProductCost: l.countsInSimulatedProductCost,
+        isChangedFromOfficial: false,
+      }))
     );
+    const nested = rollup.lines.find((l) => l.id === "comp-nested")!;
+    assert.ok(Math.abs(nested.totalCost - 0.295645) < 0.000001);
+    assert.ok(Math.abs(nested.unitCostSnapshot - 0.295645) < 0.000001);
+  });
+
+  it("alterar filho interno propaga delta ao produto raiz via motor", () => {
+    const lines = imported61203Fixture();
+    const edited = lines.map((l) =>
+      l.id === "mat-1"
+        ? {
+            ...l,
+            unitCostSnapshot: 0.06,
+            totalCost: 0.06,
+            isChangedFromOfficial: true,
+          }
+        : l
+    );
+
     const analysis = computeProductSimulationCostAnalysis(edited, {
-      officialIndustrialCost: officialMotor,
+      officialIndustrialCost: MOTOR_OFFICIAL,
+      snapshotRootProductId: ROOT,
     });
-    assert.ok(analysis.simulatedIndustrialCost > officialMotor);
-    assert.ok(analysis.difference != null && analysis.difference > 0);
-    assert.equal(analysis.officialIndustrialCost, officialMotor);
+
+    assert.ok(Math.abs(analysis.totalProjectDelta - 0.01) < 0.0001);
+    assert.ok(Math.abs(analysis.simulatedIndustrialCost - (MOTOR_OFFICIAL + 0.01)) < 0.0001);
+    assert.equal(analysis.officialIndustrialCost, MOTOR_OFFICIAL);
   });
 
   it("materiais internos não duplicam no total do produto", () => {
-    const lines = imported612Fixture();
-    const analysis = computeProductSimulationCostAnalysis(lines, { officialIndustrialCost: 109.301 });
+    const lines = imported61203Fixture();
+    const analysis = computeProductSimulationCostAnalysis(lines, {
+      officialIndustrialCost: MOTOR_OFFICIAL,
+      snapshotRootProductId: ROOT,
+    });
     assert.equal(analysis.rawMaterialCost, 0);
     assert.ok(analysis.componentCost > 0);
     assert.ok(Math.abs(analysis.unitCostTotal - analysis.simulatedIndustrialCost) < 0.0001);
   });
 
-  it("componentes de 1º nível recebem rollup dos filhos", () => {
-    const node = {
-      quantity: 1,
-      lossPercent: 0,
-      officialUnitCost: 999,
-      simulatedUnitCost: 999,
-      totalCost: 999,
-      children: [
-        {
-          quantity: 2,
-          lossPercent: 0,
-          officialUnitCost: 10,
-          simulatedUnitCost: 10,
-          totalCost: 20,
-          children: [],
-        },
-        {
-          quantity: 1,
-          lossPercent: 0,
-          officialUnitCost: 30,
-          simulatedUnitCost: 30,
-          totalCost: 30,
-          children: [],
-        },
-      ],
-    };
-    rollupEngineeringSnapshotNode(node);
-    assert.equal(node.totalCost, 50);
-    assert.equal(node.simulatedUnitCost, 50);
-    assert.equal(node.officialUnitCost, 50);
-  });
-
-  it("custo unitário total abre parcelas e sem extras iguala industrial", () => {
-    const lines = imported612Fixture();
-    const analysis = computeProductSimulationCostAnalysis(lines, { officialIndustrialCost: 109.301 });
-    assert.ok(analysis.parts.industrial > 0);
-    assert.equal(analysis.parts.other, 0);
-    assert.ok(Math.abs(analysis.unitCostTotal - analysis.parts.industrial) < 0.0001);
-  });
-
-  it("filtra apenas linhas do produto selecionado (sem misturar outro snapshot)", () => {
-    const productA = imported612Fixture();
+  it("filtra apenas linhas do produto selecionado", () => {
+    const productA = imported61203Fixture();
     const otherProduct = structureLine({
       id: "other-comp",
       snapshotRootProductId: "other-product",
@@ -231,54 +180,53 @@ describe("projectsProductSimulationCost", () => {
       countsInSimulatedProductCost: true,
     });
     const analysisA = computeProductSimulationCostAnalysis([...productA, otherProduct], {
-      officialIndustrialCost: 109.301,
+      officialIndustrialCost: MOTOR_OFFICIAL,
       snapshotRootProductId: ROOT,
     });
     const analysisOnlyA = computeProductSimulationCostAnalysis(productA, {
-      officialIndustrialCost: 109.301,
+      officialIndustrialCost: MOTOR_OFFICIAL,
       snapshotRootProductId: ROOT,
     });
-    assert.ok(Math.abs(analysisA.simulatedIndustrialCost - analysisOnlyA.simulatedIndustrialCost) < 0.0001);
-    assert.ok(analysisA.simulatedIndustrialCost < 200);
+    assert.ok(
+      Math.abs(analysisA.simulatedIndustrialCost - analysisOnlyA.simulatedIndustrialCost) < 0.0001
+    );
   });
 
   it("não retorna NaN, Infinity ou custo negativo indevido", () => {
-    const lines = imported612Fixture();
-    const analysis = computeProductSimulationCostAnalysis(lines, { officialIndustrialCost: 109.301 });
+    const lines = imported61203Fixture();
+    const analysis = computeProductSimulationCostAnalysis(lines, {
+      officialIndustrialCost: MOTOR_OFFICIAL,
+      snapshotRootProductId: ROOT,
+    });
     for (const v of [
       analysis.simulatedIndustrialCost,
       analysis.unitCostTotal,
-      analysis.rawMaterialCost,
-      analysis.componentCost,
-      analysis.serviceCost,
+      analysis.totalProjectDelta,
+      analysis.preservedOfficialResidual,
     ]) {
       assert.ok(Number.isFinite(v));
       assert.ok(v >= 0);
     }
   });
 
-  it("rollupEngineeringSnapshotNode evita custo parcial de linha BOM no pai", () => {
-    const lines = [
-      rollupLine({
-        id: "comp",
-        parentLineId: null,
-        unitCostSnapshot: 1.309301,
-        totalCost: 1.309301,
-        officialUnitCostSnapshot: 1.309301,
-        countsInSimulatedProductCost: true,
-      }),
-      rollupLine({
-        id: "mat",
-        parentLineId: "comp",
-        lineType: "RAW_MATERIAL",
-        unitCostSnapshot: 0.466661,
-        totalCost: 0.466661,
-        countsInSimulatedProductCost: false,
-      }),
-    ];
-    const rolled = recalculateEngineeringCostRollup(lines);
-    const root = sumSimulatedRootProductCost(rolled);
-    assert.ok(Math.abs(root - 0.466661) < 0.0001);
-    assert.notEqual(root, 1.309301);
+  it("computeSimulatedProductIndustrialCost com delta zero preserva motor", () => {
+    const rollupLine: EngineeringRollupLine = {
+      id: "l0",
+      parentLineId: null,
+      snapshotRootProductId: ROOT,
+      lineType: "COMPONENT",
+      quantity: 1,
+      lossPercent: 0,
+      unitCostSnapshot: 0.466661,
+      totalCost: 0.466661,
+      officialQuantitySnapshot: 1,
+      officialLossPercentSnapshot: 0,
+      officialUnitCostSnapshot: 0.466661,
+      countsInSimulatedProductCost: true,
+      isChangedFromOfficial: false,
+    };
+    const r = computeSimulatedProductIndustrialCost([rollupLine], MOTOR_OFFICIAL);
+    assert.equal(r.totalProjectDelta, 0);
+    assert.ok(Math.abs(r.simulatedIndustrialCost - MOTOR_OFFICIAL) < 0.0001);
   });
 });

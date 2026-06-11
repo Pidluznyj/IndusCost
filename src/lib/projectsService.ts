@@ -317,17 +317,17 @@ export async function establishEngineeringCostBaselineForSnapshot(
   for (const line of lines) {
     const next = byId.get(line.id);
     if (!next) continue;
+    const unit = toFiniteNumber(dec(line.unitCostSnapshot));
     updates.push(
       prisma.projectStructureLine.update({
         where: { id: line.id },
         data: {
-          officialQuantitySnapshot: next.quantity,
-          officialLossPercentSnapshot: next.lossPercent,
-          officialUnitCostSnapshot: next.unitCostSnapshot,
-          unitCostSnapshot: next.unitCostSnapshot,
+          officialQuantitySnapshot: toFiniteNumber(dec(line.quantity)),
+          officialLossPercentSnapshot: toFiniteNumber(dec(line.lossPercent)),
+          officialUnitCostSnapshot: unit,
           totalCost: next.totalCost,
           isChangedFromOfficial: false,
-          isMissingCost: next.unitCostSnapshot <= 0,
+          isMissingCost: unit <= 0,
         },
       })
     );
@@ -349,18 +349,14 @@ export async function persistEngineeringCostRollupForVersion(versionId: string):
   for (const line of lines) {
     const next = byId.get(line.id);
     if (!next || line.snapshotRootProductId == null) continue;
-    const unit = toFiniteNumber(dec(line.unitCostSnapshot));
     const total = toFiniteNumber(dec(line.totalCost));
-    const unitChanged = Math.abs(unit - next.unitCostSnapshot) > 0.000001;
     const totalChanged = Math.abs(total - next.totalCost) > 0.000001;
-    if (!unitChanged && !totalChanged) continue;
+    if (!totalChanged) continue;
     updates.push(
       prisma.projectStructureLine.update({
         where: { id: line.id },
         data: {
-          unitCostSnapshot: next.unitCostSnapshot,
           totalCost: next.totalCost,
-          isMissingCost: next.unitCostSnapshot <= 0,
         },
       })
     );

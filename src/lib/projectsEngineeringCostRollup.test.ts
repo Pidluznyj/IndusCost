@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { buildCostBreakdown } from "./projectsCalculations.js";
 import {
+  applyBaselineDeltaRollup,
+  computeSimulatedProductIndustrialCost,
   deriveUnitCostFromChildrenTotal,
   lineTotalFromParts,
   recalculateEngineeringCostRollup,
@@ -98,20 +99,60 @@ function build61202Fixture(): EngineeringRollupLine[] {
 }
 
 describe("projectsEngineeringCostRollup", () => {
-  it("rollup inicial do componente pai bate com soma dos materiais", () => {
+  it("pai com filhos preserva custo oficial completo (não substitui por soma dos filhos)", () => {
+    const parent = line({
+      id: "parent",
+      parentLineId: null,
+      unitCostSnapshot: 0.295645,
+      officialUnitCostSnapshot: 0.295645,
+      totalCost: 0.295645,
+      countsInSimulatedProductCost: true,
+    });
+    const child = line({
+      id: "child",
+      parentLineId: "parent",
+      lineType: "RAW_MATERIAL",
+      unitCostSnapshot: 0.05,
+      officialUnitCostSnapshot: 0.05,
+      totalCost: 0.05,
+      quantity: 1,
+    });
+    const rolled = recalculateEngineeringCostRollup([parent, child]);
+    const p = rolled.find((l) => l.id === "parent")!;
+    assert.ok(Math.abs(p.totalCost - 0.295645) < 0.000001);
+    assert.ok(Math.abs(p.unitCostSnapshot - 0.295645) < 0.000001);
+  });
+
+  it("sem alteração manual: projectDelta = 0 e simulado = motor oficial", () => {
+    const motor = 1.309301;
+    const l0 = line({
+      id: "l0",
+      parentLineId: null,
+      unitCostSnapshot: 0.466661,
+      officialUnitCostSnapshot: 0.466661,
+      totalCost: 0.466661,
+      countsInSimulatedProductCost: true,
+    });
+    const result = computeSimulatedProductIndustrialCost([l0], motor);
+    assert.equal(result.totalProjectDelta, 0);
+    assert.ok(Math.abs(result.simulatedIndustrialCost - motor) < 0.000001);
+    assert.ok(Math.abs(result.preservedOfficialResidual - 0.84264) < 0.0001);
+  });
+
+  it("rollup inicial do componente pai preserva baseline oficial", () => {
     const rolled = recalculateEngineeringCostRollup(build61202Fixture());
     const comp = rolled.find((l) => l.id === "comp-311")!;
     assert.equal(comp.totalCost, 50);
     assert.equal(comp.unitCostSnapshot, 50);
   });
 
-  it("custo inicial do produto raiz (1º nível) bate com custo oficial agregado", () => {
+  it("custo de 1º nível sem alteração bate com soma oficial aberta", () => {
     const rolled = recalculateEngineeringCostRollup(build61202Fixture());
     const rootCost = sumSimulatedRootProductCost(rolled);
     assert.ok(Math.abs(rootCost - 309.301) < 0.01);
   });
 
-  it("alterar custo unitário de material neto recalcula componente pai e raiz", () => {
+  it("alterar material interno propaga delta ao pai sem marcar pai como alterado", () => {
     const base = build61202Fixture();
     const mat = base.find((l) => l.id === "mat-115")!;
     mat.unitCostSnapshot = 15;
@@ -124,9 +165,12 @@ describe("projectsEngineeringCostRollup", () => {
 
     assert.equal(matRolled.totalCost, 30);
     assert.equal(comp.totalCost, 60);
-    assert.equal(comp.unitCostSnapshot, 60);
+    assert.equal(comp.unitCostSnapshot, 50);
     assert.equal(matRolled.isChangedFromOfficial, true);
     assert.equal(comp.isChangedFromOfficial, false);
+
+    const rollup = applyBaselineDeltaRollup(base);
+    assert.equal(rollup.totalProjectDelta, 10);
 
     const rootCost = sumSimulatedRootProductCost(rolled);
     assert.ok(Math.abs(rootCost - 319.301) < 0.01);
@@ -138,23 +182,6 @@ describe("projectsEngineeringCostRollup", () => {
     const naiveSum = rolled.reduce((s, l) => s + l.totalCost, 0);
     assert.ok(naiveSum > rollupSum);
     assert.ok(Math.abs(rollupSum - 309.301) < 0.01);
-  });
-
-  it("buildCostBreakdown ignora linhas profundas com countsInSimulatedProductCost=false", () => {
-    const rolled = recalculateEngineeringCostRollup(build61202Fixture());
-    const breakdown = buildCostBreakdown({
-      structureLines: rolled.map((l) => ({
-        lineType: l.lineType as "RAW_MATERIAL" | "COMPONENT",
-        quantity: l.quantity,
-        lossPercent: l.lossPercent,
-        unitCostSnapshot: l.unitCostSnapshot,
-        countsInSimulatedProductCost: l.countsInSimulatedProductCost,
-      })),
-      molds: [],
-    });
-    assert.ok(Math.abs(breakdown.unitCost - 309.301) < 0.05);
-    assert.equal(Number.isFinite(breakdown.unitCost), true);
-    assert.notEqual(breakdown.unitCost, 0);
   });
 
   it("alteração propagada não retorna NaN nem Infinity", () => {
@@ -173,6 +200,11 @@ describe("projectsEngineeringCostRollup", () => {
     }
   });
 
+  it("rollup não altera isChangedFromOfficial automaticamente", () => {
+    const rolled = recalculateEngineeringCostRollup(build61202Fixture());
+    assert.ok(rolled.every((l) => !l.isChangedFromOfficial));
+  });
+
   it("deriveUnitCostFromChildrenTotal é inverso de lineTotalFromParts", () => {
     const childrenTotal = 60;
     const unit = deriveUnitCostFromChildrenTotal(childrenTotal, 1, 0);
@@ -185,6 +217,6 @@ describe("projectsEngineeringCostRollup", () => {
       "utf8"
     );
     assert.equal(src.includes("prisma."), false);
-    assert.match(src, /recalculateEngineeringCostRollup/);
+    assert.match(src, /applyBaselineDeltaRollup/);
   });
 });
