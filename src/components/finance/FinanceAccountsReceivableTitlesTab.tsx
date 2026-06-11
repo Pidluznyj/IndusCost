@@ -8,6 +8,11 @@ import {
   type FinanceArUiFilters,
 } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import {
+  FINANCE_AR_TITLES_LOCAL_FILTER_OPTIONS,
+  type FinanceArTitlesLocalFilter,
+} from "@/src/lib/financeAccountsReceivableTitlesLocalFilter";
+import { cn } from "@/src/lib/utils";
+import {
   displayFinanceText,
   formatFinanceCurrency,
   formatFinanceDate,
@@ -41,7 +46,7 @@ export function FinanceArTitlesTab({
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [localFilter, setLocalFilter] = useState<FinanceArTitlesLocalFilter>("all");
   const [data, setData] = useState<FinanceArTitlesPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +58,7 @@ export function FinanceArTitlesTab({
 
   useEffect(() => {
     setPage(1);
-  }, [filters, debouncedSearch, overdueOnly, sortBy, sortDirection, qualityAlert]);
+  }, [filters, debouncedSearch, localFilter, sortBy, sortDirection, qualityAlert]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,7 +70,7 @@ export function FinanceArTitlesTab({
         sortBy,
         sortDirection,
         search: debouncedSearch,
-        overdueOnly,
+        localFilter,
         qualityAlert: qualityAlert ?? undefined,
       });
       const payload = await fetchJsonOk<FinanceArTitlesPayload>(
@@ -77,7 +82,7 @@ export function FinanceArTitlesTab({
     } finally {
       setLoading(false);
     }
-  }, [filters, page, sortBy, sortDirection, debouncedSearch, overdueOnly, qualityAlert]);
+  }, [filters, page, sortBy, sortDirection, debouncedSearch, localFilter, qualityAlert]);
 
   useEffect(() => {
     void load();
@@ -101,6 +106,27 @@ export function FinanceArTitlesTab({
           ) : null}
         </div>
       ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        {FINANCE_AR_TITLES_LOCAL_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setLocalFilter(opt.value)}
+            className={cn(
+              "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+              localFilter === opt.value
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-background text-muted-foreground hover:bg-accent"
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Filtros locais refinam o grid sem alterar os filtros globais aplicados.
+      </p>
 
       <div className="flex flex-wrap gap-3 items-end">
         <label className="space-y-1 flex-1 min-w-[200px]">
@@ -134,14 +160,6 @@ export function FinanceArTitlesTab({
             <option value="asc">Ascendente</option>
             <option value="desc">Descendente</option>
           </select>
-        </label>
-        <label className="inline-flex items-center gap-2 h-9 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={overdueOnly}
-            onChange={(e) => setOverdueOnly(e.target.checked)}
-          />
-          Só atrasados
         </label>
         <button
           type="button"

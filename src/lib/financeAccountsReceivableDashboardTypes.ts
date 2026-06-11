@@ -18,6 +18,10 @@ export type FinanceArDashboardFiltersApplied = {
 
 export type FinanceArDashboardCards = {
   totalRecords: number;
+  /** Σ amountReceivable no universo filtrado. */
+  totalAmountReceivable: number;
+  /** Σ amountReceived no universo filtrado. */
+  totalReceivedAmount: number;
   openTitlesCount: number;
   settledTitlesCount: number;
   totalOpenAmount: number;
@@ -283,6 +287,7 @@ export function buildFinanceArTitlesQuery(
     search?: string;
     overdueOnly?: boolean;
     qualityAlert?: FinanceArDataQualityAlertKey;
+    localFilter?: string;
   }
 ): string {
   const base = buildFinanceArDashboardQuery(filters);
@@ -294,17 +299,29 @@ export function buildFinanceArTitlesQuery(
   if (extras?.search?.trim()) q.set("search", extras.search.trim());
   if (extras?.overdueOnly) q.set("overdueOnly", "1");
   if (extras?.qualityAlert) q.set("qualityAlert", extras.qualityAlert);
+  if (extras?.localFilter && extras.localFilter !== "all") {
+    q.set("localFilter", extras.localFilter);
+  }
   return q.toString();
 }
 
-export const FINANCE_AR_TABS = [
-  { id: "overview", label: "Visão Geral" },
-  { id: "aging", label: "Aging" },
-  { id: "schedule", label: "Agenda" },
-  { id: "customers", label: "Clientes" },
+/** Abas executivas principais (Objetivo 3). */
+export const FINANCE_AR_EXECUTIVE_TABS = [
   { id: "titles", label: "Títulos" },
+  { id: "customers", label: "Clientes" },
+  { id: "aging", label: "Aging" },
+  { id: "audit", label: "Auditoria" },
+] as const;
+
+export const FINANCE_AR_SECONDARY_TABS = [
+  { id: "schedule", label: "Agenda" },
   { id: "payment-methods", label: "Formas de Pagamento" },
   { id: "companies", label: "Empresas" },
+] as const;
+
+export const FINANCE_AR_TABS = [
+  ...FINANCE_AR_EXECUTIVE_TABS,
+  ...FINANCE_AR_SECONDARY_TABS,
 ] as const;
 
 export type FinanceArTabId = (typeof FINANCE_AR_TABS)[number]["id"];

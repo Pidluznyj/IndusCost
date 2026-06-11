@@ -37,7 +37,14 @@ describe("financeAccountsReceivableTitles", () => {
     );
     const payload = buildFinanceArTitlesPayload(
       rows,
-      { page: 2, limit: 2, sortBy: "dueDate", sortDirection: "asc", filters: { status: "all" } },
+      {
+        page: 2,
+        limit: 2,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: { status: "all" },
+        localFilter: "all",
+      },
       REF
     );
     assert.equal(payload.total, 5);
@@ -65,6 +72,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortDirection: "asc",
         filters: { status: "all" },
         overdueOnly: true,
+        localFilter: "all",
       },
       REF
     );
@@ -80,6 +88,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortDirection: "asc",
         filters: { status: "all" },
         search: "xyz",
+        localFilter: "all",
       },
       REF
     );
@@ -100,6 +109,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortBy: "balanceReceivable",
         sortDirection: "desc",
         filters: { status: "all" },
+        localFilter: "all",
       },
       REF
     );
@@ -125,6 +135,8 @@ describe("financeAccountsReceivableTitles", () => {
     assert.equal(q.search, "cliente");
     assert.equal(q.filters.status, "overdue");
     assert.equal(q.qualityAlert, "missingDueDate");
+    const withLocal = parseFinanceArTitlesQuery({ localFilter: "settled" });
+    assert.equal(withLocal.localFilter, "settled");
   });
 
   it("filtra por qualityAlert", () => {
@@ -141,6 +153,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortDirection: "asc",
         filters: { status: "all" },
         qualityAlert: "missingPersonCnpj",
+        localFilter: "all",
       },
       REF
     );
@@ -163,6 +176,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortBy: "dueDate",
         sortDirection: "asc",
         filters: { status: "all", year: 2026, month: 6 },
+        localFilter: "all",
       },
       REF
     );
@@ -198,6 +212,7 @@ describe("financeAccountsReceivableTitles", () => {
         sortDirection: "asc",
         filters: { status: "all", year: 2026, month: 6 },
         search: "bbb",
+        localFilter: "all",
       },
       REF
     );

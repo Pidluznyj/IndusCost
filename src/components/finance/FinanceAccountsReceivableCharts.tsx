@@ -226,6 +226,81 @@ export function FinanceArTopDebtorsChart({ rows }: { rows: FinanceArTopDebtor[] 
   );
 }
 
+export function FinanceArPortfolioMixChart({
+  openAmount,
+  receivedAmount,
+}: {
+  openAmount: number;
+  receivedAmount: number;
+}) {
+  const data = [
+    { key: "open", label: "Em aberto", amount: openAmount, fill: "#2563EB" },
+    { key: "received", label: "Recebido", amount: receivedAmount, fill: "#059669" },
+  ];
+  const empty = openAmount <= 0 && receivedAmount <= 0;
+
+  return (
+    <ChartCard
+      title="Recebido x em aberto"
+      subtitle="Totais do universo filtrado — valores originais e baixas"
+      empty={empty}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6B7280" }} />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#6B7280" }}
+            tickFormatter={(v) => formatFinanceCurrencyCompact(v)}
+            width={72}
+          />
+          <Tooltip formatter={(value: number) => formatFinanceCurrency(value)} />
+          <Bar dataKey="amount" name="Valor" radius={[4, 4, 0, 0]} maxBarSize={48}>
+            {data.map((entry) => (
+              <Cell key={entry.key} fill={entry.fill} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+export function FinanceArScheduleBucketsChart({
+  buckets,
+}: {
+  buckets: Array<{ label: string; amount: number; count: number }>;
+}) {
+  const data = (buckets ?? []).map((b) => ({
+    label: b.label,
+    amount: b.amount,
+    count: b.count,
+  }));
+  const empty = data.every((d) => d.amount === 0);
+
+  return (
+    <ChartCard
+      title="Previsão próximos dias"
+      subtitle="Agenda de recebimentos por janela — filtros aplicados"
+      empty={empty}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+          <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6B7280" }} />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#6B7280" }}
+            tickFormatter={(v) => formatFinanceCurrencyCompact(v)}
+            width={72}
+          />
+          <Tooltip formatter={(value: number) => formatFinanceCurrency(value)} />
+          <Bar dataKey="amount" name="Valor previsto" fill="#2563EB" radius={[4, 4, 0, 0]} maxBarSize={40} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
 export function FinanceArPaymentMethodChart({ rows }: { rows: FinanceArPaymentSummary[] }) {
   const data = (rows ?? []).slice(0, 8).map((r) => ({
     label: (r.paymentMethodName?.trim() || "Sem forma").slice(0, 20),

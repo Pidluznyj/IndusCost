@@ -576,6 +576,8 @@ export function buildFinanceAccountsReceivableDashboard(
 
   let openTitlesCount = 0;
   let settledTitlesCount = 0;
+  let totalAmountReceivable = 0;
+  let totalReceivedAmount = 0;
   let totalOpenAmount = 0;
   let overdueAmount = 0;
   let dueTodayAmount = 0;
@@ -657,6 +659,8 @@ export function buildFinanceAccountsReceivableDashboard(
 
   for (const row of filteredRows) {
     if (lastSyncAt == null || row.syncedAt > lastSyncAt) lastSyncAt = row.syncedAt;
+    totalAmountReceivable += row.amountReceivable;
+    totalReceivedAmount += row.amountReceived;
 
     trackFinanceArDataQualityRow(dataQualityAcc, row, today);
 
@@ -990,6 +994,8 @@ export function buildFinanceAccountsReceivableDashboard(
     source: "NomusAccountsReceivable (read-only local sync)",
     cards: {
       totalRecords: filteredRows.length,
+      totalAmountReceivable: roundMoney(totalAmountReceivable),
+      totalReceivedAmount: roundMoney(totalReceivedAmount),
       openTitlesCount,
       settledTitlesCount,
       totalOpenAmount: roundMoney(totalOpenAmount),

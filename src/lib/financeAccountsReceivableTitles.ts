@@ -3,6 +3,11 @@ import {
   type FinanceArDataQualityAlertKey,
 } from "./financeAccountsReceivableDataQuality.js";
 import {
+  filterArTitleRowsByLocalFilter,
+  parseFinanceArTitlesLocalFilter,
+  type FinanceArTitlesLocalFilter,
+} from "./financeAccountsReceivableTitlesLocalFilter.js";
+import {
   classifyFinanceArTitle,
   computeDaysOverdue,
   filterFinanceArRows,
@@ -25,6 +30,7 @@ export type FinanceArTitlesQuery = {
   search?: string;
   overdueOnly?: boolean;
   qualityAlert?: FinanceArDataQualityAlertKey;
+  localFilter: FinanceArTitlesLocalFilter;
 };
 
 export type FinanceArTitleListItem = {
@@ -82,6 +88,7 @@ export function parseFinanceArTitlesQuery(query: Record<string, unknown>): Finan
   const searchRaw = typeof query.search === "string" ? query.search.trim() : "";
   const qualityRaw = String(query.qualityAlert ?? "").trim();
   const qualityAlert = isFinanceArQualityAlertKey(qualityRaw) ? qualityRaw : undefined;
+  const localFilter = parseFinanceArTitlesLocalFilter(query.localFilter);
   return {
     page: parsePositiveInt(query.page, 1, 10_000),
     limit: parsePositiveInt(query.limit, 50, 200),
@@ -91,6 +98,7 @@ export function parseFinanceArTitlesQuery(query: Record<string, unknown>): Finan
     search: searchRaw || undefined,
     overdueOnly,
     qualityAlert,
+    localFilter,
   };
 }
 
@@ -174,11 +182,13 @@ export function buildFinanceArTitlesPayload(
 ): FinanceArTitlesPayload {
   let filtered = filterFinanceArRows(rows, query.filters, referenceDate);
 
-  if (query.overdueOnly) {
-    filtered = filtered.filter(
-      (row) => classifyFinanceArTitle(row, referenceDate) === "overdue"
-    );
-  }
+  const effectiveLocalFilter =
+    query.localFilter !== "all"
+      ? query.localFilter
+      : query.overdueOnly
+        ? "overdue"
+        : "all";
+  filtered = filterArTitleRowsByLocalFilter(filtered, effectiveLocalFilter, referenceDate);
 
   if (query.search) {
     filtered = filtered.filter((row) => rowMatchesSearch(row, query.search!));

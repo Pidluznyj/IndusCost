@@ -11,7 +11,15 @@ import {
   formatFinanceInteger,
   formatFinancePercent,
 } from "@/src/lib/financeAccountsReceivableFormat";
-import type { FinanceArDashboardPayload } from "@/src/lib/financeAccountsReceivableDashboardTypes";
+import type {
+  FinanceArDashboardPayload,
+  FinanceArDataQualityAlertKey,
+  FinanceArDataQualityAlertItem,
+} from "@/src/lib/financeAccountsReceivableDashboardTypes";
+import type { FinanceDataSanitization } from "@/src/lib/financeInternalGroupExclusions";
+import { FinanceAccountsReceivableDataQualityPanel } from "@/src/components/finance/FinanceAccountsReceivableDataQualityPanel";
+import { FinanceManagementSanitizationNote } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import {
   FinanceArAgingChart,
   FinanceArMonthlyScheduleChart,
@@ -316,6 +324,31 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
         ))}
       </tbody>
     </FinanceArScrollableTable>
+  );
+}
+
+export function FinanceArAuditTab({
+  alerts,
+  dataSanitization,
+  appliedFiltersLabel,
+  onViewTitles,
+}: {
+  alerts: FinanceArDataQualityAlertItem[];
+  dataSanitization?: FinanceDataSanitization;
+  appliedFiltersLabel: string;
+  onViewTitles: (key: FinanceArDataQualityAlertKey) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className={`${financeBiCardClass} p-5 space-y-2`}>
+        <h4 className="text-sm font-bold text-[#111827]">Escopo da consulta</h4>
+        <p className="text-xs text-muted-foreground">
+          {appliedFiltersLabel || "Sem filtros adicionais — universo padrão da carteira."}
+        </p>
+      </div>
+      <FinanceManagementSanitizationNote dataSanitization={dataSanitization} />
+      <FinanceAccountsReceivableDataQualityPanel alerts={alerts} onViewTitles={onViewTitles} />
+    </div>
   );
 }
 

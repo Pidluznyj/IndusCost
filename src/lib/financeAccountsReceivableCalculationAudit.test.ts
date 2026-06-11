@@ -134,28 +134,25 @@ describe("financeAccountsReceivableCalculationAudit", () => {
     );
   });
 
-  it("receivedThisMonth usa mês calendário atual — exceção rotulada na UI", () => {
-    const page = readFileSync(
-      join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivablePage.tsx"),
-      "utf8"
-    );
-    assert.ok(page.includes("FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE"));
+  it("receivedThisMonth usa mês calendário atual no motor", () => {
+    const dash = buildFinanceAccountsReceivableDashboard(fixture, { status: "all" }, REF);
+    assert.equal(dash.cards.receivedThisMonthAmount, 450);
     assert.equal(
       FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE.includes("calendário atual"),
       true
     );
-    const dash = buildFinanceAccountsReceivableDashboard(fixture, { status: "all" }, REF);
-    assert.equal(dash.cards.receivedThisMonthAmount, 450);
   });
 
-  it("UI AR possui resumo executivo com 6 KPIs e filtros principais visíveis", () => {
+  it("UI AR possui resumo executivo com KPIs mínimos e filtros principais visíveis", () => {
     const page = readFileSync(
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivablePage.tsx"),
       "utf8"
     );
     assert.ok(page.includes("Resumo executivo"));
     assert.ok(page.includes("alwaysVisible"));
-    assert.ok(page.includes("Atraso Médio"));
+    assert.ok(page.includes('label="Total a Receber"'));
+    assert.ok(page.includes('label="Vence Hoje"'));
+    assert.ok(page.includes('label="Próximos 7 Dias"'));
     assert.ok(page.includes('label="Vencido"'));
     assert.ok(page.includes("buildFinanceArPrismaWhere") === false);
     const routes = readFileSync(

@@ -29,9 +29,11 @@ import {
   normalizeFinanceArUiFilters,
   type FinanceArCriticalTitle,
   type FinanceArDashboardPayload,
+  type FinanceArDashboardCards,
   type FinanceArDataQualityAlertItem,
   type FinanceArDataQualityAlertKey,
   type FinanceArTabId,
+  type FinanceArTopDebtor,
   type FinanceArUiFilters,
 } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import {
@@ -52,25 +54,29 @@ import {
 } from "@/src/lib/financeAccountsReceivablePermissions";
 import {
   FinanceArAgingTab,
+  FinanceArAuditTab,
   FinanceArCompaniesTab,
   FinanceArCustomersTab,
   FinanceArPaymentTab,
   FinanceArScheduleTab,
   statusBadgeClass,
 } from "@/src/components/finance/FinanceAccountsReceivableTabPanels";
-import { FinanceAccountsReceivableDataQualityPanel } from "@/src/components/finance/FinanceAccountsReceivableDataQualityPanel";
 import { FinanceArInvoicePortfolioPanel } from "@/src/components/finance/FinanceAccountsReceivableInvoicePortfolioPanel";
 import { FinanceAccountsReceivableSyncPanel } from "@/src/components/finance/FinanceAccountsReceivableSyncPanel";
 import { FinanceArTitlesTab } from "@/src/components/finance/FinanceAccountsReceivableTitlesTab";
 import {
   FinanceArAgingChart,
+  FinanceArMonthlyScheduleChart,
+  FinanceArPortfolioMixChart,
+  FinanceArScheduleBucketsChart,
   FinanceArTopDebtorsChart,
 } from "@/src/components/finance/FinanceAccountsReceivableCharts";
+import { FinanceActionCenterShell } from "@/src/components/finance/shared/FinanceActionCenterShell";
+import { FinanceDetailTabs } from "@/src/components/finance/shared/FinanceDetailTabs";
 import {
   FinanceArErrorBanner,
   FinanceArLoadingBlock,
   FinanceArSuccessBanner,
-  FinanceArTabNav,
 } from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 import { cn } from "@/src/lib/utils";
 import {
@@ -85,7 +91,6 @@ import { buildFinanceArFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
   FINANCE_AR_LAST_SYNC_FILTERED_SCOPE,
-  FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE,
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
@@ -105,7 +110,9 @@ type ActionItem = {
 
 function buildActionItems(
   criticalTitles: FinanceArCriticalTitle[],
-  qualityAlerts: FinanceArDataQualityAlertItem[]
+  qualityAlerts: FinanceArDataQualityAlertItem[],
+  topDebtors: FinanceArTopDebtor[] = [],
+  cards?: FinanceArDashboardCards
 ): ActionItem[] {
   const items: ActionItem[] = [];
 
@@ -163,6 +170,40 @@ function buildActionItems(
     });
   }
 
+  const topDebtor = topDebtors[0];
+  if (topDebtor && topDebtor.percentOfPortfolio >= 25) {
+    items.push({
+      id: "concentration",
+      type: "collection",
+      severity: topDebtor.percentOfPortfolio >= 40 ? "critical" : "warning",
+      title: "Revisar concentração por cliente",
+      description: `${displayFinanceText(topDebtor.personName)} — ${topDebtor.percentOfPortfolio.toFixed(1)}% da carteira em aberto`,
+      value: formatFinanceCurrencyCompact(topDebtor.totalOpenAmount),
+    });
+  }
+
+  if ((cards?.dueNext7DaysAmount ?? 0) > 0) {
+    items.push({
+      id: "due-7",
+      type: "due-soon",
+      severity: "info",
+      title: "Acompanhar vencimentos nos próximos 7 dias",
+      description: "Saldo em aberto com vencimento entre hoje e +7 dias",
+      value: formatFinanceCurrencyCompact(cards!.dueNext7DaysAmount),
+    });
+  }
+
+  if ((cards?.openWithoutInvoiceAmount ?? 0) > 0) {
+    items.push({
+      id: "pre-invoice",
+      type: "quality",
+      severity: "warning",
+      title: "Verificar títulos em aberto sem NF",
+      description: `${formatFinanceInteger(cards?.openWithoutInvoiceCount ?? 0)} título(s) pré-NF na carteira`,
+      value: formatFinanceCurrencyCompact(cards!.openWithoutInvoiceAmount),
+    });
+  }
+
   const criticalQuality = qualityAlerts.filter((a) => a.severity === "critical" && a.count > 0);
   for (const alert of criticalQuality.slice(0, 2)) {
     items.push({
@@ -214,33 +255,27 @@ function ActionIcon({ type }: { type: ActionItem["type"] }) {
 function FinanceArActionCenter({
   criticalTitles,
   qualityAlerts,
+  topDebtors,
+  cards,
   loading,
 }: {
   criticalTitles: FinanceArCriticalTitle[];
   qualityAlerts: FinanceArDataQualityAlertItem[];
+  topDebtors: FinanceArTopDebtor[];
+  cards?: FinanceArDashboardCards;
   loading: boolean;
 }) {
   const items = useMemo(
-    () => buildActionItems(criticalTitles, qualityAlerts),
-    [criticalTitles, qualityAlerts]
+    () => buildActionItems(criticalTitles, qualityAlerts, topDebtors, cards),
+    [criticalTitles, qualityAlerts, topDebtors, cards]
   );
 
   return (
-    <div className={`${financeBiCardClass} flex flex-col`}>
-      <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E7EB]">
-        <div>
-          <h3 className="text-sm font-bold text-[#111827]">Centro de Ações</h3>
-          <p className="text-[11px] text-[#6B7280] mt-0.5">
-            Alertas priorizados por risco — filtros aplicados
-          </p>
-        </div>
-        {items.length > 0 ? (
-          <span className="h-6 min-w-[1.5rem] rounded-full bg-red-500 text-white text-[10px] font-bold px-2 flex items-center justify-center">
-            {items.length}
-          </span>
-        ) : null}
-      </div>
-      <div className="flex-1 divide-y divide-border/40 overflow-auto max-h-[400px]">
+    <FinanceActionCenterShell
+      title="Centro de Ações"
+      subtitle="Cobrança, concentração e vencimentos — filtros aplicados"
+      badgeCount={items.length}
+    >
         {loading ? (
           <div className="p-5 flex items-center gap-3">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -289,8 +324,7 @@ function FinanceArActionCenter({
             );
           })
         )}
-      </div>
-    </div>
+    </FinanceActionCenterShell>
   );
 }
 
@@ -430,7 +464,7 @@ export function FinanceAccountsReceivablePage() {
   const canExport = canExportFinanceAccountsReceivable(auth);
   const canRunSync = canRunFinanceAccountsReceivableSync(auth);
 
-  const [activeTab, setActiveTab] = useState<FinanceArTabId>("overview");
+  const [activeTab, setActiveTab] = useState<FinanceArTabId>("titles");
   const [titlesQualityAlert, setTitlesQualityAlert] = useState<FinanceArDataQualityAlertKey | null>(null);
   const [draftFilters, setDraftFilters] = useState<FinanceArUiFilters>(EMPTY_FINANCE_AR_UI_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<FinanceArUiFilters>(() =>
@@ -581,17 +615,7 @@ export function FinanceAccountsReceivablePage() {
       <FinanceBiExecutiveHeader
         eyebrow="Financeiro · Carteira de Recebíveis"
         title="Contas a Receber"
-        subtitle={
-          <>
-            Fonte oficial: <span className="font-semibold text-[#111827]">NomusAccountsReceivable</span>
-            .{" "}
-            {cards?.totalRecords != null ? (
-              <span className="font-semibold text-[#111827]">
-                {formatFinanceInteger(cards.totalRecords)} registros no universo filtrado.
-              </span>
-            ) : null}
-          </>
-        }
+        subtitle="Carteira de recebíveis e clientes — visão gerencial da posição a receber, recebido e vencido."
         filterStatus={filterStatus}
         meta={[
           {
@@ -635,7 +659,18 @@ export function FinanceAccountsReceivablePage() {
               ]
             : []),
         ]}
-      />
+      >
+        <div className="flex flex-wrap gap-2 pt-1">
+          <span className="inline-flex items-center rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#1D4ED8]">
+            Fonte Nomus
+          </span>
+          {cards?.totalRecords != null ? (
+            <span className="inline-flex items-center rounded-full border border-[#E5E7EB] bg-white px-2.5 py-0.5 text-[10px] font-semibold text-[#6B7280]">
+              {formatFinanceInteger(cards.totalRecords)} registros no filtro
+            </span>
+          ) : null}
+        </div>
+      </FinanceBiExecutiveHeader>
 
       <FinanceAccountsReceivableSyncPanel
         canRun={canRunSync}
@@ -751,10 +786,28 @@ export function FinanceAccountsReceivablePage() {
             KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas
           </p>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
           <FinanceBiKpiCard
             icon={Wallet}
-            label="Carteira em Aberto"
+            label="Total a Receber"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalAmountReceivable)}
+            sub={withAppliedFilterSub("Σ valor original no filtro", Boolean(filtersActive))}
+            hint="Σ amountReceivable no universo filtrado"
+            colorClass="text-[#111827]"
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={TrendingUp}
+            label="Recebido"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalReceivedAmount)}
+            sub={withAppliedFilterSub("Baixas acumuladas no filtro", Boolean(filtersActive))}
+            hint="Σ amountReceived no universo filtrado"
+            colorClass="text-[#059669]"
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Wallet}
+            label="Em Aberto"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
             sub={withAppliedFilterSub(
               cards?.openTitlesCount != null
@@ -772,44 +825,43 @@ export function FinanceAccountsReceivablePage() {
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueAmount)}
             sub={withAppliedFilterSub("Vencimento anterior a hoje", Boolean(filtersActive))}
             hint="Σ saldo em aberto com status overdue"
-            colorClass={
-              (cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"
-            }
+            colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
             loading={loading}
           />
           <FinanceBiKpiCard
-            icon={ShieldAlert}
-            label="Vencido > 30 Dias"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueOver30DaysAmount)}
-            sub={withAppliedFilterSub(
-              cards?.overdueOver30DaysCount != null
-                ? `${formatFinanceInteger(cards.overdueOver30DaysCount)} título${cards.overdueOver30DaysCount !== 1 ? "s" : ""}`
-                : undefined,
-              Boolean(filtersActive)
-            )}
-            hint="Σ saldo vencido há mais de 30 dias"
-            colorClass={
-              (cards?.overdueOver30DaysAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"
-            }
+            icon={Clock}
+            label="Vence Hoje"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueTodayAmount)}
+            sub={withAppliedFilterSub("Vencimento = hoje", Boolean(filtersActive))}
+            hint="Σ saldo com status dueToday"
+            colorClass="text-[#D97706]"
             loading={loading}
           />
           <FinanceBiKpiCard
-            icon={TrendingUp}
-            label="Recebido no Mês"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.receivedThisMonthAmount)}
-            sub="Baixas no mês corrente"
-            scopeNote={FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE}
-            hint="Σ amountReceived com settlementDate no mês/ano de hoje"
-            colorClass="text-[#059669]"
+            icon={Clock}
+            label="Próximos 7 Dias"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext7DaysAmount)}
+            sub={withAppliedFilterSub("Hoje até +7 dias", Boolean(filtersActive))}
+            hint="Σ saldo em aberto na janela de 7 dias"
+            colorClass="text-[#2563EB]"
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Clock}
+            label="Próximos 30 Dias"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext30DaysAmount)}
+            sub={withAppliedFilterSub("Hoje até +30 dias", Boolean(filtersActive))}
+            hint="Σ saldo em aberto na janela de 30 dias"
+            colorClass="text-[#2563EB]"
             loading={loading}
           />
           <FinanceBiKpiCard
             icon={TrendingDown}
-            label="% Inadimplência"
+            label="Inadimplência"
             value={loading ? "…" : formatFinancePercent(cards?.delinquencyRate)}
             sub={withAppliedFilterSub(
               cards?.overdueCustomersCount != null
-                ? `${formatFinanceInteger(cards.overdueCustomersCount)} cliente${cards.overdueCustomersCount !== 1 ? "s" : ""} em atraso`
+                ? `${formatFinanceInteger(cards.overdueCustomersCount)} cliente(s) em atraso`
                 : undefined,
               Boolean(filtersActive)
             )}
@@ -833,23 +885,6 @@ export function FinanceAccountsReceivablePage() {
             }
             loading={loading}
           />
-          <FinanceBiKpiCard
-            icon={Clock}
-            label="Atraso Médio"
-            value={
-              loading
-                ? "…"
-                : cards?.avgDaysOverdue != null
-                  ? `${cards.avgDaysOverdue} dias`
-                  : "—"
-            }
-            sub={withAppliedFilterSub("Média ponderada por saldo vencido", Boolean(filtersActive))}
-            hint="Σ (dias em atraso × saldo) ÷ Σ saldo vencido"
-            colorClass={
-              (cards?.avgDaysOverdue ?? 0) > 30 ? "text-[#DC2626]" : "text-[#111827]"
-            }
-            loading={loading}
-          />
         </div>
       </section>
 
@@ -859,20 +894,38 @@ export function FinanceAccountsReceivablePage() {
           <>
             <div className="rounded-2xl border border-border/70 bg-card h-[300px] animate-pulse" />
             <div className="rounded-2xl border border-border/70 bg-card h-[300px] animate-pulse" />
+            <div className="rounded-2xl border border-border/70 bg-card h-[300px] animate-pulse" />
+            <div className="rounded-2xl border border-border/70 bg-card h-[300px] animate-pulse" />
           </>
         ) : (
           <>
             <FinanceArAgingChart buckets={data?.agingBuckets ?? []} />
             <FinanceArTopDebtorsChart rows={data?.topDebtors ?? []} />
+            <FinanceArPortfolioMixChart
+              openAmount={cards?.totalOpenAmount ?? 0}
+              receivedAmount={cards?.totalReceivedAmount ?? 0}
+            />
+            <FinanceArMonthlyScheduleChart rows={data?.monthlyDueSchedule ?? []} />
           </>
         )}
       </div>
+      {!loading && data?.scheduleBuckets?.length ? (
+        <FinanceArScheduleBucketsChart
+          buckets={data.scheduleBuckets.map((b) => ({
+            label: b.label,
+            amount: b.amount,
+            count: b.count,
+          }))}
+        />
+      ) : null}
 
       {/* ─── ACTION CENTER + HIGHLIGHT TABLE ─── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <FinanceArActionCenter
           criticalTitles={data?.criticalTitles ?? []}
           qualityAlerts={data?.dataQualitySummary ?? []}
+          topDebtors={data?.topDebtors ?? []}
+          cards={cards}
           loading={loading && !data}
         />
         <FinanceArHighlightTable
@@ -890,33 +943,21 @@ export function FinanceAccountsReceivablePage() {
         onFilterInvoiceIssued={handleFilterInvoiceIssued}
       />
 
-      {loading && !data ? (
-        <FinanceArLoadingBlock label="alertas e indicadores" />
-      ) : (
-        <FinanceAccountsReceivableDataQualityPanel
-          alerts={data?.dataQualitySummary ?? []}
-          onViewTitles={handleViewTitlesFromAlert}
-        />
-      )}
-
       {/* ─── ANALYTICS TABS ─── */}
       <div className={`${financeBiSectionClass}`}>
         <div className="px-5 py-4 border-b border-[#E5E7EB]">
           <h2 className="text-sm font-bold text-[#111827]">Análise detalhada</h2>
           <p className="text-[11px] text-[#6B7280] mt-0.5">
-            Drill-down: aging, agenda, clientes, títulos e formas de pagamento
+            Títulos, clientes, aging e auditoria — refinam o universo dos filtros globais aplicados
           </p>
         </div>
         <div className="p-5 space-y-4">
-          <FinanceArTabNav
+          <FinanceDetailTabs
             tabs={FINANCE_AR_TABS}
             activeId={activeTab}
-            onChange={(id) => setActiveTab(id as FinanceArTabId)}
+            onChange={(id) => setActiveTab(id)}
           />
           <div role="tabpanel" aria-label={FINANCE_AR_TABS.find((t) => t.id === activeTab)?.label}>
-            {activeTab === "overview" ? (
-              <OverviewSummary data={data} loading={loading} />
-            ) : null}
             {activeTab === "aging" ? (
               loading && !data ? (
                 <FinanceArLoadingBlock label="aging" />
@@ -959,47 +1000,18 @@ export function FinanceAccountsReceivablePage() {
                 <FinanceArCompaniesTab data={data} />
               )
             ) : null}
+            {activeTab === "audit" ? (
+              <FinanceArAuditTab
+                alerts={data?.dataQualitySummary ?? []}
+                dataSanitization={data?.dataSanitization}
+                appliedFiltersLabel={appliedFilterChips.map((c) => c.label).join(" · ")}
+                onViewTitles={handleViewTitlesFromAlert}
+              />
+            ) : null}
           </div>
         </div>
       </div>
     </FinanceBiDashboardShell>
-  );
-}
-
-/* ─── Overview tab: compact summary of all key numbers ──────────── */
-function OverviewSummary({
-  data,
-  loading,
-}: {
-  data: FinanceArDashboardPayload | null;
-  loading: boolean;
-}) {
-  if (!data && loading) return <FinanceArLoadingBlock label="visão geral" />;
-  if (!data) return <p className="text-sm text-muted-foreground">Sem dados para visão geral.</p>;
-  const { cards } = data;
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      {[
-        { label: "Em aberto", value: formatFinanceCurrencyCompact(cards.totalOpenAmount), hint: "balanceReceivable > 0" },
-        { label: "Vencido", value: formatFinanceCurrencyCompact(cards.overdueAmount), hint: "Vencimento < hoje" },
-        { label: "A vencer", value: formatFinanceCurrencyCompact(cards.upcomingAmount), hint: "Vencimento futuro" },
-        { label: "Vence hoje", value: formatFinanceCurrencyCompact(cards.dueTodayAmount), hint: "Vencimento = hoje" },
-        { label: "Próx. 7 dias", value: formatFinanceCurrencyCompact(cards.dueNext7DaysAmount), hint: "Hoje + 7 dias" },
-        { label: "Próx. 30 dias", value: formatFinanceCurrencyCompact(cards.dueNext30DaysAmount), hint: "Hoje + 30 dias" },
-        { label: "Recebido no mês", value: formatFinanceCurrencyCompact(cards.receivedThisMonthAmount), hint: "dataBaixa no mês corrente" },
-        { label: "Inadimplência", value: formatFinancePercent(cards.delinquencyRate), hint: "Vencido ÷ aberto" },
-        { label: "Títulos em aberto", value: formatFinanceInteger(cards.openTitlesCount), hint: "" },
-        { label: "Clientes em atraso", value: formatFinanceInteger(cards.overdueCustomersCount), hint: "" },
-        { label: "Em aberto com NF", value: formatFinanceCurrencyCompact(cards.openWithInvoiceAmount), hint: `${formatFinanceInteger(cards.openWithInvoiceCount)} títulos` },
-        { label: "Em aberto pré-NF", value: formatFinanceCurrencyCompact(cards.openWithoutInvoiceAmount), hint: `${formatFinancePercent(cards.preInvoiceShareOfOpenPercent)} da carteira` },
-      ].map((kpi) => (
-        <div key={kpi.label} className="rounded-xl border border-border/50 bg-background/50 p-3 space-y-1" title={kpi.hint}>
-          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{kpi.label}</p>
-          <p className="text-base font-extrabold tabular-nums text-foreground">{kpi.value}</p>
-          {kpi.hint ? <p className="text-[10px] text-muted-foreground">{kpi.hint}</p> : null}
-        </div>
-      ))}
-    </div>
   );
 }
 
