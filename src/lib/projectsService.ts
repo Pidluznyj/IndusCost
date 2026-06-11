@@ -16,6 +16,10 @@ import {
   sanitizeFinite,
   toFiniteNumber,
 } from "@/src/lib/projectsCalculations.js";
+import {
+  recalculateEngineeringCostRollup,
+  type EngineeringRollupLine,
+} from "@/src/lib/projectsEngineeringCostRollup.js";
 import type {
   ProjectAlert,
   ProjectCostBreakdown,
@@ -275,7 +279,62 @@ export function computeCostBreakdownForVersion(
   return breakdown;
 }
 
+function toEngineeringRollupLine(line: ProjectStructureLine): EngineeringRollupLine {
+  return {
+    id: line.id,
+    parentLineId: line.parentLineId,
+    snapshotRootProductId: line.snapshotRootProductId,
+    lineType: line.lineType,
+    quantity: toFiniteNumber(dec(line.quantity)),
+    lossPercent: toFiniteNumber(dec(line.lossPercent)),
+    unitCostSnapshot: toFiniteNumber(dec(line.unitCostSnapshot)),
+    totalCost: toFiniteNumber(dec(line.totalCost)),
+    officialQuantitySnapshot: dec(line.officialQuantitySnapshot),
+    officialLossPercentSnapshot: dec(line.officialLossPercentSnapshot),
+    officialUnitCostSnapshot: dec(line.officialUnitCostSnapshot),
+    countsInSimulatedProductCost: line.countsInSimulatedProductCost,
+    isChangedFromOfficial: line.isChangedFromOfficial,
+  };
+}
+
+/** Propaga custos dos filhos para ancestrais em snapshots hierárquicos importados. */
+export async function persistEngineeringCostRollupForVersion(versionId: string): Promise<void> {
+  const lines = await prisma.projectStructureLine.findMany({ where: { versionId } });
+  if (!lines.some((l) => l.snapshotRootProductId != null)) return;
+
+  const rolled = recalculateEngineeringCostRollup(lines.map(toEngineeringRollupLine));
+  const byId = new Map(rolled.map((l) => [l.id, l]));
+
+  const updates = [];
+  for (const line of lines) {
+    const next = byId.get(line.id);
+    if (!next || line.snapshotRootProductId == null) continue;
+    const unit = toFiniteNumber(dec(line.unitCostSnapshot));
+    const total = toFiniteNumber(dec(line.totalCost));
+    const unitChanged = Math.abs(unit - next.unitCostSnapshot) > 0.000001;
+    const totalChanged = Math.abs(total - next.totalCost) > 0.000001;
+    const flagChanged = line.isChangedFromOfficial !== next.isChangedFromOfficial;
+    if (!unitChanged && !totalChanged && !flagChanged) continue;
+    updates.push(
+      prisma.projectStructureLine.update({
+        where: { id: line.id },
+        data: {
+          unitCostSnapshot: next.unitCostSnapshot,
+          totalCost: next.totalCost,
+          isChangedFromOfficial: next.isChangedFromOfficial,
+          isMissingCost: next.unitCostSnapshot <= 0,
+        },
+      })
+    );
+  }
+  if (updates.length > 0) {
+    await prisma.$transaction(updates);
+  }
+}
+
 export async function recalculateAndPersistVersionCosts(versionId: string) {
+  await persistEngineeringCostRollupForVersion(versionId);
+
   const version = await prisma.projectVersion.findUnique({
     where: { id: versionId },
     include: {

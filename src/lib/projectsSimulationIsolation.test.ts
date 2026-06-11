@@ -93,6 +93,18 @@ describe("projectsSimulationIsolation", () => {
     assert.equal(panel.includes("/api/products/"), false);
   });
 
+  it("rollup de custo propaga alterações sem gravar cadastro oficial", () => {
+    const rollup = readFileSync(
+      join(process.cwd(), "src", "lib", "projectsEngineeringCostRollup.ts"),
+      "utf8"
+    );
+    const service = readFileSync(join(process.cwd(), "src", "lib", "projectsService.ts"), "utf8");
+    assert.match(rollup, /recalculateEngineeringCostRollup/);
+    assert.match(service, /persistEngineeringCostRollupForVersion/);
+    assert.equal(rollup.includes("prisma.product.update"), false);
+    assert.equal(rollup.includes("prisma.material.update"), false);
+  });
+
   it("processo/HH importado cria linhas MANUAL/PROCESS no projeto", () => {
     const snap = readFileSync(
       join(process.cwd(), "src", "lib", "projectsProductEngineeringSnapshot.ts"),

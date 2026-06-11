@@ -8,6 +8,7 @@ import {
 } from "@/src/lib/projectSimulationMode";
 import type { ProjectEngineeringSnapshot } from "@/src/lib/projectsProductEngineeringSnapshot";
 import type { ProjectOfficialProductSnapshot } from "@/src/lib/projectsProductSnapshot";
+import { sumSimulatedRootProductCost } from "@/src/lib/projectsEngineeringCostRollup";
 import { buildProjectEngineeringTree } from "@/src/lib/projectsEngineeringTree";
 import { ProjectEngineeringTreePanel } from "@/src/components/projects/ProjectEngineeringTreePanel";
 import { ProjectSimulationBanner } from "@/src/components/projects/ProjectSimulationBanner";
@@ -86,14 +87,27 @@ export function ProjectProductSimulationPanel({
     );
   }, [productId, snapshot, productLines]);
 
-  const simulatedIndustrialCost = useMemo(() => {
-    let total = 0;
-    for (const line of productLines) {
-      if (!line.countsInSimulatedProductCost) continue;
-      total += line.totalCost;
-    }
-    return total;
-  }, [productLines]);
+  const simulatedIndustrialCost = useMemo(
+    () =>
+      sumSimulatedRootProductCost(
+        productLines.map((l) => ({
+          id: l.id,
+          parentLineId: l.parentLineId,
+          snapshotRootProductId: l.snapshotRootProductId,
+          lineType: l.lineType,
+          quantity: l.quantity,
+          lossPercent: l.lossPercent ?? 0,
+          unitCostSnapshot: l.unitCostSnapshot,
+          totalCost: l.totalCost,
+          officialQuantitySnapshot: l.officialQuantitySnapshot,
+          officialLossPercentSnapshot: l.officialLossPercentSnapshot,
+          officialUnitCostSnapshot: l.officialUnitCostSnapshot,
+          countsInSimulatedProductCost: l.countsInSimulatedProductCost,
+          isChangedFromOfficial: l.isChangedFromOfficial,
+        }))
+      ),
+    [productLines]
+  );
 
   const bomLines = useMemo(
     () => productLines.filter((l) => l.unitSnapshot !== "HH" && l.lineType !== "PROCESS"),
