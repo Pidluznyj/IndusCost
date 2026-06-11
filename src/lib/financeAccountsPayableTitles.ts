@@ -4,7 +4,6 @@ import {
 } from "./financeAccountsPayableDataQuality.js";
 import {
   classifyFinanceApTitle,
-  computeDaysOverdue,
   filterFinanceApRows,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
@@ -12,6 +11,10 @@ import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import {
+  computeFinanceApDaysOverdue,
+  getAccountsPayableOperationalDueDate,
+} from "./financeAccountsPayableOperational.js";
 
 export type FinanceApTitlesSortBy = "dueDate" | "balancePayable" | "externalId";
 export type FinanceApTitlesSortDirection = "asc" | "desc";
@@ -36,6 +39,8 @@ export type FinanceApTitleListItem = {
   sourceInvoiceId: number | null;
   documentNumber: string | null;
   dueDate: string | null;
+  scheduleDate: string | null;
+  operationalDueDate: string | null;
   settlementDate: string | null;
   paymentDate: string | null;
   amountPayable: number;
@@ -134,8 +139,16 @@ function compareTitles(
   } else if (sortBy === "balancePayable") {
     cmp = a.balancePayable - b.balancePayable;
   } else {
-    const ad = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
-    const bd = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+    const ad = a.operationalDueDate
+      ? new Date(a.operationalDueDate).getTime()
+      : a.dueDate
+        ? new Date(a.dueDate).getTime()
+        : Number.POSITIVE_INFINITY;
+    const bd = b.operationalDueDate
+      ? new Date(b.operationalDueDate).getTime()
+      : b.dueDate
+        ? new Date(b.dueDate).getTime()
+        : Number.POSITIVE_INFINITY;
     cmp = ad - bd;
   }
   return direction === "desc" ? -cmp : cmp;
@@ -154,6 +167,8 @@ export function mapRowToTitleListItem(
     sourceInvoiceId: row.sourceInvoiceId,
     documentNumber: row.documentNumber,
     dueDate: row.dueDate?.toISOString() ?? null,
+    scheduleDate: row.scheduleDate?.toISOString() ?? null,
+    operationalDueDate: getAccountsPayableOperationalDueDate(row)?.toISOString() ?? null,
     settlementDate: row.settlementDate?.toISOString() ?? null,
     paymentDate: row.paymentDate?.toISOString() ?? null,
     amountPayable: roundMoney(row.amountPayable),
@@ -163,7 +178,7 @@ export function mapRowToTitleListItem(
     bankAccountName: row.bankAccountName,
     calculatedStatus: classifyFinanceApTitle(row, referenceDate),
     nomusStatus: row.nomusStatus,
-    daysOverdue: computeDaysOverdue(row.dueDate, referenceDate),
+    daysOverdue: computeFinanceApDaysOverdue(row, referenceDate),
     suspendPayment: row.suspendPayment,
     syncedAt: row.syncedAt.toISOString(),
   };
@@ -219,6 +234,8 @@ export const FINANCE_AP_TITLE_SELECT = {
   personCnpj: true,
   description: true,
   dueDate: true,
+  scheduleDate: true,
+  type: true,
   settlementDate: true,
   paymentDate: true,
   amountPayable: true,
@@ -240,6 +257,8 @@ export function mapPrismaRowToFinanceApTitleRow(row: {
   personCnpj: string | null;
   description: string | null;
   dueDate: Date | null;
+  scheduleDate?: Date | null;
+  type?: number | null;
   settlementDate: Date | null;
   paymentDate: Date | null;
   amountPayable: import("@prisma/client").Prisma.Decimal | null;

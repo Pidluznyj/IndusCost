@@ -115,6 +115,8 @@ export type FinanceApCriticalTitle = {
   personName: string | null;
   personCnpj: string | null;
   dueDate: string | null;
+  scheduleDate: string | null;
+  operationalDueDate: string | null;
   amountPayable: number;
   amountPaid: number;
   balancePayable: number;
@@ -125,6 +127,13 @@ export type FinanceApCriticalTitle = {
   suspendPayment: boolean | null;
   calculatedStatus: string;
   daysOverdue: number;
+};
+
+export type FinanceApPurchaseOrderScheduleAudit = {
+  excludedCount: number;
+  excludedAmount: number;
+  rescheduledOpenCount: number;
+  rescheduledOpenAmount: number;
 };
 
 export type FinanceApDataQualityAlerts = {
@@ -173,6 +182,7 @@ export type FinanceApDashboardPayload = {
   dataQualityAlerts: FinanceApDataQualityAlerts;
   dataQualitySummary: FinanceApDataQualityAlertItem[];
   dataSanitization: FinanceDataSanitization;
+  purchaseOrderScheduleAudit: FinanceApPurchaseOrderScheduleAudit;
 };
 
 export type FinanceApUiFilters = {

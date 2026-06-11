@@ -54,6 +54,8 @@ function apRow(overrides: Partial<FinanceApDashboardRow> = {}): FinanceApDashboa
     personCnpj: "22.222.222/0001-22",
     description: "Nota fiscal serviço",
     dueDate: new Date(2026, 5, 20),
+    scheduleDate: null,
+    type: null,
     settlementDate: null,
     paymentDate: null,
     amountPayable: 500,
@@ -188,7 +190,7 @@ describe("financeInternalGroupExclusions", () => {
     );
   });
 
-  it("agenda AP de pedido de compra no início da descrição", () => {
+  it("agenda AP de pedido de compra no início da descrição ou type 2", () => {
     assert.equal(
       isFinanceApPurchaseOrderAgenda({ description: "PEDIDO DE COMPRA 12345" }),
       true
@@ -197,6 +199,11 @@ describe("financeInternalGroupExclusions", () => {
       isFinanceApPurchaseOrderAgenda({ description: "  pedido de compra ref 99" }),
       true
     );
+    assert.equal(
+      isFinanceApPurchaseOrderAgenda({ description: "Pedido de compra PC 7788" }),
+      true
+    );
+    assert.equal(isFinanceApPurchaseOrderAgenda({ type: 2, description: "Outro" }), true);
     assert.equal(
       isFinanceApPurchaseOrderAgenda({ description: "NF ref pedido de compra" }),
       false

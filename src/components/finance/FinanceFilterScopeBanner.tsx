@@ -4,6 +4,8 @@ import {
   FINANCE_FILTER_APPLIED_SCOPE,
   FINANCE_MANAGEMENT_SANITIZATION_SCOPE,
 } from "@/src/lib/financeFilterScope";
+import type { FinanceApPurchaseOrderScheduleAudit } from "@/src/lib/financeAccountsPayableDashboardTypes";
+import { formatFinanceCurrency, formatFinanceInteger } from "@/src/lib/financeAccountsPayableFormat";
 import type { FinanceDataSanitization } from "@/src/lib/financeInternalGroupExclusions";
 import { totalFinanceDataSanitizationIgnored } from "@/src/lib/financeInternalGroupExclusions";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
@@ -29,6 +31,40 @@ export function FinanceFilterScopeNote({
 }) {
   return (
     <p className={`text-[11px] text-[#6B7280] ${className ?? ""}`.trim()}>{children}</p>
+  );
+}
+
+export function FinanceApPurchaseOrderScheduleAuditNote({
+  audit,
+  className,
+}: {
+  audit?: FinanceApPurchaseOrderScheduleAudit | null;
+  className?: string;
+}) {
+  if (!audit || (audit.excludedCount <= 0 && audit.rescheduledOpenCount <= 0)) return null;
+  return (
+    <div
+      data-testid="finance-ap-purchase-order-audit"
+      className={`${financeBiCardClass} border-[#E5E7EB] bg-[#FFFBEB] px-3 py-2 ${className ?? ""}`.trim()}
+    >
+      <p className="text-[10px] text-[#92400E] leading-snug font-medium">
+        Agenda de pedidos de compra excluída da visão gerencial
+      </p>
+      {audit.excludedCount > 0 ? (
+        <p className="text-[10px] text-[#78350F] leading-snug mt-1">
+          {formatFinanceInteger(audit.excludedCount)} título
+          {audit.excludedCount !== 1 ? "s" : ""} · {formatFinanceCurrency(audit.excludedAmount)}{" "}
+          removido{audit.excludedCount !== 1 ? "s" : ""} dos KPIs de atraso
+        </p>
+      ) : null}
+      {audit.rescheduledOpenCount > 0 ? (
+        <p className="text-[10px] text-[#78350F] leading-snug mt-1">
+          {formatFinanceInteger(audit.rescheduledOpenCount)} título
+          {audit.rescheduledOpenCount !== 1 ? "s" : ""} em aberto com agendamento diferente do
+          vencimento original ({formatFinanceCurrency(audit.rescheduledOpenAmount)})
+        </p>
+      ) : null}
+    </div>
   );
 }
 

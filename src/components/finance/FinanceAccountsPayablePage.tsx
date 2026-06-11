@@ -76,6 +76,7 @@ import {
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { cn } from "@/src/lib/utils";
 import {
+  FinanceApPurchaseOrderScheduleAuditNote,
   FinanceFilterScopeBanner,
   FinanceManagementSanitizationNote,
 } from "@/src/components/finance/FinanceFilterScopeBanner";
@@ -749,6 +750,7 @@ export function FinanceAccountsPayablePage() {
 
       <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
       <FinanceManagementSanitizationNote dataSanitization={data?.dataSanitization} />
+      <FinanceApPurchaseOrderScheduleAuditNote audit={data?.purchaseOrderScheduleAudit} />
 
       <section className={financeBiSectionClass}>
         <div className="px-5 py-4 border-b border-[#E5E7EB]">
@@ -776,8 +778,8 @@ export function FinanceAccountsPayablePage() {
             icon={AlertTriangle}
             label="Vencido"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueAmount)}
-            sub={withAppliedFilterSub("Vencimento anterior a hoje", Boolean(filtersActive))}
-            hint="Σ saldo em aberto com status overdue"
+            sub={withAppliedFilterSub("Data operacional anterior a hoje", Boolean(filtersActive))}
+            hint="Σ saldo em aberto com data operacional antes de hoje"
             colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
             loading={loading}
           />
@@ -785,8 +787,8 @@ export function FinanceAccountsPayablePage() {
             icon={Clock}
             label="Vence Hoje"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueTodayAmount)}
-            sub={withAppliedFilterSub("Vencimento no dia de referência", Boolean(filtersActive))}
-            hint="Σ saldo com vencimento = hoje"
+            sub={withAppliedFilterSub("Data operacional no dia de referência", Boolean(filtersActive))}
+            hint="Σ saldo com agendamento ou vencimento = hoje"
             colorClass={(cards?.dueTodayAmount ?? 0) > 0 ? "text-[#D97706]" : "text-[#111827]"}
             loading={loading}
           />

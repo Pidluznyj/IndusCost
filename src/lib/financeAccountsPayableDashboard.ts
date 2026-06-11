@@ -7,6 +7,11 @@ import {
 } from "./financeAccountsPayableDataQuality.js";
 import { buildSupplierSuggestedAction } from "./financeAccountsPayableActions.js";
 import {
+  computeFinanceApDaysOverdue,
+  getAccountsPayableOperationalDueDate,
+  hasAccountsPayableRescheduledPayment,
+} from "./financeAccountsPayableOperational.js";
+import {
   isFinanceApExcludedFromManagement,
   isFinanceApPurchaseOrderAgenda,
   isFinanceInternalGroupPerson,
@@ -57,6 +62,8 @@ export type FinanceApDashboardRow = {
   personCnpj: string | null;
   description: string | null;
   dueDate: Date | null;
+  scheduleDate: Date | null;
+  type: number | null;
   settlementDate: Date | null;
   paymentDate: Date | null;
   amountPayable: number;
@@ -110,6 +117,8 @@ export function mapPrismaRowToFinanceApDashboardRow(row: {
   personCnpj: string | null;
   description?: string | null;
   dueDate: Date | null;
+  scheduleDate?: Date | null;
+  type?: number | null;
   settlementDate: Date | null;
   paymentDate?: Date | null;
   amountPayable: Prisma.Decimal | null;
@@ -130,6 +139,8 @@ export function mapPrismaRowToFinanceApDashboardRow(row: {
     personCnpj: row.personCnpj,
     description: row.description ?? null,
     dueDate: row.dueDate,
+    scheduleDate: row.scheduleDate ?? null,
+    type: row.type ?? null,
     settlementDate: row.settlementDate,
     paymentDate: row.paymentDate ?? null,
     amountPayable: decimalFieldToNumber(row.amountPayable),
@@ -434,8 +445,9 @@ export function classifyFinanceApTitle(
   if (row.suspendPayment === true && isFinanceApOpen(row)) return "suspended";
   if (isFinanceApSettled(row)) return "settled";
   if (!isFinanceApOpen(row)) return "settled";
-  if (!row.dueDate) return "unknown";
-  const due = startOfLocalDay(row.dueDate);
+  const operationalDueDate = getAccountsPayableOperationalDueDate(row);
+  if (!operationalDueDate) return "unknown";
+  const due = startOfLocalDay(operationalDueDate);
   const t = startOfLocalDay(today);
   if (due < t) return "overdue";
   if (due.getTime() === t.getTime()) return "dueToday";
@@ -531,16 +543,40 @@ export function countFinanceApSanitizationInScope(
   FinanceDataSanitization,
   "ignoredInternalGroupPayables" | "ignoredPurchaseOrderAgendaPayables"
 > {
+  const audit = auditFinanceApPurchaseOrderExclusionsInScope(rows, filters, referenceDate);
+  return {
+    ignoredInternalGroupPayables: audit.ignoredInternalGroupPayables,
+    ignoredPurchaseOrderAgendaPayables: audit.ignoredPurchaseOrderAgendaPayables,
+  };
+}
+
+export function auditFinanceApPurchaseOrderExclusionsInScope(
+  rows: FinanceApDashboardRow[],
+  filters: FinanceApDashboardFilters,
+  referenceDate: Date = new Date()
+): {
+  ignoredInternalGroupPayables: number;
+  ignoredPurchaseOrderAgendaPayables: number;
+  ignoredPurchaseOrderAgendaAmount: number;
+  rescheduledOpenCount: number;
+  rescheduledOpenAmount: number;
+} {
   const { empty } = resolveFinanceApDueDateBounds(filters);
   if (empty) {
     return {
       ignoredInternalGroupPayables: 0,
       ignoredPurchaseOrderAgendaPayables: 0,
+      ignoredPurchaseOrderAgendaAmount: 0,
+      rescheduledOpenCount: 0,
+      rescheduledOpenAmount: 0,
     };
   }
 
   let ignoredInternalGroupPayables = 0;
   let ignoredPurchaseOrderAgendaPayables = 0;
+  let ignoredPurchaseOrderAgendaAmount = 0;
+  let rescheduledOpenCount = 0;
+  let rescheduledOpenAmount = 0;
 
   for (const row of rows) {
     if (!matchesFinanceApDashboardFilters(row, filters, referenceDate)) continue;
@@ -553,10 +589,20 @@ export function countFinanceApSanitizationInScope(
       ignoredInternalGroupPayables += 1;
     } else if (isFinanceApPurchaseOrderAgenda(row)) {
       ignoredPurchaseOrderAgendaPayables += 1;
+      ignoredPurchaseOrderAgendaAmount += row.balancePayable;
+    } else if (isFinanceApOpen(row) && hasAccountsPayableRescheduledPayment(row)) {
+      rescheduledOpenCount += 1;
+      rescheduledOpenAmount += row.balancePayable;
     }
   }
 
-  return { ignoredInternalGroupPayables, ignoredPurchaseOrderAgendaPayables };
+  return {
+    ignoredInternalGroupPayables,
+    ignoredPurchaseOrderAgendaPayables,
+    ignoredPurchaseOrderAgendaAmount: roundMoney(ignoredPurchaseOrderAgendaAmount),
+    rescheduledOpenCount,
+    rescheduledOpenAmount: roundMoney(rescheduledOpenAmount),
+  };
 }
 
 export function filterFinanceApRows(
@@ -711,10 +757,12 @@ export function buildFinanceAccountsPayableDashboard(
     const status = classifyFinanceApTitle(row, today);
     const supplierKey = resolveFinanceApSupplierKey(row);
 
+    const operationalDueDate = getAccountsPayableOperationalDueDate(row);
+
     if (status === "overdue") {
       overdueAmount += balance;
       overdueSuppliers.add(supplierKey);
-      const daysO = computeDaysOverdue(row.dueDate, today);
+      const daysO = computeFinanceApDaysOverdue(row, today);
       if (daysO > 30) {
         overdueOver30DaysAmount += balance;
         overdueOver30DaysCount += 1;
@@ -729,17 +777,17 @@ export function buildFinanceAccountsPayableDashboard(
       upcomingAmount += balance;
     }
 
-    if (row.dueDate) {
-      if (isDueInRange(row.dueDate, today, in7Days)) dueNext7DaysAmount += balance;
-      if (isDueInRange(row.dueDate, today, in30Days)) dueNext30DaysAmount += balance;
+    if (operationalDueDate) {
+      if (isDueInRange(operationalDueDate, today, in7Days)) dueNext7DaysAmount += balance;
+      if (isDueInRange(operationalDueDate, today, in30Days)) dueNext30DaysAmount += balance;
 
-      const bucketKey = assignAgingBucketKey(row.dueDate, today);
+      const bucketKey = assignAgingBucketKey(operationalDueDate, today);
       const bucket = agingAcc.get(bucketKey)!;
       bucket.amount += balance;
       bucket.count += 1;
       bucket.suppliers.add(supplierKey);
 
-      const dueDay = startOfLocalDay(row.dueDate);
+      const dueDay = startOfLocalDay(operationalDueDate);
       const daysFromToday = Math.floor((dueDay.getTime() - today.getTime()) / MS_PER_DAY);
       if (daysFromToday >= 0) {
         const scheduleKey = assignScheduleBucketKey(daysFromToday);
@@ -758,12 +806,12 @@ export function buildFinanceAccountsPayableDashboard(
         }
       }
 
-      const monthKey = `${row.dueDate.getFullYear()}-${row.dueDate.getMonth() + 1}`;
+      const monthKey = `${operationalDueDate.getFullYear()}-${operationalDueDate.getMonth() + 1}`;
       const monthRow =
         monthlyAcc.get(monthKey) ??
         ({
-          year: row.dueDate.getFullYear(),
-          month: row.dueDate.getMonth() + 1,
+          year: operationalDueDate.getFullYear(),
+          month: operationalDueDate.getMonth() + 1,
           openAmount: 0,
           overdueAmount: 0,
           upcomingAmount: 0,
@@ -793,7 +841,7 @@ export function buildFinanceAccountsPayableDashboard(
         maxDaysOverdue: 0,
         hasSuspendedOpen: false,
       } as const);
-    const daysOverdue = computeDaysOverdue(row.dueDate, today);
+    const daysOverdue = computeFinanceApDaysOverdue(row, today);
     debtorAcc.set(supplierKey, {
       personName: debtor.personName ?? row.personName,
       personCnpj: debtor.personCnpj ?? row.personCnpj,
@@ -803,9 +851,9 @@ export function buildFinanceAccountsPayableDashboard(
         debtor.upcomingAmount + (status === "upcoming" || status === "dueToday" ? balance : 0),
       titlesCount: debtor.titlesCount + 1,
       oldestOverdueDate:
-        status === "overdue" && row.dueDate
-          ? !debtor.oldestOverdueDate || row.dueDate < debtor.oldestOverdueDate
-            ? row.dueDate
+        status === "overdue" && operationalDueDate
+          ? !debtor.oldestOverdueDate || operationalDueDate < debtor.oldestOverdueDate
+            ? operationalDueDate
             : debtor.oldestOverdueDate
           : debtor.oldestOverdueDate,
       maxDaysOverdue: Math.max(debtor.maxDaysOverdue, daysOverdue),
@@ -956,16 +1004,21 @@ export function buildFinanceAccountsPayableDashboard(
       overduePercent: roundMoney(safeRatio(row.overdueAmount, row.openAmount) * 100),
     }));
 
+  const exclusionAudit = auditFinanceApPurchaseOrderExclusionsInScope(rows, filters, referenceDate);
+
   const criticalTitles = filteredRows
     .filter((row) => isFinanceApOpen(row))
     .map((row) => {
       const calculatedStatus = classifyFinanceApTitle(row, today);
+      const operationalDueDate = getAccountsPayableOperationalDueDate(row);
       return {
         externalId: row.externalId,
         companyName: row.companyName,
         personName: row.personName,
         personCnpj: row.personCnpj,
         dueDate: row.dueDate?.toISOString() ?? null,
+        scheduleDate: row.scheduleDate?.toISOString() ?? null,
+        operationalDueDate: operationalDueDate?.toISOString() ?? null,
         amountPayable: roundMoney(row.amountPayable),
         amountPaid: roundMoney(row.amountPaid),
         balancePayable: roundMoney(row.balancePayable),
@@ -975,7 +1028,7 @@ export function buildFinanceAccountsPayableDashboard(
         documentNumber: row.documentNumber,
         suspendPayment: row.suspendPayment,
         calculatedStatus,
-        daysOverdue: computeDaysOverdue(row.dueDate, today),
+        daysOverdue: computeFinanceApDaysOverdue(row, today),
       };
     })
     .sort((a, b) => b.daysOverdue - a.daysOverdue || b.balancePayable - a.balancePayable)
@@ -1025,7 +1078,14 @@ export function buildFinanceAccountsPayableDashboard(
     dataSanitization: {
       ignoredInternalGroupReceivables: 0,
       ignoredGhostReceivables: 0,
-      ...countFinanceApSanitizationInScope(rows, filters, referenceDate),
+      ignoredInternalGroupPayables: exclusionAudit.ignoredInternalGroupPayables,
+      ignoredPurchaseOrderAgendaPayables: exclusionAudit.ignoredPurchaseOrderAgendaPayables,
+    },
+    purchaseOrderScheduleAudit: {
+      excludedCount: exclusionAudit.ignoredPurchaseOrderAgendaPayables,
+      excludedAmount: exclusionAudit.ignoredPurchaseOrderAgendaAmount,
+      rescheduledOpenCount: exclusionAudit.rescheduledOpenCount,
+      rescheduledOpenAmount: exclusionAudit.rescheduledOpenAmount,
     },
   };
 }

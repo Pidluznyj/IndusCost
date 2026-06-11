@@ -62,6 +62,8 @@ function apRow(overrides: Partial<FinanceCashFlowApRow> = {}): FinanceCashFlowAp
     personCnpj: null,
     description: null,
     dueDate: new Date(2026, 5, 20),
+    scheduleDate: null,
+    type: null,
     settlementDate: null,
     paymentDate: null,
     competenceDate: null,

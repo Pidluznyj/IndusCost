@@ -1,9 +1,9 @@
 import {
   classifyFinanceApTitle,
-  computeDaysOverdue,
   isFinanceApOpen,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import { computeFinanceApDaysOverdue } from "./financeAccountsPayableOperational.js";
 
 export type FinanceApDataQualitySeverity = "info" | "warning" | "critical";
 
@@ -91,8 +91,8 @@ export function trackFinanceApDataQualityRow(
   if (row.suspendPayment === true) bump(acc, "suspendedPaymentOpen", balance);
 
   const status = classifyFinanceApTitle(row, referenceDate);
-  if (status === "overdue" && row.dueDate) {
-    const days = computeDaysOverdue(row.dueDate, referenceDate);
+  if (status === "overdue") {
+    const days = computeFinanceApDaysOverdue(row, referenceDate);
     if (days > 30) bump(acc, "overdueOver30Days", balance);
     if (days > 60) bump(acc, "overdueOver60Days", balance);
     if (days > 90) bump(acc, "overdueOver90Days", balance);
@@ -181,7 +181,7 @@ export function rowMatchesFinanceApQualityAlert(
     case "overdueOver90Days": {
       if (!open || !row.dueDate) return false;
       if (classifyFinanceApTitle(row, referenceDate) !== "overdue") return false;
-      const days = computeDaysOverdue(row.dueDate, referenceDate);
+      const days = computeFinanceApDaysOverdue(row, referenceDate);
       if (alertKey === "overdueOver30Days") return days > 30;
       if (alertKey === "overdueOver60Days") return days > 60;
       return days > 90;

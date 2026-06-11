@@ -15,6 +15,8 @@ function row(partial: Partial<FinanceApDashboardRow> & Pick<FinanceApDashboardRo
     personName: "Fornecedor",
     personCnpj: "11.111.111/0001-11",
     dueDate: new Date(2026, 5, 20),
+    scheduleDate: null,
+    type: null,
     settlementDate: null,
     paymentDate: null,
     amountPayable: 100,

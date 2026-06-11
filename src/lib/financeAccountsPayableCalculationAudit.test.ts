@@ -17,6 +17,8 @@ function row(
     personName: "Fornecedor X",
     personCnpj: "12.345.678/0001-90",
     dueDate: new Date(2026, 5, 10),
+    scheduleDate: null,
+    type: null,
     settlementDate: null,
     paymentDate: null,
     amountPayable: 1000,

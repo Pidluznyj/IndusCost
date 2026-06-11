@@ -1,3 +1,4 @@
+import { isAccountsPayablePurchaseOrderSchedule } from "./financeAccountsPayableOperational.js";
 import { safeFinanceNumber } from "./financeAccountsReceivableFormat.js";
 
 export const FINANCE_INTERNAL_GROUP_COMPANIES = [
@@ -137,12 +138,12 @@ export function isFinanceArGhostTitle(row: {
   return receivable > 0 && received === 0 && balance === 0;
 }
 
-/** Agenda AP de pedido de compra — descrição inicia com PEDIDO DE COMPRA. */
+/** Agenda AP de pedido de compra — type 2 ou descrição de PC no Nomus. */
 export function isFinanceApPurchaseOrderAgenda(row: {
   description?: string | null;
+  type?: number | null;
 }): boolean {
-  const desc = normalizeFinancePersonText(row.description ?? "");
-  return desc.startsWith("PEDIDO DE COMPRA");
+  return isAccountsPayablePurchaseOrderSchedule(row);
 }
 
 export function isFinanceArExcludedFromManagement(row: {
@@ -167,6 +168,7 @@ export function isFinanceApExcludedFromManagement(row: {
   personName?: string | null;
   personCnpj?: string | null;
   description?: string | null;
+  type?: number | null;
 }): boolean {
   if (
     isFinanceInternalGroupPerson({

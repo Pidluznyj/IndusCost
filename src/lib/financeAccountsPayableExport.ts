@@ -1,12 +1,17 @@
 import { fleetCsvEscape, fleetRowsToCsv } from "./fleetCsv.js";
 import {
   classifyFinanceApTitle,
-  computeDaysOverdue,
   filterFinanceApRows,
   roundMoney,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import {
+  computeFinanceApDaysOverdue,
+  getAccountsPayableExcludedReason,
+  getAccountsPayableOperationalDueDate,
+  isAccountsPayablePurchaseOrderSchedule,
+} from "./financeAccountsPayableOperational.js";
 import { formatFinanceCalculatedStatus } from "./financeAccountsPayableFormat.js";
 
 export const FINANCE_AP_EXPORT_HEADERS = [
@@ -17,6 +22,8 @@ export const FINANCE_AP_EXPORT_HEADERS = [
   "Descrição",
   "Documento/NF",
   "Data vencimento",
+  "Data agendamento",
+  "Data operacional",
   "Baixa/Pagamento",
   "Valor original",
   "Valor pago",
@@ -27,6 +34,8 @@ export const FINANCE_AP_EXPORT_HEADERS = [
   "Status Nomus",
   "Dias em atraso",
   "Pagamento suspenso",
+  "Agenda pedido compra",
+  "Motivo exclusão",
   "Última sync",
 ] as const;
 
@@ -66,7 +75,10 @@ export function mapFinanceApRowToExportCells(
   referenceDate: Date = new Date()
 ): string[] {
   const status = classifyFinanceApTitle(row, referenceDate);
-  const days = computeDaysOverdue(row.dueDate, referenceDate);
+  const operationalDueDate = getAccountsPayableOperationalDueDate(row);
+  const days = computeFinanceApDaysOverdue(row, referenceDate);
+  const isPurchaseOrderSchedule = isAccountsPayablePurchaseOrderSchedule(row);
+  const excludedReason = getAccountsPayableExcludedReason(row);
   return [
     String(row.externalId),
     row.companyName?.trim() ?? "",
@@ -75,6 +87,8 @@ export function mapFinanceApRowToExportCells(
     row.description?.trim() ?? "",
     nfOrigem(row),
     formatExportDate(row.dueDate),
+    formatExportDate(row.scheduleDate),
+    formatExportDate(operationalDueDate),
     formatExportDate(row.paymentDate ?? row.settlementDate),
     formatExportMoney(row.amountPayable),
     formatExportMoney(row.amountPaid),
@@ -85,6 +99,8 @@ export function mapFinanceApRowToExportCells(
     formatExportNomusStatus(row.nomusStatus),
     days > 0 ? String(days) : "",
     row.suspendPayment === true ? "Sim" : row.suspendPayment === false ? "Não" : "",
+    isPurchaseOrderSchedule ? "Sim" : "Não",
+    excludedReason,
     formatExportDateTime(row.syncedAt),
   ];
 }

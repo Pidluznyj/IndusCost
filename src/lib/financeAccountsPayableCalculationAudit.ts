@@ -4,7 +4,6 @@
 import {
   buildFinanceAccountsPayableDashboard,
   classifyFinanceApTitle,
-  computeDaysOverdue,
   filterFinanceApRows,
   isFinanceApOpen,
   isFinanceApSettled,
@@ -15,6 +14,10 @@ import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import {
+  computeFinanceApDaysOverdue,
+  getAccountsPayableOperationalDueDate,
+} from "./financeAccountsPayableOperational.js";
 
 export type FinanceApIndependentMetrics = {
   totalOpenAmount: number;
@@ -89,9 +92,11 @@ export function computeFinanceApIndependentMetrics(
     totalOpenAmount += balance;
     const status = classifyFinanceApTitle(row, today);
 
+    const operationalDueDate = getAccountsPayableOperationalDueDate(row);
+
     if (status === "overdue") {
       overdueAmount += balance;
-      const days = computeDaysOverdue(row.dueDate, today);
+      const days = computeFinanceApDaysOverdue(row, today);
       if (days > 30) {
         overdueOver30DaysAmount += balance;
         overdueOver30DaysCount += 1;
@@ -103,11 +108,15 @@ export function computeFinanceApIndependentMetrics(
     } else if (status === "dueToday") {
       dueTodayAmount += balance;
     } else if (status === "upcoming") {
-      if (row.dueDate && isDueInRange(row.dueDate, today, in7Days)) dueNext7DaysAmount += balance;
-      if (row.dueDate && isDueInRange(row.dueDate, today, in30Days)) dueNext30DaysAmount += balance;
+      if (operationalDueDate && isDueInRange(operationalDueDate, today, in7Days)) {
+        dueNext7DaysAmount += balance;
+      }
+      if (operationalDueDate && isDueInRange(operationalDueDate, today, in30Days)) {
+        dueNext30DaysAmount += balance;
+      }
     }
 
-    if (row.dueDate) agingOpenTotal += balance;
+    if (operationalDueDate) agingOpenTotal += balance;
 
     const key = resolveFinanceApSupplierKey(row);
     supplierAcc.set(key, (supplierAcc.get(key) ?? 0) + balance);
@@ -122,7 +131,7 @@ export function computeFinanceApIndependentMetrics(
     .filter((row) => isFinanceApOpen(row))
     .sort(
       (a, b) =>
-        computeDaysOverdue(b.dueDate, today) - computeDaysOverdue(a.dueDate, today) ||
+        computeFinanceApDaysOverdue(b, today) - computeFinanceApDaysOverdue(a, today) ||
         b.balancePayable - a.balancePayable
     )
     .slice(0, 20)

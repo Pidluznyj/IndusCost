@@ -279,7 +279,7 @@ function CriticalTitlesSection({
           <tr className="text-left text-[10px] font-bold uppercase text-muted-foreground">
             <th className="p-3">ID</th>
             <th className="p-3 min-w-[140px]">Fornecedor</th>
-            <th className="p-3 whitespace-nowrap">Vencimento</th>
+            <th className="p-3 whitespace-nowrap">Pagamento</th>
             <th className="p-3 text-right whitespace-nowrap">Saldo</th>
             <th className="p-3">Status</th>
             <th className="p-3 text-right">Dias</th>
@@ -290,7 +290,15 @@ function CriticalTitlesSection({
             <tr key={row.externalId} className="border-b border-border/60 hover:bg-muted/20">
               <td className="p-3 font-mono text-xs">{row.externalId}</td>
               <td className="p-3">{displayFinanceText(row.personName)}</td>
-              <td className="p-3 whitespace-nowrap">{formatFinanceDate(row.dueDate)}</td>
+              <td className="p-3 whitespace-nowrap">
+                {row.scheduleDate ? (
+                  <span title={`Vencimento original: ${formatFinanceDate(row.dueDate)}`}>
+                    Agendado para {formatFinanceDate(row.scheduleDate)}
+                  </span>
+                ) : (
+                  formatFinanceDate(row.operationalDueDate ?? row.dueDate)
+                )}
+              </td>
               <td className="p-3 text-right font-semibold tabular-nums whitespace-nowrap">
                 {formatFinanceCurrency(row.balancePayable)}
               </td>
