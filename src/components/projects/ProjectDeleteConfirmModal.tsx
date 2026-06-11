@@ -4,7 +4,9 @@ import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
 
 type Props = {
   open: boolean;
+  title?: string;
   itemLabel?: string;
+  description?: string;
   saving?: boolean;
   error?: string | null;
   onClose: () => void;
@@ -13,7 +15,9 @@ type Props = {
 
 export function ProjectDeleteConfirmModal({
   open,
+  title = "Confirmar exclusão",
   itemLabel,
+  description = "Esta ação removerá o item apenas deste projeto/simulação. Nenhum cadastro oficial será alterado.",
   saving,
   error,
   onClose,
@@ -23,7 +27,7 @@ export function ProjectDeleteConfirmModal({
 
   return (
     <ProjectModalShell
-      title="Confirmar exclusão"
+      title={title}
       onClose={onClose}
       footer={
         <>
@@ -52,10 +56,7 @@ export function ProjectDeleteConfirmModal({
           {error}
         </div>
       ) : null}
-      <p className="text-sm text-muted-foreground">
-        Esta ação removerá o item apenas deste projeto/simulação. Nenhum cadastro oficial será
-        alterado.
-      </p>
+      <p className="text-sm text-muted-foreground">{description}</p>
       {itemLabel ? (
         <p className="mt-3 text-sm font-medium text-foreground">{itemLabel}</p>
       ) : null}

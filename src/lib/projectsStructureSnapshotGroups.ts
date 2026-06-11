@@ -1,0 +1,221 @@
+import {
+  calculateStructureLineTotalCost,
+  sanitizeFinite,
+  toFiniteNumber,
+} from "@/src/lib/projectsCalculations.js";
+import { buildProjectEngineeringTree, type ProjectEngineeringTreeNode } from "@/src/lib/projectsEngineeringTree.js";
+import { sumSimulatedRootProductCost, type EngineeringRollupLine } from "@/src/lib/projectsEngineeringCostRollup.js";
+import type { ProjectSimulatedProductRow, ProjectStructureLineRow } from "@/src/types/projects.js";
+
+export type ProjectStructureSnapshotGroupStatus =
+  | "HERDADO"
+  | "ALTERADO"
+  | "SEM_CUSTO"
+  | "FICTICIO";
+
+export type ProjectStructureSnapshotGroup = {
+  groupKey: string;
+  snapshotRootProductId: string | null;
+  simulatedProductId: string | null;
+  rootCode: string;
+  rootDescription: string;
+  sourceLabel: string;
+  quantity: number;
+  officialCost: number;
+  simulatedCost: number;
+  totalCost: number;
+  differenceAmount: number;
+  differencePercent: number;
+  itemCount: number;
+  hasChanges: boolean;
+  hasMissingCost: boolean;
+  status: ProjectStructureSnapshotGroupStatus;
+  lines: ProjectStructureLineRow[];
+  tree: ProjectEngineeringTreeNode | null;
+};
+
+export type ProjectStructureGroupingResult = {
+  snapshotGroups: ProjectStructureSnapshotGroup[];
+  manualLines: ProjectStructureLineRow[];
+};
+
+export type RootProductMeta = { sku: string; name: string };
+
+function lineBelongsToSnapshot(line: ProjectStructureLineRow, rootId: string): boolean {
+  return (
+    line.snapshotRootProductId === rootId ||
+    line.notes?.includes(`snapshot:${rootId}`) === true ||
+    line.notes?.includes(`routing-snapshot:${rootId}`) === true
+  );
+}
+
+function isManualStructureLine(line: ProjectStructureLineRow): boolean {
+  if (line.snapshotRootProductId != null) return false;
+  if (line.notes?.includes("snapshot:")) return false;
+  if (line.notes?.includes("routing-snapshot:")) return false;
+  return true;
+}
+
+function toRollupLine(line: ProjectStructureLineRow): EngineeringRollupLine {
+  return {
+    id: line.id,
+    parentLineId: line.parentLineId,
+    snapshotRootProductId: line.snapshotRootProductId,
+    lineType: line.lineType,
+    quantity: line.quantity,
+    lossPercent: line.lossPercent ?? 0,
+    unitCostSnapshot: line.unitCostSnapshot,
+    totalCost: line.totalCost,
+    officialQuantitySnapshot: line.officialQuantitySnapshot,
+    officialLossPercentSnapshot: line.officialLossPercentSnapshot,
+    officialUnitCostSnapshot: line.officialUnitCostSnapshot,
+    countsInSimulatedProductCost: line.countsInSimulatedProductCost,
+    isChangedFromOfficial: line.isChangedFromOfficial,
+  };
+}
+
+function sumOfficialRootCost(lines: ProjectStructureLineRow[]): number {
+  let total = 0;
+  for (const line of lines) {
+    if (line.parentLineId != null) continue;
+    if (!line.countsInSimulatedProductCost) continue;
+    const qty = toFiniteNumber(line.officialQuantitySnapshot ?? line.quantity);
+    const loss = toFiniteNumber(line.officialLossPercentSnapshot ?? line.lossPercent ?? 0);
+    const unit = toFiniteNumber(line.officialUnitCostSnapshot ?? line.unitCostSnapshot);
+    const lineTotal = calculateStructureLineTotalCost(qty, unit, loss);
+    total += sanitizeFinite(lineTotal) ?? 0;
+  }
+  return sanitizeFinite(total) ?? 0;
+}
+
+function resolveGroupStatus(
+  lines: ProjectStructureLineRow[],
+  hasChanges: boolean,
+  hasMissingCost: boolean
+): ProjectStructureSnapshotGroupStatus {
+  if (hasMissingCost) return "SEM_CUSTO";
+  if (hasChanges) return "ALTERADO";
+  if (lines.some((l) => l.sourceType === "SIMULATED_ITEM")) return "FICTICIO";
+  return "HERDADO";
+}
+
+function resolveRootMeta(
+  rootId: string,
+  groupLines: ProjectStructureLineRow[],
+  rootProducts?: Record<string, RootProductMeta>,
+  simulatedProducts?: ProjectSimulatedProductRow[]
+): { rootCode: string; rootDescription: string; simulatedProductId: string | null } {
+  const fromLookup = rootProducts?.[rootId];
+  if (fromLookup) {
+    return {
+      rootCode: fromLookup.sku,
+      rootDescription: fromLookup.name,
+      simulatedProductId: null,
+    };
+  }
+
+  const topLevel = groupLines
+    .filter((l) => l.parentLineId == null)
+    .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+  if (topLevel?.descriptionSnapshot.includes(" — ")) {
+    const [code, ...rest] = topLevel.descriptionSnapshot.split(" — ");
+    return {
+      rootCode: code,
+      rootDescription: rest.join(" — "),
+      simulatedProductId: topLevel.simulatedProductId,
+    };
+  }
+
+  return {
+    rootCode: rootId.slice(0, 8),
+    rootDescription: "Produto importado",
+    simulatedProductId: topLevel?.simulatedProductId ?? null,
+  };
+}
+
+/** Agrupa linhas hierárquicas importadas por snapshotRootProductId; separa itens manuais. */
+export function buildProjectStructureSnapshotGroups(
+  lines: ProjectStructureLineRow[],
+  options?: {
+    rootProducts?: Record<string, RootProductMeta>;
+    simulatedProducts?: ProjectSimulatedProductRow[];
+  }
+): ProjectStructureGroupingResult {
+  const snapshotRootIds = new Set<string>();
+
+  for (const line of lines) {
+    if (line.snapshotRootProductId) {
+      snapshotRootIds.add(line.snapshotRootProductId);
+      continue;
+    }
+    const snapshotMatch = line.notes?.match(/snapshot:([0-9a-f-]{36})/i);
+    if (snapshotMatch?.[1]) snapshotRootIds.add(snapshotMatch[1]);
+  }
+
+  const manualLines = lines.filter(isManualStructureLine);
+
+  const snapshotGroups: ProjectStructureSnapshotGroup[] = [...snapshotRootIds].map((rootId) => {
+    const groupLines = lines.filter((l) => lineBelongsToSnapshot(l, rootId));
+    const rollupLines = groupLines.map(toRollupLine);
+    const simulatedCost = sumSimulatedRootProductCost(rollupLines);
+    const officialCost = sumOfficialRootCost(groupLines);
+    const differenceAmount = simulatedCost - officialCost;
+    const differencePercent =
+      officialCost > 0 ? sanitizeFinite((differenceAmount / officialCost) * 100) ?? 0 : 0;
+
+    const hasChanges = groupLines.some((l) => l.isChangedFromOfficial);
+    const hasMissingCost = groupLines.some(
+      (l) => l.isMissingCost || l.unitCostSnapshot <= 0 || !Number.isFinite(l.totalCost)
+    );
+
+    const { rootCode, rootDescription, simulatedProductId } = resolveRootMeta(
+      rootId,
+      groupLines,
+      options?.rootProducts,
+      options?.simulatedProducts
+    );
+
+    return {
+      groupKey: rootId,
+      snapshotRootProductId: rootId,
+      simulatedProductId,
+      rootCode,
+      rootDescription,
+      sourceLabel: "Produto oficial",
+      quantity: 1,
+      officialCost,
+      simulatedCost,
+      totalCost: simulatedCost,
+      differenceAmount,
+      differencePercent,
+      itemCount: groupLines.length,
+      hasChanges,
+      hasMissingCost,
+      status: resolveGroupStatus(groupLines, hasChanges, hasMissingCost),
+      lines: groupLines,
+      tree: null,
+    };
+  });
+
+  snapshotGroups.sort((a, b) => a.rootCode.localeCompare(b.rootCode));
+
+  for (const group of snapshotGroups) {
+    if (group.snapshotRootProductId) {
+      group.tree = buildProjectEngineeringTree(
+        {
+          productId: group.snapshotRootProductId,
+          sku: group.rootCode,
+          name: group.rootDescription,
+        },
+        group.lines
+      );
+    }
+  }
+
+  return { snapshotGroups, manualLines };
+}
+
+/** Linhas que entram no grid principal (somente manuais; snapshots ficam no accordion). */
+export function filterPrimaryStructureTableLines(lines: ProjectStructureLineRow[]): ProjectStructureLineRow[] {
+  return buildProjectStructureSnapshotGroups(lines).manualLines;
+}

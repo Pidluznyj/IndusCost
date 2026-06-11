@@ -43,6 +43,7 @@ import {
   copyVersionFromCurrent,
   createProjectWithVersion,
   dec,
+  deleteProjectStructureSnapshot,
   isValidProjectStatus,
   isValidProjectType,
   loadProjectDetail,
@@ -820,6 +821,29 @@ export function registerProjectsRoutes(
       res.status(500).json({ error: "Erro ao excluir linha de estrutura." });
     }
   });
+
+  app.delete(
+    "/api/projects/:id/structure-snapshot/:snapshotRootProductId",
+    ...manage,
+    async (req, res) => {
+      try {
+        if (!isUuid(req.params.id) || !isUuid(req.params.snapshotRootProductId)) {
+          return res.status(400).json({ error: "ID inválido." });
+        }
+        const result = await deleteProjectStructureSnapshot(
+          req.params.id,
+          req.params.snapshotRootProductId
+        );
+        const detail = await loadProjectDetail(req.params.id);
+        res.json({ ok: true, deletedCount: result.deletedCount, project: detail });
+      } catch (e: unknown) {
+        console.error("DELETE structure-snapshot", e);
+        res.status(500).json({
+          error: e instanceof Error ? e.message : "Erro ao remover snapshot de engenharia.",
+        });
+      }
+    }
+  );
 
   app.post("/api/projects/:id/molds", ...manage, async (req, res) => {
     try {

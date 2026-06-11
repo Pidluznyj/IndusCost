@@ -332,6 +332,30 @@ export async function persistEngineeringCostRollupForVersion(versionId: string):
   }
 }
 
+/** Remove snapshot de engenharia importado (somente ProjectStructureLine do projeto). */
+export async function deleteProjectStructureSnapshot(
+  projectId: string,
+  snapshotRootProductId: string
+): Promise<{ deletedCount: number }> {
+  const ctx = await requireProjectAndVersion(projectId);
+  if ("error" in ctx) throw new Error(ctx.error);
+
+  const result = await prisma.projectStructureLine.deleteMany({
+    where: {
+      projectId,
+      versionId: ctx.version.id,
+      OR: [
+        { snapshotRootProductId },
+        { notes: { contains: `snapshot:${snapshotRootProductId}` } },
+        { notes: { contains: `routing-snapshot:${snapshotRootProductId}` } },
+      ],
+    },
+  });
+
+  await recalculateAndPersistVersionCosts(ctx.version.id);
+  return { deletedCount: result.count };
+}
+
 export async function recalculateAndPersistVersionCosts(versionId: string) {
   await persistEngineeringCostRollupForVersion(versionId);
 

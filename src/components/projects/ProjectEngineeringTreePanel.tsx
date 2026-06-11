@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Layers, Loader2, Settings } from "lucide-react";
+import { Box, Layers, Loader2, Pencil, Settings } from "lucide-react";
 import { cn, formatCurrency } from "@/src/lib/utils";
 import type { ProjectEngineeringTreeNode } from "@/src/lib/projectsEngineeringTree";
 import type { ProjectStructureLineRow } from "@/src/types/projects";
@@ -36,7 +36,9 @@ const TreeRow: React.FC<{
   depth: number;
   selectedId: string | null;
   onSelect: (line: ProjectStructureLineRow | null) => void;
-}> = ({ node, depth, selectedId, onSelect }) => {
+  onEditLine?: (line: ProjectStructureLineRow) => void;
+  canManage?: boolean;
+}> = ({ node, depth, selectedId, onSelect, onEditLine, canManage }) => {
   const isComponent = node.nodeType === "PRODUCT" || node.nodeType === "ROOT";
   const isProcess = node.nodeType === "PROCESS";
   const isSelected = node.line ? selectedId === node.line.id : selectedId === node.id;
@@ -76,11 +78,24 @@ const TreeRow: React.FC<{
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
               <p className="truncate text-xs font-bold">{node.label}</p>
-              {node.line ? (
-                <p className="shrink-0 text-[10px] font-bold text-primary">
-                  Qtd: {node.line.quantity}
-                </p>
-              ) : null}
+              <div className="flex shrink-0 items-center gap-2">
+                {node.line ? (
+                  <p className="text-[10px] font-bold text-primary">Qtd: {node.line.quantity}</p>
+                ) : null}
+                {canManage && node.line && onEditLine ? (
+                  <button
+                    type="button"
+                    title="Editar linha"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditLine(node.line!);
+                    }}
+                    className="rounded border border-border p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
             </div>
             <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{node.code}</p>
             {node.line ? (
@@ -104,6 +119,8 @@ const TreeRow: React.FC<{
               depth={depth + 1}
               selectedId={selectedId}
               onSelect={onSelect}
+              onEditLine={onEditLine}
+              canManage={canManage}
             />
           ))}
         </div>
@@ -117,6 +134,9 @@ type Props = {
   loading?: boolean;
   selectedLineId: string | null;
   onSelectLine: (line: ProjectStructureLineRow | null) => void;
+  variant?: "default" | "embedded";
+  onEditLine?: (line: ProjectStructureLineRow) => void;
+  canManage?: boolean;
 };
 
 export function ProjectEngineeringTreePanel({
@@ -124,6 +144,9 @@ export function ProjectEngineeringTreePanel({
   loading,
   selectedLineId,
   onSelectLine,
+  variant = "default",
+  onEditLine,
+  canManage,
 }: Props) {
   if (loading) {
     return (
@@ -143,6 +166,24 @@ export function ProjectEngineeringTreePanel({
     );
   }
 
+  if (variant === "embedded") {
+    return (
+      <div className="space-y-2">
+        {tree.children.map((child) => (
+          <TreeRow
+            key={child.id}
+            node={child}
+            depth={0}
+            selectedId={selectedLineId}
+            onSelect={onSelectLine}
+            onEditLine={onEditLine}
+            canManage={canManage}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <TreeRow
@@ -150,6 +191,8 @@ export function ProjectEngineeringTreePanel({
         depth={0}
         selectedId={selectedLineId}
         onSelect={onSelectLine}
+        onEditLine={onEditLine}
+        canManage={canManage}
       />
     </div>
   );

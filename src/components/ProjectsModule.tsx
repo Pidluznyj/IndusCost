@@ -42,7 +42,9 @@ import { ProjectSimulatedProductFormModal } from "@/src/components/projects/Proj
 import { ProjectStructureLineEditModal } from "@/src/components/projects/ProjectStructureLineEditModal";
 import { ProjectProductSimulationPanel } from "@/src/components/projects/ProjectProductSimulationPanel";
 import { ProjectStructureLineModal } from "@/src/components/projects/ProjectStructureLineModal";
-import { MOLD_CHARGE_MODE_OPTIONS, structureLineTypeLabel } from "@/src/lib/projectsUiUtils";
+import { ProjectStructureSnapshotAccordion } from "@/src/components/projects/ProjectStructureSnapshotAccordion";
+import type { ProjectStructureSnapshotGroup } from "@/src/lib/projectsStructureSnapshotGroups";
+import { MOLD_CHARGE_MODE_OPTIONS } from "@/src/lib/projectsUiUtils";
 import type {
   ProjectDashboardPayload,
   ProjectDetail,
@@ -87,6 +89,7 @@ type DeleteTarget =
   | { kind: "product"; id: string; label: string }
   | { kind: "item"; id: string; label: string }
   | { kind: "structure"; id: string; label: string }
+  | { kind: "structureSnapshot"; snapshotRootProductId: string; label: string }
   | { kind: "mold"; id: string; label: string };
 
 function RowActions({
@@ -122,13 +125,6 @@ function RowActions({
     </td>
   );
 }
-
-const SOURCE_BADGE: Record<ProjectStructureSourceType, { label: string; className: string }> = {
-  EXISTING_PRODUCT: { label: "Existente", className: "bg-blue-100 text-blue-800" },
-  EXISTING_MATERIAL: { label: "Existente", className: "bg-blue-100 text-blue-800" },
-  SIMULATED_ITEM: { label: "Simulado", className: "bg-amber-100 text-amber-800" },
-  MANUAL: { label: "Manual", className: "bg-slate-100 text-slate-700" },
-};
 
 function formatMoney(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -560,6 +556,11 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
         await fetchJsonOk(`${base}/simulated-items/${deleteTarget.id}`, { method: "DELETE" });
       } else if (deleteTarget.kind === "structure") {
         await fetchJsonOk(`${base}/structure-lines/${deleteTarget.id}`, { method: "DELETE" });
+      } else if (deleteTarget.kind === "structureSnapshot") {
+        await fetchJsonOk(
+          `${base}/structure-snapshot/${deleteTarget.snapshotRootProductId}`,
+          { method: "DELETE" }
+        );
       } else if (deleteTarget.kind === "mold") {
         await fetchJsonOk(`${base}/molds/${deleteTarget.id}`, { method: "DELETE" });
       }
@@ -820,6 +821,10 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
           }}
           onEditLine={(line) => {
             setModalError(null);
+            if (line.snapshotRootProductId) {
+              setSimulationProductId(line.snapshotRootProductId);
+              return;
+            }
             if (line.existingProductId && line.sourceType === "EXISTING_PRODUCT") {
               setSimulationProductId(line.existingProductId);
               return;
@@ -844,6 +849,29 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
             setSimulationProductId(productId);
             setStructureModalSource(null);
           }}
+          onReimportSnapshot={async (productId) => {
+            setSaving(true);
+            setError(null);
+            try {
+              await fetchJsonOk(`/api/projects/${projectId}/import-product-snapshot`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ productId, replaceExisting: true }),
+              });
+              await load();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Erro ao reimportar produto.");
+            } finally {
+              setSaving(false);
+            }
+          }}
+          onDeleteSnapshot={(group) =>
+            setDeleteTarget({
+              kind: "structureSnapshot",
+              snapshotRootProductId: group.snapshotRootProductId!,
+              label: `${group.rootCode} — ${group.rootDescription}`,
+            })
+          }
         />
       ) : null}
 
@@ -1230,6 +1258,16 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
 
       <ProjectDeleteConfirmModal
         open={deleteTarget != null}
+        title={
+          deleteTarget?.kind === "structureSnapshot"
+            ? "Remover este produto do projeto?"
+            : "Confirmar exclusão"
+        }
+        description={
+          deleteTarget?.kind === "structureSnapshot"
+            ? "Esta ação remove apenas o snapshot de engenharia deste projeto. O cadastro oficial do produto, materiais, BOM e roteiro não será alterado."
+            : "Esta ação removerá o item apenas deste projeto/simulação. Nenhum cadastro oficial será alterado."
+        }
         itemLabel={deleteTarget?.label}
         saving={saving}
         error={deleteError}
@@ -1423,6 +1461,8 @@ function StructureTab({
   onEditLine,
   onDeleteLine,
   onOpenProductSimulation,
+  onReimportSnapshot,
+  onDeleteSnapshot,
 }: {
   detail: ProjectDetail;
   canManage: boolean;
@@ -1431,6 +1471,8 @@ function StructureTab({
   onEditLine: (line: ProjectStructureLineRow) => void;
   onDeleteLine: (line: ProjectStructureLineRow) => void;
   onOpenProductSimulation: (productId: string) => void;
+  onReimportSnapshot: (productId: string) => void;
+  onDeleteSnapshot: (group: ProjectStructureSnapshotGroup) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -1444,18 +1486,6 @@ function StructureTab({
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("EXISTING_PRODUCT")}>
               + Importar produto existente
             </button>
-            {detail.structureLines.some((l) => l.existingProductId) ? (
-              <button
-                type="button"
-                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-950"
-                onClick={() => {
-                  const pid = detail.structureLines.find((l) => l.existingProductId)?.existingProductId;
-                  if (pid) onOpenProductSimulation(pid);
-                }}
-              >
-                Editar simulação do produto
-              </button>
-            ) : null}
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("SIMULATED_ITEM")}>
               + Item simulado
             </button>
@@ -1468,56 +1498,16 @@ function StructureTab({
           </div>
         ) : null}
       </div>
-      <div className="overflow-hidden rounded-xl border border-border">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40 text-left">
-            <tr>
-              <th className="px-3 py-2">Origem</th>
-              <th className="px-3 py-2">Tipo</th>
-              <th className="px-3 py-2">Descrição</th>
-              <th className="px-3 py-2">Qtd</th>
-              <th className="px-3 py-2">Un.</th>
-              <th className="px-3 py-2">Perda</th>
-              <th className="px-3 py-2">Custo un.</th>
-              <th className="px-3 py-2">Total</th>
-              {canManage ? <th className="px-3 py-2" /> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {detail.structureLines.map((line) => {
-              const badge = SOURCE_BADGE[line.sourceType];
-              return (
-                <tr key={line.id} className="border-b border-border/60">
-                  <td className="px-3 py-2">
-                    <span className={cn("rounded px-2 py-0.5 text-xs", badge.className)}>
-                      {badge.label}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">{structureLineTypeLabel(line)}</td>
-                  <td className="px-3 py-2">{line.descriptionSnapshot}</td>
-                  <td className="px-3 py-2">{line.quantity}</td>
-                  <td className="px-3 py-2">{line.unitSnapshot}</td>
-                  <td className="px-3 py-2">{formatPercent(line.lossPercent)}</td>
-                  <td className="px-3 py-2">{formatMoney(line.unitCostSnapshot)}</td>
-                  <td className="px-3 py-2">{formatMoney(line.totalCost)}</td>
-                  <RowActions
-                    canManage={canManage}
-                    onEdit={() => onEditLine(line)}
-                    onDelete={() => onDeleteLine(line)}
-                  />
-                </tr>
-              );
-            })}
-            {!detail.structureLines.length ? (
-              <tr>
-                <td colSpan={canManage ? 9 : 8} className="px-4 py-8 text-center text-muted-foreground">
-                  Nenhuma linha de estrutura.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+
+      <ProjectStructureSnapshotAccordion
+        structureLines={detail.structureLines}
+        canManage={canManage}
+        onEditSimulation={onOpenProductSimulation}
+        onReimport={onReimportSnapshot}
+        onDeleteSnapshot={onDeleteSnapshot}
+        onEditLine={onEditLine}
+        onDeleteLine={onDeleteLine}
+      />
     </div>
   );
 }
