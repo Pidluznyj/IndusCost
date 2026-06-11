@@ -31,6 +31,16 @@ import {
   applyProfilePermissionsRaw,
   permissionsMatchProfile,
 } from "@/src/lib/accessProfilesUtils";
+import {
+  ADMIN_USERS_PAGE_SIZE,
+  buildAdminUsersPagination,
+  canGoToNextAdminUsersPage,
+  canGoToPreviousAdminUsersPage,
+  countActiveSuperAdmins,
+  formatAdminUsersDisplayRange,
+  paginateAdminUsers,
+  shouldShowAdminUsersPaginationControls,
+} from "@/src/lib/adminUsersPagination";
 
 type UserFormState = {
   name: string;
@@ -106,6 +116,7 @@ export const AdminUsersModule: React.FC = () => {
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const loadData = useCallback(async () => {
     if (!canManage) {
@@ -137,6 +148,22 @@ export const AdminUsersModule: React.FC = () => {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const pagination = useMemo(
+    () => buildAdminUsersPagination(users.length, page, ADMIN_USERS_PAGE_SIZE),
+    [users.length, page]
+  );
+
+  const paginatedUsers = useMemo(
+    () => paginateAdminUsers(users, pagination),
+    [users, pagination]
+  );
+
+  useEffect(() => {
+    if (page !== pagination.page) {
+      setPage(pagination.page);
+    }
+  }, [page, pagination.page]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -215,10 +242,7 @@ export const AdminUsersModule: React.FC = () => {
 
   // Quantos Super Administradores ativos existem na lista carregada — usado para
   // alertar antes que o admin tente inativar/rebaixar o único Super Admin.
-  const activeSuperAdminCount = useMemo(
-    () => users.filter((u) => u.isActive && u.role === "SUPER_ADMIN").length,
-    [users]
-  );
+  const activeSuperAdminCount = useMemo(() => countActiveSuperAdmins(users), [users]);
 
   const isEditingSelf = editingId !== null && editingId === currentUserId;
   const editingExistingUser = users.find((u) => u.id === editingId) ?? null;
@@ -432,9 +456,9 @@ export const AdminUsersModule: React.FC = () => {
         </div>
       ) : (
         <div className="rounded-2xl border border-border bg-card overflow-hidden">
-          <div className="overflow-x-auto max-h-[min(520px,60vh)] overflow-y-auto">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm border-b border-border">
+              <thead className="border-b border-border bg-muted/50">
                 <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="px-4 py-3 font-semibold">Nome</th>
                   <th className="px-4 py-3 font-semibold">E-mail</th>
@@ -448,7 +472,7 @@ export const AdminUsersModule: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {paginatedUsers.map((user) => (
                   <tr key={user.id} className="border-b border-border/60 hover:bg-accent/20">
                     <td className="px-4 py-3 font-medium">
                       <span className="inline-flex items-center gap-1.5">
@@ -556,6 +580,51 @@ export const AdminUsersModule: React.FC = () => {
               <p className="px-4 py-8 text-center text-sm text-muted-foreground">Nenhum usuário cadastrado.</p>
             ) : null}
           </div>
+          {users.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-xs text-muted-foreground">
+              <span>{formatAdminUsersDisplayRange(pagination)}</span>
+              {shouldShowAdminUsersPaginationControls(pagination.totalPages) ? (
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
+                    disabled={loading || !canGoToPreviousAdminUsersPage(pagination.page)}
+                    onClick={() => setPage(1)}
+                  >
+                    Primeira
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
+                    disabled={loading || !canGoToPreviousAdminUsersPage(pagination.page)}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
+                    disabled={
+                      loading || !canGoToNextAdminUsersPage(pagination.page, pagination.totalPages)
+                    }
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Próxima
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2.5 py-1 disabled:opacity-50 hover:bg-accent"
+                    disabled={
+                      loading || !canGoToNextAdminUsersPage(pagination.page, pagination.totalPages)
+                    }
+                    onClick={() => setPage(pagination.totalPages)}
+                  >
+                    Última
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       )}
 
