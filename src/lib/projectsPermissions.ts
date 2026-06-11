@@ -1,4 +1,12 @@
+import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
+
+export class ProjectsAccessError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProjectsAccessError";
+  }
+}
 
 export const PROJECTS_VIEW_PERMISSIONS = ["projects.view"] as const;
 export const PROJECTS_MANAGE_PERMISSIONS = ["projects.manage"] as const;
@@ -29,4 +37,17 @@ export function canConvertProjects(check: PermissionChecker): boolean {
 /** Conversão oficial ainda não implementada — sempre false na API. */
 export function isOfficialConversionEnabled(): boolean {
   return false;
+}
+
+export function assertProjectsDeleteSuperAdmin(user: AppAuthContext | null): void {
+  if (!user) {
+    throw new ProjectsAccessError("Autenticação necessária.");
+  }
+  if (user.role !== "SUPER_ADMIN") {
+    throw new ProjectsAccessError("Somente super administrador pode excluir projetos.");
+  }
+}
+
+export function canDeleteProject(check: { isSuperAdmin: () => boolean }): boolean {
+  return check.isSuperAdmin();
 }

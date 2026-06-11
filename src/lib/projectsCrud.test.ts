@@ -5,8 +5,11 @@ import { describe, it } from "node:test";
 import { buildLaborLinePayload, calculateLaborLineTotal } from "./projectsUiUtils.js";
 
 describe("projectsCrud", () => {
-  it("endpoints DELETE existem para produtos, itens e moldes", () => {
+  it("endpoints DELETE existem para projeto, produtos, itens e moldes", () => {
     const routes = readFileSync(join(process.cwd(), "src", "lib", "projectsRoutes.ts"), "utf8");
+    assert.match(routes, /delete\("\/api\/projects\/:id"/i);
+    assert.match(routes, /assertProjectsDeleteSuperAdmin/);
+    assert.match(routes, /deleteProject\(/);
     assert.match(routes, /delete\("\/api\/projects\/:id\/simulated-products\/:simulatedProductId"/i);
     assert.match(routes, /delete\("\/api\/projects\/:id\/simulated-items\/:simulatedItemId"/i);
     assert.match(routes, /delete\("\/api\/projects\/:id\/molds\/:moldId"/i);
@@ -90,5 +93,13 @@ describe("projectsCrud", () => {
     assert.match(mod, /editingMold/);
     assert.match(mod, /kind: "mold"/);
     assert.match(mod, /\/molds\/\$\{editingMold\.id\}/);
+  });
+
+  it("exclusão de projeto inteiro só aparece para super admin", () => {
+    const mod = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
+    assert.match(mod, /canDeleteProject/);
+    assert.match(mod, /kind: "project"/);
+    assert.match(mod, /Excluir projeto/);
+    assert.match(mod, /canDelete={canDelete}/);
   });
 });

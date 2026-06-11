@@ -22,9 +22,11 @@ import {
   serializeCommercialOwnerLookupItem,
 } from "@/src/lib/projectsCommercialOwnerLookup.js";
 import {
+  assertProjectsDeleteSuperAdmin,
   PROJECTS_LOOKUP_PERMISSIONS,
   PROJECTS_MANAGE_PERMISSIONS,
   PROJECTS_VIEW_PERMISSIONS,
+  ProjectsAccessError,
 } from "@/src/lib/projectsPermissions.js";
 import {
   setProjectsProductCostResolver,
@@ -43,6 +45,7 @@ import {
   copyVersionFromCurrent,
   createProjectWithVersion,
   dec,
+  deleteProject,
   deleteProjectStructureSnapshot,
   isValidProjectStatus,
   isValidProjectType,
@@ -445,6 +448,25 @@ export function registerProjectsRoutes(
     } catch (e: unknown) {
       console.error("PATCH /api/projects/:id", e);
       res.status(500).json({ error: "Erro ao atualizar projeto." });
+    }
+  });
+
+  app.delete("/api/projects/:id", auth.requireAppAuth, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      assertProjectsDeleteSuperAdmin(user);
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const result = await deleteProject(req.params.id);
+      res.json({ ok: true, code: result.code });
+    } catch (e: unknown) {
+      if (e instanceof ProjectsAccessError) {
+        return res.status(403).json({ error: e.message, code: "PROJECTS_DELETE_FORBIDDEN" });
+      }
+      if (e instanceof Error && e.message === "Projeto não encontrado.") {
+        return res.status(404).json({ error: e.message });
+      }
+      console.error("DELETE /api/projects/:id", e);
+      res.status(500).json({ error: "Erro ao excluir projeto." });
     }
   });
 

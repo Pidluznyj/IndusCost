@@ -366,6 +366,19 @@ export async function persistEngineeringCostRollupForVersion(versionId: string):
   }
 }
 
+/** Exclui o projeto e todos os dados de simulação (cascade). Não altera cadastros oficiais. */
+export async function deleteProject(projectId: string): Promise<{ code: string }> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { id: true, code: true },
+  });
+  if (!project) {
+    throw new Error("Projeto não encontrado.");
+  }
+  await prisma.project.delete({ where: { id: projectId } });
+  return { code: project.code };
+}
+
 /** Remove snapshot de engenharia importado (somente ProjectStructureLine do projeto). */
 export async function deleteProjectStructureSnapshot(
   projectId: string,

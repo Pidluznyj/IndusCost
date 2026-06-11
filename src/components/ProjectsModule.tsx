@@ -23,7 +23,7 @@ import {
   PROJECTS_BASE_PATH,
   type ProjectTabId,
 } from "@/src/lib/projectsNavigation";
-import { canManageProjects } from "@/src/lib/projectsPermissions";
+import { canDeleteProject, canManageProjects } from "@/src/lib/projectsPermissions";
 import {
   ProjectCustomerLookupField,
   projectCustomerSelectionToPayload,
@@ -86,6 +86,7 @@ const MOLD_CHARGE_LABEL = Object.fromEntries(
 ) as Record<string, string>;
 
 type DeleteTarget =
+  | { kind: "project"; label: string }
   | { kind: "product"; id: string; label: string }
   | { kind: "item"; id: string; label: string }
   | { kind: "structure"; id: string; label: string }
@@ -474,7 +475,17 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
   );
 }
 
-function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; tab: ProjectTabId; canManage: boolean }) {
+function ProjectDetailView({
+  projectId,
+  tab,
+  canManage,
+  canDelete,
+}: {
+  projectId: string;
+  tab: ProjectTabId;
+  canManage: boolean;
+  canDelete: boolean;
+}) {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -550,6 +561,12 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
     setDeleteError(null);
     try {
       const base = `/api/projects/${projectId}`;
+      if (deleteTarget.kind === "project") {
+        await fetchJsonOk(base, { method: "DELETE" });
+        setDeleteTarget(null);
+        navigate(PROJECTS_BASE_PATH);
+        return;
+      }
       if (deleteTarget.kind === "product") {
         await fetchJsonOk(`${base}/simulated-products/${deleteTarget.id}`, { method: "DELETE" });
       } else if (deleteTarget.kind === "item") {
@@ -651,6 +668,21 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
             Converter em cadastro oficial
             <span className="rounded bg-muted px-1.5 py-0.5 text-xs">Em breve</span>
           </button>
+          {canDelete ? (
+            <button
+              type="button"
+              onClick={() =>
+                setDeleteTarget({
+                  kind: "project",
+                  label: `${detail.code} — ${detail.title}`,
+                })
+              }
+              className="inline-flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-2 text-sm text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              Excluir projeto
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -1259,14 +1291,18 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
       <ProjectDeleteConfirmModal
         open={deleteTarget != null}
         title={
-          deleteTarget?.kind === "structureSnapshot"
-            ? "Remover este produto do projeto?"
-            : "Confirmar exclusão"
+          deleteTarget?.kind === "project"
+            ? "Excluir projeto inteiro?"
+            : deleteTarget?.kind === "structureSnapshot"
+              ? "Remover este produto do projeto?"
+              : "Confirmar exclusão"
         }
         description={
-          deleteTarget?.kind === "structureSnapshot"
-            ? "Esta ação remove apenas o snapshot de engenharia deste projeto. O cadastro oficial do produto, materiais, BOM e roteiro não será alterado."
-            : "Esta ação removerá o item apenas deste projeto/simulação. Nenhum cadastro oficial será alterado."
+          deleteTarget?.kind === "project"
+            ? "Esta ação remove o projeto, versões, estruturas simuladas, itens e moldes vinculados. Os cadastros oficiais (produtos, materiais, BOM) não serão alterados. Apenas super administrador pode executar esta exclusão."
+            : deleteTarget?.kind === "structureSnapshot"
+              ? "Esta ação remove apenas o snapshot de engenharia deste projeto. O cadastro oficial do produto, materiais, BOM e roteiro não será alterado."
+              : "Esta ação removerá o item apenas deste projeto/simulação. Nenhum cadastro oficial será alterado."
         }
         itemLabel={deleteTarget?.label}
         saving={saving}
@@ -1515,6 +1551,7 @@ function StructureTab({
 export function ProjectsModule() {
   const auth = useAuth();
   const canManage = canManageProjects(auth);
+  const canDelete = canDeleteProject(auth);
   const params = useParams();
   const projectId = params.projectId;
   const tab = useMemo(
@@ -1523,7 +1560,14 @@ export function ProjectsModule() {
   );
 
   if (projectId) {
-    return <ProjectDetailView projectId={projectId} tab={tab} canManage={canManage} />;
+    return (
+      <ProjectDetailView
+        projectId={projectId}
+        tab={tab}
+        canManage={canManage}
+        canDelete={canDelete}
+      />
+    );
   }
 
   return <ProjectsListView canManage={canManage} />;
