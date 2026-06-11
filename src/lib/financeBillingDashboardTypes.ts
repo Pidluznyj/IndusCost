@@ -46,6 +46,7 @@ export const FINANCE_BILLING_TABS = [
   { id: "forecast", label: "Carteira Prevista" },
   { id: "nfe-details", label: "Detalhado NF-e" },
   { id: "comparison", label: "Comparativo" },
+  { id: "audit", label: "Composição / Auditoria" },
 ] as const;
 
 export type FinanceBillingTabId = (typeof FINANCE_BILLING_TABS)[number]["id"];

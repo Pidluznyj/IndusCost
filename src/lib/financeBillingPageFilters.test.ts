@@ -69,6 +69,7 @@ describe("financeBillingPageFilters", () => {
     assert.ok(types.includes('"projection"'));
     assert.ok(types.includes('"nfe-details"'));
     assert.ok(types.includes('"comparison"'));
+    assert.ok(types.includes('"audit"'));
   });
 
   it("telas rotulam exceções YTD, multi-ano e comparativo", () => {

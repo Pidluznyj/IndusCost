@@ -4,6 +4,12 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { buildFinanceBillingDashboard } from "@/src/lib/financeBillingDashboard.js";
 import { buildFinanceBillingNfeComparison } from "@/src/lib/financeBillingNfeComparison.js";
 import { buildFinanceBillingNfeList } from "@/src/lib/financeBillingNfeList.js";
+import { buildBillingAuditDataset } from "@/src/lib/financeBillingAuditDataset.js";
+import {
+  billingAuditWorkbookToBytes,
+  buildBillingAuditWorkbook,
+  financeBillingAuditExportFilename,
+} from "@/src/lib/financeBillingAuditExport.js";
 import {
   buildFinanceBillingNfeExportCsv,
   financeBillingNfeExportFilename,
@@ -73,6 +79,48 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     } catch (error) {
       console.error("GET /api/finance/billing/export", error);
       return res.status(500).json({ error: "Não foi possível exportar NF-e do faturamento." });
+    }
+  });
+
+  app.get("/api/finance/billing/audit", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const payload = await buildBillingAuditDataset(
+        req.query as Record<string, unknown>,
+        user.email ?? user.name ?? null
+      );
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/finance/billing/audit", error);
+      return res.status(500).json({ error: "Não foi possível gerar auditoria do faturamento." });
+    }
+  });
+
+  app.get("/api/finance/billing/audit/export", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const payload = await buildBillingAuditDataset(
+        req.query as Record<string, unknown>,
+        user.email ?? user.name ?? null
+      );
+      const workbook = buildBillingAuditWorkbook(payload);
+      const bytes = billingAuditWorkbookToBytes(workbook);
+      const filename = financeBillingAuditExportFilename(payload.filters.year);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(Buffer.from(bytes));
+    } catch (error) {
+      console.error("GET /api/finance/billing/audit/export", error);
+      return res.status(500).json({ error: "Não foi possível exportar auditoria do faturamento." });
     }
   });
 

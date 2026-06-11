@@ -48,8 +48,15 @@ import {
   FinanceBillingOverviewView,
   FinanceBillingProjectionView,
 } from "@/src/components/finance/billing/FinanceBillingExecutiveViews";
+import { FinanceBillingAuditPanel } from "@/src/components/finance/billing/FinanceBillingAuditPanel";
 import { FinanceBillingComparisonPanel } from "@/src/components/finance/billing/FinanceBillingComparisonPanel";
 import { FinanceBillingNfeDetailsTable } from "@/src/components/finance/billing/FinanceBillingNfeDetailsTable";
+import {
+  buildBillingAuditQueryString,
+  parseBillingAuditFilters,
+} from "@/src/lib/financeBillingAuditFilters";
+import type { BillingAuditResult } from "@/src/lib/financeBillingAuditTypes";
+import { financeBillingAuditExportFilename } from "@/src/lib/financeBillingAuditExport";
 import { cn } from "@/src/lib/utils";
 import {
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
@@ -76,6 +83,11 @@ export function FinanceBillingPage() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [auditExporting, setAuditExporting] = useState(false);
+  const [auditExportError, setAuditExportError] = useState<string | null>(null);
+  const [audit, setAudit] = useState<BillingAuditResult | null>(null);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [draftYear, setDraftYear] = useState(defaultYear);
   const [appliedYear, setAppliedYear] = useState(defaultYear);
   const [draftNfeFilters, setDraftNfeFilters] = useState(() =>
@@ -88,6 +100,7 @@ export function FinanceBillingPage() {
   const abortRef = useRef<AbortController | null>(null);
   const abortNfeRef = useRef<AbortController | null>(null);
   const abortComparisonRef = useRef<AbortController | null>(null);
+  const abortAuditRef = useRef<AbortController | null>(null);
 
   const yearOptions = useMemo(() => buildFinanceBillingYearOptions(), []);
   const hasPendingFilterChanges = useMemo(
@@ -217,6 +230,67 @@ export function FinanceBillingPage() {
     void loadComparison();
   };
 
+  const auditQueryString = useMemo(() => {
+    const filters = parseBillingAuditFilters({
+      year: appliedYear,
+      month: appliedNfeFilters.month || undefined,
+      customerCnpj: appliedNfeFilters.customerCnpj || undefined,
+      classification: appliedNfeFilters.classification,
+      status: appliedNfeFilters.status,
+      documentNumber: appliedNfeFilters.documentNumber || undefined,
+    });
+    return buildBillingAuditQueryString(filters);
+  }, [appliedYear, appliedNfeFilters]);
+
+  const loadAudit = useCallback(async () => {
+    abortAuditRef.current?.abort();
+    const controller = new AbortController();
+    abortAuditRef.current = controller;
+    setLoadingAudit(true);
+    setAuditError(null);
+    try {
+      const url = `/api/finance/billing/audit?${auditQueryString}`;
+      const payload = await fetchJsonOk<BillingAuditResult>(url, {
+        signal: controller.signal,
+        credentials: "include",
+      });
+      if (controller.signal.aborted) return;
+      setAudit(payload);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setAuditError("Não foi possível carregar a auditoria do faturamento.");
+    } finally {
+      if (!controller.signal.aborted) setLoadingAudit(false);
+    }
+  }, [auditQueryString]);
+
+  const handleAuditExport = async () => {
+    setAuditExporting(true);
+    setAuditExportError(null);
+    try {
+      const res = await fetch(`/api/finance/billing/audit/export?${auditQueryString}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Falha ao exportar auditoria.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = financeBillingAuditExportFilename(
+        Number.parseInt(appliedYear, 10) || new Date().getFullYear()
+      );
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setAuditExportError(e instanceof Error ? e.message : "Erro ao exportar auditoria.");
+    } finally {
+      setAuditExporting(false);
+    }
+  };
+
   const handleExport = async () => {
     setExporting(true);
     setExportError(null);
@@ -323,12 +397,39 @@ export function FinanceBillingPage() {
             ),
           },
           {
+            id: "audit",
+            label: "Auditar base do faturamento",
+            onClick: () => {
+              setActiveTab("audit");
+              void loadAudit();
+            },
+            disabled: loadingAudit,
+            loading: loadingAudit,
+            icon: loadingAudit ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Target className="h-3.5 w-3.5" />
+            ),
+          },
+          {
+            id: "audit-export",
+            label: "Exportar composição",
+            onClick: () => void handleAuditExport(),
+            disabled: auditExporting || loadingAudit,
+            loading: auditExporting,
+            variant: "accent" as const,
+            icon: auditExporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            ),
+          },
+          {
             id: "export",
-            label: "Exportar CSV",
+            label: "Exportar CSV NF-e",
             onClick: () => void handleExport(),
             disabled: exporting || loading,
             loading: exporting,
-            variant: "accent" as const,
             icon: exporting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
@@ -363,6 +464,9 @@ export function FinanceBillingPage() {
       ) : null}
       {exportError ? (
         <FinanceApErrorBanner message={exportError} onDismiss={() => setExportError(null)} />
+      ) : null}
+      {auditExportError ? (
+        <FinanceApErrorBanner message={auditExportError} onDismiss={() => setAuditExportError(null)} />
       ) : null}
 
       <FinanceBiFilterPanel
@@ -577,6 +681,14 @@ export function FinanceBillingPage() {
               loading={loadingComparison}
               error={comparisonError}
               onRetry={() => void loadComparison()}
+            />
+          ) : null}
+          {activeTab === "audit" ? (
+            <FinanceBillingAuditPanel
+              audit={audit}
+              loading={loadingAudit}
+              error={auditError}
+              onRetry={() => void loadAudit()}
             />
           ) : null}
         </div>
