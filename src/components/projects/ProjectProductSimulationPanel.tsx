@@ -8,12 +8,13 @@ import {
 } from "@/src/lib/projectSimulationMode";
 import type { ProjectEngineeringSnapshot } from "@/src/lib/projectsProductEngineeringSnapshot";
 import type { ProjectOfficialProductSnapshot } from "@/src/lib/projectsProductSnapshot";
-import { sumSimulatedRootProductCost } from "@/src/lib/projectsEngineeringCostRollup";
+import { computeProductSimulationCostAnalysis } from "@/src/lib/projectsProductSimulationCost";
 import { buildProjectEngineeringTree } from "@/src/lib/projectsEngineeringTree";
 import { ProjectEngineeringTreePanel } from "@/src/components/projects/ProjectEngineeringTreePanel";
 import { ProjectSimulationBanner } from "@/src/components/projects/ProjectSimulationBanner";
 import { ProjectBomSimulationTable } from "@/src/components/projects/ProjectBomSimulationTable";
 import { structureLineTypeLabel } from "@/src/lib/projectsUiUtils";
+import type { ProductSimulationCostBreakdown } from "@/src/lib/projectsProductSimulationCost";
 import type { ProjectCostBreakdown, ProjectStructureLineRow } from "@/src/types/projects";
 
 type TabId = "info" | "bom" | "tree" | "routing" | "cost";
@@ -87,26 +88,34 @@ export function ProjectProductSimulationPanel({
     );
   }, [productId, snapshot, productLines]);
 
-  const simulatedIndustrialCost = useMemo(
+  const editableProductLines = useMemo(
     () =>
-      sumSimulatedRootProductCost(
-        productLines.map((l) => ({
-          id: l.id,
-          parentLineId: l.parentLineId,
-          snapshotRootProductId: l.snapshotRootProductId,
-          lineType: l.lineType,
-          quantity: l.quantity,
-          lossPercent: l.lossPercent ?? 0,
-          unitCostSnapshot: l.unitCostSnapshot,
-          totalCost: l.totalCost,
-          officialQuantitySnapshot: l.officialQuantitySnapshot,
-          officialLossPercentSnapshot: l.officialLossPercentSnapshot,
-          officialUnitCostSnapshot: l.officialUnitCostSnapshot,
-          countsInSimulatedProductCost: l.countsInSimulatedProductCost,
-          isChangedFromOfficial: l.isChangedFromOfficial,
-        }))
-      ),
-    [productLines]
+      productLines.map((l) => {
+        const d = drafts[l.id];
+        if (!d) return l;
+        return {
+          ...l,
+          quantity: d.quantity,
+          lossPercent: d.lossPercent,
+          unitCostSnapshot: d.unitCostSnapshot,
+        };
+      }),
+    [productLines, drafts]
+  );
+
+  const costAnalysis = useMemo(
+    () =>
+      computeProductSimulationCostAnalysis(editableProductLines, {
+        officialIndustrialCost: engineering?.officialIndustrialCost ?? null,
+        snapshotRootProductId: productId,
+        targetMarginPercent: costBreakdown.targetMarginPercent,
+      }),
+    [
+      editableProductLines,
+      engineering?.officialIndustrialCost,
+      productId,
+      costBreakdown.targetMarginPercent,
+    ]
   );
 
   const bomLines = useMemo(
@@ -396,31 +405,38 @@ export function ProjectProductSimulationPanel({
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <CostCard
                   label="Custo industrial oficial (importado)"
-                  value={engineering?.officialIndustrialCost ?? null}
+                  subtitle="Motor oficial getProductCostAnalysis"
+                  value={costAnalysis.officialIndustrialCost}
                 />
                 <CostCard
-                  label="Custo industrial simulado (1º nível)"
-                  value={simulatedIndustrialCost}
+                  label="Custo industrial simulado do projeto"
+                  subtitle="Calculado a partir do snapshot editável deste produto no projeto."
+                  value={costAnalysis.simulatedIndustrialCost}
                   highlight
                 />
+                <CostCard label="Diferença" value={costAnalysis.difference} />
                 <CostCard
-                  label="Diferença"
-                  value={
-                    engineering?.officialIndustrialCost != null
-                      ? simulatedIndustrialCost - engineering.officialIndustrialCost
-                      : null
-                  }
+                  label="Matéria-prima (projeto)"
+                  subtitle="1º nível do snapshot (countsInSimulatedProductCost)"
+                  value={costAnalysis.rawMaterialCost}
                 />
-                <CostCard label="Matéria-prima (projeto)" value={costBreakdown.rawMaterialCost} />
-                <CostCard label="Componentes (projeto)" value={costBreakdown.componentCost} />
-                <CostCard label="Serviços / HH (projeto)" value={costBreakdown.serviceCost} />
-                <CostCard label="Custo unitário total" value={costBreakdown.unitCost} />
-                <CostCard label="Preço sugerido" value={costBreakdown.suggestedPrice} />
+                <CostCard
+                  label="Componentes (projeto)"
+                  subtitle="1º nível após rollup bottom-up"
+                  value={costAnalysis.componentCost}
+                />
+                <CostCard
+                  label="Serviços / HH (projeto)"
+                  subtitle="Processos de 1º nível do snapshot"
+                  value={costAnalysis.serviceCost}
+                />
+                <UnitCostTotalCard analysis={costAnalysis} />
+                <CostCard label="Preço sugerido" value={costAnalysis.suggestedPrice} />
               </div>
               <p className="text-xs text-muted-foreground">
-                O custo simulado do produto soma apenas linhas de 1º nível marcadas para rollup
-                (componentes diretos + processos do pai). Materiais internos aparecem na árvore para
-                referência e edição, sem duplicar o total.
+                O custo simulado soma linhas de 1º nível do snapshot deste produto (componentes
+                diretos + processos), com custo dos filhos agregado por rollup. Materiais internos
+                entram no total do componente pai, sem dupla contagem.
               </p>
             </div>
           ) : null}
@@ -452,10 +468,12 @@ export function ProjectProductSimulationPanel({
 
 function CostCard({
   label,
+  subtitle,
   value,
   highlight,
 }: {
   label: string;
+  subtitle?: string;
   value: number | null | undefined;
   highlight?: boolean;
 }) {
@@ -467,9 +485,55 @@ function CostCard({
       )}
     >
       <p className="text-sm text-muted-foreground">{label}</p>
+      {subtitle ? <p className="mt-0.5 text-xs text-muted-foreground/80">{subtitle}</p> : null}
       <p className="mt-1 text-xl font-semibold">
         {value != null && Number.isFinite(value) ? formatCurrency(value) : "—"}
       </p>
+    </div>
+  );
+}
+
+function UnitCostTotalCard({ analysis }: { analysis: ProductSimulationCostBreakdown }) {
+  const { parts } = analysis;
+  const moldAmortized = 0;
+  const manualExtra = parts.other;
+  const additionalServices = 0;
+
+  return (
+    <div className="rounded-xl border border-border p-4">
+      <p className="text-sm text-muted-foreground">Custo unitário total</p>
+      <p className="mt-0.5 text-xs text-muted-foreground/80">
+        Industrial simulado + molde + manuais + serviços adicionais
+      </p>
+      <p className="mt-1 text-xl font-semibold">
+        {Number.isFinite(analysis.unitCostTotal) ? formatCurrency(analysis.unitCostTotal) : "—"}
+      </p>
+      <details className="mt-2 text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none hover:text-foreground">
+          Ver composição
+        </summary>
+        <ul className="mt-2 space-y-0.5 pl-1">
+          <li>Custo industrial simulado: {formatCurrency(parts.industrial)}</li>
+          <li>+ Molde amortizado: {formatCurrency(moldAmortized)}</li>
+          <li>+ Itens manuais / outros: {formatCurrency(manualExtra)}</li>
+          <li>+ Serviços adicionais: {formatCurrency(additionalServices)}</li>
+          {parts.rawMaterial > 0 ? (
+            <li className="text-muted-foreground/70">
+              (incl. MP 1º nível: {formatCurrency(parts.rawMaterial)})
+            </li>
+          ) : null}
+          {parts.components > 0 ? (
+            <li className="text-muted-foreground/70">
+              (incl. componentes 1º nível: {formatCurrency(parts.components)})
+            </li>
+          ) : null}
+          {parts.services > 0 ? (
+            <li className="text-muted-foreground/70">
+              (incl. HH/serviços 1º nível: {formatCurrency(parts.services)})
+            </li>
+          ) : null}
+        </ul>
+      </details>
     </div>
   );
 }

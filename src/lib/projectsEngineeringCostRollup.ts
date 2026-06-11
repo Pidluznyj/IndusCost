@@ -143,6 +143,38 @@ export function recalculateEngineeringCostRollup(
   return [...byId.values()];
 }
 
+export type EngineeringSnapshotRollupNode = {
+  quantity: number;
+  lossPercent: number;
+  officialUnitCost: number;
+  simulatedUnitCost: number;
+  totalCost: number;
+  children: EngineeringSnapshotRollupNode[];
+};
+
+/** Rollup bottom-up em nó de snapshot antes de persistir (pais derivam custo dos filhos). */
+export function rollupEngineeringSnapshotNode(node: EngineeringSnapshotRollupNode): void {
+  for (const child of node.children) {
+    rollupEngineeringSnapshotNode(child);
+  }
+  if (node.children.length === 0) return;
+
+  let childrenTotal = 0;
+  for (const child of node.children) {
+    childrenTotal += child.totalCost;
+  }
+  childrenTotal = sanitizeFinite(childrenTotal) ?? 0;
+
+  const derivedUnit = deriveUnitCostFromChildrenTotal(
+    childrenTotal,
+    node.quantity,
+    node.lossPercent
+  );
+  node.simulatedUnitCost = derivedUnit;
+  node.officialUnitCost = derivedUnit;
+  node.totalCost = lineTotalFromParts(node.quantity, derivedUnit, node.lossPercent);
+}
+
 /** Soma custo simulado do produto raiz (1º nível, sem dupla contagem de netos). */
 export function sumSimulatedRootProductCost(lines: EngineeringRollupLine[]): number {
   let total = 0;

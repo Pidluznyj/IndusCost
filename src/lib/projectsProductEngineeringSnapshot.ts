@@ -6,9 +6,11 @@ import {
   resolveOfficialMaterialEffectiveUnitCost,
 } from "@/src/lib/projectsOfficialBomCost.js";
 import { getProjectsProductCostResolver } from "@/src/lib/projectsProductCostResolver.js";
+import { rollupEngineeringSnapshotNode } from "@/src/lib/projectsEngineeringCostRollup.js";
 import {
   buildStructureLineTotal,
   dec,
+  establishEngineeringCostBaselineForSnapshot,
   recalculateAndPersistVersionCosts,
   requireProjectAndVersion,
 } from "@/src/lib/projectsService.js";
@@ -315,12 +317,6 @@ async function mapProductToEngineeringNode(
         children: [],
       });
     } else {
-      const { unitCost, costSource, isMissing } = resolveComponentUnitCost(
-        child.id,
-        quantity,
-        lossPercent,
-        bomLineCostMap
-      );
       const subTree = await mapProductToEngineeringNode(
         child.item,
         nodeKey,
@@ -337,12 +333,26 @@ async function mapProductToEngineeringNode(
       subTree.unit = "UN";
       subTree.quantity = quantity;
       subTree.lossPercent = lossPercent;
-      subTree.officialUnitCost = unitCost;
-      subTree.simulatedUnitCost = unitCost;
-      subTree.totalCost = buildStructureLineTotal(quantity, unitCost, lossPercent);
-      subTree.costSource = costSource;
-      subTree.isMissingCost = isMissing;
-      subTree.countsInSimulatedProductCost = countsInSimulatedProductCost;
+
+      if (subTree.children.length > 0) {
+        rollupEngineeringSnapshotNode(subTree);
+        subTree.costSource = "OFFICIAL_COST_ANALYSIS";
+        subTree.isMissingCost = subTree.simulatedUnitCost <= 0;
+      } else {
+        const { unitCost, costSource, isMissing } = resolveComponentUnitCost(
+          child.id,
+          quantity,
+          lossPercent,
+          bomLineCostMap
+        );
+        subTree.officialUnitCost = unitCost;
+        subTree.simulatedUnitCost = unitCost;
+        subTree.totalCost = buildStructureLineTotal(quantity, unitCost, lossPercent);
+        subTree.costSource = costSource;
+        subTree.isMissingCost = isMissing;
+      }
+
+      subTree.countsInSimulatedProductCost = level === 0;
       children.push(subTree);
     }
   }
@@ -584,6 +594,7 @@ export async function importProductEngineeringSnapshotToProject(
   }
 
   await recalculateAndPersistVersionCosts(ctx.version.id);
+  await establishEngineeringCostBaselineForSnapshot(ctx.version.id, productId);
 
   return {
     createdCount,

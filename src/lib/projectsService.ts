@@ -297,6 +297,46 @@ function toEngineeringRollupLine(line: ProjectStructureLine): EngineeringRollupL
   };
 }
 
+/**
+ * Após import/rollup, alinha snapshots oficiais ao valor rolado para baseline
+ * isChangedFromOfficial=false (sem edição manual do usuário).
+ */
+export async function establishEngineeringCostBaselineForSnapshot(
+  versionId: string,
+  snapshotRootProductId: string
+): Promise<void> {
+  const lines = await prisma.projectStructureLine.findMany({
+    where: { versionId, snapshotRootProductId },
+  });
+  if (!lines.length) return;
+
+  const rolled = recalculateEngineeringCostRollup(lines.map(toEngineeringRollupLine));
+  const byId = new Map(rolled.map((l) => [l.id, l]));
+
+  const updates = [];
+  for (const line of lines) {
+    const next = byId.get(line.id);
+    if (!next) continue;
+    updates.push(
+      prisma.projectStructureLine.update({
+        where: { id: line.id },
+        data: {
+          officialQuantitySnapshot: next.quantity,
+          officialLossPercentSnapshot: next.lossPercent,
+          officialUnitCostSnapshot: next.unitCostSnapshot,
+          unitCostSnapshot: next.unitCostSnapshot,
+          totalCost: next.totalCost,
+          isChangedFromOfficial: false,
+          isMissingCost: next.unitCostSnapshot <= 0,
+        },
+      })
+    );
+  }
+  if (updates.length > 0) {
+    await prisma.$transaction(updates);
+  }
+}
+
 /** Propaga custos dos filhos para ancestrais em snapshots hierárquicos importados. */
 export async function persistEngineeringCostRollupForVersion(versionId: string): Promise<void> {
   const lines = await prisma.projectStructureLine.findMany({ where: { versionId } });
