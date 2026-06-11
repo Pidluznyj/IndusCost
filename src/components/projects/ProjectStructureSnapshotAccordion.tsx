@@ -9,8 +9,9 @@ import {
   type RootProductMeta,
 } from "@/src/lib/projectsStructureSnapshotGroups";
 import { ProjectEngineeringTreePanel } from "@/src/components/projects/ProjectEngineeringTreePanel";
+import { resolveStructureLineBadges } from "@/src/lib/projectsStructureLineBadges";
 import { structureLineTypeLabel } from "@/src/lib/projectsUiUtils";
-import type { ProjectStructureLineRow } from "@/src/types/projects";
+import type { ProjectSimulatedProductRow, ProjectStructureLineRow } from "@/src/types/projects";
 
 const STATUS_LABEL: Record<ProjectStructureSnapshotGroupStatus, string> = {
   HERDADO: "Herdado",
@@ -28,12 +29,18 @@ const STATUS_CLASS: Record<ProjectStructureSnapshotGroupStatus, string> = {
 
 type Props = {
   structureLines: ProjectStructureLineRow[];
+  simulatedProducts?: ProjectSimulatedProductRow[];
   canManage: boolean;
   onEditSimulation: (snapshotRootProductId: string) => void;
   onReimport: (snapshotRootProductId: string) => void;
   onDeleteSnapshot: (group: ProjectStructureSnapshotGroup) => void;
   onEditLine: (line: ProjectStructureLineRow) => void;
   onDeleteLine: (line: ProjectStructureLineRow) => void;
+  onAddToSimulatedProduct?: (
+    productId: string,
+    sourceType: "EXISTING_MATERIAL" | "SIMULATED_ITEM" | "MANUAL",
+    parentLineId?: string | null
+  ) => void;
 };
 
 function formatPct(value: number): string {
@@ -42,14 +49,161 @@ function formatPct(value: number): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+function renderStructureGroupCard(
+  group: ProjectStructureSnapshotGroup,
+  options: {
+    expanded: boolean;
+    canManage: boolean;
+    toggleGroup: (key: string) => void;
+    onEditSimulation?: (id: string) => void;
+    onReimport?: (id: string) => void;
+    onDeleteSnapshot?: (group: ProjectStructureSnapshotGroup) => void;
+    onAddToSimulatedProduct?: Props["onAddToSimulatedProduct"];
+    onEditLine: (line: ProjectStructureLineRow) => void;
+    variant: "imported" | "simulated";
+  }
+) {
+  const diffPositive = group.differenceAmount > 0;
+  const diffNegative = group.differenceAmount < 0;
+
+  return (
+    <div key={group.groupKey} className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1 space-y-2">
+          <button
+            type="button"
+            onClick={() => options.toggleGroup(group.groupKey)}
+            className="flex w-full items-start gap-2 text-left"
+          >
+            {options.expanded ? (
+              <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
+            <div className="min-w-0">
+              <p className="font-semibold">
+                {group.rootCode} — {group.rootDescription}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>Origem: {group.sourceLabel}</span>
+                {options.variant === "imported" ? (
+                  <>
+                    <span>Custo oficial: {formatCurrency(group.officialCost)}</span>
+                    <span>Custo simulado: {formatCurrency(group.simulatedCost)}</span>
+                    <span className={cn(diffPositive && "text-amber-700", diffNegative && "text-emerald-700")}>
+                      Dif. R$: {formatCurrency(group.differenceAmount)}
+                    </span>
+                    <span className={cn(diffPositive && "text-amber-700", diffNegative && "text-emerald-700")}>
+                      Dif. %: {formatPct(group.differencePercent)}
+                    </span>
+                  </>
+                ) : (
+                  <span>Custo total: {formatCurrency(group.totalCost)}</span>
+                )}
+                <span>Itens: {group.itemCount}</span>
+                <span className={cn("rounded px-1.5 py-0.5 font-semibold", STATUS_CLASS[group.status])}>
+                  {STATUS_LABEL[group.status]}
+                </span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        {options.canManage ? (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-lg border px-3 py-1.5 text-xs"
+              onClick={() => options.toggleGroup(group.groupKey)}
+            >
+              {options.expanded ? "Recolher estrutura" : "Abrir estrutura"}
+            </button>
+            {options.variant === "imported" && group.snapshotRootProductId ? (
+              <>
+                <button
+                  type="button"
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-950"
+                  onClick={() => options.onEditSimulation?.(group.snapshotRootProductId!)}
+                >
+                  Editar simulação
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border px-3 py-1.5 text-xs"
+                  onClick={() => options.onReimport?.(group.snapshotRootProductId!)}
+                >
+                  <RefreshCw className="mr-1 inline h-3 w-3" />
+                  Reimportar
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
+                  onClick={() => options.onDeleteSnapshot?.(group)}
+                >
+                  <Trash2 className="mr-1 inline h-3 w-3" />
+                  Excluir
+                </button>
+              </>
+            ) : null}
+            {options.variant === "simulated" && group.simulatedProductId && options.onAddToSimulatedProduct ? (
+              <>
+                <button
+                  type="button"
+                  className="rounded-lg border px-3 py-1.5 text-xs"
+                  onClick={() =>
+                    options.onAddToSimulatedProduct?.(group.simulatedProductId!, "EXISTING_MATERIAL")
+                  }
+                >
+                  + Matéria-prima
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border px-3 py-1.5 text-xs"
+                  onClick={() =>
+                    options.onAddToSimulatedProduct?.(group.simulatedProductId!, "SIMULATED_ITEM")
+                  }
+                >
+                  + Componente
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border px-3 py-1.5 text-xs"
+                  onClick={() => options.onAddToSimulatedProduct?.(group.simulatedProductId!, "MANUAL")}
+                >
+                  + Manual
+                </button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {options.expanded && group.tree ? (
+        <div className="border-t border-border bg-muted/20 px-4 py-4">
+          <ProjectEngineeringTreePanel
+            tree={group.tree}
+            variant="embedded"
+            selectedLineId={null}
+            onSelectLine={() => {}}
+            onEditLine={options.onEditLine}
+            canManage={options.canManage}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProjectStructureSnapshotAccordion({
   structureLines,
+  simulatedProducts = [],
   canManage,
   onEditSimulation,
   onReimport,
   onDeleteSnapshot,
   onEditLine,
   onDeleteLine,
+  onAddToSimulatedProduct,
 }: Props) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
   const [rootProducts, setRootProducts] = useState<Record<string, RootProductMeta>>({});
@@ -99,9 +253,13 @@ export function ProjectStructureSnapshotAccordion({
     };
   }, [snapshotRootIds, rootProducts]);
 
-  const { snapshotGroups, manualLines } = useMemo(
-    () => buildProjectStructureSnapshotGroups(structureLines, { rootProducts }),
-    [structureLines, rootProducts]
+  const { snapshotGroups, simulatedProductGroups, manualLines } = useMemo(
+    () =>
+      buildProjectStructureSnapshotGroups(structureLines, {
+        rootProducts,
+        simulatedProducts,
+      }),
+    [structureLines, rootProducts, simulatedProducts]
   );
 
   const toggleGroup = (groupKey: string) => {
@@ -131,143 +289,39 @@ export function ProjectStructureSnapshotAccordion({
               Carregando produtos…
             </div>
           ) : null}
-          {snapshotGroups.map((group) => {
-            const expanded = expandedGroups.has(group.groupKey);
-            const diffPositive = group.differenceAmount > 0;
-            const diffNegative = group.differenceAmount < 0;
+          {snapshotGroups.map((group) =>
+            renderStructureGroupCard(group, {
+              expanded: expandedGroups.has(group.groupKey),
+              canManage,
+              toggleGroup,
+              onEditSimulation,
+              onReimport,
+              onDeleteSnapshot,
+              onEditLine,
+              variant: "imported",
+            })
+          )}
+        </div>
+      ) : null}
 
-            return (
-              <div
-                key={group.groupKey}
-                className="overflow-hidden rounded-xl border border-border bg-card"
-              >
-                <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(group.groupKey)}
-                      className="flex w-full items-start gap-2 text-left"
-                    >
-                      {expanded ? (
-                        <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <div className="min-w-0">
-                        <p className="font-semibold">
-                          {group.rootCode} — {group.rootDescription}
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                          <span>Origem: {group.sourceLabel}</span>
-                          <span>Custo oficial: {formatCurrency(group.officialCost)}</span>
-                          <span>Custo simulado: {formatCurrency(group.simulatedCost)}</span>
-                          <span
-                            className={cn(
-                              diffPositive && "text-amber-700",
-                              diffNegative && "text-emerald-700"
-                            )}
-                          >
-                            Dif. R$: {formatCurrency(group.differenceAmount)}
-                          </span>
-                          <span
-                            className={cn(
-                              diffPositive && "text-amber-700",
-                              diffNegative && "text-emerald-700"
-                            )}
-                          >
-                            Dif. %: {formatPct(group.differencePercent)}
-                          </span>
-                          <span>Itens: {group.itemCount}</span>
-                          <span
-                            className={cn(
-                              "rounded px-1.5 py-0.5 font-semibold",
-                              STATUS_CLASS[group.status]
-                            )}
-                          >
-                            {STATUS_LABEL[group.status]}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-
-                  {canManage ? (
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="rounded-lg border px-3 py-1.5 text-xs"
-                        onClick={() => toggleGroup(group.groupKey)}
-                      >
-                        {expanded ? "Recolher estrutura" : "Abrir estrutura"}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-950"
-                        title={`Editar simulação de ${group.rootCode} — ${group.rootDescription}`}
-                        onClick={() =>
-                          group.snapshotRootProductId &&
-                          onEditSimulation(group.snapshotRootProductId)
-                        }
-                      >
-                        Editar simulação deste produto
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border px-3 py-1.5 text-xs"
-                        onClick={() =>
-                          group.snapshotRootProductId && onReimport(group.snapshotRootProductId)
-                        }
-                      >
-                        <RefreshCw className="mr-1 inline h-3 w-3" />
-                        Reimportar
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
-                        onClick={() => onDeleteSnapshot(group)}
-                      >
-                        <Trash2 className="mr-1 inline h-3 w-3" />
-                        Excluir
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-
-                {expanded && group.tree ? (
-                  <div className="border-t border-border bg-muted/20 px-4 py-4">
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
-                      <div>
-                        <p className="text-sm font-semibold">Árvore completa da engenharia</p>
-                        <p className="text-xs text-muted-foreground">
-                          {group.rootCode} — {group.rootDescription}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>Itens: {group.itemCount}</span>
-                        <span>Custo simulado: {formatCurrency(group.simulatedCost)}</span>
-                        <span
-                          className={cn(
-                            "rounded px-1.5 py-0.5 font-semibold",
-                            STATUS_CLASS[group.status]
-                          )}
-                        >
-                          {STATUS_LABEL[group.status]}
-                        </span>
-                      </div>
-                    </div>
-                    <ProjectEngineeringTreePanel
-                      tree={group.tree}
-                      variant="embedded"
-                      selectedLineId={null}
-                      onSelectLine={() => {}}
-                      onEditLine={onEditLine}
-                      canManage={canManage}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+      {simulatedProductGroups.length > 0 ? (
+        <div className="space-y-3">
+          <div>
+            <h5 className="text-sm font-semibold text-muted-foreground">Produtos do projeto (engenharia isolada)</h5>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Monte BOM provisória com matérias-primas oficiais e componentes do projeto — sem alterar cadastro.
+            </p>
+          </div>
+          {simulatedProductGroups.map((group) =>
+            renderStructureGroupCard(group, {
+              expanded: expandedGroups.has(group.groupKey),
+              canManage,
+              toggleGroup,
+              onAddToSimulatedProduct,
+              onEditLine,
+              variant: "simulated",
+            })
+          )}
         </div>
       ) : null}
 
@@ -289,9 +343,26 @@ export function ProjectStructureSnapshotAccordion({
                 </tr>
               </thead>
               <tbody>
-                {manualLines.map((line) => (
+                {manualLines.map((line) => {
+                  const badges = resolveStructureLineBadges(line);
+                  return (
                   <tr key={line.id} className="border-b border-border/60">
-                    <td className="px-3 py-2">{structureLineTypeLabel(line)}</td>
+                    <td className="px-3 py-2">
+                      <div className="space-y-1">
+                        <span>{structureLineTypeLabel(line)}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {badges.map((b) => (
+                            <span
+                              key={b.key}
+                              title={b.title}
+                              className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", b.className)}
+                            >
+                              {b.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-3 py-2">{line.descriptionSnapshot}</td>
                     <td className="px-3 py-2">{line.quantity}</td>
                     <td className="px-3 py-2">{line.unitSnapshot}</td>
@@ -321,14 +392,15 @@ export function ProjectStructureSnapshotAccordion({
                       </td>
                     ) : null}
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       ) : null}
 
-      {!snapshotGroups.length && !manualLines.length ? (
+      {!snapshotGroups.length && !simulatedProductGroups.length && !manualLines.length ? (
         <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
           Nenhuma linha de estrutura. Importe um produto ou adicione itens manuais.
         </p>

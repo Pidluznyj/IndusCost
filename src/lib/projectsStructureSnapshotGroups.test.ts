@@ -185,6 +185,43 @@ describe("projectsStructureSnapshotGroups", () => {
     assert.equal(snapshotGroups[0]!.hasChanges, true);
   });
 
+  it("agrupa linhas de produto simulado do projeto separadamente", () => {
+    const SIM_PRODUCT = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    const lines = [
+      line({
+        id: "sp1",
+        simulatedProductId: SIM_PRODUCT,
+        sourceType: "EXISTING_MATERIAL",
+        lineType: "RAW_MATERIAL",
+        existingMaterialId: "mat-1",
+        quantity: 0.04,
+        unitCostSnapshot: 10,
+        totalCost: 0.42,
+        lossPercent: 5,
+      }),
+      line({ id: "manual", sourceType: "MANUAL", descriptionSnapshot: "Avulso" }),
+    ];
+    const { simulatedProductGroups, manualLines } = buildProjectStructureSnapshotGroups(lines, {
+      simulatedProducts: [
+        {
+          id: SIM_PRODUCT,
+          provisionalCode: "PRJ-TOR",
+          description: "Torneira teste",
+          unit: "UN",
+          estimatedWeight: null,
+          expectedVolume: null,
+          batchSize: null,
+          notes: null,
+        },
+      ],
+    });
+    assert.equal(simulatedProductGroups.length, 1);
+    assert.equal(simulatedProductGroups[0]!.rootCode, "PRJ-TOR");
+    assert.equal(simulatedProductGroups[0]!.totalCost, 0.42);
+    assert.equal(manualLines.length, 1);
+    assert.equal(manualLines[0]!.id, "manual");
+  });
+
   it("accordion UI existe e grupos começam fechados", () => {
     const accordion = readFileSync(
       join(process.cwd(), "src", "components", "projects", "ProjectStructureSnapshotAccordion.tsx"),
@@ -192,9 +229,9 @@ describe("projectsStructureSnapshotGroups", () => {
     );
     assert.match(accordion, /expandedGroups/);
     assert.match(accordion, /Abrir estrutura/);
-    assert.match(accordion, /Árvore completa da engenharia/);
     assert.match(accordion, /Clique em Abrir estrutura/);
-    assert.match(accordion, /Editar simulação deste produto/);
+    assert.match(accordion, /Produtos do projeto \(engenharia isolada\)/);
+    assert.match(accordion, /onAddToSimulatedProduct/);
     assert.match(accordion, /buildProjectStructureSnapshotGroups/);
   });
 

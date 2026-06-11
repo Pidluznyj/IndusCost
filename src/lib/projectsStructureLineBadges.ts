@@ -42,7 +42,9 @@ export function resolveMissingCostReason(line: ProjectStructureLineRow): string 
 
   const src = line.costSource ?? "";
   if (line.lineType === "RAW_MATERIAL") {
-    if (src === "OFFICIAL_MATERIAL_COST" || src === "MISSING") return "Material sem custo";
+    if (src === "MATERIAL_CURRENT_COST" || src === "OFFICIAL_MATERIAL_COST" || src === "MISSING") {
+      return "Material sem custo";
+    }
     return "Material sem custo";
   }
   if (line.lineType === "PROCESS" || line.unitSnapshot === "HH") {
@@ -68,11 +70,17 @@ export type StructureLineBadge = {
 export function resolveStructureLineBadges(line: ProjectStructureLineRow): StructureLineBadge[] {
   const badges: StructureLineBadge[] = [];
 
-  if (line.sourceType === "EXISTING_MATERIAL" || line.sourceType === "EXISTING_PRODUCT") {
+  if (line.sourceType === "EXISTING_PRODUCT") {
     badges.push({
-      key: "inherited",
-      label: "Herdado",
+      key: "official-product",
+      label: "Produto oficial",
       className: "bg-blue-100 text-blue-800",
+    });
+  } else if (line.sourceType === "EXISTING_MATERIAL") {
+    badges.push({
+      key: "official-material",
+      label: "Material da base",
+      className: "bg-sky-100 text-sky-900",
     });
   }
 
@@ -92,11 +100,27 @@ export function resolveStructureLineBadges(line: ProjectStructureLineRow): Struc
     });
   }
 
-  if (line.sourceType === "SIMULATED_ITEM" || line.sourceType === "MANUAL") {
+  if (line.sourceType === "SIMULATED_ITEM") {
+    badges.push({
+      key: "project-component",
+      label: "Componente do projeto",
+      className: "bg-violet-100 text-violet-900",
+      title: "Somente projeto — não altera cadastro oficial",
+    });
+  } else if (line.sourceType === "MANUAL") {
     badges.push({
       key: "manual",
-      label: line.sourceType === "SIMULATED_ITEM" ? "Fictício" : "Manual",
+      label: "Item orçado",
       className: "bg-violet-100 text-violet-900",
+      title: "Somente projeto",
+    });
+  }
+
+  if (line.simulatedProductId && !line.snapshotRootProductId) {
+    badges.push({
+      key: "project-only",
+      label: "Somente projeto",
+      className: "bg-indigo-100 text-indigo-900",
     });
   }
 

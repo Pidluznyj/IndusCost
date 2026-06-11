@@ -102,6 +102,30 @@ describe("projectsStructureLineBadges", () => {
     assert.equal(missing?.title, "Material sem custo");
   });
 
+  it("Material da base e Componente do projeto exibem badges de origem", () => {
+    const materialBadges = resolveStructureLineBadges(
+      line({
+        sourceType: "EXISTING_MATERIAL",
+        lineType: "RAW_MATERIAL",
+        existingMaterialId: "mat-1",
+        snapshotRootProductId: null,
+        simulatedProductId: "sim-prod",
+      })
+    );
+    assert.ok(materialBadges.some((b) => b.label === "Material da base"));
+    assert.ok(materialBadges.some((b) => b.label === "Somente projeto"));
+
+    const itemBadges = resolveStructureLineBadges(
+      line({
+        sourceType: "SIMULATED_ITEM",
+        simulatedItemId: "item-1",
+        snapshotRootProductId: null,
+        simulatedProductId: "sim-prod",
+      })
+    );
+    assert.ok(itemBadges.some((b) => b.label === "Componente do projeto"));
+  });
+
   it("Sem custo com motivo para processo", () => {
     assert.equal(
       resolveMissingCostReason(

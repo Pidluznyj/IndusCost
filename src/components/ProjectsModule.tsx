@@ -503,6 +503,11 @@ function ProjectDetailView({
   const [editingItem, setEditingItem] = useState<ProjectSimulatedItemRow | null>(null);
   const [structureModalSource, setStructureModalSource] =
     useState<ProjectStructureSourceType | null>(null);
+  const [structureLineContext, setStructureLineContext] = useState<{
+    simulatedProductId?: string;
+    parentLineId?: string;
+    contextLabel?: string;
+  } | null>(null);
   const [editingStructureLine, setEditingStructureLine] = useState<ProjectStructureLineRow | null>(
     null
   );
@@ -843,6 +848,19 @@ function ProjectDetailView({
           canManage={canManage}
           onAddLine={(sourceType) => {
             setModalError(null);
+            setStructureLineContext(null);
+            setStructureModalSource(sourceType);
+          }}
+          onAddToSimulatedProduct={(productId, sourceType, parentLineId) => {
+            setModalError(null);
+            const product = detail.simulatedProducts.find((p) => p.id === productId);
+            setStructureLineContext({
+              simulatedProductId: productId,
+              parentLineId: parentLineId ?? undefined,
+              contextLabel: product
+                ? `Adicionando em: ${product.provisionalCode ? `${product.provisionalCode} — ` : ""}${product.description}`
+                : undefined,
+            });
             setStructureModalSource(sourceType);
           }}
           onAddLabor={() => {
@@ -1379,7 +1397,12 @@ function ProjectDetailView({
         simulatedItems={detail.simulatedItems}
         saving={saving}
         error={modalError}
-        onClose={() => setStructureModalSource(null)}
+        simulatedProducts={detail.simulatedProducts}
+        lineContext={structureLineContext}
+        onClose={() => {
+          setStructureModalSource(null);
+          setStructureLineContext(null);
+        }}
         onOpenProductSimulation={(productId) => {
           setModalError(null);
           setStructureModalSource(null);
@@ -1493,6 +1516,7 @@ function StructureTab({
   detail,
   canManage,
   onAddLine,
+  onAddToSimulatedProduct,
   onAddLabor,
   onEditLine,
   onDeleteLine,
@@ -1503,6 +1527,11 @@ function StructureTab({
   detail: ProjectDetail;
   canManage: boolean;
   onAddLine: (sourceType: ProjectStructureSourceType) => void;
+  onAddToSimulatedProduct: (
+    productId: string,
+    sourceType: "EXISTING_MATERIAL" | "SIMULATED_ITEM" | "MANUAL",
+    parentLineId?: string | null
+  ) => void;
   onAddLabor: () => void;
   onEditLine: (line: ProjectStructureLineRow) => void;
   onDeleteLine: (line: ProjectStructureLineRow) => void;
@@ -1537,12 +1566,14 @@ function StructureTab({
 
       <ProjectStructureSnapshotAccordion
         structureLines={detail.structureLines}
+        simulatedProducts={detail.simulatedProducts}
         canManage={canManage}
         onEditSimulation={onOpenProductSimulation}
         onReimport={onReimportSnapshot}
         onDeleteSnapshot={onDeleteSnapshot}
         onEditLine={onEditLine}
         onDeleteLine={onDeleteLine}
+        onAddToSimulatedProduct={onAddToSimulatedProduct}
       />
     </div>
   );

@@ -39,6 +39,7 @@ export type ProjectStructureSnapshotGroup = {
 
 export type ProjectStructureGroupingResult = {
   snapshotGroups: ProjectStructureSnapshotGroup[];
+  simulatedProductGroups: ProjectStructureSnapshotGroup[];
   manualLines: ProjectStructureLineRow[];
 };
 
@@ -52,11 +53,83 @@ function lineBelongsToSnapshot(line: ProjectStructureLineRow, rootId: string): b
   );
 }
 
+function belongsToProjectSimulatedProduct(line: ProjectStructureLineRow): boolean {
+  return line.simulatedProductId != null && line.snapshotRootProductId == null;
+}
+
 function isManualStructureLine(line: ProjectStructureLineRow): boolean {
   if (line.snapshotRootProductId != null) return false;
+  if (belongsToProjectSimulatedProduct(line)) return false;
   if (line.notes?.includes("snapshot:")) return false;
   if (line.notes?.includes("routing-snapshot:")) return false;
   return true;
+}
+
+function sumProjectSimulatedProductCost(groupLines: ProjectStructureLineRow[]): number {
+  let total = 0;
+  for (const line of groupLines) {
+    if (!line.countsInSimulatedProductCost) continue;
+    total += sanitizeFinite(line.totalCost) ?? 0;
+  }
+  return sanitizeFinite(total) ?? 0;
+}
+
+function buildSimulatedProductStructureGroups(
+  lines: ProjectStructureLineRow[],
+  simulatedProducts?: ProjectSimulatedProductRow[]
+): ProjectStructureSnapshotGroup[] {
+  const productIds = new Set<string>();
+  for (const line of lines) {
+    if (belongsToProjectSimulatedProduct(line) && line.simulatedProductId) {
+      productIds.add(line.simulatedProductId);
+    }
+  }
+  for (const product of simulatedProducts ?? []) {
+    productIds.add(product.id);
+  }
+
+  const groups: ProjectStructureSnapshotGroup[] = [];
+  for (const productId of productIds) {
+    const meta = simulatedProducts?.find((p) => p.id === productId);
+    const groupLines = lines.filter((l) => l.simulatedProductId === productId);
+    const totalCost = sumProjectSimulatedProductCost(groupLines);
+    const hasMissingCost = groupLines.some(
+      (l) => l.isMissingCost || l.unitCostSnapshot <= 0 || !Number.isFinite(l.totalCost)
+    );
+
+    groups.push({
+      groupKey: `sim-product:${productId}`,
+      snapshotRootProductId: null,
+      simulatedProductId: productId,
+      rootCode: meta?.provisionalCode?.trim() || `PRJ-${productId.slice(0, 8)}`,
+      rootDescription: meta?.description ?? "Produto do projeto",
+      sourceLabel: "Produto do projeto",
+      quantity: 1,
+      officialCost: 0,
+      simulatedCost: totalCost,
+      totalCost,
+      differenceAmount: totalCost,
+      differencePercent: 0,
+      itemCount: groupLines.length,
+      hasChanges: true,
+      hasMissingCost,
+      status: hasMissingCost ? "SEM_CUSTO" : "FICTICIO",
+      lines: groupLines,
+      tree:
+        groupLines.length > 0
+          ? buildProjectEngineeringTree(
+              {
+                productId,
+                sku: meta?.provisionalCode?.trim() || "PRJ",
+                name: meta?.description ?? "Produto do projeto",
+              },
+              groupLines
+            )
+          : null,
+    });
+  }
+
+  return groups.sort((a, b) => a.rootCode.localeCompare(b.rootCode));
 }
 
 function toRollupLine(line: ProjectStructureLineRow): EngineeringRollupLine {
@@ -216,7 +289,12 @@ export function buildProjectStructureSnapshotGroups(
     }
   }
 
-  return { snapshotGroups, manualLines };
+  const simulatedProductGroups = buildSimulatedProductStructureGroups(
+    lines,
+    options?.simulatedProducts
+  );
+
+  return { snapshotGroups, simulatedProductGroups, manualLines };
 }
 
 /** Linhas que entram no grid principal (somente manuais; snapshots ficam no accordion). */

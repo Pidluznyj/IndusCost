@@ -61,6 +61,11 @@ import {
   serializeStructureLine,
   serializeVersion,
 } from "@/src/lib/projectsService.js";
+import {
+  buildProjectStructureLineFromContext,
+  ProjectStructureLineValidationError,
+  resolveProjectStructureLineCostSource,
+} from "@/src/lib/projectsStructureLineBuilder.js";
 
 function isUuid(value: unknown): value is string {
   return (
@@ -339,13 +344,26 @@ export function registerProjectsRoutes(
           code: true,
           description: true,
           unit: true,
+          category: true,
+          supplier: true,
           currentCost: true,
+          averageCost: true,
+          standardCost: true,
+          standardLoss: true,
         },
       });
       res.json({
         rows: rows.map((r) => ({
-          ...r,
+          id: r.id,
+          code: r.code,
+          description: r.description,
+          unit: r.unit,
+          category: r.category,
+          supplier: r.supplier,
           currentCost: dec(r.currentCost),
+          averageCost: dec(r.averageCost),
+          standardCost: dec(r.standardCost),
+          standardLoss: dec(r.standardLoss),
         })),
       });
     } catch (e: unknown) {
@@ -690,64 +708,99 @@ export function registerProjectsRoutes(
       const ctx = await requireProjectAndVersion(req.params.id);
       if ("error" in ctx) return res.status(404).json({ error: ctx.error });
       const body = req.body ?? {};
-      const sourceType = body.sourceType ?? "MANUAL";
+      const sourceType = String(body.sourceType ?? "MANUAL") as import("@/src/types/projects.js").ProjectStructureSourceType;
       const quantity = optNum(body.quantity) ?? 0;
       const lossPercent = optNum(body.lossPercent) ?? 0;
+
+      if (sourceType === "EXISTING_PRODUCT") {
+        return res.status(400).json({
+          error: "Use importação de produto para estrutura oficial. Esta rota não cria linha de produto.",
+        });
+      }
 
       let existingProduct = null;
       let existingMaterial = null;
       let simulatedItem = null;
 
-      if (sourceType === "EXISTING_PRODUCT" && isUuid(body.existingProductId)) {
-        existingProduct = await prisma.product.findUnique({
-          where: { id: body.existingProductId },
-        });
-        if (!existingProduct) return res.status(400).json({ error: "Produto não encontrado." });
-      }
-      if (sourceType === "EXISTING_MATERIAL" && isUuid(body.existingMaterialId)) {
+      if (sourceType === "EXISTING_MATERIAL") {
+        if (!isUuid(body.existingMaterialId)) {
+          return res.status(400).json({ error: "existingMaterialId é obrigatório." });
+        }
         existingMaterial = await prisma.material.findUnique({
           where: { id: body.existingMaterialId },
         });
         if (!existingMaterial) return res.status(400).json({ error: "Material não encontrado." });
       }
-      if (sourceType === "SIMULATED_ITEM" && isUuid(body.simulatedItemId)) {
+      if (sourceType === "SIMULATED_ITEM") {
+        if (!isUuid(body.simulatedItemId)) {
+          return res.status(400).json({ error: "simulatedItemId é obrigatório." });
+        }
         simulatedItem = await prisma.projectSimulatedItem.findFirst({
           where: { id: body.simulatedItemId, projectId: req.params.id },
         });
         if (!simulatedItem) return res.status(400).json({ error: "Item simulado não encontrado." });
       }
 
-      const snapshots = resolveStructureLineSnapshots({
+      let parentLineId: string | null = null;
+      if (isUuid(body.parentLineId)) {
+        const parent = await prisma.projectStructureLine.findFirst({
+          where: {
+            id: body.parentLineId,
+            projectId: req.params.id,
+            versionId: ctx.version.id,
+          },
+        });
+        if (!parent) return res.status(400).json({ error: "Linha pai não encontrada neste projeto." });
+        parentLineId = parent.id;
+      }
+
+      let simulatedProductId: string | null = null;
+      if (isUuid(body.simulatedProductId)) {
+        const simulatedProduct = await prisma.projectSimulatedProduct.findFirst({
+          where: { id: body.simulatedProductId, projectId: req.params.id },
+        });
+        if (!simulatedProduct) {
+          return res.status(400).json({ error: "Produto simulado do projeto não encontrado." });
+        }
+        simulatedProductId = simulatedProduct.id;
+      }
+
+      const built = buildProjectStructureLineFromContext({
         sourceType,
-        existingProduct,
-        existingMaterial,
-        simulatedItem,
+        lineType: body.lineType,
+        quantity,
+        lossPercent,
+        unitCostOverride: body.unitCost != null ? optNum(body.unitCost) : null,
         manualDescription: body.description,
         manualUnit: body.unit,
         manualUnitCost: optNum(body.unitCost) ?? 0,
+        supplierName: optStr(body.supplierName),
+        existingProduct,
+        existingMaterial,
+        simulatedItem,
       });
-
-      const unitCost =
-        body.unitCost != null ? (optNum(body.unitCost) ?? 0) : snapshots.unitCost;
-      const totalCost = buildStructureLineTotal(quantity, unitCost, lossPercent);
 
       const row = await prisma.projectStructureLine.create({
         data: {
           projectId: req.params.id,
           versionId: ctx.version.id,
-          simulatedProductId: isUuid(body.simulatedProductId) ? body.simulatedProductId : null,
-          lineType: body.lineType ?? "OTHER",
+          simulatedProductId,
+          parentLineId,
+          lineType: built.lineType,
           sourceType,
-          existingProductId: existingProduct?.id ?? null,
+          existingProductId: null,
           existingMaterialId: existingMaterial?.id ?? null,
           simulatedItemId: simulatedItem?.id ?? null,
-          descriptionSnapshot: snapshots.description,
-          unitSnapshot: snapshots.unit,
+          descriptionSnapshot: built.descriptionSnapshot,
+          unitSnapshot: built.unitSnapshot,
           quantity,
           lossPercent,
-          unitCostSnapshot: unitCost,
-          totalCost,
-          supplierNameSnapshot: optStr(body.supplierName),
+          unitCostSnapshot: built.unitCostSnapshot,
+          totalCost: built.totalCost,
+          costSource: built.costSource,
+          isMissingCost: built.isMissingCost,
+          countsInSimulatedProductCost: built.countsInSimulatedProductCost,
+          supplierNameSnapshot: built.supplierNameSnapshot,
           notes: optStr(body.notes),
           sortOrder: Number(body.sortOrder) || 0,
         },
@@ -756,6 +809,9 @@ export function registerProjectsRoutes(
       await recalculateAndPersistVersionCosts(ctx.version.id);
       res.status(201).json(serializeStructureLine(row));
     } catch (e: unknown) {
+      if (e instanceof ProjectStructureLineValidationError) {
+        return res.status(400).json({ error: e.message });
+      }
       console.error("POST structure-lines", e);
       res.status(500).json({ error: "Erro ao criar linha de estrutura." });
     }
@@ -801,6 +857,14 @@ export function registerProjectsRoutes(
         (officialUnit != null && Math.abs(officialUnit - unitCost) > 0.000001) ||
         (officialUnit == null && unitCost > 0);
 
+      const isMissingCost = !Number.isFinite(unitCost) || unitCost <= 0;
+      const costSource =
+        isMissingCost
+          ? "MISSING"
+          : existing.costSource === "MISSING"
+            ? resolveProjectStructureLineCostSource(existing.sourceType)
+            : existing.costSource;
+
       const row = await prisma.projectStructureLine.update({
         where: { id: req.params.lineId },
         data: {
@@ -812,7 +876,8 @@ export function registerProjectsRoutes(
           ...(body.unitCost != null ? { unitCostSnapshot: unitCost } : {}),
           totalCost,
           isChangedFromOfficial: changed,
-          isMissingCost: unitCost <= 0,
+          isMissingCost,
+          costSource,
           ...(body.notes !== undefined ? { notes: optStr(body.notes) } : {}),
           ...(body.sortOrder != null ? { sortOrder: Number(body.sortOrder) || 0 } : {}),
         },
