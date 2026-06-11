@@ -40,7 +40,14 @@ describe("financeAccountsPayableTitles", () => {
     );
     const payload = buildFinanceApTitlesPayload(
       rows,
-      { page: 2, limit: 2, sortBy: "dueDate", sortDirection: "asc", filters: { status: "all" } },
+      {
+        page: 2,
+        limit: 2,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: { status: "all" },
+        localFilter: "all",
+      },
       REF
     );
     assert.equal(payload.total, 5);
@@ -67,6 +74,7 @@ describe("financeAccountsPayableTitles", () => {
         sortBy: "dueDate",
         sortDirection: "asc",
         filters: { status: "all" },
+        localFilter: "all",
         overdueOnly: true,
       },
       REF
@@ -82,6 +90,7 @@ describe("financeAccountsPayableTitles", () => {
         sortBy: "dueDate",
         sortDirection: "asc",
         filters: { status: "all" },
+        localFilter: "all",
         search: "xyz",
       },
       REF
@@ -103,6 +112,7 @@ describe("financeAccountsPayableTitles", () => {
         sortBy: "balancePayable",
         sortDirection: "desc",
         filters: { status: "all" },
+        localFilter: "all",
       },
       REF
     );
@@ -128,6 +138,12 @@ describe("financeAccountsPayableTitles", () => {
     assert.equal(q.search, "fornecedor");
     assert.equal(q.filters.status, "overdue");
     assert.equal(q.qualityAlert, "missingDueDate");
+    assert.equal(q.localFilter, "all");
+  });
+
+  it("parseFinanceApTitlesQuery interpreta localFilter", () => {
+    const q = parseFinanceApTitlesQuery({ localFilter: "purchaseOrder", page: "1" });
+    assert.equal(q.localFilter, "purchaseOrder");
   });
 
   it("filtra por qualityAlert", () => {
@@ -143,6 +159,7 @@ describe("financeAccountsPayableTitles", () => {
         sortBy: "dueDate",
         sortDirection: "asc",
         filters: { status: "all" },
+        localFilter: "all",
         qualityAlert: "missingPersonCnpj",
       },
       REF
@@ -166,6 +183,7 @@ describe("financeAccountsPayableTitles", () => {
         sortBy: "dueDate",
         sortDirection: "asc",
         filters: { status: "all", year: 2026, month: 6 },
+        localFilter: "all",
       },
       REF
     );
@@ -200,6 +218,7 @@ describe("financeAccountsPayableTitles", () => {
         sortBy: "dueDate",
         sortDirection: "asc",
         filters: { status: "all", year: 2026, month: 6 },
+        localFilter: "all",
         search: "bbb",
       },
       REF

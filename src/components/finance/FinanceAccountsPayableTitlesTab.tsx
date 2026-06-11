@@ -8,6 +8,12 @@ import {
   type FinanceApUiFilters,
 } from "@/src/lib/financeAccountsPayableDashboardTypes";
 import {
+  FINANCE_AP_TITLES_LOCAL_FILTER_OPTIONS,
+  parseFinanceApTitlesLocalFilter,
+  type FinanceApTitlesLocalFilter,
+} from "@/src/lib/financeAccountsPayableTitlesLocalFilter";
+import { cn } from "@/src/lib/utils";
+import {
   displayFinanceText,
   formatFinanceCurrency,
   formatFinanceDate,
@@ -31,17 +37,20 @@ export function FinanceApTitlesTab({
   filters,
   qualityAlert = null,
   onClearQualityAlert,
+  localFilter,
+  onLocalFilterChange,
 }: {
   filters: FinanceApUiFilters;
   qualityAlert?: FinanceApDataQualityAlertKey | null;
   onClearQualityAlert?: () => void;
+  localFilter: FinanceApTitlesLocalFilter;
+  onLocalFilterChange: (value: FinanceApTitlesLocalFilter) => void;
 }) {
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<"dueDate" | "balancePayable" | "externalId">("dueDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [overdueOnly, setOverdueOnly] = useState(false);
   const [data, setData] = useState<FinanceApTitlesPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +62,7 @@ export function FinanceApTitlesTab({
 
   useEffect(() => {
     setPage(1);
-  }, [filters, debouncedSearch, overdueOnly, sortBy, sortDirection, qualityAlert]);
+  }, [filters, debouncedSearch, localFilter, sortBy, sortDirection, qualityAlert]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,7 +74,7 @@ export function FinanceApTitlesTab({
         sortBy,
         sortDirection,
         search: debouncedSearch,
-        overdueOnly,
+        localFilter,
         qualityAlert: qualityAlert ?? undefined,
       });
       const payload = await fetchJsonOk<FinanceApTitlesPayload>(
@@ -78,7 +87,7 @@ export function FinanceApTitlesTab({
     } finally {
       setLoading(false);
     }
-  }, [filters, page, sortBy, sortDirection, debouncedSearch, overdueOnly, qualityAlert]);
+  }, [filters, page, sortBy, sortDirection, debouncedSearch, localFilter, qualityAlert]);
 
   useEffect(() => {
     void load();
@@ -102,6 +111,30 @@ export function FinanceApTitlesTab({
           ) : null}
         </div>
       ) : null}
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-bold uppercase text-muted-foreground">Filtros locais</p>
+        <p className="text-[10px] text-muted-foreground">
+          Refinam o grid sem alterar filtros globais aplicados.
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {FINANCE_AP_TITLES_LOCAL_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onLocalFilterChange(parseFinanceApTitlesLocalFilter(opt.value))}
+              className={cn(
+                "rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                localFilter === opt.value
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-[#E5E7EB] bg-white text-muted-foreground hover:bg-muted/50"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="flex flex-wrap gap-3 items-end">
         <label className="space-y-1 flex-1 min-w-[200px]">
@@ -136,14 +169,6 @@ export function FinanceApTitlesTab({
             <option value="desc">Descendente</option>
           </select>
         </label>
-        <label className="inline-flex items-center gap-2 h-9 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={overdueOnly}
-            onChange={(e) => setOverdueOnly(e.target.checked)}
-          />
-          Só atrasados
-        </label>
         <button
           type="button"
           onClick={() => void load()}
@@ -171,7 +196,7 @@ export function FinanceApTitlesTab({
 
       {data?.items.length ? (
         <>
-          <FinanceApScrollableTable tableClassName="min-w-[1200px]">
+          <FinanceApScrollableTable tableClassName="min-w-[1400px]">
             <FinanceApStickyTableHead>
               <tr className="text-left text-[10px] font-bold uppercase text-muted-foreground">
                 <th className="p-2 whitespace-nowrap">ID Nomus</th>
@@ -179,9 +204,9 @@ export function FinanceApTitlesTab({
                 <th className="p-2 min-w-[120px]">Fornecedor</th>
                 <th className="p-2 whitespace-nowrap">CNPJ</th>
                 <th className="p-2 min-w-[140px]">Descrição</th>
-                <th className="p-2 whitespace-nowrap">NF emitida</th>
-                <th className="p-2 whitespace-nowrap">NF origem</th>
-                <th className="p-2 whitespace-nowrap">Vencimento</th>
+                <th className="p-2 whitespace-nowrap">Venc. original</th>
+                <th className="p-2 whitespace-nowrap">Agendamento</th>
+                <th className="p-2 whitespace-nowrap">Data operacional</th>
                 <th className="p-2 whitespace-nowrap">Baixa/Pagamento</th>
                 <th className="p-2 text-right whitespace-nowrap">Valor original</th>
                 <th className="p-2 text-right whitespace-nowrap">Pago</th>
@@ -189,9 +214,9 @@ export function FinanceApTitlesTab({
                 <th className="p-2">Forma pag.</th>
                 <th className="p-2">Conta</th>
                 <th className="p-2">Status calc.</th>
-                <th className="p-2">Status Nomus</th>
+                <th className="p-2">Tipo</th>
+                <th className="p-2 min-w-[140px]">Motivo exclusão</th>
                 <th className="p-2 text-right">Dias</th>
-                <th className="p-2">Suspensa</th>
                 <th className="p-2 whitespace-nowrap">Sync</th>
               </tr>
             </FinanceApStickyTableHead>
@@ -205,18 +230,11 @@ export function FinanceApTitlesTab({
                   <td className="p-2 max-w-[180px] truncate" title={row.description ?? undefined}>
                     {displayFinanceText(row.description)}
                   </td>
-                  <td className="p-2 text-xs font-semibold">
-                    {row.sourceInvoiceId != null || row.documentNumber?.trim()
-                      ? "Sim"
-                      : "Não"}
-                  </td>
-                  <td className="p-2 font-mono text-xs">
-                    {displayFinanceText(
-                      row.documentNumber ??
-                        (row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : null)
-                    )}
-                  </td>
                   <td className="p-2 whitespace-nowrap">{formatFinanceDate(row.dueDate)}</td>
+                  <td className="p-2 whitespace-nowrap">{formatFinanceDate(row.scheduleDate)}</td>
+                  <td className="p-2 whitespace-nowrap">
+                    {formatFinanceDate(row.operationalDueDate)}
+                  </td>
                   <td className="p-2 whitespace-nowrap">
                     {formatFinanceDate(row.paymentDate ?? row.settlementDate)}
                   </td>
@@ -230,9 +248,11 @@ export function FinanceApTitlesTab({
                   <td className="p-2">
                     <StatusBadge status={row.calculatedStatus} />
                   </td>
-                  <td className="p-2 text-xs">{formatNomusStatusLabel(row.nomusStatus)}</td>
+                  <td className="p-2 text-xs tabular-nums">{row.type ?? "—"}</td>
+                  <td className="p-2 text-[10px] text-muted-foreground max-w-[180px]">
+                    {row.exclusionReason}
+                  </td>
                   <td className="p-2 text-right tabular-nums">{formatFinanceDaysOverdue(row.daysOverdue)}</td>
-                  <td className="p-2">{row.suspendPayment ? "Sim" : "Não"}</td>
                   <td className="p-2 text-xs whitespace-nowrap">{formatFinanceDateTime(row.syncedAt)}</td>
                 </tr>
               ))}

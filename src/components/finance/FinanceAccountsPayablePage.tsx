@@ -28,15 +28,22 @@ import {
   FINANCE_AP_SUSPEND_PAYMENT_OPTIONS,
   FINANCE_AP_MONTH_OPTIONS,
   FINANCE_AP_STATUS_OPTIONS,
-  FINANCE_AP_TABS,
+  FINANCE_AP_EXECUTIVE_TABS,
+  FINANCE_AP_SECONDARY_TABS,
   normalizeFinanceApUiFilters,
   type FinanceApCriticalTitle,
   type FinanceApDashboardPayload,
   type FinanceApDataQualityAlertItem,
   type FinanceApDataQualityAlertKey,
-  type FinanceApTabId,
+  type FinanceApExecutiveTabId,
+  type FinanceApPurchaseOrderScheduleAudit,
+  type FinanceApSecondaryTabId,
   type FinanceApUiFilters,
 } from "@/src/lib/financeAccountsPayableDashboardTypes";
+import {
+  parseFinanceApTitlesLocalFilter,
+  type FinanceApTitlesLocalFilter,
+} from "@/src/lib/financeAccountsPayableTitlesLocalFilter";
 import {
   displayFinanceText,
   financeApExportFilename,
@@ -47,7 +54,6 @@ import {
   formatFinanceDateTime,
   formatFinanceDaysOverdue,
   formatFinanceInteger,
-  formatFinancePercent,
 } from "@/src/lib/financeAccountsPayableFormat";
 import {
   canExportFinanceAccountsPayable,
@@ -55,13 +61,15 @@ import {
 } from "@/src/lib/financeAccountsPayablePermissions";
 import {
   FinanceApAgingTab,
+  FinanceApAuditTab,
   FinanceApCompaniesTab,
   FinanceApSuppliersTab,
   FinanceApPaymentTab,
   FinanceApScheduleTab,
   statusBadgeClass,
 } from "@/src/components/finance/FinanceAccountsPayableTabPanels";
-import { FinanceAccountsPayableDataQualityPanel } from "@/src/components/finance/FinanceAccountsPayableDataQualityPanel";
+import { FinanceActionCenterShell } from "@/src/components/finance/shared/FinanceActionCenterShell";
+import { FinanceDetailTabs } from "@/src/components/finance/shared/FinanceDetailTabs";
 import { FinanceAccountsPayableSyncPanel } from "@/src/components/finance/FinanceAccountsPayableSyncPanel";
 import { FinanceApTitlesTab } from "@/src/components/finance/FinanceAccountsPayableTitlesTab";
 import {
@@ -72,7 +80,6 @@ import {
   FinanceApErrorBanner,
   FinanceApLoadingBlock,
   FinanceApSuccessBanner,
-  FinanceApTabNav,
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { cn } from "@/src/lib/utils";
 import {
@@ -87,7 +94,6 @@ import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import { buildFinanceApFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
-  FINANCE_AP_DEFAULT_YEAR_SCOPE,
   FINANCE_AP_LAST_SYNC_FILTERED_SCOPE,
   FINANCE_AP_PAID_THIS_MONTH_SCOPE,
   withAppliedFilterSub,
@@ -106,7 +112,8 @@ type ActionItem = {
 
 function buildActionItems(
   criticalTitles: FinanceApCriticalTitle[],
-  qualityAlerts: FinanceApDataQualityAlertItem[]
+  qualityAlerts: FinanceApDataQualityAlertItem[],
+  purchaseOrderAudit?: FinanceApPurchaseOrderScheduleAudit
 ): ActionItem[] {
   const items: ActionItem[] = [];
 
@@ -164,6 +171,28 @@ function buildActionItems(
     });
   }
 
+  if (purchaseOrderAudit && purchaseOrderAudit.excludedCount > 0) {
+    items.push({
+      id: "po-excluded",
+      type: "quality",
+      severity: "warning",
+      title: "Revisar pedidos de compra excluídos",
+      description: `${purchaseOrderAudit.excludedCount} agenda(s) fora da visão gerencial`,
+      value: formatFinanceCurrencyCompact(purchaseOrderAudit.excludedAmount),
+    });
+  }
+
+  if (purchaseOrderAudit && purchaseOrderAudit.rescheduledOpenCount > 0) {
+    items.push({
+      id: "rescheduled",
+      type: "due-soon",
+      severity: "info",
+      title: "Títulos com data agendada divergente",
+      description: `${purchaseOrderAudit.rescheduledOpenCount} título(s) remarcados em aberto`,
+      value: formatFinanceCurrencyCompact(purchaseOrderAudit.rescheduledOpenAmount),
+    });
+  }
+
   const criticalQuality = qualityAlerts.filter((a) => a.severity === "critical" && a.count > 0);
   for (const alert of criticalQuality.slice(0, 2)) {
     items.push({
@@ -215,33 +244,25 @@ function ActionIcon({ type }: { type: ActionItem["type"] }) {
 function FinanceApActionCenter({
   criticalTitles,
   qualityAlerts,
+  purchaseOrderAudit,
   loading,
 }: {
   criticalTitles: FinanceApCriticalTitle[];
   qualityAlerts: FinanceApDataQualityAlertItem[];
+  purchaseOrderAudit?: FinanceApPurchaseOrderScheduleAudit;
   loading: boolean;
 }) {
   const items = useMemo(
-    () => buildActionItems(criticalTitles, qualityAlerts),
-    [criticalTitles, qualityAlerts]
+    () => buildActionItems(criticalTitles, qualityAlerts, purchaseOrderAudit),
+    [criticalTitles, qualityAlerts, purchaseOrderAudit]
   );
 
   return (
-    <div className={`${financeBiCardClass} flex flex-col`}>
-      <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E7EB]">
-        <div>
-          <h3 className="text-sm font-bold text-[#111827]">Centro de Ações</h3>
-          <p className="text-[11px] text-[#6B7280] mt-0.5">
-            Alertas priorizados por risco — filtros aplicados
-          </p>
-        </div>
-        {items.length > 0 ? (
-          <span className="h-6 min-w-[1.5rem] rounded-full bg-red-500 text-white text-[10px] font-bold px-2 flex items-center justify-center">
-            {items.length}
-          </span>
-        ) : null}
-      </div>
-      <div className="flex-1 divide-y divide-border/40 overflow-auto max-h-[400px]">
+    <FinanceActionCenterShell
+      title="Centro de Ações"
+      subtitle="Pagamentos, saneamento gerencial e fornecedores críticos — filtros aplicados"
+      badgeCount={items.length}
+    >
         {loading ? (
           <div className="p-5 flex items-center gap-3">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -291,8 +312,7 @@ function FinanceApActionCenter({
             );
           })
         )}
-      </div>
-    </div>
+    </FinanceActionCenterShell>
   );
 }
 
@@ -426,7 +446,9 @@ export function FinanceAccountsPayablePage() {
   const canExport = canExportFinanceAccountsPayable(auth);
   const canRunSync = canRunFinanceAccountsPayableSync(auth);
 
-  const [activeTab, setActiveTab] = useState<FinanceApTabId>("overview");
+  const [executiveTab, setExecutiveTab] = useState<FinanceApExecutiveTabId>("titles");
+  const [secondaryTab, setSecondaryTab] = useState<FinanceApSecondaryTabId>("schedule");
+  const [titlesLocalFilter, setTitlesLocalFilter] = useState<FinanceApTitlesLocalFilter>("all");
   const [titlesQualityAlert, setTitlesQualityAlert] = useState<FinanceApDataQualityAlertKey | null>(
     null
   );
@@ -523,11 +545,12 @@ export function FinanceAccountsPayablePage() {
 
   const handleViewTitlesFromAlert = (key: FinanceApDataQualityAlertKey) => {
     setTitlesQualityAlert(key);
-    setActiveTab("titles");
+    setExecutiveTab("titles");
   };
 
   const handleApplyFilters = () => {
     setAppliedFilters(normalizedDraftFilters);
+    setTitlesLocalFilter("all");
   };
 
   const handleClearFilters = () => {
@@ -536,6 +559,7 @@ export function FinanceAccountsPayablePage() {
     setDraftFilters(defaults);
     setAppliedFilters(normalized);
     setTitlesQualityAlert(null);
+    setTitlesLocalFilter("all");
   };
 
   const cards = data?.cards;
@@ -561,36 +585,12 @@ export function FinanceAccountsPayablePage() {
     [appliedFilters, handleRemoveFilterChip]
   );
 
-  const overdueTrend: "up" | "down" | "neutral" =
-    cards?.overduePercent != null
-      ? cards.overduePercent > 15
-        ? "up"
-        : cards.overduePercent < 5
-          ? "down"
-          : "neutral"
-      : "neutral";
-
   return (
     <FinanceBiDashboardShell>
       <FinanceBiExecutiveHeader
         eyebrow="Financeiro · Contas a Pagar"
         title="Contas a Pagar"
-        subtitle={
-          <>
-            Fonte oficial: <span className="font-semibold text-[#111827]">NomusAccountsPayable</span>
-            .{" "}
-            {cards?.totalRecords != null ? (
-              <span className="font-semibold text-[#111827]">
-                {formatFinanceInteger(cards.totalRecords)} registros no universo filtrado.
-              </span>
-            ) : null}
-            {!filtersActive && isDefaultFinanceApUiFilters(appliedFilters) ? (
-              <span className="block text-[11px] text-[#6B7280] mt-1">
-                {FINANCE_AP_DEFAULT_YEAR_SCOPE}
-              </span>
-            ) : null}
-          </>
-        }
+        subtitle="Obrigações financeiras, fornecedores e saídas de caixa — visão gerencial saneada com data operacional."
         filterStatus={filterStatus}
         meta={[
           {
@@ -634,7 +634,16 @@ export function FinanceAccountsPayablePage() {
               ]
             : []),
         ]}
-      />
+      >
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-bold text-emerald-900">
+            Fonte: Nomus
+          </span>
+          <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-bold text-blue-900">
+            Visão gerencial saneada
+          </span>
+        </div>
+      </FinanceBiExecutiveHeader>
 
       <FinanceAccountsPayableSyncPanel
         canRun={canRunSync}
@@ -759,93 +768,102 @@ export function FinanceAccountsPayablePage() {
             KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas
           </p>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <FinanceBiKpiCard
-            icon={Wallet}
-            label="Obrigações em Aberto"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
-            sub={withAppliedFilterSub(
-              cards?.openTitlesCount != null
-                ? `${formatFinanceInteger(cards.openTitlesCount)} título${cards.openTitlesCount !== 1 ? "s" : ""}`
-                : undefined,
-              Boolean(filtersActive)
-            )}
-            hint="Σ balancePayable onde saldo > 0"
-            colorClass="text-[#2563EB]"
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            icon={AlertTriangle}
-            label="Vencido"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueAmount)}
-            sub={withAppliedFilterSub("Data operacional anterior a hoje", Boolean(filtersActive))}
-            hint="Σ saldo com max(vencimento, agendamento) antes de hoje"
-            colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            icon={Clock}
-            label="Vence Hoje"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueTodayAmount)}
-            sub={withAppliedFilterSub("Data operacional no dia de referência", Boolean(filtersActive))}
-            hint="Σ saldo com max(vencimento, agendamento) = hoje"
-            colorClass={(cards?.dueTodayAmount ?? 0) > 0 ? "text-[#D97706]" : "text-[#111827]"}
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            icon={ShieldAlert}
-            label="Vencido > 30 Dias"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueOver30DaysAmount)}
-            sub={withAppliedFilterSub(
-              cards?.overdueOver30DaysCount != null
-                ? `${formatFinanceInteger(cards.overdueOver30DaysCount)} título${cards.overdueOver30DaysCount !== 1 ? "s" : ""}`
-                : undefined,
-              Boolean(filtersActive)
-            )}
-            hint="Σ saldo vencido há mais de 30 dias"
-            colorClass={(cards?.overdueOver30DaysAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            icon={Landmark}
-            label="Pago no Mês"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.paidThisMonthAmount)}
-            sub="Pagamentos no mês corrente"
-            scopeNote={FINANCE_AP_PAID_THIS_MONTH_SCOPE}
-            hint="Σ amountPaid com paymentDate/settlementDate no mês/ano de hoje"
-            colorClass="text-[#059669]"
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            icon={TrendingDown}
-            label="% em Atraso"
-            value={loading ? "…" : formatFinancePercent(cards?.overduePercent)}
-            sub={withAppliedFilterSub(
-              cards?.overdueSuppliersCount != null
-                ? `${formatFinanceInteger(cards.overdueSuppliersCount)} fornecedor${cards.overdueSuppliersCount !== 1 ? "es" : ""}`
-                : undefined,
-              Boolean(filtersActive)
-            )}
-            hint="Vencido ÷ carteira em aberto × 100"
-            trend={overdueTrend}
-            trendLabel={
-              cards?.overduePercent != null
-                ? overdueTrend === "up"
-                  ? "Alto risco"
-                  : overdueTrend === "down"
-                    ? "Controlado"
-                    : "Atenção"
-                : undefined
-            }
-            colorClass={
-              (cards?.overduePercent ?? 0) > 15
-                ? "text-[#DC2626]"
-                : (cards?.overduePercent ?? 0) > 5
-                  ? "text-[#D97706]"
-                  : "text-[#059669]"
-            }
-            loading={loading}
-          />
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+          {[
+            {
+              icon: Wallet,
+              label: "Total a pagar",
+              value: formatFinanceCurrencyCompact(cards?.totalPayableAmount),
+              sub: withAppliedFilterSub(
+                cards?.totalRecords != null
+                  ? `${formatFinanceInteger(cards.totalRecords)} título(s)`
+                  : undefined,
+                Boolean(filtersActive)
+              ),
+              hint: "Σ valor original no universo filtrado",
+            },
+            {
+              icon: Landmark,
+              label: "Pago no mês",
+              value: formatFinanceCurrencyCompact(cards?.paidThisMonthAmount),
+              sub: "Mês corrente",
+              scopeNote: FINANCE_AP_PAID_THIS_MONTH_SCOPE,
+              hint: "Pagamentos liquidados no mês de referência",
+              colorClass: "text-[#059669]",
+            },
+            {
+              icon: Wallet,
+              label: "Em aberto",
+              value: formatFinanceCurrencyCompact(cards?.totalOpenAmount),
+              sub: withAppliedFilterSub(
+                cards?.openTitlesCount != null
+                  ? `${formatFinanceInteger(cards.openTitlesCount)} título(s)`
+                  : undefined,
+                Boolean(filtersActive)
+              ),
+              hint: "Saldo positivo na visão gerencial",
+              colorClass: "text-[#2563EB]",
+            },
+            {
+              icon: AlertTriangle,
+              label: "Vencido gerencial",
+              value: formatFinanceCurrencyCompact(cards?.overdueAmount),
+              sub: "Data operacional < hoje",
+              hint: "Exclui pedido de compra · max(vencimento, agendamento)",
+              colorClass: (cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]",
+            },
+            {
+              icon: Clock,
+              label: "Vence hoje",
+              value: formatFinanceCurrencyCompact(cards?.dueTodayAmount),
+              sub: "Data operacional = hoje",
+              hint: "Títulos com vencimento operacional no dia",
+            },
+            {
+              icon: TrendingUp,
+              label: "Próximos 7 dias",
+              value: formatFinanceCurrencyCompact(cards?.dueNext7DaysAmount),
+              sub: "Janela operacional",
+              hint: "Vencimentos operacionais em até 7 dias",
+            },
+            {
+              icon: TrendingUp,
+              label: "Próximos 30 dias",
+              value: formatFinanceCurrencyCompact(cards?.dueNext30DaysAmount),
+              sub: "Janela operacional",
+              hint: "Vencimentos operacionais em até 30 dias",
+            },
+            {
+              icon: ShieldAlert,
+              label: data?.purchaseOrderScheduleAudit.rescheduledOpenCount
+                ? "Agendados / remarcados"
+                : "Maior fornecedor",
+              value: data?.purchaseOrderScheduleAudit.rescheduledOpenCount
+                ? formatFinanceCurrencyCompact(data.purchaseOrderScheduleAudit.rescheduledOpenAmount)
+                : cards?.topSupplier
+                  ? formatFinanceCurrencyCompact(cards.topSupplier.totalOpenAmount)
+                  : "—",
+              sub: data?.purchaseOrderScheduleAudit.rescheduledOpenCount
+                ? `${formatFinanceInteger(data.purchaseOrderScheduleAudit.rescheduledOpenCount)} título(s)`
+                : displayFinanceText(cards?.topSupplier?.personName),
+              hint: data?.purchaseOrderScheduleAudit.rescheduledOpenCount
+                ? "scheduleDate ≠ dueDate em aberto"
+                : "Maior concentração de saldo aberto",
+            },
+          ].map((kpi) => (
+            <div key={kpi.label} className="min-w-0">
+              <FinanceBiKpiCard
+                icon={kpi.icon}
+                label={kpi.label}
+                value={loading ? "…" : String(kpi.value ?? "—")}
+                sub={kpi.sub}
+                hint={kpi.hint}
+                scopeNote={"scopeNote" in kpi ? kpi.scopeNote : undefined}
+                colorClass={"colorClass" in kpi ? kpi.colorClass : undefined}
+                loading={loading}
+              />
+            </div>
+          ))}
         </div>
       </section>
 
@@ -867,137 +885,104 @@ export function FinanceAccountsPayablePage() {
         <FinanceApActionCenter
           criticalTitles={data?.criticalTitles ?? []}
           qualityAlerts={data?.dataQualitySummary ?? []}
+          purchaseOrderAudit={data?.purchaseOrderScheduleAudit}
           loading={loading && !data}
         />
         <FinanceApHighlightTable
           rows={data?.criticalTitles ?? []}
           loading={loading && !data}
-          onViewAll={() => setActiveTab("titles")}
+          onViewAll={() => setExecutiveTab("titles")}
         />
       </div>
 
-      {loading && !data ? (
-        <FinanceApLoadingBlock label="alertas e indicadores" />
-      ) : (
-        <FinanceAccountsPayableDataQualityPanel
-          alerts={data?.dataQualitySummary ?? []}
-          onViewTitles={handleViewTitlesFromAlert}
-        />
-      )}
-
-      <div className={financeBiSectionClass}>
+      <section className={financeBiSectionClass}>
         <div className="px-5 py-4 border-b border-[#E5E7EB]">
-          <h2 className="text-sm font-bold text-[#111827]">Análise detalhada</h2>
+          <h2 className="text-sm font-bold text-[#111827]">Detalhamento</h2>
           <p className="text-[11px] text-[#6B7280] mt-0.5">
-            Drill-down: aging, agenda, fornecedores, títulos e formas de pagamento
+            Grid explicativo dos cards — filtros globais aplicados afetam export e listagens.
           </p>
         </div>
-        <div className="p-5 space-y-4">
-          <FinanceApTabNav
-            tabs={FINANCE_AP_TABS}
-            activeId={activeTab}
-            onChange={(id) => setActiveTab(id as FinanceApTabId)}
+        <div className="px-5 pt-4">
+          <FinanceDetailTabs
+            tabs={FINANCE_AP_EXECUTIVE_TABS}
+            activeId={executiveTab}
+            onChange={setExecutiveTab}
           />
-          <div role="tabpanel" aria-label={FINANCE_AP_TABS.find((t) => t.id === activeTab)?.label}>
-            {activeTab === "overview" ? (
-              <ApOverviewSummary data={data} loading={loading} />
-            ) : null}
-            {activeTab === "aging" ? (
-              loading && !data ? (
-                <FinanceApLoadingBlock label="aging" />
-              ) : (
-                <FinanceApAgingTab data={data} />
-              )
-            ) : null}
-            {activeTab === "schedule" ? (
-              loading && !data ? (
-                <FinanceApLoadingBlock label="agenda" />
-              ) : (
-                <FinanceApScheduleTab data={data} />
-              )
-            ) : null}
-            {activeTab === "suppliers" ? (
-              loading && !data ? (
-                <FinanceApLoadingBlock label="fornecedores" />
-              ) : (
-                <FinanceApSuppliersTab data={data} />
-              )
-            ) : null}
-            {activeTab === "titles" ? (
-              <FinanceApTitlesTab
-                filters={appliedFilters}
-                qualityAlert={titlesQualityAlert}
-                onClearQualityAlert={() => setTitlesQualityAlert(null)}
-              />
-            ) : null}
-            {activeTab === "payment-methods" ? (
-              loading && !data ? (
-                <FinanceApLoadingBlock label="formas de pagamento" />
-              ) : (
-                <FinanceApPaymentTab data={data} />
-              )
-            ) : null}
-            {activeTab === "companies" ? (
-              loading && !data ? (
-                <FinanceApLoadingBlock label="empresas" />
-              ) : (
-                <FinanceApCompaniesTab data={data} />
-              )
-            ) : null}
-          </div>
         </div>
-      </div>
-    </FinanceBiDashboardShell>
-  );
-}
+        <div className="p-5" role="tabpanel">
+          {executiveTab === "titles" ? (
+            <FinanceApTitlesTab
+              filters={appliedFilters}
+              qualityAlert={titlesQualityAlert}
+              onClearQualityAlert={() => setTitlesQualityAlert(null)}
+              localFilter={titlesLocalFilter}
+              onLocalFilterChange={(v) =>
+                setTitlesLocalFilter(parseFinanceApTitlesLocalFilter(v))
+              }
+            />
+          ) : null}
+          {executiveTab === "suppliers" ? (
+            loading && !data ? (
+              <FinanceApLoadingBlock label="fornecedores" />
+            ) : (
+              <FinanceApSuppliersTab data={data} />
+            )
+          ) : null}
+          {executiveTab === "aging" ? (
+            loading && !data ? (
+              <FinanceApLoadingBlock label="aging" />
+            ) : (
+              <FinanceApAgingTab data={data} />
+            )
+          ) : null}
+          {executiveTab === "audit" ? (
+            <FinanceApAuditTab
+              alerts={data?.dataQualitySummary ?? []}
+              dataSanitization={data?.dataSanitization}
+              purchaseOrderAudit={data?.purchaseOrderScheduleAudit}
+              appliedFiltersLabel={appliedFilterChips.map((c) => c.label).join(" · ")}
+              onViewTitles={handleViewTitlesFromAlert}
+            />
+          ) : null}
+        </div>
+      </section>
 
-function ApOverviewSummary({
-  data,
-  loading,
-}: {
-  data: FinanceApDashboardPayload | null;
-  loading: boolean;
-}) {
-  if (!data && loading) return <FinanceApLoadingBlock label="visão geral" />;
-  if (!data) return <p className="text-sm text-muted-foreground">Sem dados para visão geral.</p>;
-  const { cards } = data;
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      {[
-        { label: "Em aberto", value: formatFinanceCurrencyCompact(cards.totalOpenAmount), hint: "balancePayable > 0" },
-        { label: "Vencido", value: formatFinanceCurrencyCompact(cards.overdueAmount), hint: "Vencimento < hoje" },
-        { label: "A vencer", value: formatFinanceCurrencyCompact(cards.upcomingAmount), hint: "Vencimento futuro" },
-        { label: "Vence hoje", value: formatFinanceCurrencyCompact(cards.dueTodayAmount), hint: "Vencimento = hoje" },
-        { label: "Próx. 7 dias", value: formatFinanceCurrencyCompact(cards.dueNext7DaysAmount), hint: "Hoje + 7 dias" },
-        { label: "Próx. 30 dias", value: formatFinanceCurrencyCompact(cards.dueNext30DaysAmount), hint: "Hoje + 30 dias" },
-        { label: "Pago no mês", value: formatFinanceCurrencyCompact(cards.paidThisMonthAmount), hint: "Pagamento no mês corrente" },
-        { label: "% em atraso", value: formatFinancePercent(cards.overduePercent), hint: "Vencido ÷ aberto" },
-        { label: "Títulos em aberto", value: formatFinanceInteger(cards.openTitlesCount), hint: "" },
-        { label: "Fornecedores em atraso", value: formatFinanceInteger(cards.overdueSuppliersCount), hint: "" },
-        {
-          label: "Vencido > 30 dias",
-          value: formatFinanceCurrencyCompact(cards.overdueOver30DaysAmount),
-          hint: `${formatFinanceInteger(cards.overdueOver30DaysCount)} títulos`,
-        },
-        {
-          label: "Média dias em atraso",
-          value: cards.avgDaysOverdue != null ? `${formatFinanceInteger(Math.round(cards.avgDaysOverdue))} dias` : "—",
-          hint: "Ponderada por saldo vencido",
-        },
-      ].map((kpi) => (
-        <div
-          key={kpi.label}
-          className="rounded-xl border border-border/50 bg-background/50 p-3 space-y-1"
-          title={kpi.hint}
-        >
-          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-            {kpi.label}
-          </p>
-          <p className="text-base font-extrabold tabular-nums text-foreground">{kpi.value}</p>
-          {kpi.hint ? <p className="text-[10px] text-muted-foreground">{kpi.hint}</p> : null}
+      <section className={financeBiSectionClass}>
+        <div className="px-5 py-4 border-b border-[#E5E7EB]">
+          <h2 className="text-sm font-bold text-[#111827]">Análises complementares</h2>
         </div>
-      ))}
-    </div>
+        <div className="px-5 pt-4">
+          <FinanceDetailTabs
+            tabs={FINANCE_AP_SECONDARY_TABS}
+            activeId={secondaryTab}
+            onChange={setSecondaryTab}
+          />
+        </div>
+        <div className="p-5" role="tabpanel">
+          {secondaryTab === "schedule" ? (
+            loading && !data ? (
+              <FinanceApLoadingBlock label="agenda" />
+            ) : (
+              <FinanceApScheduleTab data={data} />
+            )
+          ) : null}
+          {secondaryTab === "payment-methods" ? (
+            loading && !data ? (
+              <FinanceApLoadingBlock label="formas de pagamento" />
+            ) : (
+              <FinanceApPaymentTab data={data} />
+            )
+          ) : null}
+          {secondaryTab === "companies" ? (
+            loading && !data ? (
+              <FinanceApLoadingBlock label="empresas" />
+            ) : (
+              <FinanceApCompaniesTab data={data} />
+            )
+          ) : null}
+        </div>
+      </section>
+    </FinanceBiDashboardShell>
   );
 }
 

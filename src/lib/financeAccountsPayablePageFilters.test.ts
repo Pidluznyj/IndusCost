@@ -38,15 +38,17 @@ describe("financeAccountsPayablePageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
       "utf8"
     );
-    assert.ok(page.includes("Obrigações em Aberto"));
-    assert.ok(page.includes("Pago no Mês"));
-    assert.ok(page.includes("Vencido > 30 Dias"));
+    assert.ok(page.includes("Total a pagar"));
+    assert.ok(page.includes("Pago no mês"));
+    assert.ok(page.includes("Vencido gerencial"));
     assert.ok(page.includes("Centro de Ações"));
     assert.ok(page.includes("Títulos Críticos"));
-    assert.ok(page.includes("Análise detalhada"));
+    assert.ok(page.includes("Detalhamento"));
     assert.ok(page.includes("Resumo executivo"));
     assert.ok(page.includes("FinanceApAgingChart"));
     assert.ok(page.includes("FinanceApTopDebtorsChart"));
+    assert.ok(page.includes("FinanceDetailTabs"));
+    assert.ok(page.includes("FINANCE_AP_EXECUTIVE_TABS"));
     assert.ok(page.includes("Atualizar"));
     assert.ok(page.includes("Exportar CSV"));
   });
@@ -81,6 +83,7 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(page.includes("FINANCE_AP_PAID_THIS_MONTH_SCOPE"));
     assert.ok(page.includes("Resumo executivo"));
     assert.ok(page.includes("withAppliedFilterSub"));
+    assert.ok(page.includes("titlesLocalFilter"));
     const applied = normalizeFinanceApUiFilters({
       ...createDefaultFinanceApUiFilters(REF),
       status: "open",

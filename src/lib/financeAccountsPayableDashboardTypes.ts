@@ -349,6 +349,7 @@ export function buildFinanceApTitlesQuery(
     search?: string;
     overdueOnly?: boolean;
     qualityAlert?: FinanceApDataQualityAlertKey;
+    localFilter?: string;
   }
 ): string {
   const base = buildFinanceApDashboardQuery(filters);
@@ -360,20 +361,38 @@ export function buildFinanceApTitlesQuery(
   if (extras?.search?.trim()) q.set("search", extras.search.trim());
   if (extras?.overdueOnly) q.set("overdueOnly", "1");
   if (extras?.qualityAlert) q.set("qualityAlert", extras.qualityAlert);
+  if (extras?.localFilter && extras.localFilter !== "all") {
+    q.set("localFilter", extras.localFilter);
+  }
   return q.toString();
 }
 
-export const FINANCE_AP_TABS = [
-  { id: "overview", label: "Visão Geral" },
-  { id: "aging", label: "Aging" },
-  { id: "schedule", label: "Agenda de Pagamentos" },
-  { id: "suppliers", label: "Fornecedores" },
+/** Abas inferiores executivas — grid, fornecedores, aging e saneamento. */
+export const FINANCE_AP_EXECUTIVE_TABS = [
   { id: "titles", label: "Títulos" },
+  { id: "suppliers", label: "Fornecedores" },
+  { id: "aging", label: "Aging" },
+  { id: "audit", label: "Auditoria / Saneamento" },
+] as const;
+
+export type FinanceApExecutiveTabId = (typeof FINANCE_AP_EXECUTIVE_TABS)[number]["id"];
+
+export const FINANCE_AP_SECONDARY_TABS = [
+  { id: "schedule", label: "Agenda" },
   { id: "payment-methods", label: "Formas de Pagamento" },
   { id: "companies", label: "Empresas" },
 ] as const;
 
-export type FinanceApTabId = (typeof FINANCE_AP_TABS)[number]["id"];
+export type FinanceApSecondaryTabId = (typeof FINANCE_AP_SECONDARY_TABS)[number]["id"];
+
+export const FINANCE_AP_TABS = [
+  ...FINANCE_AP_EXECUTIVE_TABS,
+  ...FINANCE_AP_SECONDARY_TABS,
+] as const;
+
+export type FinanceApTabId =
+  | FinanceApExecutiveTabId
+  | FinanceApSecondaryTabId;
 
 export type FinanceApDataQualityAlertKey =
   | "missingPersonCnpj"

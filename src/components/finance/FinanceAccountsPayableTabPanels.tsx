@@ -27,6 +27,18 @@ import {
   FinanceApScrollableTable,
   FinanceApStickyTableHead,
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
+import { FinanceAccountsPayableDataQualityPanel } from "@/src/components/finance/FinanceAccountsPayableDataQualityPanel";
+import {
+  FinanceApPurchaseOrderScheduleAuditNote,
+  FinanceManagementSanitizationNote,
+} from "@/src/components/finance/FinanceFilterScopeBanner";
+import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
+import type {
+  FinanceApDataQualityAlertItem,
+  FinanceApDataQualityAlertKey,
+  FinanceApPurchaseOrderScheduleAudit,
+} from "@/src/lib/financeAccountsPayableDashboardTypes";
+import type { FinanceDataSanitization } from "@/src/lib/financeInternalGroupExclusions";
 
 export function statusBadgeClass(status: string): string {
   switch (status) {
@@ -338,6 +350,38 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
         ))}
       </tbody>
     </FinanceApScrollableTable>
+  );
+}
+
+export function FinanceApAuditTab({
+  alerts,
+  dataSanitization,
+  purchaseOrderAudit,
+  appliedFiltersLabel,
+  onViewTitles,
+}: {
+  alerts: FinanceApDataQualityAlertItem[];
+  dataSanitization?: FinanceDataSanitization;
+  purchaseOrderAudit?: FinanceApPurchaseOrderScheduleAudit;
+  appliedFiltersLabel: string;
+  onViewTitles: (key: FinanceApDataQualityAlertKey) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className={`${financeBiCardClass} p-5 space-y-2`}>
+        <h4 className="text-sm font-bold text-[#111827]">Regra de data operacional</h4>
+        <p className="text-xs text-muted-foreground">
+          Data operacional = maior entre vencimento original e data agendada. Vencido gerencial usa essa
+          data e exclui pedidos de compra da visão gerencial.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Escopo: {appliedFiltersLabel || "filtros padrão do ano corrente."}
+        </p>
+      </div>
+      <FinanceManagementSanitizationNote dataSanitization={dataSanitization} />
+      <FinanceApPurchaseOrderScheduleAuditNote audit={purchaseOrderAudit} />
+      <FinanceAccountsPayableDataQualityPanel alerts={alerts} onViewTitles={onViewTitles} />
+    </div>
   );
 }
 

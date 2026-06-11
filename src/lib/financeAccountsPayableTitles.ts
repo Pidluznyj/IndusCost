@@ -5,16 +5,26 @@ import {
 import {
   classifyFinanceApTitle,
   filterFinanceApRows,
+  matchesFinanceApDashboardFilters,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
+  resolveFinanceApDueDateBounds,
   roundMoney,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import { isFinanceApExcludedFromManagement } from "./financeInternalGroupExclusions.js";
 import {
   computeFinanceApDaysOverdue,
   getAccountsPayableOperationalDueDate,
+  isAccountsPayablePurchaseOrderSchedule,
 } from "./financeAccountsPayableOperational.js";
+import {
+  filterApTitleRowsByLocalFilter,
+  parseFinanceApTitlesLocalFilter,
+  resolveFinanceApTitleExclusionReason,
+  type FinanceApTitlesLocalFilter,
+} from "./financeAccountsPayableTitlesLocalFilter.js";
 
 export type FinanceApTitlesSortBy = "dueDate" | "balancePayable" | "externalId";
 export type FinanceApTitlesSortDirection = "asc" | "desc";
@@ -28,6 +38,7 @@ export type FinanceApTitlesQuery = {
   search?: string;
   overdueOnly?: boolean;
   qualityAlert?: FinanceApDataQualityAlertKey;
+  localFilter: FinanceApTitlesLocalFilter;
 };
 
 export type FinanceApTitleListItem = {
@@ -52,6 +63,9 @@ export type FinanceApTitleListItem = {
   nomusStatus: boolean | null;
   daysOverdue: number;
   suspendPayment: boolean | null;
+  type: number | null;
+  exclusionReason: string | null;
+  isPurchaseOrderSchedule: boolean;
   syncedAt: string;
 };
 
@@ -97,6 +111,7 @@ export function parseFinanceApTitlesQuery(query: Record<string, unknown>): Finan
     search: searchRaw || undefined,
     overdueOnly,
     qualityAlert,
+    localFilter: parseFinanceApTitlesLocalFilter(query.localFilter),
   };
 }
 
@@ -180,8 +195,33 @@ export function mapRowToTitleListItem(
     nomusStatus: row.nomusStatus,
     daysOverdue: computeFinanceApDaysOverdue(row, referenceDate),
     suspendPayment: row.suspendPayment,
+    type: row.type ?? null,
+    exclusionReason: resolveFinanceApTitleExclusionReason(row),
+    isPurchaseOrderSchedule: isAccountsPayablePurchaseOrderSchedule(row),
     syncedAt: row.syncedAt.toISOString(),
   };
+}
+
+function filterRowsForTitlesGrid(
+  rows: FinanceApDashboardRow[],
+  query: FinanceApTitlesQuery,
+  referenceDate: Date
+): FinanceApDashboardRow[] {
+  const { empty } = resolveFinanceApDueDateBounds(query.filters);
+  if (empty) return [];
+
+  const includeExcluded =
+    query.localFilter === "excluded" || query.localFilter === "purchaseOrder";
+
+  let filtered = rows.filter((row) =>
+    matchesFinanceApDashboardFilters(row, query.filters, referenceDate)
+  );
+
+  if (!includeExcluded) {
+    filtered = filtered.filter((row) => !isFinanceApExcludedFromManagement(row));
+  }
+
+  return filterApTitleRowsByLocalFilter(filtered, query.localFilter, referenceDate);
 }
 
 export function buildFinanceApTitlesPayload(
@@ -189,7 +229,7 @@ export function buildFinanceApTitlesPayload(
   query: FinanceApTitlesQuery,
   referenceDate: Date = new Date()
 ): FinanceApTitlesPayload {
-  let filtered = filterFinanceApRows(rows, query.filters, referenceDate);
+  let filtered = filterRowsForTitlesGrid(rows, query, referenceDate);
 
   if (query.overdueOnly) {
     filtered = filtered.filter(
