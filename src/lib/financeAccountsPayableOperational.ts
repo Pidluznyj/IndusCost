@@ -22,8 +22,21 @@ export function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 }
 
+/**
+ * Data operacional de pagamento: agendamento pode postergar o atraso,
+ * mas não antecipar vencimento antes do vencimento original.
+ */
 export function getAccountsPayableOperationalDueDate(row: FinanceApOperationalRow): Date | null {
-  return row.scheduleDate ?? row.dueDate;
+  const dueDate = row.dueDate ?? null;
+  const scheduleDate = row.scheduleDate ?? null;
+
+  if (dueDate && scheduleDate) {
+    const due = startOfLocalDay(dueDate).getTime();
+    const sched = startOfLocalDay(scheduleDate).getTime();
+    return sched > due ? scheduleDate : dueDate;
+  }
+
+  return scheduleDate ?? dueDate;
 }
 
 export function isAccountsPayablePurchaseOrderSchedule(row: FinanceApOperationalRow): boolean {

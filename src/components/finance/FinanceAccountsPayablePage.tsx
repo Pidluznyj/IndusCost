@@ -779,7 +779,7 @@ export function FinanceAccountsPayablePage() {
             label="Vencido"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueAmount)}
             sub={withAppliedFilterSub("Data operacional anterior a hoje", Boolean(filtersActive))}
-            hint="Σ saldo em aberto com data operacional antes de hoje"
+            hint="Σ saldo com max(vencimento, agendamento) antes de hoje"
             colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
             loading={loading}
           />
@@ -788,7 +788,7 @@ export function FinanceAccountsPayablePage() {
             label="Vence Hoje"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueTodayAmount)}
             sub={withAppliedFilterSub("Data operacional no dia de referência", Boolean(filtersActive))}
-            hint="Σ saldo com agendamento ou vencimento = hoje"
+            hint="Σ saldo com max(vencimento, agendamento) = hoje"
             colorClass={(cards?.dueTodayAmount ?? 0) > 0 ? "text-[#D97706]" : "text-[#111827]"}
             loading={loading}
           />

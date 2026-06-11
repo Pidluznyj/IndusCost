@@ -17,7 +17,8 @@ import {
   isAccountsPayablePurchaseOrderSchedule,
 } from "./financeAccountsPayableOperational.js";
 
-const REF = new Date(2026, 5, 9, 12, 0, 0, 0);
+const REF_JUN_9 = new Date(2026, 5, 9, 12, 0, 0, 0);
+const REF_JUN_11 = new Date(2026, 5, 11, 12, 0, 0, 0);
 
 function row(
   partial: Partial<FinanceApDashboardRow> & Pick<FinanceApDashboardRow, "externalId">
@@ -47,16 +48,63 @@ function row(
 }
 
 describe("financeAccountsPayableOperational", () => {
-  it("dueDate vencido com scheduleDate futuro não entra como atrasado", () => {
+  it("dueDate vencido com scheduleDate futuro não entra como atrasado até scheduleDate", () => {
     const title = row({
       externalId: 1,
       dueDate: new Date(2026, 5, 2),
       scheduleDate: new Date(2026, 5, 21),
       balancePayable: 13649.24,
     });
-    assert.equal(classifyFinanceApTitle(title, REF), "upcoming");
-    assert.equal(isAccountsPayableOverdue(title, REF), false);
-    assert.equal(computeFinanceApDaysOverdue(title, REF), 0);
+    assert.equal(classifyFinanceApTitle(title, REF_JUN_9), "upcoming");
+    assert.equal(isAccountsPayableOverdue(title, REF_JUN_9), false);
+    assert.equal(computeFinanceApDaysOverdue(title, REF_JUN_9), 0);
+    assert.equal(
+      getAccountsPayableOperationalDueDate(title)?.toISOString(),
+      title.scheduleDate?.toISOString()
+    );
+  });
+
+  it("dueDate futuro com scheduleDate passado não entra como atrasado até dueDate", () => {
+    const title = row({
+      externalId: 3,
+      dueDate: new Date(2027, 5, 11),
+      scheduleDate: new Date(2026, 4, 1),
+      balancePayable: 299.83,
+    });
+    assert.equal(classifyFinanceApTitle(title, REF_JUN_9), "upcoming");
+    assert.equal(isAccountsPayableOverdue(title, REF_JUN_9), false);
+    assert.equal(
+      getAccountsPayableOperationalDueDate(title)?.toISOString(),
+      title.dueDate?.toISOString()
+    );
+  });
+
+  it("dueDate hoje com scheduleDate ontem vence hoje, não atrasado", () => {
+    const title = row({
+      externalId: 14945,
+      personName: "CLARINDA MARQUES DE ANDRADE ADVOGADA",
+      description: "HONORARIOS (Parcela 4 de 10)",
+      dueDate: new Date(2026, 5, 11),
+      scheduleDate: new Date(2026, 5, 10),
+      balancePayable: 1350,
+    });
+    assert.equal(classifyFinanceApTitle(title, REF_JUN_11), "dueToday");
+    assert.equal(isAccountsPayableOverdue(title, REF_JUN_11), false);
+    assert.equal(computeFinanceApDaysOverdue(title, REF_JUN_11), 0);
+  });
+
+  it("dueDate ontem com scheduleDate ontem entra como atrasado", () => {
+    const title = row({
+      externalId: 16892,
+      personName: "CIEE/PR",
+      description: "Bolsa estágio",
+      dueDate: new Date(2026, 5, 10),
+      scheduleDate: new Date(2026, 5, 10),
+      balancePayable: 942.81,
+    });
+    assert.equal(classifyFinanceApTitle(title, REF_JUN_11), "overdue");
+    assert.equal(isAccountsPayableOverdue(title, REF_JUN_11), true);
+    assert.ok(computeFinanceApDaysOverdue(title, REF_JUN_11) > 0);
   });
 
   it("dueDate vencido sem scheduleDate entra como atrasado", () => {
@@ -66,20 +114,20 @@ describe("financeAccountsPayableOperational", () => {
       scheduleDate: null,
       balancePayable: 942.81,
     });
-    assert.equal(classifyFinanceApTitle(title, REF), "overdue");
-    assert.equal(isAccountsPayableOverdue(title, REF), true);
-    assert.ok(computeFinanceApDaysOverdue(title, REF) > 0);
+    assert.equal(classifyFinanceApTitle(title, REF_JUN_9), "overdue");
+    assert.equal(isAccountsPayableOverdue(title, REF_JUN_9), true);
+    assert.ok(computeFinanceApDaysOverdue(title, REF_JUN_9) > 0);
   });
 
-  it("scheduleDate vencido entra como atrasado", () => {
+  it("scheduleDate futuro sem dueDate não entra como atrasado", () => {
     const title = row({
-      externalId: 3,
-      dueDate: new Date(2027, 5, 11),
-      scheduleDate: new Date(2026, 4, 1),
-      balancePayable: 299.83,
+      externalId: 99,
+      dueDate: null,
+      scheduleDate: new Date(2026, 5, 20),
+      balancePayable: 500,
     });
-    assert.equal(classifyFinanceApTitle(title, REF), "overdue");
-    assert.equal(getAccountsPayableOperationalDueDate(title)?.toISOString(), title.scheduleDate?.toISOString());
+    assert.equal(classifyFinanceApTitle(title, REF_JUN_9), "upcoming");
+    assert.equal(isAccountsPayableOverdue(title, REF_JUN_9), false);
   });
 
   it("type = 2 é excluído da visão gerencial", () => {
@@ -91,7 +139,7 @@ describe("financeAccountsPayableOperational", () => {
       balancePayable: 500,
     });
     assert.equal(isAccountsPayablePurchaseOrderSchedule(title), true);
-    const filtered = filterFinanceApRows([title], { status: "all", year: 2026 }, REF);
+    const filtered = filterFinanceApRows([title], { status: "all", year: 2026 }, REF_JUN_9);
     assert.equal(filtered.length, 0);
   });
 
@@ -103,10 +151,64 @@ describe("financeAccountsPayableOperational", () => {
       balancePayable: 800,
     });
     assert.equal(isAccountsPayablePurchaseOrderSchedule(title), true);
-    const dash = buildFinanceAccountsPayableDashboard([title], { status: "all", year: 2026 }, REF);
+    const dash = buildFinanceAccountsPayableDashboard(
+      [title],
+      { status: "all", year: 2026 },
+      REF_JUN_9
+    );
     assert.equal(dash.cards.openTitlesCount, 0);
     assert.equal(dash.purchaseOrderScheduleAudit.excludedCount, 1);
     assert.equal(dash.purchaseOrderScheduleAudit.excludedAmount, 800);
+  });
+
+  it("casos reais 12732/13529/14945 saem do vencido; apenas CIEE permanece em 11/06", () => {
+    const rows = [
+      row({
+        externalId: 12732,
+        personName: "PATRIMONIAL PK PARTICIPACOES E ADMINISTRACAO DE BENS LTDA",
+        description: "Aluguel",
+        dueDate: new Date(2026, 5, 30),
+        scheduleDate: new Date(2025, 8, 30),
+        balancePayable: 90000,
+      }),
+      row({
+        externalId: 13529,
+        personName: "DINALTE FERREIRA DOS SANTOS",
+        description: "Salário Liquido + vr + bonus absenteísmo (Parcela 6 de 12)",
+        dueDate: new Date(2026, 6, 6),
+        scheduleDate: new Date(2026, 5, 7),
+        balancePayable: 4375.47,
+      }),
+      row({
+        externalId: 14945,
+        personName: "CLARINDA MARQUES DE ANDRADE ADVOGADA",
+        description: "HONORARIOS (Parcela 4 de 10)",
+        dueDate: new Date(2026, 5, 11),
+        scheduleDate: new Date(2026, 5, 10),
+        balancePayable: 1350,
+      }),
+      row({
+        externalId: 16892,
+        personName: "CIEE/PR",
+        description: "Bolsa estágio - Nivea Maria",
+        dueDate: new Date(2026, 5, 10),
+        scheduleDate: new Date(2026, 5, 10),
+        balancePayable: 942.81,
+      }),
+    ];
+
+    const dash = buildFinanceAccountsPayableDashboard(
+      rows,
+      { status: "all", year: 2026 },
+      REF_JUN_11
+    );
+    const overdueRows = rows.filter(
+      (r) => classifyFinanceApTitle(r, REF_JUN_11) === "overdue"
+    );
+
+    assert.equal(overdueRows.length, 1);
+    assert.equal(overdueRows[0]?.externalId, 16892);
+    assert.equal(dash.cards.overdueAmount, 942.81);
   });
 
   it("exclusão de pedido de compra afeta cards, aging, ranking, críticos e export", () => {
@@ -120,14 +222,18 @@ describe("financeAccountsPayableOperational", () => {
         dueDate: new Date(2026, 4, 1),
       }),
     ];
-    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all", year: 2026 }, REF);
+    const dash = buildFinanceAccountsPayableDashboard(
+      rows,
+      { status: "all", year: 2026 },
+      REF_JUN_9
+    );
     assert.equal(dash.cards.overdueAmount, 100);
     assert.equal(dash.cards.totalRecords, 1);
     assert.equal(dash.criticalTitles.length, 1);
     assert.equal(dash.supplierRanking.length, 1);
     assert.equal(dash.agingBuckets.find((b) => b.key === "overdue31to60")?.amount, 100);
 
-    const csv = buildFinanceApExportCsv(rows, { status: "all", year: 2026 }, REF);
+    const csv = buildFinanceApExportCsv(rows, { status: "all", year: 2026 }, REF_JUN_9);
     assert.doesNotMatch(csv, /Pedido de compra PC/);
     assert.match(csv, /Fornecedor X/);
   });
@@ -139,9 +245,10 @@ describe("financeAccountsPayableOperational", () => {
         dueDate: new Date(2026, 4, 1),
         scheduleDate: new Date(2026, 5, 21),
       }),
-      REF
+      REF_JUN_9
     );
-    assert.match(cells.join(","), /09\/06\/2026/);
+    assert.match(cells.join(","), /01\/05\/2026/);
+    assert.match(cells.join(","), /21\/06\/2026/);
     assert.match(cells.join(","), /21\/06\/2026/);
     assert.match(cells.join(","), /Não/);
     const poCells = mapFinanceApRowToExportCells(
@@ -150,7 +257,7 @@ describe("financeAccountsPayableOperational", () => {
         type: 2,
         description: "Pedido de compra PC 1",
       }),
-      REF
+      REF_JUN_9
     );
     assert.match(poCells.join(","), /Sim/);
     assert.match(poCells.join(","), /Agenda de pedido de compra/);
@@ -163,7 +270,7 @@ describe("financeAccountsPayableOperational", () => {
         row({ externalId: 2, type: 2, balancePayable: 99999 }),
       ],
       { status: "all", year: 2026 },
-      REF
+      REF_JUN_9
     );
     for (const value of [
       dash.cards.overdueAmount,
