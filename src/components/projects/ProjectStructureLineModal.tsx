@@ -17,6 +17,7 @@ type Props = {
   error?: string | null;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => Promise<void>;
+  onImportExistingProduct?: (productId: string) => Promise<void>;
   onOpenProductSimulation?: (productId: string) => void;
 };
 
@@ -28,6 +29,7 @@ export function ProjectStructureLineModal({
   error,
   onClose,
   onSubmit,
+  onImportExistingProduct,
   onOpenProductSimulation,
 }: Props) {
   const [search, setSearch] = useState("");
@@ -95,7 +97,7 @@ export function ProjectStructureLineModal({
 
   const titleBySource: Record<ProjectStructureSourceType, string> = {
     EXISTING_MATERIAL: "Adicionar material existente",
-    EXISTING_PRODUCT: "Adicionar produto existente",
+    EXISTING_PRODUCT: "Importar estrutura de custos do produto",
     SIMULATED_ITEM: "Adicionar item simulado",
     MANUAL: "Adicionar linha manual",
   };
@@ -116,11 +118,24 @@ export function ProjectStructureLineModal({
   })();
 
   const handleSubmit = async () => {
+    if (sourceType === "EXISTING_PRODUCT" && selectedProductId && onImportExistingProduct) {
+      await onImportExistingProduct(selectedProductId);
+      return;
+    }
+
+    const simulatedItem =
+      sourceType === "SIMULATED_ITEM"
+        ? simulatedItems.find((i) => i.id === selectedSimulatedItemId)
+        : null;
     const lineType: ProjectStructureLineType =
       sourceType === "EXISTING_PRODUCT"
         ? "COMPONENT"
         : sourceType === "SIMULATED_ITEM"
-          ? "RAW_MATERIAL"
+          ? simulatedItem?.itemType === "COMPONENT"
+            ? "COMPONENT"
+            : simulatedItem?.itemType === "PACKAGING"
+              ? "PACKAGING"
+              : "RAW_MATERIAL"
           : "RAW_MATERIAL";
 
     const body: Record<string, unknown> = {
@@ -159,7 +174,7 @@ export function ProjectStructureLineModal({
             className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
           >
             {saving ? <Loader2 className="inline h-4 w-4 animate-spin" /> : null}
-            Adicionar linha
+            {sourceType === "EXISTING_PRODUCT" ? "Importar estrutura" : "Adicionar linha"}
           </button>
         </>
       }
@@ -168,6 +183,14 @@ export function ProjectStructureLineModal({
         <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </div>
+      ) : null}
+
+      {sourceType === "EXISTING_PRODUCT" ? (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Importa a BOM e os processos (HH) do produto oficial com os mesmos custos do cadastro.
+          Os valores ficam como snapshot no projeto — editáveis aqui sem alterar Product, Material ou
+          ProductBOM.
+        </p>
       ) : null}
 
       {sourceType === "EXISTING_MATERIAL" || sourceType === "EXISTING_PRODUCT" ? (

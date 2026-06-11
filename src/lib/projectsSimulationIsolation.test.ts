@@ -70,12 +70,16 @@ describe("projectsSimulationIsolation", () => {
   });
 
   it("importação de BOM salva somente em ProjectStructureLine", () => {
-    const snap = readFileSync(join(process.cwd(), "src", "lib", "projectsProductSnapshot.ts"), "utf8");
+    const snap = readFileSync(
+      join(process.cwd(), "src", "lib", "projectsProductEngineeringSnapshot.ts"),
+      "utf8"
+    );
     const routes = readFileSync(join(process.cwd(), "src", "lib", "projectsRoutes.ts"), "utf8");
     assert.match(snap, /prisma\.projectStructureLine\.create/);
     assert.equal(snap.includes("prisma.productBOM.create"), false);
     assert.equal(snap.includes("prisma.productBOM.update"), false);
     assert.match(routes, /import-product-snapshot/);
+    assert.match(routes, /engineering-snapshot/);
   });
 
   it("edição de custo importado salva snapshot via PATCH structure-lines", () => {
@@ -90,10 +94,13 @@ describe("projectsSimulationIsolation", () => {
   });
 
   it("processo/HH importado cria linhas MANUAL/PROCESS no projeto", () => {
-    const snap = readFileSync(join(process.cwd(), "src", "lib", "projectsProductSnapshot.ts"), "utf8");
-    assert.match(snap, /lineType: "PROCESS"/);
-    assert.match(snap, /unitSnapshot: "HH"/);
-    assert.match(snap, /routing-snapshot:/);
+    const snap = readFileSync(
+      join(process.cwd(), "src", "lib", "projectsProductEngineeringSnapshot.ts"),
+      "utf8"
+    );
+    assert.match(snap, /nodeType: "PROCESS"/);
+    assert.match(snap, /unit: "HH"/);
+    assert.match(snap, /sourceOfficialRoutingId/);
   });
 
   it("UI exibe texto de simulação sem alterar cadastro oficial", () => {

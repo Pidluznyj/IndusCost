@@ -27,6 +27,14 @@ import {
   PROJECTS_VIEW_PERMISSIONS,
 } from "@/src/lib/projectsPermissions.js";
 import {
+  setProjectsProductCostResolver,
+  type ProjectsProductCostResolver,
+} from "@/src/lib/projectsProductCostResolver.js";
+import {
+  importProductEngineeringSnapshotToProject,
+  loadOfficialProductEngineeringSnapshot,
+} from "@/src/lib/projectsProductEngineeringSnapshot.js";
+import {
   importProductSnapshotToProject,
   loadOfficialProductSnapshot,
 } from "@/src/lib/projectsProductSnapshot.js";
@@ -86,7 +94,18 @@ function optBool(value: unknown, fallback = false): boolean {
   return fallback;
 }
 
-export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
+export type ProjectsRoutesDeps = {
+  resolveOfficialProductCostAnalysis?: ProjectsProductCostResolver;
+};
+
+export function registerProjectsRoutes(
+  app: express.Express,
+  auth: AuthGuards,
+  deps: ProjectsRoutesDeps = {}
+) {
+  if (deps.resolveOfficialProductCostAnalysis) {
+    setProjectsProductCostResolver(deps.resolveOfficialProductCostAnalysis);
+  }
   const view = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_VIEW_PERMISSIONS])] as const;
   const lookup = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_LOOKUP_PERMISSIONS])] as const;
   const manage = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_MANAGE_PERMISSIONS])] as const;
@@ -257,6 +276,20 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
     }
   });
 
+  app.get("/api/projects/lookup/products/:productId/engineering-snapshot", ...lookup, async (req, res) => {
+    try {
+      if (!isUuid(req.params.productId)) {
+        return res.status(400).json({ error: "ID de produto inválido." });
+      }
+      const snapshot = await loadOfficialProductEngineeringSnapshot(req.params.productId);
+      if (!snapshot) return res.status(404).json({ error: "Produto não encontrado." });
+      res.json(snapshot);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/products/:productId/engineering-snapshot", e);
+      res.status(500).json({ error: "Erro ao carregar engenharia do produto." });
+    }
+  });
+
   app.post("/api/projects/:id/import-product-snapshot", ...manage, async (req, res) => {
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
@@ -266,8 +299,8 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
 
       const result = await importProductSnapshotToProject(req.params.id, productId, {
         includeBom: body.includeBom !== false,
-        includeRouting: body.includeRouting === true,
-        replaceExisting: body.replaceExisting === true,
+        includeRouting: body.includeRouting !== false,
+        replaceExisting: body.replaceExisting !== false,
       });
       const detail = await loadProjectDetail(req.params.id);
       res.status(201).json({
@@ -736,6 +769,15 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
             ? String(body.unit).trim()
             : undefined;
 
+      const officialQty = dec(existing.officialQuantitySnapshot);
+      const officialLoss = dec(existing.officialLossPercentSnapshot);
+      const officialUnit = dec(existing.officialUnitCostSnapshot);
+      const changed =
+        (officialQty != null && Math.abs(officialQty - quantity) > 0.000001) ||
+        (officialLoss != null && Math.abs(officialLoss - lossPercent) > 0.000001) ||
+        (officialUnit != null && Math.abs(officialUnit - unitCost) > 0.000001) ||
+        (officialUnit == null && unitCost > 0);
+
       const row = await prisma.projectStructureLine.update({
         where: { id: req.params.lineId },
         data: {
@@ -746,6 +788,8 @@ export function registerProjectsRoutes(app: express.Express, auth: AuthGuards) {
           ...(body.lossPercent != null ? { lossPercent } : {}),
           ...(body.unitCost != null ? { unitCostSnapshot: unitCost } : {}),
           totalCost,
+          isChangedFromOfficial: changed,
+          isMissingCost: unitCost <= 0,
           ...(body.notes !== undefined ? { notes: optStr(body.notes) } : {}),
           ...(body.sortOrder != null ? { sortOrder: Number(body.sortOrder) || 0 } : {}),
         },

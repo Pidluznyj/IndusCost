@@ -71,6 +71,8 @@ export type StructureLineInput = {
   quantity: number;
   lossPercent?: number | null;
   unitCostSnapshot: number;
+  /** Quando false, linha existe só para exibição hierárquica (evita dupla contagem). */
+  countsInSimulatedProductCost?: boolean;
 };
 
 export type MoldCostInput = {
@@ -96,6 +98,7 @@ export function buildCostBreakdown(input: CostBreakdownInput) {
   let amortizedMoldCostPerUnit = 0;
 
   for (const line of input.structureLines) {
+    if (line.countsInSimulatedProductCost === false) continue;
     const total = calculateStructureLineTotalCost(
       line.quantity,
       line.unitCostSnapshot,

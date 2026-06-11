@@ -23,8 +23,17 @@ describe("projectsProductSnapshot", () => {
     assert.equal(Number.isNaN(total), false);
   });
 
-  it("importação de BOM não usa Date.now em sortOrder (INT4)", () => {
+  it("usa motor cost-analysis via enrichBomRowsWithOfficialCosts", () => {
     const src = readFileSync(join(process.cwd(), "src", "lib", "projectsProductSnapshot.ts"), "utf8");
+    assert.match(src, /enrichBomRowsWithOfficialCosts/);
+    assert.match(src, /getProjectsProductCostResolver/);
+  });
+
+  it("importação de engenharia não usa Date.now em sortOrder (INT4)", () => {
+    const src = readFileSync(
+      join(process.cwd(), "src", "lib", "projectsProductEngineeringSnapshot.ts"),
+      "utf8"
+    );
     assert.equal(src.includes("Date.now()"), false);
     assert.match(src, /sortCursor/);
     assert.match(src, /orderBy: \{ sortOrder: "desc" \}/);

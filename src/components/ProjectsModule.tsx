@@ -1312,6 +1312,27 @@ function ProjectDetailView({ projectId, tab, canManage }: { projectId: string; t
           setSimulationError(null);
           setSimulationProductId(productId);
         }}
+        onImportExistingProduct={async (productId) => {
+          setSaving(true);
+          setModalError(null);
+          try {
+            await fetchJsonOk(`/api/projects/${projectId}/import-product-snapshot`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                productId,
+                includeBom: true,
+                includeRouting: true,
+              }),
+            });
+            setStructureModalSource(null);
+            await load();
+          } catch (e) {
+            setModalError(e instanceof Error ? e.message : "Erro ao importar estrutura.");
+          } finally {
+            setSaving(false);
+          }
+        }}
         onSubmit={async (body) => {
           setSaving(true);
           setModalError(null);
@@ -1421,7 +1442,7 @@ function StructureTab({
               + Material existente
             </button>
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("EXISTING_PRODUCT")}>
-              + Produto existente
+              + Importar produto existente
             </button>
             {detail.structureLines.some((l) => l.existingProductId) ? (
               <button

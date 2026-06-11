@@ -125,20 +125,35 @@ export function serializeSimulatedItem(i: ProjectSimulatedItem): ProjectSimulate
 }
 
 export function serializeStructureLine(l: ProjectStructureLine): ProjectStructureLineRow {
+  const officialUnit = dec(l.officialUnitCostSnapshot);
+  const unitCost = dec(l.unitCostSnapshot) ?? 0;
   return {
     id: l.id,
     simulatedProductId: l.simulatedProductId,
+    parentLineId: l.parentLineId,
+    level: l.level,
+    treePath: l.treePath,
+    snapshotRootProductId: l.snapshotRootProductId,
     lineType: l.lineType,
     sourceType: l.sourceType,
     existingProductId: l.existingProductId,
     existingMaterialId: l.existingMaterialId,
     simulatedItemId: l.simulatedItemId,
+    sourceOfficialBomId: l.sourceOfficialBomId,
+    sourceOfficialRoutingId: l.sourceOfficialRoutingId,
     descriptionSnapshot: l.descriptionSnapshot,
     unitSnapshot: l.unitSnapshot,
     quantity: dec(l.quantity) ?? 0,
     lossPercent: dec(l.lossPercent),
-    unitCostSnapshot: dec(l.unitCostSnapshot) ?? 0,
+    officialQuantitySnapshot: dec(l.officialQuantitySnapshot),
+    officialLossPercentSnapshot: dec(l.officialLossPercentSnapshot),
+    officialUnitCostSnapshot: officialUnit,
+    unitCostSnapshot: unitCost,
     totalCost: dec(l.totalCost) ?? 0,
+    costSource: l.costSource,
+    isChangedFromOfficial: l.isChangedFromOfficial,
+    isMissingCost: l.isMissingCost,
+    countsInSimulatedProductCost: l.countsInSimulatedProductCost,
     supplierNameSnapshot: l.supplierNameSnapshot,
     notes: l.notes,
     sortOrder: l.sortOrder,
@@ -246,6 +261,7 @@ export function computeCostBreakdownForVersion(
       quantity: toFiniteNumber(dec(l.quantity)),
       lossPercent: dec(l.lossPercent),
       unitCostSnapshot: toFiniteNumber(dec(l.unitCostSnapshot)),
+      countsInSimulatedProductCost: l.countsInSimulatedProductCost,
     })),
     molds: molds.map((m) => ({
       chargeMode: m.chargeMode,

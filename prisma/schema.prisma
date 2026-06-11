@@ -2620,30 +2620,45 @@ model ProjectSimulatedItem {
 }
 
 model ProjectStructureLine {
-  id                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId           String                     @db.Uuid
-  versionId           String                     @db.Uuid
-  simulatedProductId  String?                    @db.Uuid
-  lineType            ProjectStructureLineType
-  sourceType          ProjectStructureSourceType
-  existingProductId   String?                    @db.Uuid
-  existingMaterialId  String?                    @db.Uuid
-  simulatedItemId     String?                    @db.Uuid
-  descriptionSnapshot String
-  unitSnapshot        String
-  quantity            Decimal                    @db.Decimal(20, 6)
-  lossPercent         Decimal?                   @default(0) @db.Decimal(10, 6)
-  unitCostSnapshot    Decimal                    @db.Decimal(20, 6)
-  totalCost           Decimal                    @db.Decimal(20, 6)
-  supplierNameSnapshot String?
-  notes               String?
-  sortOrder           Int                        @default(0)
-  createdAt           DateTime                   @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+  id                           String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId                    String                     @db.Uuid
+  versionId                    String                     @db.Uuid
+  simulatedProductId           String?                    @db.Uuid
+  parentLineId                 String?                    @db.Uuid
+  level                        Int?
+  treePath                     String?
+  snapshotRootProductId        String?                    @db.Uuid
+  lineType                     ProjectStructureLineType
+  sourceType                   ProjectStructureSourceType
+  existingProductId            String?                    @db.Uuid
+  existingMaterialId           String?                    @db.Uuid
+  simulatedItemId              String?                    @db.Uuid
+  sourceOfficialBomId          String?
+  sourceOfficialRoutingId      String?
+  descriptionSnapshot          String
+  unitSnapshot                 String
+  quantity                     Decimal                    @db.Decimal(20, 6)
+  lossPercent                  Decimal?                   @default(0) @db.Decimal(10, 6)
+  officialQuantitySnapshot     Decimal?                   @db.Decimal(20, 6)
+  officialLossPercentSnapshot  Decimal?                   @db.Decimal(10, 6)
+  officialUnitCostSnapshot     Decimal?                   @db.Decimal(20, 6)
+  unitCostSnapshot             Decimal                    @db.Decimal(20, 6)
+  totalCost                    Decimal                    @db.Decimal(20, 6)
+  costSource                   String?
+  isChangedFromOfficial        Boolean                    @default(false)
+  isMissingCost                Boolean                    @default(false)
+  countsInSimulatedProductCost Boolean                    @default(true)
+  supplierNameSnapshot         String?
+  notes                        String?
+  sortOrder                    Int                        @default(0)
+  createdAt                    DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt                    DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
 
   project          Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   version          ProjectVersion           @relation(fields: [versionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   simulatedProduct ProjectSimulatedProduct? @relation(fields: [simulatedProductId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  parentLine       ProjectStructureLine?    @relation("StructureLineHierarchy", fields: [parentLineId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  childLines       ProjectStructureLine[]   @relation("StructureLineHierarchy")
   existingProduct  Product?                 @relation(fields: [existingProductId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   existingMaterial Material?                @relation(fields: [existingMaterialId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   simulatedItem    ProjectSimulatedItem?    @relation(fields: [simulatedItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -2651,6 +2666,8 @@ model ProjectStructureLine {
   @@index([projectId])
   @@index([versionId])
   @@index([simulatedProductId])
+  @@index([parentLineId])
+  @@index([snapshotRootProductId])
 }
 
 model ProjectMold {

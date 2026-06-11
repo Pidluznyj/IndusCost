@@ -1,11 +1,12 @@
 import { prisma } from "@/src/lib/prisma.js";
+import { isCostAnalysisFailure } from "@/src/lib/productCostSnapshot.js";
 import {
-  buildStructureLineTotal,
-  dec,
-  recalculateAndPersistVersionCosts,
-  requireProjectAndVersion,
-  resolveStructureLineSnapshots,
-} from "@/src/lib/projectsService.js";
+  computeOfficialBomLineTotal,
+  projectUnitCostFromOfficialLineTotal,
+  resolveOfficialMaterialEffectiveUnitCost,
+} from "@/src/lib/projectsOfficialBomCost.js";
+import { getProjectsProductCostResolver } from "@/src/lib/projectsProductCostResolver.js";
+import { dec, resolveStructureLineSnapshots } from "@/src/lib/projectsService.js";
 import { toFiniteNumber } from "@/src/lib/projectsCalculations.js";
 
 export type ProjectProductSnapshotBomRow = {
@@ -56,6 +57,68 @@ function roleHourlyRate(baseSalary: unknown, monthlyHours: unknown): number {
   return salary / hours;
 }
 
+function resolveFallbackBomUnitCost(
+  row: {
+    materialId: string | null;
+    childProductId: string | null;
+    quantity: import("@prisma/client").Prisma.Decimal | number | null;
+    lossPercentage: import("@prisma/client").Prisma.Decimal | number | null;
+    Material: {
+      currentCost: unknown;
+      freight?: unknown;
+      standardLoss?: unknown;
+    } | null;
+  },
+  snapshots: { unitCost: number }
+): number {
+  const quantity = dec(row.quantity) ?? 0;
+  const lossPercent = dec(row.lossPercentage) ?? 0;
+  if (row.Material) {
+    const unitEffective = resolveOfficialMaterialEffectiveUnitCost(row.Material);
+    const lineTotal = computeOfficialBomLineTotal(quantity, lossPercent, unitEffective);
+    return projectUnitCostFromOfficialLineTotal(lineTotal, quantity, lossPercent);
+  }
+  return snapshots.unitCost;
+}
+
+/** Aplica custos do motor oficial cost-analysis (paridade com cadastro de produto). */
+export async function enrichBomRowsWithOfficialCosts(
+  productId: string,
+  bomRows: ProjectProductSnapshotBomRow[]
+): Promise<void> {
+  const resolver = getProjectsProductCostResolver();
+  if (!resolver) return;
+
+  let analysis: Awaited<ReturnType<typeof resolver>>;
+  try {
+    analysis = await resolver(productId);
+  } catch {
+    return;
+  }
+  if (!analysis || isCostAnalysisFailure(analysis)) return;
+  if (!("details" in analysis)) return;
+
+  const materials = analysis.details?.materials;
+  if (!Array.isArray(materials)) return;
+
+  const lineTotalByBomId = new Map<string, number>();
+  for (const line of materials) {
+    if (!line.bomLineId || line.excludedFromCost) continue;
+    if (typeof line.unitCost !== "number" || !Number.isFinite(line.unitCost)) continue;
+    lineTotalByBomId.set(line.bomLineId, line.unitCost);
+  }
+
+  for (const row of bomRows) {
+    const lineTotal = lineTotalByBomId.get(row.officialBomId);
+    if (lineTotal == null) continue;
+    row.unitCost = projectUnitCostFromOfficialLineTotal(
+      lineTotal,
+      row.quantity,
+      row.lossPercent
+    );
+  }
+}
+
 export async function loadOfficialProductSnapshot(
   productId: string
 ): Promise<ProjectOfficialProductSnapshot | null> {
@@ -91,10 +154,12 @@ export async function loadOfficialProductSnapshot(
       unit: snapshots.unit,
       quantity: dec(row.quantity) ?? 0,
       lossPercent: dec(row.lossPercentage) ?? 0,
-      unitCost: snapshots.unitCost,
+      unitCost: resolveFallbackBomUnitCost(row, snapshots),
       notes: row.notes,
     };
   });
+
+  await enrichBomRowsWithOfficialCosts(product.id, bomRows);
 
   const routingRows: ProjectProductSnapshotRoutingRow[] = product.ProductRouting.map((row) => {
     const setup = dec(row.setupTimeMin) ?? 0;
@@ -137,91 +202,21 @@ export async function importProductSnapshotToProject(
   productId: string,
   options: { includeBom?: boolean; includeRouting?: boolean; replaceExisting?: boolean } = {}
 ) {
-  const ctx = await requireProjectAndVersion(projectId);
-  if ("error" in ctx) throw new Error(ctx.error);
-
-  const snapshot = await loadOfficialProductSnapshot(productId);
-  if (!snapshot) throw new Error("Produto não encontrado.");
-
-  if (options.replaceExisting) {
-    await prisma.projectStructureLine.deleteMany({
-      where: {
-        projectId,
-        versionId: ctx.version.id,
-        OR: [{ existingProductId: productId }, { notes: { contains: `snapshot:${productId}` } }],
-      },
-    });
-  }
-
-  const created: string[] = [];
-  const lastSort = await prisma.projectStructureLine.findFirst({
-    where: { projectId, versionId: ctx.version.id },
-    orderBy: { sortOrder: "desc" },
-    select: { sortOrder: true },
+  const { importProductEngineeringSnapshotToProject } = await import(
+    "./projectsProductEngineeringSnapshot.js"
+  );
+  const result = await importProductEngineeringSnapshotToProject(projectId, productId, {
+    ...options,
+    replaceExisting: options.replaceExisting !== false,
+    includeRouting: options.includeRouting !== false,
   });
-  let sortCursor = (lastSort?.sortOrder ?? 0) + 1;
-
-  if (options.includeBom !== false) {
-    for (let i = 0; i < snapshot.bomRows.length; i++) {
-      const row = snapshot.bomRows[i];
-      const totalCost = buildStructureLineTotal(row.quantity, row.unitCost, row.lossPercent);
-      const line = await prisma.projectStructureLine.create({
-        data: {
-          projectId,
-          versionId: ctx.version.id,
-          lineType: row.lineType,
-          sourceType: row.sourceType,
-          existingProductId: row.existingProductId,
-          existingMaterialId: row.existingMaterialId,
-          descriptionSnapshot: row.description,
-          unitSnapshot: row.unit,
-          quantity: row.quantity,
-          lossPercent: row.lossPercent,
-          unitCostSnapshot: row.unitCost,
-          totalCost,
-          notes: row.notes
-            ? `${row.notes} | snapshot:${productId}`
-            : `snapshot:${productId}`,
-          sortOrder: sortCursor++,
-        },
-      });
-      created.push(line.id);
-    }
-  }
-
-  if (options.includeRouting) {
-    for (let i = 0; i < snapshot.routingRows.length; i++) {
-      const row = snapshot.routingRows[i];
-      if (row.hours <= 0) continue;
-      const totalCost = buildStructureLineTotal(row.hours, row.hourlyRate, 0);
-      const line = await prisma.projectStructureLine.create({
-        data: {
-          projectId,
-          versionId: ctx.version.id,
-          lineType: "PROCESS",
-          sourceType: "MANUAL",
-          descriptionSnapshot: row.description,
-          unitSnapshot: "HH",
-          quantity: row.hours,
-          lossPercent: 0,
-          unitCostSnapshot: row.hourlyRate,
-          totalCost,
-          notes: [
-            row.machineName ? `Máquina: ${row.machineName}` : null,
-            row.roleName ? `Função: ${row.roleName}` : null,
-            row.cycleTimeSeconds != null ? `Ciclo: ${row.cycleTimeSeconds}s` : null,
-            row.cavities != null ? `Cavidades: ${row.cavities}` : null,
-            `routing-snapshot:${productId}`,
-          ]
-            .filter(Boolean)
-            .join(" · "),
-          sortOrder: sortCursor++,
-        },
-      });
-      created.push(line.id);
-    }
-  }
-
-  await recalculateAndPersistVersionCosts(ctx.version.id);
-  return { createdCount: created.length, lineIds: created, snapshot };
+  const flat = await loadOfficialProductSnapshot(productId);
+  return {
+    createdCount: result.createdCount,
+    lineIds: result.lineIds,
+    snapshot: flat,
+    engineering: result.snapshot,
+    nodeCount: result.nodeCount,
+    officialIndustrialCost: result.officialIndustrialCost,
+  };
 }

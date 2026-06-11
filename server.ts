@@ -14681,11 +14681,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     getCurrentAppUser,
   });
 
-  registerProjectsRoutes(app, {
-    requireAppAuth,
-    requireAnyPermission,
-    getCurrentAppUser,
-  });
+  registerProjectsRoutes(
+    app,
+    {
+      requireAppAuth,
+      requireAnyPermission,
+      getCurrentAppUser,
+    },
+    {
+      resolveOfficialProductCostAnalysis: async (productId) => {
+        const cache = await initAnalysisCache();
+        return getProductCostAnalysis(productId, cache, true);
+      },
+    }
+  );
 
   const { registerCompanyIntelligenceRoutes } = await import(
     "./src/lib/companyIntelligenceRoutes.js"
