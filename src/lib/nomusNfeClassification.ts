@@ -18,6 +18,7 @@ const LOGISTICS_KEYWORDS = [
   "CONSERTO",
 ] as const;
 
+export const NOMUS_NFE_STATUS_AUTHORIZED = 4;
 export const NOMUS_NFE_STATUS_CANCELLED = 7;
 export const NOMUS_NFE_PRODUCTION_ENV = 1;
 export const NOMUS_NFE_SAIDA_TIPO_OPERACAO = 1;

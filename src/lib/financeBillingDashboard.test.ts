@@ -158,20 +158,21 @@ function minimalBillingTab(): BillingDashboardTab {
 }
 
 describe("financeBillingDashboard", () => {
-  it("wrapper reutiliza motor oficial buildBillingDashboardTab", () => {
+  it("wrapper roteia nfe e sales_order", () => {
     const service = readFileSync(
       join(process.cwd(), "src", "lib", "financeBillingDashboard.ts"),
       "utf8"
     );
     const routes = readFileSync(join(process.cwd(), "src", "lib", "financeBillingRoutes.ts"), "utf8");
     assert.ok(service.includes("buildBillingDashboardTab"));
+    assert.ok(service.includes("buildBillingDashboardFromNfes"));
     assert.ok(service.includes("resolveExecutiveDashboardYearContext"));
     assert.ok(routes.includes("/api/finance/billing/dashboard"));
     assert.ok(!routes.includes("buildExecutiveDashboardSummary"));
   });
 
   it("filtro de ano monta query correta", () => {
-    assert.equal(buildFinanceBillingDashboardQuery("2026"), "year=2026");
+    assert.equal(buildFinanceBillingDashboardQuery("2026"), "year=2026&billingSource=nfe");
     assert.equal(createDefaultFinanceBillingYear(REF), "2026");
     assert.equal(hasPendingFinanceBillingYearChange("2025", "2026"), true);
     assert.equal(hasPendingFinanceBillingYearChange("2026", "2026"), false);

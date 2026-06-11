@@ -22,6 +22,9 @@ function minimalAuditResult(): BillingAuditResult {
     ),
     summary: {
       dataSourceOfficial: "SalesOrder",
+      nfeFiscalTotal: 120000,
+      salesOrderTotal: 90000,
+      sourceComparisonDifference: 30000,
       dateBaseUsed: "processamento",
       dateBaseLabel: "dataProcessamento",
       valueModeUsed: "pedido_total_net",
@@ -122,6 +125,9 @@ function minimalAuditResult(): BillingAuditResult {
     ],
     itemRows: [],
     dailyTotals: [],
+    dailySourceComparison: [
+      { date: "2026-06-08", nfeTotal: 180232.34, salesOrderTotal: 12254.34, difference: 167978 },
+    ],
     customerTotals: [],
     operationTotals: [],
     diagnostics: [],
@@ -213,6 +219,49 @@ describe("financeBillingAudit", () => {
     assert.ok(wb.SheetNames.includes("Incluídas"));
     assert.ok(wb.SheetNames.includes("Excluídas"));
     assert.ok(wb.SheetNames.includes("Divergências"));
+    assert.ok(wb.SheetNames.includes("NF-e x Pedidos"));
+  });
+
+  it("auditoria compara NF-e x SalesOrder no resumo", () => {
+    const result = minimalAuditResult();
+    assert.equal(
+      result.summary.sourceComparisonDifference,
+      result.summary.nfeFiscalTotal - result.summary.salesOrderTotal
+    );
+    assert.ok(result.dailySourceComparison.length > 0);
+  });
+
+  it("status autorizado exige status 4 na NF-e", () => {
+    const authorizedFilters = parseBillingAuditFilters({
+      year: "2026",
+      month: "6",
+      status: "authorized",
+    });
+    const rejected = evaluateNomusNfeForBilling(
+      {
+        id: "n1",
+        externalId: 1,
+        numero: "1",
+        serie: "1",
+        chave: "k",
+        status: 1,
+        billingClassification: "MARKET_REVENUE",
+        xmlNatOp: "VENDA",
+        xmlDestCnpjCpf: "123",
+        xmlDhEmi: new Date("2026-06-05"),
+        dataProcessamento: new Date("2026-06-05"),
+        xmlVProd: 100,
+        xmlVDesc: 0,
+        xmlVNF: 100,
+        valorLiquido: 100,
+        syncedAt: new Date(),
+        isMarketSale: true,
+      },
+      authorizedFilters,
+      period
+    );
+    assert.equal(rejected.included, false);
+    assert.equal(rejected.exclusionReasonCode, "FILTERED_BY_STATUS");
   });
 
   it("export CSV contém colunas mínimas", () => {

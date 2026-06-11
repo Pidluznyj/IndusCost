@@ -1,7 +1,10 @@
 import { NomusNfeBillingClassification, Prisma } from "@prisma/client";
 import { decimalToNumber } from "@/src/lib/executiveDashboardHelpers.js";
 import { prisma } from "@/src/lib/prisma.js";
-import { NOMUS_NFE_STATUS_CANCELLED } from "@/src/lib/nomusNfeClassification.js";
+import {
+  NOMUS_NFE_STATUS_AUTHORIZED,
+  NOMUS_NFE_STATUS_CANCELLED,
+} from "@/src/lib/nomusNfeClassification.js";
 
 export type FinanceBillingNfeClassificationFilter =
   | "all"
@@ -135,7 +138,9 @@ function buildPrismaWhere(filters: FinanceBillingNfeFilters): Prisma.NomusNfeWhe
   }
 
   if (filters.status === "authorized") {
-    where.status = { not: NOMUS_NFE_STATUS_CANCELLED };
+    where.status = NOMUS_NFE_STATUS_AUTHORIZED;
+    where.isMarketSale = true;
+    where.billingClassification = NomusNfeBillingClassification.MARKET_REVENUE;
   } else if (filters.status === "cancelled") {
     where.status = NOMUS_NFE_STATUS_CANCELLED;
   }

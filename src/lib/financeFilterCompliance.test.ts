@@ -76,7 +76,8 @@ describe("financeFilterCompliance", () => {
 
   it("Faturamento: painel executivo e NF-e usam filtros aplicados distintos", () => {
     const page = readPage("FinanceBillingPage.tsx");
-    assert.ok(page.includes("buildFinanceBillingDashboardQuery(appliedYear)"));
+    assert.ok(page.includes("buildFinanceBillingDashboardQuery(appliedYear"));
+    assert.ok(page.includes("billingSource"));
     assert.ok(page.includes("buildFinanceBillingNfeQuery(appliedNfeFilters)"));
     assert.ok(page.includes("loadingComparison"));
     assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE"));
@@ -150,7 +151,7 @@ describe("financeFilterCompliance", () => {
   });
 
   it("Faturamento: dashboard por ano e NF-e por filtros aplicados", () => {
-    assert.equal(buildFinanceBillingDashboardQuery("2025"), "year=2025");
+    assert.equal(buildFinanceBillingDashboardQuery("2025"), "year=2025&billingSource=nfe");
     const nfeQs = buildFinanceBillingNfeQuery({
       year: "2025",
       month: "3",

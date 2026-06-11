@@ -45,6 +45,9 @@ export function buildBillingAuditWorkbook(result: BillingAuditResult): XLSX.Work
     { Campo: "Exportado em", Valor: result.generatedAt },
     { Campo: "Exportado por", Valor: result.exportedBy ?? "" },
     { Campo: "Fonte oficial do dashboard", Valor: result.summary.dataSourceOfficial },
+    { Campo: "Total NF-e fiscal (período)", Valor: result.summary.nfeFiscalTotal },
+    { Campo: "Total SalesOrder (período)", Valor: result.summary.salesOrderTotal },
+    { Campo: "Diferença NF-e − SalesOrder", Valor: result.summary.sourceComparisonDifference },
     { Campo: "Data base", Valor: result.summary.dateBaseLabel },
     { Campo: "Campo de valor", Valor: result.summary.valueFieldLabel },
     { Campo: "Período", Valor: result.summary.periodLabel },
@@ -85,6 +88,18 @@ export function buildBillingAuditWorkbook(result: BillingAuditResult): XLSX.Work
     wb,
     XLSX.utils.json_to_sheet(result.dailyTotals),
     "Totais por dia"
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      result.dailySourceComparison.map((row) => ({
+        Dia: row.date,
+        "NF-e fiscal": row.nfeTotal,
+        SalesOrder: row.salesOrderTotal,
+        Diferença: row.difference,
+      }))
+    ),
+    "NF-e x Pedidos"
   );
   XLSX.utils.book_append_sheet(
     wb,

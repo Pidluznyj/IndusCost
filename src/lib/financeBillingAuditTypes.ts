@@ -148,8 +148,21 @@ export type BillingAuditDiagnostic = {
   hint?: string;
 };
 
+export type BillingSourceDailyComparisonRow = {
+  date: string;
+  nfeTotal: number;
+  salesOrderTotal: number;
+  difference: number;
+};
+
 export type BillingAuditSummary = {
   dataSourceOfficial: BillingAuditDataSource;
+  /** Total NF-e fiscal incluído no período (auditoria). */
+  nfeFiscalTotal: number;
+  /** Total SalesOrder incluído no período (auditoria). */
+  salesOrderTotal: number;
+  /** NF-e − SalesOrder no período. */
+  sourceComparisonDifference: number;
   dateBaseUsed: BillingAuditDateBase;
   dateBaseLabel: string;
   valueModeUsed: BillingAuditValueMode;
@@ -192,6 +205,8 @@ export type BillingAuditResult = {
   excludedRows: BillingAuditRow[];
   itemRows: BillingAuditItemRow[];
   dailyTotals: BillingAuditDailyTotal[];
+  /** Comparação diária NF-e fiscal × SalesOrder. */
+  dailySourceComparison: BillingSourceDailyComparisonRow[];
   customerTotals: BillingAuditCustomerTotal[];
   operationTotals: BillingAuditOperationTotal[];
   diagnostics: BillingAuditDiagnostic[];

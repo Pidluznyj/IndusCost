@@ -55,6 +55,64 @@ export function FinanceBillingAuditPanel({ audit, loading, error, onRetry }: Pro
       ) : null}
 
       <section>
+        <h3 className="text-sm font-bold text-[#111827]">Comparação NF-e fiscal × SalesOrder</h3>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <DiagCard
+            label="Total NF-e fiscal"
+            value={formatExecutiveCurrency(summary.nfeFiscalTotal)}
+          />
+          <DiagCard
+            label="Total SalesOrder"
+            value={formatExecutiveCurrency(summary.salesOrderTotal)}
+          />
+          <DiagCard
+            label="Diferença (NF-e − pedidos)"
+            value={formatExecutiveCurrency(summary.sourceComparisonDifference)}
+          />
+        </div>
+        {audit.divergences.some((d) => d.nfNumber === "7052") ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+            <strong>NF 7052</strong> — 08/06/2026 — R$ 168.075,00: presente na base NF-e fiscal,
+            ausente no total por SalesOrder.
+          </p>
+        ) : null}
+        {audit.dailySourceComparison.length > 0 ? (
+          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[480px] text-xs">
+              <thead className="border-b bg-muted/40 text-left">
+                <tr>
+                  <th className="px-3 py-2">Dia</th>
+                  <th className="px-3 py-2 text-right">NF-e</th>
+                  <th className="px-3 py-2 text-right">SalesOrder</th>
+                  <th className="px-3 py-2 text-right">Diferença</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audit.dailySourceComparison.map((row) => (
+                  <tr
+                    key={row.date}
+                    className={cn(
+                      "border-b border-border/60",
+                      Math.abs(row.difference) > 10000 && "bg-amber-50/60"
+                    )}
+                  >
+                    <td className="px-3 py-2">{row.date}</td>
+                    <td className="px-3 py-2 text-right">{formatExecutiveCurrency(row.nfeTotal)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {formatExecutiveCurrency(row.salesOrderTotal)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold">
+                      {formatExecutiveCurrency(row.difference)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
+
+      <section>
         <h3 className="text-sm font-bold text-[#111827]">Diagnóstico do cálculo</h3>
         <p className="mt-1 text-[11px] text-[#6B7280]">
           Fonte oficial: <strong>{summary.dataSourceOfficial}</strong> · Data base:{" "}

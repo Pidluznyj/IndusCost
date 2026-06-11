@@ -2,6 +2,14 @@
 
 import type { BillingDashboardTab } from "./executiveDashboardTypes.js";
 import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "./executiveDashboardYear.js";
+import {
+  buildFinanceBillingDashboardQuery,
+  type FinanceBillingDateBase,
+  type FinanceBillingSource,
+} from "./financeBillingSourceTypes.js";
+
+export type { FinanceBillingDateBase, FinanceBillingSource };
+export { buildFinanceBillingDashboardQuery };
 
 export type FinanceBillingDashboardPayload = {
   generatedAt: string;
@@ -10,6 +18,8 @@ export type FinanceBillingDashboardPayload = {
   currentMonth: number;
   periodLabel: string;
   lastInvoicedAt: string | null;
+  billingSource: FinanceBillingSource;
+  dateBase: FinanceBillingDateBase;
   tab: BillingDashboardTab;
 };
 
@@ -25,11 +35,6 @@ export function buildFinanceBillingYearOptions(referenceYear = new Date().getFul
   return options;
 }
 
-export function buildFinanceBillingDashboardQuery(year: string): string {
-  const y = year.trim();
-  if (!y) return "";
-  return `year=${encodeURIComponent(y)}`;
-}
 
 export function hasPendingFinanceBillingYearChange(
   draftYear: string,

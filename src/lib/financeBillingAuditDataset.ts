@@ -12,6 +12,11 @@ import {
   resolveBillingAuditPeriod,
   sanitizeAuditMoney,
 } from "@/src/lib/financeBillingAuditRules.js";
+import { queryFiscalNfeInPeriod } from "@/src/lib/financeBillingNfeDashboard.js";
+import {
+  parseFinanceBillingDateBase,
+  parseFinanceBillingSource,
+} from "@/src/lib/financeBillingSourceTypes.js";
 import type {
   BillingAuditCustomerTotal,
   BillingAuditDailyTotal,
@@ -22,6 +27,7 @@ import type {
   BillingAuditResult,
   BillingAuditRow,
   BillingAuditSummary,
+  BillingSourceDailyComparisonRow,
 } from "@/src/lib/financeBillingAuditTypes.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
@@ -145,6 +151,35 @@ async function queryNomusNfeAuditRows(year: number) {
       isMarketSale: true,
     },
   });
+}
+
+export function buildBillingSourceDailyComparison(
+  nfeRows: BillingAuditRow[],
+  salesRows: BillingAuditRow[]
+): BillingSourceDailyComparisonRow[] {
+  const map = new Map<string, { nfe: number; sales: number }>();
+  for (const row of nfeRows) {
+    if (!row.includedInBilling) continue;
+    const date = row.competenceDateUsed ?? row.processingDate ?? row.issueDate ?? "sem-data";
+    const bucket = map.get(date) ?? { nfe: 0, sales: 0 };
+    bucket.nfe += sanitizeAuditMoney(row.valueUsedInDashboard);
+    map.set(date, bucket);
+  }
+  for (const row of salesRows) {
+    if (!row.includedInBilling) continue;
+    const date = row.competenceDateUsed ?? row.processingDate ?? row.issueDate ?? "sem-data";
+    const bucket = map.get(date) ?? { nfe: 0, sales: 0 };
+    bucket.sales += sanitizeAuditMoney(row.valueUsedInDashboard);
+    map.set(date, bucket);
+  }
+  return [...map.entries()]
+    .map(([date, totals]) => ({
+      date,
+      nfeTotal: totals.nfe,
+      salesOrderTotal: totals.sales,
+      difference: totals.nfe - totals.sales,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function aggregateDaily(rows: BillingAuditRow[]): BillingAuditDailyTotal[] {
@@ -339,11 +374,15 @@ export async function buildBillingAuditDataset(
 ): Promise<BillingAuditResult> {
   const filters = parseBillingAuditFilters(query);
   const period = resolveBillingAuditPeriod(filters);
-  const dashboardDisplayedTotal = await queryDashboardYearTotal(
-    filters.year,
-    period.from,
-    period.to
-  );
+  const billingSource = parseFinanceBillingSource(query.billingSource);
+  const dashboardDateBase = parseFinanceBillingDateBase(query.dateBase);
+
+  const [salesDashboardTotal, nfeDashboardAgg] = await Promise.all([
+    queryDashboardYearTotal(filters.year, period.from, period.to),
+    queryFiscalNfeInPeriod(period.from, period.to, dashboardDateBase),
+  ]);
+  const dashboardDisplayedTotal =
+    billingSource === "nfe" ? (nfeDashboardAgg.net ?? 0) : salesDashboardTotal;
 
   const [soRaw, nomusRaw, lastSync] = await Promise.all([
     querySalesOrderAuditRows(filters.year),
@@ -469,10 +508,17 @@ export async function buildBillingAuditDataset(
     };
   });
 
-  const officialRows = salesRows;
+  const officialRows = billingSource === "nfe" ? nomusRows : salesRows;
   const includedRows = officialRows.filter((r) => r.includedInBilling);
   const excludedRows = officialRows.filter((r) => !r.includedInBilling);
   const allOfficial = officialRows;
+
+  const nfeFiscalTotal = nomusRows
+    .filter((r) => r.includedInBilling)
+    .reduce((s, r) => s + sanitizeAuditMoney(r.valueUsedInDashboard), 0);
+  const salesOrderTotal = salesRows
+    .filter((r) => r.includedInBilling)
+    .reduce((s, r) => s + sanitizeAuditMoney(r.valueUsedInDashboard), 0);
 
   const includedTotal = includedRows.reduce(
     (s, r) => s + sanitizeAuditMoney(r.valueUsedInDashboard),
@@ -492,15 +538,22 @@ export async function buildBillingAuditDataset(
     .filter((d): d is string => Boolean(d))
     .sort();
 
+  const isNfeOfficial = billingSource === "nfe";
   const summary: BillingAuditSummary = {
-    dataSourceOfficial: "SalesOrder",
+    dataSourceOfficial: isNfeOfficial ? "NomusNfe" : "SalesOrder",
+    nfeFiscalTotal: sanitizeAuditMoney(nfeFiscalTotal),
+    salesOrderTotal: sanitizeAuditMoney(salesOrderTotal),
+    sourceComparisonDifference: sanitizeAuditMoney(nfeFiscalTotal - salesOrderTotal),
     dateBaseUsed: filters.dateBase,
-    dateBaseLabel:
-      filters.dateBase === "processamento"
+    dateBaseLabel: isNfeOfficial
+      ? dashboardDateBase === "processamento"
+        ? "data processamento NF-e"
+        : "data fiscal/emissão NF-e"
+      : filters.dateBase === "processamento"
         ? "dataProcessamento (NF no pedido)"
         : filters.dateBase,
     valueModeUsed: filters.valueMode,
-    valueFieldLabel: "SalesOrder.totalNetValue",
+    valueFieldLabel: isNfeOfficial ? "NomusNfe.valorLiquido" : "SalesOrder.totalNetValue",
     periodFrom: ymd(period.from)!,
     periodTo: ymd(period.to)!,
     periodLabel: period.label,
@@ -521,10 +574,28 @@ export async function buildBillingAuditDataset(
 
   const itemRows: BillingAuditItemRow[] = [];
   const dailyTotals = aggregateDaily(allOfficial);
+  const dailySourceComparison = buildBillingSourceDailyComparison(nomusRows, salesRows);
   const customerTotals = aggregateCustomers(allOfficial);
   const operationTotals = aggregateOperations([...allOfficial, ...nomusRows]);
   const diagnostics = buildDiagnostics(allOfficial, summary);
-  const divergences = compareNomusVsSalesOrder(salesRows, nomusRows);
+  let divergences = compareNomusVsSalesOrder(salesRows, nomusRows);
+  const nf7052 = nomusRows.find((r) => r.nfNumber === "7052");
+  if (nf7052 && !salesRows.some((r) => r.nfKey === nf7052.nfKey && r.includedInBilling)) {
+    divergences = [
+      {
+        kind: "nomus_only",
+        nfKey: nf7052.nfKey,
+        nfNumber: nf7052.nfNumber,
+        nomusValue: nf7052.valueUsedInDashboard,
+        systemValue: null,
+        nomusDate: nf7052.competenceDateUsed,
+        systemDate: null,
+        notes:
+          "NF 7052 — presente na base NF-e fiscal, ausente no total por SalesOrder (ex.: 08/06/2026, R$ 168.075,00)",
+      },
+      ...divergences.filter((d) => d.nfNumber !== "7052"),
+    ];
+  }
 
   return {
     generatedAt: new Date().toISOString(),
@@ -536,6 +607,7 @@ export async function buildBillingAuditDataset(
     excludedRows,
     itemRows,
     dailyTotals,
+    dailySourceComparison,
     customerTotals,
     operationTotals,
     diagnostics,

@@ -1,29 +1,56 @@
 import React from "react";
+import type { FinanceBillingSource } from "@/src/lib/financeBillingSourceTypes";
+import { financeBillingSourceChip } from "@/src/lib/financeBillingSourceTypes";
 import { cn } from "@/src/lib/utils";
 
+type LegacyVariant = "official" | "diagnostic" | "warning";
+
 export function FinanceBillingSourceBadge({
-  variant = "official",
+  source,
+  variant,
+  className,
 }: {
-  variant?: "official" | "diagnostic" | "warning";
+  source?: FinanceBillingSource;
+  variant?: LegacyVariant;
+  className?: string;
 }) {
-  const styles = {
-    official: "bg-blue-50 text-blue-800 border-blue-200",
+  if (source) {
+    const isNfe = source === "nfe";
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-bold",
+          isNfe
+            ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+            : "bg-blue-50 text-blue-800 border-blue-200",
+          className
+        )}
+      >
+        {financeBillingSourceChip(source)}
+      </span>
+    );
+  }
+
+  const styles: Record<LegacyVariant, string> = {
+    official: "bg-emerald-50 text-emerald-900 border-emerald-200",
     diagnostic: "bg-amber-50 text-amber-900 border-amber-200",
     warning: "bg-red-50 text-red-800 border-red-200",
   };
-  const labels = {
-    official: "Fonte atual: Pedidos/NF em SalesOrder",
-    diagnostic: "Fonte diagnóstica: NF-e Nomus (em validação)",
-    warning: "Fonte NF-e em validação — dashboard oficial usa SalesOrder",
+  const labels: Record<LegacyVariant, string> = {
+    official: "Fonte: NF-e fiscal · Status: Autorizada · Mercado: Sim",
+    diagnostic: "Comparativo: SalesOrder × NomusNfe",
+    warning: "NF-e ainda não sincronizada neste período",
   };
+
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-bold",
-        styles[variant]
+        styles[variant ?? "official"],
+        className
       )}
     >
-      {labels[variant]}
+      {labels[variant ?? "official"]}
     </span>
   );
 }

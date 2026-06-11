@@ -1,5 +1,4 @@
-import { Prisma } from "@prisma/client";
-import { billingMarketCustomerFilterSql } from "@/src/lib/billingMarketCustomerSql.js";
+import { NomusNfeBillingClassification, Prisma } from "@prisma/client";
 import {
   buildAccumulatedSeriesPoints,
   buildChartSeriesConfig,
@@ -11,6 +10,7 @@ import {
   buildBillingMultiYearSummaries,
 } from "@/src/lib/financeBillingChartData.js";
 import { resolveFinanceBillingComparisonYears } from "@/src/lib/financeBillingChartTheme.js";
+import type { FinanceBillingDateBase } from "@/src/lib/financeBillingSourceTypes.js";
 import type { ExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
@@ -42,14 +42,8 @@ import {
   computeYtdDailyAverageByWorkday,
   EXECUTIVE_BILLING_YTD_DAILY_AVERAGE_HINT,
 } from "@/src/lib/salesOrderDashboardRules.js";
-import {
-  nfeProcessamentoDateSql,
-  nomusNfesElementsSql,
-  orderInvoicedInPeriodSql,
-  orderIsInvoicedSql,
-  toPgDateYmd,
-} from "@/src/lib/salesOrderInvoicingSql.js";
 import { buildBillingForecastBlock } from "@/src/lib/financeBillingForecast.js";
+import { NOMUS_NFE_STATUS_AUTHORIZED } from "@/src/lib/nomusNfeClassification.js";
 import type {
   BillingDashboardTab,
   BillingProjectionBlock,
@@ -62,13 +56,28 @@ import type {
   RecentInvoicedOrderRow,
 } from "@/src/lib/executiveDashboardTypes.js";
 
-const RECENT_INVOICED_LIMIT = 15;
+const RECENT_NFE_LIMIT = 15;
 const TOP_CUSTOMERS_LIMIT = 10;
-const MARKET_BILLING_NOTE =
-  "Faturamento de mercado: NF com dataProcessamento, pedido não cancelado, clientes do grupo (Lazarios, Koppetel, SM) excluídos. Valor: totalNetValue do pedido.";
 
-const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
-const MARKET_CUSTOMER = billingMarketCustomerFilterSql("c");
+export const FISCAL_NFE_BILLING_NOTE =
+  "Faturamento fiscal NF-e: status 4 (Autorizada), venda de mercado, classificação MARKET_REVENUE, valor líquido da NF-e. Alinhado ao BI fiscal.";
+
+function nfeCompetenceDateSql(dateBase: FinanceBillingDateBase): Prisma.Sql {
+  if (dateBase === "processamento") {
+    return Prisma.sql`COALESCE("dataProcessamento", "xmlDhEmi")`;
+  }
+  return Prisma.sql`COALESCE("xmlDhEmi", "dataProcessamento")`;
+}
+
+function fiscalNfeWhereSql(dateBase: FinanceBillingDateBase): Prisma.Sql {
+  return Prisma.sql`
+    "status" = ${NOMUS_NFE_STATUS_AUTHORIZED}
+    AND "isMarketSale" = true
+    AND "billingClassification" = ${NomusNfeBillingClassification.MARKET_REVENUE}::"NomusNfeBillingClassification"
+    AND ${nfeCompetenceDateSql(dateBase)} IS NOT NULL
+    AND "valorLiquido" IS NOT NULL
+  `;
+}
 
 function metricCard(
   id: string,
@@ -111,44 +120,40 @@ function buildTargetBlock(actual: number | null, previousPeriod: number | null):
   };
 }
 
-async function queryMarketBillingInPeriod(
+export async function queryFiscalNfeInPeriod(
   from: Date,
-  to: Date
+  to: Date,
+  dateBase: FinanceBillingDateBase = "emissao"
 ): Promise<{ count: number | null; net: number | null }> {
-  const fromYmd = toPgDateYmd(from);
-  const toYmd = toPgDateYmd(to);
+  const dateExpr = nfeCompetenceDateSql(dateBase);
   const [row] = await prisma.$queryRaw<{ c: bigint; v: unknown }[]>(
     Prisma.sql`
-      SELECT COUNT(*)::bigint AS c, COALESCE(SUM(so."totalNetValue"), 0) AS v
-      FROM "SalesOrder" so
-      INNER JOIN "Customer" c ON c.id = so."customerId"
-      WHERE ${NOT_CANCELLED}
-        AND ${MARKET_CUSTOMER}
-        AND ${orderInvoicedInPeriodSql("so", fromYmd, toYmd)}
+      SELECT COUNT(*)::bigint AS c, COALESCE(SUM("valorLiquido"), 0) AS v
+      FROM "NomusNfe"
+      WHERE ${fiscalNfeWhereSql(dateBase)}
+        AND ${dateExpr} >= ${from}
+        AND ${dateExpr} <= ${to}
     `
   );
   return { count: safeMetricNumber(Number(row?.c ?? 0n)), net: decimalToNumber(row?.v) };
 }
 
-async function queryMonthlyMarketBilling(year: number): Promise<Map<number, number>> {
-  const fromYmd = toPgDateYmd(startOfYear(new Date(year, 0, 1)));
-  const toYmd = toPgDateYmd(endOfYear(new Date(year, 0, 1)));
+export async function queryMonthlyFiscalNfe(
+  year: number,
+  dateBase: FinanceBillingDateBase = "emissao"
+): Promise<Map<number, number>> {
+  const from = startOfYear(new Date(year, 0, 1));
+  const to = endOfYear(new Date(year, 0, 1));
+  const dateExpr = nfeCompetenceDateSql(dateBase);
   const rows = await prisma.$queryRaw<{ month: number; total: unknown }[]>(
     Prisma.sql`
       SELECT
-        EXTRACT(MONTH FROM inv.invoice_date)::int AS month,
-        COALESCE(SUM(so."totalNetValue"), 0) AS total
-      FROM "SalesOrder" so
-      INNER JOIN "Customer" c ON c.id = so."customerId"
-      INNER JOIN LATERAL (
-        SELECT MAX((${nfeProcessamentoDateSql()})) AS invoice_date
-        FROM ${nomusNfesElementsSql("so")}
-        WHERE (${nfeProcessamentoDateSql()}) IS NOT NULL
-      ) inv ON inv.invoice_date IS NOT NULL
-      WHERE ${NOT_CANCELLED}
-        AND ${MARKET_CUSTOMER}
-        AND inv.invoice_date >= ${fromYmd}::date
-        AND inv.invoice_date <= ${toYmd}::date
+        EXTRACT(MONTH FROM ${dateExpr})::int AS month,
+        COALESCE(SUM("valorLiquido"), 0) AS total
+      FROM "NomusNfe"
+      WHERE ${fiscalNfeWhereSql(dateBase)}
+        AND ${dateExpr} >= ${from}
+        AND ${dateExpr} <= ${to}
       GROUP BY 1
       ORDER BY 1
     `
@@ -160,69 +165,64 @@ async function queryMonthlyMarketBilling(year: number): Promise<Map<number, numb
   return map;
 }
 
-async function queryRecentMarketInvoicedOrders(): Promise<RecentInvoicedOrderRow[]> {
+async function queryRecentFiscalNfes(
+  dateBase: FinanceBillingDateBase
+): Promise<RecentInvoicedOrderRow[]> {
+  const dateExpr = nfeCompetenceDateSql(dateBase);
   const rows = await prisma.$queryRaw<
     {
       id: string;
-      order_code: string;
-      customer_name: string;
-      invoice_date: Date;
-      total_net_value: unknown;
-      invoice_status: string | null;
+      numero: string | null;
+      dest: string | null;
+      competence: Date;
+      valor: unknown;
+      status: number | null;
     }[]
   >(
     Prisma.sql`
       SELECT
-        so.id,
-        so."orderCode" AS order_code,
-        COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
-        inv.invoice_date,
-        so."totalNetValue" AS total_net_value,
-        inv.invoice_status
-      FROM "SalesOrder" so
-      INNER JOIN "Customer" c ON c.id = so."customerId"
-      INNER JOIN LATERAL (
-        SELECT
-          MAX((${nfeProcessamentoDateSql()})) AS invoice_date,
-          MAX(NULLIF(TRIM(nfe->>'status'), '')) AS invoice_status
-        FROM ${nomusNfesElementsSql("so")}
-        WHERE (${nfeProcessamentoDateSql()}) IS NOT NULL
-      ) inv ON inv.invoice_date IS NOT NULL
-      WHERE ${NOT_CANCELLED}
-        AND ${MARKET_CUSTOMER}
-        AND ${orderIsInvoicedSql("so")}
-      ORDER BY inv.invoice_date DESC, so."issueDate" DESC
-      LIMIT ${RECENT_INVOICED_LIMIT}
+        id,
+        numero,
+        "xmlDestCnpjCpf" AS dest,
+        ${dateExpr} AS competence,
+        "valorLiquido" AS valor,
+        status
+      FROM "NomusNfe"
+      WHERE ${fiscalNfeWhereSql(dateBase)}
+      ORDER BY ${dateExpr} DESC
+      LIMIT ${RECENT_NFE_LIMIT}
     `
   );
   return rows.map((row) => ({
     orderId: row.id,
-    orderCode: row.order_code,
-    customerName: row.customer_name,
-    invoiceDate: row.invoice_date.toISOString(),
-    totalNetValue: decimalToNumber(row.total_net_value),
-    invoiceStatus: row.invoice_status,
+    orderCode: row.numero ? `NF ${row.numero}` : row.id.slice(0, 8),
+    customerName: row.dest ?? "—",
+    invoiceDate: row.competence.toISOString(),
+    totalNetValue: decimalToNumber(row.valor),
+    invoiceStatus: row.status != null ? String(row.status) : null,
   }));
 }
 
-async function queryTopMarketCustomersInPeriod(from: Date, to: Date): Promise<BillingTopCustomerRow[]> {
-  const fromYmd = toPgDateYmd(from);
-  const toYmd = toPgDateYmd(to);
+async function queryTopFiscalNfeCustomers(
+  from: Date,
+  to: Date,
+  dateBase: FinanceBillingDateBase
+): Promise<BillingTopCustomerRow[]> {
+  const dateExpr = nfeCompetenceDateSql(dateBase);
   const rows = await prisma.$queryRaw<
     { customer_id: string; customer_name: string; order_count: bigint; total: unknown }[]
   >(
     Prisma.sql`
       SELECT
-        c.id AS customer_id,
-        COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
+        COALESCE("xmlDestCnpjCpf", '—') AS customer_id,
+        COALESCE("xmlDestCnpjCpf", '—') AS customer_name,
         COUNT(*)::bigint AS order_count,
-        COALESCE(SUM(so."totalNetValue"), 0) AS total
-      FROM "SalesOrder" so
-      INNER JOIN "Customer" c ON c.id = so."customerId"
-      WHERE ${NOT_CANCELLED}
-        AND ${MARKET_CUSTOMER}
-        AND ${orderInvoicedInPeriodSql("so", fromYmd, toYmd)}
-      GROUP BY c.id, customer_name
+        COALESCE(SUM("valorLiquido"), 0) AS total
+      FROM "NomusNfe"
+      WHERE ${fiscalNfeWhereSql(dateBase)}
+        AND ${dateExpr} >= ${from}
+        AND ${dateExpr} <= ${to}
+      GROUP BY 1, 2
       ORDER BY total DESC
       LIMIT ${TOP_CUSTOMERS_LIMIT}
     `
@@ -248,8 +248,9 @@ function toCumulativeBillingPoints(
   }));
 }
 
-export async function buildBillingDashboardTab(
-  yearCtx: ExecutiveDashboardYearContext
+export async function buildBillingDashboardFromNfes(
+  yearCtx: ExecutiveDashboardYearContext,
+  dateBase: FinanceBillingDateBase = "emissao"
 ): Promise<BillingDashboardTab> {
   const ref = yearCtx.referenceDate;
   const year = yearCtx.selectedYear;
@@ -287,17 +288,17 @@ export async function buildBillingDashboardTab(
     topCustomers,
     ...extraYearMonthlies
   ] = await Promise.all([
-    queryMarketBillingInPeriod(monthStart, monthEnd),
-    queryMarketBillingInPeriod(yearStart, yearEnd),
-    queryMarketBillingInPeriod(prevYearSameMonthStart, prevYearSameMonthEnd),
-    queryMarketBillingInPeriod(prevYearStart, prevYearEnd),
-    queryMarketBillingInPeriod(yearStart, ref),
-    queryMarketBillingInPeriod(prevYearStart, ytdPrevEnd),
-    queryMonthlyMarketBilling(year),
-    queryMonthlyMarketBilling(yearCtx.previousYear),
-    queryRecentMarketInvoicedOrders(),
-    queryTopMarketCustomersInPeriod(yearStart, yearEnd),
-    ...extraYears.map((y) => queryMonthlyMarketBilling(y)),
+    queryFiscalNfeInPeriod(monthStart, monthEnd, dateBase),
+    queryFiscalNfeInPeriod(yearStart, yearEnd, dateBase),
+    queryFiscalNfeInPeriod(prevYearSameMonthStart, prevYearSameMonthEnd, dateBase),
+    queryFiscalNfeInPeriod(prevYearStart, prevYearEnd, dateBase),
+    queryFiscalNfeInPeriod(yearStart, ref, dateBase),
+    queryFiscalNfeInPeriod(prevYearStart, ytdPrevEnd, dateBase),
+    queryMonthlyFiscalNfe(year, dateBase),
+    queryMonthlyFiscalNfe(yearCtx.previousYear, dateBase),
+    queryRecentFiscalNfes(dateBase),
+    queryTopFiscalNfeCustomers(yearStart, yearEnd, dateBase),
+    ...extraYears.map((y) => queryMonthlyFiscalNfe(y, dateBase)),
   ]);
 
   const yearMaps = new Map<number, Map<number, number>>();
@@ -356,13 +357,22 @@ export async function buildBillingDashboardTab(
     },
   };
 
+  const dateBaseLabel = dateBase === "emissao" ? "data fiscal/emissão" : "data processamento";
+
   const summaryCards: DashboardMetricCard[] = [
-    metricCard("billing-month", "Mês atual — Pedidos", monthAgg.net, { asCurrency: true, compact: true }),
+    metricCard("billing-month", "Mês atual — NF-e fiscal", monthAgg.net, {
+      asCurrency: true,
+      compact: true,
+      hint: dateBaseLabel,
+    }),
     metricCard("billing-prev-month", "Mesmo mês ano anterior", prevMonthAgg.net, {
       asCurrency: true,
       compact: true,
     }),
-    metricCard("billing-year", "Faturamento ano atual", yearAgg.net, { asCurrency: true, compact: true }),
+    metricCard("billing-year", `Faturamento ${year} — NF-e`, yearAgg.net, {
+      asCurrency: true,
+      compact: true,
+    }),
     metricCard("billing-daily-avg", "Média faturamento/dia útil YTD", dailyAvgYtd, {
       asCurrency: true,
       hint: EXECUTIVE_BILLING_YTD_DAILY_AVERAGE_HINT,
@@ -375,8 +385,8 @@ export async function buildBillingDashboardTab(
     metricCard("billing-target", "Meta do mês (+30%)", target.target, { asCurrency: true, compact: true }),
     metricCard("billing-achievement", "% atingimento meta", target.achievementPercent, { asPercent: true }),
     metricCard("billing-gap", "Diferença p/ meta", target.gap, { asCurrency: true, compact: true }),
-    metricCard("billing-count-month", "Pedidos faturados no mês (SalesOrder)", monthAgg.count),
-    metricCard("billing-ticket", "Ticket médio faturado", ticketAvg, { asCurrency: true }),
+    metricCard("billing-count-month", "NF-e autorizadas no mês", monthAgg.count),
+    metricCard("billing-ticket", "Ticket médio NF-e", ticketAvg, { asCurrency: true }),
   ];
 
   const monthlySeries = buildMonthlySeriesPoints(
@@ -408,7 +418,7 @@ export async function buildBillingDashboardTab(
 
   return {
     available: true,
-    source: "SalesOrder.totalNetValue · dataProcessamento (NF no pedido) · mercado",
+    source: `NomusNfe.valorLiquido · status ${NOMUS_NFE_STATUS_AUTHORIZED} · mercado · ${dateBaseLabel}`,
     periodLabel: ref.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
     yearLabel: year,
     summaryCards,
@@ -425,7 +435,7 @@ export async function buildBillingDashboardTab(
     recentInvoicedOrders: recentInvoiced,
     topCustomers,
     intercompanyExclusionApplied: true,
-    marketBillingNote: MARKET_BILLING_NOTE,
+    marketBillingNote: FISCAL_NFE_BILLING_NOTE,
     forecast,
   };
 }

@@ -38,7 +38,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
         return res.status(401).json({ error: "Não autenticado." });
       }
 
-      const payload = await buildFinanceBillingDashboard(req.query.year);
+      const payload = await buildFinanceBillingDashboard(req.query as Record<string, unknown>);
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/billing/dashboard", error);

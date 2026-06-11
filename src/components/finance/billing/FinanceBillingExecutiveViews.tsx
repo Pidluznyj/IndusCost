@@ -50,7 +50,7 @@ export function FinanceBillingOverviewView({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <FinanceBillingSourceBadge variant="official" />
+        <FinanceBillingSourceBadge source={data?.billingSource ?? "nfe"} />
         <FinanceFilterScopeNote className="flex-1">
           {FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE}
         </FinanceFilterScopeNote>
@@ -189,7 +189,7 @@ export function FinanceBillingAccumulatedView({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <FinanceBillingSourceBadge variant="official" />
+        <FinanceBillingSourceBadge source={data?.billingSource ?? "nfe"} />
         <FinanceFilterScopeNote>{FINANCE_BILLING_YTD_SCOPE}</FinanceFilterScopeNote>
       </div>
       <FinanceFilterScopeNote>{FINANCE_BILLING_MULTI_YEAR_SCOPE}</FinanceFilterScopeNote>
@@ -233,7 +233,7 @@ export function FinanceBillingMonthlyView({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <FinanceBillingSourceBadge variant="official" />
+        <FinanceBillingSourceBadge source={data?.billingSource ?? "nfe"} />
         <FinanceFilterScopeNote>{FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE}</FinanceFilterScopeNote>
       </div>
       <FinanceFilterScopeNote>{FINANCE_BILLING_MULTI_YEAR_SCOPE}</FinanceFilterScopeNote>
@@ -279,7 +279,7 @@ export function FinanceBillingProjectionView({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <FinanceBillingSourceBadge variant="official" />
+        <FinanceBillingSourceBadge source={data?.billingSource ?? "nfe"} />
         <FinanceFilterScopeNote>{FINANCE_BILLING_PROJECTION_SCOPE}</FinanceFilterScopeNote>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-4">
@@ -366,7 +366,7 @@ export function FinanceBillingForecastView({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <FinanceBillingSourceBadge variant="official" />
+        <FinanceBillingSourceBadge source={data?.billingSource ?? "nfe"} />
         <FinanceFilterScopeNote className="flex-1">{FINANCE_BILLING_FORECAST_SCOPE}</FinanceFilterScopeNote>
       </div>
       <p className="text-[11px] text-muted-foreground">{forecast.note}</p>

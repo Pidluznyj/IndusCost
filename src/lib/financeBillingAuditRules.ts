@@ -1,5 +1,9 @@
 import { isGroupCompanyCustomer } from "@/src/lib/groupCompanyCustomer.js";
-import { isLogisticsNature, NOMUS_NFE_STATUS_CANCELLED } from "@/src/lib/nomusNfeClassification.js";
+import {
+  isLogisticsNature,
+  NOMUS_NFE_STATUS_AUTHORIZED,
+  NOMUS_NFE_STATUS_CANCELLED,
+} from "@/src/lib/nomusNfeClassification.js";
 import type {
   BillingAuditFilters,
   BillingAuditValueMode,
@@ -299,13 +303,23 @@ export function evaluateNomusNfeForBilling(
     }
   }
 
-  if (filters.status === "authorized" && row.status === NOMUS_NFE_STATUS_CANCELLED) {
-    return {
-      included: false,
-      exclusionReasonCode: "FILTERED_BY_STATUS",
-      competenceDate,
-      valueUsed,
-    };
+  if (filters.status === "authorized") {
+    if (row.status === NOMUS_NFE_STATUS_CANCELLED) {
+      return {
+        included: false,
+        exclusionReasonCode: "CANCELLED_NFE",
+        competenceDate,
+        valueUsed,
+      };
+    }
+    if (row.status !== NOMUS_NFE_STATUS_AUTHORIZED) {
+      return {
+        included: false,
+        exclusionReasonCode: "FILTERED_BY_STATUS",
+        competenceDate,
+        valueUsed,
+      };
+    }
   }
 
   if (filters.status === "cancelled" && row.status !== NOMUS_NFE_STATUS_CANCELLED) {

@@ -83,8 +83,8 @@ export function FinanceBillingComparisonPanel({
         </div>
         {nfeEmpty ? (
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-            Fonte NF-e em validação. O dashboard oficial ainda utiliza SalesOrder. Execute a
-            sincronização de NF-e e aguarde validação antes de migrar a fonte.
+            Sem NF-e sincronizada neste período. O dashboard fiscal usa NomusNfe — execute a
+            sincronização de NF-e para comparar com SalesOrder.
           </p>
         ) : null}
       </div>

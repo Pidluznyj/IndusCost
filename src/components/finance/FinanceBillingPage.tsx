@@ -10,7 +10,6 @@ import {
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
-  buildFinanceBillingDashboardQuery,
   buildFinanceBillingYearOptions,
   createDefaultFinanceBillingYear,
   FINANCE_BILLING_TABS,
@@ -18,6 +17,13 @@ import {
   type FinanceBillingDashboardPayload,
   type FinanceBillingTabId,
 } from "@/src/lib/financeBillingDashboardTypes";
+import {
+  buildFinanceBillingDashboardQuery,
+  FINANCE_BILLING_SOURCE_DEFAULT,
+  financeBillingSourceLabel,
+  type FinanceBillingDateBase,
+  type FinanceBillingSource,
+} from "@/src/lib/financeBillingSourceTypes";
 import {
   buildFinanceBillingExportQuery,
   buildFinanceBillingNfeQuery,
@@ -90,6 +96,14 @@ export function FinanceBillingPage() {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [draftYear, setDraftYear] = useState(defaultYear);
   const [appliedYear, setAppliedYear] = useState(defaultYear);
+  const [draftBillingSource, setDraftBillingSource] = useState<FinanceBillingSource>(
+    FINANCE_BILLING_SOURCE_DEFAULT
+  );
+  const [appliedBillingSource, setAppliedBillingSource] = useState<FinanceBillingSource>(
+    FINANCE_BILLING_SOURCE_DEFAULT
+  );
+  const [draftDateBase, setDraftDateBase] = useState<FinanceBillingDateBase>("emissao");
+  const [appliedDateBase, setAppliedDateBase] = useState<FinanceBillingDateBase>("emissao");
   const [draftNfeFilters, setDraftNfeFilters] = useState(() =>
     createDefaultFinanceBillingNfeFilters(defaultYear)
   );
@@ -106,13 +120,28 @@ export function FinanceBillingPage() {
   const hasPendingFilterChanges = useMemo(
     () =>
       hasPendingFinanceBillingYearChange(draftYear, appliedYear) ||
+      draftBillingSource !== appliedBillingSource ||
+      draftDateBase !== appliedDateBase ||
       hasPendingFinanceBillingNfeFilterChanges(draftNfeFilters, appliedNfeFilters),
-    [draftYear, appliedYear, draftNfeFilters, appliedNfeFilters]
+    [
+      draftYear,
+      appliedYear,
+      draftBillingSource,
+      appliedBillingSource,
+      draftDateBase,
+      appliedDateBase,
+      draftNfeFilters,
+      appliedNfeFilters,
+    ]
   );
 
   const queryString = useMemo(
-    () => buildFinanceBillingDashboardQuery(appliedYear),
-    [appliedYear]
+    () =>
+      buildFinanceBillingDashboardQuery(appliedYear, {
+        billingSource: appliedBillingSource,
+        dateBase: appliedDateBase,
+      }),
+    [appliedYear, appliedBillingSource, appliedDateBase]
   );
   const nfeQueryString = useMemo(
     () => buildFinanceBillingNfeQuery(appliedNfeFilters),
@@ -212,6 +241,8 @@ export function FinanceBillingPage() {
 
   const handleApplyFilters = () => {
     setAppliedYear(draftYear.trim());
+    setAppliedBillingSource(draftBillingSource);
+    setAppliedDateBase(draftDateBase);
     setAppliedNfeFilters({ ...draftNfeFilters, year: draftYear.trim() });
   };
 
@@ -219,6 +250,10 @@ export function FinanceBillingPage() {
     const year = createDefaultFinanceBillingYear();
     setDraftYear(year);
     setAppliedYear(year);
+    setDraftBillingSource(FINANCE_BILLING_SOURCE_DEFAULT);
+    setAppliedBillingSource(FINANCE_BILLING_SOURCE_DEFAULT);
+    setDraftDateBase("emissao");
+    setAppliedDateBase("emissao");
     const defaults = createDefaultFinanceBillingNfeFilters(year);
     setDraftNfeFilters(defaults);
     setAppliedNfeFilters(defaults);
@@ -239,8 +274,12 @@ export function FinanceBillingPage() {
       status: appliedNfeFilters.status,
       documentNumber: appliedNfeFilters.documentNumber || undefined,
     });
-    return buildBillingAuditQueryString(filters);
-  }, [appliedYear, appliedNfeFilters]);
+    const base = buildBillingAuditQueryString(filters);
+    const params = new URLSearchParams(base);
+    params.set("billingSource", appliedBillingSource);
+    params.set("dateBase", appliedDateBase);
+    return params.toString();
+  }, [appliedYear, appliedNfeFilters, appliedBillingSource, appliedDateBase]);
 
   const loadAudit = useCallback(async () => {
     abortAuditRef.current?.abort();
@@ -328,7 +367,14 @@ export function FinanceBillingPage() {
     appliedYear !== createDefaultFinanceBillingYear();
 
   const tab = data?.tab;
+  const billingSource = data?.billingSource ?? appliedBillingSource;
+  const isNfeSource = billingSource === "nfe";
+  const pageTitle = financeBillingSourceLabel(billingSource);
   const yearSummary = tab?.multiYearSummary.find((s) => s.year === data?.selectedYear);
+  const monthCardLabel = isNfeSource ? "Mês atual — NF-e fiscal" : "Mês atual — Pedidos";
+  const yearCardLabel = isNfeSource
+    ? `Faturamento ${appliedYear} — NF-e`
+    : `Faturamento ${appliedYear} — Pedidos`;
 
   const filterStatus = useMemo(
     () => resolveFinanceBiFilterStatus(Boolean(filtersActive), hasPendingFilterChanges),
@@ -359,12 +405,14 @@ export function FinanceBillingPage() {
     <FinanceBiDashboardShell>
       <FinanceBiExecutiveHeader
         eyebrow="Financeiro · Mercado"
-        title="Faturamento"
+        title={pageTitle}
         subtitle={
           <>
-            Fonte executiva: <span className="font-semibold text-[#111827]">SalesOrder</span> + NF no
-            pedido. Diagnóstico: <span className="font-semibold text-[#111827]">NomusNfe</span>.
-            Comparativo {comparisonLabel}.
+            Fonte do dashboard:{" "}
+            <span className="font-semibold text-[#111827]">
+              {isNfeSource ? "NF-e fiscal (NomusNfe)" : "Pedidos de venda (SalesOrder)"}
+            </span>
+            . Comparativo {comparisonLabel}. Use a aba Composição / Auditoria para NF-e × pedidos.
           </>
         }
         filterStatus={filterStatus}
@@ -439,8 +487,7 @@ export function FinanceBillingPage() {
         ]}
       >
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <FinanceBillingSourceBadge variant="official" />
-          <FinanceBillingSourceBadge variant="diagnostic" />
+          <FinanceBillingSourceBadge source={billingSource} />
         </div>
       </FinanceBiExecutiveHeader>
 
@@ -480,7 +527,48 @@ export function FinanceBillingPage() {
         applyDisabled={!hasPendingFilterChanges || loading}
         hint={FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE}
         alwaysVisible={
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="space-y-4">
+            <div>
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                Fonte do faturamento
+              </span>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {(
+                  [
+                    ["nfe", "Fiscal NF-e"],
+                    ["sales_order", "Pedidos de venda"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setDraftBillingSource(id)}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                      draftBillingSource === id
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "border border-[#E5E7EB] bg-white text-muted-foreground hover:bg-muted/50"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <FilterField label="Data base (NF-e)">
+              <select
+                value={draftDateBase}
+                onChange={(e) =>
+                  setDraftDateBase(e.target.value as FinanceBillingDateBase)
+                }
+                disabled={draftBillingSource !== "nfe"}
+                className="w-full h-9 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-sm disabled:opacity-50"
+              >
+                <option value="emissao">Data fiscal / emissão</option>
+                <option value="processamento">Data processamento</option>
+              </select>
+            </FilterField>
             <FilterField label="Ano">
               <select
                 value={draftYear}
@@ -553,6 +641,7 @@ export function FinanceBillingPage() {
                 <option value="cancelled">Cancelada</option>
               </select>
             </FilterField>
+            </div>
           </div>
         }
       >
@@ -577,25 +666,27 @@ export function FinanceBillingPage() {
         <div className="px-5 py-4 border-b border-[#E5E7EB]">
           <h2 className="text-sm font-bold text-[#111827]">Resumo executivo</h2>
           <p className="text-[11px] text-[#6B7280] mt-0.5">
-            Painel SalesOrder — ano {appliedYear}. Exceções rotuladas nos cards com escopo diferente.
+            {isNfeSource
+              ? `Painel NF-e fiscal — ano ${appliedYear}. Alinhado ao BI fiscal.`
+              : `Painel pedidos de venda — ano ${appliedYear}. Pode divergir do BI fiscal.`}
           </p>
         </div>
         <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <FinanceBiKpiCard
             icon={Wallet}
-            label={`Faturamento ${appliedYear}`}
+            label={yearCardLabel}
             value={loading ? "…" : formatExecutiveCompactCurrency(yearSummary?.yearTotal)}
             sub="Total anual mercado"
-            hint="Σ mensal do ano selecionado (SalesOrder)"
+            hint={isNfeSource ? "Σ mensal NF-e autorizada mercado" : "Σ mensal SalesOrder"}
             colorClass="text-[#059669]"
             loading={loading}
           />
           <FinanceBiKpiCard
             icon={TrendingUp}
-            label="Mês atual"
+            label={monthCardLabel}
             value={loading ? "…" : formatExecutiveCompactCurrency(tab?.target.actual)}
             sub={tab?.periodLabel}
-            hint="Faturamento do mês de referência"
+            hint={isNfeSource ? "Valor líquido NF-e no mês" : "SalesOrder.totalNetValue no mês"}
             loading={loading}
           />
           <FinanceBiKpiCard

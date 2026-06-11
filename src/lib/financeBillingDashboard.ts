@@ -1,14 +1,24 @@
 import { buildBillingDashboardTab } from "./billingDashboardMetrics.js";
 import { resolveExecutiveDashboardYearContext } from "./executiveDashboardYear.js";
+import { buildBillingDashboardFromNfes } from "./financeBillingNfeDashboard.js";
 import type { FinanceBillingDashboardPayload } from "./financeBillingDashboardTypes.js";
+import {
+  parseFinanceBillingDateBase,
+  parseFinanceBillingSource,
+} from "./financeBillingSourceTypes.js";
 import type { BillingDashboardTab } from "./executiveDashboardTypes.js";
 
 export async function buildFinanceBillingDashboard(
-  yearParam: unknown,
+  query: Record<string, unknown> = {},
   now = new Date()
 ): Promise<FinanceBillingDashboardPayload> {
-  const yearCtx = resolveExecutiveDashboardYearContext(yearParam, now);
-  const tab = await buildBillingDashboardTab(yearCtx);
+  const billingSource = parseFinanceBillingSource(query.billingSource);
+  const dateBase = parseFinanceBillingDateBase(query.dateBase);
+  const yearCtx = resolveExecutiveDashboardYearContext(query.year, now);
+  const tab =
+    billingSource === "nfe"
+      ? await buildBillingDashboardFromNfes(yearCtx, dateBase)
+      : await buildBillingDashboardTab(yearCtx);
   const lastInvoicedAt = tab.recentInvoicedOrders[0]?.invoiceDate ?? null;
   return {
     generatedAt: now.toISOString(),
@@ -17,6 +27,8 @@ export async function buildFinanceBillingDashboard(
     currentMonth: yearCtx.referenceDate.getMonth() + 1,
     periodLabel: tab.periodLabel,
     lastInvoicedAt,
+    billingSource,
+    dateBase,
     tab,
   };
 }
