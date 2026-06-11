@@ -39,7 +39,10 @@ describe("financeBillingPageFilters", () => {
     assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("draftYear"));
     assert.ok(page.includes("appliedYear"));
-    assert.ok(page.includes("FINANCE_BILLING_TABS"));
+    assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_TABS"));
+    assert.ok(page.includes("FINANCE_BILLING_ANALYSIS_TABS"));
+    assert.ok(page.includes("FinanceDetailTabs"));
+    assert.ok(page.includes("FinanceBillingActionCenter"));
     assert.ok(page.includes("FinanceBillingOverviewView"));
     assert.ok(page.includes("FinanceBillingAccumulatedView"));
     assert.ok(page.includes("FinanceBillingMonthlyView"));
@@ -63,11 +66,12 @@ describe("financeBillingPageFilters", () => {
       join(process.cwd(), "src", "lib", "financeBillingDashboardTypes.ts"),
       "utf8"
     );
+    assert.ok(types.includes('"documents"'));
+    assert.ok(types.includes('"customers"'));
     assert.ok(types.includes('"overview"'));
     assert.ok(types.includes('"accumulated"'));
     assert.ok(types.includes('"monthly"'));
     assert.ok(types.includes('"projection"'));
-    assert.ok(types.includes('"nfe-details"'));
     assert.ok(types.includes('"comparison"'));
     assert.ok(types.includes('"audit"'));
   });

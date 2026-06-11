@@ -12,18 +12,22 @@ import { fetchJsonOk } from "@/src/lib/http";
 import {
   buildFinanceBillingYearOptions,
   createDefaultFinanceBillingYear,
-  FINANCE_BILLING_TABS,
+  FINANCE_BILLING_ANALYSIS_TABS,
+  FINANCE_BILLING_EXECUTIVE_TABS,
   hasPendingFinanceBillingYearChange,
+  type FinanceBillingAnalysisTabId,
   type FinanceBillingDashboardPayload,
-  type FinanceBillingTabId,
+  type FinanceBillingExecutiveTabId,
 } from "@/src/lib/financeBillingDashboardTypes";
 import {
   buildFinanceBillingDashboardQuery,
   FINANCE_BILLING_SOURCE_DEFAULT,
-  financeBillingSourceLabel,
   type FinanceBillingDateBase,
-  type FinanceBillingSource,
 } from "@/src/lib/financeBillingSourceTypes";
+import {
+  parseFinanceBillingNfeLocalFilter,
+  type FinanceBillingNfeLocalFilter,
+} from "@/src/lib/financeBillingNfeLocalFilter";
 import {
   buildFinanceBillingExportQuery,
   buildFinanceBillingNfeQuery,
@@ -35,7 +39,7 @@ import {
 import { financeBillingNfeExportFilename } from "@/src/lib/financeBillingNfeExport";
 import {
   formatExecutiveCompactCurrency,
-  formatExecutivePercent,
+  formatExecutiveInteger,
 } from "@/src/lib/executiveDashboardFormatters";
 import type { FinanceBillingComparisonPayload } from "@/src/lib/financeBillingNfeComparison";
 import type { FinanceBillingNfeListPayload } from "@/src/lib/financeBillingNfeList";
@@ -57,13 +61,15 @@ import {
 import { FinanceBillingAuditPanel } from "@/src/components/finance/billing/FinanceBillingAuditPanel";
 import { FinanceBillingComparisonPanel } from "@/src/components/finance/billing/FinanceBillingComparisonPanel";
 import { FinanceBillingNfeDetailsTable } from "@/src/components/finance/billing/FinanceBillingNfeDetailsTable";
+import { FinanceBillingCustomersTab } from "@/src/components/finance/billing/FinanceBillingCustomersTab";
+import { FinanceBillingActionCenter } from "@/src/components/finance/billing/FinanceBillingActionCenter";
+import { FinanceDetailTabs } from "@/src/components/finance/shared/FinanceDetailTabs";
 import {
   buildBillingAuditQueryString,
   parseBillingAuditFilters,
 } from "@/src/lib/financeBillingAuditFilters";
 import type { BillingAuditResult } from "@/src/lib/financeBillingAuditTypes";
 import { financeBillingAuditExportFilename } from "@/src/lib/financeBillingAuditExport";
-import { cn } from "@/src/lib/utils";
 import {
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
   FINANCE_BILLING_NFE_EXPORT_SCOPE,
@@ -85,7 +91,9 @@ export function FinanceBillingPage() {
   const canRunSync = canRunFinanceBillingNfeSync(auth);
   const defaultYear = createDefaultFinanceBillingYear();
 
-  const [activeTab, setActiveTab] = useState<FinanceBillingTabId>("overview");
+  const [analysisTab, setAnalysisTab] = useState<FinanceBillingAnalysisTabId>("overview");
+  const [executiveTab, setExecutiveTab] = useState<FinanceBillingExecutiveTabId>("documents");
+  const [nfeLocalFilter, setNfeLocalFilter] = useState<FinanceBillingNfeLocalFilter>("all");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -96,12 +104,6 @@ export function FinanceBillingPage() {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [draftYear, setDraftYear] = useState(defaultYear);
   const [appliedYear, setAppliedYear] = useState(defaultYear);
-  const [draftBillingSource, setDraftBillingSource] = useState<FinanceBillingSource>(
-    FINANCE_BILLING_SOURCE_DEFAULT
-  );
-  const [appliedBillingSource, setAppliedBillingSource] = useState<FinanceBillingSource>(
-    FINANCE_BILLING_SOURCE_DEFAULT
-  );
   const [draftDateBase, setDraftDateBase] = useState<FinanceBillingDateBase>("emissao");
   const [appliedDateBase, setAppliedDateBase] = useState<FinanceBillingDateBase>("emissao");
   const [draftNfeFilters, setDraftNfeFilters] = useState(() =>
@@ -120,14 +122,11 @@ export function FinanceBillingPage() {
   const hasPendingFilterChanges = useMemo(
     () =>
       hasPendingFinanceBillingYearChange(draftYear, appliedYear) ||
-      draftBillingSource !== appliedBillingSource ||
       draftDateBase !== appliedDateBase ||
       hasPendingFinanceBillingNfeFilterChanges(draftNfeFilters, appliedNfeFilters),
     [
       draftYear,
       appliedYear,
-      draftBillingSource,
-      appliedBillingSource,
       draftDateBase,
       appliedDateBase,
       draftNfeFilters,
@@ -138,10 +137,10 @@ export function FinanceBillingPage() {
   const queryString = useMemo(
     () =>
       buildFinanceBillingDashboardQuery(appliedYear, {
-        billingSource: appliedBillingSource,
+        billingSource: FINANCE_BILLING_SOURCE_DEFAULT,
         dateBase: appliedDateBase,
       }),
-    [appliedYear, appliedBillingSource, appliedDateBase]
+    [appliedYear, appliedDateBase]
   );
   const nfeQueryString = useMemo(
     () => buildFinanceBillingNfeQuery(appliedNfeFilters),
@@ -241,22 +240,21 @@ export function FinanceBillingPage() {
 
   const handleApplyFilters = () => {
     setAppliedYear(draftYear.trim());
-    setAppliedBillingSource(draftBillingSource);
     setAppliedDateBase(draftDateBase);
     setAppliedNfeFilters({ ...draftNfeFilters, year: draftYear.trim() });
+    setNfeLocalFilter("all");
   };
 
   const handleClearFilters = () => {
     const year = createDefaultFinanceBillingYear();
     setDraftYear(year);
     setAppliedYear(year);
-    setDraftBillingSource(FINANCE_BILLING_SOURCE_DEFAULT);
-    setAppliedBillingSource(FINANCE_BILLING_SOURCE_DEFAULT);
     setDraftDateBase("emissao");
     setAppliedDateBase("emissao");
     const defaults = createDefaultFinanceBillingNfeFilters(year);
     setDraftNfeFilters(defaults);
     setAppliedNfeFilters(defaults);
+    setNfeLocalFilter("all");
   };
 
   const handleRefreshAll = () => {
@@ -276,10 +274,10 @@ export function FinanceBillingPage() {
     });
     const base = buildBillingAuditQueryString(filters);
     const params = new URLSearchParams(base);
-    params.set("billingSource", appliedBillingSource);
+    params.set("billingSource", FINANCE_BILLING_SOURCE_DEFAULT);
     params.set("dateBase", appliedDateBase);
     return params.toString();
-  }, [appliedYear, appliedNfeFilters, appliedBillingSource, appliedDateBase]);
+  }, [appliedYear, appliedNfeFilters, appliedDateBase]);
 
   const loadAudit = useCallback(async () => {
     abortAuditRef.current?.abort();
@@ -302,6 +300,10 @@ export function FinanceBillingPage() {
       if (!controller.signal.aborted) setLoadingAudit(false);
     }
   }, [auditQueryString]);
+
+  useEffect(() => {
+    void loadAudit();
+  }, [loadAudit]);
 
   const handleAuditExport = async () => {
     setAuditExporting(true);
@@ -367,14 +369,80 @@ export function FinanceBillingPage() {
     appliedYear !== createDefaultFinanceBillingYear();
 
   const tab = data?.tab;
-  const billingSource = data?.billingSource ?? appliedBillingSource;
-  const isNfeSource = billingSource === "nfe";
-  const pageTitle = financeBillingSourceLabel(billingSource);
   const yearSummary = tab?.multiYearSummary.find((s) => s.year === data?.selectedYear);
-  const monthCardLabel = isNfeSource ? "Mês atual — NF-e fiscal" : "Mês atual — Pedidos";
-  const yearCardLabel = isNfeSource
-    ? `Faturamento ${appliedYear} — NF-e`
-    : `Faturamento ${appliedYear} — Pedidos`;
+  const appliedMonthNum = appliedNfeFilters.month
+    ? Number.parseInt(appliedNfeFilters.month, 10)
+    : null;
+  const summaryCard = (id: string) => tab?.summaryCards.find((c) => c.id === id);
+
+  const kpiCards = [
+    {
+      icon: Wallet,
+      label: "Faturamento líquido (mês)",
+      value: loading ? "…" : formatExecutiveCompactCurrency(tab?.target.actual),
+      sub: tab?.periodLabel ?? "—",
+      hint: "NF-e autorizada mercado · valor líquido · data base aplicada",
+    },
+    {
+      icon: TrendingUp,
+      label: "Faturamento bruto encontrado",
+      value: loading
+        ? "…"
+        : formatExecutiveCompactCurrency(audit?.summary.grossFoundTotal ?? null),
+      sub: "Auditoria fiscal",
+      hint: "Total bruto antes das regras de exclusão",
+    },
+    {
+      icon: Target,
+      label: "Quantidade NF-e (mês)",
+      value: loading
+        ? "…"
+        : (summaryCard("billing-count-month")?.formatted ??
+          formatExecutiveInteger(summaryCard("billing-count-month")?.value)),
+      sub: "Autorizadas no período",
+      hint: "Contagem de notas incluídas no mês filtrado",
+    },
+    {
+      icon: Wallet,
+      label: "Ticket médio NF-e",
+      value: loading ? "…" : summaryCard("billing-ticket")?.formatted ?? "—",
+      sub: "Líquido ÷ quantidade",
+      hint: "Média por NF-e no mês de referência",
+    },
+    {
+      icon: TrendingUp,
+      label: "Comparativo mês anterior",
+      value: loading ? "…" : formatExecutiveCompactCurrency(tab?.target.previousPeriod),
+      sub: tab?.target.formatted.previousPeriod ?? "—",
+      hint: "Mesmo mês do ano anterior (NF-e)",
+    },
+    {
+      icon: TrendingUp,
+      label: "Comparativo ano anterior (YTD)",
+      value: loading ? "…" : tab?.yearComparison.formatted.yearToDatePrevious ?? "—",
+      sub: `YTD ${data?.previousYear ?? ""}`,
+      scopeNote: FINANCE_BILLING_YTD_SCOPE,
+      hint: "Acumulado até o mês de referência",
+    },
+    {
+      icon: Wallet,
+      label: "Acumulado YTD",
+      value: loading ? "…" : formatExecutiveCompactCurrency(yearSummary?.ytdTotal),
+      scopeNote: FINANCE_BILLING_YTD_SCOPE,
+      hint: "Σ mensal NF-e até mês de referência",
+    },
+    {
+      icon: Target,
+      label: "Previsto no mês",
+      value: loading
+        ? "…"
+        : tab?.forecast?.formatted.monthForecastAmount ??
+          tab?.projection.formatted.projectedMonth ??
+          "—",
+      scopeNote: FINANCE_BILLING_PROJECTION_SCOPE,
+      hint: "Carteira prevista ou projeção YTD — não confundir com realizado",
+    },
+  ];
 
   const filterStatus = useMemo(
     () => resolveFinanceBiFilterStatus(Boolean(filtersActive), hasPendingFilterChanges),
@@ -404,17 +472,9 @@ export function FinanceBillingPage() {
   return (
     <FinanceBiDashboardShell>
       <FinanceBiExecutiveHeader
-        eyebrow="Financeiro · Mercado"
-        title={pageTitle}
-        subtitle={
-          <>
-            Fonte do dashboard:{" "}
-            <span className="font-semibold text-[#111827]">
-              {isNfeSource ? "NF-e fiscal (NomusNfe)" : "Pedidos de venda (SalesOrder)"}
-            </span>
-            . Comparativo {comparisonLabel}. Use a aba Composição / Auditoria para NF-e × pedidos.
-          </>
-        }
+        eyebrow="Financeiro · Faturamento"
+        title="Faturamento"
+        subtitle="Receita fiscal e operacional por NF-e autorizada. SalesOrder aparece apenas em comparativos e auditoria."
         filterStatus={filterStatus}
         meta={[
           { label: "Período", value: data?.periodLabel ?? (loading ? "…" : "—") },
@@ -448,7 +508,7 @@ export function FinanceBillingPage() {
             id: "audit",
             label: "Auditar base do faturamento",
             onClick: () => {
-              setActiveTab("audit");
+              setExecutiveTab("audit");
               void loadAudit();
             },
             disabled: loadingAudit,
@@ -487,7 +547,8 @@ export function FinanceBillingPage() {
         ]}
       >
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <FinanceBillingSourceBadge source={billingSource} />
+          <FinanceBillingSourceBadge source="nfe" />
+          <FinanceBillingSourceBadge variant="diagnostic" />
         </div>
       </FinanceBiExecutiveHeader>
 
@@ -528,33 +589,10 @@ export function FinanceBillingPage() {
         hint={FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE}
         alwaysVisible={
           <div className="space-y-4">
-            <div>
-              <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                Fonte do faturamento
-              </span>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {(
-                  [
-                    ["nfe", "Fiscal NF-e"],
-                    ["sales_order", "Pedidos de venda"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setDraftBillingSource(id)}
-                    className={cn(
-                      "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                      draftBillingSource === id
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "border border-[#E5E7EB] bg-white text-muted-foreground hover:bg-muted/50"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <p className="text-[11px] text-[#6B7280]">
+              Fonte padrão: <span className="font-semibold text-[#111827]">NF-e fiscal</span>.
+              Comparativo SalesOrder na aba Comparativos.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
             <FilterField label="Data base (NF-e)">
               <select
@@ -562,8 +600,7 @@ export function FinanceBillingPage() {
                 onChange={(e) =>
                   setDraftDateBase(e.target.value as FinanceBillingDateBase)
                 }
-                disabled={draftBillingSource !== "nfe"}
-                className="w-full h-9 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-sm disabled:opacity-50"
+                className="w-full h-9 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-sm"
               >
                 <option value="emissao">Data fiscal / emissão</option>
                 <option value="processamento">Data processamento</option>
@@ -666,107 +703,110 @@ export function FinanceBillingPage() {
         <div className="px-5 py-4 border-b border-[#E5E7EB]">
           <h2 className="text-sm font-bold text-[#111827]">Resumo executivo</h2>
           <p className="text-[11px] text-[#6B7280] mt-0.5">
-            {isNfeSource
-              ? `Painel NF-e fiscal — ano ${appliedYear}. Alinhado ao BI fiscal.`
-              : `Painel pedidos de venda — ano ${appliedYear}. Pode divergir do BI fiscal.`}
+            Painel NF-e fiscal — ano {appliedYear}. Comparativo {comparisonLabel}. Meses futuros
+            exibem null, não zero falso.
           </p>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <FinanceBiKpiCard
-            icon={Wallet}
-            label={yearCardLabel}
-            value={loading ? "…" : formatExecutiveCompactCurrency(yearSummary?.yearTotal)}
-            sub="Total anual mercado"
-            hint={isNfeSource ? "Σ mensal NF-e autorizada mercado" : "Σ mensal SalesOrder"}
-            colorClass="text-[#059669]"
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            icon={TrendingUp}
-            label={monthCardLabel}
-            value={loading ? "…" : formatExecutiveCompactCurrency(tab?.target.actual)}
-            sub={tab?.periodLabel}
-            hint={isNfeSource ? "Valor líquido NF-e no mês" : "SalesOrder.totalNetValue no mês"}
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            icon={Target}
-            label="Meta (+30%)"
-            value={loading ? "…" : formatExecutiveCompactCurrency(tab?.target.target)}
-            sub={`Base: ${tab?.target.formatted.previousPeriod ?? "—"}`}
-            hint="Mês anterior × 1,3"
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            label="% Atingimento"
-            value={loading ? "…" : formatExecutivePercent(tab?.target.achievementPercent, 1)}
-            sub={`Gap: ${tab?.target.formatted.gap ?? "—"}`}
-            hint="Realizado ÷ meta × 100"
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            label="Acumulado YTD"
-            value={loading ? "…" : formatExecutiveCompactCurrency(yearSummary?.ytdTotal)}
-            scopeNote={FINANCE_BILLING_YTD_SCOPE}
-            hint="Σ até mês de referência no ano"
-            loading={loading}
-          />
-          <FinanceBiKpiCard
-            label="Projeção anual"
-            value={loading ? "…" : formatExecutiveCompactCurrency(tab?.projection.projectedYear)}
-            scopeNote={FINANCE_BILLING_PROJECTION_SCOPE}
-            hint="Média diária YTD × dias úteis restantes"
-            loading={loading}
-          />
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+          {kpiCards.map((card) => (
+            <div key={card.label} className="min-w-0">
+              <FinanceBiKpiCard
+                icon={card.icon}
+                label={card.label}
+                value={String(card.value)}
+                sub={card.sub}
+                hint={card.hint}
+                scopeNote={"scopeNote" in card ? String(card.scopeNote) : undefined}
+                loading={loading}
+              />
+            </div>
+          ))}
         </div>
       </section>
 
-      <div className={financeBiSectionClass}>
-        <nav className="flex flex-wrap gap-1 p-2 border-b border-border/50 bg-background/30">
-          {FINANCE_BILLING_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "rounded-xl px-3 py-2 text-xs font-semibold transition-colors",
-                activeTab === tab.id
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
+      <section className={financeBiSectionClass}>
+        <div className="px-5 py-4 border-b border-[#E5E7EB]">
+          <h2 className="text-sm font-bold text-[#111827]">Análises gráficas</h2>
+          <p className="text-[11px] text-[#6B7280] mt-0.5">
+            Evolução mensal, acumulado, projeção e carteira prevista — fonte NF-e.
+          </p>
+        </div>
+        <div className="px-5 pt-4">
+          <FinanceDetailTabs
+            tabs={FINANCE_BILLING_ANALYSIS_TABS}
+            activeId={analysisTab}
+            onChange={setAnalysisTab}
+          />
+        </div>
         <div className="p-5" role="tabpanel">
-          {loading && !data ? <FinanceApLoadingBlock label="faturamento" /> : null}
-
-          {activeTab === "overview" ? (
+          {loading && !data ? <FinanceApLoadingBlock label="gráficos de faturamento" /> : null}
+          {analysisTab === "overview" ? (
             <FinanceBillingOverviewView data={data} loading={loading} />
           ) : null}
-          {activeTab === "accumulated" ? (
+          {analysisTab === "accumulated" ? (
             <FinanceBillingAccumulatedView data={data} loading={loading} />
           ) : null}
-          {activeTab === "monthly" ? (
+          {analysisTab === "monthly" ? (
             <FinanceBillingMonthlyView data={data} loading={loading} />
           ) : null}
-          {activeTab === "projection" ? (
+          {analysisTab === "projection" ? (
             <FinanceBillingProjectionView data={data} loading={loading} />
           ) : null}
-          {activeTab === "forecast" ? (
+          {analysisTab === "forecast" ? (
             <FinanceBillingForecastView data={data} loading={loading} />
           ) : null}
-          {activeTab === "nfe-details" ? (
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <FinanceBillingActionCenter
+          tab={tab}
+          comparison={comparison}
+          audit={audit}
+          loading={loading || loadingComparison || loadingAudit}
+        />
+        <FinanceBillingCustomersTab
+          rows={tab?.topCustomers ?? []}
+          loading={loading}
+          yearLabel={appliedYear}
+        />
+      </div>
+
+      <section className={financeBiSectionClass}>
+        <div className="px-5 py-4 border-b border-[#E5E7EB]">
+          <h2 className="text-sm font-bold text-[#111827]">Detalhamento</h2>
+          <p className="text-[11px] text-[#6B7280] mt-0.5">
+            Grid explicativo dos cards — filtros globais aplicados afetam export e listagens.
+          </p>
+        </div>
+        <div className="px-5 pt-4">
+          <FinanceDetailTabs
+            tabs={FINANCE_BILLING_EXECUTIVE_TABS}
+            activeId={executiveTab}
+            onChange={setExecutiveTab}
+          />
+        </div>
+        <div className="p-5" role="tabpanel">
+          {executiveTab === "documents" ? (
             <FinanceBillingNfeDetailsTable
               nfeList={nfeList}
               loading={loadingNfe}
               error={nfeError}
               onRetry={() => void loadNfeList()}
+              localFilter={nfeLocalFilter}
+              onLocalFilterChange={(v) => setNfeLocalFilter(parseFinanceBillingNfeLocalFilter(v))}
+              appliedYear={Number.parseInt(appliedYear, 10) || new Date().getFullYear()}
+              appliedMonth={appliedMonthNum}
             />
           ) : null}
-          {activeTab === "comparison" ? (
+          {executiveTab === "customers" ? (
+            <FinanceBillingCustomersTab
+              rows={tab?.topCustomers ?? []}
+              loading={loading}
+              yearLabel={appliedYear}
+            />
+          ) : null}
+          {executiveTab === "comparison" ? (
             <FinanceBillingComparisonPanel
               comparison={comparison}
               loading={loadingComparison}
@@ -774,7 +814,7 @@ export function FinanceBillingPage() {
               onRetry={() => void loadComparison()}
             />
           ) : null}
-          {activeTab === "audit" ? (
+          {executiveTab === "audit" ? (
             <FinanceBillingAuditPanel
               audit={audit}
               loading={loadingAudit}
@@ -783,7 +823,7 @@ export function FinanceBillingPage() {
             />
           ) : null}
         </div>
-      </div>
+      </section>
     </FinanceBiDashboardShell>
   );
 }

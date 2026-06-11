@@ -43,15 +43,37 @@ export function hasPendingFinanceBillingYearChange(
   return draftYear.trim() !== appliedYear.trim();
 }
 
-export const FINANCE_BILLING_TABS = [
+/** Abas inferiores executivas — grid, clientes, comparativos e auditoria. */
+export const FINANCE_BILLING_EXECUTIVE_TABS = [
+  { id: "documents", label: "NF-e / Documentos" },
+  { id: "customers", label: "Clientes" },
+  { id: "comparison", label: "Comparativos" },
+  { id: "audit", label: "Auditoria" },
+] as const;
+
+export type FinanceBillingExecutiveTabId =
+  (typeof FINANCE_BILLING_EXECUTIVE_TABS)[number]["id"];
+
+/** Abas de análise gráfica — mesma fonte NF-e fiscal. */
+export const FINANCE_BILLING_ANALYSIS_TABS = [
   { id: "overview", label: "Visão Geral" },
-  { id: "accumulated", label: "Acumulado NF-e" },
+  { id: "accumulated", label: "Acumulado" },
   { id: "monthly", label: "Mês a Mês" },
   { id: "projection", label: "Projeção" },
   { id: "forecast", label: "Carteira Prevista" },
-  { id: "nfe-details", label: "Detalhado NF-e" },
-  { id: "comparison", label: "Comparativo" },
-  { id: "audit", label: "Composição / Auditoria" },
 ] as const;
 
-export type FinanceBillingTabId = (typeof FINANCE_BILLING_TABS)[number]["id"];
+export type FinanceBillingAnalysisTabId =
+  (typeof FINANCE_BILLING_ANALYSIS_TABS)[number]["id"];
+
+/** União legada para testes e rotas que referenciam ids antigos. */
+export const FINANCE_BILLING_TABS = [
+  ...FINANCE_BILLING_ANALYSIS_TABS,
+  ...FINANCE_BILLING_EXECUTIVE_TABS,
+  { id: "nfe-details", label: "Detalhado NF-e" },
+] as const;
+
+export type FinanceBillingTabId =
+  | FinanceBillingExecutiveTabId
+  | FinanceBillingAnalysisTabId
+  | "nfe-details";

@@ -138,6 +138,9 @@ describe("financeBillingCalculationAudit", () => {
     assert.ok(page.includes("FINANCE_BILLING_YTD_SCOPE"));
     assert.ok(page.includes("FINANCE_BILLING_PROJECTION_SCOPE"));
     assert.ok(page.includes("FinanceBillingForecastView"));
+    assert.ok(page.includes("FinanceBillingActionCenter"));
+    assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_TABS"));
+    assert.ok(page.includes('title="Faturamento"'));
     const views = readFileSync(
       join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
       "utf8"

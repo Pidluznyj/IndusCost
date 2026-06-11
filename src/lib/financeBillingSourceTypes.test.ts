@@ -35,15 +35,16 @@ describe("financeBillingSourceTypes", () => {
     assert.match(financeBillingSourceChip("sales_order"), /SalesOrder/);
   });
 
-  it("FinanceBillingPage expõe seletor de fonte", () => {
+  it("FinanceBillingPage mantém NF-e como fonte padrão e SalesOrder só em comparativo", () => {
     const page = readFileSync(
       join(process.cwd(), "src", "components", "finance", "FinanceBillingPage.tsx"),
       "utf8"
     );
-    assert.match(page, /Fiscal NF-e/);
-    assert.match(page, /Pedidos de venda/);
+    assert.match(page, /FINANCE_BILLING_SOURCE_DEFAULT/);
     assert.match(page, /FinanceBillingSourceBadge/);
-    assert.match(page, /billingSource/);
+    assert.match(page, /SalesOrder aparece apenas/);
+    assert.match(page, /FinanceBillingComparisonPanel/);
+    assert.doesNotMatch(page, /setDraftBillingSource/);
   });
 
   it("motor roteia billingSource nfe para buildBillingDashboardFromNfes", () => {
