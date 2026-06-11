@@ -1477,7 +1477,7 @@ function StructureTab({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="font-semibold">Estrutura / BOM simulada</h4>
+        <h4 className="font-semibold">Produtos e estruturas do projeto</h4>
         {canManage ? (
           <div className="flex flex-wrap gap-2">
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("EXISTING_MATERIAL")}>

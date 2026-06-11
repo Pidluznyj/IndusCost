@@ -119,7 +119,13 @@ export function ProjectProductSimulationPanel({
   );
 
   const bomLines = useMemo(
-    () => productLines.filter((l) => l.unitSnapshot !== "HH" && l.lineType !== "PROCESS"),
+    () =>
+      productLines.filter(
+        (l) =>
+          l.parentLineId == null &&
+          l.unitSnapshot !== "HH" &&
+          l.lineType !== "PROCESS"
+      ),
     [productLines]
   );
 
@@ -334,6 +340,10 @@ export function ProjectProductSimulationPanel({
                   Atualizar lista
                 </button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Composição de 1º nível deste produto no projeto. Para ver e editar todos os níveis
+                (materiais internos, subcomponentes), use a aba Estrutura em Árvore.
+              </p>
               <ProjectBomSimulationTable
                 mode={mode}
                 lines={editableBomLines}

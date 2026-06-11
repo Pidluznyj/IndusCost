@@ -125,7 +125,8 @@ describe("projectsEngineeringCostRollup", () => {
     assert.equal(matRolled.totalCost, 30);
     assert.equal(comp.totalCost, 60);
     assert.equal(comp.unitCostSnapshot, 60);
-    assert.equal(comp.isChangedFromOfficial, true);
+    assert.equal(matRolled.isChangedFromOfficial, true);
+    assert.equal(comp.isChangedFromOfficial, false);
 
     const rootCost = sumSimulatedRootProductCost(rolled);
     assert.ok(Math.abs(rootCost - 319.301) < 0.01);

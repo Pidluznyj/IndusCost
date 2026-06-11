@@ -1,32 +1,32 @@
 import React from "react";
 import { Box, Layers, Loader2, Pencil, Settings } from "lucide-react";
 import { cn, formatCurrency } from "@/src/lib/utils";
+import { resolveStructureLineBadges } from "@/src/lib/projectsStructureLineBadges";
 import type { ProjectEngineeringTreeNode } from "@/src/lib/projectsEngineeringTree";
 import type { ProjectStructureLineRow } from "@/src/types/projects";
 
-function LineBadges({ line }: { line: ProjectStructureLineRow }) {
+function LineBadges({
+  line,
+  hasChildren,
+}: {
+  line: ProjectStructureLineRow;
+  hasChildren: boolean;
+}) {
+  const badges = resolveStructureLineBadges(line, { hasChildren });
   return (
-    <div className="flex flex-wrap gap-1 mt-1">
-      {line.sourceType === "EXISTING_MATERIAL" || line.sourceType === "EXISTING_PRODUCT" ? (
-        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold text-blue-800">
-          Herdado
+    <div className="mt-1 flex flex-wrap gap-1">
+      {badges.map((badge) => (
+        <span
+          key={badge.key}
+          title={badge.title}
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[9px] font-semibold",
+            badge.className
+          )}
+        >
+          {badge.label}
         </span>
-      ) : null}
-      {line.isChangedFromOfficial ? (
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-900">
-          Alterado
-        </span>
-      ) : null}
-      {line.sourceType === "SIMULATED_ITEM" || line.sourceType === "MANUAL" ? (
-        <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold text-violet-900">
-          {line.sourceType === "SIMULATED_ITEM" ? "Fictício" : "Manual"}
-        </span>
-      ) : null}
-      {line.isMissingCost || line.unitCostSnapshot <= 0 ? (
-        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-800">
-          Sem custo
-        </span>
-      ) : null}
+      ))}
     </div>
   );
 }
@@ -104,7 +104,7 @@ const TreeRow: React.FC<{
                   Custo un.: {formatCurrency(node.line.unitCostSnapshot)} · Total:{" "}
                   {formatCurrency(node.line.totalCost)}
                 </p>
-                <LineBadges line={node.line} />
+                <LineBadges line={node.line} hasChildren={node.children.length > 0} />
               </>
             ) : null}
           </div>

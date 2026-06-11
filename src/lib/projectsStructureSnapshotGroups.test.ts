@@ -191,7 +191,24 @@ describe("projectsStructureSnapshotGroups", () => {
     );
     assert.match(accordion, /expandedGroups/);
     assert.match(accordion, /Abrir estrutura/);
+    assert.match(accordion, /Árvore completa da engenharia/);
+    assert.match(accordion, /Clique em Abrir estrutura/);
+    assert.match(accordion, /Editar simulação deste produto/);
     assert.match(accordion, /buildProjectStructureSnapshotGroups/);
+  });
+
+  it("aba estrutura usa título Produtos e estruturas do projeto", () => {
+    const module = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
+    assert.match(module, /Produtos e estruturas do projeto/);
+  });
+
+  it("composição BOM no editor mostra só 1º nível", () => {
+    const panel = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectProductSimulationPanel.tsx"),
+      "utf8"
+    );
+    assert.match(panel, /parentLineId == null/);
+    assert.match(panel, /Composição de 1º nível/);
   });
 
   it("edição filtra por snapshotRootProductId no painel de simulação", () => {

@@ -4,8 +4,6 @@ import {
   toFiniteNumber,
 } from "@/src/lib/projectsCalculations.js";
 
-const ROLLUP_EPSILON = 0.000001;
-
 export type EngineeringRollupLine = {
   id: string;
   parentLineId: string | null;
@@ -43,22 +41,6 @@ export function deriveUnitCostFromChildrenTotal(
   if (divisor <= 0) return sanitizeFinite(childrenTotal) ?? 0;
   const unit = childrenTotal / divisor;
   return sanitizeFinite(unit) ?? 0;
-}
-
-function differsFromOfficial(
-  line: EngineeringRollupLine,
-  quantity: number,
-  lossPercent: number,
-  unitCost: number
-): boolean {
-  const oq = line.officialQuantitySnapshot;
-  const ol = line.officialLossPercentSnapshot;
-  const ou = line.officialUnitCostSnapshot;
-  if (oq != null && Math.abs(oq - quantity) > ROLLUP_EPSILON) return true;
-  if (ol != null && Math.abs(ol - lossPercent) > ROLLUP_EPSILON) return true;
-  if (ou != null && Math.abs(ou - unitCost) > ROLLUP_EPSILON) return true;
-  if (ou == null && unitCost > ROLLUP_EPSILON) return true;
-  return false;
 }
 
 function isHierarchicalSnapshotLine(line: EngineeringRollupLine): boolean {
@@ -103,21 +85,12 @@ export function recalculateEngineeringCostRollup(
 
       if (childIds.length === 0) {
         line.totalCost = lineTotalFromParts(line.quantity, line.unitCostSnapshot, line.lossPercent);
-        line.isChangedFromOfficial = differsFromOfficial(
-          line,
-          line.quantity,
-          line.lossPercent,
-          line.unitCostSnapshot
-        );
         return;
       }
 
       let childrenTotal = 0;
-      let childChanged = false;
       for (const cid of childIds) {
-        const child = byId.get(cid)!;
-        childrenTotal += child.totalCost;
-        if (child.isChangedFromOfficial) childChanged = true;
+        childrenTotal += byId.get(cid)!.totalCost;
       }
       childrenTotal = sanitizeFinite(childrenTotal) ?? 0;
 
@@ -128,8 +101,6 @@ export function recalculateEngineeringCostRollup(
       );
       line.unitCostSnapshot = derivedUnit;
       line.totalCost = lineTotalFromParts(line.quantity, derivedUnit, line.lossPercent);
-      line.isChangedFromOfficial =
-        differsFromOfficial(line, line.quantity, line.lossPercent, derivedUnit) || childChanged;
     };
 
     for (const id of scopedIds) {

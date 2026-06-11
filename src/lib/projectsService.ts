@@ -353,15 +353,13 @@ export async function persistEngineeringCostRollupForVersion(versionId: string):
     const total = toFiniteNumber(dec(line.totalCost));
     const unitChanged = Math.abs(unit - next.unitCostSnapshot) > 0.000001;
     const totalChanged = Math.abs(total - next.totalCost) > 0.000001;
-    const flagChanged = line.isChangedFromOfficial !== next.isChangedFromOfficial;
-    if (!unitChanged && !totalChanged && !flagChanged) continue;
+    if (!unitChanged && !totalChanged) continue;
     updates.push(
       prisma.projectStructureLine.update({
         where: { id: line.id },
         data: {
           unitCostSnapshot: next.unitCostSnapshot,
           totalCost: next.totalCost,
-          isChangedFromOfficial: next.isChangedFromOfficial,
           isMissingCost: next.unitCostSnapshot <= 0,
         },
       })
