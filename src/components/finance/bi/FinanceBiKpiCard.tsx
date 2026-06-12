@@ -52,7 +52,16 @@ export function FinanceBiKpiCard({
       {loading ? (
         <div className="h-8 w-32 animate-pulse rounded-lg bg-[#E5E7EB]" />
       ) : (
-        <p className={cn(financeBiKpiValueClass, colorClass, valueClassName)}>{value}</p>
+        <p
+          className={cn(
+            financeBiKpiValueClass,
+            "whitespace-nowrap tabular-nums",
+            colorClass,
+            valueClassName
+          )}
+        >
+          {value}
+        </p>
       )}
       <div className="flex items-center justify-between min-h-[1.25rem] gap-2">
         {sub ? <span className="text-[11px] text-[#6B7280]">{sub}</span> : <span />}

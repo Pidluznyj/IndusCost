@@ -13,7 +13,6 @@ import {
   RotateCcw,
   ShieldAlert,
   TrendingDown,
-  TrendingUp,
   Wallet,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -768,102 +767,110 @@ export function FinanceAccountsPayablePage() {
             KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas
           </p>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
-          {[
-            {
-              icon: Wallet,
-              label: "Total a pagar",
-              value: formatFinanceCurrencyCompact(cards?.totalPayableAmount),
-              sub: withAppliedFilterSub(
-                cards?.totalRecords != null
-                  ? `${formatFinanceInteger(cards.totalRecords)} título(s)`
-                  : undefined,
-                Boolean(filtersActive)
-              ),
-              hint: "Σ valor original no universo filtrado",
-            },
-            {
-              icon: Landmark,
-              label: "Pago no mês",
-              value: formatFinanceCurrencyCompact(cards?.paidThisMonthAmount),
-              sub: "Mês corrente",
-              scopeNote: FINANCE_AP_PAID_THIS_MONTH_SCOPE,
-              hint: "Pagamentos liquidados no mês de referência",
-              colorClass: "text-[#059669]",
-            },
-            {
-              icon: Wallet,
-              label: "Em aberto",
-              value: formatFinanceCurrencyCompact(cards?.totalOpenAmount),
-              sub: withAppliedFilterSub(
-                cards?.openTitlesCount != null
-                  ? `${formatFinanceInteger(cards.openTitlesCount)} título(s)`
-                  : undefined,
-                Boolean(filtersActive)
-              ),
-              hint: "Saldo positivo na visão gerencial",
-              colorClass: "text-[#2563EB]",
-            },
-            {
-              icon: AlertTriangle,
-              label: "Vencido gerencial",
-              value: formatFinanceCurrencyCompact(cards?.overdueAmount),
-              sub: "Data operacional < hoje",
-              hint: "Exclui pedido de compra · max(vencimento, agendamento)",
-              colorClass: (cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]",
-            },
-            {
-              icon: Clock,
-              label: "Vence hoje",
-              value: formatFinanceCurrencyCompact(cards?.dueTodayAmount),
-              sub: "Data operacional = hoje",
-              hint: "Títulos com vencimento operacional no dia",
-            },
-            {
-              icon: TrendingUp,
-              label: "Próximos 7 dias",
-              value: formatFinanceCurrencyCompact(cards?.dueNext7DaysAmount),
-              sub: "Janela operacional",
-              hint: "Vencimentos operacionais em até 7 dias",
-            },
-            {
-              icon: TrendingUp,
-              label: "Próximos 30 dias",
-              value: formatFinanceCurrencyCompact(cards?.dueNext30DaysAmount),
-              sub: "Janela operacional",
-              hint: "Vencimentos operacionais em até 30 dias",
-            },
-            {
-              icon: ShieldAlert,
-              label: data?.purchaseOrderScheduleAudit.rescheduledOpenCount
-                ? "Agendados / remarcados"
-                : "Maior fornecedor",
-              value: data?.purchaseOrderScheduleAudit.rescheduledOpenCount
-                ? formatFinanceCurrencyCompact(data.purchaseOrderScheduleAudit.rescheduledOpenAmount)
-                : cards?.topSupplier
-                  ? formatFinanceCurrencyCompact(cards.topSupplier.totalOpenAmount)
-                  : "—",
-              sub: data?.purchaseOrderScheduleAudit.rescheduledOpenCount
-                ? `${formatFinanceInteger(data.purchaseOrderScheduleAudit.rescheduledOpenCount)} título(s)`
-                : displayFinanceText(cards?.topSupplier?.personName),
-              hint: data?.purchaseOrderScheduleAudit.rescheduledOpenCount
-                ? "scheduleDate ≠ dueDate em aberto"
-                : "Maior concentração de saldo aberto",
-            },
-          ].map((kpi) => (
-            <div key={kpi.label} className="min-w-0">
-              <FinanceBiKpiCard
-                icon={kpi.icon}
-                label={kpi.label}
-                value={loading ? "…" : String(kpi.value ?? "—")}
-                sub={kpi.sub}
-                hint={kpi.hint}
-                scopeNote={"scopeNote" in kpi ? kpi.scopeNote : undefined}
-                colorClass={"colorClass" in kpi ? kpi.colorClass : undefined}
-                loading={loading}
-              />
-            </div>
-          ))}
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
+          <FinanceBiKpiCard
+            icon={Wallet}
+            label="Total a pagar"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalPayableAmount)}
+            sub={withAppliedFilterSub(
+              cards?.totalRecords != null
+                ? `${formatFinanceInteger(cards.totalRecords)} título(s)`
+                : undefined,
+              Boolean(filtersActive)
+            )}
+            hint="Σ valor original no universo filtrado"
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Landmark}
+            label="Pago no mês"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.paidThisMonthAmount)}
+            sub="Mês atual, dentro do filtro"
+            hint={FINANCE_AP_PAID_THIS_MONTH_SCOPE}
+            colorClass="text-[#059669]"
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Wallet}
+            label="Em aberto"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
+            sub={withAppliedFilterSub(
+              cards?.openTitlesCount != null
+                ? `${formatFinanceInteger(cards.openTitlesCount)} título(s)`
+                : undefined,
+              Boolean(filtersActive)
+            )}
+            hint="Saldo positivo na visão gerencial"
+            colorClass="text-[#2563EB]"
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={AlertTriangle}
+            label="Vencido gerencial"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueAmount)}
+            sub={withAppliedFilterSub("Data operacional < hoje", Boolean(filtersActive))}
+            hint="Exclui pedido de compra · max(vencimento, agendamento)"
+            colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Clock}
+            label="Vence hoje"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueTodayAmount)}
+            sub={withAppliedFilterSub("Data operacional = hoje", Boolean(filtersActive))}
+            hint="Títulos com vencimento operacional no dia"
+            colorClass="text-[#D97706]"
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Clock}
+            label="Próx. 7 dias"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext7DaysAmount)}
+            sub={withAppliedFilterSub("Janela operacional", Boolean(filtersActive))}
+            hint="Vencimentos operacionais em até 7 dias"
+            colorClass="text-[#2563EB]"
+            loading={loading}
+          />
+          <FinanceBiKpiCard
+            icon={Clock}
+            label="Próx. 30 dias"
+            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext30DaysAmount)}
+            sub={withAppliedFilterSub("Janela operacional", Boolean(filtersActive))}
+            hint="Vencimentos operacionais em até 30 dias"
+            colorClass="text-[#2563EB]"
+            loading={loading}
+          />
+          {data?.purchaseOrderScheduleAudit?.rescheduledOpenCount ? (
+            <FinanceBiKpiCard
+              icon={ShieldAlert}
+              label="Agendados"
+              value={
+                loading
+                  ? "…"
+                  : formatFinanceCurrencyCompact(
+                      data.purchaseOrderScheduleAudit.rescheduledOpenAmount
+                    )
+              }
+              sub={`${formatFinanceInteger(data.purchaseOrderScheduleAudit.rescheduledOpenCount)} título(s) remarcados`}
+              hint="Títulos com data de agendamento diferente do vencimento original"
+              loading={loading}
+            />
+          ) : (
+            <FinanceBiKpiCard
+              icon={ShieldAlert}
+              label="Maior fornecedor"
+              value={
+                loading
+                  ? "…"
+                  : cards?.topSupplier
+                    ? formatFinanceCurrencyCompact(cards.topSupplier.totalOpenAmount)
+                    : "—"
+              }
+              sub={displayFinanceText(cards?.topSupplier?.personName)}
+              hint="Maior concentração de saldo aberto na carteira filtrada"
+              loading={loading}
+            />
+          )}
         </div>
       </section>
 
