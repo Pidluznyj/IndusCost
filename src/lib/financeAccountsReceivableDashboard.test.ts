@@ -249,6 +249,7 @@ describe("financeAccountsReceivableDashboard", () => {
       row({
         externalId: 1,
         sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
         balanceReceivable: 800,
         dueDate: new Date(2026, 2, 1),
       }),
