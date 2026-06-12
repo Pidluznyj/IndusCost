@@ -80,7 +80,18 @@ import {
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import {
+  FinanceKpiCard,
+  type FinanceKpiTone,
+} from "@/src/components/finance/shared/FinanceKpiCard";
+import {
+  buildFinanceBillingComparisonPeriodTitle,
+  buildFinanceBillingSelectedPeriodTitle,
+  computeFinanceBillingComparisonDelta,
+  formatFinanceBillingDeltaValue,
+  formatFinanceBillingShortMonthYear,
+  formatFinanceBillingVariationValue,
+} from "@/src/lib/financeBillingExecutiveKpi";
 import { buildFinanceBillingFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
@@ -369,87 +380,40 @@ export function FinanceBillingPage() {
     appliedYear !== createDefaultFinanceBillingYear();
 
   const tab = data?.tab;
-  const yearSummary = tab?.multiYearSummary.find((s) => s.year === data?.selectedYear);
   const appliedMonthNum = appliedNfeFilters.month
     ? Number.parseInt(appliedNfeFilters.month, 10)
     : null;
+  const selectedYear =
+    data?.selectedYear ?? (Number.parseInt(appliedYear, 10) || new Date().getFullYear());
+  const previousYear = data?.previousYear ?? selectedYear - 1;
+  const referenceMonth = data?.currentMonth ?? new Date().getMonth() + 1;
   const summaryCard = (id: string) => tab?.summaryCards.find((c) => c.id === id);
 
-  const kpiCards = [
-    {
-      icon: Wallet,
-      label: "Faturamento líquido",
-      value: loading ? "…" : formatExecutiveCompactCurrency(tab?.target.actual),
-      subtitle: tab?.periodLabel ?? "—",
-      helperText: "NF-e autorizada mercado · valor líquido · data base aplicada",
-      tone: "info" as const,
-    },
-    {
-      icon: TrendingUp,
-      label: "Bruto encontrado",
-      value: loading
-        ? "…"
-        : formatExecutiveCompactCurrency(audit?.summary.grossFoundTotal ?? null),
-      subtitle: "Auditoria fiscal",
-      helperText: "Total bruto antes das regras de exclusão",
-      tone: "neutral" as const,
-    },
-    {
-      icon: Target,
-      label: "NF-e no mês",
-      value: loading
-        ? "…"
-        : (summaryCard("billing-count-month")?.formatted ??
-          formatExecutiveInteger(summaryCard("billing-count-month")?.value)),
-      subtitle: "Autorizadas no período",
-      helperText: "Contagem de notas incluídas no mês filtrado",
-      tone: "neutral" as const,
-    },
-    {
-      icon: Wallet,
-      label: "Ticket médio",
-      value: loading ? "…" : summaryCard("billing-ticket")?.formatted ?? "—",
-      subtitle: "Líquido ÷ quantidade",
-      helperText: "Média por NF-e no mês de referência",
-      tone: "neutral" as const,
-    },
-    {
-      icon: TrendingUp,
-      label: "Mês anterior",
-      value: loading ? "…" : formatExecutiveCompactCurrency(tab?.target.previousPeriod),
-      subtitle: tab?.target.formatted.previousPeriod ?? "—",
-      helperText: "Mesmo mês do ano anterior (NF-e)",
-      tone: "neutral" as const,
-    },
-    {
-      icon: TrendingUp,
-      label: "Ano anterior",
-      value: loading ? "…" : tab?.yearComparison.formatted.yearToDatePrevious ?? "—",
-      subtitle: `YTD ${data?.previousYear ?? ""}`,
-      helperText: FINANCE_BILLING_YTD_SCOPE,
-      tone: "neutral" as const,
-    },
-    {
-      icon: Wallet,
-      label: "Acumulado YTD",
-      value: loading ? "…" : formatExecutiveCompactCurrency(yearSummary?.ytdTotal),
-      subtitle: "Ano selecionado",
-      helperText: FINANCE_BILLING_YTD_SCOPE,
-      tone: "info" as const,
-    },
-    {
-      icon: Target,
-      label: "Previsto no mês",
-      value: loading
-        ? "…"
-        : tab?.forecast?.formatted.monthForecastAmount ??
-          tab?.projection.formatted.projectedMonth ??
-          "—",
-      subtitle: "Carteira / projeção",
-      helperText: FINANCE_BILLING_PROJECTION_SCOPE,
-      tone: "warning" as const,
-    },
-  ];
+  const monthComparison = useMemo(
+    () => computeFinanceBillingComparisonDelta(tab?.target.actual, tab?.target.previousPeriod),
+    [tab?.target.actual, tab?.target.previousPeriod]
+  );
+
+  const ytdComparison = useMemo(
+    () =>
+      computeFinanceBillingComparisonDelta(
+        tab?.yearComparison?.yearToDateCurrent,
+        tab?.yearComparison?.yearToDatePrevious
+      ),
+    [tab?.yearComparison?.yearToDateCurrent, tab?.yearComparison?.yearToDatePrevious]
+  );
+
+  const selectedPeriodTitle = buildFinanceBillingSelectedPeriodTitle(selectedYear, referenceMonth);
+  const comparisonPeriodTitle = buildFinanceBillingComparisonPeriodTitle(
+    referenceMonth,
+    previousYear
+  );
+  const sameMonthPrevYearLabel = formatFinanceBillingShortMonthYear(referenceMonth, previousYear);
+
+  const deltaTone = (delta: number | null | undefined): FinanceKpiTone => {
+    if (delta == null || !Number.isFinite(delta) || delta === 0) return "neutral";
+    return delta > 0 ? "success" : "danger";
+  };
 
   const filterStatus = useMemo(
     () => resolveFinanceBiFilterStatus(Boolean(filtersActive), hasPendingFilterChanges),
@@ -714,20 +678,147 @@ export function FinanceBillingPage() {
             exibem null, não zero falso.
           </p>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
-          {kpiCards.map((card) => (
-            <div key={card.label} className="min-w-0">
-              <FinanceKpiCard
-                icon={card.icon}
-                label={card.label}
-                value={String(card.value)}
-                subtitle={card.subtitle}
-                helperText={card.helperText}
-                tone={card.tone}
-                loading={loading}
-              />
-            </div>
-          ))}
+        <div className="p-5 space-y-8">
+          <FinanceBillingKpiGroup
+            title={selectedPeriodTitle}
+            subtitle="Fonte NF-e fiscal autorizada."
+          >
+            <FinanceKpiCard
+              icon={Wallet}
+              label="Faturamento líquido"
+              value={loading ? "…" : formatExecutiveCompactCurrency(tab?.target.actual)}
+              subtitle={tab?.periodLabel ?? "—"}
+              helperText="NF-e autorizada mercado · valor líquido · data base aplicada"
+              tone="info"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={TrendingUp}
+              label="Bruto encontrado"
+              value={
+                loading
+                  ? "…"
+                  : formatExecutiveCompactCurrency(audit?.summary.grossFoundTotal ?? null)
+              }
+              subtitle="Auditoria fiscal"
+              helperText="Total bruto antes das regras de exclusão"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={Target}
+              label="NF-e no mês"
+              value={
+                loading
+                  ? "…"
+                  : (summaryCard("billing-count-month")?.formatted ??
+                    formatExecutiveInteger(summaryCard("billing-count-month")?.value))
+              }
+              subtitle="Autorizadas no período"
+              helperText="Contagem de notas no mês de referência do painel"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={Wallet}
+              label="Ticket médio"
+              value={loading ? "…" : summaryCard("billing-ticket")?.formatted ?? "—"}
+              subtitle="Líquido ÷ quantidade"
+              helperText="Média por NF-e no mês de referência"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={Target}
+              label="Previsto no mês"
+              value={
+                loading
+                  ? "…"
+                  : tab?.forecast?.formatted.monthForecastAmount ??
+                    tab?.projection.formatted.projectedMonth ??
+                    "—"
+              }
+              subtitle="Carteira / projeção"
+              helperText={FINANCE_BILLING_PROJECTION_SCOPE}
+              tone="warning"
+              loading={loading}
+            />
+          </FinanceBillingKpiGroup>
+
+          <FinanceBillingKpiGroup
+            title={comparisonPeriodTitle}
+            subtitle="Mesmo mês do ano anterior — não é o mês cronológico anterior."
+            columns={3}
+          >
+            <FinanceKpiCard
+              icon={TrendingUp}
+              label={sameMonthPrevYearLabel}
+              value={loading ? "…" : formatExecutiveCompactCurrency(tab?.target.previousPeriod)}
+              subtitle="Mesmo mês do ano anterior"
+              helperText="Compara o mês filtrado no ano selecionado contra o mesmo mês do ano anterior."
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={TrendingUp}
+              label={`Diferença vs ${previousYear}`}
+              value={loading ? "…" : formatFinanceBillingDeltaValue(monthComparison.delta)}
+              subtitle="Período − mesmo mês ano anterior"
+              helperText="Faturamento líquido do período menos o mesmo mês do ano anterior."
+              tone={deltaTone(monthComparison.delta)}
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={TrendingUp}
+              label={`Variação vs ${previousYear}`}
+              value={loading ? "…" : formatFinanceBillingVariationValue(monthComparison.variationPercent)}
+              subtitle="Percentual sobre a base comparativa"
+              helperText="Diferença dividida pelo faturamento do mesmo mês do ano anterior."
+              tone={deltaTone(monthComparison.delta)}
+              loading={loading}
+            />
+          </FinanceBillingKpiGroup>
+
+          <FinanceBillingKpiGroup
+            title="Acumulado do ano — YTD"
+            subtitle="Comparação acumulada entre ano selecionado e ano anterior."
+          >
+            <FinanceKpiCard
+              icon={Wallet}
+              label={`YTD ${selectedYear}`}
+              value={
+                loading ? "…" : formatExecutiveCompactCurrency(tab?.yearComparison?.yearToDateCurrent)
+              }
+              subtitle="Ano selecionado"
+              helperText={FINANCE_BILLING_YTD_SCOPE}
+              tone="info"
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={Wallet}
+              label={`YTD ${previousYear}`}
+              value={
+                loading ? "…" : tab?.yearComparison?.formatted.yearToDatePrevious ?? "—"
+              }
+              subtitle="Mesmo recorte no ano anterior"
+              helperText={FINANCE_BILLING_YTD_SCOPE}
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={TrendingUp}
+              label="Diferença YTD"
+              value={loading ? "…" : formatFinanceBillingDeltaValue(ytdComparison.delta)}
+              subtitle={`${selectedYear} − ${previousYear}`}
+              helperText="Acumulado do ano selecionado menos acumulado do ano anterior."
+              tone={deltaTone(ytdComparison.delta)}
+              loading={loading}
+            />
+            <FinanceKpiCard
+              icon={TrendingUp}
+              label="Variação YTD"
+              value={loading ? "…" : formatFinanceBillingVariationValue(ytdComparison.variationPercent)}
+              subtitle="Percentual sobre YTD anterior"
+              helperText="Diferença YTD dividida pelo acumulado do ano anterior."
+              tone={deltaTone(ytdComparison.delta)}
+              loading={loading}
+            />
+          </FinanceBillingKpiGroup>
         </div>
       </section>
 
@@ -832,6 +923,37 @@ export function FinanceBillingPage() {
         </div>
       </section>
     </FinanceBiDashboardShell>
+  );
+}
+
+function FinanceBillingKpiGroup({
+  title,
+  subtitle,
+  columns = 4,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  columns?: 3 | 4;
+  children: React.ReactNode;
+}) {
+  const gridClass =
+    columns === 3
+      ? "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3"
+      : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4";
+
+  return (
+    <section className="space-y-4">
+      <header>
+        <h3 className="text-xs font-bold text-[#111827]">{title}</h3>
+        <p className="text-[11px] text-[#6B7280] mt-0.5">{subtitle}</p>
+      </header>
+      <div className={gridClass}>
+        {React.Children.map(children, (child) =>
+          child ? <div className="min-w-0">{child}</div> : null
+        )}
+      </div>
+    </section>
   );
 }
 

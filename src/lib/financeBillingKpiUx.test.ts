@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { buildBillingMultiYearMonthlyPoints } from "./financeBillingChartData.js";
+import {
+  computeFinanceBillingComparisonDelta,
+  formatFinanceBillingVariationValue,
+} from "./financeBillingExecutiveKpi.js";
 
 const pagePath = join(
   process.cwd(),
@@ -13,28 +17,35 @@ const pagePath = join(
 );
 
 describe("financeBillingKpiUx", () => {
-  it("página Billing usa labels curtos no resumo executivo", () => {
+  it("página Billing usa labels curtos e agrupamento claro no resumo executivo", () => {
     const page = readFileSync(pagePath, "utf8");
     const labels = [
       "Faturamento líquido",
       "Bruto encontrado",
       "NF-e no mês",
       "Ticket médio",
-      "Mês anterior",
-      "Ano anterior",
-      "Acumulado YTD",
       "Previsto no mês",
+      "Diferença vs",
+      "Variação vs",
+      "Diferença YTD",
+      "Variação YTD",
     ];
     for (const label of labels) {
       assert.ok(page.includes(label), `label ausente: ${label}`);
     }
+    assert.equal(page.includes("Mês anterior"), false);
+    assert.equal(page.includes("Ano anterior"), false);
     assert.equal(page.includes("Faturamento líquido (mês)"), false);
-    assert.equal(page.includes("Faturamento bruto encontrado"), false);
     assert.equal(page.includes("Quantidade NF-e (mês)"), false);
-    assert.equal(page.includes("Comparativo ano anterior"), false);
     assert.equal(page.includes("xl:grid-cols-8"), false);
     assert.match(page, /FinanceKpiCard/);
-    assert.match(page, /lg:grid-cols-4 xl:grid-cols-4/);
+    assert.match(page, /FinanceBillingKpiGroup/);
+    assert.match(page, /buildFinanceBillingSelectedPeriodTitle/);
+    assert.match(page, /buildFinanceBillingComparisonPeriodTitle/);
+    assert.match(page, /Acumulado do ano — YTD/);
+    assert.match(page, /YTD \$\{selectedYear\}/);
+    assert.match(page, /formatFinanceBillingShortMonthYear/);
+    assert.match(page, /Mesmo mês do ano anterior/);
   });
 
   it("fonte padrão NF-e continua preservada na página", () => {
@@ -49,5 +60,13 @@ describe("financeBillingKpiUx", () => {
     const points = buildBillingMultiYearMonthlyPoints(2026, maps, 6, true);
     assert.equal(points[5]!.values[2026], 200);
     assert.equal(points[6]!.values[2026], null);
+  });
+
+  it("métricas de diferença/variação não retornam NaN ou Infinity", () => {
+    const cmp = computeFinanceBillingComparisonDelta(1000, 800);
+    assert.ok(cmp.delta != null && Number.isFinite(cmp.delta));
+    assert.ok(cmp.variationPercent != null && Number.isFinite(cmp.variationPercent));
+    assert.doesNotMatch(formatFinanceBillingVariationValue(cmp.variationPercent), /NaN/);
+    assert.equal(formatFinanceBillingVariationValue(computeFinanceBillingComparisonDelta(100, 0).variationPercent), "Sem base comparativa");
   });
 });
