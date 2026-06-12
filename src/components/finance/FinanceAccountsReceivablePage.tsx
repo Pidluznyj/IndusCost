@@ -93,6 +93,17 @@ import {
   FINANCE_AR_LAST_SYNC_FILTERED_SCOPE,
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
+import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
+import {
+  FINANCE_KPI_AR_DELINQUENCY,
+  FINANCE_KPI_AR_DUE_30_DAYS,
+  FINANCE_KPI_AR_DUE_7_DAYS,
+  FINANCE_KPI_AR_DUE_TODAY,
+  FINANCE_KPI_AR_OPEN,
+  FINANCE_KPI_AR_OVERDUE,
+  FINANCE_KPI_AR_RECEIVED,
+  FINANCE_KPI_AR_TOTAL_RECEIVABLE,
+} from "@/src/lib/financeKpiTooltips";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 
 /* ─────────────────────────────────────────────────────────────────
@@ -790,68 +801,68 @@ export function FinanceAccountsReceivablePage() {
           <FinanceBiKpiCard
             icon={Wallet}
             label="Total a Receber"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalAmountReceivable)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.totalAmountReceivable)}
             sub={withAppliedFilterSub("Σ valor original no filtro", Boolean(filtersActive))}
-            hint="Σ amountReceivable no universo filtrado"
+            hint={FINANCE_KPI_AR_TOTAL_RECEIVABLE}
             colorClass="text-[#111827]"
             loading={loading}
           />
           <FinanceBiKpiCard
             icon={TrendingUp}
             label="Recebido"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalReceivedAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.totalReceivedAmount)}
             sub={withAppliedFilterSub("Baixas acumuladas no filtro", Boolean(filtersActive))}
-            hint="Σ amountReceived no universo filtrado"
+            hint={FINANCE_KPI_AR_RECEIVED}
             colorClass="text-[#059669]"
             loading={loading}
           />
           <FinanceBiKpiCard
             icon={Wallet}
             label="Em Aberto"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.totalOpenAmount)}
             sub={withAppliedFilterSub(
               cards?.openTitlesCount != null
                 ? `${formatFinanceInteger(cards.openTitlesCount)} título${cards.openTitlesCount !== 1 ? "s" : ""}`
                 : undefined,
               Boolean(filtersActive)
             )}
-            hint="Σ balanceReceivable onde saldo > 0"
+            hint={FINANCE_KPI_AR_OPEN}
             colorClass="text-[#2563EB]"
             loading={loading}
           />
           <FinanceBiKpiCard
             icon={AlertTriangle}
             label="Vencido"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.overdueAmount)}
             sub={withAppliedFilterSub("Vencimento anterior a hoje", Boolean(filtersActive))}
-            hint="Σ saldo em aberto com status overdue"
+            hint={FINANCE_KPI_AR_OVERDUE}
             colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
             loading={loading}
           />
           <FinanceBiKpiCard
             icon={Clock}
             label="Vence Hoje"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueTodayAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueTodayAmount)}
             sub={withAppliedFilterSub("Vencimento = hoje", Boolean(filtersActive))}
-            hint="Σ saldo com status dueToday"
+            hint={FINANCE_KPI_AR_DUE_TODAY}
             colorClass="text-[#D97706]"
             loading={loading}
           />
           <FinanceBiKpiCard
             icon={Clock}
             label="Próximos 7 Dias"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext7DaysAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueNext7DaysAmount)}
             sub={withAppliedFilterSub("Hoje até +7 dias", Boolean(filtersActive))}
-            hint="Σ saldo em aberto na janela de 7 dias"
+            hint={FINANCE_KPI_AR_DUE_7_DAYS}
             colorClass="text-[#2563EB]"
             loading={loading}
           />
           <FinanceBiKpiCard
             icon={Clock}
             label="Próximos 30 Dias"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext30DaysAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueNext30DaysAmount)}
             sub={withAppliedFilterSub("Hoje até +30 dias", Boolean(filtersActive))}
-            hint="Σ saldo em aberto na janela de 30 dias"
+            hint={FINANCE_KPI_AR_DUE_30_DAYS}
             colorClass="text-[#2563EB]"
             loading={loading}
           />
@@ -865,7 +876,7 @@ export function FinanceAccountsReceivablePage() {
                 : undefined,
               Boolean(filtersActive)
             )}
-            hint="Vencido ÷ carteira em aberto × 100"
+            hint={FINANCE_KPI_AR_DELINQUENCY}
             trend={delinquencyTrend}
             trendLabel={
               cards?.delinquencyRate != null

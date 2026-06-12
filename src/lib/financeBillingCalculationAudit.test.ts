@@ -135,8 +135,8 @@ describe("financeBillingCalculationAudit", () => {
     assert.ok(page.includes("alwaysVisible"));
     assert.ok(page.includes("buildFinanceBillingExportQuery"));
     assert.ok(page.includes("comparisonError"));
-    assert.ok(page.includes("FINANCE_BILLING_YTD_SCOPE"));
-    assert.ok(page.includes("FINANCE_BILLING_PROJECTION_SCOPE"));
+    assert.ok(page.includes("FINANCE_KPI_BILLING_YTD_CURRENT"));
+    assert.ok(page.includes("FINANCE_KPI_BILLING_FORECAST"));
     assert.ok(page.includes("FinanceBillingForecastView"));
     assert.ok(page.includes("FinanceBillingActionCenter"));
     assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_TABS"));

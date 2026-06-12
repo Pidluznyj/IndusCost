@@ -1,7 +1,7 @@
 import {
-  formatExecutiveCompactCurrency,
-  formatExecutivePercent,
-} from "./executiveDashboardFormatters.js";
+  formatFinanceKpiCurrency,
+  formatFinanceKpiVariationPercent,
+} from "./financeKpiFormat.js";
 
 const MONTH_SHORT_PT = [
   "Jan",
@@ -91,13 +91,9 @@ export function computeFinanceBillingComparisonDelta(
 }
 
 export function formatFinanceBillingDeltaValue(delta: number | null): string {
-  if (delta == null || !Number.isFinite(delta)) return "—";
-  return formatExecutiveCompactCurrency(delta);
+  return formatFinanceKpiCurrency(delta);
 }
 
 export function formatFinanceBillingVariationValue(variationPercent: number | null): string {
-  if (variationPercent == null || !Number.isFinite(variationPercent)) {
-    return "Sem base comparativa";
-  }
-  return formatExecutivePercent(variationPercent, 1);
+  return formatFinanceKpiVariationPercent(variationPercent);
 }

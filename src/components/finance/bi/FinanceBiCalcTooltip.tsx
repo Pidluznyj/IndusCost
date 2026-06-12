@@ -11,13 +11,16 @@ export function FinanceBiCalcTooltip({
   className?: string;
 }) {
   return (
-    <span
+    <button
+      type="button"
       title={rule}
-      className={cn("inline-flex cursor-help text-[#6B7280] hover:text-[#2563EB]", className)}
       aria-label={rule}
-      role="img"
+      className={cn(
+        "inline-flex shrink-0 cursor-help border-0 bg-transparent p-0 text-[#6B7280] hover:text-[#2563EB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 rounded-sm",
+        className
+      )}
     >
-      <Info className="h-3.5 w-3.5" />
-    </span>
+      <Info className="h-3.5 w-3.5" aria-hidden />
+    </button>
   );
 }

@@ -94,9 +94,20 @@ import { buildFinanceApFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
   FINANCE_AP_LAST_SYNC_FILTERED_SCOPE,
-  FINANCE_AP_PAID_THIS_MONTH_SCOPE,
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
+import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
+import {
+  FINANCE_KPI_AP_DUE_30_DAYS,
+  FINANCE_KPI_AP_DUE_7_DAYS,
+  FINANCE_KPI_AP_DUE_TODAY,
+  FINANCE_KPI_AP_OPEN,
+  FINANCE_KPI_AP_OVERDUE,
+  FINANCE_KPI_AP_PAID_THIS_MONTH,
+  FINANCE_KPI_AP_SCHEDULED,
+  FINANCE_KPI_AP_TOP_SUPPLIER,
+  FINANCE_KPI_AP_TOTAL_PAYABLE,
+} from "@/src/lib/financeKpiTooltips";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 
 type ActionItem = {
@@ -771,72 +782,72 @@ export function FinanceAccountsPayablePage() {
           <FinanceKpiCard
             icon={Wallet}
             label="Total a pagar"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalPayableAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.totalPayableAmount)}
             subtitle={withAppliedFilterSub(
               cards?.totalRecords != null
                 ? `${formatFinanceInteger(cards.totalRecords)} título(s)`
                 : undefined,
               Boolean(filtersActive)
             )}
-            helperText="Σ valor original no universo filtrado"
+            helperText={FINANCE_KPI_AP_TOTAL_PAYABLE}
             loading={loading}
           />
           <FinanceKpiCard
             icon={Landmark}
             label="Pago no mês"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.paidThisMonthAmount)}
-            subtitle="Mês atual, dentro do filtro"
-            helperText={FINANCE_AP_PAID_THIS_MONTH_SCOPE}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.paidThisMonthAmount)}
+            subtitle={withAppliedFilterSub("Mês atual, dentro do filtro", Boolean(filtersActive))}
+            helperText={FINANCE_KPI_AP_PAID_THIS_MONTH}
             tone="success"
             loading={loading}
           />
           <FinanceKpiCard
             icon={Wallet}
             label="Em aberto"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.totalOpenAmount)}
             subtitle={withAppliedFilterSub(
               cards?.openTitlesCount != null
                 ? `${formatFinanceInteger(cards.openTitlesCount)} título(s)`
                 : undefined,
               Boolean(filtersActive)
             )}
-            helperText="Saldo positivo na visão gerencial"
+            helperText={FINANCE_KPI_AP_OPEN}
             tone="info"
             loading={loading}
           />
           <FinanceKpiCard
             icon={AlertTriangle}
             label="Vencido gerencial"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.overdueAmount)}
             subtitle={withAppliedFilterSub("Data operacional < hoje", Boolean(filtersActive))}
-            helperText="Usa max(vencimento, agendamento), excluindo agenda de pedido de compra"
+            helperText={FINANCE_KPI_AP_OVERDUE}
             tone={(cards?.overdueAmount ?? 0) > 0 ? "danger" : "neutral"}
             loading={loading}
           />
           <FinanceKpiCard
             icon={Clock}
             label="Vence hoje"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueTodayAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueTodayAmount)}
             subtitle={withAppliedFilterSub("Data operacional = hoje", Boolean(filtersActive))}
-            helperText="Títulos com vencimento operacional no dia"
+            helperText={FINANCE_KPI_AP_DUE_TODAY}
             tone="warning"
             loading={loading}
           />
           <FinanceKpiCard
             icon={Clock}
             label="Próx. 7 dias"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext7DaysAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueNext7DaysAmount)}
             subtitle={withAppliedFilterSub("Janela operacional", Boolean(filtersActive))}
-            helperText="Vencimentos operacionais em até 7 dias"
+            helperText={FINANCE_KPI_AP_DUE_7_DAYS}
             tone="info"
             loading={loading}
           />
           <FinanceKpiCard
             icon={Clock}
             label="Próx. 30 dias"
-            value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext30DaysAmount)}
+            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueNext30DaysAmount)}
             subtitle={withAppliedFilterSub("Janela operacional", Boolean(filtersActive))}
-            helperText="Vencimentos operacionais em até 30 dias"
+            helperText={FINANCE_KPI_AP_DUE_30_DAYS}
             tone="info"
             loading={loading}
           />
@@ -847,12 +858,10 @@ export function FinanceAccountsPayablePage() {
               value={
                 loading
                   ? "…"
-                  : formatFinanceCurrencyCompact(
-                      data.purchaseOrderScheduleAudit.rescheduledOpenAmount
-                    )
+                  : formatFinanceKpiCurrency(data.purchaseOrderScheduleAudit.rescheduledOpenAmount)
               }
               subtitle={`${formatFinanceInteger(data.purchaseOrderScheduleAudit.rescheduledOpenCount)} título(s) remarcados`}
-              helperText="Títulos com data de agendamento diferente do vencimento original"
+              helperText={FINANCE_KPI_AP_SCHEDULED}
               tone="info"
               loading={loading}
             />
@@ -863,12 +872,10 @@ export function FinanceAccountsPayablePage() {
               value={
                 loading
                   ? "…"
-                  : cards?.topSupplier
-                    ? formatFinanceCurrencyCompact(cards.topSupplier.totalOpenAmount)
-                    : "—"
+                  : formatFinanceKpiCurrency(cards?.topSupplier?.totalOpenAmount)
               }
               subtitle={displayFinanceText(cards?.topSupplier?.personName)}
-              helperText="Maior concentração de saldo aberto na carteira filtrada"
+              helperText={FINANCE_KPI_AP_TOP_SUPPLIER}
               loading={loading}
             />
           )}

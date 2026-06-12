@@ -36,5 +36,9 @@ describe("financeBillingExecutiveKpi", () => {
     assert.equal(formatFinanceBillingVariationValue(null), "Sem base comparativa");
     assert.doesNotMatch(formatFinanceBillingVariationValue(null), /NaN/);
     assert.doesNotMatch(formatFinanceBillingDeltaValue(1000), /Infinity/);
+    assert.match(formatFinanceBillingVariationValue(12.4), /^\+12,4%$/);
+    assert.match(formatFinanceBillingVariationValue(-8.1), /^-8,1%$/);
+    assert.match(formatFinanceBillingDeltaValue(5_827_010.62), /Mi$/);
+    assert.doesNotMatch(formatFinanceBillingDeltaValue(5_827_010.62), /5\.827\.010/);
   });
 });

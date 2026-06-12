@@ -69,4 +69,14 @@ describe("financeBillingKpiUx", () => {
     assert.doesNotMatch(formatFinanceBillingVariationValue(cmp.variationPercent), /NaN/);
     assert.equal(formatFinanceBillingVariationValue(computeFinanceBillingComparisonDelta(100, 0).variationPercent), "Sem base comparativa");
   });
+
+  it("página Billing usa formatter KPI compacto e tooltips negociais", () => {
+    const page = readFileSync(pagePath, "utf8");
+    assert.match(page, /formatFinanceKpiCurrency/);
+    assert.ok(page.includes("FINANCE_KPI_BILLING_NET_REVENUE"));
+    assert.ok(page.includes("FINANCE_KPI_BILLING_SAME_MONTH_PREV_YEAR"));
+    assert.ok(page.includes("FINANCE_KPI_BILLING_YTD_CURRENT"));
+    assert.equal(page.includes("formatExecutiveCompactCurrency"), false);
+    assert.doesNotMatch(page, /R\$ 5\.827\.010/);
+  });
 });

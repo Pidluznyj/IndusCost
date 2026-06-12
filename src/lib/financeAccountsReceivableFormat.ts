@@ -1,3 +1,5 @@
+import { formatFinanceKpiCurrency } from "./financeKpiFormat.js";
+
 /** Formatadores da UI Financeiro > Contas a Receber (sem NaN/null na tela). */
 
 export function safeFinanceNumber(value: unknown, fallback = 0): number {
@@ -15,19 +17,9 @@ export function formatFinanceCurrency(value: unknown): string {
   }).format(n);
 }
 
-/** Valores grandes: R$ 1,25 Mi / R$ 350,00 mil */
+/** Valores grandes compactos — padrão KPI executivo (R$ 827,5 mil / R$ 5,83 Mi). */
 export function formatFinanceCurrencyCompact(value: unknown): string {
-  const n = safeFinanceNumber(value, 0);
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) {
-    const scaled = n / 1_000_000;
-    return `R$ ${scaled.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Mi`;
-  }
-  if (abs >= 100_000) {
-    const scaled = n / 1_000;
-    return `R$ ${scaled.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} mil`;
-  }
-  return formatFinanceCurrency(n);
+  return formatFinanceKpiCurrency(safeFinanceNumber(value, 0));
 }
 
 export function formatFinancePercent(value: unknown): string {

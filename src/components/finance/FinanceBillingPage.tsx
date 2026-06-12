@@ -37,10 +37,8 @@ import {
   type FinanceBillingNfeDraftFilters,
 } from "@/src/lib/financeBillingNfeFiltersTypes";
 import { financeBillingNfeExportFilename } from "@/src/lib/financeBillingNfeExport";
-import {
-  formatExecutiveCompactCurrency,
-  formatExecutiveInteger,
-} from "@/src/lib/executiveDashboardFormatters";
+import { formatExecutiveInteger } from "@/src/lib/executiveDashboardFormatters";
+import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import type { FinanceBillingComparisonPayload } from "@/src/lib/financeBillingNfeComparison";
 import type { FinanceBillingNfeListPayload } from "@/src/lib/financeBillingNfeList";
 import { canRunFinanceBillingNfeSync } from "@/src/lib/financeBillingPermissions";
@@ -73,10 +71,22 @@ import { financeBillingAuditExportFilename } from "@/src/lib/financeBillingAudit
 import {
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
   FINANCE_BILLING_NFE_EXPORT_SCOPE,
-  FINANCE_BILLING_PROJECTION_SCOPE,
-  FINANCE_BILLING_YTD_SCOPE,
   FINANCE_SYNC_GLOBAL_SCOPE,
 } from "@/src/lib/financeFilterScope";
+import {
+  FINANCE_KPI_BILLING_DELTA_VS_PREV_YEAR,
+  FINANCE_KPI_BILLING_FORECAST,
+  FINANCE_KPI_BILLING_GROSS_FOUND,
+  FINANCE_KPI_BILLING_NET_REVENUE,
+  FINANCE_KPI_BILLING_NFE_COUNT,
+  FINANCE_KPI_BILLING_SAME_MONTH_PREV_YEAR,
+  FINANCE_KPI_BILLING_TICKET_AVG,
+  FINANCE_KPI_BILLING_VARIATION_VS_PREV_YEAR,
+  FINANCE_KPI_BILLING_YTD_CURRENT,
+  FINANCE_KPI_BILLING_YTD_DELTA,
+  FINANCE_KPI_BILLING_YTD_PREVIOUS,
+  FINANCE_KPI_BILLING_YTD_VARIATION,
+} from "@/src/lib/financeKpiTooltips";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
@@ -686,9 +696,9 @@ export function FinanceBillingPage() {
             <FinanceKpiCard
               icon={Wallet}
               label="Faturamento líquido"
-              value={loading ? "…" : formatExecutiveCompactCurrency(tab?.target.actual)}
+              value={loading ? "…" : formatFinanceKpiCurrency(tab?.target.actual)}
               subtitle={tab?.periodLabel ?? "—"}
-              helperText="NF-e autorizada mercado · valor líquido · data base aplicada"
+              helperText={FINANCE_KPI_BILLING_NET_REVENUE}
               tone="info"
               loading={loading}
             />
@@ -696,12 +706,10 @@ export function FinanceBillingPage() {
               icon={TrendingUp}
               label="Bruto encontrado"
               value={
-                loading
-                  ? "…"
-                  : formatExecutiveCompactCurrency(audit?.summary.grossFoundTotal ?? null)
+                loading ? "…" : formatFinanceKpiCurrency(audit?.summary.grossFoundTotal ?? null)
               }
               subtitle="Auditoria fiscal"
-              helperText="Total bruto antes das regras de exclusão"
+              helperText={FINANCE_KPI_BILLING_GROSS_FOUND}
               loading={loading}
             />
             <FinanceKpiCard
@@ -714,15 +722,17 @@ export function FinanceBillingPage() {
                     formatExecutiveInteger(summaryCard("billing-count-month")?.value))
               }
               subtitle="Autorizadas no período"
-              helperText="Contagem de notas no mês de referência do painel"
+              helperText={FINANCE_KPI_BILLING_NFE_COUNT}
               loading={loading}
             />
             <FinanceKpiCard
               icon={Wallet}
               label="Ticket médio"
-              value={loading ? "…" : summaryCard("billing-ticket")?.formatted ?? "—"}
+              value={
+                loading ? "…" : formatFinanceKpiCurrency(summaryCard("billing-ticket")?.value ?? null)
+              }
               subtitle="Líquido ÷ quantidade"
-              helperText="Média por NF-e no mês de referência"
+              helperText={FINANCE_KPI_BILLING_TICKET_AVG}
               loading={loading}
             />
             <FinanceKpiCard
@@ -731,12 +741,14 @@ export function FinanceBillingPage() {
               value={
                 loading
                   ? "…"
-                  : tab?.forecast?.formatted.monthForecastAmount ??
-                    tab?.projection.formatted.projectedMonth ??
-                    "—"
+                  : formatFinanceKpiCurrency(
+                      tab?.forecast?.monthForecastAmount ??
+                        tab?.projection.projectedMonth ??
+                        null
+                    )
               }
               subtitle="Carteira / projeção"
-              helperText={FINANCE_BILLING_PROJECTION_SCOPE}
+              helperText={FINANCE_KPI_BILLING_FORECAST}
               tone="warning"
               loading={loading}
             />
@@ -750,9 +762,9 @@ export function FinanceBillingPage() {
             <FinanceKpiCard
               icon={TrendingUp}
               label={sameMonthPrevYearLabel}
-              value={loading ? "…" : formatExecutiveCompactCurrency(tab?.target.previousPeriod)}
+              value={loading ? "…" : formatFinanceKpiCurrency(tab?.target.previousPeriod)}
               subtitle="Mesmo mês do ano anterior"
-              helperText="Compara o mês filtrado no ano selecionado contra o mesmo mês do ano anterior."
+              helperText={FINANCE_KPI_BILLING_SAME_MONTH_PREV_YEAR}
               loading={loading}
             />
             <FinanceKpiCard
@@ -760,7 +772,7 @@ export function FinanceBillingPage() {
               label={`Diferença vs ${previousYear}`}
               value={loading ? "…" : formatFinanceBillingDeltaValue(monthComparison.delta)}
               subtitle="Período − mesmo mês ano anterior"
-              helperText="Faturamento líquido do período menos o mesmo mês do ano anterior."
+              helperText={FINANCE_KPI_BILLING_DELTA_VS_PREV_YEAR}
               tone={deltaTone(monthComparison.delta)}
               loading={loading}
             />
@@ -769,7 +781,7 @@ export function FinanceBillingPage() {
               label={`Variação vs ${previousYear}`}
               value={loading ? "…" : formatFinanceBillingVariationValue(monthComparison.variationPercent)}
               subtitle="Percentual sobre a base comparativa"
-              helperText="Diferença dividida pelo faturamento do mesmo mês do ano anterior."
+              helperText={FINANCE_KPI_BILLING_VARIATION_VS_PREV_YEAR}
               tone={deltaTone(monthComparison.delta)}
               loading={loading}
             />
@@ -783,10 +795,10 @@ export function FinanceBillingPage() {
               icon={Wallet}
               label={`YTD ${selectedYear}`}
               value={
-                loading ? "…" : formatExecutiveCompactCurrency(tab?.yearComparison?.yearToDateCurrent)
+                loading ? "…" : formatFinanceKpiCurrency(tab?.yearComparison?.yearToDateCurrent)
               }
               subtitle="Ano selecionado"
-              helperText={FINANCE_BILLING_YTD_SCOPE}
+              helperText={FINANCE_KPI_BILLING_YTD_CURRENT}
               tone="info"
               loading={loading}
             />
@@ -794,10 +806,10 @@ export function FinanceBillingPage() {
               icon={Wallet}
               label={`YTD ${previousYear}`}
               value={
-                loading ? "…" : tab?.yearComparison?.formatted.yearToDatePrevious ?? "—"
+                loading ? "…" : formatFinanceKpiCurrency(tab?.yearComparison?.yearToDatePrevious)
               }
               subtitle="Mesmo recorte no ano anterior"
-              helperText={FINANCE_BILLING_YTD_SCOPE}
+              helperText={FINANCE_KPI_BILLING_YTD_PREVIOUS}
               loading={loading}
             />
             <FinanceKpiCard
@@ -805,7 +817,7 @@ export function FinanceBillingPage() {
               label="Diferença YTD"
               value={loading ? "…" : formatFinanceBillingDeltaValue(ytdComparison.delta)}
               subtitle={`${selectedYear} − ${previousYear}`}
-              helperText="Acumulado do ano selecionado menos acumulado do ano anterior."
+              helperText={FINANCE_KPI_BILLING_YTD_DELTA}
               tone={deltaTone(ytdComparison.delta)}
               loading={loading}
             />
@@ -814,7 +826,7 @@ export function FinanceBillingPage() {
               label="Variação YTD"
               value={loading ? "…" : formatFinanceBillingVariationValue(ytdComparison.variationPercent)}
               subtitle="Percentual sobre YTD anterior"
-              helperText="Diferença YTD dividida pelo acumulado do ano anterior."
+              helperText={FINANCE_KPI_BILLING_YTD_VARIATION}
               tone={deltaTone(ytdComparison.delta)}
               loading={loading}
             />

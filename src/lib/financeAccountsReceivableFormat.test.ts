@@ -18,9 +18,12 @@ describe("financeAccountsReceivableFormat", () => {
     assert.equal(formatFinanceCurrency(214190), "R$\u00a0214.190,00");
   });
 
-  it("formatFinanceCurrencyCompact compacta milhões", () => {
-    assert.match(formatFinanceCurrencyCompact(1_250_000), /1,25 Mi/);
-    assert.match(formatFinanceCurrencyCompact(350_000), /350,00 mil/);
+  it("formatFinanceCurrencyCompact usa padrão KPI executivo", () => {
+    assert.equal(formatFinanceCurrencyCompact(942.81), "R$\u00a0942,81");
+    assert.equal(formatFinanceCurrencyCompact(12_400), "R$ 12,4 mil");
+    assert.equal(formatFinanceCurrencyCompact(827_500), "R$ 827,5 mil");
+    assert.equal(formatFinanceCurrencyCompact(5_830_000), "R$ 5,83 Mi");
+    assert.doesNotMatch(formatFinanceCurrencyCompact(5_827_010.62), /5\.827\.010/);
   });
 
   it("formatFinancePercent", () => {

@@ -48,11 +48,18 @@ describe("financeAccountsPayableKpiUx", () => {
     assert.match(page, /FinanceKpiCard/);
   });
 
-  it("card Pago no mês usa subtítulo curto e explicação longa no tooltip", () => {
+  it("card Pago no mês usa subtítulo curto e explicação negocial no tooltip", () => {
     const page = readFileSync(pagePath, "utf8");
     assert.ok(page.includes("Mês atual, dentro do filtro"));
-    assert.ok(page.includes("FINANCE_AP_PAID_THIS_MONTH_SCOPE"));
+    assert.ok(page.includes("FINANCE_KPI_AP_PAID_THIS_MONTH"));
+    assert.ok(page.includes("formatFinanceKpiCurrency"));
     assert.equal(page.includes("scopeNote={FINANCE_AP_PAID_THIS_MONTH_SCOPE}"), false);
+  });
+
+  it("cards AP usam tooltips negociais nos principais KPIs", () => {
+    const page = readFileSync(pagePath, "utf8");
+    assert.ok(page.includes("FINANCE_KPI_AP_OVERDUE"));
+    assert.ok(page.includes("FINANCE_KPI_AP_SCHEDULED"));
   });
 
   it("FinanceKpiCard evita quebra de valor monetário", () => {

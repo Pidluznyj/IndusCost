@@ -80,7 +80,7 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("alwaysVisible"));
-    assert.ok(page.includes("FINANCE_AP_PAID_THIS_MONTH_SCOPE"));
+    assert.ok(page.includes("FINANCE_KPI_AP_PAID_THIS_MONTH"));
     assert.ok(page.includes("Resumo executivo"));
     assert.ok(page.includes("withAppliedFilterSub"));
     assert.ok(page.includes("titlesLocalFilter"));
