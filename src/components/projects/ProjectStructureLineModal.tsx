@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import { previewProjectStructureLineTotal } from "@/src/lib/projectsStructureLineBuilder";
+import { previewProjectStructureLineTotal } from "@/src/lib/projectsStructureLineBuilderShared";
 import { formatCurrency } from "@/src/lib/utils";
 import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
 import { parseProjectsNumberInput } from "@/src/lib/projectsUiUtils";
