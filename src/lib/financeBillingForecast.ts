@@ -11,7 +11,9 @@ import {
   formatExecutiveCurrency,
   formatExecutiveInteger,
 } from "@/src/lib/executiveDashboardFormatters.js";
-import { startOfLocalDay } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import { addLocalDays, startOfLocalDay } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import { buildFinanceBillingHorizonSummary } from "@/src/lib/financeHorizonAggregation.js";
+import type { FinanceHorizonSummary } from "@/src/lib/financeHorizonAggregation.js";
 import {
   nomusNfesElementsSql,
   orderNotInvoicedSql,
@@ -68,6 +70,7 @@ export type BillingForecastBlock = {
   monthlyComparison: BillingForecastMonthlyPoint[];
   dailySeries: BillingForecastDailyPoint[];
   orders: BillingForecastOrderRow[];
+  financialHorizon: FinanceHorizonSummary;
 };
 
 type RawForecastOrder = {
@@ -85,6 +88,40 @@ function computeDaysOverdue(expectedDate: Date, today: Date): number {
   const ref = startOfLocalDay(today);
   const diff = Math.floor((ref.getTime() - exp.getTime()) / 86400000);
   return diff > 0 ? diff : 0;
+}
+
+export async function queryBillingForecastHorizonOrders(
+  referenceDate: Date = new Date()
+): Promise<RawForecastOrder[]> {
+  const today = startOfLocalDay(referenceDate);
+  const horizonEnd = addLocalDays(today, 60);
+  const fromYmd = toPgDateYmd(today);
+  const toYmd = toPgDateYmd(horizonEnd);
+
+  return prisma.$queryRaw<RawForecastOrder[]>(
+    Prisma.sql`
+      SELECT
+        so.id,
+        so."orderCode" AS order_code,
+        COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
+        so."expectedDeliveryDate" AS expected_delivery_date,
+        so."totalNetValue" AS total_net_value,
+        so.status,
+        EXISTS (
+          SELECT 1 FROM ${nomusNfesElementsSql("so")}
+        ) AS has_nfe
+      FROM "SalesOrder" so
+      INNER JOIN "Customer" c ON c.id = so."customerId"
+      WHERE ${NOT_CANCELLED}
+        AND ${MARKET_CUSTOMER}
+        AND ${orderNotInvoicedSql("so")}
+        AND so."expectedDeliveryDate" IS NOT NULL
+        AND so."expectedDeliveryDate" >= ${fromYmd}::date
+        AND so."expectedDeliveryDate" <= ${toYmd}::date
+      ORDER BY so."expectedDeliveryDate" ASC, so."issueDate" DESC
+      LIMIT 2000
+    `
+  );
 }
 
 async function queryOpenForecastOrders(year: number): Promise<RawForecastOrder[]> {
@@ -236,8 +273,9 @@ export async function buildBillingForecastBlock(
   const monthStart = startOfMonth(ref);
   const monthEnd = endOfMonth(ref);
 
-  const [rawOrders, realizedByDay] = await Promise.all([
+  const [rawOrders, horizonOrders, realizedByDay] = await Promise.all([
     queryOpenForecastOrders(year),
+    queryBillingForecastHorizonOrders(ref),
     queryRealizedByDayInMonth(monthStart, monthEnd),
   ]);
 
@@ -276,6 +314,14 @@ export async function buildBillingForecastBlock(
     };
   });
 
+  const financialHorizon = buildFinanceBillingHorizonSummary(
+    horizonOrders.map((row) => ({
+      totalNetValue: decimalToNumber(row.total_net_value) ?? 0,
+      expectedDeliveryDate: row.expected_delivery_date,
+    })),
+    ref
+  );
+
   return {
     dateField: "expectedDeliveryDate",
     portfolioAmount,
@@ -294,6 +340,7 @@ export async function buildBillingForecastBlock(
     monthlyComparison: buildBillingForecastMonthlyComparison(yearCtx, realizedByMonth, rawOrders),
     dailySeries: buildDailySeries(yearCtx, rawOrders, realizedByDay),
     orders: orders.filter((o) => o.expectedDeliveryDate != null).slice(0, 50),
+    financialHorizon,
   };
 }
 
@@ -305,6 +352,8 @@ export function billingForecastMetricsAreFinite(block: BillingForecastBlock): bo
     ...block.monthlyComparison.flatMap((p) => [p.realized, p.forecast, p.difference]),
     ...block.dailySeries.flatMap((p) => [p.realized, p.forecast, p.difference]),
     ...block.orders.map((o) => o.totalNetValue),
+    ...block.financialHorizon.buckets.map((b) => b.amount),
+    block.financialHorizon.total.amount,
   ];
   return nums.every((v) => v == null || Number.isFinite(v));
 }

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import {
+  createEmptyFinanceHorizonSummary,
+  FINANCE_HORIZON_BILLING_SCOPE_NOTE,
+} from "./financeHorizonAggregation.js";
 import { billingTabMetricsAreFinite } from "./financeBillingDashboard.js";
 import {
   buildFinanceBillingDashboardQuery,
@@ -153,6 +157,13 @@ function minimalBillingTab(): BillingDashboardTab {
       monthlyComparison: [],
       dailySeries: [],
       orders: [],
+      financialHorizon: createEmptyFinanceHorizonSummary({
+        title: "Horizonte de faturamento — próximos 60 dias",
+        subtitle: "Previsão por carteira de pedidos ainda não faturados. Não representa NF-e já emitida.",
+        scopeNote: FINANCE_HORIZON_BILLING_SCOPE_NOTE,
+        countUnitLabel: "pedido(s)",
+        ignoresPeriodFilter: true,
+      }),
     },
   };
 }

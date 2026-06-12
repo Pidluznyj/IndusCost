@@ -1,6 +1,7 @@
 /** Tipos do payload GET /api/finance/accounts-receivable/dashboard */
 
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import type { FinanceHorizonSummary } from "./financeHorizonAggregation.js";
 
 export type FinanceArDashboardFiltersApplied = {
   companyName?: string;
@@ -178,6 +179,7 @@ export type FinanceArDashboardPayload = {
   dataQualityAlerts: FinanceArDataQualityAlerts;
   dataQualitySummary: FinanceArDataQualityAlertItem[];
   dataSanitization: FinanceDataSanitization;
+  financialHorizon: FinanceHorizonSummary;
 };
 
 export type FinanceArUiFilters = {

@@ -5,6 +5,10 @@ import {
   buildBillingForecastMonthlyComparison,
   type BillingForecastBlock,
 } from "./financeBillingForecast.js";
+import {
+  createEmptyFinanceHorizonSummary,
+  FINANCE_HORIZON_BILLING_SCOPE_NOTE,
+} from "./financeHorizonAggregation.js";
 import type { ExecutiveDashboardYearContext } from "./executiveDashboardYear.js";
 
 const REF = new Date(2026, 5, 9);
@@ -79,6 +83,13 @@ describe("financeBillingForecast", () => {
           hasLinkedNfe: false,
         },
       ],
+      financialHorizon: createEmptyFinanceHorizonSummary({
+        title: "Horizonte de faturamento — próximos 60 dias",
+        subtitle: "Previsão por carteira de pedidos ainda não faturados. Não representa NF-e já emitida.",
+        scopeNote: FINANCE_HORIZON_BILLING_SCOPE_NOTE,
+        countUnitLabel: "pedido(s)",
+        ignoresPeriodFilter: true,
+      }),
     };
     assert.equal(billingForecastMetricsAreFinite(block), true);
   });

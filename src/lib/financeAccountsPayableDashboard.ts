@@ -21,6 +21,7 @@ import {
   FINANCE_AP_COMPANY_SUMMARY_LIMIT,
   FINANCE_AP_SUPPLIER_RANKING_LIMIT,
 } from "./financeAccountsPayableDashboardTypes.js";
+import { buildFinanceApHorizonSummary } from "./financeHorizonAggregation.js";
 
 export type FinanceApTitleStatus =
   | "open"
@@ -1087,5 +1088,6 @@ export function buildFinanceAccountsPayableDashboard(
       rescheduledOpenCount: exclusionAudit.rescheduledOpenCount,
       rescheduledOpenAmount: exclusionAudit.rescheduledOpenAmount,
     },
+    financialHorizon: buildFinanceApHorizonSummary(rows, filters, referenceDate),
   };
 }

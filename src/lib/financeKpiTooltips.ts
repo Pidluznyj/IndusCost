@@ -86,3 +86,52 @@ export const FINANCE_KPI_AR_DUE_30_DAYS =
 
 export const FINANCE_KPI_AR_DELINQUENCY =
   "Taxa de inadimplência: percentual do vencido sobre a carteira em aberto. Quanto maior, maior a exposição a recebíveis em atraso." as const;
+
+const HORIZON_AP_BASE =
+  "Soma dos títulos em aberto com data operacional nesta janela. A data operacional usa a maior data entre vencimento original e agendamento. Pedidos de compra são excluídos da visão gerencial." as const;
+
+const HORIZON_AR_BASE =
+  "Soma dos títulos a receber em aberto com vencimento dentro desta janela futura. Ajuda a projetar entrada de caixa nos próximos 60 dias." as const;
+
+const HORIZON_BILLING_BASE =
+  "Pedidos em carteira com previsão de faturamento nesta janela, usando SalesOrder.expectedDeliveryDate. Não representa NF-e já emitida." as const;
+
+function horizonBucketTooltip(base: string, rangeLabel: string): string {
+  return `${base} Faixa: ${rangeLabel}.`;
+}
+
+export const FINANCE_HORIZON_TOTAL_TOOLTIP =
+  "Soma das janelas de 0 a 60 dias. As faixas individuais são não acumulativas." as const;
+
+export const FINANCE_HORIZON_AP_BUCKET_TOOLTIPS = {
+  "0_7": horizonBucketTooltip(
+    "Títulos a pagar em aberto com data operacional entre hoje e os próximos 7 dias. A data operacional considera a maior data entre vencimento e agendamento.",
+    "0–7 dias"
+  ),
+  "8_15": horizonBucketTooltip(HORIZON_AP_BASE, "8–15 dias"),
+  "16_30": horizonBucketTooltip(HORIZON_AP_BASE, "16–30 dias"),
+  "31_45": horizonBucketTooltip(HORIZON_AP_BASE, "31–45 dias"),
+  "46_60": horizonBucketTooltip(HORIZON_AP_BASE, "46–60 dias"),
+} as const;
+
+export const FINANCE_HORIZON_AR_BUCKET_TOOLTIPS = {
+  "0_7": horizonBucketTooltip(
+    "Títulos a receber em aberto com vencimento entre hoje e os próximos 7 dias.",
+    "0–7 dias"
+  ),
+  "8_15": horizonBucketTooltip(HORIZON_AR_BASE, "8–15 dias"),
+  "16_30": horizonBucketTooltip(HORIZON_AR_BASE, "16–30 dias"),
+  "31_45": horizonBucketTooltip(HORIZON_AR_BASE, "31–45 dias"),
+  "46_60": horizonBucketTooltip(HORIZON_AR_BASE, "46–60 dias"),
+} as const;
+
+export const FINANCE_HORIZON_BILLING_BUCKET_TOOLTIPS = {
+  "0_7": horizonBucketTooltip(
+    "Pedidos em carteira com previsão de faturamento entre hoje e os próximos 7 dias, usando a melhor data operacional disponível.",
+    "0–7 dias"
+  ),
+  "8_15": horizonBucketTooltip(HORIZON_BILLING_BASE, "8–15 dias"),
+  "16_30": horizonBucketTooltip(HORIZON_BILLING_BASE, "16–30 dias"),
+  "31_45": horizonBucketTooltip(HORIZON_BILLING_BASE, "31–45 dias"),
+  "46_60": horizonBucketTooltip(HORIZON_BILLING_BASE, "46–60 dias"),
+} as const;

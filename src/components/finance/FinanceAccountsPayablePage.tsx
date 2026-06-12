@@ -109,6 +109,7 @@ import {
   FINANCE_KPI_AP_TOTAL_PAYABLE,
 } from "@/src/lib/financeKpiTooltips";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
+import { FinanceHorizonSection } from "@/src/components/finance/shared/FinanceHorizonSection";
 
 type ActionItem = {
   id: string;
@@ -881,6 +882,12 @@ export function FinanceAccountsPayablePage() {
           )}
         </div>
       </section>
+
+      <FinanceHorizonSection
+        summary={data?.financialHorizon}
+        variant="ap"
+        loading={loading}
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {loading && !data ? (

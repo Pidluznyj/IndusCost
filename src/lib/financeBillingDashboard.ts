@@ -75,6 +75,8 @@ export function billingTabMetricsAreFinite(tab: BillingDashboardTab): boolean {
     ...tab.forecast.monthlyComparison.flatMap((p) => [p.realized, p.forecast, p.difference]),
     ...tab.forecast.dailySeries.flatMap((p) => [p.realized, p.forecast, p.difference]),
     ...tab.forecast.orders.map((o) => o.totalNetValue),
+    ...tab.forecast.financialHorizon.buckets.map((b) => b.amount),
+    tab.forecast.financialHorizon.total.amount,
   ];
   return numericValues.every((v) => v == null || Number.isFinite(v));
 }

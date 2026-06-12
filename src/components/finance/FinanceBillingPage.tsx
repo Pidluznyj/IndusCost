@@ -106,6 +106,7 @@ import { buildFinanceBillingFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceFilterScopeBanner } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { FinanceHorizonSection } from "@/src/components/finance/shared/FinanceHorizonSection";
 
 export function FinanceBillingPage() {
   const auth = useAuth();
@@ -833,6 +834,12 @@ export function FinanceBillingPage() {
           </FinanceBillingKpiGroup>
         </div>
       </section>
+
+      <FinanceHorizonSection
+        summary={tab?.forecast?.financialHorizon}
+        variant="billing"
+        loading={loading}
+      />
 
       <section className={financeBiSectionClass}>
         <div className="px-5 py-4 border-b border-[#E5E7EB]">

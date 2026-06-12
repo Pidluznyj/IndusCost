@@ -12,6 +12,7 @@ import {
   isFinanceInternalGroupPerson,
   type FinanceDataSanitization,
 } from "./financeInternalGroupExclusions.js";
+import { buildFinanceArHorizonSummary } from "./financeHorizonAggregation.js";
 
 export type FinanceArTitleStatus =
   | "open"
@@ -1036,5 +1037,6 @@ export function buildFinanceAccountsReceivableDashboard(
       ignoredInternalGroupPayables: 0,
       ignoredPurchaseOrderAgendaPayables: 0,
     },
+    financialHorizon: buildFinanceArHorizonSummary(rows, filters, referenceDate),
   };
 }
