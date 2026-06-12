@@ -38,6 +38,8 @@ import { FinanceCashFlowScenarioChart } from "@/src/components/finance/cash-flow
 import { FinanceCashFlowRecommendations } from "@/src/components/finance/cash-flow/FinanceCashFlowRecommendations";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
+import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
+import { FinanceCashFlowReconciliationPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowReconciliationPanel";
 import {
   FinanceFilterScopeBanner,
   FinanceManagementSanitizationNote,
@@ -306,7 +308,8 @@ export function FinanceCashFlowPage() {
               <span className={labelClass()}>Data base</span>
               <select
                 className={filterFieldClass()}
-                value={draftFilters.dateBase}
+                value={draftFilters.viewMode === "realized" ? "settlement" : draftFilters.dateBase}
+                disabled={draftFilters.viewMode === "realized"}
                 onChange={(e) =>
                   setDraftFilters((f) => ({
                     ...f,
@@ -320,6 +323,9 @@ export function FinanceCashFlowPage() {
                   </option>
                 ))}
               </select>
+              {draftFilters.viewMode === "realized" ? (
+                <p className="text-[10px] text-[#6B7280]">Modo realizado usa data de baixa/pagamento.</p>
+              ) : null}
             </label>
             <label className="space-y-1">
               <span className={labelClass()}>Status</span>
@@ -387,7 +393,7 @@ export function FinanceCashFlowPage() {
             />
           </label>
           <label className="space-y-1">
-            <span className={labelClass()}>NF emitida?</span>
+            <span className={labelClass()}>Origem do recebível</span>
             <select
               className={filterFieldClass()}
               value={draftFilters.invoiceIssued}
@@ -444,6 +450,41 @@ export function FinanceCashFlowPage() {
 
       {payload && activeTab === "overview" ? (
         <div className="space-y-6">
+          <section className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="cash-flow-period-kpis">
+            <FinanceCashFlowKpiCard
+              testId="cash-flow-inflow-kpi"
+              label="Entradas do período"
+              hint="Contas a Receber — valores financeiros do filtro"
+              value={formatFinanceCurrency(cards?.inflowAmount ?? 0)}
+              valueFull={formatFinanceCurrency(cards?.inflowAmount ?? 0)}
+              icon={<TrendingUp className="h-4 w-4 text-[#059669]" />}
+              valueClassName="text-[#059669] font-bold tabular-nums text-xl sm:text-2xl"
+            />
+            <FinanceCashFlowKpiCard
+              testId="cash-flow-outflow-kpi"
+              label="Saídas do período"
+              hint="Contas a Pagar — valores financeiros do filtro"
+              value={formatFinanceCurrency(cards?.outflowAmount ?? 0)}
+              valueFull={formatFinanceCurrency(cards?.outflowAmount ?? 0)}
+              icon={<TrendingDown className="h-4 w-4 text-[#DC2626]" />}
+              valueClassName="text-[#DC2626] font-bold tabular-nums text-xl sm:text-2xl"
+            />
+            <FinanceCashFlowKpiCard
+              testId="cash-flow-net-kpi"
+              label="Saldo líquido"
+              hint="Entradas − saídas no período filtrado"
+              featured
+              value={formatFinanceCurrency(cards?.netFlowAmount ?? 0)}
+              valueFull={formatFinanceCurrency(cards?.netFlowAmount ?? 0)}
+              valueClassName={cn(
+                "font-bold tabular-nums text-xl sm:text-2xl",
+                (cards?.netFlowAmount ?? 0) >= 0 ? "text-[#059669]" : "text-[#DC2626]"
+              )}
+            />
+          </section>
+
+          <FinanceCashFlowReconciliationPanel reconciliation={payload.reconciliation} />
+
           <FinanceCashFlowYtdSummary
             executiveYtd={payload.executiveYtd}
             executiveYtdReading={payload.executiveYtdReading}

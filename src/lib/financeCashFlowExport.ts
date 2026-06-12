@@ -80,6 +80,59 @@ export function buildFinanceCashFlowExportCsv(
     ].join(",")
   );
 
+  const rec = payload.reconciliation;
+  lines.push(
+    [
+      csvEscape("conferencia_entradas"),
+      csvEscape(rec.periodLabel),
+      csvEscape(""),
+      csvEscape(rec.receivable.cashFlowInflow),
+      csvEscape(rec.receivable.ledgerInflow),
+      csvEscape(rec.receivable.arDashboardOpen),
+      csvEscape(rec.receivable.deltaVsLedger),
+      csvEscape(rec.receivable.matchesLedger ? "ok" : "divergencia"),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+    ].join(",")
+  );
+  lines.push(
+    [
+      csvEscape("conferencia_saidas"),
+      csvEscape(rec.periodLabel),
+      csvEscape(""),
+      csvEscape(rec.payable.cashFlowOutflow),
+      csvEscape(rec.payable.ledgerOutflow),
+      csvEscape(rec.payable.apDashboardOpen),
+      csvEscape(rec.payable.deltaVsLedger),
+      csvEscape(rec.payable.matchesLedger ? "ok" : "divergencia"),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+    ].join(",")
+  );
+  lines.push(
+    [
+      csvEscape("conferencia_saldo"),
+      csvEscape(rec.periodLabel),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(rec.netCashFlow),
+      csvEscape(""),
+      csvEscape(rec.netMatchesLedger ? "ok" : "divergencia"),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+    ].join(",")
+  );
+
   return `${lines.join("\n")}\n`;
 }
 

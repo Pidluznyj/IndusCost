@@ -18,6 +18,48 @@ export type FinanceCashFlowViewMode = "projected" | "realized" | "combined";
 export type FinanceCashFlowDateBase = "due" | "settlement" | "issue";
 export type FinanceCashFlowStatusFilter = "all" | "open" | "settled" | "overdue";
 
+export type FinanceCashFlowReconciliationSide = {
+  cashFlowInflow?: number;
+  cashFlowOutflow?: number;
+  ledgerInflow?: number;
+  ledgerOutflow?: number;
+  arDashboardOpen?: number;
+  arDashboardReceived?: number;
+  apDashboardOpen?: number;
+  apDashboardPaid?: number;
+  cashFlowOpenPortfolio: number;
+  matchesLedger: boolean;
+  matchesArOpen?: boolean;
+  matchesApOpen?: boolean;
+  deltaVsLedger: number;
+  deltaOpenVsAr?: number;
+  deltaOpenVsAp?: number;
+};
+
+export type FinanceCashFlowReconciliation = {
+  periodLabel: string;
+  viewMode: FinanceCashFlowViewMode;
+  receivable: FinanceCashFlowReconciliationSide & {
+    cashFlowInflow: number;
+    ledgerInflow: number;
+    arDashboardOpen: number;
+    arDashboardReceived: number;
+    matchesArOpen: boolean;
+    deltaOpenVsAr: number;
+  };
+  payable: FinanceCashFlowReconciliationSide & {
+    cashFlowOutflow: number;
+    ledgerOutflow: number;
+    apDashboardOpen: number;
+    apDashboardPaid: number;
+    matchesApOpen: boolean;
+    deltaOpenVsAp: number;
+  };
+  netCashFlow: number;
+  netMatchesLedger: boolean;
+  notes: string[];
+};
+
 export type FinanceCashFlowDashboardFiltersApplied = {
   year?: number;
   month?: number;
@@ -136,6 +178,8 @@ export type FinanceCashFlowDashboardPayload = {
   overduePayables: FinanceCashFlowCriticalMovement[];
   /** Registros excluídos da visão gerencial (intercompany, fantasma, agenda PC). */
   dataSanitization: FinanceDataSanitization;
+  /** Conferência AR/AP × fluxo do período (mesmos filtros e saneamento). */
+  reconciliation: FinanceCashFlowReconciliation;
 };
 
 export type FinanceCashFlowUiFilters = {
@@ -156,7 +200,7 @@ export type FinanceCashFlowUiFilters = {
 export const FINANCE_CASH_FLOW_VIEW_OPTIONS = [
   { value: "projected", label: "Previsto" },
   { value: "realized", label: "Realizado" },
-  { value: "combined", label: "Previsto x Realizado" },
+  { value: "combined", label: "Realizado + Previsto" },
 ] as const;
 
 export const FINANCE_CASH_FLOW_DATE_BASE_OPTIONS = [
@@ -173,9 +217,9 @@ export const FINANCE_CASH_FLOW_STATUS_OPTIONS = [
 ] as const;
 
 export const FINANCE_CASH_FLOW_INVOICE_OPTIONS = [
-  { value: "all", label: "Todos" },
-  { value: "yes", label: "Sim" },
-  { value: "no", label: "Não" },
+  { value: "all", label: "Tudo" },
+  { value: "yes", label: "Com NF" },
+  { value: "no", label: "Sem NF" },
 ] as const;
 
 export const FINANCE_CASH_FLOW_MONTH_OPTIONS = [
@@ -246,10 +290,12 @@ export function normalizeFinanceCashFlowUiFilters(
   const merged = { ...defaults, ...filters };
   const year = merged.year.trim();
   const month = merged.month.trim();
-  if (month && !year) {
-    return { ...merged, year: String(new Date().getFullYear()) };
+  const normalized =
+    month && !year ? { ...merged, year: String(new Date().getFullYear()) } : merged;
+  if (normalized.viewMode === "realized") {
+    return { ...normalized, dateBase: "settlement" };
   }
-  return merged;
+  return normalized;
 }
 
 export function buildFinanceCashFlowDashboardQuery(

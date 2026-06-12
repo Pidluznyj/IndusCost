@@ -15,6 +15,11 @@ import type {
   FinanceCashFlowDashboardPayload,
   FinanceCashFlowPartySummary,
 } from "./financeCashFlowDashboardTypes.js";
+import {
+  cashFlowViewModeSlices,
+  resolveCashFlowArMovementDate,
+  resolveCashFlowApMovementDate,
+} from "./financeCashFlowLedger.js";
 
 /** Limite de concentração (%) para alerta gerencial. */
 export const CFO_CONCENTRATION_ALERT_PERCENT = 40;
@@ -232,28 +237,6 @@ function dateKey(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-function resolveArMovementDate(
-  row: FinanceCashFlowArRow,
-  dateBase: FinanceCashFlowDashboardFilters["dateBase"],
-  projected: boolean
-): Date | null {
-  if (projected) return row.dueDate;
-  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
-  if (dateBase === "settlement") return row.settlementDate;
-  return row.dueDate;
-}
-
-function resolveApMovementDate(
-  row: FinanceCashFlowApRow,
-  dateBase: FinanceCashFlowDashboardFilters["dateBase"],
-  projected: boolean
-): Date | null {
-  if (projected) return row.dueDate;
-  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
-  if (dateBase === "settlement") return row.paymentDate ?? row.settlementDate;
-  return row.dueDate;
-}
-
 function buildMovementBuckets(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -261,12 +244,7 @@ function buildMovementBuckets(
   referenceDate: Date
 ): Map<string, DayBucket> {
   const buckets = new Map<string, DayBucket>();
-  const modes: boolean[] =
-    filters.viewMode === "combined"
-      ? [true, false]
-      : filters.viewMode === "projected"
-        ? [true]
-        : [false];
+  const modes = cashFlowViewModeSlices(filters.viewMode);
 
   const add = (key: string, side: "inflow" | "outflow", amount: number) => {
     const b = buckets.get(key) ?? { inflow: 0, outflow: 0, inflowCount: 0, outflowCount: 0 };
@@ -280,31 +258,31 @@ function buildMovementBuckets(
     buckets.set(key, b);
   };
 
-  for (const projected of modes) {
+  for (const slice of modes) {
     for (const row of arRows) {
-      if (projected) {
+      if (slice === "projected") {
         if (!isFinanceArOpen(row) || row.suspendCollection || row.balanceReceivable <= 0) continue;
-        const date = resolveArMovementDate(row, filters.dateBase, true);
+        const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
         if (!date) continue;
         add(dateKey(startOfLocalDay(date)), "inflow", row.balanceReceivable);
       } else if (row.amountReceived > 0 && row.settlementDate) {
-        const date = resolveArMovementDate(row, filters.dateBase, false);
+        const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
         if (!date) continue;
         add(dateKey(startOfLocalDay(date)), "inflow", row.amountReceived);
       }
     }
     for (const row of apRows) {
-      if (projected) {
+      if (slice === "projected") {
         if (!isFinanceApOpen(row) || row.suspendPayment || row.balancePayable <= 0) continue;
-        const date = resolveApMovementDate(row, filters.dateBase, true);
+        const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
         if (!date) continue;
         add(dateKey(startOfLocalDay(date)), "outflow", row.balancePayable);
       } else {
         const payDate = row.paymentDate ?? row.settlementDate;
         if (row.amountPaid > 0 && payDate) {
-          const date = resolveApMovementDate(row, filters.dateBase, false);
+          const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
           if (!date) continue;
-          add(dateKey(startOfLocalDay(payDate)), "outflow", row.amountPaid);
+          add(dateKey(startOfLocalDay(date)), "outflow", row.amountPaid);
         }
       }
     }
@@ -463,6 +441,7 @@ export type FinanceCashFlowInsightsInput = Omit<
   | "executiveReading"
   | "executiveYtd"
   | "executiveYtdReading"
+  | "reconciliation"
 >;
 
 export function buildCashFlowExecutiveInsights(

@@ -17,6 +17,15 @@ import type {
   FinanceCashFlowPartySummary,
 } from "./financeCashFlowDashboardTypes.js";
 import { resolveMonthlyNetStatus } from "./financeCashFlowIntelligence.js";
+import {
+  cashFlowViewModeSlices,
+  resolveCashFlowArAmount,
+  resolveCashFlowApAmount,
+  resolveCashFlowArMovementDate,
+  resolveCashFlowApMovementDate,
+  shouldIncludeCashFlowArMovement,
+  shouldIncludeCashFlowApMovement,
+} from "./financeCashFlowLedger.js";
 
 const MONTH_LABELS = [
   "Jan",
@@ -136,59 +145,6 @@ function isFutureCalendarMonth(
   return month > refMonth;
 }
 
-function resolveArMovementDate(
-  row: FinanceCashFlowArRow,
-  dateBase: FinanceCashFlowDashboardFilters["dateBase"],
-  projected: boolean
-): Date | null {
-  if (projected) return row.dueDate;
-  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
-  if (dateBase === "settlement") return row.settlementDate;
-  return row.dueDate;
-}
-
-function resolveApMovementDate(
-  row: FinanceCashFlowApRow,
-  dateBase: FinanceCashFlowDashboardFilters["dateBase"],
-  projected: boolean
-): Date | null {
-  if (projected) return row.dueDate;
-  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
-  if (dateBase === "settlement") return row.paymentDate ?? row.settlementDate;
-  return row.dueDate;
-}
-
-function resolveArAmount(row: FinanceCashFlowArRow, projected: boolean): number {
-  if (projected) {
-    if (!isFinanceArOpen(row) || row.suspendCollection) return 0;
-    return row.balanceReceivable;
-  }
-  return row.amountReceived > 0 ? row.amountReceived : 0;
-}
-
-function resolveApAmount(row: FinanceCashFlowApRow, projected: boolean): number {
-  if (projected) {
-    if (!isFinanceApOpen(row) || row.suspendPayment) return 0;
-    return row.balancePayable;
-  }
-  return row.amountPaid > 0 ? row.amountPaid : 0;
-}
-
-function shouldIncludeAr(row: FinanceCashFlowArRow, projected: boolean): boolean {
-  if (projected) {
-    return isFinanceArOpen(row) && !row.suspendCollection && row.balanceReceivable > 0;
-  }
-  return row.amountReceived > 0 && row.settlementDate != null;
-}
-
-function shouldIncludeAp(row: FinanceCashFlowApRow, projected: boolean): boolean {
-  if (projected) {
-    return isFinanceApOpen(row) && !row.suspendPayment && row.balancePayable > 0;
-  }
-  const payDate = row.paymentDate ?? row.settlementDate;
-  return row.amountPaid > 0 && payDate != null;
-}
-
 function buildForwardBuckets(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -204,22 +160,16 @@ function buildForwardBuckets(
     buckets.set(`${ym.year}-${ym.month}`, { inflow: 0, outflow: 0 });
   }
 
-  const modes: boolean[] =
-    filters.viewMode === "combined"
-      ? [true, false]
-      : filters.viewMode === "projected"
-        ? [true]
-        : [false];
-
+  const modes = cashFlowViewModeSlices(filters.viewMode);
   const nullFutureRealized = filters.viewMode === "realized";
 
-  for (const projected of modes) {
+  for (const slice of modes) {
     for (const row of arRows) {
-      if (!shouldIncludeAr(row, projected)) continue;
-      let amount = resolveArAmount(row, projected);
+      if (!shouldIncludeCashFlowArMovement(row, slice)) continue;
+      let amount = resolveCashFlowArAmount(row, slice);
       if (amount <= 0) continue;
       amount = roundMoney(amount * inflowFactor(row, referenceDate));
-      const date = resolveArMovementDate(row, filters.dateBase, projected);
+      const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
       if (!date) continue;
       const { year, month } = { year: date.getFullYear(), month: date.getMonth() + 1 };
       const key = `${year}-${month}`;
@@ -232,10 +182,10 @@ function buildForwardBuckets(
     }
 
     for (const row of apRows) {
-      if (!shouldIncludeAp(row, projected)) continue;
-      const amount = resolveApAmount(row, projected);
+      if (!shouldIncludeCashFlowApMovement(row, slice)) continue;
+      const amount = resolveCashFlowApAmount(row, slice);
       if (amount <= 0) continue;
-      const date = resolveApMovementDate(row, filters.dateBase, projected);
+      const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
       if (!date) continue;
       const { year, month } = { year: date.getFullYear(), month: date.getMonth() + 1 };
       const key = `${year}-${month}`;

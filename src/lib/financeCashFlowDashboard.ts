@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import {
+  buildFinanceAccountsReceivableDashboard,
   classifyFinanceArTitle,
   countFinanceArSanitizationInScope,
   decimalFieldToNumber,
@@ -17,6 +18,7 @@ import {
   FinanceArFilterParseError,
 } from "./financeAccountsReceivableDashboard.js";
 import {
+  buildFinanceAccountsPayableDashboard,
   classifyFinanceApTitle,
   countFinanceApSanitizationInScope,
   filterFinanceApRows,
@@ -63,6 +65,18 @@ import {
   buildYtdDashboardFilters,
   executiveYtdMetricsAreFinite,
 } from "./financeCashFlowExecutiveYtd.js";
+import {
+  buildCashFlowReconciliation,
+  cashFlowViewModeSlices,
+  computeCashFlowLedgerPeriodTotals,
+  computeCashFlowOpenPortfolioTotals,
+  resolveCashFlowArAmount,
+  resolveCashFlowApAmount,
+  resolveCashFlowArMovementDate,
+  resolveCashFlowApMovementDate,
+  shouldIncludeCashFlowArMovement,
+  shouldIncludeCashFlowApMovement,
+} from "./financeCashFlowLedger.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
   constructor(message: string) {
@@ -352,67 +366,6 @@ export function filterCashFlowApRows(
   return filterFinanceApRows(rows, apFilters, referenceDate) as FinanceCashFlowApRow[];
 }
 
-function resolveArMovementDate(
-  row: FinanceCashFlowArRow,
-  dateBase: FinanceCashFlowDateBase,
-  projected: boolean
-): Date | null {
-  if (projected) return row.dueDate;
-  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
-  if (dateBase === "settlement") return row.settlementDate;
-  return row.dueDate;
-}
-
-function resolveApMovementDate(
-  row: FinanceCashFlowApRow,
-  dateBase: FinanceCashFlowDateBase,
-  projected: boolean
-): Date | null {
-  if (projected) return row.dueDate;
-  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
-  if (dateBase === "settlement") return row.paymentDate ?? row.settlementDate;
-  return row.dueDate;
-}
-
-function resolveArAmount(row: FinanceCashFlowArRow, projected: boolean): number {
-  if (projected) {
-    if (!isFinanceArOpen(row) || row.suspendCollection) return 0;
-    return row.balanceReceivable;
-  }
-  return row.amountReceived > 0 ? row.amountReceived : 0;
-}
-
-function resolveApAmount(row: FinanceCashFlowApRow, projected: boolean): number {
-  if (projected) {
-    if (!isFinanceApOpen(row) || row.suspendPayment) return 0;
-    return row.balancePayable;
-  }
-  return row.amountPaid > 0 ? row.amountPaid : 0;
-}
-
-function shouldIncludeArMovement(
-  row: FinanceCashFlowArRow,
-  projected: boolean,
-  referenceDate: Date
-): boolean {
-  if (projected) {
-    return isFinanceArOpen(row) && !row.suspendCollection && row.balanceReceivable > 0;
-  }
-  return row.amountReceived > 0 && row.settlementDate != null;
-}
-
-function shouldIncludeApMovement(
-  row: FinanceCashFlowApRow,
-  projected: boolean,
-  referenceDate: Date
-): boolean {
-  if (projected) {
-    return isFinanceApOpen(row) && !row.suspendPayment && row.balancePayable > 0;
-  }
-  const payDate = row.paymentDate ?? row.settlementDate;
-  return row.amountPaid > 0 && payDate != null;
-}
-
 type MonthBucket = {
   inflow: number;
   outflow: number;
@@ -451,19 +404,14 @@ function buildMonthlyBuckets(
     buckets.set(m, { inflow: 0, outflow: 0, inflowCount: 0, outflowCount: 0 });
   }
 
-  const modes: boolean[] =
-    filters.viewMode === "combined"
-      ? [true, false]
-      : filters.viewMode === "projected"
-        ? [true]
-        : [false];
+  const modes = cashFlowViewModeSlices(filters.viewMode);
 
-  for (const projected of modes) {
+  for (const slice of modes) {
     for (const row of arRows) {
-      if (!shouldIncludeArMovement(row, projected, referenceDate)) continue;
-      const amount = resolveArAmount(row, projected);
+      if (!shouldIncludeCashFlowArMovement(row, slice)) continue;
+      const amount = resolveCashFlowArAmount(row, slice);
       if (amount <= 0) continue;
-      const date = resolveArMovementDate(row, filters.dateBase, projected);
+      const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
       if (!date || date.getFullYear() !== seriesYear) continue;
       if (filters.month != null && date.getMonth() + 1 !== filters.month) continue;
       const bucket = buckets.get(date.getMonth() + 1);
@@ -473,10 +421,10 @@ function buildMonthlyBuckets(
     }
 
     for (const row of apRows) {
-      if (!shouldIncludeApMovement(row, projected, referenceDate)) continue;
-      const amount = resolveApAmount(row, projected);
+      if (!shouldIncludeCashFlowApMovement(row, slice)) continue;
+      const amount = resolveCashFlowApAmount(row, slice);
       if (amount <= 0) continue;
-      const date = resolveApMovementDate(row, filters.dateBase, projected);
+      const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
       if (!date || date.getFullYear() !== seriesYear) continue;
       if (filters.month != null && date.getMonth() + 1 !== filters.month) continue;
       const bucket = buckets.get(date.getMonth() + 1);
@@ -915,6 +863,51 @@ export function buildFinanceCashFlowDashboard(
     referenceDate
   );
 
+  const arDash = buildFinanceAccountsReceivableDashboard(
+    filteredAr,
+    toArLoadFilters(filters),
+    referenceDate
+  );
+  const apDash = buildFinanceAccountsPayableDashboard(
+    filteredAp,
+    toApLoadFilters(filters),
+    referenceDate
+  );
+  const ledgerPeriod = computeCashFlowLedgerPeriodTotals(
+    filteredAr,
+    filteredAp,
+    filters,
+    referenceDate
+  );
+  const portfolio = computeCashFlowOpenPortfolioTotals(filteredAr, filteredAp);
+  const apPaidInScope = filteredAp.reduce(
+    (sum, row) => sum + (row.amountPaid > 0 ? row.amountPaid : 0),
+    0
+  );
+  const openReceivableWithoutDueDate = filteredAr.filter(
+    (r) => isFinanceArOpen(r) && !r.suspendCollection && !r.dueDate
+  ).length;
+
+  const reconciliation = buildCashFlowReconciliation(
+    filters,
+    {
+      inflowAmount: period.inflow,
+      outflowAmount: period.outflow,
+      netFlowAmount: period.net,
+      totalReceivableOpen: totalReceivableRounded,
+      totalPayableOpen: totalPayableRounded,
+    },
+    ledgerPeriod,
+    portfolio,
+    {
+      arDashboardOpen: arDash.cards.totalOpenAmount,
+      arDashboardReceived: arDash.cards.totalReceivedAmount,
+      apDashboardOpen: apDash.cards.totalOpenAmount,
+      apDashboardPaid: roundMoney(apPaidInScope),
+    },
+    { openReceivableWithoutDueDate }
+  );
+
   return {
     ...partialPayload,
     executiveYtd,
@@ -922,6 +915,7 @@ export function buildFinanceCashFlowDashboard(
     cashHealthScore,
     executiveInsights,
     dailyCalendar,
+    reconciliation,
     executiveReading: buildCashFlowExecutiveReading({
       cards: {
         netCashPosition: netPosition.netCashPosition,
@@ -1013,6 +1007,24 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
   }
   if (!cashFlowCfoMetricsAreFinite(payload.executiveInsights)) return false;
   if (!executiveYtdMetricsAreFinite(payload.executiveYtd)) return false;
+  const rec = payload.reconciliation;
+  for (const v of [
+    rec.netCashFlow,
+    rec.receivable.cashFlowInflow,
+    rec.receivable.ledgerInflow,
+    rec.receivable.arDashboardOpen,
+    rec.receivable.arDashboardReceived,
+    rec.receivable.deltaVsLedger,
+    rec.receivable.deltaOpenVsAr,
+    rec.payable.cashFlowOutflow,
+    rec.payable.ledgerOutflow,
+    rec.payable.apDashboardOpen,
+    rec.payable.apDashboardPaid,
+    rec.payable.deltaVsLedger,
+    rec.payable.deltaOpenVsAp,
+  ]) {
+    if (!Number.isFinite(v)) return false;
+  }
   return true;
 }
 

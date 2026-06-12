@@ -1,0 +1,347 @@
+/**
+ * Regras únicas de movimentação de caixa a partir de Contas a Receber e Contas a Pagar.
+ * Usado pelo dashboard, previsão, calendário e reconciliação com AR/AP.
+ */
+import { isFinanceArOpen, roundMoney } from "./financeAccountsReceivableDashboard.js";
+import { isFinanceApOpen } from "./financeAccountsPayableDashboard.js";
+import type {
+  FinanceCashFlowApRow,
+  FinanceCashFlowArRow,
+  FinanceCashFlowDashboardFilters,
+} from "./financeCashFlowDashboard.js";
+import type {
+  FinanceCashFlowDateBase,
+  FinanceCashFlowReconciliation,
+  FinanceCashFlowViewMode,
+} from "./financeCashFlowDashboardTypes.js";
+
+export type CashFlowMovementSlice = "projected" | "realized";
+
+export function cashFlowViewModeSlices(
+  viewMode: FinanceCashFlowViewMode
+): CashFlowMovementSlice[] {
+  if (viewMode === "combined") return ["projected", "realized"];
+  if (viewMode === "realized") return ["realized"];
+  return ["projected"];
+}
+
+/** Previsto: vencimento (ou competência se data base = emissão). Realizado: sempre liquidação. */
+export function resolveCashFlowArMovementDate(
+  row: FinanceCashFlowArRow,
+  slice: CashFlowMovementSlice,
+  dateBase: FinanceCashFlowDateBase
+): Date | null {
+  if (slice === "realized") return row.settlementDate;
+  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
+  return row.dueDate;
+}
+
+export function resolveCashFlowApMovementDate(
+  row: FinanceCashFlowApRow,
+  slice: CashFlowMovementSlice,
+  dateBase: FinanceCashFlowDateBase
+): Date | null {
+  if (slice === "realized") return row.paymentDate ?? row.settlementDate;
+  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
+  return row.dueDate;
+}
+
+export function resolveCashFlowArAmount(
+  row: FinanceCashFlowArRow,
+  slice: CashFlowMovementSlice
+): number {
+  if (slice === "projected") {
+    if (!isFinanceArOpen(row) || row.suspendCollection) return 0;
+    return row.balanceReceivable;
+  }
+  return row.amountReceived > 0 ? row.amountReceived : 0;
+}
+
+export function resolveCashFlowApAmount(
+  row: FinanceCashFlowApRow,
+  slice: CashFlowMovementSlice
+): number {
+  if (slice === "projected") {
+    if (!isFinanceApOpen(row) || row.suspendPayment) return 0;
+    return row.balancePayable;
+  }
+  return row.amountPaid > 0 ? row.amountPaid : 0;
+}
+
+export function shouldIncludeCashFlowArMovement(
+  row: FinanceCashFlowArRow,
+  slice: CashFlowMovementSlice
+): boolean {
+  if (slice === "projected") {
+    return isFinanceArOpen(row) && !row.suspendCollection && row.balanceReceivable > 0;
+  }
+  return row.amountReceived > 0 && row.settlementDate != null;
+}
+
+export function shouldIncludeCashFlowApMovement(
+  row: FinanceCashFlowApRow,
+  slice: CashFlowMovementSlice
+): boolean {
+  if (slice === "projected") {
+    return isFinanceApOpen(row) && !row.suspendPayment && row.balancePayable > 0;
+  }
+  const payDate = row.paymentDate ?? row.settlementDate;
+  return row.amountPaid > 0 && payDate != null;
+}
+
+export type CashFlowPeriodBounds = {
+  seriesYear: number;
+  month?: number;
+};
+
+export function resolveCashFlowPeriodBounds(
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date
+): CashFlowPeriodBounds {
+  return {
+    seriesYear: filters.year ?? referenceDate.getFullYear(),
+    month: filters.month,
+  };
+}
+
+function movementMatchesPeriod(
+  date: Date,
+  bounds: CashFlowPeriodBounds
+): boolean {
+  if (date.getFullYear() !== bounds.seriesYear) return false;
+  if (bounds.month != null && date.getMonth() + 1 !== bounds.month) return false;
+  return true;
+}
+
+export type CashFlowLedgerPeriodTotals = {
+  inflow: number;
+  outflow: number;
+  net: number;
+  inflowCount: number;
+  outflowCount: number;
+};
+
+/** Soma entradas/saídas do período com as mesmas regras da série mensal. */
+export function computeCashFlowLedgerPeriodTotals(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date
+): CashFlowLedgerPeriodTotals {
+  const bounds = resolveCashFlowPeriodBounds(filters, referenceDate);
+  let inflow = 0;
+  let outflow = 0;
+  let inflowCount = 0;
+  let outflowCount = 0;
+
+  for (const slice of cashFlowViewModeSlices(filters.viewMode)) {
+    for (const row of arRows) {
+      if (!shouldIncludeCashFlowArMovement(row, slice)) continue;
+      const amount = resolveCashFlowArAmount(row, slice);
+      if (amount <= 0) continue;
+      const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
+      if (!date || !movementMatchesPeriod(date, bounds)) continue;
+      inflow += amount;
+      inflowCount += 1;
+    }
+
+    for (const row of apRows) {
+      if (!shouldIncludeCashFlowApMovement(row, slice)) continue;
+      const amount = resolveCashFlowApAmount(row, slice);
+      if (amount <= 0) continue;
+      const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
+      if (!date || !movementMatchesPeriod(date, bounds)) continue;
+      outflow += amount;
+      outflowCount += 1;
+    }
+  }
+
+  const inflowRounded = roundMoney(inflow);
+  const outflowRounded = roundMoney(outflow);
+  return {
+    inflow: inflowRounded,
+    outflow: outflowRounded,
+    net: roundMoney(inflowRounded - outflowRounded),
+    inflowCount,
+    outflowCount,
+  };
+}
+
+export type CashFlowOpenPortfolioTotals = {
+  receivableOpen: number;
+  payableOpen: number;
+  netPosition: number;
+};
+
+export function computeCashFlowOpenPortfolioTotals(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[]
+): CashFlowOpenPortfolioTotals {
+  let receivableOpen = 0;
+  let payableOpen = 0;
+
+  for (const row of arRows) {
+    if (isFinanceArOpen(row) && !row.suspendCollection) {
+      receivableOpen += row.balanceReceivable;
+    }
+  }
+  for (const row of apRows) {
+    if (isFinanceApOpen(row) && !row.suspendPayment) {
+      payableOpen += row.balancePayable;
+    }
+  }
+
+  const receivableRounded = roundMoney(receivableOpen);
+  const payableRounded = roundMoney(payableOpen);
+  return {
+    receivableOpen: receivableRounded,
+    payableOpen: payableRounded,
+    netPosition: roundMoney(receivableRounded - payableRounded),
+  };
+}
+
+function buildPeriodLabel(filters: FinanceCashFlowDashboardFilters): string {
+  if (filters.year != null && filters.month != null) {
+    return `${String(filters.month).padStart(2, "0")}/${filters.year}`;
+  }
+  if (filters.year != null) return `Ano ${filters.year}`;
+  return "Período filtrado";
+}
+
+function viewModeLabel(viewMode: FinanceCashFlowViewMode): string {
+  if (viewMode === "realized") return "Realizado";
+  if (viewMode === "combined") return "Realizado + Previsto";
+  return "Previsto";
+}
+
+const EPSILON = 0.01;
+
+function nearlyEqual(a: number, b: number): boolean {
+  return Math.abs(a - b) < EPSILON;
+}
+
+export type CashFlowReconciliationSourceTotals = {
+  arDashboardOpen: number;
+  arDashboardReceived: number;
+  apDashboardOpen: number;
+  apDashboardPaid: number;
+};
+
+/**
+ * Conferência entre Fluxo de Caixa, ledger e dashboards AR/AP (mesmos filtros e saneamento).
+ */
+export function buildCashFlowReconciliation(
+  filters: FinanceCashFlowDashboardFilters,
+  cashFlow: {
+    inflowAmount: number;
+    outflowAmount: number;
+    netFlowAmount: number;
+    totalReceivableOpen: number;
+    totalPayableOpen: number;
+  },
+  ledgerPeriod: CashFlowLedgerPeriodTotals,
+  portfolio: CashFlowOpenPortfolioTotals,
+  sourceTotals: CashFlowReconciliationSourceTotals,
+  options?: { openReceivableWithoutDueDate?: number }
+): FinanceCashFlowReconciliation {
+
+  const inflowMatchesLedger = nearlyEqual(cashFlow.inflowAmount, ledgerPeriod.inflow);
+  const outflowMatchesLedger = nearlyEqual(cashFlow.outflowAmount, ledgerPeriod.outflow);
+  const netMatchesLedger = nearlyEqual(cashFlow.netFlowAmount, ledgerPeriod.net);
+
+  const openMatchesAr = nearlyEqual(
+    cashFlow.totalReceivableOpen,
+    sourceTotals.arDashboardOpen
+  );
+  const openMatchesAp = nearlyEqual(
+    cashFlow.totalPayableOpen,
+    sourceTotals.apDashboardOpen
+  );
+  const portfolioMatchesAr = nearlyEqual(
+    portfolio.receivableOpen,
+    sourceTotals.arDashboardOpen
+  );
+  const portfolioMatchesAp = nearlyEqual(
+    portfolio.payableOpen,
+    sourceTotals.apDashboardOpen
+  );
+
+  const notes: string[] = [
+    "Entradas = Contas a Receber (NomusAccountsReceivable). Saídas = Contas a Pagar (NomusAccountsPayable).",
+    "Saldo líquido do período = entradas − saídas (valores financeiros, não quantidade de títulos).",
+    `Modo ${viewModeLabel(filters.viewMode)}: previsto usa saldo em aberto e vencimento; realizado usa valor liquidado e data de baixa/pagamento.`,
+    "Faturamento não alimenta este fluxo — apenas AR/AP saneados.",
+  ];
+
+  if (filters.invoiceIssued === "yes") {
+    notes.push("Origem do recebível: somente títulos com NF vinculada.");
+  } else if (filters.invoiceIssued === "no") {
+    notes.push("Origem do recebível: somente títulos sem NF vinculada.");
+  }
+
+  if (!inflowMatchesLedger || !outflowMatchesLedger) {
+    notes.push(
+      "Divergência interna entre cards do fluxo e recomputação do ledger — revisar série mensal."
+    );
+  }
+
+  if (!openMatchesAr) {
+    notes.push(
+      `Carteira a receber: fluxo R$ ${cashFlow.totalReceivableOpen.toFixed(2)} vs AR Em Aberto R$ ${sourceTotals.arDashboardOpen.toFixed(2)}.`
+    );
+  }
+  if (!openMatchesAp) {
+    notes.push(
+      `Carteira a pagar: fluxo R$ ${cashFlow.totalPayableOpen.toFixed(2)} vs AP Em Aberto R$ ${sourceTotals.apDashboardOpen.toFixed(2)}.`
+    );
+  }
+
+  if (filters.viewMode === "realized") {
+    notes.push(
+      "No modo realizado, entradas usam settlementDate; o card Recebido do AR filtra por vencimento — totais do período podem diferir do card Recebido."
+    );
+  }
+
+  if (filters.viewMode === "projected" || filters.viewMode === "combined") {
+    const openWithoutDue = options?.openReceivableWithoutDueDate ?? 0;
+    if (openWithoutDue > 0) {
+      notes.push(
+        `${openWithoutDue} título(s) em aberto sem vencimento entram na carteira AR mas não no fluxo do período.`
+      );
+    }
+  }
+
+  return {
+    periodLabel: buildPeriodLabel(filters),
+    viewMode: filters.viewMode,
+    receivable: {
+      cashFlowInflow: cashFlow.inflowAmount,
+      ledgerInflow: ledgerPeriod.inflow,
+      arDashboardOpen: sourceTotals.arDashboardOpen,
+      arDashboardReceived: sourceTotals.arDashboardReceived,
+      cashFlowOpenPortfolio: cashFlow.totalReceivableOpen,
+      matchesLedger: inflowMatchesLedger,
+      matchesArOpen: openMatchesAr && portfolioMatchesAr,
+      deltaVsLedger: roundMoney(cashFlow.inflowAmount - ledgerPeriod.inflow),
+      deltaOpenVsAr: roundMoney(
+        cashFlow.totalReceivableOpen - sourceTotals.arDashboardOpen
+      ),
+    },
+    payable: {
+      cashFlowOutflow: cashFlow.outflowAmount,
+      ledgerOutflow: ledgerPeriod.outflow,
+      apDashboardOpen: sourceTotals.apDashboardOpen,
+      apDashboardPaid: sourceTotals.apDashboardPaid,
+      cashFlowOpenPortfolio: cashFlow.totalPayableOpen,
+      matchesLedger: outflowMatchesLedger,
+      matchesApOpen: openMatchesAp && portfolioMatchesAp,
+      deltaVsLedger: roundMoney(cashFlow.outflowAmount - ledgerPeriod.outflow),
+      deltaOpenVsAp: roundMoney(
+        cashFlow.totalPayableOpen - sourceTotals.apDashboardOpen
+      ),
+    },
+    netCashFlow: cashFlow.netFlowAmount,
+    netMatchesLedger,
+    notes,
+  };
+}

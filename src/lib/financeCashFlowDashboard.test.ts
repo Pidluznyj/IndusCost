@@ -159,6 +159,21 @@ describe("financeCashFlowDashboard", () => {
     const fev = payload.monthlySeries.find((p) => p.month === 2);
     assert.ok(fev);
     assert.equal(fev!.inflowAmount, 1500);
+    assert.equal(payload.reconciliation.receivable.matchesLedger, true);
+  });
+
+  it("reconciliação expõe totais AR/AP do período", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [arRow({ balanceReceivable: 2000, dueDate: new Date(2026, 0, 10) })],
+      [apRow({ balancePayable: 700, dueDate: new Date(2026, 0, 12) })],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF
+    );
+    assert.equal(payload.reconciliation.receivable.cashFlowInflow, 2000);
+    assert.equal(payload.reconciliation.payable.cashFlowOutflow, 700);
+    assert.equal(payload.reconciliation.netCashFlow, 1300);
+    assert.equal(payload.reconciliation.receivable.matchesArOpen, true);
+    assert.equal(payload.reconciliation.payable.matchesApOpen, true);
   });
 
   it("meses futuros null no modo realizado (ano corrente)", () => {
