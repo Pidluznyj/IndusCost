@@ -1,3 +1,4 @@
+import { createBrowserSafeId } from "@/src/lib/browserSafeId";
 import { calculateStructureLineTotalCost } from "@/src/lib/projectsCalculations";
 
 export type ProjectMoldCostLineType =
@@ -67,7 +68,7 @@ export function parseMoldNotes(notes: string | null | undefined): {
 
 export function createEmptyMoldLine(): ProjectMoldCostLine {
   return {
-    id: crypto.randomUUID(),
+    id: createBrowserSafeId("mold-line"),
     description: "",
     lineType: "MATERIAL",
     supplierName: null,

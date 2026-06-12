@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { createBrowserSafeId } from "@/src/lib/browserSafeId";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import {
@@ -1014,7 +1015,7 @@ function ProjectDetailView({
           setSaving(true);
           setModalError(null);
           try {
-            const batchId = crypto.randomUUID();
+            const batchId = createBrowserSafeId("other-cost-batch");
             for (const line of payload.lines) {
               await fetchJsonOk(`/api/projects/${projectId}/simulated-items`, {
                 method: "POST",

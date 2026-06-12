@@ -1,3 +1,5 @@
+import { createBrowserSafeId } from "@/src/lib/browserSafeId";
+
 export const OTHER_COST_MARKER = "guided-other-cost";
 export const OTHER_COST_BATCH_PREFIX = "batch:";
 
@@ -75,7 +77,7 @@ export function createEmptyOtherCostLine(
   group: ProjectOtherCostGroupKey = "OTHER"
 ): ProjectOtherCostLine {
   return {
-    id: crypto.randomUUID(),
+    id: createBrowserSafeId("other-cost-line"),
     group,
     description: "",
     supplierName: null,
