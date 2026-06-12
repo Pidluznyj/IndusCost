@@ -1,6 +1,6 @@
 import React from "react";
 import { CalendarRange } from "lucide-react";
-import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
+import { FinanceKpiCard, type FinanceKpiCardProps } from "@/src/components/finance/shared/FinanceKpiCard";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import type { FinanceHorizonBucketKey, FinanceHorizonBucketValue } from "@/src/lib/financeHorizonBuckets";
 import type { FinanceHorizonSummary } from "@/src/lib/financeHorizonAggregation";
@@ -19,6 +19,17 @@ const BUCKET_TOOLTIPS: Record<FinanceHorizonVariant, Record<string, string>> = {
   ar: FINANCE_HORIZON_AR_BUCKET_TOOLTIPS,
   billing: FINANCE_HORIZON_BILLING_BUCKET_TOOLTIPS,
 };
+
+type HorizonSkeletonCard = FinanceKpiCardProps & { id: string };
+
+const HORIZON_SKELETON_CARDS: HorizonSkeletonCard[] = Array.from({ length: 6 }, (_, index) => ({
+  id: `horizon-skeleton-${index}`,
+  icon: CalendarRange,
+  label: "…",
+  value: "…",
+  loading: true,
+  compact: true,
+}));
 
 function bucketHelper(variant: FinanceHorizonVariant, key: FinanceHorizonBucketKey): string {
   if (key === "total_60") return FINANCE_HORIZON_TOTAL_TOOLTIP;
@@ -81,24 +92,20 @@ export function FinanceHorizonSection({
       </div>
       <div className="p-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-6">
         {loading && !summary
-          ? Array.from({ length: 6 }).map((_, index) => (
-              <FinanceKpiCard
-                key={`horizon-skeleton-${index}`}
-                icon={CalendarRange}
-                label="…"
-                value="…"
-                loading
-                compact
-              />
+          ? HORIZON_SKELETON_CARDS.map(({ id, ...cardProps }) => (
+              <React.Fragment key={id}>
+                <FinanceKpiCard {...cardProps} />
+              </React.Fragment>
             ))
           : cards.map((bucket) => (
-              <HorizonCard
-                key={bucket.key}
-                bucket={bucket}
-                countUnitLabel={summary?.countUnitLabel ?? "item(ns)"}
-                variant={variant}
-                loading={loading}
-              />
+              <React.Fragment key={bucket.key}>
+                <HorizonCard
+                  bucket={bucket}
+                  countUnitLabel={summary?.countUnitLabel ?? "item(ns)"}
+                  variant={variant}
+                  loading={loading}
+                />
+              </React.Fragment>
             ))}
       </div>
     </section>
