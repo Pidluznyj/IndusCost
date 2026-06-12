@@ -21,6 +21,11 @@ import {
   isLinkedPreferredPricingComponent,
   type PreferredAlternativeSet,
 } from "@/src/lib/nomusPreferredAlternativeLink";
+import {
+  optionalItemMatchesCurrent,
+  reconcileOptionalPricingSnapshotsForParent,
+} from "@/src/lib/nomusOptionalChoiceReconciliation";
+import { computeNomusParentStructureFingerprint } from "@/src/lib/nomusBomStructureFingerprint";
 
 export type { PreferredAlternativeSet } from "@/src/lib/nomusPreferredAlternativeLink";
 
@@ -114,26 +119,6 @@ function aggregateLinesByComponent(
     }
   }
   return [...map.values()].sort((a, b) => a.componentCode.localeCompare(b.componentCode, "pt-BR"));
-}
-
-function lineIdsKey(ids: number[]): string {
-  return [...ids].sort((a, b) => a - b).join(",");
-}
-
-function itemMatchesCurrent(
-  choice: { componentCode: string; plannedQuantity: unknown; nomusSourceLineIds: unknown },
-  current: AggregatedOptionalItem | undefined
-): boolean {
-  if (!current) return false;
-  const choiceIds = Array.isArray(choice.nomusSourceLineIds)
-    ? (choice.nomusSourceLineIds as number[])
-    : [];
-  if (lineIdsKey(choiceIds) !== lineIdsKey(current.nomusSourceLineIds)) return false;
-  const choiceQty = toNumberSafe(choice.plannedQuantity);
-  const currentQty = current.plannedQuantity;
-  if (choiceQty == null && currentQty == null) return true;
-  if (choiceQty == null || currentQty == null) return false;
-  return Math.abs(choiceQty - currentQty) < 0.000001;
 }
 
 export async function getEffectiveNomusContext(parentCode: string): Promise<EffectiveNomusContext | null> {
@@ -356,7 +341,7 @@ function buildChoiceViews(
 ): OptionalPricingChoiceView[] {
   return choices.map((c) => {
     const current = optionalByCode.get(normalizeComponentCode(c.componentCode));
-    const isStale = !itemMatchesCurrent(c, current);
+    const isStale = !optionalItemMatchesCurrent(c, current);
     return {
       id: c.id,
       componentCode: c.componentCode,
@@ -567,6 +552,7 @@ export async function createOptionalPricingGroup(input: {
   if (!ctx) throw new Error("Não foi possível carregar contexto Nomus.");
 
   const items = validateComponentCodesInOptionalPool(input.componentCodes, ctx.optionalItems);
+  const structureFingerprint = await computeNomusParentStructureFingerprint(ctx.parentCode);
 
   const group = await prisma.nomusOptionalPricingGroup.create({
     data: {
@@ -578,6 +564,7 @@ export async function createOptionalPricingGroup(input: {
       selectionMode: input.selectionMode,
       notes: input.notes?.trim() || null,
       selectedNone: false,
+      nomusStructureFingerprint: structureFingerprint,
       choices: {
         create: items.map((item) => ({
           parentCode: ctx.parentCode,
@@ -719,6 +706,15 @@ export async function setOptionalPricingSelection(
       }
     }
   });
+
+  const structureFingerprint = await computeNomusParentStructureFingerprint(group.parentCode);
+  if (structureFingerprint) {
+    await prisma.nomusOptionalPricingGroup.update({
+      where: { id: groupId },
+      data: { nomusStructureFingerprint: structureFingerprint },
+    });
+  }
+  await reconcileOptionalPricingSnapshotsForParent(group.parentCode);
 
   return getOptionalPricingSelectionDetail(group.parentCode);
 }

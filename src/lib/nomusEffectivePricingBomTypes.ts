@@ -125,6 +125,8 @@ export type ReviewDecisionView = {
   notes: string | null;
   decidedBy: string | null;
   decidedAt: string | null;
+  /** Hash da estrutura Nomus no momento da decisão — invalida se contexto mudar. */
+  nomusStructureFingerprint?: string | null;
 };
 
 export type LocalReviewCatalogItem = {

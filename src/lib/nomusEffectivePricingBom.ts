@@ -23,6 +23,7 @@ import {
   type PricingOptionalStatus,
 } from "@/src/lib/nomusOptionalPricingSelection";
 import type { PreferredAlternativeSet } from "@/src/lib/nomusPreferredAlternativeLink";
+import { prepareNomusEngineeringGovernance } from "@/src/lib/nomusEngineeringDecisionGovernance";
 import {
   applyReviewDecisionsToEffectiveBom,
   listReviewDecisionsForParentCode,
@@ -645,6 +646,8 @@ export async function buildEffectivePricingBomForParentCode(
   const maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
   const cache = options?._cache;
 
+  const governance = await prepareNomusEngineeringGovernance(trimmed);
+
   const stageLines = await loadNomusStageLinesForParent(trimmed);
   if (stageLines.length === 0) {
     return {
@@ -866,7 +869,7 @@ export async function buildEffectivePricingBomForParentCode(
     nomusUniverse,
     localRowFlags,
     lineComponentKinds,
-  });
+  }, governance.structureFingerprint);
 
   return result;
 }

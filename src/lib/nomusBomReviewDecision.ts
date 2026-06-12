@@ -1,6 +1,10 @@
 import type { NomusBomReviewDecisionType as PrismaReviewDecisionType } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma";
 import { normalizeComponentCode, normalizeSku, toNumberSafe } from "@/src/lib/nomusBomComparison";
+import {
+  computeNomusParentStructureFingerprint,
+  localLineMatchesDecisionSnapshot,
+} from "@/src/lib/nomusBomStructureFingerprint";
 import type {
   EffectivePricingBomLine,
   EffectivePricingBomResult,
@@ -43,6 +47,7 @@ function rowToView(row: {
   notes: string | null;
   decidedBy: string | null;
   decidedAt: Date | null;
+  nomusStructureFingerprint: string | null;
 }): ReviewDecisionView {
   return {
     id: row.id,
@@ -59,6 +64,7 @@ function rowToView(row: {
     notes: row.notes,
     decidedBy: row.decidedBy,
     decidedAt: row.decidedAt?.toISOString() ?? null,
+    nomusStructureFingerprint: row.nomusStructureFingerprint,
   };
 }
 
@@ -128,14 +134,39 @@ function syntheticAutoObsoleteReviewDecision(
   );
 }
 
+function decisionStillAppliesToLocalLine(
+  saved: ReviewDecisionView,
+  base: EffectivePricingBomLine
+): boolean {
+  if (saved.decision === "PENDING") return false;
+  return localLineMatchesDecisionSnapshot({
+    componentCode: base.componentCode,
+    quantity: base.quantity,
+    decision: {
+      componentCode: saved.componentCode,
+      quantitySnapshot: saved.quantitySnapshot,
+    },
+  });
+}
+
 function effectiveReviewDecision(
   saved: ReviewDecisionView | undefined,
   parentCode: string,
   base: EffectivePricingBomLine,
   bomLineId: string,
-  autoObsoleteContext?: AutoObsoleteLocalContext
+  autoObsoleteContext?: AutoObsoleteLocalContext,
+  currentStructureFingerprint?: string | null
 ): ReviewDecisionView | null {
-  if (saved && saved.decision !== "PENDING") return saved;
+  if (saved && saved.decision !== "PENDING") {
+    const fingerprintMismatch =
+      saved.nomusStructureFingerprint &&
+      currentStructureFingerprint &&
+      saved.nomusStructureFingerprint !== currentStructureFingerprint;
+    if (fingerprintMismatch && !decisionStillAppliesToLocalLine(saved, base)) {
+      return null;
+    }
+    return saved;
+  }
 
   const inferred = inferDefaultLocalReviewDecision(base.componentCode);
   if (inferred) return syntheticReviewDecision(parentCode, base, bomLineId, inferred);
@@ -255,6 +286,7 @@ export async function saveReviewDecision(
 
   const productBomLineId = input.productBomLineId?.trim() || null;
   const parentKey = normalizeSku(parentCode);
+  const structureFingerprint = await computeNomusParentStructureFingerprint(parentKey);
 
   const existing = await prisma.nomusBomReviewDecision.findFirst({
     where: {
@@ -284,6 +316,7 @@ export async function saveReviewDecision(
     notes: input.notes?.trim() || null,
     decidedBy: decidedBy ?? null,
     decidedAt: input.decision === "PENDING" ? null : new Date(),
+    nomusStructureFingerprint: structureFingerprint,
     isActive: true,
   };
 
@@ -441,7 +474,8 @@ export function applyReviewDecisionsToEffectiveBom(
   result: EffectivePricingBomResult,
   decisions: ReviewDecisionView[],
   rawLocalLines: EffectivePricingBomLine[],
-  autoObsoleteContext?: AutoObsoleteLocalContext
+  autoObsoleteContext?: AutoObsoleteLocalContext,
+  currentStructureFingerprint?: string | null
 ): EffectivePricingBomResult {
   const nonLocalDirect = result.directLines.filter((l) => !isLocalReviewDerivedLine(l));
   const nonLocalExcluded = result.excludedLines.filter((l) => !isLocalReviewDerivedLine(l));
@@ -460,7 +494,8 @@ export function applyReviewDecisionsToEffectiveBom(
       result.parentCode,
       base,
       bomLineId,
-      autoObsoleteContext
+      autoObsoleteContext,
+      currentStructureFingerprint
     );
     const { line, bucket } = applyDecisionToLine(base, effective);
 

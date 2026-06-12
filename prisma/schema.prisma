@@ -1470,6 +1470,7 @@ model NomusOptionalPricingGroup {
   isActive           Boolean                           @default(true)
   notes              String?
   selectedNone       Boolean                           @default(false)
+  nomusStructureFingerprint String?
   createdAt          DateTime                          @default(now())
   updatedAt          DateTime                          @updatedAt
   choices            NomusOptionalPricingChoice[]
@@ -1526,6 +1527,7 @@ model NomusBomReviewDecision {
   notes                   String?
   decidedBy               String?
   decidedAt               DateTime?
+  nomusStructureFingerprint String?
   isActive                Boolean                    @default(true)
   createdAt               DateTime                   @default(now())
   updatedAt               DateTime                   @updatedAt
