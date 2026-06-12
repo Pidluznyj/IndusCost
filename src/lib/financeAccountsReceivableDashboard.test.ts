@@ -244,6 +244,27 @@ describe("financeAccountsReceivableDashboard", () => {
     );
   });
 
+  it("filterFinanceArRows remove duplicata sem NF quando existe Com NF", () => {
+    const rows = [
+      row({
+        externalId: 1,
+        sourceInvoiceId: null,
+        balanceReceivable: 800,
+        dueDate: new Date(2026, 2, 1),
+      }),
+      row({
+        externalId: 2,
+        sourceInvoiceId: 10,
+        sourceInvoiceNumber: "NF-10",
+        balanceReceivable: 800,
+        dueDate: new Date(2026, 2, 1),
+      }),
+    ];
+    const filtered = filterFinanceArRows(rows, { status: "all", year: 2026, month: 3 }, REF);
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0]!.externalId, 2);
+  });
+
   it("parseFinanceArDashboardFilters interpreta invoiceIssued", () => {
     assert.equal(parseFinanceArDashboardFilters({ invoiceIssued: "yes" }).invoiceIssued, "yes");
     assert.equal(parseFinanceArDashboardFilters({ invoiceIssued: "nao" }).invoiceIssued, "no");

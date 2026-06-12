@@ -59,6 +59,8 @@ export type FinanceDataSanitization = {
   ignoredInternalGroupPayables: number;
   ignoredGhostReceivables: number;
   ignoredPurchaseOrderAgendaPayables: number;
+  supersededPreInvoiceReceivables: number;
+  supersededPreInvoiceAmount: number;
 };
 
 export function normalizeFinanceCnpj(value: string | null | undefined): string {
@@ -200,6 +202,8 @@ export function mergeFinanceDataSanitization(
     ignoredInternalGroupPayables: 0,
     ignoredGhostReceivables: 0,
     ignoredPurchaseOrderAgendaPayables: 0,
+    supersededPreInvoiceReceivables: 0,
+    supersededPreInvoiceAmount: 0,
   };
   for (const part of parts) {
     merged.ignoredInternalGroupReceivables +=
@@ -208,6 +212,9 @@ export function mergeFinanceDataSanitization(
     merged.ignoredGhostReceivables += part.ignoredGhostReceivables ?? 0;
     merged.ignoredPurchaseOrderAgendaPayables +=
       part.ignoredPurchaseOrderAgendaPayables ?? 0;
+    merged.supersededPreInvoiceReceivables +=
+      part.supersededPreInvoiceReceivables ?? 0;
+    merged.supersededPreInvoiceAmount += part.supersededPreInvoiceAmount ?? 0;
   }
   return merged;
 }

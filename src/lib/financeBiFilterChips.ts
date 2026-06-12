@@ -58,7 +58,7 @@ export function buildFinanceArFilterChips(
   if (filters.invoiceIssued !== "all") {
     push(
       "invoiceIssued",
-      `NF: ${optionLabel(FINANCE_AR_INVOICE_ISSUED_OPTIONS, filters.invoiceIssued)}`
+      `Origem: ${optionLabel(FINANCE_AR_INVOICE_ISSUED_OPTIONS, filters.invoiceIssued)}`
     );
   }
   if (filters.companyName.trim()) push("companyName", `Empresa: ${filters.companyName.trim()}`);
@@ -182,7 +182,7 @@ export function buildFinanceCashFlowFilterChips(
   if (filters.invoiceIssued !== "all") {
     push(
       "invoiceIssued",
-      `NF: ${optionLabel(FINANCE_CASH_FLOW_INVOICE_OPTIONS, filters.invoiceIssued)}`
+      `Origem: ${optionLabel(FINANCE_CASH_FLOW_INVOICE_OPTIONS, filters.invoiceIssued)}`
     );
   }
 

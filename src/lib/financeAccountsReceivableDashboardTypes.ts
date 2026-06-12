@@ -213,9 +213,9 @@ export const FINANCE_AR_FUTURE_FILTER_KEYS = [
 ] as const satisfies ReadonlyArray<keyof FinanceArUiFiltersFuture>;
 
 export const FINANCE_AR_INVOICE_ISSUED_OPTIONS = [
-  { value: "all", label: "Todos" },
-  { value: "yes", label: "Sim" },
-  { value: "no", label: "Não" },
+  { value: "all", label: "Tudo" },
+  { value: "yes", label: "Com NF" },
+  { value: "no", label: "Sem NF" },
 ] as const;
 
 export const FINANCE_AR_STATUS_OPTIONS = [

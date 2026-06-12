@@ -1,8 +1,10 @@
 import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { buildFinanceArPrismaWhere } from "@/src/lib/financeAccountsReceivableDashboard.js";
-import { buildFinanceApPrismaWhere } from "@/src/lib/financeAccountsPayableDashboard.js";
+import {
+  buildCashFlowArPrismaWhere,
+  buildCashFlowApPrismaWhere,
+} from "@/src/lib/financeCashFlowRowFilters.js";
 import {
   buildFinanceCashFlowDashboard,
   FINANCE_CASH_FLOW_AP_SELECT,
@@ -54,8 +56,10 @@ function parseFiltersOrRespond(res: express.Response, query: Record<string, unkn
 }
 
 async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowDashboardFilters>) {
-  const arWhere = buildFinanceArPrismaWhere(toArLoadFilters(filters));
-  const apWhere = buildFinanceApPrismaWhere(toApLoadFilters(filters));
+  const arFilters = toArLoadFilters(filters);
+  const apFilters = toApLoadFilters(filters);
+  const arWhere = buildCashFlowArPrismaWhere(filters, arFilters);
+  const apWhere = buildCashFlowApPrismaWhere(filters, apFilters);
 
   const [arPrisma, apPrisma] = await Promise.all([
     prisma.nomusAccountsReceivable.findMany({

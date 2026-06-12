@@ -13,6 +13,7 @@ import {
   type FinanceDataSanitization,
 } from "./financeInternalGroupExclusions.js";
 import { buildFinanceArHorizonSummary } from "./financeHorizonAggregation.js";
+import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
 
 export type FinanceArTitleStatus =
   | "open"
@@ -519,15 +520,24 @@ export function countFinanceArSanitizationInScope(
   referenceDate: Date = new Date()
 ): Pick<
   FinanceDataSanitization,
-  "ignoredInternalGroupReceivables" | "ignoredGhostReceivables"
+  | "ignoredInternalGroupReceivables"
+  | "ignoredGhostReceivables"
+  | "supersededPreInvoiceReceivables"
+  | "supersededPreInvoiceAmount"
 > {
   const { empty } = resolveFinanceArDueDateBounds(filters);
   if (empty) {
-    return { ignoredInternalGroupReceivables: 0, ignoredGhostReceivables: 0 };
+    return {
+      ignoredInternalGroupReceivables: 0,
+      ignoredGhostReceivables: 0,
+      supersededPreInvoiceReceivables: 0,
+      supersededPreInvoiceAmount: 0,
+    };
   }
 
   let ignoredInternalGroupReceivables = 0;
   let ignoredGhostReceivables = 0;
+  const preDedup: FinanceArDashboardRow[] = [];
 
   for (const row of rows) {
     if (!matchesFinanceArDashboardFilters(row, filters, referenceDate)) continue;
@@ -540,10 +550,18 @@ export function countFinanceArSanitizationInScope(
       ignoredInternalGroupReceivables += 1;
     } else if (isFinanceArGhostTitle(row)) {
       ignoredGhostReceivables += 1;
+    } else {
+      preDedup.push(row);
     }
   }
 
-  return { ignoredInternalGroupReceivables, ignoredGhostReceivables };
+  const deduped = deduplicateFinanceArRows(preDedup);
+  return {
+    ignoredInternalGroupReceivables,
+    ignoredGhostReceivables,
+    supersededPreInvoiceReceivables: deduped.supersededPreInvoiceCount,
+    supersededPreInvoiceAmount: deduped.supersededPreInvoiceAmount,
+  };
 }
 
 export function filterFinanceArRows(
@@ -554,11 +572,12 @@ export function filterFinanceArRows(
   const { empty } = resolveFinanceArDueDateBounds(filters);
   if (empty) return [];
 
-  return rows.filter(
+  const matched = rows.filter(
     (row) =>
       matchesFinanceArDashboardFilters(row, filters, referenceDate) &&
       !isFinanceArExcludedFromManagement(row)
   );
+  return deduplicateFinanceArRows(matched).rows;
 }
 
 export function buildFinanceAccountsReceivableDashboard(

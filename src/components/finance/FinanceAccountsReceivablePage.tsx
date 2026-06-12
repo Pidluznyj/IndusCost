@@ -766,7 +766,7 @@ export function FinanceAccountsReceivablePage() {
             onChange={(v) => setDraftFilters((f) => ({ ...f, dueDateTo: v }))}
           />
           <FilterSelect
-            label="NF emitida"
+            label="Origem do recebível"
             value={draftFilters.invoiceIssued}
             onChange={(v) => setDraftFilters((f) => ({ ...f, invoiceIssued: v }))}
             options={FINANCE_AR_INVOICE_ISSUED_OPTIONS.map((o) => ({

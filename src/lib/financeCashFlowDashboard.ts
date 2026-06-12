@@ -77,6 +77,10 @@ import {
   shouldIncludeCashFlowArMovement,
   shouldIncludeCashFlowApMovement,
 } from "./financeCashFlowLedger.js";
+import {
+  filterCashFlowArRowsScoped,
+  filterCashFlowApRowsScoped,
+} from "./financeCashFlowRowFilters.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
   constructor(message: string) {
@@ -353,8 +357,7 @@ export function filterCashFlowArRows(
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date
 ): FinanceCashFlowArRow[] {
-  const arFilters = toArLoadFilters(filters);
-  return filterFinanceArRows(rows, arFilters, referenceDate) as FinanceCashFlowArRow[];
+  return filterCashFlowArRowsScoped(rows, filters, toArLoadFilters(filters), referenceDate);
 }
 
 export function filterCashFlowApRows(
@@ -362,8 +365,7 @@ export function filterCashFlowApRows(
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date
 ): FinanceCashFlowApRow[] {
-  const apFilters = toApLoadFilters(filters);
-  return filterFinanceApRows(rows, apFilters, referenceDate) as FinanceCashFlowApRow[];
+  return filterCashFlowApRowsScoped(rows, filters, toApLoadFilters(filters), referenceDate);
 }
 
 type MonthBucket = {
