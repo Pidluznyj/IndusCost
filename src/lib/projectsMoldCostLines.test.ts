@@ -64,6 +64,11 @@ describe("projectsMoldCostLines", () => {
     assert.equal(parsed.userNotes, "Obs geral");
   });
 
+  it("parseMoldNotes ignora JSON inválido sem lançar erro", () => {
+    const parsed = parseMoldNotes("__MOLD_LINES__={invalid json");
+    assert.deepEqual(parsed.lines, []);
+  });
+
   it("modal de molde permite adicionar e remover linhas", () => {
     const modal = readFileSync(
       join(process.cwd(), "src", "components", "projects", "ProjectGuidedMoldModal.tsx"),

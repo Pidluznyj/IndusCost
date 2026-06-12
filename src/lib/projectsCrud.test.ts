@@ -75,17 +75,18 @@ describe("projectsCrud", () => {
     assert.equal(mod.includes("window.confirm"), false);
   });
 
-  it("UI permite criar, editar e excluir em todas as abas principais", () => {
+  it("UI guiada permite criar, editar e excluir itens do projeto", () => {
     const mod = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
-    assert.match(mod, /ProjectSimulatedProductFormModal/);
+    assert.match(mod, /ProjectEngineeringItemModal/);
+    assert.match(mod, /ProjectGuidedMoldModal/);
+    assert.match(mod, /ProjectOtherCostsModal/);
     assert.match(mod, /ProjectSimulatedItemFormModal/);
-    assert.match(mod, /ProjectMoldFormModal/);
-    assert.match(mod, /ProjectStructureLineEditModal/);
-    assert.match(mod, /ProjectLaborLineModal/);
+    assert.match(mod, /ProjectItemsTab/);
     assert.match(mod, /method: "PATCH"/);
     assert.match(mod, /method: "DELETE"/);
-    assert.match(mod, /moldModalMode/);
-    assert.match(mod, /\+ HH \/ Mão de obra/);
+    assert.match(mod, /guidedMoldMode/);
+    assert.equal(mod.includes("ProjectMoldFormModal"), false);
+    assert.equal(mod.includes("ProjectStructureLineModal"), false);
   });
 
   it("molde pode ser criado, editado e excluído via UI", () => {

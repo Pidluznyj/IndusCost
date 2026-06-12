@@ -590,6 +590,10 @@ export function registerProjectsRoutes(
       });
       if (!existing) return res.status(404).json({ error: "Produto simulado não encontrado." });
       await prisma.projectSimulatedProduct.delete({ where: { id: req.params.simulatedProductId } });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if (!("error" in ctx) && ctx.version) {
+        await recalculateAndPersistVersionCosts(ctx.version.id);
+      }
       res.json({ ok: true });
     } catch (e: unknown) {
       console.error("DELETE simulated-products", e);

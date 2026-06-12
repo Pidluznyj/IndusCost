@@ -21,6 +21,30 @@ export const PROJECT_GUIDED_HOME_INTRO =
 export const PROJECT_GUIDED_MASTER_NOTICE =
   "Este item será salvo somente no projeto e não altera o cadastro mestre.";
 
+export const GUIDED_ORIGIN_REFERENCE_MARKER = "guided-origin:REFERENCE";
+
+export function isGuidedReferenceProduct(notes: string | null | undefined): boolean {
+  return notes?.includes(GUIDED_ORIGIN_REFERENCE_MARKER) === true;
+}
+
+export function appendGuidedReferenceOrigin(notes: string | null | undefined): string {
+  const base = notes?.trim();
+  if (base?.includes(GUIDED_ORIGIN_REFERENCE_MARKER)) return base;
+  return base ? `${base}\n${GUIDED_ORIGIN_REFERENCE_MARKER}` : GUIDED_ORIGIN_REFERENCE_MARKER;
+}
+
+function simulatedProductHasCost(
+  productId: string,
+  structureLines: ProjectDetail["structureLines"]
+): boolean {
+  const lines = structureLines.filter((line) => line.simulatedProductId === productId);
+  if (lines.length === 0) return false;
+  return lines.some((line) => {
+    const unit = line.unitCostSnapshot ?? 0;
+    return Number.isFinite(unit) && unit > 0;
+  });
+}
+
 export type ProjectGuidedItemType =
   | "PRODUCT"
   | "COMPONENT"
@@ -106,13 +130,15 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
   const { snapshotGroups } = buildProjectStructureSnapshotGroups(detail.structureLines, {
     simulatedProducts: detail.simulatedProducts,
   });
-  const clonedProductIds = new Set(
-    snapshotGroups.map((g) => g.snapshotRootProductId).filter(Boolean) as string[]
-  );
 
   const rows: ProjectGuidedItemRow[] = [];
 
   for (const p of detail.simulatedProducts) {
+    const hasCost = simulatedProductHasCost(p.id, detail.structureLines);
+    const origin: ProjectGuidedOrigin = isGuidedReferenceProduct(p.notes)
+      ? "OFFICIAL_REFERENCE"
+      : "CREATED_IN_PROJECT";
+    const status = resolveStatus(detail.status, hasCost);
     rows.push({
       id: p.id,
       entityKind: "product",
@@ -121,11 +147,11 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
       code: p.provisionalCode,
       name: p.description,
       description: p.description,
-      origin: "CREATED_IN_PROJECT",
-      originLabel: ORIGIN_LABEL.CREATED_IN_PROJECT,
-      status: resolveStatus(detail.status, false),
-      statusLabel: STATUS_LABEL[resolveStatus(detail.status, false)],
-      estimatedCost: null,
+      origin,
+      originLabel: ORIGIN_LABEL[origin],
+      status,
+      statusLabel: STATUS_LABEL[status],
+      estimatedCost: hasCost ? detail.costBreakdown.unitCost : null,
       costKind: "unit",
       updatedAt: detail.updatedAt,
       productId: p.id,
@@ -150,7 +176,6 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
       updatedAt: detail.updatedAt,
       snapshotRootProductId: group.snapshotRootProductId,
     });
-    if (group.snapshotRootProductId) clonedProductIds.add(group.snapshotRootProductId);
   }
 
   for (const item of detail.simulatedItems) {

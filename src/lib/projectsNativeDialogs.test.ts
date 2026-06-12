@@ -44,11 +44,12 @@ describe("projectsNativeDialogs", () => {
     }
   });
 
-  it("aba molde abre modal padrão ProjectMoldFormModal", () => {
+  it("fluxo guiado abre ProjectGuidedMoldModal para moldes", () => {
     const mod = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
-    assert.match(mod, /ProjectMoldFormModal/);
-    assert.match(mod, /setMoldModalOpen\(true\)/);
+    assert.match(mod, /ProjectGuidedMoldModal/);
+    assert.match(mod, /setGuidedMoldModalOpen\(true\)/);
     assert.equal(mod.includes("window.prompt"), false);
+    assert.equal(mod.includes("ProjectMoldFormModal"), false);
   });
 
   it("exclusão não usa confirm nativo", () => {

@@ -15,12 +15,17 @@ import { createBrowserSafeId } from "@/src/lib/browserSafeId";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import {
+  appendGuidedReferenceOrigin,
   buildProjectGuidedItems,
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
 import {
   buildOtherCostNotes,
+  findOtherCostBatchItems,
+  isGuidedOtherCostItem,
+  loadOtherCostBatchLines,
   parseOtherCostMeta,
+  type ProjectOtherCostLine,
 } from "@/src/lib/projectsOtherCostGroups";
 import {
   getProjectTabPath,
@@ -50,11 +55,9 @@ import {
   type ProjectCommercialOwnerSelection,
 } from "@/src/components/projects/ProjectCommercialOwnerLookupField";
 import { ProjectDeleteConfirmModal } from "@/src/components/projects/ProjectDeleteConfirmModal";
-import { ProjectLaborLineModal } from "@/src/components/projects/ProjectLaborLineModal";
+import { ProjectDetailErrorBoundary } from "@/src/components/projects/ProjectDetailErrorBoundary";
 import { ProjectSimulatedItemFormModal } from "@/src/components/projects/ProjectSimulatedItemFormModal";
-import { ProjectStructureLineEditModal } from "@/src/components/projects/ProjectStructureLineEditModal";
 import { ProjectProductSimulationPanel } from "@/src/components/projects/ProjectProductSimulationPanel";
-import { ProjectStructureLineModal } from "@/src/components/projects/ProjectStructureLineModal";
 import type {
   ProjectDashboardPayload,
   ProjectDetail,
@@ -63,8 +66,6 @@ import type {
   ProjectSimulatedItemRow,
   ProjectSimulatedProductRow,
   ProjectStatus,
-  ProjectStructureLineRow,
-  ProjectStructureSourceType,
   ProjectType,
 } from "@/src/types/projects";
 
@@ -470,22 +471,6 @@ function ProjectDetailView({
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [itemModalMode, setItemModalMode] = useState<"create" | "edit">("create");
   const [editingItem, setEditingItem] = useState<ProjectSimulatedItemRow | null>(null);
-  const [structureModalSource, setStructureModalSource] =
-    useState<ProjectStructureSourceType | null>(null);
-  const [structureEngineeringFlow, setStructureEngineeringFlow] = useState<
-    "clone" | "official" | null
-  >(null);
-  const [structureLineContext, setStructureLineContext] = useState<{
-    simulatedProductId?: string;
-    parentLineId?: string;
-    contextLabel?: string;
-  } | null>(null);
-  const [editingStructureLine, setEditingStructureLine] = useState<ProjectStructureLineRow | null>(
-    null
-  );
-  const [laborModalOpen, setLaborModalOpen] = useState(false);
-  const [laborModalMode, setLaborModalMode] = useState<"create" | "edit">("create");
-  const [editingLaborLine, setEditingLaborLine] = useState<ProjectStructureLineRow | null>(null);
   const [simulationProductId, setSimulationProductId] = useState<string | null>(null);
   const [simulationError, setSimulationError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
@@ -500,6 +485,9 @@ function ProjectDetailView({
   const [guidedMoldModalOpen, setGuidedMoldModalOpen] = useState(false);
   const [guidedMoldMode, setGuidedMoldMode] = useState<"create" | "edit">("create");
   const [otherCostsModalOpen, setOtherCostsModalOpen] = useState(false);
+  const [otherCostsModalMode, setOtherCostsModalMode] = useState<"create" | "edit">("create");
+  const [editingOtherCostBatchId, setEditingOtherCostBatchId] = useState<string | null>(null);
+  const [editingOtherCostLines, setEditingOtherCostLines] = useState<ProjectOtherCostLine[]>([]);
   const [postSavePrompt, setPostSavePrompt] = useState(false);
 
   const legacyTab = useMemo(
@@ -649,10 +637,22 @@ function ProjectDetailView({
 
   const openCreateOtherCost = () => {
     setModalError(null);
+    setOtherCostsModalMode("create");
+    setEditingOtherCostBatchId(null);
+    setEditingOtherCostLines([]);
     setOtherCostsModalOpen(true);
   };
 
   const handleGuidedItemOpen = (item: ProjectGuidedItemRow) => {
+    if (item.entityKind === "other_cost" && item.batchId) {
+      const lines = loadOtherCostBatchLines(detail.simulatedItems, item.batchId);
+      setModalError(null);
+      setOtherCostsModalMode("edit");
+      setEditingOtherCostBatchId(item.batchId);
+      setEditingOtherCostLines(lines.length > 0 ? lines : []);
+      setOtherCostsModalOpen(true);
+      return;
+    }
     if (item.snapshotRootProductId) {
       setSimulationError(null);
       setSimulationProductId(item.snapshotRootProductId);
@@ -680,7 +680,7 @@ function ProjectDetailView({
     }
     if (item.simulatedItemId) {
       const simItem = detail.simulatedItems.find((i) => i.id === item.simulatedItemId);
-      if (simItem) {
+      if (simItem && !isGuidedOtherCostItem(simItem.notes)) {
         setModalError(null);
         setItemModalMode("edit");
         setEditingItem(simItem);
@@ -952,6 +952,10 @@ function ProjectDetailView({
           setModalError(null);
           try {
             if (payload.itemKind === "PRODUCT") {
+              const notes =
+                payload.originMode === "REFERENCE"
+                  ? appendGuidedReferenceOrigin(payload.notes)
+                  : payload.notes;
               const body = {
                 provisionalCode: payload.provisionalCode,
                 description: payload.description,
@@ -959,7 +963,7 @@ function ProjectDetailView({
                 estimatedWeight: payload.estimatedWeight,
                 expectedVolume: payload.expectedVolume,
                 batchSize: payload.batchSize,
-                notes: payload.notes,
+                notes,
               };
               if (engineeringItemModalMode === "edit" && editingProduct) {
                 await fetchJsonOk(
@@ -1007,15 +1011,33 @@ function ProjectDetailView({
 
       <ProjectOtherCostsModal
         open={otherCostsModalOpen}
+        mode={otherCostsModalMode}
         projectLabel={`${detail.code} — ${detail.title}`}
+        initialLines={editingOtherCostLines}
+        initialBatchId={editingOtherCostBatchId}
         saving={saving}
         error={modalError}
-        onClose={() => setOtherCostsModalOpen(false)}
+        onClose={() => {
+          setOtherCostsModalOpen(false);
+          setOtherCostsModalMode("create");
+          setEditingOtherCostBatchId(null);
+          setEditingOtherCostLines([]);
+        }}
         onSubmit={async (payload) => {
+          if (saving) return;
           setSaving(true);
           setModalError(null);
           try {
-            const batchId = createBrowserSafeId("other-cost-batch");
+            const batchId =
+              payload.batchId ?? editingOtherCostBatchId ?? createBrowserSafeId("other-cost-batch");
+            if (otherCostsModalMode === "edit" && editingOtherCostBatchId) {
+              const existing = findOtherCostBatchItems(detail.simulatedItems, editingOtherCostBatchId);
+              for (const item of existing) {
+                await fetchJsonOk(`/api/projects/${projectId}/simulated-items/${item.id}`, {
+                  method: "DELETE",
+                });
+              }
+            }
             for (const line of payload.lines) {
               await fetchJsonOk(`/api/projects/${projectId}/simulated-items`, {
                 method: "POST",
@@ -1032,6 +1054,9 @@ function ProjectDetailView({
               });
             }
             setOtherCostsModalOpen(false);
+            setOtherCostsModalMode("create");
+            setEditingOtherCostBatchId(null);
+            setEditingOtherCostLines([]);
             await load();
             setPostSavePrompt(true);
           } catch (e) {
@@ -1074,89 +1099,6 @@ function ProjectDetailView({
             await load();
           } catch (e) {
             setModalError(e instanceof Error ? e.message : "Erro ao salvar item.");
-          } finally {
-            setSaving(false);
-          }
-        }}
-      />
-
-      <ProjectLaborLineModal
-        open={laborModalOpen}
-        mode={laborModalMode}
-        initial={editingLaborLine}
-        saving={saving}
-        error={modalError}
-        onClose={() => {
-          setLaborModalOpen(false);
-          setEditingLaborLine(null);
-        }}
-        onSubmit={async (body) => {
-          setSaving(true);
-          setModalError(null);
-          try {
-            await fetchJsonOk(`/api/projects/${projectId}/structure-lines`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            });
-            setLaborModalOpen(false);
-            await load();
-          } catch (e) {
-            setModalError(e instanceof Error ? e.message : "Erro ao adicionar HH.");
-          } finally {
-            setSaving(false);
-          }
-        }}
-        onSubmitEdit={
-          laborModalMode === "edit" && editingLaborLine
-            ? async (body) => {
-                setSaving(true);
-                setModalError(null);
-                try {
-                  await fetchJsonOk(
-                    `/api/projects/${projectId}/structure-lines/${editingLaborLine.id}`,
-                    {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(body),
-                    }
-                  );
-                  setLaborModalOpen(false);
-                  setEditingLaborLine(null);
-                  await load();
-                } catch (e) {
-                  setModalError(e instanceof Error ? e.message : "Erro ao salvar HH.");
-                } finally {
-                  setSaving(false);
-                }
-              }
-            : undefined
-        }
-      />
-
-      <ProjectStructureLineEditModal
-        open={editingStructureLine != null}
-        line={editingStructureLine}
-        saving={saving}
-        error={modalError}
-        onClose={() => setEditingStructureLine(null)}
-        onSubmit={async (body) => {
-          if (!editingStructureLine) return;
-          setSaving(true);
-          setModalError(null);
-          try {
-            await fetchJsonOk(
-              `/api/projects/${projectId}/structure-lines/${editingStructureLine.id}`,
-              {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-              }
-            );
-            setEditingStructureLine(null);
-            await load();
-          } catch (e) {
-            setModalError(e instanceof Error ? e.message : "Erro ao salvar linha.");
           } finally {
             setSaving(false);
           }
@@ -1248,65 +1190,6 @@ function ProjectDetailView({
         }}
       />
 
-      <ProjectStructureLineModal
-        open={structureModalSource != null}
-        sourceType={structureModalSource}
-        engineeringFlow={structureEngineeringFlow}
-        simulatedItems={detail.simulatedItems}
-        saving={saving}
-        error={modalError}
-        simulatedProducts={detail.simulatedProducts}
-        lineContext={structureLineContext}
-        onClose={() => {
-          setStructureModalSource(null);
-          setStructureLineContext(null);
-          setStructureEngineeringFlow(null);
-        }}
-        onOpenProductSimulation={(productId) => {
-          setModalError(null);
-          setStructureModalSource(null);
-          setSimulationError(null);
-          setSimulationProductId(productId);
-        }}
-        onImportExistingProduct={async (productId) => {
-          setSaving(true);
-          setModalError(null);
-          try {
-            await fetchJsonOk(`/api/projects/${projectId}/import-product-snapshot`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                productId,
-                includeBom: true,
-                includeRouting: true,
-              }),
-            });
-            setStructureModalSource(null);
-            await load();
-          } catch (e) {
-            setModalError(e instanceof Error ? e.message : "Erro ao importar estrutura.");
-          } finally {
-            setSaving(false);
-          }
-        }}
-        onSubmit={async (body) => {
-          setSaving(true);
-          setModalError(null);
-          try {
-            await fetchJsonOk(`/api/projects/${projectId}/structure-lines`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            });
-            setStructureModalSource(null);
-            await load();
-          } catch (e) {
-            setModalError(e instanceof Error ? e.message : "Erro ao adicionar linha.");
-          } finally {
-            setSaving(false);
-          }
-        }}
-      />
     </div>
   );
 }
@@ -1324,12 +1207,14 @@ export function ProjectsModule() {
 
   if (projectId) {
     return (
-      <ProjectDetailView
-        projectId={projectId}
-        tab={tab}
-        canManage={canManage}
-        canDelete={canDelete}
-      />
+      <ProjectDetailErrorBoundary>
+        <ProjectDetailView
+          projectId={projectId}
+          tab={tab}
+          canManage={canManage}
+          canDelete={canDelete}
+        />
+      </ProjectDetailErrorBoundary>
     );
   }
 

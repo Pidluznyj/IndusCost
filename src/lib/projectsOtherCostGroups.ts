@@ -1,4 +1,5 @@
 import { createBrowserSafeId } from "@/src/lib/browserSafeId";
+import type { ProjectSimulatedItemRow } from "@/src/types/projects";
 
 export const OTHER_COST_MARKER = "guided-other-cost";
 export const OTHER_COST_BATCH_PREFIX = "batch:";
@@ -87,4 +88,38 @@ export function createEmptyOtherCostLine(
     totalCost: 0,
     notes: null,
   };
+}
+
+export function simulatedItemToOtherCostLine(item: ProjectSimulatedItemRow): ProjectOtherCostLine {
+  const meta = parseOtherCostMeta(item.notes);
+  const total = item.quotedUnitCost ?? item.estimatedUnitCost ?? 0;
+  return {
+    id: item.id,
+    group: meta.group,
+    description: item.description,
+    supplierName: item.supplierName,
+    quantity: 1,
+    unit: item.unit,
+    unitCost: total,
+    totalCost: total,
+    notes: item.notes,
+  };
+}
+
+export function loadOtherCostBatchLines(
+  items: ProjectSimulatedItemRow[],
+  batchId: string
+): ProjectOtherCostLine[] {
+  return items
+    .filter((item) => isGuidedOtherCostItem(item.notes) && parseOtherCostMeta(item.notes).batchId === batchId)
+    .map(simulatedItemToOtherCostLine);
+}
+
+export function findOtherCostBatchItems(
+  items: ProjectSimulatedItemRow[],
+  batchId: string
+): ProjectSimulatedItemRow[] {
+  return items.filter(
+    (item) => isGuidedOtherCostItem(item.notes) && parseOtherCostMeta(item.notes).batchId === batchId
+  );
 }

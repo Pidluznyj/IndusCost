@@ -13,11 +13,15 @@ import { parseProjectsNumberInput } from "@/src/lib/projectsUiUtils";
 
 export type GuidedOtherCostPayload = {
   lines: ProjectOtherCostLine[];
+  batchId?: string;
 };
 
 type Props = {
   open: boolean;
+  mode?: "create" | "edit";
   projectLabel: string;
+  initialLines?: ProjectOtherCostLine[];
+  initialBatchId?: string | null;
   saving?: boolean;
   error?: string | null;
   onClose: () => void;
@@ -26,7 +30,10 @@ type Props = {
 
 export function ProjectOtherCostsModal({
   open,
+  mode = "create",
   projectLabel,
+  initialLines,
+  initialBatchId,
   saving,
   error,
   onClose,
@@ -36,8 +43,12 @@ export function ProjectOtherCostsModal({
 
   useEffect(() => {
     if (!open) return;
+    if (mode === "edit" && initialLines && initialLines.length > 0) {
+      setLines(initialLines);
+      return;
+    }
     setLines([createEmptyOtherCostLine()]);
-  }, [open]);
+  }, [open, mode, initialLines]);
 
   const totalCost = useMemo(
     () => lines.reduce((acc, l) => acc + l.totalCost, 0),
@@ -63,12 +74,17 @@ export function ProjectOtherCostsModal({
     e.preventDefault();
     const valid = lines.filter((l) => l.description.trim());
     if (valid.length === 0) return;
-    await onSubmit({ lines: valid });
+    await onSubmit({
+      lines: valid,
+      batchId: mode === "edit" ? initialBatchId ?? undefined : undefined,
+    });
   };
 
   return (
     <ProjectModalShell
-      title="Adicionar outros custos do projeto"
+      title={
+        mode === "edit" ? "Editar outros custos do projeto" : "Adicionar outros custos do projeto"
+      }
       subtitle="Inclua custos adicionais que não fazem parte diretamente da engenharia ou do molde."
       onClose={onClose}
       wide
@@ -84,7 +100,7 @@ export function ProjectOtherCostsModal({
             className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
           >
             {saving ? <Loader2 className="inline h-4 w-4 animate-spin" /> : null}
-            Salvar custos
+            {mode === "edit" ? "Salvar alterações" : "Salvar custos"}
           </button>
         </>
       }

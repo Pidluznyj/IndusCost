@@ -164,6 +164,26 @@ describe("projectsGuidedFlow", () => {
     assert.ok(costs.estimatedUnitCost < costs.initialInvestment);
     assert.notEqual(costs.estimatedUnitCost, costs.totalProjectCost);
   });
+
+  it("produto com referência oficial é identificado nas notas", () => {
+    const detail = minimalDetail({
+      simulatedProducts: [
+        {
+          id: "sp-ref",
+          provisionalCode: "REF-01",
+          description: "Produto referência",
+          unit: "UN",
+          estimatedWeight: null,
+          expectedVolume: null,
+          batchSize: null,
+          notes: "guided-origin:REFERENCE",
+        },
+      ],
+    });
+    const items = buildProjectGuidedItems(detail);
+    const product = items.find((i) => i.productId === "sp-ref");
+    assert.equal(product?.origin, "OFFICIAL_REFERENCE");
+  });
 });
 
 describe("ProjectsModule UI — fluxo guiado", () => {
@@ -205,6 +225,10 @@ describe("ProjectsModule UI — fluxo guiado", () => {
     assert.match(mod, /ProjectItemsTab/);
     assert.match(mod, /ProjectGuidedMoldModal/);
     assert.match(mod, /ProjectOtherCostsModal/);
+    assert.match(mod, /ProjectDetailErrorBoundary/);
+    assert.match(mod, /otherCostsModalMode/);
+    assert.equal(mod.includes("ProjectStructureLineModal"), false);
+    assert.equal(mod.includes("ProjectLaborLineModal"), false);
   });
 
   it("menu do projeto possui apenas abas do fluxo guiado", () => {
