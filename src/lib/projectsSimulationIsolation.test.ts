@@ -101,6 +101,7 @@ describe("projectsSimulationIsolation", () => {
     const service = readFileSync(join(process.cwd(), "src", "lib", "projectsService.ts"), "utf8");
     assert.match(rollup, /recalculateEngineeringCostRollup/);
     assert.match(service, /persistEngineeringCostRollupForVersion/);
+    assert.match(service, /persistSimulatedProductRefCostsForVersion/);
     assert.equal(rollup.includes("prisma.product.update"), false);
     assert.equal(rollup.includes("prisma.material.update"), false);
   });

@@ -19,9 +19,9 @@ import {
   appendGuidedReferenceOrigin,
   buildProjectGuidedItems,
   buildSimulatedProductRefNotes,
-  sumSimulatedProductStructureCost,
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
+import { resolveReferencedSimulatedProductUnitCost } from "@/src/lib/projectsSimulatedProductRefs";
 import {
   buildOtherCostNotes,
   findOtherCostBatchItems,
@@ -557,6 +557,12 @@ function ProjectDetailView({
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!detail || !simulatedWorkspaceProductId) return;
+    const exists = detail.simulatedProducts.some((p) => p.id === simulatedWorkspaceProductId);
+    if (!exists) setSimulatedWorkspaceProductId(null);
+  }, [detail, simulatedWorkspaceProductId]);
 
   const patchProject = async (body: Record<string, unknown>) => {
     setSaving(true);
@@ -1248,6 +1254,29 @@ function ProjectDetailView({
           onDeleteLine={(line) => {
             setDeleteTarget({ kind: "structure", id: line.id, label: line.descriptionSnapshot });
           }}
+          onSaveBomPatches={async (patches) => {
+            setSaving(true);
+            setStructureLineError(null);
+            try {
+              for (const patch of patches) {
+                await fetchJsonOk(`/api/projects/${projectId}/structure-lines/${patch.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    quantity: patch.quantity,
+                    lossPercent: patch.lossPercent,
+                    unitCost: patch.unitCost,
+                  }),
+                });
+              }
+              await load();
+            } catch (e) {
+              setStructureLineError(e instanceof Error ? e.message : "Erro ao salvar BOM.");
+              throw e;
+            } finally {
+              setSaving(false);
+            }
+          }}
         />
       ) : null}
 
@@ -1274,7 +1303,10 @@ function ProjectDetailView({
                 ? body.referencedSimulatedProductId
                 : null;
             if (refId) {
-              const refCost = sumSimulatedProductStructureCost(detail.structureLines, refId);
+              const refCost = resolveReferencedSimulatedProductUnitCost(
+                detail.structureLines,
+                refId
+              );
               body.unitCost = refCost;
               body.notes = buildSimulatedProductRefNotes(
                 refId,

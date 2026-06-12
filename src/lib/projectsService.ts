@@ -20,6 +20,7 @@ import {
   recalculateEngineeringCostRollup,
   type EngineeringRollupLine,
 } from "@/src/lib/projectsEngineeringCostRollup.js";
+import { computeSimulatedProductRefLineUpdate } from "@/src/lib/projectsSimulatedProductRefs.js";
 import type {
   ProjectAlert,
   ProjectCostBreakdown,
@@ -337,6 +338,62 @@ export async function establishEngineeringCostBaselineForSnapshot(
   }
 }
 
+/** Atualiza linhas MANUAL que referenciam produtos simulados com o roll-up atual da estrutura filha. */
+export async function persistSimulatedProductRefCostsForVersion(versionId: string): Promise<void> {
+  const lines = await prisma.projectStructureLine.findMany({ where: { versionId } });
+  const refInputs = lines.map((line) => ({
+    id: line.id,
+    simulatedProductId: line.simulatedProductId,
+    snapshotRootProductId: line.snapshotRootProductId,
+    sourceType: line.sourceType,
+    quantity: toFiniteNumber(dec(line.quantity)),
+    lossPercent: toFiniteNumber(dec(line.lossPercent)),
+    unitCostSnapshot: toFiniteNumber(dec(line.unitCostSnapshot)),
+    totalCost: toFiniteNumber(dec(line.totalCost)),
+    notes: line.notes,
+  }));
+
+  const updates = [];
+  for (const line of lines) {
+    const next = computeSimulatedProductRefLineUpdate(
+      {
+        id: line.id,
+        simulatedProductId: line.simulatedProductId,
+        snapshotRootProductId: line.snapshotRootProductId,
+        sourceType: line.sourceType,
+        quantity: toFiniteNumber(dec(line.quantity)),
+        lossPercent: toFiniteNumber(dec(line.lossPercent)),
+        unitCostSnapshot: toFiniteNumber(dec(line.unitCostSnapshot)),
+        totalCost: toFiniteNumber(dec(line.totalCost)),
+        notes: line.notes,
+      },
+      refInputs
+    );
+    if (!next) continue;
+    const unit = toFiniteNumber(dec(line.unitCostSnapshot));
+    const total = toFiniteNumber(dec(line.totalCost));
+    if (
+      Math.abs(unit - next.unitCostSnapshot) < 0.000001 &&
+      Math.abs(total - next.totalCost) < 0.000001
+    ) {
+      continue;
+    }
+    updates.push(
+      prisma.projectStructureLine.update({
+        where: { id: line.id },
+        data: {
+          unitCostSnapshot: next.unitCostSnapshot,
+          totalCost: next.totalCost,
+          isMissingCost: next.isMissingCost,
+        },
+      })
+    );
+  }
+  if (updates.length > 0) {
+    await prisma.$transaction(updates);
+  }
+}
+
 /** Propaga custos dos filhos para ancestrais em snapshots hierárquicos importados. */
 export async function persistEngineeringCostRollupForVersion(versionId: string): Promise<void> {
   const lines = await prisma.projectStructureLine.findMany({ where: { versionId } });
@@ -404,6 +461,7 @@ export async function deleteProjectStructureSnapshot(
 }
 
 export async function recalculateAndPersistVersionCosts(versionId: string) {
+  await persistSimulatedProductRefCostsForVersion(versionId);
   await persistEngineeringCostRollupForVersion(versionId);
 
   const version = await prisma.projectVersion.findUnique({

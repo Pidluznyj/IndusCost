@@ -17,7 +17,9 @@ import {
 } from "@/src/lib/projectsGuidedFlow";
 import { buildProjectEngineeringTree } from "@/src/lib/projectsEngineeringTree";
 import { ProjectEngineeringTreePanel } from "@/src/components/projects/ProjectEngineeringTreePanel";
+import { ProjectBomSimulationTable } from "@/src/components/projects/ProjectBomSimulationTable";
 import { structureLineTypeLabel } from "@/src/lib/projectsUiUtils";
+import { calculateStructureLineTotalCost } from "@/src/lib/projectsCalculations";
 import type {
   ProjectSimulatedItemRow,
   ProjectSimulatedProductRow,
@@ -54,6 +56,9 @@ type Props = {
   onCreateChildComponent: () => void;
   onEditLine: (line: ProjectStructureLineRow) => void;
   onDeleteLine: (line: ProjectStructureLineRow) => void;
+  onSaveBomPatches: (
+    patches: { id: string; quantity: number; lossPercent: number; unitCost: number }[]
+  ) => Promise<void>;
 };
 
 export function ProjectSimulatedProductWorkspace({
@@ -73,9 +78,15 @@ export function ProjectSimulatedProductWorkspace({
   onCreateChildComponent,
   onEditLine,
   onDeleteLine,
+  onSaveBomPatches,
 }: Props) {
   const [tab, setTab] = useState<TabId>("tree");
   const [selectedTreeLineId, setSelectedTreeLineId] = useState<string | null>(null);
+  const [bomDrafts, setBomDrafts] = useState<
+    Record<string, { quantity: number; lossPercent: number; unitCostSnapshot: number }>
+  >({});
+  const [bomSaving, setBomSaving] = useState(false);
+  const [bomError, setBomError] = useState<string | null>(null);
   const [infoDraft, setInfoDraft] = useState({
     provisionalCode: "",
     description: "",
@@ -128,6 +139,16 @@ export function ProjectSimulatedProductWorkspace({
     if (!open) return;
     setTab("tree");
     setSelectedTreeLineId(null);
+    setBomError(null);
+    const nextBom: typeof bomDrafts = {};
+    for (const line of productLines.filter((l) => l.parentLineId == null)) {
+      nextBom[line.id] = {
+        quantity: line.quantity,
+        lossPercent: line.lossPercent ?? 0,
+        unitCostSnapshot: line.unitCostSnapshot,
+      };
+    }
+    setBomDrafts(nextBom);
     setInfoError(null);
     setInfoDraft({
       provisionalCode: product.provisionalCode ?? "",
@@ -135,9 +156,68 @@ export function ProjectSimulatedProductWorkspace({
       unit: product.unit,
       notes: product.notes ?? "",
     });
-  }, [open, product]);
+  }, [open, product, productLines]);
+
+  const editableBomLines = useMemo(
+    () =>
+      bomLines.map((line) => {
+        const draft = bomDrafts[line.id];
+        if (!draft) return line;
+        return {
+          ...line,
+          quantity: draft.quantity,
+          lossPercent: draft.lossPercent,
+          unitCostSnapshot: draft.unitCostSnapshot,
+        };
+      }),
+    [bomLines, bomDrafts]
+  );
+
+  const bomPreviewTotal = useMemo(
+    () =>
+      editableBomLines.reduce((acc, line) => {
+        const total = calculateStructureLineTotalCost(
+          line.quantity,
+          line.unitCostSnapshot,
+          line.lossPercent ?? 0
+        );
+        return acc + (Number.isFinite(total) ? total : 0);
+      }, 0),
+    [editableBomLines]
+  );
 
   if (!open) return null;
+
+  const handleBomLineChange = (
+    lineId: string,
+    patch: Partial<{ quantity: number; lossPercent: number; unitCostSnapshot: number }>
+  ) => {
+    setBomDrafts((prev) => ({
+      ...prev,
+      [lineId]: { ...prev[lineId]!, ...patch },
+    }));
+  };
+
+  const handleSaveBom = async () => {
+    setBomSaving(true);
+    setBomError(null);
+    try {
+      const patches = Object.keys(bomDrafts).map((id) => {
+        const d = bomDrafts[id]!;
+        return {
+          id,
+          quantity: d.quantity,
+          lossPercent: d.lossPercent,
+          unitCost: d.unitCostSnapshot,
+        };
+      });
+      await onSaveBomPatches(patches);
+    } catch (e) {
+      setBomError(e instanceof Error ? e.message : "Erro ao salvar BOM.");
+    } finally {
+      setBomSaving(false);
+    }
+  };
 
   const handleSaveInfo = async () => {
     setInfoSaving(true);
@@ -360,57 +440,47 @@ export function ProjectSimulatedProductWorkspace({
           {tab === "bom" ? (
             <div className="space-y-4">
               <p className="text-xs text-muted-foreground">
-                Composição de 1º nível. Para subcomponentes e matérias internas, use a aba Estrutura
-                em Árvore.
+                Composição de 1º nível com ajuste de quantidade, perda e custo unitário (snapshot do
+                projeto). Para subcomponentes e matérias internas, use a aba Estrutura em Árvore.
               </p>
-              <div className="overflow-hidden rounded-xl border border-border">
-                <table className="w-full text-sm">
-                  <thead className="border-b bg-muted/40 text-left">
-                    <tr>
-                      <th className="px-3 py-2">Tipo</th>
-                      <th className="px-3 py-2">Descrição</th>
-                      <th className="px-3 py-2">Qtd</th>
-                      <th className="px-3 py-2">Perda %</th>
-                      <th className="px-3 py-2">R$/un</th>
-                      <th className="px-3 py-2">Total</th>
-                      {canManage ? <th className="px-3 py-2" /> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bomLines.map((line) => (
-                      <tr key={line.id} className="border-b border-border/60">
-                        <td className="px-3 py-2">{structureLineTypeLabel(line)}</td>
-                        <td className="px-3 py-2">{line.descriptionSnapshot}</td>
-                        <td className="px-3 py-2">{line.quantity}</td>
-                        <td className="px-3 py-2">{line.lossPercent ?? 0}</td>
-                        <td className="px-3 py-2">{formatCurrency(line.unitCostSnapshot)}</td>
-                        <td className="px-3 py-2">{formatCurrency(line.totalCost)}</td>
-                        {canManage ? (
-                          <td className="px-3 py-2">
-                            <button
-                              type="button"
-                              className="text-xs text-primary hover:underline"
-                              onClick={() => onEditLine(line)}
-                            >
-                              Editar
-                            </button>
-                          </td>
-                        ) : null}
-                      </tr>
-                    ))}
-                    {!bomLines.length ? (
-                      <tr>
-                        <td
-                          colSpan={canManage ? 7 : 6}
-                          className="px-4 py-8 text-center text-muted-foreground"
-                        >
-                          BOM vazio — adicione itens com os botões acima.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
+              {bomError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {bomError}
+                </div>
+              ) : null}
+              <ProjectBomSimulationTable
+                lines={editableBomLines}
+                onLineChange={handleBomLineChange}
+              />
+              {bomLines.length > 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm">
+                  <span>
+                    Prévia do total (1º nível):{" "}
+                    <strong>{formatCurrency(bomPreviewTotal)}</strong>
+                  </span>
+                  {canManage ? (
+                    <button
+                      type="button"
+                      disabled={bomSaving || saving}
+                      onClick={() => void handleSaveBom()}
+                      className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                    >
+                      {bomSaving ? <Loader2 className="inline h-4 w-4 animate-spin" /> : null}
+                      Salvar alterações do BOM
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  BOM vazio — adicione itens com os botões acima.
+                </p>
+              )}
+              {bomLines.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Tipo das linhas:{" "}
+                  {bomLines.map((l) => structureLineTypeLabel(l)).join(" · ")}
+                </p>
+              ) : null}
             </div>
           ) : null}
 

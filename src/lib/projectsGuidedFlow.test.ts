@@ -255,6 +255,18 @@ describe("ProjectsModule UI — fluxo guiado", () => {
     assert.match(mod, /ProjectSimulatedProductWorkspace/);
     assert.match(mod, /ProjectStructureLineModal/);
     assert.match(mod, /setSimulatedWorkspaceProductId/);
+    assert.match(mod, /onSaveBomPatches/);
+    assert.match(mod, /resolveReferencedSimulatedProductUnitCost/);
+  });
+
+  it("workspace expõe BOM editável alinhado ao painel de simulação", () => {
+    const ws = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectSimulatedProductWorkspace.tsx"),
+      "utf8"
+    );
+    assert.match(ws, /ProjectBomSimulationTable/);
+    assert.match(ws, /Salvar alterações do BOM/);
+    assert.match(ws, /onCreateChildComponent/);
   });
 
   it("empty state orienta o usuário quando não há itens", () => {
