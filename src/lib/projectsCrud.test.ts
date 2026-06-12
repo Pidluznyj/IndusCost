@@ -86,7 +86,8 @@ describe("projectsCrud", () => {
     assert.match(mod, /method: "DELETE"/);
     assert.match(mod, /guidedMoldMode/);
     assert.equal(mod.includes("ProjectMoldFormModal"), false);
-    assert.equal(mod.includes("ProjectStructureLineModal"), false);
+    assert.match(mod, /ProjectStructureLineModal/);
+    assert.match(mod, /ProjectSimulatedProductWorkspace/);
   });
 
   it("molde pode ser criado, editado e excluído via UI", () => {

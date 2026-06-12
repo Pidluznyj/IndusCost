@@ -123,7 +123,8 @@ function buildSimulatedProductStructureGroups(
                 sku: meta?.provisionalCode?.trim() || "PRJ",
                 name: meta?.description ?? "Produto do projeto",
               },
-              groupLines
+              groupLines,
+              { kind: "simulated_product", simulatedProductId: productId }
             )
           : null,
     });

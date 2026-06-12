@@ -22,6 +22,45 @@ export const PROJECT_GUIDED_MASTER_NOTICE =
   "Este item será salvo somente no projeto e não altera o cadastro mestre.";
 
 export const GUIDED_ORIGIN_REFERENCE_MARKER = "guided-origin:REFERENCE";
+export const GUIDED_ITEM_KIND_COMPONENT_MARKER = "guided-item-kind:COMPONENT";
+export const GUIDED_REF_SIMULATED_PRODUCT_PREFIX = "guided-ref-sim-product:";
+
+export function buildSimulatedProductRefNotes(
+  refProductId: string,
+  existingNotes?: string | null
+): string {
+  const marker = `${GUIDED_REF_SIMULATED_PRODUCT_PREFIX}${refProductId}`;
+  const base = existingNotes?.trim();
+  if (base?.includes(marker)) return base;
+  return base ? `${base}\n${marker}` : marker;
+}
+
+export function parseSimulatedProductRefFromNotes(notes: string | null | undefined): string | null {
+  if (!notes) return null;
+  const idx = notes.indexOf(GUIDED_REF_SIMULATED_PRODUCT_PREFIX);
+  if (idx < 0) return null;
+  const id = notes.slice(idx + GUIDED_REF_SIMULATED_PRODUCT_PREFIX.length, idx + GUIDED_REF_SIMULATED_PRODUCT_PREFIX.length + 36);
+  return /^[0-9a-f-]{36}$/i.test(id) ? id : null;
+}
+
+export function isGuidedComponentProduct(notes: string | null | undefined): boolean {
+  return notes?.includes(GUIDED_ITEM_KIND_COMPONENT_MARKER) === true;
+}
+
+export function appendGuidedComponentKind(notes: string | null | undefined): string {
+  const base = notes?.trim();
+  if (base?.includes(GUIDED_ITEM_KIND_COMPONENT_MARKER)) return base;
+  return base ? `${base}\n${GUIDED_ITEM_KIND_COMPONENT_MARKER}` : GUIDED_ITEM_KIND_COMPONENT_MARKER;
+}
+
+export function sumSimulatedProductStructureCost(
+  lines: ProjectDetail["structureLines"],
+  simulatedProductId: string
+): number {
+  return lines
+    .filter((l) => l.simulatedProductId === simulatedProductId && l.snapshotRootProductId == null)
+    .reduce((acc, l) => acc + (Number.isFinite(l.totalCost) ? l.totalCost : 0), 0);
+}
 
 export function isGuidedReferenceProduct(notes: string | null | undefined): boolean {
   return notes?.includes(GUIDED_ORIGIN_REFERENCE_MARKER) === true;
@@ -134,7 +173,9 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
   const rows: ProjectGuidedItemRow[] = [];
 
   for (const p of detail.simulatedProducts) {
-    const hasCost = simulatedProductHasCost(p.id, detail.structureLines);
+    const structureCost = sumSimulatedProductStructureCost(detail.structureLines, p.id);
+    const hasCost = structureCost > 0 || simulatedProductHasCost(p.id, detail.structureLines);
+    const isComponent = isGuidedComponentProduct(p.notes);
     const origin: ProjectGuidedOrigin = isGuidedReferenceProduct(p.notes)
       ? "OFFICIAL_REFERENCE"
       : "CREATED_IN_PROJECT";
@@ -142,8 +183,8 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
     rows.push({
       id: p.id,
       entityKind: "product",
-      itemType: "PRODUCT",
-      itemTypeLabel: "Produto",
+      itemType: isComponent ? "COMPONENT" : "PRODUCT",
+      itemTypeLabel: isComponent ? "Componente" : "Produto",
       code: p.provisionalCode,
       name: p.description,
       description: p.description,
@@ -151,7 +192,7 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
       originLabel: ORIGIN_LABEL[origin],
       status,
       statusLabel: STATUS_LABEL[status],
-      estimatedCost: hasCost ? detail.costBreakdown.unitCost : null,
+      estimatedCost: hasCost ? structureCost || detail.costBreakdown.unitCost : null,
       costKind: "unit",
       updatedAt: detail.updatedAt,
       productId: p.id,

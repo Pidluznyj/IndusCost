@@ -15,8 +15,11 @@ import { createBrowserSafeId } from "@/src/lib/browserSafeId";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import {
+  appendGuidedComponentKind,
   appendGuidedReferenceOrigin,
   buildProjectGuidedItems,
+  buildSimulatedProductRefNotes,
+  sumSimulatedProductStructureCost,
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
 import {
@@ -58,6 +61,9 @@ import { ProjectDeleteConfirmModal } from "@/src/components/projects/ProjectDele
 import { ProjectDetailErrorBoundary } from "@/src/components/projects/ProjectDetailErrorBoundary";
 import { ProjectSimulatedItemFormModal } from "@/src/components/projects/ProjectSimulatedItemFormModal";
 import { ProjectProductSimulationPanel } from "@/src/components/projects/ProjectProductSimulationPanel";
+import { ProjectSimulatedProductWorkspace } from "@/src/components/projects/ProjectSimulatedProductWorkspace";
+import { ProjectStructureLineEditModal } from "@/src/components/projects/ProjectStructureLineEditModal";
+import { ProjectStructureLineModal } from "@/src/components/projects/ProjectStructureLineModal";
 import type {
   ProjectDashboardPayload,
   ProjectDetail,
@@ -66,6 +72,8 @@ import type {
   ProjectSimulatedItemRow,
   ProjectSimulatedProductRow,
   ProjectStatus,
+  ProjectStructureLineRow,
+  ProjectStructureSourceType,
   ProjectType,
 } from "@/src/types/projects";
 
@@ -489,6 +497,24 @@ function ProjectDetailView({
   const [editingOtherCostBatchId, setEditingOtherCostBatchId] = useState<string | null>(null);
   const [editingOtherCostLines, setEditingOtherCostLines] = useState<ProjectOtherCostLine[]>([]);
   const [postSavePrompt, setPostSavePrompt] = useState(false);
+  const [simulatedWorkspaceProductId, setSimulatedWorkspaceProductId] = useState<string | null>(
+    null
+  );
+  const [structureLineModalOpen, setStructureLineModalOpen] = useState(false);
+  const [structureLineSourceType, setStructureLineSourceType] =
+    useState<ProjectStructureSourceType | null>(null);
+  const [structureLineContext, setStructureLineContext] = useState<{
+    simulatedProductId: string;
+    parentLineId?: string;
+    contextLabel?: string;
+  } | null>(null);
+  const [structureLineError, setStructureLineError] = useState<string | null>(null);
+  const [structureLineEditOpen, setStructureLineEditOpen] = useState(false);
+  const [editingStructureLine, setEditingStructureLine] =
+    useState<ProjectStructureLineRow | null>(null);
+  const [engineeringDefaultKind, setEngineeringDefaultKind] = useState<
+    "PRODUCT" | "COMPONENT" | "RAW_MATERIAL"
+  >("PRODUCT");
 
   const legacyTab = useMemo(
     () => parseLegacyTabSegment(window.location.pathname),
@@ -498,6 +524,19 @@ function ProjectDetailView({
   const guidedItems = useMemo(
     () => (detail ? buildProjectGuidedItems(detail) : []),
     [detail]
+  );
+
+  const workspaceSimulatedItems = useMemo(
+    () => (detail ? detail.simulatedItems.filter((i) => !isGuidedOtherCostItem(i.notes)) : []),
+    [detail]
+  );
+
+  const workspaceProduct = useMemo(
+    () =>
+      detail && simulatedWorkspaceProductId
+        ? detail.simulatedProducts.find((p) => p.id === simulatedWorkspaceProductId) ?? null
+        : null,
+    [detail, simulatedWorkspaceProductId]
   );
 
   const load = useCallback(async () => {
@@ -625,7 +664,33 @@ function ProjectDetailView({
     setModalError(null);
     setEngineeringItemModalMode("create");
     setEditingProduct(null);
+    setEngineeringDefaultKind("PRODUCT");
     setEngineeringItemModalOpen(true);
+  };
+
+  const openCreateChildComponent = () => {
+    setModalError(null);
+    setEngineeringItemModalMode("create");
+    setEditingProduct(null);
+    setEngineeringDefaultKind("COMPONENT");
+    setEngineeringItemModalOpen(true);
+  };
+
+  const openStructureLineAdd = (
+    sourceType: ProjectStructureSourceType,
+    context?: { parentLineId?: string }
+  ) => {
+    if (!simulatedWorkspaceProductId) return;
+    setStructureLineError(null);
+    setStructureLineSourceType(sourceType);
+    setStructureLineContext({
+      simulatedProductId: simulatedWorkspaceProductId,
+      parentLineId: context?.parentLineId,
+      contextLabel: context?.parentLineId
+        ? "Adicionando subitem à linha selecionada na árvore."
+        : undefined,
+    });
+    setStructureLineModalOpen(true);
   };
 
   const openCreateMold = () => {
@@ -659,13 +724,7 @@ function ProjectDetailView({
       return;
     }
     if (item.productId) {
-      const product = detail.simulatedProducts.find((p) => p.id === item.productId);
-      if (product) {
-        setModalError(null);
-        setEngineeringItemModalMode("edit");
-        setEditingProduct(product);
-        setEngineeringItemModalOpen(true);
-      }
+      setSimulatedWorkspaceProductId(item.productId);
       return;
     }
     if (item.moldId) {
@@ -947,15 +1006,20 @@ function ProjectDetailView({
             setSaving(false);
           }
         }}
+        defaultItemKind={engineeringDefaultKind}
         onSubmit={async (payload) => {
           setSaving(true);
           setModalError(null);
           try {
-            if (payload.itemKind === "PRODUCT") {
-              const notes =
+            let openWorkspaceId: string | null = null;
+            if (payload.itemKind === "PRODUCT" || payload.itemKind === "COMPONENT") {
+              let notes =
                 payload.originMode === "REFERENCE"
                   ? appendGuidedReferenceOrigin(payload.notes)
                   : payload.notes;
+              if (payload.itemKind === "COMPONENT") {
+                notes = appendGuidedComponentKind(notes);
+              }
               const body = {
                 provisionalCode: payload.provisionalCode,
                 description: payload.description,
@@ -974,19 +1038,23 @@ function ProjectDetailView({
                     body: JSON.stringify(body),
                   }
                 );
+                openWorkspaceId = editingProduct.id;
               } else {
-                await fetchJsonOk(`/api/projects/${projectId}/simulated-products`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
+                const created = await fetchJsonOk<ProjectSimulatedProductRow>(
+                  `/api/projects/${projectId}/simulated-products`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                  }
+                );
+                openWorkspaceId = created.id;
               }
             } else {
-              const itemType = payload.itemKind === "RAW_MATERIAL" ? "RAW_MATERIAL" : "COMPONENT";
               const body = {
                 provisionalCode: payload.provisionalCode,
                 description: payload.description,
-                itemType,
+                itemType: "RAW_MATERIAL" as const,
                 unit: payload.unit,
                 estimatedWeight: payload.estimatedWeight,
                 notes: payload.notes,
@@ -1000,6 +1068,9 @@ function ProjectDetailView({
             setEngineeringItemModalOpen(false);
             setEditingProduct(null);
             await load();
+            if (openWorkspaceId) {
+              setSimulatedWorkspaceProductId(openWorkspaceId);
+            }
             setPostSavePrompt(true);
           } catch (e) {
             setModalError(e instanceof Error ? e.message : "Erro ao salvar item.");
@@ -1129,6 +1200,137 @@ function ProjectDetailView({
           setDeleteError(null);
         }}
         onConfirm={handleDelete}
+      />
+
+      {workspaceProduct ? (
+        <ProjectSimulatedProductWorkspace
+          open={simulatedWorkspaceProductId != null}
+          projectId={projectId}
+          product={workspaceProduct}
+          structureLines={detail.structureLines}
+          simulatedItems={workspaceSimulatedItems}
+          simulatedProducts={detail.simulatedProducts}
+          saving={saving}
+          error={structureLineError}
+          canManage={canManage}
+          onClose={() => {
+            setSimulatedWorkspaceProductId(null);
+            setStructureLineError(null);
+          }}
+          onReload={load}
+          onPatchProduct={async (body) => {
+            setSaving(true);
+            setStructureLineError(null);
+            try {
+              await fetchJsonOk(
+                `/api/projects/${projectId}/simulated-products/${workspaceProduct.id}`,
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                }
+              );
+              await load();
+            } catch (e) {
+              setStructureLineError(e instanceof Error ? e.message : "Erro ao salvar.");
+              throw e;
+            } finally {
+              setSaving(false);
+            }
+          }}
+          onAddLine={openStructureLineAdd}
+          onCreateChildComponent={openCreateChildComponent}
+          onEditLine={(line) => {
+            setStructureLineError(null);
+            setEditingStructureLine(line);
+            setStructureLineEditOpen(true);
+          }}
+          onDeleteLine={(line) => {
+            setDeleteTarget({ kind: "structure", id: line.id, label: line.descriptionSnapshot });
+          }}
+        />
+      ) : null}
+
+      <ProjectStructureLineModal
+        open={structureLineModalOpen}
+        sourceType={structureLineSourceType}
+        simulatedItems={workspaceSimulatedItems}
+        simulatedProducts={detail.simulatedProducts}
+        lineContext={structureLineContext}
+        saving={saving}
+        error={structureLineError}
+        onClose={() => {
+          setStructureLineModalOpen(false);
+          setStructureLineSourceType(null);
+          setStructureLineContext(null);
+          setStructureLineError(null);
+        }}
+        onSubmit={async (body) => {
+          setSaving(true);
+          setStructureLineError(null);
+          try {
+            const refId =
+              typeof body.referencedSimulatedProductId === "string"
+                ? body.referencedSimulatedProductId
+                : null;
+            if (refId) {
+              const refCost = sumSimulatedProductStructureCost(detail.structureLines, refId);
+              body.unitCost = refCost;
+              body.notes = buildSimulatedProductRefNotes(
+                refId,
+                typeof body.notes === "string" ? body.notes : null
+              );
+              delete body.referencedSimulatedProductId;
+            }
+            await fetchJsonOk(`/api/projects/${projectId}/structure-lines`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            setStructureLineModalOpen(false);
+            setStructureLineSourceType(null);
+            setStructureLineContext(null);
+            await load();
+          } catch (e) {
+            setStructureLineError(e instanceof Error ? e.message : "Erro ao adicionar linha.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+
+      <ProjectStructureLineEditModal
+        open={structureLineEditOpen}
+        line={editingStructureLine}
+        saving={saving}
+        error={structureLineError}
+        onClose={() => {
+          setStructureLineEditOpen(false);
+          setEditingStructureLine(null);
+          setStructureLineError(null);
+        }}
+        onSubmit={async (body) => {
+          if (!editingStructureLine) return;
+          setSaving(true);
+          setStructureLineError(null);
+          try {
+            await fetchJsonOk(
+              `/api/projects/${projectId}/structure-lines/${editingStructureLine.id}`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              }
+            );
+            setStructureLineEditOpen(false);
+            setEditingStructureLine(null);
+            await load();
+          } catch (e) {
+            setStructureLineError(e instanceof Error ? e.message : "Erro ao salvar linha.");
+          } finally {
+            setSaving(false);
+          }
+        }}
       />
 
       <ProjectProductSimulationPanel

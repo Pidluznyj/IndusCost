@@ -69,6 +69,7 @@ export function ProjectStructureLineModal({
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialLookupRow | null>(null);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [selectedSimulatedItemId, setSelectedSimulatedItemId] = useState("");
+  const [selectedProjectComponentId, setSelectedProjectComponentId] = useState("");
   const [selectedSimulatedProductId, setSelectedSimulatedProductId] = useState("");
   const [manualDescription, setManualDescription] = useState("");
   const [manualUnit, setManualUnit] = useState("UN");
@@ -85,6 +86,7 @@ export function ProjectStructureLineModal({
     setSelectedMaterial(null);
     setSelectedProductId("");
     setSelectedSimulatedItemId(simulatedItems[0]?.id ?? "");
+    setSelectedProjectComponentId("");
     setSelectedSimulatedProductId(
       lineContext?.simulatedProductId ?? simulatedProducts[0]?.id ?? ""
     );
@@ -171,7 +173,7 @@ export function ProjectStructureLineModal({
       case "EXISTING_PRODUCT":
         return Boolean(selectedProductId);
       case "SIMULATED_ITEM":
-        return Boolean(selectedSimulatedItemId);
+        return Boolean(selectedSimulatedItemId || selectedProjectComponentId);
       case "MANUAL":
         return Boolean(manualDescription.trim());
       default:
@@ -187,8 +189,33 @@ export function ProjectStructureLineModal({
   };
 
   const handleSubmit = async () => {
-    if (sourceType === "EXISTING_PRODUCT" && selectedProductId && onImportExistingProduct) {
+    if (
+      sourceType === "EXISTING_PRODUCT" &&
+      selectedProductId &&
+      onImportExistingProduct &&
+      !lineContext?.simulatedProductId
+    ) {
       await onImportExistingProduct(selectedProductId);
+      return;
+    }
+
+    if (sourceType === "SIMULATED_ITEM" && selectedProjectComponentId) {
+      const refProduct = simulatedProducts.find((p) => p.id === selectedProjectComponentId);
+      const body: Record<string, unknown> = {
+        sourceType: "MANUAL",
+        lineType: "COMPONENT",
+        quantity: qtyNum,
+        lossPercent: lossNum,
+        description: refProduct
+          ? `${refProduct.provisionalCode ? `${refProduct.provisionalCode} — ` : ""}${refProduct.description}`
+          : "Componente do projeto",
+        unit: refProduct?.unit ?? "UN",
+        referencedSimulatedProductId: selectedProjectComponentId,
+      };
+      const targetProductId = lineContext?.simulatedProductId || selectedSimulatedProductId;
+      if (targetProductId) body.simulatedProductId = targetProductId;
+      if (lineContext?.parentLineId) body.parentLineId = lineContext.parentLineId;
+      await onSubmit(body);
       return;
     }
 
@@ -250,7 +277,11 @@ export function ProjectStructureLineModal({
             className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
           >
             {saving ? <Loader2 className="inline h-4 w-4 animate-spin" /> : null}
-            {sourceType === "EXISTING_PRODUCT" ? "Clonar para o projeto" : "Adicionar componente"}
+            {sourceType === "EXISTING_PRODUCT"
+              ? lineContext?.simulatedProductId
+                ? "Adicionar referência"
+                : "Clonar para o projeto"
+              : "Adicionar componente"}
           </button>
         </>
       }
@@ -269,9 +300,11 @@ export function ProjectStructureLineModal({
 
       {sourceType === "EXISTING_PRODUCT" ? (
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          {engineeringFlow === "clone"
-            ? PROJECT_ENGINEERING_CLONE_NOTICE
-            : "Importa a BOM e os processos (HH) do produto oficial com os mesmos custos do cadastro. Os valores ficam como snapshot no projeto — editáveis aqui sem alterar Product, Material ou ProductBOM."}
+          {lineContext?.simulatedProductId
+            ? "Referência ao componente oficial no BOM do projeto. O custo industrial do cadastro é usado como snapshot — editável aqui sem alterar o cadastro mestre."
+            : engineeringFlow === "clone"
+              ? PROJECT_ENGINEERING_CLONE_NOTICE
+              : "Importa a BOM e os processos (HH) do produto oficial com os mesmos custos do cadastro. Os valores ficam como snapshot no projeto — editáveis aqui sem alterar Product, Material ou ProductBOM."}
         </p>
       ) : (
         <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
@@ -379,25 +412,61 @@ export function ProjectStructureLineModal({
       ) : null}
 
       {sourceType === "SIMULATED_ITEM" ? (
-        <div className="space-y-2">
-          {simulatedItems.length === 0 ? (
+        <div className="space-y-3">
+          {simulatedProducts.filter((p) => p.id !== lineContext?.simulatedProductId).length > 0 ? (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Componente com estrutura no projeto
+              </label>
+              <select
+                className={fieldClass}
+                value={selectedProjectComponentId}
+                onChange={(e) => {
+                  setSelectedProjectComponentId(e.target.value);
+                  if (e.target.value) setSelectedSimulatedItemId("");
+                }}
+              >
+                <option value="">— Selecionar —</option>
+                {simulatedProducts
+                  .filter((p) => p.id !== lineContext?.simulatedProductId)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.provisionalCode ? `${p.provisionalCode} — ` : ""}
+                      {p.description}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          ) : null}
+          {simulatedItems.length > 0 ? (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Matéria-prima / item simples
+              </label>
+              <select
+                className={fieldClass}
+                value={selectedSimulatedItemId}
+                onChange={(e) => {
+                  setSelectedSimulatedItemId(e.target.value);
+                  if (e.target.value) setSelectedProjectComponentId("");
+                }}
+              >
+                <option value="">— Selecionar —</option>
+                {simulatedItems.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.provisionalCode ? `${i.provisionalCode} — ` : ""}
+                    {i.description}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          {simulatedItems.length === 0 &&
+          simulatedProducts.filter((p) => p.id !== lineContext?.simulatedProductId).length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Cadastre um componente do projeto na aba Itens simulados antes.
+              Cadastre um componente ou matéria-prima na aba Itens do Projeto antes.
             </p>
-          ) : (
-            <select
-              className={fieldClass}
-              value={selectedSimulatedItemId}
-              onChange={(e) => setSelectedSimulatedItemId(e.target.value)}
-            >
-              {simulatedItems.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.provisionalCode ? `${i.provisionalCode} — ` : ""}
-                  {i.description}
-                </option>
-              ))}
-            </select>
-          )}
+          ) : null}
         </div>
       ) : null}
 

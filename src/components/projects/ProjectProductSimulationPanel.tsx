@@ -84,7 +84,8 @@ export function ProjectProductSimulationPanel({
     if (!snapshot) return null;
     return buildProjectEngineeringTree(
       { productId, sku: snapshot.sku, name: snapshot.name },
-      productLines
+      productLines,
+      { kind: "official_snapshot", rootProductId: productId }
     );
   }, [productId, snapshot, productLines]);
 

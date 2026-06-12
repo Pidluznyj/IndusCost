@@ -227,7 +227,8 @@ describe("ProjectsModule UI — fluxo guiado", () => {
     assert.match(mod, /ProjectOtherCostsModal/);
     assert.match(mod, /ProjectDetailErrorBoundary/);
     assert.match(mod, /otherCostsModalMode/);
-    assert.equal(mod.includes("ProjectStructureLineModal"), false);
+    assert.match(mod, /ProjectStructureLineModal/);
+    assert.match(mod, /ProjectSimulatedProductWorkspace/);
     assert.equal(mod.includes("ProjectLaborLineModal"), false);
   });
 
@@ -247,6 +248,13 @@ describe("ProjectsModule UI — fluxo guiado", () => {
     assert.match(nav, /Custos do Projeto/);
     assert.equal(nav.includes("Engenharia do Projeto"), false);
     assert.equal(nav.includes("Estrutura / Árvore"), false);
+  });
+
+  it("ProjectsModule monta workspace de produto simulado e modais de estrutura", () => {
+    const mod = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
+    assert.match(mod, /ProjectSimulatedProductWorkspace/);
+    assert.match(mod, /ProjectStructureLineModal/);
+    assert.match(mod, /setSimulatedWorkspaceProductId/);
   });
 
   it("empty state orienta o usuário quando não há itens", () => {

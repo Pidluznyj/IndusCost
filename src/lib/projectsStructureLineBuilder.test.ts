@@ -132,6 +132,7 @@ describe("projectsStructureLineBuilder", () => {
     assert.match(routes, /existingMaterialId: existingMaterial\?\.id/);
     assert.equal(routes.includes("prisma.product.create"), false);
     assert.equal(routes.includes("prisma.productBOM.create"), false);
-    assert.match(routes, /Use importação de produto para estrutura oficial/);
+    assert.match(routes, /existingProductId: existingProduct\?\.id/);
+    assert.match(routes, /Adicione componentes oficiais dentro de um produto do projeto/);
   });
 });

@@ -29,9 +29,11 @@ import {
   ProjectsAccessError,
 } from "@/src/lib/projectsPermissions.js";
 import {
+  getProjectsProductCostResolver,
   setProjectsProductCostResolver,
   type ProjectsProductCostResolver,
 } from "@/src/lib/projectsProductCostResolver.js";
+import { toFiniteNumber } from "@/src/lib/projectsCalculations.js";
 import {
   importProductEngineeringSnapshotToProject,
   loadOfficialProductEngineeringSnapshot,
@@ -716,35 +718,6 @@ export function registerProjectsRoutes(
       const quantity = optNum(body.quantity) ?? 0;
       const lossPercent = optNum(body.lossPercent) ?? 0;
 
-      if (sourceType === "EXISTING_PRODUCT") {
-        return res.status(400).json({
-          error: "Use importação de produto para estrutura oficial. Esta rota não cria linha de produto.",
-        });
-      }
-
-      let existingProduct = null;
-      let existingMaterial = null;
-      let simulatedItem = null;
-
-      if (sourceType === "EXISTING_MATERIAL") {
-        if (!isUuid(body.existingMaterialId)) {
-          return res.status(400).json({ error: "existingMaterialId é obrigatório." });
-        }
-        existingMaterial = await prisma.material.findUnique({
-          where: { id: body.existingMaterialId },
-        });
-        if (!existingMaterial) return res.status(400).json({ error: "Material não encontrado." });
-      }
-      if (sourceType === "SIMULATED_ITEM") {
-        if (!isUuid(body.simulatedItemId)) {
-          return res.status(400).json({ error: "simulatedItemId é obrigatório." });
-        }
-        simulatedItem = await prisma.projectSimulatedItem.findFirst({
-          where: { id: body.simulatedItemId, projectId: req.params.id },
-        });
-        if (!simulatedItem) return res.status(400).json({ error: "Item simulado não encontrado." });
-      }
-
       let parentLineId: string | null = null;
       if (isUuid(body.parentLineId)) {
         const parent = await prisma.projectStructureLine.findFirst({
@@ -769,12 +742,76 @@ export function registerProjectsRoutes(
         simulatedProductId = simulatedProduct.id;
       }
 
+      let existingProduct: { id: string; name: string; sku: string } | null = null;
+      let existingMaterial = null;
+      let simulatedItem = null;
+
+      if (sourceType === "EXISTING_PRODUCT") {
+        if (!isUuid(body.existingProductId)) {
+          return res.status(400).json({ error: "existingProductId é obrigatório." });
+        }
+        if (!simulatedProductId && !parentLineId) {
+          return res.status(400).json({
+            error:
+              "Para estrutura oficial na raiz use importação de produto. Adicione componentes oficiais dentro de um produto do projeto.",
+          });
+        }
+        existingProduct = await prisma.product.findUnique({
+          where: { id: body.existingProductId },
+          select: { id: true, name: true, sku: true },
+        });
+        if (!existingProduct) return res.status(400).json({ error: "Produto oficial não encontrado." });
+      }
+
+      if (sourceType === "EXISTING_MATERIAL") {
+        if (!isUuid(body.existingMaterialId)) {
+          return res.status(400).json({ error: "existingMaterialId é obrigatório." });
+        }
+        existingMaterial = await prisma.material.findUnique({
+          where: { id: body.existingMaterialId },
+        });
+        if (!existingMaterial) return res.status(400).json({ error: "Material não encontrado." });
+      }
+      if (sourceType === "SIMULATED_ITEM") {
+        if (!isUuid(body.simulatedItemId)) {
+          return res.status(400).json({ error: "simulatedItemId é obrigatório." });
+        }
+        simulatedItem = await prisma.projectSimulatedItem.findFirst({
+          where: { id: body.simulatedItemId, projectId: req.params.id },
+        });
+        if (!simulatedItem) return res.status(400).json({ error: "Item simulado não encontrado." });
+      }
+
+      let unitCostOverride = body.unitCost != null ? optNum(body.unitCost) : null;
+      if (
+        sourceType === "EXISTING_PRODUCT" &&
+        existingProduct &&
+        (unitCostOverride == null || unitCostOverride <= 0)
+      ) {
+        const resolver = getProjectsProductCostResolver();
+        if (resolver) {
+          try {
+            const analysis = await resolver(existingProduct.id);
+            if (
+              analysis &&
+              !("error" in analysis) &&
+              analysis.totalIndustrialCost != null &&
+              Number.isFinite(Number(analysis.totalIndustrialCost))
+            ) {
+              unitCostOverride = toFiniteNumber(analysis.totalIndustrialCost);
+            }
+          } catch {
+            /* custo oficial indisponível — linha seguirá com isMissingCost */
+          }
+        }
+      }
+
       const built = buildProjectStructureLineFromContext({
         sourceType,
-        lineType: body.lineType,
+        lineType: body.lineType ?? (sourceType === "EXISTING_PRODUCT" ? "COMPONENT" : undefined),
         quantity,
         lossPercent,
-        unitCostOverride: body.unitCost != null ? optNum(body.unitCost) : null,
+        unitCostOverride,
         manualDescription: body.description,
         manualUnit: body.unit,
         manualUnitCost: optNum(body.unitCost) ?? 0,
@@ -792,7 +829,7 @@ export function registerProjectsRoutes(
           parentLineId,
           lineType: built.lineType,
           sourceType,
-          existingProductId: null,
+          existingProductId: existingProduct?.id ?? null,
           existingMaterialId: existingMaterial?.id ?? null,
           simulatedItemId: simulatedItem?.id ?? null,
           descriptionSnapshot: built.descriptionSnapshot,

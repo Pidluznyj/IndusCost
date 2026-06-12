@@ -2,7 +2,10 @@ import React, { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { PROJECT_ENGINEERING_CLONE_NOTICE } from "@/src/lib/projectsEngineeringWorkspace";
-import { PROJECT_GUIDED_MASTER_NOTICE } from "@/src/lib/projectsGuidedFlow";
+import {
+  isGuidedComponentProduct,
+  PROJECT_GUIDED_MASTER_NOTICE,
+} from "@/src/lib/projectsGuidedFlow";
 import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
 import { parseProjectsNumberInput } from "@/src/lib/projectsUiUtils";
 import type { ProjectSimulatedProductRow } from "@/src/types/projects";
@@ -26,6 +29,7 @@ type Props = {
   mode: "create" | "edit";
   projectLabel: string;
   initial?: ProjectSimulatedProductRow | null;
+  defaultItemKind?: ProjectEngineeringItemKind;
   saving?: boolean;
   error?: string | null;
   onClose: () => void;
@@ -50,6 +54,7 @@ export function ProjectEngineeringItemModal({
   mode,
   projectLabel,
   initial,
+  defaultItemKind = "PRODUCT",
   saving,
   error,
   onClose,
@@ -69,7 +74,7 @@ export function ProjectEngineeringItemModal({
     setSelectedCloneId("");
     if (initial) {
       setForm({
-        itemKind: "PRODUCT",
+        itemKind: isGuidedComponentProduct(initial.notes) ? "COMPONENT" : "PRODUCT",
         provisionalCode: initial.provisionalCode ?? "",
         description: initial.description,
         unit: initial.unit,
@@ -80,9 +85,9 @@ export function ProjectEngineeringItemModal({
         originMode: "NEW",
       });
     } else {
-      setForm(EMPTY);
+      setForm({ ...EMPTY, itemKind: defaultItemKind });
     }
-  }, [open, initial]);
+  }, [open, initial, defaultItemKind]);
 
   useEffect(() => {
     if (!open || form.originMode !== "CLONE") return;

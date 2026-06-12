@@ -9,15 +9,35 @@ export type ProjectEngineeringTreeNode = {
   children: ProjectEngineeringTreeNode[];
 };
 
+export type ProjectEngineeringTreeScope =
+  | { kind: "official_snapshot"; rootProductId: string }
+  | { kind: "simulated_product"; simulatedProductId: string };
+
+function scopeLines(
+  lines: ProjectStructureLineRow[],
+  scope?: ProjectEngineeringTreeScope,
+  rootProductId?: string
+): ProjectStructureLineRow[] {
+  if (scope?.kind === "simulated_product") {
+    return lines.filter(
+      (l) =>
+        l.simulatedProductId === scope.simulatedProductId && l.snapshotRootProductId == null
+    );
+  }
+  const officialId = scope?.kind === "official_snapshot" ? scope.rootProductId : rootProductId;
+  if (!officialId) return lines;
+  return lines.filter(
+    (l) =>
+      l.snapshotRootProductId === officialId || l.notes?.includes(`snapshot:${officialId}`)
+  );
+}
+
 export function buildProjectEngineeringTree(
   root: { productId: string; sku: string; name: string },
-  lines: ProjectStructureLineRow[]
+  lines: ProjectStructureLineRow[],
+  scope?: ProjectEngineeringTreeScope
 ): ProjectEngineeringTreeNode {
-  const scoped = lines.filter(
-    (l) =>
-      l.snapshotRootProductId === root.productId ||
-      l.notes?.includes(`snapshot:${root.productId}`)
-  );
+  const scoped = scopeLines(lines, scope, root.productId);
   const byParent = new Map<string | null, ProjectStructureLineRow[]>();
   for (const line of scoped) {
     const key = line.parentLineId;
