@@ -1,9 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
-  AlertTriangle,
   ArrowLeft,
-  BadgeCheck,
   ChevronRight,
   FolderKanban,
   Loader2,
@@ -16,9 +14,13 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import {
-  computeProjectEngineeringStats,
-  type ProjectEngineeringItemRow,
-} from "@/src/lib/projectsEngineeringWorkspace";
+  buildProjectGuidedItems,
+  type ProjectGuidedItemRow,
+} from "@/src/lib/projectsGuidedFlow";
+import {
+  buildOtherCostNotes,
+  parseOtherCostMeta,
+} from "@/src/lib/projectsOtherCostGroups";
 import {
   getProjectTabPath,
   parseLegacyTabSegment,
@@ -27,14 +29,14 @@ import {
   PROJECTS_BASE_PATH,
   type ProjectTabId,
 } from "@/src/lib/projectsNavigation";
-import { ProjectCostSimulation } from "@/src/components/projects/ProjectCostSimulation";
 import { ProjectDocuments } from "@/src/components/projects/ProjectDocuments";
 import { ProjectEngineeringItemModal } from "@/src/components/projects/ProjectEngineeringItemModal";
-import { ProjectEngineeringTab } from "@/src/components/projects/ProjectEngineeringTab";
-import { ProjectEngineeringTree } from "@/src/components/projects/ProjectEngineeringTree";
+import { ProjectGuidedCostsTab } from "@/src/components/projects/ProjectGuidedCostsTab";
+import { ProjectGuidedMoldModal } from "@/src/components/projects/ProjectGuidedMoldModal";
 import { ProjectHistory } from "@/src/components/projects/ProjectHistory";
-import { ProjectMaterialsAndComponents } from "@/src/components/projects/ProjectMaterialsAndComponents";
-import { ProjectTimeline } from "@/src/components/projects/ProjectTimeline";
+import { ProjectHomeAssistant } from "@/src/components/projects/ProjectHomeAssistant";
+import { ProjectItemsTab } from "@/src/components/projects/ProjectItemsTab";
+import { ProjectOtherCostsModal } from "@/src/components/projects/ProjectOtherCostsModal";
 import { canDeleteProject, canManageProjects } from "@/src/lib/projectsPermissions";
 import {
   ProjectCustomerLookupField,
@@ -48,7 +50,6 @@ import {
 } from "@/src/components/projects/ProjectCommercialOwnerLookupField";
 import { ProjectDeleteConfirmModal } from "@/src/components/projects/ProjectDeleteConfirmModal";
 import { ProjectLaborLineModal } from "@/src/components/projects/ProjectLaborLineModal";
-import { ProjectMoldFormModal } from "@/src/components/projects/ProjectMoldFormModal";
 import { ProjectSimulatedItemFormModal } from "@/src/components/projects/ProjectSimulatedItemFormModal";
 import { ProjectStructureLineEditModal } from "@/src/components/projects/ProjectStructureLineEditModal";
 import { ProjectProductSimulationPanel } from "@/src/components/projects/ProjectProductSimulationPanel";
@@ -95,7 +96,8 @@ type DeleteTarget =
   | { kind: "item"; id: string; label: string }
   | { kind: "structure"; id: string; label: string }
   | { kind: "structureSnapshot"; snapshotRootProductId: string; label: string }
-  | { kind: "mold"; id: string; label: string };
+  | { kind: "mold"; id: string; label: string }
+  | { kind: "other_cost_batch"; batchId: string; label: string };
 
 function formatMoney(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -461,8 +463,6 @@ function ProjectDetailView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [moldModalOpen, setMoldModalOpen] = useState(false);
-  const [moldModalMode, setMoldModalMode] = useState<"create" | "edit">("create");
   const [editingMold, setEditingMold] = useState<ProjectMoldRow | null>(null);
   const [moldModalError, setMoldModalError] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<ProjectSimulatedProductRow | null>(null);
@@ -496,15 +496,18 @@ function ProjectDetailView({
   const [engineeringItemModalMode, setEngineeringItemModalMode] = useState<"create" | "edit">(
     "create"
   );
-  const [officialPickerOpen, setOfficialPickerOpen] = useState(false);
+  const [guidedMoldModalOpen, setGuidedMoldModalOpen] = useState(false);
+  const [guidedMoldMode, setGuidedMoldMode] = useState<"create" | "edit">("create");
+  const [otherCostsModalOpen, setOtherCostsModalOpen] = useState(false);
+  const [postSavePrompt, setPostSavePrompt] = useState(false);
 
   const legacyTab = useMemo(
     () => parseLegacyTabSegment(window.location.pathname),
     [tab, projectId]
   );
 
-  const engineeringStats = useMemo(
-    () => (detail ? computeProjectEngineeringStats(detail) : null),
+  const guidedItems = useMemo(
+    () => (detail ? buildProjectGuidedItems(detail) : []),
     [detail]
   );
 
@@ -571,6 +574,14 @@ function ProjectDetailView({
         );
       } else if (deleteTarget.kind === "mold") {
         await fetchJsonOk(`${base}/molds/${deleteTarget.id}`, { method: "DELETE" });
+      } else if (deleteTarget.kind === "other_cost_batch" && detail) {
+        const toDelete = detail.simulatedItems.filter((i) => {
+          const meta = parseOtherCostMeta(i.notes);
+          return meta.batchId === deleteTarget.batchId;
+        });
+        for (const item of toDelete) {
+          await fetchJsonOk(`${base}/simulated-items/${item.id}`, { method: "DELETE" });
+        }
       }
       setDeleteTarget(null);
       await load();
@@ -621,16 +632,33 @@ function ProjectDetailView({
     );
   }
 
-  const cost = detail.costBreakdown;
+  const openCreateProduct = () => {
+    setModalError(null);
+    setEngineeringItemModalMode("create");
+    setEditingProduct(null);
+    setEngineeringItemModalOpen(true);
+  };
 
-  const handleEditEngineeringItem = (item: ProjectEngineeringItemRow) => {
+  const openCreateMold = () => {
+    setMoldModalError(null);
+    setGuidedMoldMode("create");
+    setEditingMold(null);
+    setGuidedMoldModalOpen(true);
+  };
+
+  const openCreateOtherCost = () => {
+    setModalError(null);
+    setOtherCostsModalOpen(true);
+  };
+
+  const handleGuidedItemOpen = (item: ProjectGuidedItemRow) => {
     if (item.snapshotRootProductId) {
       setSimulationError(null);
       setSimulationProductId(item.snapshotRootProductId);
       return;
     }
-    if (item.kind === "simulated_product" && item.simulatedProductId) {
-      const product = detail.simulatedProducts.find((p) => p.id === item.simulatedProductId);
+    if (item.productId) {
+      const product = detail.simulatedProducts.find((p) => p.id === item.productId);
       if (product) {
         setModalError(null);
         setEngineeringItemModalMode("edit");
@@ -639,7 +667,17 @@ function ProjectDetailView({
       }
       return;
     }
-    if (item.kind === "simulated_item" && item.simulatedItemId) {
+    if (item.moldId) {
+      const mold = detail.molds.find((m) => m.id === item.moldId);
+      if (mold) {
+        setMoldModalError(null);
+        setGuidedMoldMode("edit");
+        setEditingMold(mold);
+        setGuidedMoldModalOpen(true);
+      }
+      return;
+    }
+    if (item.simulatedItemId) {
       const simItem = detail.simulatedItems.find((i) => i.id === item.simulatedItemId);
       if (simItem) {
         setModalError(null);
@@ -650,26 +688,33 @@ function ProjectDetailView({
     }
   };
 
-  const handleCreateLocalVariation = async (item: ProjectEngineeringItemRow) => {
-    if (!item.snapshotRootProductId) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await fetchJsonOk(`/api/projects/${projectId}/import-product-snapshot`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: item.snapshotRootProductId,
-          includeBom: true,
-          includeRouting: true,
-          replaceExisting: false,
-        }),
+  const handleGuidedItemDelete = (item: ProjectGuidedItemRow) => {
+    if (item.entityKind === "mold" && item.moldId) {
+      setDeleteTarget({ kind: "mold", id: item.moldId, label: item.name });
+      return;
+    }
+    if (item.entityKind === "other_cost" && item.batchId) {
+      setDeleteTarget({
+        kind: "other_cost_batch",
+        batchId: item.batchId,
+        label: item.name,
       });
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao criar variação local.");
-    } finally {
-      setSaving(false);
+      return;
+    }
+    if (item.entityKind === "engineering_clone" && item.snapshotRootProductId) {
+      setDeleteTarget({
+        kind: "structureSnapshot",
+        snapshotRootProductId: item.snapshotRootProductId,
+        label: item.name,
+      });
+      return;
+    }
+    if (item.productId) {
+      setDeleteTarget({ kind: "product", id: item.productId, label: item.name });
+      return;
+    }
+    if (item.simulatedItemId) {
+      setDeleteTarget({ kind: "item", id: item.simulatedItemId, label: item.name });
     }
   };
 
@@ -754,260 +799,54 @@ function ProjectDetailView({
         </div>
       ) : null}
 
-      {tab === "summary" ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-4 rounded-xl border border-border bg-card p-5">
-            <h4 className="font-semibold">Visão Geral</h4>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <dt className="text-muted-foreground">Projeto</dt>
-                <dd>{detail.title}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Cliente</dt>
-                <dd>{detail.customerName}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Status</dt>
-                <dd>{PROJECT_STATUS_LABEL[detail.status]}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Responsável técnico</dt>
-                <dd>{detail.technicalOwner ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Responsável comercial</dt>
-                <dd>{detail.commercialOwner ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Criado em</dt>
-                <dd>{formatDate(detail.createdAt)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Última atualização</dt>
-                <dd>{formatDate(detail.updatedAt)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Previsão (volume mensal)</dt>
-                <dd>{detail.expectedMonthlyVolume ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Custo estimado</dt>
-                <dd className="font-medium">{formatMoney(cost.unitCost)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Margem alvo</dt>
-                <dd>{formatPercent(detail.targetMarginPercent)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Preço alvo</dt>
-                <dd>{formatMoney(detail.targetPrice)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Itens locais</dt>
-                <dd>{engineeringStats?.localItemsCount ?? 0}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Itens oficiais reutilizados</dt>
-                <dd>{engineeringStats?.officialItemsUsedCount ?? 0}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Versão atual</dt>
-                <dd>
-                  {detail.currentVersion
-                    ? `v${detail.currentVersion.versionNumber}`
-                    : "—"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          <div className="space-y-4 rounded-xl border border-border bg-card p-5">
-            <h4 className="font-semibold">Resumo de custo</h4>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <dt className="text-muted-foreground">Custo unitário simulado</dt>
-                <dd className="font-medium">{formatMoney(cost.unitCost)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Preço sugerido</dt>
-                <dd className="font-medium">{formatMoney(cost.suggestedPrice)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Molde amortizado/un.</dt>
-                <dd>{formatMoney(cost.amortizedMoldCostPerUnit)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Molde separado</dt>
-                <dd>{formatMoney(cost.separateMoldCost)}</dd>
-              </div>
-            </dl>
-            <p className="text-xs text-muted-foreground">
-              Engenharia e simulações ficam nas abas Engenharia do Projeto e Simulação de Custos —
-              alterações locais não modificam o cadastro mestre.
-            </p>
-            {detail.alerts.length ? (
-              <div className="space-y-2 pt-2">
-                <h5 className="text-sm font-medium">Alertas</h5>
-                {detail.alerts.map((a) => (
-                  <div
-                    key={`${a.code}-${a.message}`}
-                    className={cn(
-                      "flex items-start gap-2 rounded-lg px-3 py-2 text-sm",
-                      a.severity === "warning"
-                        ? "bg-amber-50 text-amber-900"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    {a.message}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-sm text-emerald-700">
-                <BadgeCheck className="h-4 w-4" />
-                Nenhum alerta pendente.
-              </div>
-            )}
+      {postSavePrompt ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          Item salvo no projeto. O que deseja adicionar agora?
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className="rounded-lg border bg-white px-3 py-1.5 text-sm" onClick={openCreateProduct}>
+              Criar novo produto
+            </button>
+            <button type="button" className="rounded-lg border bg-white px-3 py-1.5 text-sm" onClick={openCreateMold}>
+              Criar molde
+            </button>
+            <button type="button" className="rounded-lg border bg-white px-3 py-1.5 text-sm" onClick={openCreateOtherCost}>
+              Criar outros custos
+            </button>
+            <button
+              type="button"
+              className="rounded-lg px-3 py-1.5 text-sm text-emerald-800"
+              onClick={() => setPostSavePrompt(false)}
+            >
+              Fechar
+            </button>
           </div>
         </div>
       ) : null}
 
-      {tab === "engineering" ? (
-        <ProjectEngineeringTab
+      {tab === "home" ? (
+        <ProjectHomeAssistant
           detail={detail}
           canManage={canManage}
-          saving={saving}
-          onNewItem={() => {
-            setModalError(null);
-            setEngineeringItemModalMode("create");
-            setEditingProduct(null);
-            setEngineeringItemModalOpen(true);
-          }}
-          onCloneItem={() => {
-            setModalError(null);
-            setStructureLineContext(null);
-            setStructureEngineeringFlow("clone");
-            setStructureModalSource("EXISTING_PRODUCT");
-          }}
-          onAddOfficialItem={() => setOfficialPickerOpen(true)}
-          onEditItem={handleEditEngineeringItem}
-          onCreateLocalVariation={(item) => void handleCreateLocalVariation(item)}
-          onDeleteProduct={(id, label) =>
-            setDeleteTarget({ kind: "product", id, label })
-          }
-          onDeleteSimulatedItem={(id, label) =>
-            setDeleteTarget({ kind: "item", id, label })
-          }
-          onDeleteSnapshot={(snapshotRootProductId, label) =>
-            setDeleteTarget({ kind: "structureSnapshot", snapshotRootProductId, label })
-          }
+          onCreateProduct={openCreateProduct}
+          onCreateMold={openCreateMold}
+          onCreateOtherCost={openCreateOtherCost}
+          onOpenItem={handleGuidedItemOpen}
         />
       ) : null}
 
-      {tab === "structure" ? (
-        <ProjectEngineeringTree
-          detail={detail}
+      {tab === "items" ? (
+        <ProjectItemsTab
+          items={guidedItems}
           canManage={canManage}
-          onAddLine={(sourceType) => {
-            setModalError(null);
-            setStructureLineContext(null);
-            setStructureModalSource(sourceType);
-          }}
-          onAddToSimulatedProduct={(productId, sourceType, parentLineId) => {
-            setModalError(null);
-            const product = detail.simulatedProducts.find((p) => p.id === productId);
-            setStructureLineContext({
-              simulatedProductId: productId,
-              parentLineId: parentLineId ?? undefined,
-              contextLabel: product
-                ? `Adicionando em: ${product.provisionalCode ? `${product.provisionalCode} — ` : ""}${product.description}`
-                : undefined,
-            });
-            setStructureModalSource(sourceType);
-          }}
-          onAddLabor={() => {
-            setModalError(null);
-            setLaborModalMode("create");
-            setEditingLaborLine(null);
-            setLaborModalOpen(true);
-          }}
-          onEditLine={(line) => {
-            setModalError(null);
-            if (line.snapshotRootProductId) {
-              setSimulationProductId(line.snapshotRootProductId);
-              return;
-            }
-            if (line.existingProductId && line.sourceType === "EXISTING_PRODUCT") {
-              setSimulationProductId(line.existingProductId);
-              return;
-            }
-            if (
-              line.unitSnapshot === "HH" ||
-              (line.sourceType === "MANUAL" &&
-                (line.lineType === "PROCESS" || line.lineType === "SERVICE"))
-            ) {
-              setLaborModalMode("edit");
-              setEditingLaborLine(line);
-              setLaborModalOpen(true);
-            } else {
-              setEditingStructureLine(line);
-            }
-          }}
-          onDeleteLine={(line) =>
-            setDeleteTarget({
-              kind: "structure",
-              id: line.id,
-              label: line.descriptionSnapshot,
-            })
-          }
-          onOpenProductSimulation={(productId) => {
-            setSimulationError(null);
-            setSimulationProductId(productId);
-            setStructureModalSource(null);
-          }}
-          onReimportSnapshot={async (productId) => {
-            setSaving(true);
-            setError(null);
-            try {
-              await fetchJsonOk(`/api/projects/${projectId}/import-product-snapshot`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ productId, replaceExisting: true }),
-              });
-              await load();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "Erro ao reimportar produto.");
-            } finally {
-              setSaving(false);
-            }
-          }}
-          onDeleteSnapshot={(group) =>
-            setDeleteTarget({
-              kind: "structureSnapshot",
-              snapshotRootProductId: group.snapshotRootProductId!,
-              label: `${group.rootCode} — ${group.rootDescription}`,
-            })
-          }
+          onCreateProduct={openCreateProduct}
+          onCreateMold={openCreateMold}
+          onCreateOtherCost={openCreateOtherCost}
+          onOpenItem={handleGuidedItemOpen}
+          onDeleteItem={canManage ? handleGuidedItemDelete : undefined}
         />
       ) : null}
 
-      {tab === "costs" ? <ProjectCostSimulation detail={detail} /> : null}
-
-      {tab === "materials" ? (
-        <ProjectMaterialsAndComponents
-          detail={detail}
-          canManage={canManage}
-          onAddMold={() => {
-            setMoldModalError(null);
-            setMoldModalMode("create");
-            setEditingMold(null);
-            setMoldModalOpen(true);
-          }}
-        />
-      ) : null}
-
-      {tab === "timeline" ? <ProjectTimeline detail={detail} /> : null}
+      {tab === "costs" ? <ProjectGuidedCostsTab detail={detail} /> : null}
 
       {tab === "documents" ? <ProjectDocuments canManage={canManage} /> : null}
 
@@ -1024,36 +863,46 @@ function ProjectDetailView({
         />
       ) : null}
 
-      <ProjectMoldFormModal
-        open={moldModalOpen}
-        mode={moldModalMode}
+      <ProjectGuidedMoldModal
+        open={guidedMoldModalOpen}
+        mode={guidedMoldMode}
+        projectLabel={`${detail.code} — ${detail.title}`}
         initial={editingMold}
         saving={saving}
         error={moldModalError}
         onClose={() => {
-          setMoldModalOpen(false);
+          setGuidedMoldModalOpen(false);
           setEditingMold(null);
         }}
         onSubmit={async (payload) => {
           setSaving(true);
           setMoldModalError(null);
           try {
-            if (moldModalMode === "edit" && editingMold) {
+            const body = {
+              name: payload.name,
+              moldType: payload.moldType,
+              cavities: payload.cavities,
+              notes: payload.notes,
+              constructionCost: payload.constructionCost,
+              chargeMode: "CHARGED_SEPARATELY",
+            };
+            if (guidedMoldMode === "edit" && editingMold) {
               await fetchJsonOk(`/api/projects/${projectId}/molds/${editingMold.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
+                body: JSON.stringify(body),
               });
             } else {
               await fetchJsonOk(`/api/projects/${projectId}/molds`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
+                body: JSON.stringify(body),
               });
             }
-            setMoldModalOpen(false);
+            setGuidedMoldModalOpen(false);
             setEditingMold(null);
             await load();
+            setPostSavePrompt(true);
           } catch (e) {
             setMoldModalError(e instanceof Error ? e.message : "Erro ao salvar molde.");
           } finally {
@@ -1073,30 +922,71 @@ function ProjectDetailView({
           setEngineeringItemModalOpen(false);
           setEditingProduct(null);
         }}
+        onCloneOfficial={async (productId) => {
+          setSaving(true);
+          setModalError(null);
+          try {
+            await fetchJsonOk(`/api/projects/${projectId}/import-product-snapshot`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                productId,
+                includeBom: true,
+                includeRouting: true,
+                replaceExisting: false,
+              }),
+            });
+            setEngineeringItemModalOpen(false);
+            setEditingProduct(null);
+            await load();
+            setPostSavePrompt(true);
+          } catch (e) {
+            setModalError(e instanceof Error ? e.message : "Erro ao clonar item.");
+          } finally {
+            setSaving(false);
+          }
+        }}
         onSubmit={async (payload) => {
           setSaving(true);
           setModalError(null);
           try {
-            const body = {
-              provisionalCode: payload.provisionalCode,
-              description: payload.description,
-              unit: payload.unit,
-              estimatedWeight: payload.estimatedWeight,
-              expectedVolume: payload.expectedVolume,
-              batchSize: payload.batchSize,
-              notes: payload.notes,
-            };
-            if (engineeringItemModalMode === "edit" && editingProduct) {
-              await fetchJsonOk(
-                `/api/projects/${projectId}/simulated-products/${editingProduct.id}`,
-                {
-                  method: "PATCH",
+            if (payload.itemKind === "PRODUCT") {
+              const body = {
+                provisionalCode: payload.provisionalCode,
+                description: payload.description,
+                unit: payload.unit,
+                estimatedWeight: payload.estimatedWeight,
+                expectedVolume: payload.expectedVolume,
+                batchSize: payload.batchSize,
+                notes: payload.notes,
+              };
+              if (engineeringItemModalMode === "edit" && editingProduct) {
+                await fetchJsonOk(
+                  `/api/projects/${projectId}/simulated-products/${editingProduct.id}`,
+                  {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                  }
+                );
+              } else {
+                await fetchJsonOk(`/api/projects/${projectId}/simulated-products`, {
+                  method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify(body),
-                }
-              );
+                });
+              }
             } else {
-              await fetchJsonOk(`/api/projects/${projectId}/simulated-products`, {
+              const itemType = payload.itemKind === "RAW_MATERIAL" ? "RAW_MATERIAL" : "COMPONENT";
+              const body = {
+                provisionalCode: payload.provisionalCode,
+                description: payload.description,
+                itemType,
+                unit: payload.unit,
+                estimatedWeight: payload.estimatedWeight,
+                notes: payload.notes,
+              };
+              await fetchJsonOk(`/api/projects/${projectId}/simulated-items`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
@@ -1105,6 +995,7 @@ function ProjectDetailView({
             setEngineeringItemModalOpen(false);
             setEditingProduct(null);
             await load();
+            setPostSavePrompt(true);
           } catch (e) {
             setModalError(e instanceof Error ? e.message : "Erro ao salvar item.");
           } finally {
@@ -1113,54 +1004,42 @@ function ProjectDetailView({
         }}
       />
 
-      {officialPickerOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
-            <h3 className="text-lg font-semibold">Adicionar item oficial</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Reutilize um item do cadastro mestre como referência no projeto, sem clonar a engenharia
-              completa.
-            </p>
-            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-              Referências oficiais não são editadas localmente. Use &quot;Criar variação local&quot; ou
-              &quot;Clonar item existente&quot; para simular alterações.
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              <button
-                type="button"
-                className="rounded-lg border px-4 py-2 text-sm text-left hover:bg-muted/50"
-                onClick={() => {
-                  setOfficialPickerOpen(false);
-                  setStructureLineContext(null);
-                  setStructureEngineeringFlow("official");
-                  setStructureModalSource("EXISTING_MATERIAL");
-                }}
-              >
-                Matéria-prima / material oficial
-              </button>
-              <button
-                type="button"
-                className="rounded-lg border px-4 py-2 text-sm text-left hover:bg-muted/50"
-                onClick={() => {
-                  setOfficialPickerOpen(false);
-                  setStructureLineContext(null);
-                  setStructureEngineeringFlow("official");
-                  setStructureModalSource("MANUAL");
-                }}
-              >
-                Componente / serviço orçado (referência manual)
-              </button>
-            </div>
-            <button
-              type="button"
-              className="mt-4 w-full rounded-lg border border-border px-4 py-2 text-sm"
-              onClick={() => setOfficialPickerOpen(false)}
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <ProjectOtherCostsModal
+        open={otherCostsModalOpen}
+        projectLabel={`${detail.code} — ${detail.title}`}
+        saving={saving}
+        error={modalError}
+        onClose={() => setOtherCostsModalOpen(false)}
+        onSubmit={async (payload) => {
+          setSaving(true);
+          setModalError(null);
+          try {
+            const batchId = crypto.randomUUID();
+            for (const line of payload.lines) {
+              await fetchJsonOk(`/api/projects/${projectId}/simulated-items`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  description: line.description.trim(),
+                  itemType: "OTHER",
+                  unit: line.unit,
+                  estimatedUnitCost: line.totalCost,
+                  quotedUnitCost: line.totalCost,
+                  supplierName: line.supplierName,
+                  notes: buildOtherCostNotes(line.group, batchId, line.notes),
+                }),
+              });
+            }
+            setOtherCostsModalOpen(false);
+            await load();
+            setPostSavePrompt(true);
+          } catch (e) {
+            setModalError(e instanceof Error ? e.message : "Erro ao salvar custos.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
 
       <ProjectSimulatedItemFormModal
         open={itemModalOpen}

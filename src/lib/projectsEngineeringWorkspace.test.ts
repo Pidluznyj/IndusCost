@@ -74,32 +74,14 @@ function minimalDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
   };
 }
 
-describe("projectsNavigation — menu reorganizado", () => {
-  it("exibe as 8 abas do workspace de engenharia", () => {
-    const labels = PROJECT_TABS.map((t) => t.label);
-    assert.deepEqual(labels, [
-      "Visão Geral",
-      "Engenharia do Projeto",
-      "Estrutura / Árvore",
-      "Simulação de Custos",
-      "Materiais e Componentes",
-      "Cronograma / Etapas",
-      "Documentos",
-      "Histórico",
-    ]);
-  });
-
-  it("rotas legadas redirecionam para abas equivalentes", () => {
-    assert.equal(parseProjectTabFromPath("/projects/x/products"), "engineering");
-    assert.equal(parseProjectTabFromPath("/projects/x/items"), "materials");
+describe("projectsNavigation — aliases legados", () => {
+  it("rotas antigas de engenharia redirecionam para início ou itens", () => {
+    assert.equal(parseProjectTabFromPath("/projects/x/products"), "home");
+    assert.equal(parseProjectTabFromPath("/projects/x/items"), "items");
     assert.equal(parseProjectTabFromPath("/projects/x/versions"), "history");
     assert.equal(parseLegacyTabSegment("/projects/x/products"), "products");
-    assert.equal(LEGACY_PROJECT_TAB_ALIASES.products, "engineering");
-    assert.equal(getProjectTabPath("x", "engineering"), "/projects/x/engineering");
-  });
-
-  it("rota base /projects existe", () => {
-    assert.equal(PROJECTS_BASE_PATH, "/projects");
+    assert.equal(LEGACY_PROJECT_TAB_ALIASES.products, "home");
+    assert.equal(getProjectTabPath("x", "home"), "/projects/x");
   });
 });
 
@@ -126,34 +108,8 @@ describe("projectsEngineeringWorkspace", () => {
   });
 });
 
-describe("ProjectsModule UI — engenharia do projeto", () => {
-  it("ProjectsModule exibe aba Engenharia do Projeto e ações principais", () => {
-    const mod = readFileSync(
-      join(process.cwd(), "src", "components", "ProjectsModule.tsx"),
-      "utf8"
-    );
-    const tab = readFileSync(
-      join(process.cwd(), "src", "components", "projects", "ProjectEngineeringTab.tsx"),
-      "utf8"
-    );
-    assert.match(mod, /ProjectEngineeringTab/);
-    assert.match(tab, /Novo item do projeto/);
-    assert.match(tab, /Clonar item existente/);
-    assert.match(tab, /Adicionar item oficial/);
-    assert.match(mod, /Converter em cadastro oficial/);
-    assert.match(mod, /Em breve/);
-  });
-
-  it("modal de novo item usa título de contexto do projeto", () => {
-    const modal = readFileSync(
-      join(process.cwd(), "src", "components", "projects", "ProjectEngineeringItemModal.tsx"),
-      "utf8"
-    );
-    assert.match(modal, /Novo Item de Engenharia do Projeto/);
-    assert.match(modal, /não altera o cadastro mestre/i);
-  });
-
-  it("fluxo de projeto não importa Prisma/backend no frontend", () => {
+describe("ProjectsModule UI — helpers de engenharia reaproveitados", () => {
+  it("helpers de engenharia continuam browser-safe", () => {
     const mod = readFileSync(
       join(process.cwd(), "src", "components", "ProjectsModule.tsx"),
       "utf8"
@@ -161,11 +117,6 @@ describe("ProjectsModule UI — engenharia do projeto", () => {
     assert.equal(mod.includes("@prisma/client"), false);
     assert.equal(mod.includes("projectsService"), false);
     assert.equal(mod.includes("src/lib/prisma"), false);
-
-    const engineeringTab = readFileSync(
-      join(process.cwd(), "src", "components", "projects", "ProjectEngineeringTab.tsx"),
-      "utf8"
-    );
-    assert.equal(engineeringTab.includes("projectsService"), false);
+    assert.match(mod, /ProjectProductSimulationPanel/);
   });
 });
