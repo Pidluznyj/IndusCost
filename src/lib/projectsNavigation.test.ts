@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   getProjectTabPath,
   parseProjectTabFromPath,
+  PROJECT_TABS,
   PROJECTS_BASE_PATH,
 } from "./projectsNavigation.js";
 
@@ -16,8 +17,13 @@ describe("projectsNavigation", () => {
   it("resolve abas do detalhe do projeto", () => {
     assert.equal(parseProjectTabFromPath("/projects/abc"), "summary");
     assert.equal(parseProjectTabFromPath("/projects/abc/costs"), "costs");
-    assert.equal(getProjectTabPath("abc", "molds"), "/projects/abc/molds");
+    assert.equal(parseProjectTabFromPath("/projects/abc/engineering"), "engineering");
+    assert.equal(getProjectTabPath("abc", "engineering"), "/projects/abc/engineering");
     assert.equal(getProjectTabPath("abc", "summary"), "/projects/abc");
+  });
+
+  it("menu inclui Engenharia do Projeto", () => {
+    assert.ok(PROJECT_TABS.some((t) => t.id === "engineering" && t.label === "Engenharia do Projeto"));
   });
 
   it("App.tsx registra rotas /projects", () => {

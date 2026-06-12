@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -7,7 +7,6 @@ import {
   ChevronRight,
   FolderKanban,
   Loader2,
-  Pencil,
   Plus,
   Search,
   Sparkles,
@@ -17,12 +16,25 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import {
+  computeProjectEngineeringStats,
+  type ProjectEngineeringItemRow,
+} from "@/src/lib/projectsEngineeringWorkspace";
+import {
   getProjectTabPath,
+  parseLegacyTabSegment,
   parseProjectTabFromPath,
   PROJECT_TABS,
   PROJECTS_BASE_PATH,
   type ProjectTabId,
 } from "@/src/lib/projectsNavigation";
+import { ProjectCostSimulation } from "@/src/components/projects/ProjectCostSimulation";
+import { ProjectDocuments } from "@/src/components/projects/ProjectDocuments";
+import { ProjectEngineeringItemModal } from "@/src/components/projects/ProjectEngineeringItemModal";
+import { ProjectEngineeringTab } from "@/src/components/projects/ProjectEngineeringTab";
+import { ProjectEngineeringTree } from "@/src/components/projects/ProjectEngineeringTree";
+import { ProjectHistory } from "@/src/components/projects/ProjectHistory";
+import { ProjectMaterialsAndComponents } from "@/src/components/projects/ProjectMaterialsAndComponents";
+import { ProjectTimeline } from "@/src/components/projects/ProjectTimeline";
 import { canDeleteProject, canManageProjects } from "@/src/lib/projectsPermissions";
 import {
   ProjectCustomerLookupField,
@@ -38,13 +50,9 @@ import { ProjectDeleteConfirmModal } from "@/src/components/projects/ProjectDele
 import { ProjectLaborLineModal } from "@/src/components/projects/ProjectLaborLineModal";
 import { ProjectMoldFormModal } from "@/src/components/projects/ProjectMoldFormModal";
 import { ProjectSimulatedItemFormModal } from "@/src/components/projects/ProjectSimulatedItemFormModal";
-import { ProjectSimulatedProductFormModal } from "@/src/components/projects/ProjectSimulatedProductFormModal";
 import { ProjectStructureLineEditModal } from "@/src/components/projects/ProjectStructureLineEditModal";
 import { ProjectProductSimulationPanel } from "@/src/components/projects/ProjectProductSimulationPanel";
 import { ProjectStructureLineModal } from "@/src/components/projects/ProjectStructureLineModal";
-import { ProjectStructureSnapshotAccordion } from "@/src/components/projects/ProjectStructureSnapshotAccordion";
-import type { ProjectStructureSnapshotGroup } from "@/src/lib/projectsStructureSnapshotGroups";
-import { MOLD_CHARGE_MODE_OPTIONS } from "@/src/lib/projectsUiUtils";
 import type {
   ProjectDashboardPayload,
   ProjectDetail,
@@ -81,10 +89,6 @@ const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
   CONVERTED: "Convertido",
 };
 
-const MOLD_CHARGE_LABEL = Object.fromEntries(
-  MOLD_CHARGE_MODE_OPTIONS.map((o) => [o.value, o.label])
-) as Record<string, string>;
-
 type DeleteTarget =
   | { kind: "project"; label: string }
   | { kind: "product"; id: string; label: string }
@@ -92,40 +96,6 @@ type DeleteTarget =
   | { kind: "structure"; id: string; label: string }
   | { kind: "structureSnapshot"; snapshotRootProductId: string; label: string }
   | { kind: "mold"; id: string; label: string };
-
-function RowActions({
-  canManage,
-  onEdit,
-  onDelete,
-}: {
-  canManage: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  if (!canManage) return null;
-  return (
-    <td className="px-3 py-2">
-      <div className="flex justify-end gap-1">
-        <button
-          type="button"
-          title="Editar"
-          onClick={onEdit}
-          className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Excluir"
-          onClick={onDelete}
-          className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </td>
-  );
-}
 
 function formatMoney(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -495,14 +465,15 @@ function ProjectDetailView({
   const [moldModalMode, setMoldModalMode] = useState<"create" | "edit">("create");
   const [editingMold, setEditingMold] = useState<ProjectMoldRow | null>(null);
   const [moldModalError, setMoldModalError] = useState<string | null>(null);
-  const [productModalOpen, setProductModalOpen] = useState(false);
-  const [productModalMode, setProductModalMode] = useState<"create" | "edit">("create");
   const [editingProduct, setEditingProduct] = useState<ProjectSimulatedProductRow | null>(null);
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [itemModalMode, setItemModalMode] = useState<"create" | "edit">("create");
   const [editingItem, setEditingItem] = useState<ProjectSimulatedItemRow | null>(null);
   const [structureModalSource, setStructureModalSource] =
     useState<ProjectStructureSourceType | null>(null);
+  const [structureEngineeringFlow, setStructureEngineeringFlow] = useState<
+    "clone" | "official" | null
+  >(null);
   const [structureLineContext, setStructureLineContext] = useState<{
     simulatedProductId?: string;
     parentLineId?: string;
@@ -521,6 +492,21 @@ function ProjectDetailView({
   const [modalError, setModalError] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [notesStatus, setNotesStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [engineeringItemModalOpen, setEngineeringItemModalOpen] = useState(false);
+  const [engineeringItemModalMode, setEngineeringItemModalMode] = useState<"create" | "edit">(
+    "create"
+  );
+  const [officialPickerOpen, setOfficialPickerOpen] = useState(false);
+
+  const legacyTab = useMemo(
+    () => parseLegacyTabSegment(window.location.pathname),
+    [tab, projectId]
+  );
+
+  const engineeringStats = useMemo(
+    () => (detail ? computeProjectEngineeringStats(detail) : null),
+    [detail]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -637,6 +623,60 @@ function ProjectDetailView({
 
   const cost = detail.costBreakdown;
 
+  const handleEditEngineeringItem = (item: ProjectEngineeringItemRow) => {
+    if (item.snapshotRootProductId) {
+      setSimulationError(null);
+      setSimulationProductId(item.snapshotRootProductId);
+      return;
+    }
+    if (item.kind === "simulated_product" && item.simulatedProductId) {
+      const product = detail.simulatedProducts.find((p) => p.id === item.simulatedProductId);
+      if (product) {
+        setModalError(null);
+        setEngineeringItemModalMode("edit");
+        setEditingProduct(product);
+        setEngineeringItemModalOpen(true);
+      }
+      return;
+    }
+    if (item.kind === "simulated_item" && item.simulatedItemId) {
+      const simItem = detail.simulatedItems.find((i) => i.id === item.simulatedItemId);
+      if (simItem) {
+        setModalError(null);
+        setItemModalMode("edit");
+        setEditingItem(simItem);
+        setItemModalOpen(true);
+      }
+    }
+  };
+
+  const handleCreateLocalVariation = async (item: ProjectEngineeringItemRow) => {
+    if (!item.snapshotRootProductId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await fetchJsonOk(`/api/projects/${projectId}/import-product-snapshot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: item.snapshotRootProductId,
+          includeBom: true,
+          includeRouting: true,
+          replaceExisting: false,
+        }),
+      });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao criar variação local.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (legacyTab) {
+    return <Navigate to={getProjectTabPath(projectId, tab)} replace />;
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -717,8 +757,12 @@ function ProjectDetailView({
       {tab === "summary" ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4 rounded-xl border border-border bg-card p-5">
-            <h4 className="font-semibold">Dados principais</h4>
+            <h4 className="font-semibold">Visão Geral</h4>
             <dl className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-muted-foreground">Projeto</dt>
+                <dd>{detail.title}</dd>
+              </div>
               <div>
                 <dt className="text-muted-foreground">Cliente</dt>
                 <dd>{detail.customerName}</dd>
@@ -728,16 +772,28 @@ function ProjectDetailView({
                 <dd>{PROJECT_STATUS_LABEL[detail.status]}</dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">Comercial</dt>
-                <dd>{detail.commercialOwner ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Técnico</dt>
+                <dt className="text-muted-foreground">Responsável técnico</dt>
                 <dd>{detail.technicalOwner ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">Volume mensal est.</dt>
+                <dt className="text-muted-foreground">Responsável comercial</dt>
+                <dd>{detail.commercialOwner ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Criado em</dt>
+                <dd>{formatDate(detail.createdAt)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Última atualização</dt>
+                <dd>{formatDate(detail.updatedAt)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Previsão (volume mensal)</dt>
                 <dd>{detail.expectedMonthlyVolume ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Custo estimado</dt>
+                <dd className="font-medium">{formatMoney(cost.unitCost)}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Margem alvo</dt>
@@ -746,6 +802,14 @@ function ProjectDetailView({
               <div>
                 <dt className="text-muted-foreground">Preço alvo</dt>
                 <dd>{formatMoney(detail.targetPrice)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Itens locais</dt>
+                <dd>{engineeringStats?.localItemsCount ?? 0}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Itens oficiais reutilizados</dt>
+                <dd>{engineeringStats?.officialItemsUsedCount ?? 0}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Versão atual</dt>
@@ -761,7 +825,7 @@ function ProjectDetailView({
             <h4 className="font-semibold">Resumo de custo</h4>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <dt className="text-muted-foreground">Custo unitário</dt>
+                <dt className="text-muted-foreground">Custo unitário simulado</dt>
                 <dd className="font-medium">{formatMoney(cost.unitCost)}</dd>
               </div>
               <div>
@@ -777,6 +841,10 @@ function ProjectDetailView({
                 <dd>{formatMoney(cost.separateMoldCost)}</dd>
               </div>
             </dl>
+            <p className="text-xs text-muted-foreground">
+              Engenharia e simulações ficam nas abas Engenharia do Projeto e Simulação de Custos —
+              alterações locais não modificam o cadastro mestre.
+            </p>
             {detail.alerts.length ? (
               <div className="space-y-2 pt-2">
                 <h5 className="text-sm font-medium">Alertas</h5>
@@ -805,45 +873,40 @@ function ProjectDetailView({
         </div>
       ) : null}
 
-      {tab === "products" ? (
-        <EntitySection
-          title="Produtos simulados"
+      {tab === "engineering" ? (
+        <ProjectEngineeringTab
+          detail={detail}
           canManage={canManage}
-          isEmpty={detail.simulatedProducts.length === 0}
-          empty="Nenhum produto simulado."
-          onAddClick={() => {
+          saving={saving}
+          onNewItem={() => {
             setModalError(null);
-            setProductModalMode("create");
+            setEngineeringItemModalMode("create");
             setEditingProduct(null);
-            setProductModalOpen(true);
+            setEngineeringItemModalOpen(true);
           }}
-          rows={detail.simulatedProducts.map((p) => (
-            <tr key={p.id} className="border-b border-border/60">
-              <td className="px-3 py-2">{p.provisionalCode ?? "—"}</td>
-              <td className="px-3 py-2">{p.description}</td>
-              <td className="px-3 py-2">{p.unit}</td>
-              <td className="px-3 py-2">{p.expectedVolume ?? "—"}</td>
-              <td className="px-3 py-2">{p.batchSize ?? "—"}</td>
-              <RowActions
-                canManage={canManage}
-                onEdit={() => {
-                  setModalError(null);
-                  setProductModalMode("edit");
-                  setEditingProduct(p);
-                  setProductModalOpen(true);
-                }}
-                onDelete={() =>
-                  setDeleteTarget({ kind: "product", id: p.id, label: p.description })
-                }
-              />
-            </tr>
-          ))}
-          headers={["Código prov.", "Descrição", "Un.", "Volume", "Lote", ""]}
+          onCloneItem={() => {
+            setModalError(null);
+            setStructureLineContext(null);
+            setStructureEngineeringFlow("clone");
+            setStructureModalSource("EXISTING_PRODUCT");
+          }}
+          onAddOfficialItem={() => setOfficialPickerOpen(true)}
+          onEditItem={handleEditEngineeringItem}
+          onCreateLocalVariation={(item) => void handleCreateLocalVariation(item)}
+          onDeleteProduct={(id, label) =>
+            setDeleteTarget({ kind: "product", id, label })
+          }
+          onDeleteSimulatedItem={(id, label) =>
+            setDeleteTarget({ kind: "item", id, label })
+          }
+          onDeleteSnapshot={(snapshotRootProductId, label) =>
+            setDeleteTarget({ kind: "structureSnapshot", snapshotRootProductId, label })
+          }
         />
       ) : null}
 
       {tab === "structure" ? (
-        <StructureTab
+        <ProjectEngineeringTree
           detail={detail}
           canManage={canManage}
           onAddLine={(sourceType) => {
@@ -879,7 +942,11 @@ function ProjectDetailView({
               setSimulationProductId(line.existingProductId);
               return;
             }
-            if (line.unitSnapshot === "HH" || (line.sourceType === "MANUAL" && (line.lineType === "PROCESS" || line.lineType === "SERVICE"))) {
+            if (
+              line.unitSnapshot === "HH" ||
+              (line.sourceType === "MANUAL" &&
+                (line.lineType === "PROCESS" || line.lineType === "SERVICE"))
+            ) {
               setLaborModalMode("edit");
               setEditingLaborLine(line);
               setLaborModalOpen(true);
@@ -925,185 +992,36 @@ function ProjectDetailView({
         />
       ) : null}
 
-      {tab === "items" ? (
-        <EntitySection
-          title="Itens simulados (não viram cadastro oficial)"
-          canManage={canManage}
-          isEmpty={detail.simulatedItems.length === 0}
-          empty="Nenhum item simulado."
-          onAddClick={() => {
-            setModalError(null);
-            setItemModalMode("create");
-            setEditingItem(null);
-            setItemModalOpen(true);
-          }}
-          rows={detail.simulatedItems.map((i) => (
-            <tr key={i.id} className="border-b border-border/60">
-              <td className="px-3 py-2">
-                <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-                  Simulado
-                </span>
-              </td>
-              <td className="px-3 py-2">{i.description}</td>
-              <td className="px-3 py-2">{i.itemType}</td>
-              <td className="px-3 py-2">{formatMoney(i.quotedUnitCost ?? i.estimatedUnitCost)}</td>
-              <td className="px-3 py-2">{i.requiresQuotation ? "Sim" : "Não"}</td>
-              <RowActions
-                canManage={canManage}
-                onEdit={() => {
-                  setModalError(null);
-                  setItemModalMode("edit");
-                  setEditingItem(i);
-                  setItemModalOpen(true);
-                }}
-                onDelete={() =>
-                  setDeleteTarget({ kind: "item", id: i.id, label: i.description })
-                }
-              />
-            </tr>
-          ))}
-          headers={["Origem", "Descrição", "Tipo", "Custo", "Cotação?", ""]}
-        />
-      ) : null}
+      {tab === "costs" ? <ProjectCostSimulation detail={detail} /> : null}
 
-      {tab === "molds" ? (
-        <EntitySection
-          title="Molde / Ferramental"
+      {tab === "materials" ? (
+        <ProjectMaterialsAndComponents
+          detail={detail}
           canManage={canManage}
-          isEmpty={detail.molds.length === 0}
-          empty="Nenhum molde cadastrado."
-          onAddClick={() => {
+          onAddMold={() => {
             setMoldModalError(null);
             setMoldModalMode("create");
             setEditingMold(null);
             setMoldModalOpen(true);
           }}
-          rows={detail.molds.map((m) => (
-            <tr key={m.id} className="border-b border-border/60">
-              <td className="px-3 py-2">{m.name}</td>
-              <td className="px-3 py-2">{MOLD_CHARGE_LABEL[m.chargeMode] ?? m.chargeMode}</td>
-              <td className="px-3 py-2">{formatMoney(m.constructionCost)}</td>
-              <td className="px-3 py-2">{m.amortizationQuantity ?? "—"}</td>
-              <td className="px-3 py-2">{formatMoney(m.amortizedCostPerUnit)}</td>
-              <td className="px-3 py-2">{m.ownership}</td>
-              <RowActions
-                canManage={canManage}
-                onEdit={() => {
-                  setMoldModalError(null);
-                  setMoldModalMode("edit");
-                  setEditingMold(m);
-                  setMoldModalOpen(true);
-                }}
-                onDelete={() => setDeleteTarget({ kind: "mold", id: m.id, label: m.name })}
-              />
-            </tr>
-          ))}
-          headers={["Nome", "Cobrança", "Construção", "Qtd amort.", "Custo/un.", "Propriedade", ""]}
         />
       ) : null}
 
-      {tab === "costs" ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <StatCard label="Custo MP" value={formatMoney(cost.rawMaterialCost)} />
-          <StatCard label="Custo componentes" value={formatMoney(cost.componentCost)} />
-          <StatCard label="Custo serviços" value={formatMoney(cost.serviceCost)} />
-          <StatCard label="Custo embalagem" value={formatMoney(cost.packagingCost)} />
-          <StatCard label="Molde separado" value={formatMoney(cost.separateMoldCost)} />
-          <StatCard label="Molde amortizado/un." value={formatMoney(cost.amortizedMoldCostPerUnit)} />
-          <StatCard label="Custo unitário total" value={formatMoney(cost.unitCost)} />
-          <StatCard label="Margem alvo" value={formatPercent(cost.targetMarginPercent)} />
-          <StatCard label="Preço sugerido" value={formatMoney(cost.suggestedPrice)} />
-          <StatCard label="Markup" value={formatPercent(cost.markupPercent)} />
-          <StatCard label="Preço alvo" value={formatMoney(cost.targetPrice)} />
-          <StatCard label="Diferença sugerido − alvo" value={formatMoney(cost.priceGap)} />
-        </div>
-      ) : null}
+      {tab === "timeline" ? <ProjectTimeline detail={detail} /> : null}
 
-      {tab === "versions" ? (
-        <div className="space-y-4">
-          {canManage ? (
-            <button
-              type="button"
-              disabled={saving}
-              onClick={createVersion}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Criar nova versão
-            </button>
-          ) : null}
-          <p className="text-sm text-muted-foreground">
-            Nova versão copia a versão atual e congela os custos anteriores.
-          </p>
-          <div className="overflow-hidden rounded-xl border border-border">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/40 text-left">
-                <tr>
-                  <th className="px-4 py-3">Versão</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Atual</th>
-                  <th className="px-4 py-3">Custo un.</th>
-                  <th className="px-4 py-3">Preço sug.</th>
-                  <th className="px-4 py-3">Margem</th>
-                  <th className="px-4 py-3">Criada em</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.versions.map((v) => (
-                  <tr key={v.id} className="border-b border-border/60">
-                    <td className="px-4 py-3">v{v.versionNumber}</td>
-                    <td className="px-4 py-3">{PROJECT_STATUS_LABEL[v.status]}</td>
-                    <td className="px-4 py-3">{v.isCurrent ? "Sim" : "—"}</td>
-                    <td className="px-4 py-3">{formatMoney(v.unitCost)}</td>
-                    <td className="px-4 py-3">{formatMoney(v.suggestedPrice)}</td>
-                    <td className="px-4 py-3">{formatPercent(v.marginPercent)}</td>
-                    <td className="px-4 py-3">{formatDate(v.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : null}
+      {tab === "documents" ? <ProjectDocuments canManage={canManage} /> : null}
 
-      {tab === "notes" ? (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between gap-3">
-            <h4 className="font-semibold">Observações técnicas e comerciais</h4>
-            {canManage ? (
-              <div className="flex items-center gap-2">
-                {notesStatus === "saved" ? (
-                  <span className="text-xs text-emerald-700">Salvo</span>
-                ) : null}
-                {notesStatus === "error" ? (
-                  <span className="text-xs text-destructive">Erro ao salvar</span>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={saving || notesStatus === "saving"}
-                  onClick={() => void saveNotes()}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
-                >
-                  {notesStatus === "saving" ? "Salvando..." : "Salvar"}
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {canManage ? (
-            <textarea
-              className="mt-3 min-h-[160px] w-full rounded-lg border border-border px-3 py-2 text-sm"
-              value={notesDraft}
-              onChange={(e) => {
-                setNotesDraft(e.target.value);
-                setNotesStatus("idle");
-              }}
-            />
-          ) : (
-            <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
-              {detail.notes ?? "Sem observações."}
-            </p>
-          )}
-        </div>
+      {tab === "history" ? (
+        <ProjectHistory
+          detail={detail}
+          canManage={canManage}
+          notesDraft={notesDraft}
+          notesStatus={notesStatus}
+          saving={saving}
+          onNotesChange={setNotesDraft}
+          onSaveNotes={() => void saveNotes()}
+          onCreateVersion={() => void createVersion()}
+        />
       ) : null}
 
       <ProjectMoldFormModal
@@ -1144,46 +1062,105 @@ function ProjectDetailView({
         }}
       />
 
-      <ProjectSimulatedProductFormModal
-        open={productModalOpen}
-        mode={productModalMode}
+      <ProjectEngineeringItemModal
+        open={engineeringItemModalOpen}
+        mode={engineeringItemModalMode}
+        projectLabel={`${detail.code} — ${detail.title}`}
         initial={editingProduct}
         saving={saving}
         error={modalError}
         onClose={() => {
-          setProductModalOpen(false);
+          setEngineeringItemModalOpen(false);
           setEditingProduct(null);
         }}
         onSubmit={async (payload) => {
           setSaving(true);
           setModalError(null);
           try {
-            if (productModalMode === "edit" && editingProduct) {
+            const body = {
+              provisionalCode: payload.provisionalCode,
+              description: payload.description,
+              unit: payload.unit,
+              estimatedWeight: payload.estimatedWeight,
+              expectedVolume: payload.expectedVolume,
+              batchSize: payload.batchSize,
+              notes: payload.notes,
+            };
+            if (engineeringItemModalMode === "edit" && editingProduct) {
               await fetchJsonOk(
                 `/api/projects/${projectId}/simulated-products/${editingProduct.id}`,
                 {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload),
+                  body: JSON.stringify(body),
                 }
               );
             } else {
               await fetchJsonOk(`/api/projects/${projectId}/simulated-products`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
+                body: JSON.stringify(body),
               });
             }
-            setProductModalOpen(false);
+            setEngineeringItemModalOpen(false);
             setEditingProduct(null);
             await load();
           } catch (e) {
-            setModalError(e instanceof Error ? e.message : "Erro ao salvar produto.");
+            setModalError(e instanceof Error ? e.message : "Erro ao salvar item.");
           } finally {
             setSaving(false);
           }
         }}
       />
+
+      {officialPickerOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Adicionar item oficial</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Reutilize um item do cadastro mestre como referência no projeto, sem clonar a engenharia
+              completa.
+            </p>
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+              Referências oficiais não são editadas localmente. Use &quot;Criar variação local&quot; ou
+              &quot;Clonar item existente&quot; para simular alterações.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                className="rounded-lg border px-4 py-2 text-sm text-left hover:bg-muted/50"
+                onClick={() => {
+                  setOfficialPickerOpen(false);
+                  setStructureLineContext(null);
+                  setStructureEngineeringFlow("official");
+                  setStructureModalSource("EXISTING_MATERIAL");
+                }}
+              >
+                Matéria-prima / material oficial
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border px-4 py-2 text-sm text-left hover:bg-muted/50"
+                onClick={() => {
+                  setOfficialPickerOpen(false);
+                  setStructureLineContext(null);
+                  setStructureEngineeringFlow("official");
+                  setStructureModalSource("MANUAL");
+                }}
+              >
+                Componente / serviço orçado (referência manual)
+              </button>
+            </div>
+            <button
+              type="button"
+              className="mt-4 w-full rounded-lg border border-border px-4 py-2 text-sm"
+              onClick={() => setOfficialPickerOpen(false)}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <ProjectSimulatedItemFormModal
         open={itemModalOpen}
@@ -1394,6 +1371,7 @@ function ProjectDetailView({
       <ProjectStructureLineModal
         open={structureModalSource != null}
         sourceType={structureModalSource}
+        engineeringFlow={structureEngineeringFlow}
         simulatedItems={detail.simulatedItems}
         saving={saving}
         error={modalError}
@@ -1402,6 +1380,7 @@ function ProjectDetailView({
         onClose={() => {
           setStructureModalSource(null);
           setStructureLineContext(null);
+          setStructureEngineeringFlow(null);
         }}
         onOpenProductSimulation={(productId) => {
           setModalError(null);
@@ -1447,133 +1426,6 @@ function ProjectDetailView({
             setSaving(false);
           }
         }}
-      />
-    </div>
-  );
-}
-
-function EntitySection({
-  title,
-  headers,
-  rows,
-  empty,
-  isEmpty,
-  canManage,
-  onAddClick,
-}: {
-  title: string;
-  headers: string[];
-  rows: React.ReactNode;
-  empty: string;
-  isEmpty?: boolean;
-  canManage: boolean;
-  onAddClick?: () => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h4 className="font-semibold">{title}</h4>
-        {canManage && onAddClick ? (
-          <button
-            type="button"
-            onClick={onAddClick}
-            className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Adicionar
-          </button>
-        ) : null}
-      </div>
-      <div className="overflow-hidden rounded-xl border border-border">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40 text-left">
-            <tr>
-              {headers.map((h) => (
-                <th key={h} className="px-3 py-2 font-medium">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isEmpty ? (
-              <tr>
-                <td colSpan={headers.length} className="px-4 py-8 text-center text-muted-foreground">
-                  {empty}
-                </td>
-              </tr>
-            ) : (
-              rows
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function StructureTab({
-  detail,
-  canManage,
-  onAddLine,
-  onAddToSimulatedProduct,
-  onAddLabor,
-  onEditLine,
-  onDeleteLine,
-  onOpenProductSimulation,
-  onReimportSnapshot,
-  onDeleteSnapshot,
-}: {
-  detail: ProjectDetail;
-  canManage: boolean;
-  onAddLine: (sourceType: ProjectStructureSourceType) => void;
-  onAddToSimulatedProduct: (
-    productId: string,
-    sourceType: "EXISTING_MATERIAL" | "SIMULATED_ITEM" | "MANUAL",
-    parentLineId?: string | null
-  ) => void;
-  onAddLabor: () => void;
-  onEditLine: (line: ProjectStructureLineRow) => void;
-  onDeleteLine: (line: ProjectStructureLineRow) => void;
-  onOpenProductSimulation: (productId: string) => void;
-  onReimportSnapshot: (productId: string) => void;
-  onDeleteSnapshot: (group: ProjectStructureSnapshotGroup) => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="font-semibold">Produtos e estruturas do projeto</h4>
-        {canManage ? (
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("EXISTING_MATERIAL")}>
-              + Material existente
-            </button>
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("EXISTING_PRODUCT")}>
-              + Importar produto existente
-            </button>
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("SIMULATED_ITEM")}>
-              + Item simulado
-            </button>
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => onAddLine("MANUAL")}>
-              + Manual
-            </button>
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={onAddLabor}>
-              + HH / Mão de obra
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      <ProjectStructureSnapshotAccordion
-        structureLines={detail.structureLines}
-        simulatedProducts={detail.simulatedProducts}
-        canManage={canManage}
-        onEditSimulation={onOpenProductSimulation}
-        onReimport={onReimportSnapshot}
-        onDeleteSnapshot={onDeleteSnapshot}
-        onEditLine={onEditLine}
-        onDeleteLine={onDeleteLine}
-        onAddToSimulatedProduct={onAddToSimulatedProduct}
       />
     </div>
   );

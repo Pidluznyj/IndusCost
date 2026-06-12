@@ -235,9 +235,12 @@ describe("projectsStructureSnapshotGroups", () => {
     assert.match(accordion, /buildProjectStructureSnapshotGroups/);
   });
 
-  it("aba estrutura usa título Produtos e estruturas do projeto", () => {
-    const module = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
-    assert.match(module, /Produtos e estruturas do projeto/);
+  it("aba estrutura usa título Estrutura / Árvore", () => {
+    const tree = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectEngineeringTree.tsx"),
+      "utf8"
+    );
+    assert.match(tree, /Estrutura \/ Árvore/);
   });
 
   it("composição BOM no editor mostra só 1º nível", () => {

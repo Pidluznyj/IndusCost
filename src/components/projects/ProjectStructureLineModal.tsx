@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { previewProjectStructureLineTotal } from "@/src/lib/projectsStructureLineBuilderShared";
+import { PROJECT_ENGINEERING_CLONE_NOTICE } from "@/src/lib/projectsEngineeringWorkspace";
 import { formatCurrency } from "@/src/lib/utils";
 import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
 import { parseProjectsNumberInput } from "@/src/lib/projectsUiUtils";
@@ -34,6 +35,7 @@ type StructureLineContext = {
 type Props = {
   open: boolean;
   sourceType: ProjectStructureSourceType | null;
+  engineeringFlow?: "clone" | "official" | null;
   simulatedItems: ProjectSimulatedItemRow[];
   simulatedProducts?: ProjectSimulatedProductRow[];
   lineContext?: StructureLineContext | null;
@@ -48,6 +50,7 @@ type Props = {
 export function ProjectStructureLineModal({
   open,
   sourceType,
+  engineeringFlow = null,
   simulatedItems,
   simulatedProducts = [],
   lineContext,
@@ -150,10 +153,14 @@ export function ProjectStructureLineModal({
   if (!open || !sourceType) return null;
 
   const titleBySource: Record<ProjectStructureSourceType, string> = {
-    EXISTING_MATERIAL: "Matéria-prima da base",
-    EXISTING_PRODUCT: "Produto/componente existente",
+    EXISTING_MATERIAL:
+      engineeringFlow === "official" ? "Adicionar material oficial" : "Matéria-prima da base",
+    EXISTING_PRODUCT:
+      engineeringFlow === "clone"
+        ? "Clonar item existente"
+        : "Produto/componente existente",
     SIMULATED_ITEM: "Componente do projeto",
-    MANUAL: "Item orçado / manual",
+    MANUAL: engineeringFlow === "official" ? "Referência orçada no projeto" : "Item orçado / manual",
   };
 
   const canSubmit = (() => {
@@ -243,7 +250,7 @@ export function ProjectStructureLineModal({
             className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
           >
             {saving ? <Loader2 className="inline h-4 w-4 animate-spin" /> : null}
-            {sourceType === "EXISTING_PRODUCT" ? "Importar estrutura" : "Adicionar componente"}
+            {sourceType === "EXISTING_PRODUCT" ? "Clonar para o projeto" : "Adicionar componente"}
           </button>
         </>
       }
@@ -262,9 +269,9 @@ export function ProjectStructureLineModal({
 
       {sourceType === "EXISTING_PRODUCT" ? (
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Importa a BOM e os processos (HH) do produto oficial com os mesmos custos do cadastro.
-          Os valores ficam como snapshot no projeto — editáveis aqui sem alterar Product, Material ou
-          ProductBOM.
+          {engineeringFlow === "clone"
+            ? PROJECT_ENGINEERING_CLONE_NOTICE
+            : "Importa a BOM e os processos (HH) do produto oficial com os mesmos custos do cadastro. Os valores ficam como snapshot no projeto — editáveis aqui sem alterar Product, Material ou ProductBOM."}
         </p>
       ) : (
         <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
