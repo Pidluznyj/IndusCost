@@ -21,8 +21,8 @@ const kpiCardPath = join(
   "src",
   "components",
   "finance",
-  "bi",
-  "FinanceBiKpiCard.tsx"
+  "shared",
+  "FinanceKpiCard.tsx"
 );
 
 describe("financeAccountsPayableKpiUx", () => {
@@ -45,6 +45,7 @@ describe("financeAccountsPayableKpiUx", () => {
     assert.equal(page.includes("Próximos 30 dias"), false);
     assert.equal(page.includes("xl:grid-cols-8"), false);
     assert.match(page, /lg:grid-cols-4 xl:grid-cols-4/);
+    assert.match(page, /FinanceKpiCard/);
   });
 
   it("card Pago no mês usa subtítulo curto e explicação longa no tooltip", () => {
@@ -54,10 +55,14 @@ describe("financeAccountsPayableKpiUx", () => {
     assert.equal(page.includes("scopeNote={FINANCE_AP_PAID_THIS_MONTH_SCOPE}"), false);
   });
 
-  it("FinanceBiKpiCard evita quebra de valor monetário", () => {
+  it("FinanceKpiCard evita quebra de valor monetário", () => {
+    const biKpi = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "bi", "FinanceBiKpiCard.tsx"),
+      "utf8"
+    );
     const kpi = readFileSync(kpiCardPath, "utf8");
-    assert.match(kpi, /whitespace-nowrap/);
-    assert.match(kpi, /tabular-nums/);
+    assert.match(biKpi, /whitespace-nowrap/);
+    assert.match(kpi, /text-xl font-semibold sm:text-2xl/);
   });
 
   it("regra operacional AP preservada (max due/schedule, pedido de compra)", () => {

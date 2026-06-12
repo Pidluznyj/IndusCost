@@ -19,6 +19,7 @@ export function FinanceBiKpiCard({
   trendLabel,
   colorClass = "text-[#111827]",
   valueClassName,
+  labelClassName,
   loading = false,
 }: {
   icon?: React.ElementType;
@@ -31,12 +32,19 @@ export function FinanceBiKpiCard({
   trendLabel?: string;
   colorClass?: string;
   valueClassName?: string;
+  labelClassName?: string;
   loading?: boolean;
 }) {
   return (
-    <div className={cn(financeBiCardClass, "p-5 space-y-3")}>
-      <div className="flex items-center justify-between gap-2">
-        <span className={cn(financeBiKpiLabelClass, "flex items-center gap-1.5")}>
+    <div className={cn(financeBiCardClass, "p-5 space-y-3 min-h-[9.5rem]")}>
+      <div className="flex items-start justify-between gap-2">
+        <span
+          className={cn(
+            financeBiKpiLabelClass,
+            "flex items-center gap-1.5 leading-snug",
+            labelClassName
+          )}
+        >
           {label}
           {hint ? <FinanceBiCalcTooltip rule={hint} /> : null}
         </span>

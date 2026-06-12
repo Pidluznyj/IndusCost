@@ -89,7 +89,7 @@ import {
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { buildFinanceApFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
@@ -768,80 +768,80 @@ export function FinanceAccountsPayablePage() {
           </p>
         </div>
         <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
-          <FinanceBiKpiCard
+          <FinanceKpiCard
             icon={Wallet}
             label="Total a pagar"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalPayableAmount)}
-            sub={withAppliedFilterSub(
+            subtitle={withAppliedFilterSub(
               cards?.totalRecords != null
                 ? `${formatFinanceInteger(cards.totalRecords)} título(s)`
                 : undefined,
               Boolean(filtersActive)
             )}
-            hint="Σ valor original no universo filtrado"
+            helperText="Σ valor original no universo filtrado"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceKpiCard
             icon={Landmark}
             label="Pago no mês"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.paidThisMonthAmount)}
-            sub="Mês atual, dentro do filtro"
-            hint={FINANCE_AP_PAID_THIS_MONTH_SCOPE}
-            colorClass="text-[#059669]"
+            subtitle="Mês atual, dentro do filtro"
+            helperText={FINANCE_AP_PAID_THIS_MONTH_SCOPE}
+            tone="success"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceKpiCard
             icon={Wallet}
             label="Em aberto"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.totalOpenAmount)}
-            sub={withAppliedFilterSub(
+            subtitle={withAppliedFilterSub(
               cards?.openTitlesCount != null
                 ? `${formatFinanceInteger(cards.openTitlesCount)} título(s)`
                 : undefined,
               Boolean(filtersActive)
             )}
-            hint="Saldo positivo na visão gerencial"
-            colorClass="text-[#2563EB]"
+            helperText="Saldo positivo na visão gerencial"
+            tone="info"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceKpiCard
             icon={AlertTriangle}
             label="Vencido gerencial"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.overdueAmount)}
-            sub={withAppliedFilterSub("Data operacional < hoje", Boolean(filtersActive))}
-            hint="Exclui pedido de compra · max(vencimento, agendamento)"
-            colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
+            subtitle={withAppliedFilterSub("Data operacional < hoje", Boolean(filtersActive))}
+            helperText="Usa max(vencimento, agendamento), excluindo agenda de pedido de compra"
+            tone={(cards?.overdueAmount ?? 0) > 0 ? "danger" : "neutral"}
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceKpiCard
             icon={Clock}
             label="Vence hoje"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueTodayAmount)}
-            sub={withAppliedFilterSub("Data operacional = hoje", Boolean(filtersActive))}
-            hint="Títulos com vencimento operacional no dia"
-            colorClass="text-[#D97706]"
+            subtitle={withAppliedFilterSub("Data operacional = hoje", Boolean(filtersActive))}
+            helperText="Títulos com vencimento operacional no dia"
+            tone="warning"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceKpiCard
             icon={Clock}
             label="Próx. 7 dias"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext7DaysAmount)}
-            sub={withAppliedFilterSub("Janela operacional", Boolean(filtersActive))}
-            hint="Vencimentos operacionais em até 7 dias"
-            colorClass="text-[#2563EB]"
+            subtitle={withAppliedFilterSub("Janela operacional", Boolean(filtersActive))}
+            helperText="Vencimentos operacionais em até 7 dias"
+            tone="info"
             loading={loading}
           />
-          <FinanceBiKpiCard
+          <FinanceKpiCard
             icon={Clock}
             label="Próx. 30 dias"
             value={loading ? "…" : formatFinanceCurrencyCompact(cards?.dueNext30DaysAmount)}
-            sub={withAppliedFilterSub("Janela operacional", Boolean(filtersActive))}
-            hint="Vencimentos operacionais em até 30 dias"
-            colorClass="text-[#2563EB]"
+            subtitle={withAppliedFilterSub("Janela operacional", Boolean(filtersActive))}
+            helperText="Vencimentos operacionais em até 30 dias"
+            tone="info"
             loading={loading}
           />
           {data?.purchaseOrderScheduleAudit?.rescheduledOpenCount ? (
-            <FinanceBiKpiCard
+            <FinanceKpiCard
               icon={ShieldAlert}
               label="Agendados"
               value={
@@ -851,12 +851,13 @@ export function FinanceAccountsPayablePage() {
                       data.purchaseOrderScheduleAudit.rescheduledOpenAmount
                     )
               }
-              sub={`${formatFinanceInteger(data.purchaseOrderScheduleAudit.rescheduledOpenCount)} título(s) remarcados`}
-              hint="Títulos com data de agendamento diferente do vencimento original"
+              subtitle={`${formatFinanceInteger(data.purchaseOrderScheduleAudit.rescheduledOpenCount)} título(s) remarcados`}
+              helperText="Títulos com data de agendamento diferente do vencimento original"
+              tone="info"
               loading={loading}
             />
           ) : (
-            <FinanceBiKpiCard
+            <FinanceKpiCard
               icon={ShieldAlert}
               label="Maior fornecedor"
               value={
@@ -866,8 +867,8 @@ export function FinanceAccountsPayablePage() {
                     ? formatFinanceCurrencyCompact(cards.topSupplier.totalOpenAmount)
                     : "—"
               }
-              sub={displayFinanceText(cards?.topSupplier?.personName)}
-              hint="Maior concentração de saldo aberto na carteira filtrada"
+              subtitle={displayFinanceText(cards?.topSupplier?.personName)}
+              helperText="Maior concentração de saldo aberto na carteira filtrada"
               loading={loading}
             />
           )}

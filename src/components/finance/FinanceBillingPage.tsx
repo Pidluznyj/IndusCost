@@ -80,7 +80,7 @@ import {
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
-import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { buildFinanceBillingFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
@@ -378,58 +378,64 @@ export function FinanceBillingPage() {
   const kpiCards = [
     {
       icon: Wallet,
-      label: "Faturamento líquido (mês)",
+      label: "Faturamento líquido",
       value: loading ? "…" : formatExecutiveCompactCurrency(tab?.target.actual),
-      sub: tab?.periodLabel ?? "—",
-      hint: "NF-e autorizada mercado · valor líquido · data base aplicada",
+      subtitle: tab?.periodLabel ?? "—",
+      helperText: "NF-e autorizada mercado · valor líquido · data base aplicada",
+      tone: "info" as const,
     },
     {
       icon: TrendingUp,
-      label: "Faturamento bruto encontrado",
+      label: "Bruto encontrado",
       value: loading
         ? "…"
         : formatExecutiveCompactCurrency(audit?.summary.grossFoundTotal ?? null),
-      sub: "Auditoria fiscal",
-      hint: "Total bruto antes das regras de exclusão",
+      subtitle: "Auditoria fiscal",
+      helperText: "Total bruto antes das regras de exclusão",
+      tone: "neutral" as const,
     },
     {
       icon: Target,
-      label: "Quantidade NF-e (mês)",
+      label: "NF-e no mês",
       value: loading
         ? "…"
         : (summaryCard("billing-count-month")?.formatted ??
           formatExecutiveInteger(summaryCard("billing-count-month")?.value)),
-      sub: "Autorizadas no período",
-      hint: "Contagem de notas incluídas no mês filtrado",
+      subtitle: "Autorizadas no período",
+      helperText: "Contagem de notas incluídas no mês filtrado",
+      tone: "neutral" as const,
     },
     {
       icon: Wallet,
-      label: "Ticket médio NF-e",
+      label: "Ticket médio",
       value: loading ? "…" : summaryCard("billing-ticket")?.formatted ?? "—",
-      sub: "Líquido ÷ quantidade",
-      hint: "Média por NF-e no mês de referência",
+      subtitle: "Líquido ÷ quantidade",
+      helperText: "Média por NF-e no mês de referência",
+      tone: "neutral" as const,
     },
     {
       icon: TrendingUp,
-      label: "Comparativo mês anterior",
+      label: "Mês anterior",
       value: loading ? "…" : formatExecutiveCompactCurrency(tab?.target.previousPeriod),
-      sub: tab?.target.formatted.previousPeriod ?? "—",
-      hint: "Mesmo mês do ano anterior (NF-e)",
+      subtitle: tab?.target.formatted.previousPeriod ?? "—",
+      helperText: "Mesmo mês do ano anterior (NF-e)",
+      tone: "neutral" as const,
     },
     {
       icon: TrendingUp,
-      label: "Comparativo ano anterior (YTD)",
+      label: "Ano anterior",
       value: loading ? "…" : tab?.yearComparison.formatted.yearToDatePrevious ?? "—",
-      sub: `YTD ${data?.previousYear ?? ""}`,
-      scopeNote: FINANCE_BILLING_YTD_SCOPE,
-      hint: "Acumulado até o mês de referência",
+      subtitle: `YTD ${data?.previousYear ?? ""}`,
+      helperText: FINANCE_BILLING_YTD_SCOPE,
+      tone: "neutral" as const,
     },
     {
       icon: Wallet,
       label: "Acumulado YTD",
       value: loading ? "…" : formatExecutiveCompactCurrency(yearSummary?.ytdTotal),
-      scopeNote: FINANCE_BILLING_YTD_SCOPE,
-      hint: "Σ mensal NF-e até mês de referência",
+      subtitle: "Ano selecionado",
+      helperText: FINANCE_BILLING_YTD_SCOPE,
+      tone: "info" as const,
     },
     {
       icon: Target,
@@ -439,8 +445,9 @@ export function FinanceBillingPage() {
         : tab?.forecast?.formatted.monthForecastAmount ??
           tab?.projection.formatted.projectedMonth ??
           "—",
-      scopeNote: FINANCE_BILLING_PROJECTION_SCOPE,
-      hint: "Carteira prevista ou projeção YTD — não confundir com realizado",
+      subtitle: "Carteira / projeção",
+      helperText: FINANCE_BILLING_PROJECTION_SCOPE,
+      tone: "warning" as const,
     },
   ];
 
@@ -707,16 +714,16 @@ export function FinanceBillingPage() {
             exibem null, não zero falso.
           </p>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
           {kpiCards.map((card) => (
             <div key={card.label} className="min-w-0">
-              <FinanceBiKpiCard
+              <FinanceKpiCard
                 icon={card.icon}
                 label={card.label}
                 value={String(card.value)}
-                sub={card.sub}
-                hint={card.hint}
-                scopeNote={"scopeNote" in card ? String(card.scopeNote) : undefined}
+                subtitle={card.subtitle}
+                helperText={card.helperText}
+                tone={card.tone}
                 loading={loading}
               />
             </div>
