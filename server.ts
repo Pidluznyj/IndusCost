@@ -26,7 +26,9 @@ import {
   buildPortfolioAbcFromSalesOrders,
   normalizeCustomerDocument,
   salesOrderHasInvoicing,
+  salesOrderMatchesCustomer,
 } from "./src/lib/customerCommercialSalesOrderView.js";
+import { buildCrmCommercialIntelligenceResponse } from "./src/lib/crmCommercialIntelligence.js";
 import {
   buildCostAnalysisExplainability,
   buildPricingSnapshotExplainability,
@@ -13261,109 +13263,49 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  /** CRM Fase 1H-B — inteligência comercial só leitura (propostas + pedidos válidos). */
+  /** CRM Fase 1H-B — inteligência comercial só leitura (base principal: Pedidos de Venda). */
   app.get("/api/crm/customers/:customerId/commercial-intelligence", requireAppAuth, requireAnyPermission(["crm.customer_cockpit.view", "customers.commercial360.view", "customers.view"]), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
     }
 
-    /** Pedidos válidos como “compra” nos indicadores de CRM (V1). */
-    const VALID_PURCHASE_ORDER_STATUSES = ["READY_TO_SEND", "SENT_TO_NOMUS"] as const;
-    /** Pipeline comercial “aberto” sobre `Proposal.status` (V1). */
-    const OPEN_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] as const;
-
-    const toNumberIntel = (value: unknown): number => {
-      const n = Number(value ?? 0);
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    type ActivityRow = { proposalId: string | null; contactDate: Date | null; createdAt: Date };
-    const activityEffectiveMs = (a: ActivityRow): number => {
-      const d = a.contactDate ?? a.createdAt;
-      const t = d.getTime();
-      return Number.isFinite(t) ? t : 0;
-    };
-
-    /**
-     * Follow-up válido após `proposalUpdatedAt` quando existir atividade com data efetiva >= updatedAt
-     * e (proposalId da proposta OU atividade geral do cliente com proposalId null).
-     */
-    const proposalHasFollowUpAfterUpdate = (
-      proposalId: string,
-      proposalUpdatedAt: Date,
-      activities: ActivityRow[]
-    ): boolean => {
-      const cutoff = proposalUpdatedAt.getTime();
-      const pid = proposalId;
-      for (const a of activities) {
-        const ef = activityEffectiveMs(a);
-        if (ef >= cutoff && (a.proposalId === pid || a.proposalId === null)) {
-          return true;
-        }
-      }
-      return false;
-    };
+    const OPEN_NEGOTIATION_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] as const;
 
     try {
-      const now = new Date();
-      const twelveMonthsAgo = new Date(now);
-      twelveMonthsAgo.setUTCDate(twelveMonthsAgo.getUTCDate() - 365);
+      const customerRow = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { id: true, companyName: true, tradeName: true, taxId: true },
+      });
+      if (!customerRow) {
+        return res.status(404).json({ error: "Cliente não encontrado." });
+      }
 
-      const [
-        customerRow,
-        activityRows,
-        validOrders5,
-        orders12mAgg,
-        latestProposals5,
-        openProposalRows,
-      ] = await Promise.all([
-        prisma.customer.findUnique({
-          where: { id: customerId },
-          select: { id: true, companyName: true, tradeName: true, taxId: true },
-        }),
+      const customerDoc = normalizeCustomerDocument(customerRow.taxId);
+
+      const [activityRows, salesOrdersRaw, negotiationProposals] = await Promise.all([
         prisma.commercialActivity.findMany({
           where: { customerId },
-          select: { proposalId: true, contactDate: true, createdAt: true },
+          select: { contactDate: true, createdAt: true },
         }),
         prisma.salesOrder.findMany({
-          where: { customerId, status: { in: [...VALID_PURCHASE_ORDER_STATUSES] } },
-          orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
-          take: 5,
-          select: {
-            id: true,
-            orderCode: true,
-            issueDate: true,
-            status: true,
-            totalNetValue: true,
+          where: customerRow.taxId
+            ? {
+                OR: [{ customerId }, { Customer: { taxId: customerRow.taxId } }],
+              }
+            : { customerId },
+          include: {
+            Customer: { select: { taxId: true } },
           },
+          orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
         }),
-        prisma.salesOrder.aggregate({
+        prisma.proposal.findMany({
           where: {
             customerId,
-            status: { in: [...VALID_PURCHASE_ORDER_STATUSES] },
-            issueDate: { gte: twelveMonthsAgo },
+            status: { in: [...OPEN_NEGOTIATION_PROPOSAL_STATUSES] },
           },
-          _sum: { totalNetValue: true },
-          _count: true,
-        }),
-        prisma.proposal.findMany({
-          where: { customerId },
-          orderBy: { createdAt: "desc" },
+          orderBy: { updatedAt: "desc" },
           take: 5,
-          select: {
-            id: true,
-            number: true,
-            title: true,
-            status: true,
-            totalNetValue: true,
-            createdAt: true,
-            updatedAt: true,
-            responsible: true,
-          },
-        }),
-        prisma.proposal.findMany({
-          where: { customerId, status: { in: [...OPEN_PROPOSAL_STATUSES] } },
           select: {
             id: true,
             number: true,
@@ -13377,201 +13319,30 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         }),
       ]);
 
-      if (!customerRow) {
-        return res.status(404).json({ error: "Cliente não encontrado." });
-      }
+      const salesOrders = salesOrdersRaw
+        .filter((order) =>
+          salesOrderMatchesCustomer(order.customerId, customerRow, order.Customer?.taxId)
+        )
+        .map((order) => ({
+          id: order.id,
+          orderCode: order.orderCode,
+          issueDate: order.issueDate,
+          updatedAt: order.updatedAt,
+          status: order.status,
+          totalNetValue: order.totalNetValue,
+          responsible: order.responsible,
+          expectedDeliveryDate: order.expectedDeliveryDate,
+          nomusRawResponse: order.nomusRawResponse,
+        }));
 
-      const displayName =
-        (customerRow.tradeName && customerRow.tradeName.trim()) || customerRow.companyName;
-
-      const mapOrderLite = (
-        row: Pick<
-          typeof validOrders5[number],
-          "id" | "orderCode" | "issueDate" | "status" | "totalNetValue"
-        >
-      ) => ({
-        id: row.id,
-        orderCode: row.orderCode,
-        issueDate: row.issueDate,
-        status: row.status,
-        totalNetValue: toNumberIntel(row.totalNetValue),
-      });
-
-      const mapProposalIntel = (
-        row: Pick<
-          typeof latestProposals5[number],
-          | "id"
-          | "number"
-          | "title"
-          | "status"
-          | "totalNetValue"
-          | "createdAt"
-          | "updatedAt"
-          | "responsible"
-        >
-      ) => ({
-        id: row.id,
-        number: row.number,
-        title: row.title ?? null,
-        status: row.status,
-        totalNetValue: toNumberIntel(row.totalNetValue),
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        responsible: row.responsible ?? null,
-      });
-
-      const lastOrderRow = validOrders5[0] ?? null;
-      const lastOrder = lastOrderRow ? mapOrderLite(lastOrderRow) : null;
-
-      let daysSinceLastPurchase: number | null = null;
-      if (lastOrderRow) {
-        daysSinceLastPurchase = Math.max(
-          0,
-          Math.floor((now.getTime() - lastOrderRow.issueDate.getTime()) / 86400000)
-        );
-      }
-
-      const totalPurchasedLast12Months = toNumberIntel(orders12mAgg._sum.totalNetValue);
-      const ordersLast12MonthsCount = orders12mAgg._count;
-
-      const lastProposalRow = latestProposals5[0] ?? null;
-      const lastProposal = lastProposalRow ? mapProposalIntel(lastProposalRow) : null;
-
-      const openProposalsCount = openProposalRows.length;
-      const openProposalsValue = openProposalRows.reduce(
-        (acc, p) => acc + toNumberIntel(p.totalNetValue),
-        0
+      res.json(
+        buildCrmCommercialIntelligenceResponse({
+          customer: customerRow,
+          activities: activityRows,
+          salesOrders,
+          negotiationProposals,
+        })
       );
-      const latestOpenProposals = [...openProposalRows]
-        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-        .slice(0, 5)
-        .map(mapProposalIntel);
-
-      const withoutFollowUpAll = openProposalRows.filter(
-        (p) => !proposalHasFollowUpAfterUpdate(p.id, p.updatedAt, activityRows)
-      );
-      const proposalsWithoutFollowUpCount = withoutFollowUpAll.length;
-      const proposalsWithoutFollowUpDraft = [...withoutFollowUpAll].map((p) => {
-        const daysWithoutFollowUp = Math.max(
-          0,
-          Math.floor((now.getTime() - p.updatedAt.getTime()) / 86400000)
-        );
-        return {
-          id: p.id,
-          number: p.number,
-          title: p.title ?? null,
-          status: p.status,
-          totalNetValue: toNumberIntel(p.totalNetValue),
-          updatedAt: p.updatedAt,
-          daysWithoutFollowUp,
-        };
-      });
-      const proposalsWithoutFollowUp = proposalsWithoutFollowUpDraft
-        .sort((a, b) => b.daysWithoutFollowUp - a.daysWithoutFollowUp)
-        .slice(0, 5);
-
-      const hasPurchaseHistory = lastOrder !== null;
-      const hasOpenProposals = openProposalsCount > 0;
-      const hasProposalWithoutFollowUp = proposalsWithoutFollowUpCount > 0;
-
-      let riskLevel: "LOW" | "MEDIUM" | "HIGH" = "LOW";
-      if (
-        hasProposalWithoutFollowUp ||
-        (daysSinceLastPurchase !== null && daysSinceLastPurchase > 90)
-      ) {
-        riskLevel = "HIGH";
-      } else if (!hasPurchaseHistory || hasOpenProposals) {
-        riskLevel = "MEDIUM";
-      }
-
-      let nextSuggestedAction = "Manter acompanhamento comercial.";
-      if (hasProposalWithoutFollowUp) {
-        nextSuggestedAction = "Fazer follow-up da proposta aberta.";
-      } else if (daysSinceLastPurchase !== null && daysSinceLastPurchase > 90) {
-        nextSuggestedAction = "Entrar em contato para reativação comercial.";
-      } else if (daysSinceLastPurchase !== null && daysSinceLastPurchase <= 30) {
-        nextSuggestedAction = "Realizar pós-venda e identificar nova oportunidade.";
-      }
-
-      const signals: Array<{
-        type: "RISK" | "OPPORTUNITY" | "INFO";
-        severity: "LOW" | "MEDIUM" | "HIGH";
-        title: string;
-        description: string;
-      }> = [];
-
-      if (!hasPurchaseHistory) {
-        signals.push({
-          type: "INFO",
-          severity: "MEDIUM",
-          title: "Sem histórico de compra",
-          description: "Cliente ainda não possui pedido válido registrado no IndusCost.",
-        });
-      }
-      if (daysSinceLastPurchase !== null && daysSinceLastPurchase > 90) {
-        signals.push({
-          type: "RISK",
-          severity: "HIGH",
-          title: "Cliente sem compra há mais de 90 dias",
-          description: "Priorizar contato comercial para entender recorrência ou reativação.",
-        });
-      }
-      if (openProposalsCount > 0) {
-        signals.push({
-          type: "OPPORTUNITY",
-          severity: "MEDIUM",
-          title: "Propostas abertas",
-          description: "Cliente possui propostas em andamento que podem exigir follow-up.",
-        });
-      }
-      if (proposalsWithoutFollowUpCount > 0) {
-        signals.push({
-          type: "RISK",
-          severity: "HIGH",
-          title: "Proposta sem follow-up",
-          description: "Existe proposta aberta sem contato posterior registrado.",
-        });
-      }
-      if (daysSinceLastPurchase !== null && daysSinceLastPurchase <= 30) {
-        signals.push({
-          type: "OPPORTUNITY",
-          severity: "LOW",
-          title: "Compra recente",
-          description: "Cliente comprou recentemente; pode ser bom para pós-venda ou venda complementar.",
-        });
-      }
-
-      res.json({
-        customer: {
-          id: customerRow.id,
-          displayName,
-          taxId: customerRow.taxId,
-        },
-        summary: {
-          hasPurchaseHistory,
-          daysSinceLastPurchase,
-          hasOpenProposals,
-          hasProposalWithoutFollowUp,
-          riskLevel,
-          nextSuggestedAction,
-        },
-        orders: {
-          lastOrder,
-          lastOrders: validOrders5.map(mapOrderLite),
-          totalPurchasedLast12Months,
-          ordersLast12MonthsCount,
-        },
-        proposals: {
-          lastProposal,
-          latestProposals: latestProposals5.map(mapProposalIntel),
-          openProposalsCount,
-          openProposalsValue,
-          latestOpenProposals,
-          proposalsWithoutFollowUpCount,
-          proposalsWithoutFollowUp,
-        },
-        signals,
-      });
     } catch (error) {
       console.error("GET /api/crm/customers/:customerId/commercial-intelligence", error);
       res.status(500).json({ error: "Erro ao carregar inteligência comercial do cliente." });

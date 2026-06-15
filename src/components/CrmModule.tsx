@@ -37,6 +37,7 @@ import {
   TrendingUp,
   ShoppingCart,
   FileSpreadsheet,
+  Package,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -193,7 +194,13 @@ type CommercialIntelOrderLite = {
   totalNetValue: number;
 };
 
-type CommercialIntelProposalLite = {
+type CommercialIntelOpenOrderLite = CommercialIntelOrderLite & {
+  updatedAt: string;
+  responsible: string | null;
+  hasInvoicing: boolean;
+};
+
+type CommercialIntelNegotiationProposal = {
   id: string;
   number: number;
   title: string | null;
@@ -202,14 +209,6 @@ type CommercialIntelProposalLite = {
   createdAt: string;
   updatedAt: string;
   responsible: string | null;
-};
-
-type CommercialIntelProposalNoFollowUp = Omit<
-  CommercialIntelProposalLite,
-  "createdAt" | "responsible"
-> & {
-  updatedAt: string;
-  daysWithoutFollowUp: number;
 };
 
 type CommercialIntelResponse = {
@@ -221,8 +220,10 @@ type CommercialIntelResponse = {
   summary: {
     hasPurchaseHistory: boolean;
     daysSinceLastPurchase: number | null;
-    hasOpenProposals: boolean;
-    hasProposalWithoutFollowUp: boolean;
+    hasOpenOrders: boolean;
+    hasOrderWithoutFollowUp: boolean;
+    hasOpenProposals?: boolean;
+    hasProposalWithoutFollowUp?: boolean;
     riskLevel: "LOW" | "MEDIUM" | "HIGH" | string;
     nextSuggestedAction: string;
   };
@@ -232,14 +233,29 @@ type CommercialIntelResponse = {
     totalPurchasedLast12Months: number;
     ordersLast12MonthsCount: number;
   };
-  proposals: {
-    lastProposal: CommercialIntelProposalLite | null;
-    latestProposals: CommercialIntelProposalLite[];
-    openProposalsCount: number;
-    openProposalsValue: number;
-    latestOpenProposals: CommercialIntelProposalLite[];
-    proposalsWithoutFollowUpCount: number;
-    proposalsWithoutFollowUp: CommercialIntelProposalNoFollowUp[];
+  openOrders: {
+    lastOrder: CommercialIntelOpenOrderLite | null;
+    lastOpenOrder: CommercialIntelOpenOrderLite | null;
+    latestOrders: CommercialIntelOpenOrderLite[];
+    latestOpenOrders: CommercialIntelOpenOrderLite[];
+    openOrdersCount: number;
+    openOrdersValue: number;
+    ordersWithoutFollowUpCount: number;
+    ordersWithoutFollowUp: Array<{
+      id: string;
+      orderCode: string;
+      status: string;
+      totalNetValue: number;
+      updatedAt: string;
+      daysWithoutFollowUp: number;
+    }>;
+    followUpNote: string;
+  };
+  proposals?: {
+    _deprecated: true;
+    _note: string;
+    negotiationCount: number;
+    latestNegotiationProposals: CommercialIntelNegotiationProposal[];
   };
   signals: CommercialIntelSignal[];
 };
@@ -1148,9 +1164,10 @@ function CommercialIntelBoard({
 
   if (!intel) return null;
 
-  const { summary, orders, proposals: propBlock, signals } = intel;
-  const lastThreeOrders = orders.lastOrders.slice(0, 3);
-  const lastThreeProposals = propBlock.latestProposals.slice(0, 3);
+  const { summary, orders, openOrders, proposals: preSalesBlock, signals } = intel;
+  const lastThreeOrders = openOrders.latestOrders.slice(0, 3);
+  const lastThreeOpenOrders = openOrders.latestOpenOrders.slice(0, 3);
+  const negotiationProposals = preSalesBlock?.latestNegotiationProposals?.slice(0, 3) ?? [];
 
   return (
     <section className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 via-card to-card p-6 sm:p-7 shadow-sm space-y-5">
@@ -1162,7 +1179,7 @@ function CommercialIntelBoard({
           <div className="min-w-0">
             <h3 className="text-lg font-bold text-foreground">Inteligência comercial</h3>
             <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
-              Compras, propostas e sinais comerciais calculados a partir dos dados do IndusCost.
+              Pedidos, carteira e sinais comerciais calculados a partir dos dados do IndusCost.
             </p>
           </div>
         </div>
@@ -1223,30 +1240,30 @@ function CommercialIntelBoard({
 
         <div className="rounded-xl border border-border/70 bg-card/80 p-4 space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Propostas abertas
+            Pedidos em carteira
           </p>
-          <p className="text-lg font-bold tabular-nums text-foreground">{propBlock.openProposalsCount}</p>
+          <p className="text-lg font-bold tabular-nums text-foreground">{openOrders.openOrdersCount}</p>
           <p className="text-sm text-muted-foreground">
-            Valor total aberto:{" "}
-            <span className="font-semibold text-foreground">{formatIntelCurrency(propBlock.openProposalsValue)}</span>
+            Valor em carteira:{" "}
+            <span className="font-semibold text-foreground">{formatIntelCurrency(openOrders.openOrdersValue)}</span>
           </p>
         </div>
 
         <div
           className={cn(
             "rounded-xl border p-4 space-y-2",
-            propBlock.proposalsWithoutFollowUpCount > 0
+            openOrders.ordersWithoutFollowUpCount > 0
               ? "border-rose-200 bg-rose-50/50"
               : "border-border/70 bg-card/80"
           )}
         >
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Propostas sem follow-up
+            Pedidos sem follow-up
           </p>
           <p className="text-lg font-bold tabular-nums text-foreground">
-            {propBlock.proposalsWithoutFollowUpCount}
+            {openOrders.ordersWithoutFollowUpCount}
           </p>
-          {propBlock.proposalsWithoutFollowUpCount > 0 ? (
+          {openOrders.ordersWithoutFollowUpCount > 0 ? (
             <p className="text-xs font-semibold text-rose-900">Ação comercial recomendada</p>
           ) : (
             <p className="text-xs text-muted-foreground">Nenhuma pendência neste critério</p>
@@ -1312,6 +1329,7 @@ function CommercialIntelBoard({
                   </span>
                   <span className="block text-[11px] text-muted-foreground mt-0.5">
                     {formatCommercialStatusLabel(o.status)}
+                    {o.hasInvoicing ? " · Faturado" : " · Em carteira"}
                   </span>
                 </li>
               ))}
@@ -1321,31 +1339,56 @@ function CommercialIntelBoard({
 
         <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-bold text-foreground">Últimas propostas</p>
+            <Package className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-bold text-foreground">Carteira aberta</p>
           </div>
-          {lastThreeProposals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhuma proposta encontrada.</p>
+          {lastThreeOpenOrders.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum pedido em carteira no momento.</p>
           ) : (
             <ul className="space-y-2 text-sm">
-              {lastThreeProposals.map((p) => (
-                <li key={p.id} className="rounded-lg border border-border/50 bg-card/70 px-3 py-2">
-                  <span className="font-semibold text-foreground">
-                    {typeof p.number === "number" && Number.isFinite(p.number)
-                      ? `#${p.number}`
-                      : strField(p.title) || "Proposta"}
-                  </span>
+              {lastThreeOpenOrders.map((o) => (
+                <li key={o.id} className="rounded-lg border border-border/50 bg-card/70 px-3 py-2">
+                  <span className="font-semibold text-foreground">{displayLine(o.orderCode)}</span>
                   <span className="text-muted-foreground">
                     {" "}
-                    · {formatCommercialStatusLabel(p.status)} · {formatIntelCurrency(p.totalNetValue)}
+                    · {formatIntelCurrency(o.totalNetValue)} · {formatCommercialStatusLabel(o.status)}
                   </span>
-                  <span className="block text-[11px] text-muted-foreground mt-0.5">{formatDateShortPt(p.createdAt)}</span>
+                  <span className="block text-[11px] text-muted-foreground mt-0.5">
+                    Atualizado {formatDateShortPt(o.updatedAt)}
+                  </span>
                 </li>
               ))}
             </ul>
           )}
         </div>
       </div>
+
+      {negotiationProposals.length > 0 ? (
+        <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-muted/5 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-bold text-foreground">Pré-venda / propostas em negociação</p>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Referência auxiliar de orçamentos — não compõe pipeline principal nem saúde comercial.
+          </p>
+          <ul className="space-y-2 text-sm">
+            {negotiationProposals.map((p) => (
+              <li key={p.id} className="rounded-lg border border-border/40 bg-card/60 px-3 py-2">
+                <span className="font-semibold text-foreground">
+                  {typeof p.number === "number" && Number.isFinite(p.number)
+                    ? `#${p.number}`
+                    : strField(p.title) || "Proposta"}
+                </span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {formatCommercialStatusLabel(p.status)} · {formatIntelCurrency(p.totalNetValue)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }
