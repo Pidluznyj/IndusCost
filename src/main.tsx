@@ -8,6 +8,7 @@ import "./reports-print.css";
 import "./material-demand-print.css";
 import "./proposal-print.css";
 import "./cnpj-intelligence-print.css";
+import "./project-executive-report-print.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { AlertTriangle, Settings2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { ProjectCostAmortizationModal } from "@/src/components/projects/ProjectCostAmortizationModal";
+import { ProjectExecutiveReportButton } from "@/src/components/projects/ProjectExecutiveReportButton";
 import { buildProjectStructureSnapshotGroups } from "@/src/lib/projectsStructureSnapshotGroups";
 import { computeProjectGuidedCosts } from "@/src/lib/projectsGuidedFlow";
 import {
@@ -159,11 +160,14 @@ export function ProjectGuidedCostsTab({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h4 className="text-lg font-semibold">Custos do Projeto</h4>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Resumo financeiro, investimentos em moldes/outros custos e amortização repassada aos itens.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h4 className="text-lg font-semibold">Custos do Projeto</h4>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Resumo financeiro, investimentos em moldes/outros custos e amortização repassada aos itens.
+          </p>
+        </div>
+        <ProjectExecutiveReportButton projectId={projectId} />
       </div>
 
       <div>

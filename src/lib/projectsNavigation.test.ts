@@ -7,6 +7,7 @@ import {
   LEGACY_PROJECT_TAB_ALIASES,
   parseLegacyTabSegment,
   parseProjectTabFromPath,
+  PROJECT_EXECUTIVE_REPORT_PATH,
   PROJECT_TABS,
   PROJECTS_BASE_PATH,
 } from "./projectsNavigation.js";
@@ -62,7 +63,12 @@ describe("projectsNavigation", () => {
     const app = readFileSync(join(process.cwd(), "src", "App.tsx"), "utf8");
     assert.match(app, /path="projects"/);
     assert.match(app, /path="projects\/:projectId"/);
+    assert.match(app, /projects\/:projectId\/report/);
     assert.match(app, /ProjectsModule/);
+  });
+
+  it("rota de relatório gerencial executivo", () => {
+    assert.equal(PROJECT_EXECUTIVE_REPORT_PATH("abc"), "/projects/abc/report");
   });
 
   it("ProjectsModule exibe botão de conversão como ação futura", () => {

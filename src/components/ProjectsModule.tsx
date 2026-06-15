@@ -43,6 +43,7 @@ import { ProjectAddItemModal } from "@/src/components/projects/ProjectAddItemMod
 import { PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION } from "@/src/lib/projectsAddItemPolicy";
 import { ProjectEngineeringItemModal } from "@/src/components/projects/ProjectEngineeringItemModal";
 import { ProjectGuidedCostsTab } from "@/src/components/projects/ProjectGuidedCostsTab";
+import { ProjectExecutiveReportButton } from "@/src/components/projects/ProjectExecutiveReportButton";
 import { ProjectGuidedMoldModal } from "@/src/components/projects/ProjectGuidedMoldModal";
 import { ProjectHistory } from "@/src/components/projects/ProjectHistory";
 import { ProjectHomeAssistant } from "@/src/components/projects/ProjectHomeAssistant";
@@ -804,6 +805,7 @@ function ProjectDetailView({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ProjectExecutiveReportButton projectId={projectId} />
           <button
             type="button"
             disabled

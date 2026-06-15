@@ -2,6 +2,9 @@ export const PROJECTS_BASE_PATH = "/projects";
 
 export const PROJECT_DETAIL_PATH = (projectId: string) => `${PROJECTS_BASE_PATH}/${projectId}`;
 
+export const PROJECT_EXECUTIVE_REPORT_PATH = (projectId: string) =>
+  `${PROJECT_DETAIL_PATH(projectId)}/report`;
+
 /** Menu enxuto — fluxo guiado por criação de itens. */
 export type ProjectTabId = "home" | "items" | "costs" | "documents" | "history";
 
