@@ -459,6 +459,23 @@ describe("ProjectsModule UI — fluxo guiado", () => {
     assert.equal(mod.includes("window.confirm"), false);
   });
 
+  it("aba Itens do Projeto usa mesma normalização da home e não fica em branco", () => {
+    const mod = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
+    const itemsTab = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectItemsTab.tsx"),
+      "utf8"
+    );
+    assert.match(mod, /tab === "items"/);
+    assert.match(mod, /detail=\{detail\}/);
+    assert.match(mod, /LEGACY_PROJECT_TAB_ALIASES/);
+    assert.match(itemsTab, /buildProjectGuidedItems\(detail\)/);
+    assert.match(itemsTab, /Abrir/);
+    assert.match(itemsTab, /Remover/);
+    assert.match(itemsTab, /formatProjectGuidedItemCost/);
+    assert.match(itemsTab, /Produto oficial|itemTypeLabel/);
+    assert.equal(itemsTab.includes("window.confirm"), false);
+  });
+
   it("custo pendente exibe Sem custo em vez de traço", () => {
     assert.equal(formatProjectGuidedItemCost(null, "PENDING_COST"), "Sem custo");
     assert.equal(formatProjectGuidedItemCost(0, "PENDING_COST"), "Sem custo");

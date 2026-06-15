@@ -17,7 +17,6 @@ import { cn } from "@/src/lib/utils";
 import {
   appendGuidedComponentKind,
   appendGuidedReferenceOrigin,
-  buildProjectGuidedItems,
   buildSimulatedProductRefNotes,
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
@@ -32,6 +31,7 @@ import {
 } from "@/src/lib/projectsOtherCostGroups";
 import {
   getProjectTabPath,
+  LEGACY_PROJECT_TAB_ALIASES,
   parseLegacyTabSegment,
   parseProjectTabFromPath,
   PROJECT_TABS,
@@ -524,11 +524,6 @@ function ProjectDetailView({
     [tab, projectId]
   );
 
-  const guidedItems = useMemo(
-    () => (detail ? buildProjectGuidedItems(detail) : []),
-    [detail]
-  );
-
   const workspaceSimulatedItems = useMemo(
     () => (detail ? detail.simulatedItems.filter((i) => !isGuidedOtherCostItem(i.notes)) : []),
     [detail]
@@ -777,7 +772,10 @@ function ProjectDetailView({
   };
 
   if (legacyTab) {
-    return <Navigate to={getProjectTabPath(projectId, tab)} replace />;
+    const targetPath = getProjectTabPath(projectId, LEGACY_PROJECT_TAB_ALIASES[legacyTab]);
+    if (targetPath !== window.location.pathname) {
+      return <Navigate to={targetPath} replace />;
+    }
   }
 
   return (
@@ -895,7 +893,7 @@ function ProjectDetailView({
 
       {tab === "items" ? (
         <ProjectItemsTab
-          items={guidedItems}
+          detail={detail}
           canManage={canManage}
           onAddItem={openAddItem}
           onCreateMold={openCreateMold}

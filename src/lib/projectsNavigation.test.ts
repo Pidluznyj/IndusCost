@@ -36,6 +36,16 @@ describe("projectsNavigation", () => {
     assert.equal(LEGACY_PROJECT_TAB_ALIASES.engineering, "home");
   });
 
+  it("aba Itens do Projeto (/items) não dispara redirect legado", () => {
+    assert.equal(parseProjectTabFromPath("/projects/x/items"), "items");
+    assert.equal(parseLegacyTabSegment("/projects/x/items"), null);
+    assert.equal(parseLegacyTabSegment("/projects/x/costs"), null);
+    assert.equal(parseLegacyTabSegment("/projects/x/documents"), null);
+    assert.equal(parseLegacyTabSegment("/projects/x/history"), null);
+    assert.equal(parseLegacyTabSegment("/projects/x/structure"), "structure");
+    assert.equal(parseLegacyTabSegment("/projects/x/materials"), "materials");
+  });
+
   it("menu possui 5 abas enxutas", () => {
     assert.deepEqual(PROJECT_TABS.map((t) => t.label), [
       "Início",

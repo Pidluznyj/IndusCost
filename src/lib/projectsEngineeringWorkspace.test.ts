@@ -81,6 +81,7 @@ describe("projectsNavigation — aliases legados", () => {
     assert.equal(parseProjectTabFromPath("/projects/x/items"), "items");
     assert.equal(parseProjectTabFromPath("/projects/x/versions"), "history");
     assert.equal(parseLegacyTabSegment("/projects/x/products"), "products");
+    assert.equal(parseLegacyTabSegment("/projects/x/items"), null);
     assert.equal(LEGACY_PROJECT_TAB_ALIASES.products, "home");
     assert.equal(getProjectTabPath("x", "home"), "/projects/x");
   });

@@ -63,8 +63,10 @@ export function parseLegacyTabSegment(pathname: string): LegacyProjectTabId | nu
   const segment = pathname.replace(/^\//, "").split("/").filter(Boolean);
   if (segment[0] !== "projects" || !segment[1]) return null;
   const tab = segment[2];
-  if (tab && tab in LEGACY_PROJECT_TAB_ALIASES) return tab as LegacyProjectTabId;
-  return null;
+  if (!tab || !(tab in LEGACY_PROJECT_TAB_ALIASES)) return null;
+  // Abas atuais do fluxo guiado não devem disparar redirect legado (ex.: /items).
+  if (PROJECT_TABS.some((t) => t.id === tab)) return null;
+  return tab as LegacyProjectTabId;
 }
 
 export function getProjectTabPath(projectId: string, tab: ProjectTabId): string {

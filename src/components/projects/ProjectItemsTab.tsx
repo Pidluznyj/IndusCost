@@ -7,6 +7,7 @@ import {
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
 import { formatProjectGuidedItemCost } from "@/src/lib/projectsUiUtils";
+import type { ProjectDetail } from "@/src/types/projects";
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
@@ -16,7 +17,7 @@ function formatDate(value: string | null | undefined) {
 }
 
 type Props = {
-  items: ProjectGuidedItemRow[];
+  detail: ProjectDetail;
   canManage: boolean;
   onAddItem: () => void;
   onCreateMold: () => void;
@@ -26,7 +27,7 @@ type Props = {
 };
 
 export function ProjectItemsTab({
-  items,
+  detail,
   canManage,
   onAddItem,
   onCreateMold,
@@ -34,6 +35,7 @@ export function ProjectItemsTab({
   onOpenItem,
   onDeleteItem,
 }: Props) {
+  const items = buildProjectGuidedItems(detail);
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
