@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { 
   TrendingUp, 
   Plus, 
@@ -22,6 +23,7 @@ import {
   FileText,
   Printer,
   Search,
+  FolderKanban,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
@@ -50,6 +52,12 @@ import {
   type NewProductSimulationSnapshot,
 } from "@/src/lib/newProductSimulationSnapshot";
 import { NewProductSimulationReport } from "@/src/components/NewProductSimulationReport";
+import { PROJECTS_BASE_PATH } from "@/src/lib/projectsNavigation";
+import {
+  parseSimulationsWorkspaceTabParam,
+  SIMULATIONS_NEW_PRODUCT_TAB_PARAM,
+  SIMULATIONS_TO_PROJECTS_HINT,
+} from "@/src/lib/simulationsNavigation";
 
 type PersistedNewProductSimulationSummary = {
   id: string;
@@ -94,7 +102,10 @@ function parseProductCostAnalysisPayload(
 }
 
 export const SimulationModule = () => {
-  const [workspaceTab, setWorkspaceTab] = useState<"SCENARIOS" | "NEW_PRODUCT">("SCENARIOS");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [workspaceTab, setWorkspaceTab] = useState<"SCENARIOS" | "NEW_PRODUCT">(() =>
+    parseSimulationsWorkspaceTabParam(searchParams.get("tab"))
+  );
   const [simulations, setSimulations] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [taxRules, setTaxRules] = useState<any[]>([]);
@@ -153,6 +164,22 @@ export const SimulationModule = () => {
     efficiencyAdj: 0,
     marginAdj: 0,
   });
+
+  const selectWorkspaceTab = (tab: "SCENARIOS" | "NEW_PRODUCT") => {
+    setWorkspaceTab(tab);
+    const next = new URLSearchParams(searchParams);
+    if (tab === "NEW_PRODUCT") {
+      next.set("tab", SIMULATIONS_NEW_PRODUCT_TAB_PARAM);
+    } else {
+      next.delete("tab");
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  useEffect(() => {
+    const fromUrl = parseSimulationsWorkspaceTabParam(searchParams.get("tab"));
+    setWorkspaceTab((current) => (current === fromUrl ? current : fromUrl));
+  }, [searchParams]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -994,13 +1021,22 @@ export const SimulationModule = () => {
         <div className="flex flex-col gap-1">
           <h2 className="text-2xl font-bold tracking-tight">Cenários e Simulações</h2>
           <p className="text-xs text-muted-foreground">Teste o impacto de variações de mercado sem alterar seus dados oficiais.</p>
+          <p className="text-xs text-muted-foreground">{SIMULATIONS_TO_PROJECTS_HINT}</p>
           {headerSimulatedProductName ? (
             <p className="text-sm font-medium text-foreground/90">
               Produto simulado: <span className="font-bold">{headerSimulatedProductName}</span>
             </p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to={PROJECTS_BASE_PATH}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
+            data-testid="simulations-go-to-projects"
+          >
+            <FolderKanban className="h-4 w-4" />
+            Ver projetos
+          </Link>
           <TourHelpButton onClick={() => setTourOpen(true)} />
           {workspaceTab === "SCENARIOS" && (
             <button
@@ -1017,7 +1053,7 @@ export const SimulationModule = () => {
       <div className="inline-flex rounded-xl border border-border p-1 bg-accent/20">
         <button
           type="button"
-          onClick={() => setWorkspaceTab("SCENARIOS")}
+          onClick={() => selectWorkspaceTab("SCENARIOS")}
           className={cn(
             "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
             workspaceTab === "SCENARIOS"
@@ -1029,7 +1065,7 @@ export const SimulationModule = () => {
         </button>
         <button
           type="button"
-          onClick={() => setWorkspaceTab("NEW_PRODUCT")}
+          onClick={() => selectWorkspaceTab("NEW_PRODUCT")}
           className={cn(
             "px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
             workspaceTab === "NEW_PRODUCT"
