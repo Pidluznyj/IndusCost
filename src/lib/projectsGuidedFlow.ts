@@ -5,6 +5,7 @@ import {
   OTHER_COST_GROUP_LABEL,
   parseOtherCostMeta,
 } from "@/src/lib/projectsOtherCostGroups";
+import { isGuidedSimulationItem } from "@/src/lib/projectsSimulationRefs";
 import type {
   ProjectDetail,
   ProjectMoldRow,
@@ -15,11 +16,11 @@ import type {
 
 export const PROJECT_GUIDED_HOME_TITLE = "Montagem do Projeto";
 export const PROJECT_GUIDED_HOME_SUBTITLE =
-  "Crie os produtos, moldes e custos adicionais que compõem este projeto.";
+  "Monte o orçamento com produtos oficiais, simulações salvas, moldes e outros custos.";
 export const PROJECT_GUIDED_HOME_INTRO =
-  "Monte os itens do projeto para simular produto, molde e custos adicionais antes de transformar isso em cadastro oficial.";
+  "Adicione itens já existentes ou simulações criadas em Simulações. O projeto não cria engenharia nova — apenas agrupa e custeia o orçamento.";
 export const PROJECT_GUIDED_MASTER_NOTICE =
-  "Este item será salvo somente no projeto e não altera o cadastro mestre.";
+  "Itens adicionados ficam somente neste projeto e não alteram cadastro oficial nem simulações.";
 
 export const GUIDED_ORIGIN_REFERENCE_MARKER = "guided-origin:REFERENCE";
 export const GUIDED_ITEM_KIND_COMPONENT_MARKER = "guided-item-kind:COMPONENT";
@@ -95,7 +96,8 @@ export type ProjectGuidedOrigin =
   | "CREATED_IN_PROJECT"
   | "CLONED_FROM_OFFICIAL"
   | "OFFICIAL_REFERENCE"
-  | "MANUAL_ENTRY";
+  | "MANUAL_ENTRY"
+  | "FROM_SIMULATION";
 
 export type ProjectGuidedStatus =
   | "DRAFT"
@@ -107,7 +109,7 @@ export type ProjectGuidedStatus =
 
 export type ProjectGuidedItemRow = {
   id: string;
-  entityKind: "product" | "mold" | "other_cost" | "engineering_clone";
+  entityKind: "product" | "mold" | "other_cost" | "engineering_clone" | "simulation_ref";
   itemType: ProjectGuidedItemType;
   itemTypeLabel: string;
   code: string | null;
@@ -140,10 +142,11 @@ export type ProjectGuidedCostSummary = {
 };
 
 const ORIGIN_LABEL: Record<ProjectGuidedOrigin, string> = {
-  CREATED_IN_PROJECT: "Criado no projeto",
-  CLONED_FROM_OFFICIAL: "Clonado de item oficial",
+  CREATED_IN_PROJECT: "Legado — criado no projeto",
+  CLONED_FROM_OFFICIAL: "Produto oficial",
   OFFICIAL_REFERENCE: "Item oficial reutilizado",
   MANUAL_ENTRY: "Lançamento manual",
+  FROM_SIMULATION: "Simulações",
 };
 
 const STATUS_LABEL: Record<ProjectGuidedStatus, string> = {
@@ -221,6 +224,27 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
 
   for (const item of detail.simulatedItems) {
     if (isGuidedOtherCostItem(item.notes)) continue;
+    if (isGuidedSimulationItem(item.notes)) {
+      const cost = item.quotedUnitCost ?? item.estimatedUnitCost;
+      rows.push({
+        id: item.id,
+        entityKind: "simulation_ref",
+        itemType: "PRODUCT",
+        itemTypeLabel: "Produto simulado",
+        code: item.provisionalCode,
+        name: item.description,
+        description: item.description,
+        origin: "FROM_SIMULATION",
+        originLabel: ORIGIN_LABEL.FROM_SIMULATION,
+        status: resolveStatus(detail.status, cost != null && cost > 0),
+        statusLabel: STATUS_LABEL[resolveStatus(detail.status, cost != null && cost > 0)],
+        estimatedCost: cost,
+        costKind: "unit",
+        updatedAt: detail.updatedAt,
+        simulatedItemId: item.id,
+      });
+      continue;
+    }
     const cost = item.quotedUnitCost ?? item.estimatedUnitCost;
     const itemType: ProjectGuidedItemType =
       item.itemType === "RAW_MATERIAL"

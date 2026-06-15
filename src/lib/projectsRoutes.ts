@@ -43,6 +43,15 @@ import {
   loadOfficialProductSnapshot,
 } from "@/src/lib/projectsProductSnapshot.js";
 import {
+  PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION,
+  projectInProjectProductCreationDisabledPayload,
+} from "@/src/lib/projectsAddItemPolicy.js";
+import { isGuidedOtherCostItem } from "@/src/lib/projectsOtherCostGroups.js";
+import {
+  addSimulationReferenceToProject,
+  lookupProjectSimulations,
+} from "@/src/lib/projectsSimulationItemService.js";
+import {
   buildStructureLineTotal,
   copyVersionFromCurrent,
   createProjectWithVersion,
@@ -301,6 +310,39 @@ export function registerProjectsRoutes(
     }
   });
 
+  app.get("/api/projects/lookup/simulations", ...lookup, async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const rows = await lookupProjectSimulations(q);
+      res.json({ rows });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/lookup/simulations", e);
+      res.status(500).json({ error: "Erro ao buscar simulações." });
+    }
+  });
+
+  app.post("/api/projects/:id/simulation-references", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const ctx = await requireProjectAndVersion(req.params.id);
+      if ("error" in ctx) return res.status(404).json({ error: ctx.error });
+      const simulationId = typeof req.body?.simulationId === "string" ? req.body.simulationId.trim() : "";
+      if (!isUuid(simulationId)) {
+        return res.status(400).json({ error: "simulationId inválido." });
+      }
+      const row = await addSimulationReferenceToProject({
+        projectId: req.params.id,
+        versionId: ctx.version.id,
+        simulationId,
+      });
+      res.status(201).json(row);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Erro ao adicionar simulação ao projeto.";
+      console.error("POST simulation-references", e);
+      res.status(400).json({ error: message });
+    }
+  });
+
   app.post("/api/projects/:id/import-product-snapshot", ...manage, async (req, res) => {
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
@@ -523,6 +565,9 @@ export function registerProjectsRoutes(
   });
 
   app.post("/api/projects/:id/simulated-products", ...manage, async (req, res) => {
+    if (PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION) {
+      return res.status(403).json(projectInProjectProductCreationDisabledPayload());
+    }
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
       const ctx = await requireProjectAndVersion(req.params.id);
@@ -609,6 +654,10 @@ export function registerProjectsRoutes(
       const ctx = await requireProjectAndVersion(req.params.id);
       if ("error" in ctx) return res.status(404).json({ error: ctx.error });
       const body = req.body ?? {};
+      const notes = typeof body.notes === "string" ? body.notes : null;
+      if (PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION && !isGuidedOtherCostItem(notes)) {
+        return res.status(403).json(projectInProjectProductCreationDisabledPayload());
+      }
       const description = typeof body.description === "string" ? body.description.trim() : "";
       if (!description) return res.status(400).json({ error: "Descrição é obrigatória." });
 
@@ -733,6 +782,9 @@ export function registerProjectsRoutes(
 
       let simulatedProductId: string | null = null;
       if (isUuid(body.simulatedProductId)) {
+        if (PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION) {
+          return res.status(403).json(projectInProjectProductCreationDisabledPayload());
+        }
         const simulatedProduct = await prisma.projectSimulatedProduct.findFirst({
           where: { id: body.simulatedProductId, projectId: req.params.id },
         });

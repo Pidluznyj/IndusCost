@@ -22,7 +22,7 @@ function formatDate(value: string | null | undefined) {
 type Props = {
   items: ProjectGuidedItemRow[];
   canManage: boolean;
-  onCreateProduct: () => void;
+  onAddItem: () => void;
   onCreateMold: () => void;
   onCreateOtherCost: () => void;
   onOpenItem: (item: ProjectGuidedItemRow) => void;
@@ -32,7 +32,7 @@ type Props = {
 export function ProjectItemsTab({
   items,
   canManage,
-  onCreateProduct,
+  onAddItem,
   onCreateMold,
   onCreateOtherCost,
   onOpenItem,
@@ -44,15 +44,15 @@ export function ProjectItemsTab({
         <div>
           <h4 className="text-lg font-semibold">Itens do Projeto</h4>
           <p className="mt-1 text-sm text-muted-foreground">
-            Produtos, moldes e custos adicionais vinculados a este projeto.
+            Produtos oficiais, simulações, moldes e custos adicionais vinculados a este projeto.
           </p>
           <p className="mt-2 text-xs text-muted-foreground">{PROJECT_GUIDED_MASTER_NOTICE}</p>
         </div>
         {canManage ? (
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={onCreateProduct}>
+            <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={onAddItem}>
               <Plus className="mr-1 inline h-4 w-4" />
-              Criar produto
+              Adicionar item
             </button>
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={onCreateMold}>
               Criar molde

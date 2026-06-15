@@ -39,6 +39,8 @@ import {
   type ProjectTabId,
 } from "@/src/lib/projectsNavigation";
 import { ProjectDocuments } from "@/src/components/projects/ProjectDocuments";
+import { ProjectAddItemModal } from "@/src/components/projects/ProjectAddItemModal";
+import { PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION } from "@/src/lib/projectsAddItemPolicy";
 import { ProjectEngineeringItemModal } from "@/src/components/projects/ProjectEngineeringItemModal";
 import { ProjectGuidedCostsTab } from "@/src/components/projects/ProjectGuidedCostsTab";
 import { ProjectGuidedMoldModal } from "@/src/components/projects/ProjectGuidedMoldModal";
@@ -496,6 +498,7 @@ function ProjectDetailView({
   const [otherCostsModalMode, setOtherCostsModalMode] = useState<"create" | "edit">("create");
   const [editingOtherCostBatchId, setEditingOtherCostBatchId] = useState<string | null>(null);
   const [editingOtherCostLines, setEditingOtherCostLines] = useState<ProjectOtherCostLine[]>([]);
+  const [addItemModalOpen, setAddItemModalOpen] = useState(false);
   const [postSavePrompt, setPostSavePrompt] = useState(false);
   const [simulatedWorkspaceProductId, setSimulatedWorkspaceProductId] = useState<string | null>(
     null
@@ -666,20 +669,9 @@ function ProjectDetailView({
     );
   }
 
-  const openCreateProduct = () => {
+  const openAddItem = () => {
     setModalError(null);
-    setEngineeringItemModalMode("create");
-    setEditingProduct(null);
-    setEngineeringDefaultKind("PRODUCT");
-    setEngineeringItemModalOpen(true);
-  };
-
-  const openCreateChildComponent = () => {
-    setModalError(null);
-    setEngineeringItemModalMode("create");
-    setEditingProduct(null);
-    setEngineeringDefaultKind("COMPONENT");
-    setEngineeringItemModalOpen(true);
+    setAddItemModalOpen(true);
   };
 
   const openStructureLineAdd = (
@@ -869,8 +861,8 @@ function ProjectDetailView({
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
           Item salvo no projeto. O que deseja adicionar agora?
           <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" className="rounded-lg border bg-white px-3 py-1.5 text-sm" onClick={openCreateProduct}>
-              Criar novo produto
+            <button type="button" className="rounded-lg border bg-white px-3 py-1.5 text-sm" onClick={openAddItem}>
+              Adicionar item
             </button>
             <button type="button" className="rounded-lg border bg-white px-3 py-1.5 text-sm" onClick={openCreateMold}>
               Criar molde
@@ -893,7 +885,7 @@ function ProjectDetailView({
         <ProjectHomeAssistant
           detail={detail}
           canManage={canManage}
-          onCreateProduct={openCreateProduct}
+          onAddItem={openAddItem}
           onCreateMold={openCreateMold}
           onCreateOtherCost={openCreateOtherCost}
           onOpenItem={handleGuidedItemOpen}
@@ -904,7 +896,7 @@ function ProjectDetailView({
         <ProjectItemsTab
           items={guidedItems}
           canManage={canManage}
-          onCreateProduct={openCreateProduct}
+          onAddItem={openAddItem}
           onCreateMold={openCreateMold}
           onCreateOtherCost={openCreateOtherCost}
           onOpenItem={handleGuidedItemOpen}
@@ -977,6 +969,23 @@ function ProjectDetailView({
         }}
       />
 
+      <ProjectAddItemModal
+        open={addItemModalOpen}
+        projectId={projectId}
+        projectLabel={`${detail.code} — ${detail.title}`}
+        saving={saving}
+        error={modalError}
+        onClose={() => {
+          setAddItemModalOpen(false);
+          setModalError(null);
+        }}
+        onAdded={async () => {
+          await load();
+          setPostSavePrompt(true);
+        }}
+      />
+
+      {!PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION ? (
       <ProjectEngineeringItemModal
         open={engineeringItemModalOpen}
         mode={engineeringItemModalMode}
@@ -1085,6 +1094,7 @@ function ProjectDetailView({
           }
         }}
       />
+      ) : null}
 
       <ProjectOtherCostsModal
         open={otherCostsModalOpen}
@@ -1218,7 +1228,8 @@ function ProjectDetailView({
           simulatedProducts={detail.simulatedProducts}
           saving={saving}
           error={structureLineError}
-          canManage={canManage}
+          canManage={canManage && !PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION}
+          legacyReadOnly={PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION}
           onClose={() => {
             setSimulatedWorkspaceProductId(null);
             setStructureLineError(null);
@@ -1245,7 +1256,7 @@ function ProjectDetailView({
             }
           }}
           onAddLine={openStructureLineAdd}
-          onCreateChildComponent={openCreateChildComponent}
+          onCreateChildComponent={() => {}}
           onEditLine={(line) => {
             setStructureLineError(null);
             setEditingStructureLine(line);

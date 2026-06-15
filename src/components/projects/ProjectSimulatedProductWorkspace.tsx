@@ -46,6 +46,7 @@ type Props = {
   saving?: boolean;
   error?: string | null;
   canManage?: boolean;
+  legacyReadOnly?: boolean;
   onClose: () => void;
   onReload: () => Promise<void>;
   onPatchProduct: (body: Record<string, unknown>) => Promise<void>;
@@ -71,6 +72,7 @@ export function ProjectSimulatedProductWorkspace({
   saving,
   error,
   canManage = true,
+  legacyReadOnly = false,
   onClose,
   onReload,
   onPatchProduct,
@@ -236,12 +238,16 @@ export function ProjectSimulatedProductWorkspace({
     }
   };
 
+  const effectiveCanManage = canManage && !legacyReadOnly;
+
   const addButtons: { label: string; source: ProjectStructureSourceType; action?: () => void }[] = [
     { label: "Matéria-prima oficial", source: "EXISTING_MATERIAL" },
     { label: "Componente oficial", source: "EXISTING_PRODUCT" },
     { label: "Item do projeto", source: "SIMULATED_ITEM" },
     { label: "Item manual / orçado", source: "MANUAL" },
-    { label: "Novo componente do projeto", source: "MANUAL", action: onCreateChildComponent },
+    ...(legacyReadOnly
+      ? []
+      : [{ label: "Novo componente do projeto", source: "MANUAL" as const, action: onCreateChildComponent }]),
   ];
 
   const fieldClass = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
@@ -273,6 +279,13 @@ export function ProjectSimulatedProductWorkspace({
           <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
             {PROJECT_GUIDED_MASTER_NOTICE}
           </p>
+
+          {legacyReadOnly ? (
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+              Produto criado anteriormente neste projeto (legado). Visualização somente leitura — para
+              engenharia nova, use Simulações → Simular novo produto.
+            </p>
+          ) : null}
 
           {error ? (
             <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -345,7 +358,7 @@ export function ProjectSimulatedProductWorkspace({
                   />
                 </div>
               </div>
-              {canManage ? (
+              {effectiveCanManage ? (
                 <button
                   type="button"
                   disabled={infoSaving || saving || !infoDraft.description.trim()}
@@ -359,7 +372,7 @@ export function ProjectSimulatedProductWorkspace({
             </div>
           ) : null}
 
-          {(tab === "tree" || tab === "bom") && canManage ? (
+          {(tab === "tree" || tab === "bom") && effectiveCanManage ? (
             <div className="mb-4 flex flex-wrap gap-2">
               {addButtons.map((btn) => (
                 <button
@@ -404,12 +417,12 @@ export function ProjectSimulatedProductWorkspace({
                   tree={engineeringTree}
                   selectedLineId={selectedTreeLineId}
                   onSelectLine={(line) => setSelectedTreeLineId(line?.id ?? null)}
-                  onEditLine={canManage ? onEditLine : undefined}
-                  canManage={canManage}
+                  onEditLine={effectiveCanManage ? onEditLine : undefined}
+                  canManage={effectiveCanManage}
                   variant="embedded"
                 />
               )}
-              {selectedTreeLineId && canManage ? (
+              {selectedTreeLineId && effectiveCanManage ? (
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -458,7 +471,7 @@ export function ProjectSimulatedProductWorkspace({
                     Prévia do total (1º nível):{" "}
                     <strong>{formatCurrency(bomPreviewTotal)}</strong>
                   </span>
-                  {canManage ? (
+                  {effectiveCanManage ? (
                     <button
                       type="button"
                       disabled={bomSaving || saving}

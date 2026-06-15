@@ -50,7 +50,7 @@ function ActionCard({ icon: Icon, title, description, buttonLabel, onClick, disa
 type Props = {
   detail: ProjectDetail;
   canManage: boolean;
-  onCreateProduct: () => void;
+  onAddItem: () => void;
   onCreateMold: () => void;
   onCreateOtherCost: () => void;
   onOpenItem?: (item: ProjectGuidedItemRow) => void;
@@ -59,7 +59,7 @@ type Props = {
 export function ProjectHomeAssistant({
   detail,
   canManage,
-  onCreateProduct,
+  onAddItem,
   onCreateMold,
   onCreateOtherCost,
   onOpenItem,
@@ -82,37 +82,40 @@ export function ProjectHomeAssistant({
         <h5 className="mb-3 text-sm font-medium text-muted-foreground">
           O que você deseja adicionar ao projeto?
         </h5>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <ActionCard
             icon={Package}
-            title="Criar novo produto"
-            description="Crie um produto, componente ou matéria-prima somente dentro deste projeto."
-            buttonLabel="Criar produto"
-            onClick={onCreateProduct}
+            title="Itens existentes"
+            description="Produto oficial, componente oficial ou produto simulado salvo em Simulações."
+            buttonLabel="Adicionar item"
+            onClick={onAddItem}
             disabled={!canManage}
           />
           <ActionCard
             icon={Wrench}
-            title="Criar molde"
-            description="Liste materiais, serviços e custos necessários para construção ou alteração de molde."
+            title="Molde"
+            description="Materiais, serviços e custos de construção ou alteração de molde."
             buttonLabel="Criar molde"
             onClick={onCreateMold}
             disabled={!canManage}
           />
           <ActionCard
             icon={Coins}
-            title="Criar outros custos"
-            description="Adicione custos extras do projeto, como testes, desenvolvimento, dispositivos, frete ou serviços."
+            title="Outros custos"
+            description="Testes, desenvolvimento, dispositivos, frete ou serviços extras do projeto."
             buttonLabel="Adicionar custo"
             onClick={onCreateOtherCost}
             disabled={!canManage}
           />
         </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Produtos oficiais: cadastro de engenharia. Simulações: menu Simulações → Simular novo produto.
+        </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatMini label="Itens do projeto" value={String(costs.itemCount)} />
-        <StatMini label="Produtos criados" value={String(costs.productCount)} />
+        <StatMini label="Produtos / simulações" value={String(costs.productCount)} />
         <StatMini label="Moldes" value={String(costs.moldCount)} />
         <StatMini label="Outros custos" value={String(costs.otherCostCount)} />
         <StatMini label="Itens pendentes" value={String(costs.pendingCount)} />
@@ -132,7 +135,7 @@ export function ProjectHomeAssistant({
             <Box className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-3 text-sm font-medium">Nenhum item adicionado ao projeto ainda.</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Comece criando um produto, molde ou custo adicional.
+              Adicione produtos oficiais, simulações existentes, moldes ou outros custos.
             </p>
           </div>
         ) : (
@@ -175,9 +178,9 @@ export function ProjectHomeAssistant({
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-sm font-medium">O que deseja adicionar agora?</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <QuickBtn label="Criar novo produto" onClick={onCreateProduct} />
+            <QuickBtn label="Adicionar item" onClick={onAddItem} />
             <QuickBtn label="Criar molde" onClick={onCreateMold} />
-            <QuickBtn label="Criar outros custos" onClick={onCreateOtherCost} />
+            <QuickBtn label="Adicionar outros custos" onClick={onCreateOtherCost} />
           </div>
         </div>
       ) : null}

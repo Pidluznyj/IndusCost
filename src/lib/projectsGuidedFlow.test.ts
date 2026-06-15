@@ -184,17 +184,45 @@ describe("projectsGuidedFlow", () => {
     const product = items.find((i) => i.productId === "sp-ref");
     assert.equal(product?.origin, "OFFICIAL_REFERENCE");
   });
+  it("lista produto simulado de Simulações como item guiado", () => {
+    const detail = minimalDetail({
+      simulatedItems: [
+        {
+          id: "sim-ref",
+          provisionalCode: "SIM-X",
+          description: "Simulação salva",
+          itemType: "FINISHED_PRODUCT",
+          unit: "UN",
+          estimatedUnitCost: 50,
+          quotedUnitCost: 50,
+          supplierName: null,
+          leadTimeDays: null,
+          estimatedWeight: null,
+          lossPercent: 0,
+          requiresQuotation: false,
+          requiresEngineeringReview: false,
+          canBecomeOfficial: false,
+          notes: "guided-origin:SIMULATION\nguided-simulation-id:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        },
+      ],
+    });
+    const items = buildProjectGuidedItems(detail);
+    const sim = items.find((i) => i.entityKind === "simulation_ref");
+    assert.equal(sim?.origin, "FROM_SIMULATION");
+    assert.equal(sim?.estimatedCost, 50);
+  });
 });
 
 describe("ProjectsModule UI — fluxo guiado", () => {
-  it("tela inicial exibe ações Criar novo produto, Criar molde e Criar outros custos", () => {
+  it("tela inicial exibe adicionar item, molde e outros custos", () => {
     const home = readFileSync(
       join(process.cwd(), "src", "components", "projects", "ProjectHomeAssistant.tsx"),
       "utf8"
     );
-    assert.match(home, /Criar novo produto/);
+    assert.match(home, /Adicionar item/);
     assert.match(home, /Criar molde/);
-    assert.match(home, /Criar outros custos/);
+    assert.match(home, /Adicionar custo|outros custos/i);
+    assert.equal(home.includes("Criar novo produto"), false);
     assert.equal(PROJECT_GUIDED_HOME_TITLE, "Montagem do Projeto");
     assert.match(home, /PROJECT_GUIDED_HOME_TITLE/);
   });
@@ -206,7 +234,7 @@ describe("ProjectsModule UI — fluxo guiado", () => {
     );
     assert.match(modal, /Adicionar item de engenharia ao projeto/);
     assert.match(modal, /PROJECT_GUIDED_MASTER_NOTICE/);
-    assert.match(PROJECT_GUIDED_MASTER_NOTICE, /não altera o cadastro mestre/i);
+    assert.match(PROJECT_GUIDED_MASTER_NOTICE, /não alteram cadastro oficial/i);
     assert.match(modal, /Produto/);
     assert.match(modal, /Componente/);
     assert.match(modal, /Matéria-prima/);
@@ -250,23 +278,23 @@ describe("ProjectsModule UI — fluxo guiado", () => {
     assert.equal(nav.includes("Estrutura / Árvore"), false);
   });
 
-  it("ProjectsModule monta workspace de produto simulado e modais de estrutura", () => {
+  it("ProjectsModule monta workspace legado e modal de adicionar item", () => {
     const mod = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
     assert.match(mod, /ProjectSimulatedProductWorkspace/);
-    assert.match(mod, /ProjectStructureLineModal/);
+    assert.match(mod, /ProjectAddItemModal/);
+    assert.match(mod, /legacyReadOnly/);
     assert.match(mod, /setSimulatedWorkspaceProductId/);
-    assert.match(mod, /onSaveBomPatches/);
     assert.match(mod, /resolveReferencedSimulatedProductUnitCost/);
   });
 
-  it("workspace expõe BOM editável alinhado ao painel de simulação", () => {
+  it("workspace legado oculta criação de subcomponente quando somente leitura", () => {
     const ws = readFileSync(
       join(process.cwd(), "src", "components", "projects", "ProjectSimulatedProductWorkspace.tsx"),
       "utf8"
     );
     assert.match(ws, /ProjectBomSimulationTable/);
-    assert.match(ws, /Salvar alterações do BOM/);
-    assert.match(ws, /onCreateChildComponent/);
+    assert.match(ws, /legacyReadOnly/);
+    assert.match(ws, /effectiveCanManage/);
   });
 
   it("empty state orienta o usuário quando não há itens", () => {
