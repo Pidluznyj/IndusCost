@@ -82,6 +82,13 @@ Models Prisma:
 - `ProjectCostAmortization` — configuração por fonte (`MOLD` | `OTHER_COST`)
 - `ProjectCostAmortizationAllocation` — distribuição por item elegível
 
+Identificadores de fonte:
+
+- **MOLD**: `sourceId` = `ProjectMold.id` (UUID)
+- **OTHER_COST**: `sourceId` = `batchId` do lote em `ProjectSimulatedItem.notes` (ex.: `other-cost-batch-{uuid}`), persistido em `sourceBatchId`
+
+O campo `sourceId` é `TEXT` no banco para suportar o batch id de outros custos.
+
 API:
 
 - `GET /api/projects/:id/cost-amortizations`

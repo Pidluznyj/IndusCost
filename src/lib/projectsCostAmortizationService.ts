@@ -11,8 +11,8 @@ import {
   buildProjectAmortizationTargets,
   buildProjectCostAmortizationSummary,
   computeAmortizationConfig,
-  listAmortizableCostSources,
   resolveAmortizationDistributionStatus,
+  validateAmortizationSourceRef,
   type ProjectCostAmortizationAllocationInput,
   type ProjectCostAmortizationConfigInput,
   type ProjectCostAmortizationRow,
@@ -95,13 +95,11 @@ export function validateUpsertAmortizationPayload(
   detail: ProjectDetail,
   payload: UpsertProjectCostAmortizationPayload
 ): { ok: true; config: ProjectCostAmortizationConfigInput } | { ok: false; error: string } {
-  const sources = listAmortizableCostSources(detail);
-  const source = sources.find(
-    (s) => s.sourceType === payload.sourceType && s.sourceId === payload.sourceId
-  );
-  if (!source) {
-    return { ok: false, error: "Custo amortizável não encontrado no projeto." };
+  const sourceRef = validateAmortizationSourceRef(detail, payload.sourceType, payload.sourceId);
+  if (sourceRef.ok === false) {
+    return { ok: false, error: sourceRef.error };
   }
+  const source = sourceRef.source;
 
   if (payload.passThroughPercent < 0 || payload.passThroughPercent > 100) {
     return { ok: false, error: "Percentual repassado deve estar entre 0% e 100%." };
@@ -186,7 +184,9 @@ export async function upsertProjectCostAmortization(
     });
 
     const baseData = {
-      sourceBatchId: payload.sourceBatchId ?? null,
+      sourceBatchId:
+        payload.sourceBatchId ??
+        (payload.sourceType === "OTHER_COST" ? payload.sourceId : null),
       sourceDescriptionSnapshot: computed.sourceDescriptionSnapshot,
       sourceTotalCostSnapshot: computed.sourceTotalCostSnapshot,
       passThroughPercent: computed.passThroughPercent,

@@ -104,6 +104,51 @@ export type ProjectCostAmortizationSummary = {
 
 export const AMORTIZATION_PERCENT_TOLERANCE = 0.0001;
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isAmortizationUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
+export type AmortizableCostSource = {
+  sourceType: ProjectCostAmortizationSourceType;
+  sourceId: string;
+  sourceBatchId?: string | null;
+  description: string;
+  totalCost: number;
+};
+
+export function validateAmortizationSourceRef(
+  detail: ProjectDetail,
+  sourceType: ProjectCostAmortizationSourceType,
+  sourceId: string
+): { ok: true; source: AmortizableCostSource } | { ok: false; error: string } {
+  const trimmed = sourceId?.trim();
+  if (!trimmed) {
+    return { ok: false, error: "sourceId inválido." };
+  }
+
+  if (sourceType === "MOLD" && !isAmortizationUuid(trimmed)) {
+    return { ok: false, error: "sourceId inválido." };
+  }
+
+  const source = listAmortizableCostSources(detail).find(
+    (row) => row.sourceType === sourceType && row.sourceId === trimmed
+  );
+  if (!source) {
+    return {
+      ok: false,
+      error:
+        sourceType === "MOLD"
+          ? "Molde não encontrado no projeto."
+          : "Outro custo não encontrado no projeto.",
+    };
+  }
+
+  return { ok: true, source };
+}
+
 export function roundProjectMoney(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -229,18 +274,8 @@ export function resolveOtherCostBatchTotal(detail: ProjectDetail, batchId: strin
   return roundProjectMoney(total);
 }
 
-export function listAmortizableCostSources(detail: ProjectDetail): Array<{
-  sourceType: ProjectCostAmortizationSourceType;
-  sourceId: string;
-  description: string;
-  totalCost: number;
-}> {
-  const sources: Array<{
-    sourceType: ProjectCostAmortizationSourceType;
-    sourceId: string;
-    description: string;
-    totalCost: number;
-  }> = [];
+export function listAmortizableCostSources(detail: ProjectDetail): AmortizableCostSource[] {
+  const sources: AmortizableCostSource[] = [];
 
   for (const mold of detail.molds) {
     sources.push({
@@ -264,6 +299,7 @@ export function listAmortizableCostSources(detail: ProjectDetail): Array<{
     sources.push({
       sourceType: "OTHER_COST",
       sourceId: batchId,
+      sourceBatchId: batchId,
       description: batch.description,
       totalCost: roundProjectMoney(batch.total),
     });

@@ -2725,8 +2725,8 @@ model ProjectCostAmortization {
   id                        String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   projectId                 String                            @db.Uuid
   sourceType                ProjectCostAmortizationSourceType
-  sourceId                  String                            @db.Uuid
-  sourceBatchId             String?                           @db.Uuid
+  sourceId                  String
+  sourceBatchId             String?
   sourceDescriptionSnapshot String
   sourceTotalCostSnapshot   Decimal                           @db.Decimal(20, 6)
   passThroughPercent        Decimal                           @default(100) @db.Decimal(10, 6)

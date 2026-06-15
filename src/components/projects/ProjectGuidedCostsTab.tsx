@@ -37,6 +37,7 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
 type AmortizationModalState = {
   sourceType: ProjectCostAmortizationSourceType;
   sourceId: string;
+  sourceBatchId?: string | null;
   description: string;
   totalCost: number;
   passThroughPercent: number;
@@ -109,6 +110,7 @@ export function ProjectGuidedCostsTab({
     setModal({
       sourceType,
       sourceId,
+      sourceBatchId: source.sourceBatchId ?? null,
       description: source.description,
       totalCost: source.totalCost,
       passThroughPercent: saved?.passThroughPercent ?? savedRow?.passThroughPercent ?? 100,
@@ -126,6 +128,7 @@ export function ProjectGuidedCostsTab({
   const handleSaveAmortization = async (payload: {
     sourceType: ProjectCostAmortizationSourceType;
     sourceId: string;
+    sourceBatchId?: string | null;
     passThroughPercent: number;
     allocations: AmortizationModalState["allocations"];
   }) => {
@@ -137,7 +140,10 @@ export function ProjectGuidedCostsTab({
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            sourceBatchId: payload.sourceBatchId ?? modal?.sourceBatchId ?? null,
+          }),
         }
       );
       onDetailRefresh(result.project);

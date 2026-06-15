@@ -84,7 +84,10 @@ import {
   upsertProjectCostAmortization,
   type UpsertProjectCostAmortizationPayload,
 } from "@/src/lib/projectsCostAmortizationService.js";
-import { buildProjectCostAmortizationSummary } from "@/src/lib/projectsCostAmortization.js";
+import {
+  buildProjectCostAmortizationSummary,
+  validateAmortizationSourceRef,
+} from "@/src/lib/projectsCostAmortization.js";
 
 function isUuid(value: unknown): value is string {
   return (
@@ -1208,7 +1211,11 @@ export function registerProjectsRoutes(
       if (sourceType !== "MOLD" && sourceType !== "OTHER_COST") {
         return res.status(400).json({ error: "sourceType inválido." });
       }
-      if (!isUuid(sourceId)) return res.status(400).json({ error: "sourceId inválido." });
+
+      const sourceRef = validateAmortizationSourceRef(detail, sourceType, sourceId);
+      if (sourceRef.ok === false) {
+        return res.status(400).json({ error: sourceRef.error });
+      }
 
       const passThroughPercent = optNum(body.passThroughPercent);
       if (passThroughPercent == null) {
@@ -1219,7 +1226,10 @@ export function registerProjectsRoutes(
       const payload: UpsertProjectCostAmortizationPayload = {
         sourceType,
         sourceId,
-        sourceBatchId: typeof body.sourceBatchId === "string" ? body.sourceBatchId : null,
+        sourceBatchId:
+          typeof body.sourceBatchId === "string"
+            ? body.sourceBatchId
+            : sourceRef.source.sourceBatchId ?? null,
         passThroughPercent,
         allocations: allocations.map((row: Record<string, unknown>) => ({
           targetItemType: String(row.targetItemType ?? "LEGACY"),
@@ -1249,20 +1259,32 @@ export function registerProjectsRoutes(
     ...manage,
     async (req, res) => {
       try {
-        if (!isUuid(req.params.id) || !isUuid(req.params.sourceId)) {
+        if (!isUuid(req.params.id)) {
           return res.status(400).json({ error: "ID inválido." });
         }
         const sourceType = req.params.sourceType;
         if (sourceType !== "MOLD" && sourceType !== "OTHER_COST") {
           return res.status(400).json({ error: "sourceType inválido." });
         }
+        const detail = await loadProjectDetail(req.params.id);
+        if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+
+        const sourceRef = validateAmortizationSourceRef(
+          detail,
+          sourceType,
+          req.params.sourceId
+        );
+        if (sourceRef.ok === false) {
+          return res.status(400).json({ error: sourceRef.error });
+        }
+
         await deleteProjectCostAmortizationBySource(
           req.params.id,
           sourceType,
           req.params.sourceId
         );
-        const detail = await loadProjectDetail(req.params.id);
-        res.json({ ok: true, project: detail });
+        const refreshed = await loadProjectDetail(req.params.id);
+        res.json({ ok: true, project: refreshed });
       } catch (e: unknown) {
         console.error("DELETE cost-amortizations", e);
         res.status(500).json({ error: "Erro ao remover amortização." });

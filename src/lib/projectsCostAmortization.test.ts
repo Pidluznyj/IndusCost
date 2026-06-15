@@ -3,33 +3,38 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
-  AMORTIZATION_PERCENT_TOLERANCE,
   amortizationMetricsAreFinite,
   amortizationStatusLabel,
+  buildProjectAmortizationTargets,
   buildProjectCostAmortizationSummary,
   calculateAmortizationAllocation,
   calculatePassThroughAmounts,
   computeAmortizationConfig,
+  isAmortizationUuid,
+  listAmortizableCostSources,
   resolveAmortizationDistributionStatus,
+  validateAmortizationSourceRef,
 } from "./projectsCostAmortization.js";
 import {
   removeAmortizationAllocationsForTargetItem,
   validateUpsertAmortizationPayload,
 } from "./projectsCostAmortizationService.js";
 import { canManageProjects, canViewProjects } from "./projectsPermissions.js";
+import { buildOtherCostNotes } from "./projectsOtherCostGroups.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
 
+const AMORTIZATION_PERCENT_TOLERANCE = 0.0001;
 const MOLD_TOTAL = 52_000;
 const PASS_THROUGH_80 = 80;
 const EXPECTED_PASSTHROUGH = 41_600;
 const EXPECTED_ABSORBED = 10_400;
 
 function buildDetailFixture(): ProjectDetail {
-  const itemA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
-  const itemB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
-  const moldId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  const itemA = "aaaaaaaa-aaaa-4111-8111-aaaaaaaaaaaa";
+  const itemB = "bbbbbbbb-bbbb-4111-8111-bbbbbbbbbbbb";
+  const moldId = "cccccccc-cccc-4111-8111-cccccccccccc";
   return {
-    id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    id: "dddddddd-dddd-4111-8111-dddddddddddd",
     code: "PRJ-0001",
     title: "Projeto teste",
     customerName: "Cliente",
@@ -421,5 +426,149 @@ describe("projectsCostAmortization — remoção de item", () => {
     assert.ok(amort);
     assert.equal(amort.allocations.some((a) => a.targetItemId === itemA), false);
     assert.equal(amort.status, "INCOMPLETE");
+  });
+});
+
+const OTHER_COST_BATCH_ID = "other-cost-batch-11111111-1111-1111-1111-111111111111";
+const OTHER_COST_TOTAL = 5075;
+
+function buildOtherCostDetailFixture(): ProjectDetail {
+  const detail = buildDetailFixture();
+  return {
+    ...detail,
+    simulatedItems: [
+      ...detail.simulatedItems,
+      {
+        id: "eeeeeeee-eeee-4111-8111-eeeeeeeeeeee",
+        provisionalCode: null,
+        description: "Projeto 3d",
+        itemType: "COMPONENT",
+        unit: "UN",
+        estimatedUnitCost: OTHER_COST_TOTAL,
+        quotedUnitCost: null,
+        supplierName: null,
+        leadTimeDays: null,
+        estimatedWeight: null,
+        lossPercent: 0,
+        requiresQuotation: false,
+        requiresEngineeringReview: false,
+        canBecomeOfficial: false,
+        notes: buildOtherCostNotes("OTHER", OTHER_COST_BATCH_ID),
+      },
+    ],
+  };
+}
+
+describe("projectsCostAmortization — OTHER_COST sourceId", () => {
+  it("outro custo usa batchId real como sourceId na listagem", () => {
+    const detail = buildOtherCostDetailFixture();
+    const source = listAmortizableCostSources(detail).find((s) => s.sourceType === "OTHER_COST");
+    assert.ok(source);
+    assert.equal(source.sourceId, OTHER_COST_BATCH_ID);
+    assert.equal(source.sourceBatchId, OTHER_COST_BATCH_ID);
+    assert.equal(source.description, "Projeto 3d");
+    assert.equal(source.totalCost, OTHER_COST_TOTAL);
+    assert.equal(isAmortizationUuid(source.sourceId), false);
+  });
+
+  it("backend aceita sourceId de OTHER_COST existente no projeto", () => {
+    const detail = buildOtherCostDetailFixture();
+    const result = validateAmortizationSourceRef(detail, "OTHER_COST", OTHER_COST_BATCH_ID);
+    assert.equal(result.ok, true);
+  });
+
+  it("backend rejeita sourceId de OTHER_COST inexistente", () => {
+    const detail = buildOtherCostDetailFixture();
+    const result = validateAmortizationSourceRef(detail, "OTHER_COST", "other-cost-batch-missing");
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /não encontrado/i);
+  });
+
+  it("outro custo 100% em um item valida payload", () => {
+    const detail = buildOtherCostDetailFixture();
+    const targetA = detail.simulatedItems[0]!.id;
+    const result = validateUpsertAmortizationPayload(detail, {
+      sourceType: "OTHER_COST",
+      sourceId: OTHER_COST_BATCH_ID,
+      passThroughPercent: 100,
+      allocations: [
+        {
+          targetItemType: "SIMULATION",
+          targetItemId: targetA,
+          allocationPercent: 100,
+          amortizationQuantity: 1000,
+        },
+      ],
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      const computed = computeAmortizationConfig(
+        result.config,
+        buildProjectAmortizationTargets(detail)
+      );
+      assert.equal(computed.passThroughAmount, OTHER_COST_TOTAL);
+      assert.equal(computed.allocations[0]?.allocatedAmount, OTHER_COST_TOTAL);
+      assert.equal(computed.status, "DISTRIBUTED");
+    }
+  });
+
+  it("outro custo 50/50 em dois itens valida payload", () => {
+    const detail = buildOtherCostDetailFixture();
+    const targetA = detail.simulatedItems[0]!.id;
+    const targetB = detail.simulatedItems[1]!.id;
+    const result = validateUpsertAmortizationPayload(detail, {
+      sourceType: "OTHER_COST",
+      sourceId: OTHER_COST_BATCH_ID,
+      passThroughPercent: 100,
+      allocations: [
+        {
+          targetItemType: "SIMULATION",
+          targetItemId: targetA,
+          allocationPercent: 50,
+          amortizationQuantity: 1000,
+        },
+        {
+          targetItemType: "LEGACY",
+          targetItemId: targetB,
+          allocationPercent: 50,
+          amortizationQuantity: 1000,
+        },
+      ],
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      const computed = computeAmortizationConfig(
+        result.config,
+        buildProjectAmortizationTargets(detail)
+      );
+      assert.equal(computed.allocations[0]?.allocatedAmount, 2537.5);
+      assert.equal(computed.allocations[1]?.allocatedAmount, 2537.5);
+      assert.equal(computed.status, "DISTRIBUTED");
+    }
+  });
+
+  it("molde continua exigindo UUID como sourceId", () => {
+    const detail = buildDetailFixture();
+    const moldId = detail.molds[0]!.id;
+    assert.equal(validateAmortizationSourceRef(detail, "MOLD", moldId).ok, true);
+    assert.equal(validateAmortizationSourceRef(detail, "MOLD", OTHER_COST_BATCH_ID).ok, false);
+  });
+
+  it("rotas não rejeitam OTHER_COST apenas por não ser UUID", () => {
+    const routes = readFileSync(
+      join(process.cwd(), "src", "lib", "projectsRoutes.ts"),
+      "utf8"
+    );
+    assert.match(routes, /validateAmortizationSourceRef/);
+    assert.doesNotMatch(
+      routes.slice(routes.indexOf('app.put("/api/projects/:id/cost-amortizations"')),
+      /if \(!isUuid\(sourceId\)\) return res\.status\(400\)\.json\(\{ error: "sourceId inválido\." \}\);/
+    );
+  });
+
+  it("valores de outro custo não retornam NaN/Infinity", () => {
+    const detail = buildOtherCostDetailFixture();
+    const summary = buildProjectCostAmortizationSummary(detail);
+    assert.equal(amortizationMetricsAreFinite(summary), true);
   });
 });
