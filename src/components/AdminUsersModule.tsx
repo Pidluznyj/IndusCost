@@ -636,7 +636,7 @@ export const AdminUsersModule: React.FC = () => {
                 <h4 className="text-lg font-bold">{editingId ? "Editar usuário" : "Novo usuário"}</h4>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {form.role === "SELLER"
-                    ? "Vincule o vendedor real observado em pedidos e propostas para Minha Gestão Comercial."
+                    ? "Vincule o vendedor real observado em pedidos para Minha Gestão Comercial."
                     : form.role === "COMMERCIAL_MANAGER"
                       ? "Gestores comerciais podem ver todos os vendedores no CRM (crm.seller.all)."
                       : form.role === "SUPER_ADMIN"

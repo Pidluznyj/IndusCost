@@ -9,7 +9,7 @@ export type AdminSellerOption = {
   ordersValue: number;
   proposalsCount: number;
   proposalsValue: number;
-  source: "sales_orders_and_proposals";
+  source: "sales_orders";
   confidence: AdminSellerOptionConfidence;
   /** Linhas MEDIUM (sem ID) mescladas nesta opção HIGH com o mesmo nome normalizado. */
   hasMergedNameFallback?: boolean;

@@ -79,14 +79,14 @@ function rowToSellerOption(row: {
     ordersValue: toMoneyNumber(row.orders_value),
     proposalsCount: row.proposals_count ?? 0,
     proposalsValue: toMoneyNumber(row.proposals_value),
-    source: "sales_orders_and_proposals",
+    source: "sales_orders",
     confidence: externalSellerId != null ? "HIGH" : "MEDIUM",
   };
 }
 
 /**
  * Mescla opção MEDIUM (sem ID) na HIGH quando o normalizedName coincide.
- * Não mescla nomes diferentes nem MEDIUM órfãs sem HIGH correspondente.
+ * Soma apenas pedidos — propostas permanecem separadas.
  */
 export function mergeSellerOptionsByNormalizedName(sellers: AdminSellerOption[]): AdminSellerOption[] {
   const byName = new Map<string, AdminSellerOption[]>();
@@ -132,9 +132,8 @@ export function mergeSellerOptionsByNormalizedName(sellers: AdminSellerOption[])
 
 export function sortAdminSellerOptions(sellers: AdminSellerOption[]): AdminSellerOption[] {
   return [...sellers].sort((a, b) => {
-    const totalA = a.ordersCount + a.proposalsCount;
-    const totalB = b.ordersCount + b.proposalsCount;
-    if (totalB !== totalA) return totalB - totalA;
+    if (b.ordersCount !== a.ordersCount) return b.ordersCount - a.ordersCount;
+    if (b.ordersValue !== a.ordersValue) return b.ordersValue - a.ordersValue;
     return a.displayName.localeCompare(b.displayName, "pt-BR", { sensitivity: "base" });
   });
 }
@@ -150,50 +149,79 @@ export async function fetchAdminSellerOptionsFromDb(): Promise<AdminSellerOption
       proposals_value: unknown;
     }[]
   >(Prisma.sql`
-    WITH raw_events AS (
+    WITH orders_events AS (
       SELECT
-        'order'::text AS src,
         so."externalSellerId" AS external_seller_id,
         NULLIF(TRIM(so."responsible"), '') AS responsible,
-        so."totalNetValue"::double precision AS line_value
-      FROM "SalesOrder" so
-      WHERE so."externalSellerId" IS NOT NULL
-         OR (so."responsible" IS NOT NULL AND TRIM(so."responsible") <> '')
-      UNION ALL
-      SELECT
-        'proposal'::text AS src,
-        p."externalSellerId" AS external_seller_id,
-        NULLIF(TRIM(p."responsible"), '') AS responsible,
-        p."totalNetValue"::double precision AS line_value
-      FROM "Proposal" p
-      WHERE p."externalSellerId" IS NOT NULL
-         OR (p."responsible" IS NOT NULL AND TRIM(p."responsible") <> '')
-    ),
-    with_key AS (
-      SELECT
-        src,
-        external_seller_id,
-        responsible,
-        line_value,
+        so."totalNetValue"::double precision AS line_value,
         CASE
-          WHEN external_seller_id IS NOT NULL THEN 'id:' || external_seller_id::text
-          WHEN responsible IS NOT NULL THEN 'r:' || UPPER(REGEXP_REPLACE(TRIM(responsible), '\\s+', ' ', 'g'))
+          WHEN so."externalSellerId" IS NOT NULL THEN 'id:' || so."externalSellerId"::text
+          WHEN NULLIF(TRIM(so."responsible"), '') IS NOT NULL
+          THEN 'r:' || UPPER(REGEXP_REPLACE(TRIM(so."responsible"), '\\s+', ' ', 'g'))
           ELSE NULL
         END AS seller_key
-      FROM raw_events
+      FROM "SalesOrder" so
+      WHERE so.status::text NOT IN ('CANCELLED', 'ERROR')
+        AND (
+          so."externalSellerId" IS NOT NULL
+          OR (so."responsible" IS NOT NULL AND TRIM(so."responsible") <> '')
+        )
     ),
-    filtered AS (
-      SELECT * FROM with_key WHERE seller_key IS NOT NULL
+    proposals_events AS (
+      SELECT
+        p."externalSellerId" AS external_seller_id,
+        NULLIF(TRIM(p."responsible"), '') AS responsible,
+        p."totalNetValue"::double precision AS line_value,
+        CASE
+          WHEN p."externalSellerId" IS NOT NULL THEN 'id:' || p."externalSellerId"::text
+          WHEN NULLIF(TRIM(p."responsible"), '') IS NOT NULL
+          THEN 'r:' || UPPER(REGEXP_REPLACE(TRIM(p."responsible"), '\\s+', ' ', 'g'))
+          ELSE NULL
+        END AS seller_key
+      FROM "Proposal" p
+      WHERE p.status::text IN ('DRAFT', 'ANALYSIS', 'SENT')
+        AND (
+          p."externalSellerId" IS NOT NULL
+          OR (p."responsible" IS NOT NULL AND TRIM(p."responsible") <> '')
+        )
+    ),
+    orders_by_seller AS (
+      SELECT
+        seller_key,
+        MAX(external_seller_id) AS external_seller_id,
+        MODE() WITHIN GROUP (ORDER BY responsible) AS responsible,
+        COUNT(*)::int AS orders_count,
+        COALESCE(SUM(line_value), 0)::double precision AS orders_value
+      FROM orders_events
+      WHERE seller_key IS NOT NULL
+      GROUP BY seller_key
+    ),
+    proposals_by_seller AS (
+      SELECT
+        seller_key,
+        MAX(external_seller_id) AS external_seller_id,
+        MODE() WITHIN GROUP (ORDER BY responsible) AS responsible,
+        COUNT(*)::int AS proposals_count,
+        COALESCE(SUM(line_value), 0)::double precision AS proposals_value
+      FROM proposals_events
+      WHERE seller_key IS NOT NULL
+      GROUP BY seller_key
+    ),
+    all_keys AS (
+      SELECT seller_key FROM orders_by_seller
+      UNION
+      SELECT seller_key FROM proposals_by_seller
     )
     SELECT
-      MAX(external_seller_id) AS external_seller_id,
-      MODE() WITHIN GROUP (ORDER BY responsible) AS responsible,
-      COUNT(*) FILTER (WHERE src = 'order')::int AS orders_count,
-      COALESCE(SUM(line_value) FILTER (WHERE src = 'order'), 0)::double precision AS orders_value,
-      COUNT(*) FILTER (WHERE src = 'proposal')::int AS proposals_count,
-      COALESCE(SUM(line_value) FILTER (WHERE src = 'proposal'), 0)::double precision AS proposals_value
-    FROM filtered
-    GROUP BY seller_key
+      COALESCE(o.external_seller_id, p.external_seller_id) AS external_seller_id,
+      COALESCE(o.responsible, p.responsible) AS responsible,
+      COALESCE(o.orders_count, 0) AS orders_count,
+      COALESCE(o.orders_value, 0) AS orders_value,
+      COALESCE(p.proposals_count, 0) AS proposals_count,
+      COALESCE(p.proposals_value, 0) AS proposals_value
+    FROM all_keys k
+    LEFT JOIN orders_by_seller o ON o.seller_key = k.seller_key
+    LEFT JOIN proposals_by_seller p ON p.seller_key = k.seller_key
   `);
 
   const rawSellers: AdminSellerOption[] = [];

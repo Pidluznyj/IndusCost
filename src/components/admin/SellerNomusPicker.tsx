@@ -55,12 +55,14 @@ function formatCompactBrl(value: number): string | null {
 }
 
 function formatCounts(option: AdminSellerOption): string {
-  const base = `${option.ordersCount} ped. · ${option.proposalsCount} prop.`;
+  const base = `${option.ordersCount} ped.`;
   const orderVal = formatCompactBrl(option.ordersValue);
-  const propVal = formatCompactBrl(option.proposalsValue);
-  if (!orderVal && !propVal) return base;
-  const valueParts = [orderVal, propVal].filter(Boolean);
-  return `${base} · ${valueParts.join(" / ")}`;
+  const propPart =
+    option.proposalsCount > 0
+      ? ` · ${option.proposalsCount} prop. negociação`
+      : "";
+  if (!orderVal) return `${base}${propPart}`;
+  return `${base}${orderVal ? ` · ${orderVal}` : ""}${propPart}`;
 }
 
 export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
@@ -75,7 +77,7 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
       {
         value: CLEAR_VALUE,
         label: "Sem vínculo comercial",
-        sublabel: "Não filtra pedidos/propostas em Minha Gestão",
+        sublabel: "Não filtra pedidos em Minha Gestão",
       },
     ];
     for (const seller of sellers) {
@@ -134,7 +136,7 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
         value={hasCustomSelection ? "" : selectedKey}
         onChange={handleSelectChange}
         placeholder={loading ? "Carregando vendedores…" : "Pesquisar por nome ou ID Nomus…"}
-        emptyMessage="Nenhum vendedor encontrado nos pedidos/propostas."
+        emptyMessage="Nenhum vendedor encontrado nos pedidos."
         unknownSelectionLabel="Vínculo manual (não listado nos dados atuais)"
         searchInputPlaceholder="Nome ou ID Nomus…"
         pinOptionValues={[CLEAR_VALUE]}
@@ -142,8 +144,8 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
         listMaxHeight={320}
       />
       <p className="text-[10px] text-muted-foreground leading-relaxed">
-        Este vínculo define quais pedidos e propostas aparecem em Minha Gestão Comercial. Sempre que
-        possível, use uma opção com ID Nomus.
+        Este vínculo define quais pedidos aparecem em Minha Gestão Comercial. Sempre que
+        possível, use uma opção com ID Nomus. Propostas em negociação aparecem apenas como dado auxiliar.
       </p>
 
       {selectedSeller ? (
