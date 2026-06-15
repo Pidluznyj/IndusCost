@@ -20,9 +20,13 @@ import { EngineeringImportConfigs } from "./src/lib/importer/ProductConfig.js";
 import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
 import {
-  buildPortfolioAbcForCustomer,
   buildCustomerAbcRanking,
 } from "./src/lib/customerCommercialIntel.js";
+import {
+  buildPortfolioAbcFromSalesOrders,
+  normalizeCustomerDocument,
+  salesOrderHasInvoicing,
+} from "./src/lib/customerCommercialSalesOrderView.js";
 import {
   buildCostAnalysisExplainability,
   buildPricingSnapshotExplainability,
@@ -10564,15 +10568,22 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  /** Visão comercial 360°: cliente + propostas com itens e produto (sem pedido faturado separado no schema). */
+  /** Visão comercial 360°: cliente + pedidos de venda com itens e produto. */
   app.get("/api/customers/:id/commercial-360", requireAppAuth, requireAnyPermission(["customers.commercial360.view", "customers.view"]), async (req, res) => {
     const { id } = req.params;
     try {
       const customer = await prisma.customer.findUnique({ where: { id } });
       if (!customer) return res.status(404).json({ error: "Cliente não encontrado" });
-      const proposals = await prisma.proposal.findMany({
-        where: { customerId: id },
+
+      const customerDoc = normalizeCustomerDocument(customer.taxId);
+      const salesOrdersRaw = await prisma.salesOrder.findMany({
+        where: customer.taxId
+          ? {
+              OR: [{ customerId: id }, { Customer: { taxId: customer.taxId } }],
+            }
+          : { customerId: id },
         include: {
+          Customer: { select: { id: true, taxId: true, companyName: true } },
           items: {
             include: {
               Product: {
@@ -10586,21 +10597,32 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             },
           },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: { issueDate: "desc" },
       });
 
-      const approvedByCustomer = await prisma.proposal.groupBy({
+      const salesOrders = salesOrdersRaw
+        .filter((order) => {
+          if (order.customerId === id) return true;
+          const orderDoc = normalizeCustomerDocument(order.Customer?.taxId);
+          return customerDoc.length > 0 && orderDoc === customerDoc;
+        })
+        .map((order) => ({
+          ...order,
+          hasInvoicing: salesOrderHasInvoicing(order.nomusRawResponse),
+        }));
+
+      const revenueByCustomer = await prisma.salesOrder.groupBy({
         by: ["customerId"],
-        where: { status: "APPROVED" },
+        where: { status: { notIn: ["CANCELLED", "ERROR"] } },
         _sum: { totalNetValue: true },
       });
-      const abcRows = approvedByCustomer.map((g) => ({
+      const abcRows = revenueByCustomer.map((g) => ({
         customerId: g.customerId,
         revenue: Number(g._sum.totalNetValue ?? 0),
       }));
-      const portfolioAbc = buildPortfolioAbcForCustomer(abcRows, id);
+      const portfolioAbc = buildPortfolioAbcFromSalesOrders(abcRows, id);
 
-      res.json({ customer, proposals, portfolioAbc });
+      res.json({ customer, salesOrders, portfolioAbc });
     } catch (error) {
       console.error("commercial-360 error:", error);
       res.status(500).json({ error: "Erro ao montar visão comercial do cliente." });

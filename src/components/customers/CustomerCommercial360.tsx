@@ -20,30 +20,50 @@ import {
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
-import type { Customer, Proposal, ProposalItem, ProposalStatus } from "@/src/types/commercial";
-import {
-  STATUS_FUNNEL_META,
-  isPipelineOpenStatus,
-  proposalExpiryDate,
-} from "@/src/lib/salesFunnel";
+import type { Customer, SalesOrderLinkStatus } from "@/src/types/commercial";
 import type { PortfolioAbcResult } from "@/src/lib/customerCommercialIntel";
 import {
-  computeCommercialPhase2,
-  enrichCrossSellFromMix,
+  COMMERCIAL_SALES_ORDER_BASIS_NOTE,
+  computeCommercialPhase2FromSalesOrders,
+  enrichCrossSellFromSalesOrderMix,
   HEALTH_LEVEL_LABEL_PT,
+  isCommercialMetricsSalesOrder,
+  isCommercialOpenSalesOrder,
   REPURCHASE_WINDOW_LABEL_PT,
-} from "@/src/lib/customerCommercialIntel";
+  safeCommercialNumber,
+  SALES_ORDER_STATUS_LABELS,
+} from "@/src/lib/customerCommercialSalesOrderView";
 
 type ProductLite = { id: string; sku: string; name: string; type: string };
 
-export type CommercialProposal = Proposal & {
-  items: (ProposalItem & { Product?: ProductLite })[];
+type SalesOrderItemRow = {
+  id: string;
+  productId: string;
+  quantity: unknown;
+  totalNetValue: unknown;
+  marginValue: unknown;
+  negotiatedPrice: unknown;
+  Product?: ProductLite;
 };
 
-function n(v: unknown, fb = 0): number {
-  const x = Number(v);
-  return Number.isFinite(x) ? x : fb;
-}
+export type CommercialSalesOrder = {
+  id: string;
+  orderCode: string;
+  status: SalesOrderLinkStatus;
+  issueDate: string;
+  updatedAt: string;
+  responsible: string | null;
+  totalNetValue: unknown;
+  totalGrossValue: unknown;
+  totalMarginValue: unknown;
+  totalMarginPerc: unknown;
+  totalItems: number;
+  paymentTerms: string | null;
+  freightCondition: string | null;
+  notes: string | null;
+  hasInvoicing: boolean;
+  items: SalesOrderItemRow[];
+};
 
 function daysBetween(a: string | Date, b: string | Date): number {
   const t1 = typeof a === "string" ? new Date(a).getTime() : a.getTime();
@@ -66,15 +86,12 @@ function inRange(iso: string, from: string | null, to: string | null): boolean {
   return true;
 }
 
-const STATUS_OPTS: { value: ProposalStatus | ""; label: string }[] = [
+const STATUS_OPTS: { value: SalesOrderLinkStatus | ""; label: string }[] = [
   { value: "", label: "Todos os status" },
-  { value: "DRAFT", label: "Rascunho" },
-  { value: "ANALYSIS", label: "Em análise" },
-  { value: "SENT", label: "Enviada" },
-  { value: "APPROVED", label: "Aprovada" },
-  { value: "REJECTED", label: "Rejeitada" },
-  { value: "EXPIRED", label: "Expirada" },
-  { value: "CANCELED", label: "Cancelada" },
+  ...(["DRAFT", "READY_TO_SEND", "SENT_TO_NOMUS", "CANCELLED", "ERROR"] as const).map((s) => ({
+    value: s,
+    label: SALES_ORDER_STATUS_LABELS[s],
+  })),
 ];
 
 interface Props {
@@ -87,15 +104,15 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [proposals, setProposals] = useState<CommercialProposal[]>([]);
+  const [salesOrders, setSalesOrders] = useState<CommercialSalesOrder[]>([]);
   const [portfolioAbc, setPortfolioAbc] = useState<PortfolioAbcResult | null>(null);
 
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
-  const [statusF, setStatusF] = useState<ProposalStatus | "">("");
+  const [statusF, setStatusF] = useState<SalesOrderLinkStatus | "">("");
   const [respF, setRespF] = useState("");
   const [productF, setProductF] = useState("");
-  const [dealScope, setDealScope] = useState<"all" | "open" | "won" | "lost">("all");
+  const [dealScope, setDealScope] = useState<"all" | "open" | "invoiced" | "cancelled">("all");
   const [minNet, setMinNet] = useState("");
   const [maxNet, setMaxNet] = useState("");
 
@@ -107,13 +124,13 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
     setPortfolioAbc(null);
     fetchJsonOk<{
       customer: Customer;
-      proposals: CommercialProposal[];
+      salesOrders: CommercialSalesOrder[];
       portfolioAbc: PortfolioAbcResult;
     }>(`/api/customers/${customerId}/commercial-360`)
       .then((data) => {
         if (cancelled) return;
         setCustomer(data.customer);
-        setProposals(Array.isArray(data.proposals) ? data.proposals : []);
+        setSalesOrders(Array.isArray(data.salesOrders) ? data.salesOrders : []);
         setPortfolioAbc(data.portfolioAbc ?? null);
       })
       .catch((e) => {
@@ -129,20 +146,20 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
 
   const responsibleOpts = useMemo(() => {
     const s = new Set<string>();
-    proposals.forEach((p) => {
-      const t = (p.responsible || "").trim();
+    salesOrders.forEach((o) => {
+      const t = (o.responsible || "").trim();
       if (t) s.add(t);
     });
     return [
       { value: "", label: "Todos", searchTerms: "todos" },
       ...[...s].sort().map((r) => ({ value: r, label: r, searchTerms: r })),
     ];
-  }, [proposals]);
+  }, [salesOrders]);
 
   const productOpts = useMemo(() => {
     const m = new Map<string, string>();
-    proposals.forEach((p) => {
-      p.items?.forEach((it) => {
+    salesOrders.forEach((o) => {
+      o.items?.forEach((it) => {
         if (it.Product) m.set(it.Product.id, `${it.Product.sku} — ${it.Product.name}`);
       });
     });
@@ -150,21 +167,21 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       { value: "", label: "Todos os produtos", searchTerms: "todos" },
       ...[...m.entries()].map(([id, label]) => ({ value: id, label, searchTerms: label })),
     ];
-  }, [proposals]);
+  }, [salesOrders]);
 
-  /** Mix agregado de todo o histórico do cliente (sem filtro) — cross-sell / Fase 2. */
   const mixRowsAll = useMemo(() => {
     const m = new Map<
       string,
       { sku: string; name: string; type: string; qty: number; revenue: number; margin: number }
     >();
-    proposals.forEach((p) => {
-      p.items?.forEach((it) => {
+    salesOrders.forEach((o) => {
+      if (!isCommercialMetricsSalesOrder(o.status)) return;
+      o.items?.forEach((it) => {
         const pr = it.Product;
         const id = it.productId;
-        const qty = n(it.quantity);
-        const lineRev = qty * n(it.negotiatedPrice);
-        const lineMg = n(it.marginValue);
+        const qty = safeCommercialNumber(it.quantity);
+        const lineRev = safeCommercialNumber(it.totalNetValue);
+        const lineMg = safeCommercialNumber(it.marginValue);
         const prev = m.get(id);
         const sku = pr?.sku || "—";
         const name = pr?.name || "Produto";
@@ -182,99 +199,86 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       });
     });
     return [...m.values()].sort((a, b) => b.revenue - a.revenue);
-  }, [proposals]);
+  }, [salesOrders]);
 
   const filtered = useMemo(() => {
-    const minV = minNet === "" ? null : n(minNet);
-    const maxV = maxNet === "" ? null : n(maxNet);
-    return proposals.filter((p) => {
-      if (!inRange(p.createdAt, dateFrom, dateTo)) return false;
-      if (statusF && p.status !== statusF) return false;
-      if (respF && (p.responsible || "").trim() !== respF) return false;
-      if (productF && !p.items?.some((i) => i.productId === productF)) return false;
-      const net = n(p.totalNetValue);
+    const minV = minNet === "" ? null : safeCommercialNumber(minNet);
+    const maxV = maxNet === "" ? null : safeCommercialNumber(maxNet);
+    return salesOrders.filter((o) => {
+      if (!inRange(o.issueDate, dateFrom, dateTo)) return false;
+      if (statusF && o.status !== statusF) return false;
+      if (respF && (o.responsible || "").trim() !== respF) return false;
+      if (productF && !o.items?.some((i) => i.productId === productF)) return false;
+      const net = safeCommercialNumber(o.totalNetValue);
       if (minV !== null && net < minV) return false;
       if (maxV !== null && net > maxV) return false;
-      if (dealScope === "open" && !isPipelineOpenStatus(p.status)) return false;
-      if (dealScope === "won" && p.status !== "APPROVED") return false;
-      if (
-        dealScope === "lost" &&
-        p.status !== "REJECTED" &&
-        p.status !== "CANCELED" &&
-        p.status !== "EXPIRED"
-      )
+      if (dealScope === "open" && !isCommercialOpenSalesOrder(o)) return false;
+      if (dealScope === "invoiced" && (!o.hasInvoicing || !isCommercialMetricsSalesOrder(o.status)))
         return false;
+      if (dealScope === "cancelled" && o.status !== "CANCELLED") return false;
       return true;
     });
-  }, [proposals, dateFrom, dateTo, statusF, respF, productF, minNet, maxNet, dealScope]);
+  }, [salesOrders, dateFrom, dateTo, statusF, respF, productF, minNet, maxNet, dealScope]);
 
   const metrics = useMemo(() => {
-    const fp = filtered;
-    const totalNet = fp.reduce((a, p) => a + n(p.totalNetValue), 0);
-    const totalGross = fp.reduce((a, p) => a + n(p.totalGrossValue), 0);
-    const totalMargin = fp.reduce((a, p) => a + n(p.totalMarginValue), 0);
-    const count = fp.length;
-    const approved = fp.filter((p) => p.status === "APPROVED");
-    const approvedCount = approved.length;
-    const lostCount = fp.filter(
-      (p) => p.status === "REJECTED" || p.status === "CANCELED"
-    ).length;
-    const closedConv = approvedCount + lostCount;
-    const conversion = closedConv > 0 ? (approvedCount / closedConv) * 100 : 0;
-    const ticket = count > 0 ? totalNet / count : 0;
-    const nets = fp.map((p) => n(p.totalNetValue)).filter((v) => v > 0);
+    const fo = filtered;
+    const valid = fo.filter((o) => isCommercialMetricsSalesOrder(o.status));
+    const totalNet = valid.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
+    const totalGross = valid.reduce((a, o) => a + safeCommercialNumber(o.totalGrossValue), 0);
+    const totalMargin = valid.reduce((a, o) => a + safeCommercialNumber(o.totalMarginValue), 0);
+    const count = fo.length;
+    const validCount = valid.length;
+    const invoicedCount = valid.filter((o) => o.hasInvoicing).length;
+    const cancelledCount = fo.filter((o) => o.status === "CANCELLED").length;
+    const ticket = validCount > 0 ? totalNet / validCount : 0;
+    const nets = valid.map((o) => safeCommercialNumber(o.totalNetValue)).filter((v) => v > 0);
     const minDeal = nets.length ? Math.min(...nets) : 0;
     const maxDeal = nets.length ? Math.max(...nets) : 0;
-    const totalItems = fp.reduce((a, p) => a + (p.totalItems || 0), 0);
-    const avgItems = count > 0 ? totalItems / count : 0;
-    const marginAvg = count > 0 ? fp.reduce((a, p) => a + n(p.totalMarginPerc), 0) / count : 0;
+    const totalItems = valid.reduce((a, o) => a + (o.totalItems || 0), 0);
+    const avgItems = validCount > 0 ? totalItems / validCount : 0;
+    const marginAvg =
+      validCount > 0 ? valid.reduce((a, o) => a + safeCommercialNumber(o.totalMarginPerc), 0) / validCount : 0;
 
-    const approvedChrono = [...approved].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    const validChrono = [...valid].sort(
+      (a, b) => new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime()
     );
     let avgRepurchase: number | null = null;
-    if (approvedChrono.length >= 2) {
+    if (validChrono.length >= 2) {
       let sum = 0;
-      for (let i = 1; i < approvedChrono.length; i++) {
-        sum += daysBetween(approvedChrono[i - 1].createdAt, approvedChrono[i].createdAt);
+      for (let i = 1; i < validChrono.length; i++) {
+        sum += daysBetween(validChrono[i - 1]!.issueDate, validChrono[i]!.issueDate);
       }
-      avgRepurchase = sum / (approvedChrono.length - 1);
+      avgRepurchase = sum / (validChrono.length - 1);
     }
-    const lastApproved = approvedChrono.length
-      ? approvedChrono[approvedChrono.length - 1]
-      : null;
-    const daysSinceApproved = lastApproved
-      ? daysBetween(lastApproved.createdAt, new Date())
+    const lastOrder = validChrono.length ? validChrono[validChrono.length - 1] : null;
+    const daysSinceLastOrder = lastOrder ? daysBetween(lastOrder.issueDate, new Date()) : null;
+
+    const lastAny = fo.length
+      ? [...fo].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
       : null;
 
-    const lastAny = fp.length
-      ? [...fp].sort(
-          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        )[0]
-      : null;
-
-    const openPipe = fp.filter((p) => isPipelineOpenStatus(p.status));
-    const pipelineOpenNet = openPipe.reduce((a, p) => a + n(p.totalNetValue), 0);
+    const openOrders = valid.filter((o) => isCommercialOpenSalesOrder(o));
+    const openNet = openOrders.reduce((a, o) => a + safeCommercialNumber(o.totalNetValue), 0);
 
     return {
       totalNet,
       totalGross,
       totalMargin,
       count,
-      approvedCount,
-      lostClosed: lostCount,
-      conversion,
+      validCount,
+      invoicedCount,
+      cancelledCount,
       ticket,
       minDeal,
       maxDeal,
       avgItems,
       marginAvg,
       avgRepurchase,
-      daysSinceApproved,
-      lastApprovedDate: lastApproved?.createdAt,
+      daysSinceLastOrder,
+      lastOrderDate: lastOrder?.issueDate,
       lastMovement: lastAny,
-      pipelineOpenNet,
-      openCount: openPipe.length,
+      openNet,
+      openCount: openOrders.length,
     };
   }, [filtered]);
 
@@ -283,13 +287,14 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
       string,
       { sku: string; name: string; type: string; qty: number; revenue: number; margin: number }
     >();
-    filtered.forEach((p) => {
-      p.items?.forEach((it) => {
+    filtered.forEach((o) => {
+      if (!isCommercialMetricsSalesOrder(o.status)) return;
+      o.items?.forEach((it) => {
         const pr = it.Product;
         const id = it.productId;
-        const qty = n(it.quantity);
-        const lineRev = qty * n(it.negotiatedPrice);
-        const lineMg = n(it.marginValue);
+        const qty = safeCommercialNumber(it.quantity);
+        const lineRev = safeCommercialNumber(it.totalNetValue);
+        const lineMg = safeCommercialNumber(it.marginValue);
         const prev = m.get(id);
         const sku = pr?.sku || "—";
         const name = pr?.name || "Produto";
@@ -312,122 +317,103 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
   const alerts = useMemo(() => {
     const out: { level: "info" | "warn" | "danger"; text: string }[] = [];
     const now = new Date();
-    const fp = filtered;
-    const approved = fp.filter((p) => p.status === "APPROVED");
-    const lastApp = approved.length
-      ? [...approved].sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    const valid = filtered.filter((o) => isCommercialMetricsSalesOrder(o.status));
+    const lastOrd = valid.length
+      ? [...valid].sort(
+          (a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime()
         )[0]
       : null;
 
-    if (approved.length >= 2 && metrics.avgRepurchase != null && lastApp) {
-      const since = daysBetween(lastApp.createdAt, now);
+    if (valid.length >= 2 && metrics.avgRepurchase != null && lastOrd) {
+      const since = daysBetween(lastOrd.issueDate, now);
       if (since > metrics.avgRepurchase * 1.1) {
         out.push({
           level: "warn",
-          text: `Sem nova proposta aprovada há ${since} dias; média histórica entre aprovações ~${Math.round(metrics.avgRepurchase)} dias — oportunidade de recompra.`,
+          text: `Sem novo pedido há ${since} dias; média histórica entre pedidos ~${Math.round(metrics.avgRepurchase)} dias — oportunidade de recompra.`,
         });
       }
       if (since < metrics.avgRepurchase * 0.5 && since >= 0) {
         out.push({
           level: "info",
-          text: `Dentro da janela típica de recompra (última aprovação há ${since} dias; média ~${Math.round(metrics.avgRepurchase)}).`,
+          text: `Dentro da janela típica de recompra (último pedido há ${since} dias; média ~${Math.round(metrics.avgRepurchase)}).`,
         });
       }
     }
 
-    if (lastApp && daysBetween(lastApp.createdAt, now) > 120 && approved.length > 0) {
+    if (lastOrd && daysBetween(lastOrd.issueDate, now) > 120) {
       out.push({
         level: "warn",
-        text: "Último negócio aprovado há mais de 120 dias — revisar relacionamento.",
+        text: "Último pedido há mais de 120 dias — revisar relacionamento.",
       });
     }
 
-    fp.forEach((p) => {
-      if (p.status === "SENT") {
-        const du = daysBetween(p.updatedAt, now);
-        if (du > 14) {
+    valid
+      .filter((o) => isCommercialOpenSalesOrder(o))
+      .forEach((o) => {
+        const du = daysBetween(o.updatedAt, now);
+        if (du > 30) {
           out.push({
             level: "warn",
-            text: `Proposta #${p.number} enviada sem atualização há ${du} dias.`,
+            text: `Pedido ${o.orderCode} em carteira há ${du} dias sem faturamento processado.`,
           });
         }
-      }
-      if (isPipelineOpenStatus(p.status)) {
-        const exp = proposalExpiryDate(p.createdAt, p.validityDays ?? 15);
-        if (exp < now) {
-          out.push({
-            level: "danger",
-            text: `Proposta #${p.number} (${p.status}) com validade ultrapassada.`,
-          });
-        }
-      }
-    });
-
-    const allP = proposals;
-    const conv =
-      allP.filter((p) => p.status === "APPROVED").length /
-      Math.max(
-        1,
-        allP.filter((p) =>
-          ["APPROVED", "REJECTED", "CANCELED"].includes(p.status)
-        ).length
-      );
-    if (allP.length >= 4 && conv < 0.25) {
-      out.push({
-        level: "warn",
-        text: "Taxa de conversão histórica baixa neste cliente — revisar precificação ou qualificação.",
       });
-    }
 
-    if (metrics.pipelineOpenNet > 0 && n(metrics.totalNet) > 0 && metrics.openCount > 0) {
-      const ratio = metrics.pipelineOpenNet / (n(metrics.totalNet) + metrics.pipelineOpenNet);
-      if (ratio > 0.4 && approved.length > 0) {
+    if (metrics.openNet > 0 && metrics.totalNet > 0 && metrics.openCount > 0) {
+      const ratio = metrics.openNet / (metrics.totalNet + metrics.openNet);
+      if (ratio > 0.4 && valid.length > 0) {
         out.push({
           level: "info",
-          text: "Pipeline aberto representa fatia relevante do histórico filtrado — acompanhar fechamento.",
+          text: "Carteira em aberto representa fatia relevante do histórico filtrado — acompanhar faturamento.",
         });
       }
     }
 
-    if (metrics.marginAvg >= 15 && approved.length > 0) {
+    if (metrics.marginAvg >= 15 && valid.length > 0) {
       out.push({
         level: "info",
-        text: `Margem média das propostas no filtro elevada (~${formatNumber(metrics.marginAvg, 1)}%).`,
+        text: `Margem média dos pedidos no filtro elevada (~${formatNumber(metrics.marginAvg, 1)}%).`,
       });
     }
 
     return out.slice(0, 12);
-  }, [filtered, proposals, metrics]);
+  }, [filtered, metrics]);
 
   const phase2 = useMemo(() => {
     if (!portfolioAbc) return null;
-    const approvedN = proposals.filter((p) => p.status === "APPROVED").length;
-    const base = computeCommercialPhase2(proposals, portfolioAbc);
-    const mixHint = enrichCrossSellFromMix(
+    const slices = salesOrders.map((o) => ({
+      id: o.id,
+      orderCode: o.orderCode,
+      status: o.status,
+      issueDate: o.issueDate,
+      updatedAt: o.updatedAt,
+      totalNetValue: o.totalNetValue,
+      totalMarginPerc: o.totalMarginPerc,
+      responsible: o.responsible,
+      hasInvoicing: o.hasInvoicing,
+    }));
+    const base = computeCommercialPhase2FromSalesOrders(slices, portfolioAbc);
+    const mixHint = enrichCrossSellFromSalesOrderMix(
       mixRowsAll.map((r) => ({ sku: r.sku, type: r.type, revenue: r.revenue })),
-      approvedN
+      slices.filter((o) => isCommercialMetricsSalesOrder(o.status)).length
     );
-    return {
-      ...base,
-      crossSell: [...base.crossSell, ...mixHint],
-    };
-  }, [proposals, portfolioAbc, mixRowsAll]);
+    return { ...base, crossSell: [...base.crossSell, ...mixHint] };
+  }, [salesOrders, portfolioAbc, mixRowsAll]);
 
   const relationInfo = useMemo(() => {
-    const last = proposals.length
-      ? [...proposals].sort(
+    const last = salesOrders.length
+      ? [...salesOrders].sort(
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         )[0]
       : null;
-    const openAll = proposals.filter((p) => isPipelineOpenStatus(p.status)).length;
+    const openAll = salesOrders.filter((o) => isCommercialOpenSalesOrder(o)).length;
     return {
       resp: last?.responsible?.trim() || null,
       lastMove: last?.updatedAt,
       lastStatus: last?.status,
       openAll,
     };
-  }, [proposals]);
+  }, [salesOrders]);
 
   if (!open) return null;
 
@@ -446,8 +432,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
             </p>
             <p className="text-[10px] text-muted-foreground mt-2 max-w-2xl flex gap-1">
               <Info className="h-3 w-3 shrink-0 mt-0.5" />
-              Não existe módulo de pedido faturado no sistema. Negócios fechados usam propostas{" "}
-              <strong>Aprovadas</strong> como proxy. Indicadores respeitam os filtros abaixo.
+              {COMMERCIAL_SALES_ORDER_BASIS_NOTE} Indicadores respeitam os filtros abaixo.
             </p>
           </div>
           <button
@@ -467,19 +452,16 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
               <p className="text-sm text-muted-foreground">Carregando histórico comercial...</p>
             </div>
           )}
-          {err && (
-            <p className="text-sm text-red-600 text-center py-8">{err}</p>
-          )}
+          {err && <p className="text-sm text-red-600 text-center py-8">{err}</p>}
           {!loading && !err && customer && (
             <>
-              {/* Fase 2 — Inteligência comercial (histórico completo) */}
               {phase2 && (
                 <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-primary/5 to-transparent p-4 space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-black flex items-center gap-2">
                         <Sparkles className="h-4 w-4 text-primary" />
-                        Inteligência comercial (Fase 2)
+                        Inteligência comercial
                       </h3>
                       <p className="text-[10px] text-muted-foreground mt-1 max-w-3xl">{phase2.proxyNote}</p>
                     </div>
@@ -487,114 +469,41 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                    <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Heart className="h-4 w-4 text-rose-500" />
-                        <span className="text-xs font-bold uppercase text-muted-foreground">Saúde comercial</span>
-                      </div>
-                      <div className="flex items-end gap-2">
-                        <span
-                          className={cn(
-                            "text-2xl font-black",
-                            phase2.health.level === "SAUDAVEL" && "text-emerald-600",
-                            phase2.health.level === "ATENCAO" && "text-amber-600",
-                            phase2.health.level === "EM_RISCO" && "text-orange-600",
-                            phase2.health.level === "INATIVO" && "text-slate-500"
-                          )}
-                        >
-                          {HEALTH_LEVEL_LABEL_PT[phase2.health.level]}
-                        </span>
-                        <span className="text-sm text-muted-foreground pb-0.5">Score {phase2.health.score}/100</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-all",
-                            phase2.health.level === "SAUDAVEL" && "bg-emerald-500",
-                            phase2.health.level === "ATENCAO" && "bg-amber-500",
-                            phase2.health.level === "EM_RISCO" && "bg-orange-500",
-                            phase2.health.level === "INATIVO" && "bg-slate-400"
-                          )}
-                          style={{ width: `${phase2.health.score}%` }}
-                        />
-                      </div>
-                      <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
-                        {phase2.health.reasons.length ? (
-                          phase2.health.reasons.map((r, i) => <li key={i}>{r}</li>)
-                        ) : (
-                          <li>Critérios calculados; sem detalhes adicionais.</li>
-                        )}
-                      </ul>
-                      <p className="text-[10px] text-muted-foreground border-t border-border pt-2">
-                        Critérios: atividade recente, pipeline, tempo desde aprovações (proxy), margem e conversão.
-                        Não substitui pedido/NF.
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Target className="h-4 w-4 text-primary" />
-                        <span className="text-xs font-bold uppercase text-muted-foreground">Classificação</span>
-                      </div>
-                      <p className="text-lg font-black text-primary">
-                        {phase2.segment.labelsPt[phase2.segment.primary]}
-                      </p>
-                      <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
-                        {phase2.segment.reasons.map((r, i) => (
-                          <li key={i}>{r}</li>
-                        ))}
-                      </ul>
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
-                          ABC:{" "}
-                          {phase2.portfolioAbc.abcEligible && phase2.portfolioAbc.abcClass
+                    <IntelCard
+                      title="Saúde comercial"
+                      icon={<Heart className="h-4 w-4 text-rose-500" />}
+                      main={HEALTH_LEVEL_LABEL_PT[phase2.health.level]}
+                      sub={`Score ${phase2.health.score}/100`}
+                      reasons={phase2.health.reasons}
+                      footer="Critérios: recência de pedidos, carteira em aberto, intervalo entre compras e margem."
+                    />
+                    <IntelCard
+                      title="Classificação"
+                      icon={<Target className="h-4 w-4 text-primary" />}
+                      main={phase2.segment.labelsPt[phase2.segment.primary]}
+                      reasons={phase2.segment.reasons}
+                      badges={[
+                        `ABC: ${
+                          phase2.portfolioAbc.abcEligible && phase2.portfolioAbc.abcClass
                             ? `Classe ${phase2.portfolioAbc.abcClass}`
-                            : "— (sem receita aprovada)"}
-                        </span>
-                        {phase2.portfolioAbc.rank != null && (
-                          <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-muted">
-                            Ranking receita aprovada: #{phase2.portfolioAbc.rank} /{" "}
-                            {phase2.portfolioAbc.customerCount}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-primary" />
-                        <span className="text-xs font-bold uppercase text-muted-foreground">Previsão de recompra</span>
-                      </div>
-                      <p className="text-[11px] font-semibold text-foreground">{phase2.repurchase.basis}</p>
-                      <p className="text-sm font-bold">{REPURCHASE_WINDOW_LABEL_PT[phase2.repurchase.windowStatus]}</p>
-                      <p className="text-[11px] text-muted-foreground">{phase2.repurchase.windowDetail}</p>
-                      <dl className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
-                        <dt className="text-muted-foreground">Mediana (dias)</dt>
-                        <dd className="font-mono text-right">
-                          {phase2.repurchase.medianDaysBetweenApprovals != null
-                            ? Math.round(phase2.repurchase.medianDaysBetweenApprovals)
-                            : "—"}
-                        </dd>
-                        <dt className="text-muted-foreground">Média (dias)</dt>
-                        <dd className="font-mono text-right">
-                          {phase2.repurchase.meanDaysBetweenApprovals != null
-                            ? Math.round(phase2.repurchase.meanDaysBetweenApprovals)
-                            : "—"}
-                        </dd>
-                        <dt className="text-muted-foreground">Dias última aprovação</dt>
-                        <dd className="font-mono text-right">
-                          {phase2.repurchase.daysSinceLastApproval != null
-                            ? Math.round(phase2.repurchase.daysSinceLastApproval)
-                            : "—"}
-                        </dd>
-                        <dt className="text-muted-foreground">Próxima janela (est.)</dt>
-                        <dd className="font-mono text-right text-[10px]">
-                          {phase2.repurchase.predictedNextApprovalDate
-                            ? new Date(phase2.repurchase.predictedNextApprovalDate).toLocaleDateString("pt-BR")
-                            : "—"}
-                        </dd>
-                      </dl>
-                    </div>
+                            : "— (sem receita de pedidos)"
+                        }`,
+                        phase2.portfolioAbc.rank != null
+                          ? `Ranking receita: #${phase2.portfolioAbc.rank} / ${phase2.portfolioAbc.customerCount}`
+                          : "",
+                      ].filter(Boolean)}
+                    />
+                    <IntelCard
+                      title="Previsão de recompra"
+                      icon={<Calendar className="h-4 w-4 text-primary" />}
+                      main={REPURCHASE_WINDOW_LABEL_PT[phase2.repurchase.windowStatus]}
+                      sub={phase2.repurchase.windowDetail}
+                      stats={[
+                        ["Mediana (dias)", phase2.repurchase.medianDaysBetweenApprovals],
+                        ["Média (dias)", phase2.repurchase.meanDaysBetweenApprovals],
+                        ["Dias último pedido", phase2.repurchase.daysSinceLastApproval],
+                      ]}
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -605,23 +514,33 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                       <p className="text-[10px] text-muted-foreground mb-2">{phase2.portfolioAbc.basisLabel}</p>
                       <p className="text-[11px] leading-relaxed">{phase2.portfolioAbc.methodologyNote}</p>
                       <dl className="mt-3 grid grid-cols-2 gap-1 text-[11px]">
-                        <dt className="text-muted-foreground">Receita aprovada (cliente)</dt>
-                        <dd className="text-right font-mono">{formatCurrency(phase2.portfolioAbc.customerApprovedNet)}</dd>
-                        <dt className="text-muted-foreground">Total carteira aprovada</dt>
-                        <dd className="text-right font-mono">{formatCurrency(phase2.portfolioAbc.portfolioApprovedTotal)}</dd>
+                        <dt className="text-muted-foreground">Receita de pedidos (cliente)</dt>
+                        <dd className="text-right font-mono">
+                          {formatCurrency(phase2.portfolioAbc.customerApprovedNet)}
+                        </dd>
+                        <dt className="text-muted-foreground">Total carteira (pedidos)</dt>
+                        <dd className="text-right font-mono">
+                          {formatCurrency(phase2.portfolioAbc.portfolioApprovedTotal)}
+                        </dd>
                         <dt className="text-muted-foreground">Participação</dt>
-                        <dd className="text-right font-mono">{formatNumber(phase2.portfolioAbc.shareOfPortfolioPct, 2)}%</dd>
+                        <dd className="text-right font-mono">
+                          {formatNumber(phase2.portfolioAbc.shareOfPortfolioPct, 2)}%
+                        </dd>
                       </dl>
                     </div>
                     <div className="rounded-xl border border-border bg-card p-4">
                       <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2 flex items-center gap-2">
-                        <TrendingUp className="h-3.5 w-3.5" /> Tendência (aprovações)
+                        <TrendingUp className="h-3.5 w-3.5" /> Tendência (pedidos)
                       </h4>
                       <dl className="grid grid-cols-2 gap-1 text-[11px]">
-                        <dt className="text-muted-foreground">Últimos 180d (líq. aprov.)</dt>
-                        <dd className="text-right font-mono">{formatCurrency(phase2.trend.recent180dApprovedNet)}</dd>
+                        <dt className="text-muted-foreground">Últimos 180d (líq. pedidos)</dt>
+                        <dd className="text-right font-mono">
+                          {formatCurrency(phase2.trend.recent180dApprovedNet)}
+                        </dd>
                         <dt className="text-muted-foreground">180d anteriores</dt>
-                        <dd className="text-right font-mono">{formatCurrency(phase2.trend.prior180dApprovedNet)}</dd>
+                        <dd className="text-right font-mono">
+                          {formatCurrency(phase2.trend.prior180dApprovedNet)}
+                        </dd>
                       </dl>
                       {phase2.trend.note && (
                         <p className="text-[11px] text-amber-800 mt-2">{phase2.trend.note}</p>
@@ -632,7 +551,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   {phase2.crossSell.length > 0 && (
                     <div className="rounded-xl border border-border bg-card p-4">
                       <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2 flex items-center gap-2">
-                        <Package className="h-3.5 w-3.5" /> Expansão / cross-sell (heurística)
+                        <Package className="h-3.5 w-3.5" /> Expansão / cross-sell
                       </h4>
                       <ul className="text-[11px] space-y-1 list-disc pl-4 text-muted-foreground">
                         {phase2.crossSell.map((c, i) => (
@@ -663,7 +582,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   {phase2.strategicAlerts.length > 0 && (
                     <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 space-y-2">
                       <h4 className="text-xs font-bold uppercase text-red-900 flex items-center gap-2">
-                        <AlertTriangle className="h-3.5 w-3.5" /> Alertas de follow-up
+                        <AlertTriangle className="h-3.5 w-3.5" /> Alertas comerciais
                       </h4>
                       <ul className="text-sm space-y-1">
                         {phase2.strategicAlerts.map((a, i) => (
@@ -683,18 +602,17 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   )}
 
                   <div className="rounded-xl border border-dashed border-border p-3 bg-muted/30">
-                    <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Visão gerencial (reutilizável)</p>
+                    <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Visão gerencial</p>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">{phase2.managerial.summary}</p>
                   </div>
                 </div>
               )}
 
-              {/* Filtros */}
               <div className="rounded-xl border border-border p-4 bg-accent/10 space-y-3">
                 <p className="text-xs font-bold uppercase text-muted-foreground">Filtros da visão</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
-                    <label className="text-[10px] font-bold text-muted-foreground">Período (criação)</label>
+                    <label className="text-[10px] font-bold text-muted-foreground">Período (emissão)</label>
                     <div className="flex gap-2 mt-1">
                       <input
                         type="date"
@@ -711,7 +629,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                     </div>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-muted-foreground">Status</label>
+                    <label className="text-[10px] font-bold text-muted-foreground">Status do pedido</label>
                     <SearchableSelect
                       placeholder="Status..."
                       options={STATUS_OPTS.map((o) => ({
@@ -720,7 +638,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                         searchTerms: o.label,
                       }))}
                       value={statusF}
-                      onChange={(v) => setStatusF(v as ProposalStatus | "")}
+                      onChange={(v) => setStatusF(v as SalesOrderLinkStatus | "")}
                     />
                   </div>
                   <div>
@@ -763,10 +681,10 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   <div className="flex flex-wrap gap-2 items-end">
                     {(
                       [
-                        ["all", "Todas"],
-                        ["open", "Abertas"],
-                        ["won", "Ganhas"],
-                        ["lost", "Perdidas"],
+                        ["all", "Todos"],
+                        ["open", "Em aberto"],
+                        ["invoiced", "Faturados"],
+                        ["cancelled", "Cancelados"],
                       ] as const
                     ).map(([k, lab]) => (
                       <button
@@ -787,48 +705,40 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 </div>
               </div>
 
-              {/* Resumo */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                <MiniCard label="Valor líq. (filtro)" value={formatCurrency(metrics.totalNet)} />
-                <MiniCard label="Propostas (filtro)" value={String(metrics.count)} />
-                <MiniCard label="Aprovadas (filtro)" value={String(metrics.approvedCount)} />
-                <MiniCard
-                  label="Conversão"
-                  value={
-                    metrics.approvedCount + metrics.lostClosed > 0
-                      ? `${formatNumber(metrics.conversion, 1)}%`
-                      : "—"
-                  }
-                  hint="Aprov ÷ (Aprov+Rej+Canc)"
-                />
+                <MiniCard label="Receita de pedidos (filtro)" value={formatCurrency(metrics.totalNet)} />
+                <MiniCard label="Pedidos (filtro)" value={String(metrics.count)} />
+                <MiniCard label="Pedidos válidos (filtro)" value={String(metrics.validCount)} />
+                <MiniCard label="Faturados (filtro)" value={String(metrics.invoicedCount)} />
                 <MiniCard label="Ticket médio (filtro)" value={formatCurrency(metrics.ticket)} />
                 <MiniCard label="Margem média %" value={`${formatNumber(metrics.marginAvg, 2)}%`} />
                 <MiniCard label="Margem R$ total" value={formatCurrency(metrics.totalMargin)} />
-                <MiniCard label="Maior / menor negócio (líq.)" value={`${formatCurrency(metrics.maxDeal)} / ${formatCurrency(metrics.minDeal)}`} />
-                <MiniCard label="Média itens / prop." value={formatNumber(metrics.avgItems, 2)} />
                 <MiniCard
-                  label="Pipeline aberto (filtro)"
-                  value={formatCurrency(metrics.pipelineOpenNet)}
-                  hint={`${metrics.openCount} prop.`}
+                  label="Maior / menor pedido (líq.)"
+                  value={`${formatCurrency(metrics.maxDeal)} / ${formatCurrency(metrics.minDeal)}`}
+                />
+                <MiniCard label="Média itens / pedido" value={formatNumber(metrics.avgItems, 2)} />
+                <MiniCard
+                  label="Carteira em aberto (filtro)"
+                  value={formatCurrency(metrics.openNet)}
+                  hint={`${metrics.openCount} pedido(s)`}
                 />
                 <MiniCard
-                  label="Última aprovação (proxy)"
+                  label="Último pedido"
                   value={
-                    metrics.lastApprovedDate
-                      ? new Date(metrics.lastApprovedDate).toLocaleDateString("pt-BR")
+                    metrics.lastOrderDate
+                      ? new Date(metrics.lastOrderDate).toLocaleDateString("pt-BR")
                       : "—"
                   }
                 />
                 <MiniCard
-                  label="Dias desde última aprovação"
-                  value={metrics.daysSinceApproved != null ? `${Math.round(metrics.daysSinceApproved)}` : "—"}
+                  label="Dias desde último pedido"
+                  value={metrics.daysSinceLastOrder != null ? `${Math.round(metrics.daysSinceLastOrder)}` : "—"}
                 />
                 <MiniCard
-                  label="Média dias entre aprovações"
-                  value={
-                    metrics.avgRepurchase != null ? `${Math.round(metrics.avgRepurchase)}` : "—"
-                  }
-                  hint="≥2 aprovações"
+                  label="Média dias entre pedidos"
+                  value={metrics.avgRepurchase != null ? `${Math.round(metrics.avgRepurchase)}` : "—"}
+                  hint="≥2 pedidos válidos"
                 />
                 <MiniCard
                   label="Produto líder (receita filtro)"
@@ -837,7 +747,6 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 />
               </div>
 
-              {/* Relacionamento */}
               <div className="rounded-xl border border-border p-4 flex flex-wrap gap-6 items-center bg-primary/5">
                 <div className="flex items-center gap-2">
                   <User className="h-5 w-5 text-primary" />
@@ -849,7 +758,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 <div className="flex items-center gap-2">
                   <Clock className="h-5 w-5 text-primary" />
                   <div>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase">Última atualização (histórico completo)</p>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase">Última atualização</p>
                     <p className="font-bold text-sm">
                       {relationInfo.lastMove
                         ? new Date(relationInfo.lastMove).toLocaleString("pt-BR")
@@ -858,14 +767,15 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Pipeline aberto (total cliente)</p>
-                  <p className="font-bold text-primary">{relationInfo.openAll} proposta(s)</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Carteira em aberto (total)</p>
+                  <p className="font-bold text-primary">{relationInfo.openAll} pedido(s)</p>
                   <p className="text-[10px] text-muted-foreground">
-                    Último status: {relationInfo.lastStatus || "—"}
+                    Último status:{" "}
+                    {relationInfo.lastStatus ? SALES_ORDER_STATUS_LABELS[relationInfo.lastStatus] : "—"}
                     {phase2 && (
                       <>
                         {" "}
-                        · Saúde (Fase 2):{" "}
+                        · Saúde:{" "}
                         <span className="font-semibold text-foreground">
                           {HEALTH_LEVEL_LABEL_PT[phase2.health.level]}
                         </span>
@@ -875,15 +785,11 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 </div>
               </div>
 
-              {/* Alertas */}
               {alerts.length > 0 && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
                   <h3 className="text-sm font-bold flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-amber-600" /> Sinais com base no filtro atual
                   </h3>
-                  <p className="text-[10px] text-muted-foreground">
-                    Complementa os alertas estratégicos acima; respeita período, status e demais filtros.
-                  </p>
                   <ul className="text-sm space-y-1">
                     {alerts.map((a, i) => (
                       <li
@@ -903,127 +809,63 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 </div>
               )}
 
-              {/* Histórico propostas */}
               <div>
                 <h3 className="text-sm font-bold mb-2 flex items-center gap-2">
-                  <FileText className="h-4 w-4" /> Histórico de propostas (cronológico)
+                  <FileText className="h-4 w-4" /> Histórico de pedidos de venda
                 </h3>
                 <div className="rounded-xl border border-border overflow-x-auto">
-                  <table className="w-full text-left text-xs min-w-[800px]">
+                  <table className="w-full text-left text-xs min-w-[900px]">
                     <thead className="bg-accent/50">
                       <tr>
-                        <th className="p-2">#</th>
+                        <th className="p-2">Pedido</th>
                         <th className="p-2">Status</th>
-                        <th className="p-2">Criação</th>
+                        <th className="p-2">Emissão</th>
                         <th className="p-2">Atual.</th>
                         <th className="p-2 text-right">Líq.</th>
                         <th className="p-2 text-right">Margem %</th>
                         <th className="p-2">Resp.</th>
-                        <th className="p-2">Título / obs.</th>
+                        <th className="p-2">Faturado</th>
+                        <th className="p-2">Obs.</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                       {[...filtered]
                         .sort(
-                          (a, b) =>
-                            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                          (a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime()
                         )
-                        .map((p) => (
-                          <tr key={p.id} className="hover:bg-accent/20">
-                            <td className="p-2 font-mono font-bold">#{p.number}</td>
-                            <td className="p-2">{STATUS_FUNNEL_META[p.status].stageLabel}</td>
+                        .map((o) => (
+                          <tr key={o.id} className="hover:bg-accent/20">
+                            <td className="p-2 font-mono font-bold">{o.orderCode}</td>
+                            <td className="p-2">{SALES_ORDER_STATUS_LABELS[o.status]}</td>
                             <td className="p-2 whitespace-nowrap">
-                              {new Date(p.createdAt).toLocaleDateString("pt-BR")}
+                              {new Date(o.issueDate).toLocaleDateString("pt-BR")}
                             </td>
                             <td className="p-2 whitespace-nowrap">
-                              {new Date(p.updatedAt).toLocaleDateString("pt-BR")}
+                              {new Date(o.updatedAt).toLocaleDateString("pt-BR")}
                             </td>
-                            <td className="p-2 text-right">{formatCurrency(n(p.totalNetValue))}</td>
-                            <td className="p-2 text-right">{formatNumber(n(p.totalMarginPerc), 2)}%</td>
-                            <td className="p-2 max-w-[100px] truncate">
-                              {(p.responsible || "—").trim()}
+                            <td className="p-2 text-right">{formatCurrency(safeCommercialNumber(o.totalNetValue))}</td>
+                            <td className="p-2 text-right">
+                              {formatNumber(safeCommercialNumber(o.totalMarginPerc), 2)}%
                             </td>
-                            <td className="p-2 max-w-[200px] truncate" title={p.notes || ""}>
-                              {p.title || p.notes?.slice(0, 80) || "—"}
+                            <td className="p-2 max-w-[100px] truncate">{(o.responsible || "—").trim()}</td>
+                            <td className="p-2">{o.hasInvoicing ? "Sim" : "Não"}</td>
+                            <td className="p-2 max-w-[200px] truncate" title={o.notes || ""}>
+                              {o.notes?.slice(0, 80) || "—"}
                             </td>
                           </tr>
                         ))}
                     </tbody>
                   </table>
                   {filtered.length === 0 && (
-                    <p className="p-6 text-center text-muted-foreground text-sm">
-                      Nenhuma proposta no filtro.
-                    </p>
+                    <p className="p-6 text-center text-muted-foreground text-sm">Nenhum pedido no filtro.</p>
                   )}
                 </div>
               </div>
 
-              {/* Proxy negócios */}
               <div>
                 <h3 className="text-sm font-bold mb-2 flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" /> Negócios fechados (proxy: propostas aprovadas)
+                  <Package className="h-4 w-4" /> Mix de produtos (itens dos pedidos filtrados)
                 </h3>
-                <p className="text-[10px] text-muted-foreground mb-2">
-                  Cada linha é uma proposta com status Aprovada — não equivale a NF / pedido ERP.
-                </p>
-                <div className="rounded-xl border border-border overflow-x-auto">
-                  <table className="w-full text-left text-xs min-w-[900px]">
-                    <thead className="bg-accent/50">
-                      <tr>
-                        <th className="p-2">Data</th>
-                        <th className="p-2">#</th>
-                        <th className="p-2 text-right">Valor líq.</th>
-                        <th className="p-2 text-right">Margem %</th>
-                        <th className="p-2">Itens (resumo)</th>
-                        <th className="p-2">Condições</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filtered
-                        .filter((p) => p.status === "APPROVED")
-                        .map((p) => (
-                          <tr key={p.id}>
-                            <td className="p-2 whitespace-nowrap">
-                              {new Date(p.createdAt).toLocaleDateString("pt-BR")}
-                            </td>
-                            <td className="p-2 font-mono">#{p.number}</td>
-                            <td className="p-2 text-right font-bold">
-                              {formatCurrency(n(p.totalNetValue))}
-                            </td>
-                            <td className="p-2 text-right">{formatNumber(n(p.totalMarginPerc), 2)}%</td>
-                            <td className="p-2">
-                              {p.items?.slice(0, 3).map((it) => (
-                                <span key={it.id} className="block text-[10px]">
-                                  {it.Product?.sku} × {formatNumber(n(it.quantity), 2)}
-                                </span>
-                              ))}
-                              {(p.totalItems || 0) > 3 && (
-                                <span className="text-[10px] text-muted-foreground">+ mais</span>
-                              )}
-                            </td>
-                            <td className="p-2 max-w-[200px] text-[10px]">
-                              {p.paymentTerms || "—"} · {p.freightCondition || "—"}
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                  {filtered.filter((p) => p.status === "APPROVED").length === 0 && (
-                    <p className="p-4 text-center text-muted-foreground text-sm">
-                      Nenhuma proposta aprovada no filtro.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Mix */}
-              <div>
-                <h3 className="text-sm font-bold mb-2 flex items-center gap-2">
-                  <Package className="h-4 w-4" /> Mix de produtos (itens das propostas filtradas)
-                </h3>
-                <p className="text-[10px] text-muted-foreground mb-2">
-                  Agrupado por SKU. Coluna &quot;Tipo&quot; = engenharia (Produto/Componente), não família comercial.
-                </p>
                 <div className="rounded-xl border border-border overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-accent/50">
@@ -1032,8 +874,8 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                         <th className="p-2">Nome</th>
                         <th className="p-2">Tipo item</th>
                         <th className="p-2 text-right">Qtd</th>
-                        <th className="p-2 text-right">Receita (est.)</th>
-                        <th className="p-2 text-right">Margem R$ (linha)</th>
+                        <th className="p-2 text-right">Receita</th>
+                        <th className="p-2 text-right">Margem R$</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -1050,9 +892,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                     </tbody>
                   </table>
                   {mixRows.length === 0 && (
-                    <p className="p-4 text-center text-muted-foreground text-sm">
-                      Sem itens no filtro atual.
-                    </p>
+                    <p className="p-4 text-center text-muted-foreground text-sm">Sem itens no filtro atual.</p>
                   )}
                 </div>
               </div>
@@ -1064,15 +904,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
   );
 };
 
-function MiniCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
+function MiniCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-xl border border-border bg-card p-3">
       <p className="text-[9px] font-bold text-muted-foreground uppercase leading-tight">{label}</p>
@@ -1080,6 +912,71 @@ function MiniCard({
         {value}
       </p>
       {hint && <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{hint}</p>}
+    </div>
+  );
+}
+
+function IntelCard({
+  title,
+  icon,
+  main,
+  sub,
+  reasons,
+  footer,
+  badges,
+  stats,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  main: string;
+  sub?: string;
+  reasons?: string[];
+  footer?: string;
+  badges?: string[];
+  stats?: Array<[string, number | null]>;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-xs font-bold uppercase text-muted-foreground">{title}</span>
+      </div>
+      <p className="text-lg font-black text-primary">{main}</p>
+      {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
+      {reasons && reasons.length > 0 && (
+        <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
+          {reasons.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      )}
+      {badges && badges.length > 0 && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {badges.map((b) => (
+            <span
+              key={b}
+              className="text-[10px] font-bold px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20"
+            >
+              {b}
+            </span>
+          ))}
+        </div>
+      )}
+      {stats && (
+        <dl className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+          {stats.map(([label, value]) => (
+            <React.Fragment key={label}>
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-mono text-right">
+                {value != null ? Math.round(value) : "—"}
+              </dd>
+            </React.Fragment>
+          ))}
+        </dl>
+      )}
+      {footer && (
+        <p className="text-[10px] text-muted-foreground border-t border-border pt-2">{footer}</p>
+      )}
     </div>
   );
 }
