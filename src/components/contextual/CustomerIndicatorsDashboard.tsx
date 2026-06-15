@@ -148,9 +148,9 @@ export function CustomerIndicatorsDashboard() {
         <ContextualDashboardKpiCard label="Ativos" value={String(s.activeCount)} />
         <ContextualDashboardKpiCard label="Inativos" value={String(s.inactiveCount)} />
         <ContextualDashboardKpiCard
-          label="Com ao menos uma proposta"
-          value={String(s.withProposalCount)}
-          hint="Contagem de clientes com vínculo em proposta."
+          label="Com ao menos um pedido"
+          value={String(s.withSalesOrderCount)}
+          hint="Clientes com pedido de venda válido."
         />
       </div>
 
@@ -159,6 +159,11 @@ export function CustomerIndicatorsDashboard() {
         <ContextualDashboardKpiCard label="Com e-mail" value={String(s.withEmailCount)} />
         <ContextualDashboardKpiCard label="Com telefone" value={String(s.withPhoneCount)} />
         <ContextualDashboardKpiCard label="Novos (últimos 30 dias)" value={String(s.newLast30Days)} />
+        <ContextualDashboardKpiCard
+          label="Com propostas em negociação"
+          value={String(s.withNegotiationProposalCount)}
+          hint="Pré-venda auxiliar — não substitui pedidos."
+        />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">

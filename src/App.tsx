@@ -611,7 +611,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Clientes — Indicadores"
-              description="Carteira, geografia (UF) e segmentos a partir do cadastro e vínculos com propostas."
+              description="Carteira, geografia (UF) e segmentos a partir do cadastro e pedidos de venda."
             >
               <CustomerIndicatorsDashboard />
             </ModulePageShell>

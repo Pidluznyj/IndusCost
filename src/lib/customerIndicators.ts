@@ -1,5 +1,5 @@
 /**
- * Agregações somente leitura para o dashboard de clientes (sem alterar regras de negócio).
+ * Agregações somente leitura para o dashboard de clientes (base principal: SalesOrder).
  */
 
 const UF_ORDER = [
@@ -74,7 +74,10 @@ export type CustomerIndicatorInput = {
   phone: string | null;
   address: string | null;
   createdAt: Date;
-  proposalCount: number;
+  /** Pedidos válidos (status NOT IN CANCELLED/ERROR). */
+  salesOrderCount: number;
+  /** @deprecated Secundário — propostas em negociação. */
+  negotiationProposalCount?: number;
 };
 
 export type CustomerIndicatorsResponse = {
@@ -83,7 +86,10 @@ export type CustomerIndicatorsResponse = {
     totalCustomers: number;
     activeCount: number;
     inactiveCount: number;
-    withProposalCount: number;
+    withSalesOrderCount: number;
+    /** @deprecated Use withSalesOrderCount. Mantido por compatibilidade. */
+    withProposalCount?: number;
+    withNegotiationProposalCount: number;
     withoutStateCount: number;
     withEmailCount: number;
     withPhoneCount: number;
@@ -131,7 +137,8 @@ export function buildCustomerIndicatorsPayload(rows: CustomerIndicatorInput[]): 
 
   let activeCount = 0;
   let inactiveCount = 0;
-  let withProposalCount = 0;
+  let withSalesOrderCount = 0;
+  let withNegotiationProposalCount = 0;
   let withoutStateCount = 0;
   let withEmailCount = 0;
   let withPhoneCount = 0;
@@ -145,7 +152,8 @@ export function buildCustomerIndicatorsPayload(rows: CustomerIndicatorInput[]): 
     if (r.status === "ACTIVE") activeCount++;
     else inactiveCount++;
 
-    if (r.proposalCount > 0) withProposalCount++;
+    if (r.salesOrderCount > 0) withSalesOrderCount++;
+    if ((r.negotiationProposalCount ?? 0) > 0) withNegotiationProposalCount++;
 
     if (r.email != null && String(r.email).trim() !== "") withEmailCount++;
     if (r.phone != null && String(r.phone).trim() !== "") withPhoneCount++;
@@ -193,13 +201,15 @@ export function buildCustomerIndicatorsPayload(rows: CustomerIndicatorInput[]): 
   return {
     semantics: {
       label:
-        "Indicadores derivados do cadastro de clientes e da contagem de propostas vinculadas (leitura; não altera dados).",
+        "Indicadores derivados do cadastro de clientes e pedidos de venda válidos (leitura; não altera dados).",
     },
     summary: {
       totalCustomers: rows.length,
       activeCount,
       inactiveCount,
-      withProposalCount,
+      withSalesOrderCount,
+      withProposalCount: withSalesOrderCount,
+      withNegotiationProposalCount,
       withoutStateCount,
       withEmailCount,
       withPhoneCount,
