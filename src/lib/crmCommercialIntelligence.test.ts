@@ -112,7 +112,7 @@ describe("crmCommercialIntelligence", () => {
     assert.equal(res.openOrders.openOrdersCount, 1);
   });
 
-  it("pedidos sem follow-up não dependem de proposalId", () => {
+  it("pedidos sem follow-up usam salesOrderId com fallback por cliente", () => {
     const order = openOrder();
     const res = buildCrmCommercialIntelligenceResponse({
       customer: baseCustomer(),
@@ -121,17 +121,25 @@ describe("crmCommercialIntelligence", () => {
       now: NOW,
     });
     assert.equal(res.openOrders.ordersWithoutFollowUpCount, 1);
-    assert.equal(orderHasFollowUpAfterUpdate(order.updatedAt, []), false);
+    assert.equal(orderHasFollowUpAfterUpdate(order.id, order.updatedAt, []), false);
     assert.equal(
-      orderHasFollowUpAfterUpdate(order.updatedAt, [
-        { contactDate: new Date("2026-05-03T00:00:00.000Z"), createdAt: new Date("2026-05-03T00:00:00.000Z") },
+      orderHasFollowUpAfterUpdate(order.id, order.updatedAt, [
+        {
+          contactDate: new Date("2026-05-03T00:00:00.000Z"),
+          createdAt: new Date("2026-05-03T00:00:00.000Z"),
+          salesOrderId: order.id,
+        },
       ]),
       true
     );
     const withFollowUp = buildCrmCommercialIntelligenceResponse({
       customer: baseCustomer(),
       activities: [
-        { contactDate: new Date("2026-05-03T00:00:00.000Z"), createdAt: new Date("2026-05-03T00:00:00.000Z") },
+        {
+          contactDate: new Date("2026-05-03T00:00:00.000Z"),
+          createdAt: new Date("2026-05-03T00:00:00.000Z"),
+          salesOrderId: order.id,
+        },
       ],
       salesOrders: [order],
       now: NOW,

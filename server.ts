@@ -35,6 +35,17 @@ import {
   SellerDashboardBadRequest,
 } from "./src/lib/crmSellerDashboardService.js";
 import {
+  applyCommercialActivityProposalToCreate,
+  applyCommercialActivityProposalToUpdate,
+  applyCommercialActivitySalesOrderToCreate,
+  applyCommercialActivitySalesOrderToUpdate,
+  COMMERCIAL_ACTIVITY_API_INCLUDE,
+  mapCommercialActivityForApi,
+  parseOptionalUuidField,
+  resolveCommercialActivityProposalLink,
+  resolveCommercialActivitySalesOrderLink,
+} from "./src/lib/commercialActivityApi.js";
+import {
   buildCostAnalysisExplainability,
   buildPricingSnapshotExplainability,
 } from "./src/lib/calculationExplainability.js";
@@ -10509,9 +10520,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  /** Indicadores agregados do cadastro (somente leitura). */
+  /** Indicadores agregados do cadastro (somente leitura; base: SalesOrder). */
   app.get("/api/customers/indicators", requireAppAuth, requirePermission("customers.view"), async (_req, res) => {
     try {
+      const VALID_ORDER_STATUSES = ["CANCELLED", "ERROR"] as const;
+      const NEGOTIATION_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] as const;
+
       const rows = await prisma.customer.findMany({
         select: {
           id: true,
@@ -10522,7 +10536,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           phone: true,
           address: true,
           createdAt: true,
-          _count: { select: { proposals: true } },
+          _count: {
+            select: {
+              salesOrders: {
+                where: { status: { notIn: [...VALID_ORDER_STATUSES] } },
+              },
+              proposals: {
+                where: { status: { in: [...NEGOTIATION_PROPOSAL_STATUSES] } },
+              },
+            },
+          },
         },
       });
       const mapped = rows.map((r) => ({
@@ -10534,7 +10557,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         phone: r.phone,
         address: r.address,
         createdAt: r.createdAt,
-        proposalCount: r._count.proposals,
+        salesOrderCount: r._count.salesOrders,
+        negotiationProposalCount: r._count.proposals,
       }));
       res.json(buildCustomerIndicatorsPayload(mapped));
     } catch (error) {
@@ -10679,67 +10703,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     );
   }
 
-  function mapCommercialActivityForApi(
-    row: {
-      id: string;
-      activityType: string;
-      subject: string | null;
-      description: string | null;
-      scheduledAt: Date | null;
-      completedAt: Date | null;
-      status: string;
-      priority: number | null;
-      assignedTo: string | null;
-      closeReason: string | null;
-      contactDate: Date | null;
-      channel: string | null;
-      reason: string | null;
-      outcome: string | null;
-      nextActionAt: Date | null;
-      nextActionDescription: string | null;
-      createdByName: string | null;
-      createdByPhone: string | null;
-      createdByEmail: string | null;
-      createdAt: Date;
-      Proposal: {
-        number: number;
-        title: string | null;
-        status: string;
-      } | null;
-    }
-  ) {
-    const proposal = row.Proposal
-      ? {
-          number: row.Proposal.number,
-          title: row.Proposal.title,
-          status: row.Proposal.status,
-        }
-      : null;
-    return {
-      id: row.id,
-      activityType: row.activityType,
-      subject: row.subject,
-      description: row.description,
-      scheduledAt: row.scheduledAt,
-      completedAt: row.completedAt,
-      status: row.status,
-      priority: row.priority,
-      assignedTo: row.assignedTo,
-      closeReason: row.closeReason,
-      contactDate: row.contactDate,
-      channel: row.channel,
-      reason: row.reason,
-      outcome: row.outcome,
-      nextActionAt: row.nextActionAt,
-      nextActionDescription: row.nextActionDescription,
-      createdByName: row.createdByName,
-      createdByPhone: row.createdByPhone,
-      createdByEmail: row.createdByEmail,
-      createdAt: row.createdAt,
-      proposal,
-    };
-  }
-
   app.get("/api/customers/:customerId/commercial-activities", requireAppAuth, requireAnyPermission(["crm.customer_cockpit.view", "customers.commercial360.view", "customers.view"]), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
@@ -10772,11 +10735,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           { contactDate: { sort: "desc", nulls: "last" } },
           { createdAt: "desc" },
         ],
-        include: {
-          Proposal: {
-            select: { number: true, title: true, status: true },
-          },
-        },
+        include: COMMERCIAL_ACTIVITY_API_INCLUDE,
       });
       res.json({ activities: rows.map(mapCommercialActivityForApi) });
     } catch (error) {
@@ -10889,6 +10848,32 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const scheduledAt = parseOptionalIsoDate(body.scheduledAt);
       const completedAt = parseOptionalIsoDate(body.completedAt);
 
+      const salesOrderIdRaw = parseOptionalUuidField(body.salesOrderId);
+      if (salesOrderIdRaw === "INVALID") {
+        return res.status(400).json({ error: "salesOrderId inválido." });
+      }
+      const proposalIdRaw = parseOptionalUuidField(body.proposalId);
+      if (proposalIdRaw === "INVALID") {
+        return res.status(400).json({ error: "proposalId inválido." });
+      }
+
+      const salesOrderLink = await resolveCommercialActivitySalesOrderLink(
+        customerId,
+        salesOrderIdRaw ?? undefined,
+        prisma
+      );
+      if (salesOrderLink.ok === false) {
+        return res.status(400).json({ error: salesOrderLink.error });
+      }
+      const proposalLink = await resolveCommercialActivityProposalLink(
+        customerId,
+        proposalIdRaw ?? undefined,
+        prisma
+      );
+      if (proposalLink.ok === false) {
+        return res.status(400).json({ error: proposalLink.error });
+      }
+
       const createData: Prisma.CommercialActivityCreateInput = {
         Customer: { connect: { id: customerId } },
         activityType,
@@ -10909,12 +10894,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         ...(createdByPhone !== undefined ? { createdByPhone } : {}),
         ...(createdByEmail !== undefined ? { createdByEmail } : {}),
       };
+      applyCommercialActivitySalesOrderToCreate(createData, salesOrderIdRaw ?? undefined);
+      applyCommercialActivityProposalToCreate(createData, proposalIdRaw ?? undefined);
 
       const created = await prisma.commercialActivity.create({
         data: createData,
-        include: {
-          Proposal: { select: { number: true, title: true, status: true } },
-        },
+        include: COMMERCIAL_ACTIVITY_API_INCLUDE,
       });
       res.status(201).json(mapCommercialActivityForApi(created));
     } catch (error) {
@@ -11083,6 +11068,36 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         );
         data.closeReason = v === undefined ? null : v;
       }
+      if ("salesOrderId" in body) {
+        const parsed = parseOptionalUuidField(body.salesOrderId);
+        if (parsed === "INVALID") {
+          return res.status(400).json({ error: "salesOrderId inválido." });
+        }
+        const salesOrderLink = await resolveCommercialActivitySalesOrderLink(
+          existing.customerId,
+          parsed ?? undefined,
+          prisma
+        );
+        if (salesOrderLink.ok === false) {
+          return res.status(400).json({ error: salesOrderLink.error });
+        }
+        applyCommercialActivitySalesOrderToUpdate(data, parsed ?? undefined);
+      }
+      if ("proposalId" in body) {
+        const parsed = parseOptionalUuidField(body.proposalId);
+        if (parsed === "INVALID") {
+          return res.status(400).json({ error: "proposalId inválido." });
+        }
+        const proposalLink = await resolveCommercialActivityProposalLink(
+          existing.customerId,
+          parsed ?? undefined,
+          prisma
+        );
+        if (proposalLink.ok === false) {
+          return res.status(400).json({ error: proposalLink.error });
+        }
+        applyCommercialActivityProposalToUpdate(data, parsed ?? undefined);
+      }
 
       if (Object.keys(data).length === 0) {
         return res.status(400).json({ error: "Nenhum campo para atualizar." });
@@ -11091,9 +11106,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const updated = await prisma.commercialActivity.update({
         where: { id },
         data,
-        include: {
-          Proposal: { select: { number: true, title: true, status: true } },
-        },
+        include: COMMERCIAL_ACTIVITY_API_INCLUDE,
       });
       res.json(mapCommercialActivityForApi(updated));
     } catch (error) {
@@ -11701,7 +11714,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const [activityRows, salesOrdersRaw, negotiationProposals] = await Promise.all([
         prisma.commercialActivity.findMany({
           where: { customerId },
-          select: { contactDate: true, createdAt: true },
+          select: { contactDate: true, createdAt: true, salesOrderId: true },
         }),
         prisma.salesOrder.findMany({
           where: customerRow.taxId

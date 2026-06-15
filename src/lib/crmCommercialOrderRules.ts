@@ -23,8 +23,8 @@ export type ValidPurchaseOrderStatus = (typeof VALID_PURCHASE_ORDER_STATUSES)[nu
 
 const VALID_PURCHASE_STATUS_SET = new Set<string>(VALID_PURCHASE_ORDER_STATUSES);
 
-export const CRM_ORDER_FOLLOW_UP_LIMITATION_NOTE =
-  "Follow-up de pedidos em carteira usa atividades comerciais do cliente após updatedAt/issueDate do pedido. Vínculo por salesOrderId será adicionado em fase futura.";
+export const CRM_ORDER_FOLLOW_UP_NOTE =
+  "Follow-up de pedidos: prioriza CommercialActivity.salesOrderId; fallback por atividade do cliente sem vínculo a pedido.";
 
 export type CommercialSalesOrderSnapshot = {
   status: string;

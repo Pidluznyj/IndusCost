@@ -494,6 +494,7 @@ model SalesOrder {
   Customer               Customer         @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Proposal               Proposal?        @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items                  SalesOrderItem[]
+  CommercialActivity     CommercialActivity[]
 
   @@index([customerId])
   @@index([status])
@@ -676,6 +677,7 @@ model CommercialActivity {
   id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   customerId            String    @db.Uuid
   proposalId            String?   @db.Uuid
+  salesOrderId          String?   @db.Uuid
   activityType          String
   subject               String?
   description           String?
@@ -698,10 +700,12 @@ model CommercialActivity {
   updatedAt             DateTime  @default(now()) @db.Timestamp(6)
   Customer              Customer  @relation(fields: [customerId], references: [id])
   Proposal              Proposal? @relation(fields: [proposalId], references: [id])
+  SalesOrder            SalesOrder? @relation(fields: [salesOrderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([customerId])
   @@index([customerId, contactDate])
   @@index([proposalId])
+  @@index([salesOrderId])
   @@index([scheduledAt])
   @@index([nextActionAt])
   @@index([status])

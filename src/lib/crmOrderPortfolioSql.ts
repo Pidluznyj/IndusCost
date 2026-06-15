@@ -3,6 +3,7 @@
  */
 
 import { Prisma } from "@prisma/client";
+import { crmOrderHasFollowUpExistsSql } from "@/src/lib/crmOrderFollowUp";
 
 export const CRM_VALID_PURCHASE_STATUS_SQL = Prisma.sql`so.status::text IN ('READY_TO_SEND', 'SENT_TO_NOMUS')`;
 
@@ -42,21 +43,10 @@ export function crmOpenPortfolioOrderSql(alias: string) {
 }
 
 /**
- * Follow-up por cliente (Fase 2): atividade após updatedAt/issueDate do pedido.
- * Limitação: sem CommercialActivity.salesOrderId ainda.
+ * Pedido em carteira sem follow-up: sem atividade vinculada ao pedido nem fallback do cliente.
  */
 export function crmOrderWithoutFollowUpNotExistsSql(alias: string) {
-  return Prisma.sql`
-    NOT EXISTS (
-      SELECT 1
-      FROM "CommercialActivity" a
-      WHERE a."customerId" = ${Prisma.raw(`${alias}."customerId"`)}
-        AND COALESCE(a."contactDate", a."createdAt") >= COALESCE(
-          ${Prisma.raw(`${alias}."updatedAt"`)},
-          ${Prisma.raw(`${alias}."issueDate"`)}
-        )
-    )
-  `;
+  return Prisma.sql`NOT ${crmOrderHasFollowUpExistsSql(alias)}`;
 }
 
 export const CRM_ACTIVITY_NOT_CLOSED_SQL = Prisma.sql`(

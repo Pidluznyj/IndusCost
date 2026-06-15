@@ -4,7 +4,7 @@
  */
 
 import {
-  CRM_ORDER_FOLLOW_UP_LIMITATION_NOTE,
+  CRM_ORDER_FOLLOW_UP_NOTE,
   getSalesOrderNetValue,
   getSalesOrderIssueDate,
   getSalesOrderUpdatedAt,
@@ -14,6 +14,7 @@ import {
   resolveSalesOrderHasInvoicing,
   VALID_PURCHASE_ORDER_STATUSES,
 } from "@/src/lib/crmCommercialOrderRules";
+import { orderHasFollowUpAfterCutoff } from "@/src/lib/crmOrderFollowUp";
 import { safeCommercialNumber } from "@/src/lib/customerCommercialSalesOrderView";
 
 export const OPEN_NEGOTIATION_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] as const;
@@ -21,6 +22,7 @@ export const OPEN_NEGOTIATION_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] 
 export type CrmCommercialActivityRow = {
   contactDate: Date | null;
   createdAt: Date;
+  salesOrderId?: string | null;
 };
 
 export type CrmCommercialOrderRow = {
@@ -133,25 +135,24 @@ export type CrmCommercialIntelResponse = {
   signals: CrmCommercialIntelSignal[];
 };
 
-function activityEffectiveMs(a: CrmCommercialActivityRow): number {
-  const d = a.contactDate ?? a.createdAt;
-  const t = d.getTime();
-  return Number.isFinite(t) ? t : 0;
-}
-
 /**
- * Follow-up por cliente (Fase 1): qualquer atividade do cliente com data efetiva >= cutoff do pedido.
- * Limitação documentada em CRM_ORDER_FOLLOW_UP_LIMITATION_NOTE.
+ * @deprecated Use orderHasFollowUpAfterCutoff from crmOrderFollowUp.
  */
 export function orderHasFollowUpAfterUpdate(
-  orderCutoff: Date,
-  activities: CrmCommercialActivityRow[]
+  orderIdOrCutoff: string | Date,
+  orderCutoffOrActivities: Date | CrmCommercialActivityRow[],
+  activitiesMaybe?: CrmCommercialActivityRow[]
 ): boolean {
-  const cutoff = orderCutoff.getTime();
-  for (const a of activities) {
-    if (activityEffectiveMs(a) >= cutoff) return true;
+  if (activitiesMaybe) {
+    return orderHasFollowUpAfterCutoff(
+      orderIdOrCutoff as string,
+      orderCutoffOrActivities as Date,
+      activitiesMaybe
+    );
   }
-  return false;
+  const cutoff = orderIdOrCutoff as Date;
+  const activities = orderCutoffOrActivities as CrmCommercialActivityRow[];
+  return orderHasFollowUpAfterCutoff("", cutoff, activities);
 }
 
 function orderFollowUpCutoff(order: CrmCommercialOrderRow): Date {
@@ -218,7 +219,7 @@ export function buildCrmCommercialIntelligenceResponse(input: {
   const openOrdersValue = openPortfolioRows.reduce((acc, o) => acc + getSalesOrderNetValue(o), 0);
 
   const withoutFollowUpAll = openPortfolioRows.filter(
-    (o) => !orderHasFollowUpAfterUpdate(orderFollowUpCutoff(o), input.activities)
+    (o) => !orderHasFollowUpAfterCutoff(o.id, orderFollowUpCutoff(o), input.activities)
   );
   const ordersWithoutFollowUp = [...withoutFollowUpAll]
     .map((o) => {
@@ -406,7 +407,7 @@ export function buildCrmCommercialIntelligenceResponse(input: {
       openOrdersValue: safeCommercialNumber(openOrdersValue),
       ordersWithoutFollowUpCount,
       ordersWithoutFollowUp,
-      followUpNote: CRM_ORDER_FOLLOW_UP_LIMITATION_NOTE,
+      followUpNote: CRM_ORDER_FOLLOW_UP_NOTE,
     },
     proposals:
       negotiation.length > 0
