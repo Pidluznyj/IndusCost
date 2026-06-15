@@ -46,7 +46,7 @@ import {
   PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION,
   projectInProjectProductCreationDisabledPayload,
 } from "@/src/lib/projectsAddItemPolicy.js";
-import { isGuidedOtherCostItem } from "@/src/lib/projectsOtherCostGroups.js";
+import { isGuidedOtherCostItem, parseOtherCostMeta } from "@/src/lib/projectsOtherCostGroups.js";
 import {
   addSimulationReferenceToProject,
   lookupProjectSimulations,
@@ -77,6 +77,14 @@ import {
   ProjectStructureLineValidationError,
   resolveProjectStructureLineCostSource,
 } from "@/src/lib/projectsStructureLineBuilder.js";
+import {
+  deleteProjectCostAmortizationBySource,
+  loadProjectCostAmortizations,
+  removeAmortizationAllocationsForTargetItem,
+  upsertProjectCostAmortization,
+  type UpsertProjectCostAmortizationPayload,
+} from "@/src/lib/projectsCostAmortizationService.js";
+import { buildProjectCostAmortizationSummary } from "@/src/lib/projectsCostAmortization.js";
 
 function isUuid(value: unknown): value is string {
   return (
@@ -636,6 +644,10 @@ export function registerProjectsRoutes(
         where: { id: req.params.simulatedProductId, projectId: req.params.id },
       });
       if (!existing) return res.status(404).json({ error: "Produto simulado não encontrado." });
+      await removeAmortizationAllocationsForTargetItem(
+        req.params.id,
+        req.params.simulatedProductId
+      );
       await prisma.projectSimulatedProduct.delete({ where: { id: req.params.simulatedProductId } });
       const ctx = await requireProjectAndVersion(req.params.id);
       if (!("error" in ctx) && ctx.version) {
@@ -745,7 +757,22 @@ export function registerProjectsRoutes(
         where: { id: req.params.simulatedItemId, projectId: req.params.id },
       });
       if (!existing) return res.status(404).json({ error: "Item simulado não encontrado." });
-      await prisma.projectSimulatedItem.delete({ where: { id: req.params.simulatedItemId } });
+      await removeAmortizationAllocationsForTargetItem(req.params.id, req.params.simulatedItemId);
+      if (isGuidedOtherCostItem(existing.notes)) {
+        const batchId = parseOtherCostMeta(existing.notes).batchId ?? existing.id;
+        await prisma.projectSimulatedItem.delete({ where: { id: req.params.simulatedItemId } });
+        const remaining = await prisma.projectSimulatedItem.count({
+          where: {
+            projectId: req.params.id,
+            notes: { contains: `"batchId":"${batchId}"` },
+          },
+        });
+        if (remaining === 0) {
+          await deleteProjectCostAmortizationBySource(req.params.id, "OTHER_COST", batchId);
+        }
+      } else {
+        await prisma.projectSimulatedItem.delete({ where: { id: req.params.simulatedItemId } });
+      }
       const ctx = await requireProjectAndVersion(req.params.id);
       if (!("error" in ctx) && ctx.version) {
         await recalculateAndPersistVersionCosts(ctx.version.id);
@@ -1145,6 +1172,7 @@ export function registerProjectsRoutes(
         where: { id: req.params.moldId, projectId: req.params.id },
       });
       if (!existing) return res.status(404).json({ error: "Molde não encontrado." });
+      await deleteProjectCostAmortizationBySource(req.params.id, "MOLD", req.params.moldId);
       await prisma.projectMold.delete({ where: { id: req.params.moldId } });
       await recalculateAndPersistVersionCosts(existing.versionId);
       res.json({ ok: true });
@@ -1153,4 +1181,92 @@ export function registerProjectsRoutes(
       res.status(500).json({ error: "Erro ao excluir molde." });
     }
   });
+
+  app.get("/api/projects/:id/cost-amortizations", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+      const saved = await loadProjectCostAmortizations(req.params.id);
+      const summary = buildProjectCostAmortizationSummary(detail, saved);
+      res.json({ amortizations: saved, summary, projectCostSummary: summary });
+    } catch (e: unknown) {
+      console.error("GET cost-amortizations", e);
+      res.status(500).json({ error: "Erro ao carregar amortizações." });
+    }
+  });
+
+  app.put("/api/projects/:id/cost-amortizations", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+
+      const body = req.body ?? {};
+      const sourceType = body.sourceType;
+      const sourceId = typeof body.sourceId === "string" ? body.sourceId : "";
+      if (sourceType !== "MOLD" && sourceType !== "OTHER_COST") {
+        return res.status(400).json({ error: "sourceType inválido." });
+      }
+      if (!isUuid(sourceId)) return res.status(400).json({ error: "sourceId inválido." });
+
+      const passThroughPercent = optNum(body.passThroughPercent);
+      if (passThroughPercent == null) {
+        return res.status(400).json({ error: "Percentual repassado é obrigatório." });
+      }
+
+      const allocations = Array.isArray(body.allocations) ? body.allocations : [];
+      const payload: UpsertProjectCostAmortizationPayload = {
+        sourceType,
+        sourceId,
+        sourceBatchId: typeof body.sourceBatchId === "string" ? body.sourceBatchId : null,
+        passThroughPercent,
+        allocations: allocations.map((row: Record<string, unknown>) => ({
+          targetItemType: String(row.targetItemType ?? "LEGACY"),
+          targetItemId: String(row.targetItemId ?? ""),
+          targetSnapshotRootProductId:
+            typeof row.targetSnapshotRootProductId === "string"
+              ? row.targetSnapshotRootProductId
+              : null,
+          allocationPercent: optNum(row.allocationPercent) ?? 0,
+          amortizationQuantity: optNum(row.amortizationQuantity) ?? 0,
+        })),
+      };
+
+      const result = await upsertProjectCostAmortization(req.params.id, detail, payload);
+      const refreshed = await loadProjectDetail(req.params.id);
+      res.json({ ...result, project: refreshed });
+    } catch (e: unknown) {
+      console.error("PUT cost-amortizations", e);
+      res.status(400).json({
+        error: e instanceof Error ? e.message : "Erro ao salvar amortização.",
+      });
+    }
+  });
+
+  app.delete(
+    "/api/projects/:id/cost-amortizations/:sourceType/:sourceId",
+    ...manage,
+    async (req, res) => {
+      try {
+        if (!isUuid(req.params.id) || !isUuid(req.params.sourceId)) {
+          return res.status(400).json({ error: "ID inválido." });
+        }
+        const sourceType = req.params.sourceType;
+        if (sourceType !== "MOLD" && sourceType !== "OTHER_COST") {
+          return res.status(400).json({ error: "sourceType inválido." });
+        }
+        await deleteProjectCostAmortizationBySource(
+          req.params.id,
+          sourceType,
+          req.params.sourceId
+        );
+        const detail = await loadProjectDetail(req.params.id);
+        res.json({ ok: true, project: detail });
+      } catch (e: unknown) {
+        console.error("DELETE cost-amortizations", e);
+        res.status(500).json({ error: "Erro ao remover amortização." });
+      }
+    }
+  );
 }

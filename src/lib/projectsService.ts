@@ -22,6 +22,11 @@ import {
 } from "@/src/lib/projectsEngineeringCostRollup.js";
 import { computeSimulatedProductRefLineUpdate } from "@/src/lib/projectsSimulatedProductRefs.js";
 import { collectSnapshotRootProductIds } from "@/src/lib/projectsStructureSnapshotGroups.js";
+import {
+  enrichProjectDetailWithAmortization,
+  loadProjectCostAmortizations,
+  removeAmortizationAllocationsForTargetItem,
+} from "@/src/lib/projectsCostAmortizationService.js";
 import type {
   ProjectAlert,
   ProjectCostBreakdown,
@@ -458,6 +463,7 @@ export async function deleteProjectStructureSnapshot(
   });
 
   await recalculateAndPersistVersionCosts(ctx.version.id);
+  await removeAmortizationAllocationsForTargetItem(projectId, snapshotRootProductId);
   return { deletedCount: result.count };
 }
 
@@ -627,7 +633,7 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
 
   const snapshotRootProducts = await loadSnapshotRootProductsMap(structureLines);
 
-  return {
+  const baseDetail: ProjectDetail = {
     id: project.id,
     code: project.code,
     title: project.title,
@@ -655,6 +661,9 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
     alerts,
     conversionAvailable: false,
   };
+
+  const costAmortizations = await loadProjectCostAmortizations(projectId);
+  return enrichProjectDetailWithAmortization(baseDetail, costAmortizations);
 }
 
 export async function createProjectWithVersion(data: {

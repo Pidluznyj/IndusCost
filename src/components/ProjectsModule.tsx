@@ -903,7 +903,14 @@ function ProjectDetailView({
         />
       ) : null}
 
-      {tab === "costs" ? <ProjectGuidedCostsTab detail={detail} /> : null}
+      {tab === "costs" ? (
+        <ProjectGuidedCostsTab
+          detail={detail}
+          projectId={projectId}
+          canManage={canManage}
+          onDetailRefresh={setDetail}
+        />
+      ) : null}
 
       {tab === "documents" ? <ProjectDocuments canManage={canManage} /> : null}
 

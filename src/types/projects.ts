@@ -188,6 +188,72 @@ export type ProjectAlert = {
   severity: "info" | "warning" | "error";
 };
 
+export type ProjectCostAmortizationAllocationRow = {
+  targetItemId: string;
+  targetItemType: string;
+  targetSnapshotRootProductId?: string | null;
+  targetDescriptionSnapshot: string;
+  targetBaseUnitCostSnapshot: number;
+  allocationPercent: number;
+  amortizationQuantity: number;
+  allocatedAmount: number;
+  unitAmortizedCost: number;
+  finalUnitCost: number;
+};
+
+export type ProjectCostAmortizationSavedRow = {
+  id: string;
+  projectId: string;
+  sourceType: "MOLD" | "OTHER_COST";
+  sourceId: string;
+  sourceDescriptionSnapshot: string;
+  sourceTotalCostSnapshot: number;
+  passThroughPercent: number;
+  passThroughAmount: number;
+  absorbedAmount: number;
+  status: string;
+  distributionPercentTotal: number;
+  distributionBalancePercent: number;
+  allocatedAmountTotal: number;
+  unallocatedAmount: number;
+  allocations: ProjectCostAmortizationAllocationRow[];
+};
+
+export type ProjectCostAmortizationSummaryView = {
+  baseItemsUnitCost: number;
+  totalMoldsCost: number;
+  totalOtherCosts: number;
+  totalPassThroughAmount: number;
+  totalAbsorbedAmount: number;
+  totalAmortizationAllocated: number;
+  finalItemsUnitCostWithAmortization: number;
+  itemRollups: Array<{
+    targetItemId: string;
+    displayName: string;
+    baseUnitCost: number;
+    unitAmortizedCost: number;
+    finalUnitCost: number;
+    totalAllocated: number;
+    sourceLabels: string[];
+  }>;
+  amortizations: Array<{
+    sourceType: "MOLD" | "OTHER_COST";
+    sourceId: string;
+    sourceDescriptionSnapshot: string;
+    sourceTotalCostSnapshot: number;
+    passThroughPercent: number;
+    passThroughAmount: number;
+    absorbedAmount: number;
+    status: string;
+    distributionPercentTotal: number;
+    distributionBalancePercent: number;
+    allocatedAmountTotal: number;
+    unallocatedAmount: number;
+    allocations: ProjectCostAmortizationAllocationRow[];
+  }>;
+  alerts: string[];
+};
+
 export type ProjectDetail = {
   id: string;
   code: string;
@@ -216,6 +282,8 @@ export type ProjectDetail = {
   costBreakdown: ProjectCostBreakdown;
   alerts: ProjectAlert[];
   conversionAvailable: false;
+  costAmortizations?: ProjectCostAmortizationSavedRow[];
+  costAmortizationSummary?: ProjectCostAmortizationSummaryView;
 };
 
 export type ProjectDashboardPayload = {
