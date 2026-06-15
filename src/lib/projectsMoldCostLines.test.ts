@@ -74,8 +74,24 @@ describe("projectsMoldCostLines", () => {
       join(process.cwd(), "src", "components", "projects", "ProjectGuidedMoldModal.tsx"),
       "utf8"
     );
+    const shell = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectModalShell.tsx"),
+      "utf8"
+    );
     assert.match(modal, /Adicionar linha/);
     assert.match(modal, /Salvar molde/);
     assert.match(modal, /Criar molde do projeto/);
+    assert.match(modal, /size="xl"/);
+    assert.match(modal, /projects-mold-modal/);
+    assert.match(modal, /projects-mold-cost-grid/);
+    assert.match(modal, /projects-mold-total-footer/);
+    assert.match(modal, /min-w-\[1100px\]/);
+    assert.match(modal, /overflow-x-auto/);
+    assert.match(shell, /max-w-\[1280px\]/);
+    assert.match(shell, /overflow-y-auto/);
+    assert.match(shell, /project-modal-footer/);
+    assert.equal(modal.includes("alert("), false);
+    assert.equal(modal.includes("confirm("), false);
+    assert.equal(modal.includes("prompt("), false);
   });
 });

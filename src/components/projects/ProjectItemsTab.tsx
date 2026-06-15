@@ -7,6 +7,7 @@ import {
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
 import { formatProjectGuidedItemCost } from "@/src/lib/projectsUiUtils";
+import { ProjectsGoToSimulationsCallout } from "@/src/components/projects/ProjectsGoToSimulationsCallout";
 import type { ProjectDetail } from "@/src/types/projects";
 
 function formatDate(value: string | null | undefined) {
@@ -47,7 +48,7 @@ export function ProjectItemsTab({
           <p className="mt-2 text-xs text-muted-foreground">{PROJECT_GUIDED_MASTER_NOTICE}</p>
         </div>
         {canManage ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={onAddItem}>
               <Plus className="mr-1 inline h-4 w-4" />
               Adicionar item
@@ -58,9 +59,12 @@ export function ProjectItemsTab({
             <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={onCreateOtherCost}>
               Adicionar custo
             </button>
+            <ProjectsGoToSimulationsCallout variant="toolbar" />
           </div>
         ) : null}
       </div>
+
+      <ProjectsGoToSimulationsCallout />
 
       <div className="overflow-hidden rounded-xl border border-border">
         <table className="w-full text-sm">

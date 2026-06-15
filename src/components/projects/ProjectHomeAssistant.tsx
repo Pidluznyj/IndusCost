@@ -1,6 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
-import { Box, Coins, Package, Plus, Wrench, FlaskConical } from "lucide-react";
+import { Box, Coins, Package, Plus, Wrench } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import {
   buildProjectGuidedItems,
@@ -12,10 +11,7 @@ import {
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
 import { formatProjectGuidedItemCost } from "@/src/lib/projectsUiUtils";
-import {
-  buildSimulationsNewProductPath,
-  PROJECTS_TO_SIMULATIONS_HINT,
-} from "@/src/lib/simulationsNavigation";
+import { ProjectsGoToSimulationsCallout } from "@/src/components/projects/ProjectsGoToSimulationsCallout";
 import type { ProjectDetail } from "@/src/types/projects";
 
 function formatMoney(value: number | null | undefined) {
@@ -84,6 +80,7 @@ export function ProjectHomeAssistant({
           {PROJECT_GUIDED_HOME_INTRO}
         </p>
         <p className="mt-2 text-xs text-muted-foreground">{PROJECT_GUIDED_MASTER_NOTICE}</p>
+        <ProjectsGoToSimulationsCallout className="mt-4" />
       </div>
 
       <div>
@@ -119,17 +116,6 @@ export function ProjectHomeAssistant({
         <p className="mt-3 text-xs text-muted-foreground">
           Produtos oficiais: cadastro de engenharia. Simulações: menu Simulações → Simular novo produto.
         </p>
-        <div className="mt-4 flex flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">{PROJECTS_TO_SIMULATIONS_HINT}</p>
-          <Link
-            to={buildSimulationsNewProductPath()}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-primary/30 bg-background px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5"
-            data-testid="projects-go-to-simulations"
-          >
-            <FlaskConical className="h-4 w-4" />
-            Simular novo produto
-          </Link>
-        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -214,6 +200,7 @@ export function ProjectHomeAssistant({
             <QuickBtn label="Criar molde" onClick={onCreateMold} />
             <QuickBtn label="Adicionar outros custos" onClick={onCreateOtherCost} />
           </div>
+          <ProjectsGoToSimulationsCallout variant="toolbar" className="mt-3" />
         </div>
       ) : null}
     </div>

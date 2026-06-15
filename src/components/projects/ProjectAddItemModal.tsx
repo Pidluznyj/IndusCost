@@ -4,6 +4,7 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { PROJECT_GUIDED_MASTER_NOTICE } from "@/src/lib/projectsGuidedFlow";
 import type { ProjectSimulationLookupRow } from "@/src/lib/projectsSimulationLookup";
 import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
+import { ProjectsGoToSimulationsCallout } from "@/src/components/projects/ProjectsGoToSimulationsCallout";
 
 export type ProjectAddItemKind =
   | "OFFICIAL_PRODUCT"
@@ -179,6 +180,7 @@ export function ProjectAddItemModal({
       wide
     >
       <p className="mb-4 text-xs text-muted-foreground">{PROJECT_GUIDED_MASTER_NOTICE}</p>
+      <ProjectsGoToSimulationsCallout className="mb-4" />
 
       {!kind ? (
         <div className="grid gap-3 sm:grid-cols-3">

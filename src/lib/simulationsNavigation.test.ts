@@ -31,10 +31,19 @@ describe("cross-module navigation shortcuts", () => {
       join(process.cwd(), "src", "components", "projects", "ProjectHomeAssistant.tsx"),
       "utf8"
     );
-    assert.match(home, /Simular novo produto/);
-    assert.match(home, /buildSimulationsNewProductPath/);
-    assert.match(home, /projects-go-to-simulations/);
-    assert.match(home, /PROJECTS_TO_SIMULATIONS_HINT/);
+    const callout = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectsGoToSimulationsCallout.tsx"),
+      "utf8"
+    );
+    const itemsTab = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectItemsTab.tsx"),
+      "utf8"
+    );
+    assert.match(home, /ProjectsGoToSimulationsCallout/);
+    assert.match(callout, /Simular novo produto/);
+    assert.match(callout, /buildSimulationsNewProductPath/);
+    assert.match(callout, /projects-go-to-simulations/);
+    assert.match(itemsTab, /ProjectsGoToSimulationsCallout/);
     assert.equal(home.includes("Criar novo produto"), false);
   });
 
