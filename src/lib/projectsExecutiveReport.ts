@@ -19,6 +19,7 @@ import {
   parseOtherCostUserNotes,
   resolveOtherCostItemLineTotal,
 } from "./projectsOtherCostGroups.js";
+import { formatMoldDescriptionForDisplay } from "./projectsMoldCostLines.js";
 import type { ProjectDetail, ProjectStatus, ProjectType } from "@/src/types/projects.js";
 
 export const PROJECT_EXECUTIVE_REPORT_VERSION = "1.0";
@@ -351,7 +352,11 @@ export function buildProjectExecutiveReport(
       id: mold.id,
       name: mold.name,
       statusLabel: guidedById.get(mold.id)?.statusLabel ?? PROJECT_EXECUTIVE_REPORT_NOT_INFORMED,
-      description: mold.notes?.trim() || mold.moldType || PROJECT_EXECUTIVE_REPORT_NOT_INFORMED,
+      description: formatMoldDescriptionForDisplay(
+        mold.notes,
+        mold.moldType,
+        PROJECT_EXECUTIVE_REPORT_NOT_INFORMED
+      ),
       totalCost: resolveMoldTotalCost(mold),
       passThroughPercent: amort?.passThroughPercent ?? 100,
       passThroughAmount: amort?.passThroughAmount ?? resolveMoldTotalCost(mold),

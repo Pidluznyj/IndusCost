@@ -66,6 +66,18 @@ export function parseMoldNotes(notes: string | null | undefined): {
   return { lines, userNotes };
 }
 
+/** Texto legível para exibição — oculta payload serializado __MOLD_LINES__. */
+export function formatMoldDescriptionForDisplay(
+  notes: string | null | undefined,
+  moldType?: string | null,
+  fallback = "Não informado"
+): string {
+  const { userNotes } = parseMoldNotes(notes);
+  if (userNotes?.trim()) return userNotes.trim();
+  if (moldType?.trim()) return moldType.trim();
+  return fallback;
+}
+
 export function createEmptyMoldLine(): ProjectMoldCostLine {
   return {
     id: createBrowserSafeId("mold-line"),

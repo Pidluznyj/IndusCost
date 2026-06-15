@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   computeMoldLineTotal,
+  formatMoldDescriptionForDisplay,
   parseMoldNotes,
   serializeMoldNotes,
   sumMoldCostLines,
@@ -67,6 +68,28 @@ describe("projectsMoldCostLines", () => {
   it("parseMoldNotes ignora JSON inválido sem lançar erro", () => {
     const parsed = parseMoldNotes("__MOLD_LINES__={invalid json");
     assert.deepEqual(parsed.lines, []);
+  });
+
+  it("formatMoldDescriptionForDisplay oculta payload __MOLD_LINES__", () => {
+    const notes = serializeMoldNotes(
+      [
+        {
+          id: "1",
+          description: "Projeto",
+          lineType: "SERVICE",
+          supplierName: null,
+          quantity: 1,
+          unit: "UN",
+          unitCost: 3500,
+          totalCost: 3500,
+          notes: null,
+        },
+      ],
+      "Es Rodrigo"
+    );
+    assert.equal(formatMoldDescriptionForDisplay(notes, "Novo"), "Es Rodrigo");
+    assert.equal(formatMoldDescriptionForDisplay(notes, null), "Es Rodrigo");
+    assert.equal(formatMoldDescriptionForDisplay(notes?.replace(/\n__USER_NOTES__=.*/, ""), "Novo"), "Novo");
   });
 
   it("modal de molde permite adicionar e remover linhas", () => {
