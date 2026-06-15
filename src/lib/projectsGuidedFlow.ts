@@ -351,7 +351,10 @@ export function buildProjectGuidedItems(detail: ProjectDetail): ProjectGuidedIte
 export function computeProjectGuidedCosts(detail: ProjectDetail): ProjectGuidedCostSummary {
   const items = buildProjectGuidedItems(detail);
   const productCount = items.filter(
-    (i) => i.entityKind === "product" || i.entityKind === "engineering_clone"
+    (i) =>
+      i.entityKind === "product" ||
+      i.entityKind === "engineering_clone" ||
+      i.entityKind === "simulation_ref"
   ).length;
   const moldCount = items.filter((i) => i.entityKind === "mold").length;
   const otherCostCount = items.filter((i) => i.entityKind === "other_cost").length;

@@ -164,6 +164,39 @@ function toRollupLine(line: ProjectStructureLineRow): EngineeringRollupLine {
   };
 }
 
+/** Custo exibível do grupo: rollup oficial+delta, com fallback em folhas e totais persistidos. */
+export function resolveSnapshotGroupSimulatedCost(lines: ProjectStructureLineRow[]): number {
+  const rollupLines = lines.map(toRollupLine);
+  const fromRollup = sumSimulatedRootProductCost(rollupLines);
+  if (fromRollup > 0) return fromRollup;
+
+  const fromOfficialOpen = sumOfficialRootCost(lines);
+  if (fromOfficialOpen > 0) return fromOfficialOpen;
+
+  const parentIds = new Set(
+    lines.map((l) => l.parentLineId).filter((id): id is string => id != null)
+  );
+
+  let leafSum = 0;
+  for (const line of lines) {
+    if (!line.countsInSimulatedProductCost) continue;
+    if (parentIds.has(line.id)) continue;
+
+    const persisted = sanitizeFinite(line.totalCost);
+    if (persisted != null && persisted > 0) {
+      leafSum += persisted;
+      continue;
+    }
+
+    const qty = toFiniteNumber(line.quantity);
+    const unit = toFiniteNumber(line.unitCostSnapshot);
+    const loss = toFiniteNumber(line.lossPercent ?? 0);
+    leafSum += calculateStructureLineTotalCost(qty, unit, loss);
+  }
+
+  return sanitizeFinite(leafSum) ?? 0;
+}
+
 function sumOfficialRootCost(lines: ProjectStructureLineRow[]): number {
   let total = 0;
   for (const line of lines) {
@@ -234,9 +267,8 @@ export function buildProjectStructureSnapshotGroups(
 
   const snapshotGroups: ProjectStructureSnapshotGroup[] = [...snapshotRootIds].map((rootId) => {
     const groupLines = lines.filter((l) => lineBelongsToSnapshot(l, rootId));
-    const rollupLines = groupLines.map(toRollupLine);
     const officialCost = sumOfficialRootCost(groupLines);
-    const simulatedCost = sumSimulatedRootProductCost(rollupLines);
+    const simulatedCost = resolveSnapshotGroupSimulatedCost(groupLines);
     const differenceAmount = simulatedCost - officialCost;
     const differencePercent =
       officialCost > 0 ? sanitizeFinite((differenceAmount / officialCost) * 100) ?? 0 : 0;

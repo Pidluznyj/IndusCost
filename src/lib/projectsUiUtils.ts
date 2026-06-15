@@ -161,3 +161,14 @@ export function calculateLaborLineTotal(hours: number, hourlyRate: number, lossP
   const total = calculateStructureLineTotalCost(hours, hourlyRate, lossPercent);
   return Number.isFinite(total) ? total : 0;
 }
+
+export function formatProjectGuidedItemCost(
+  estimatedCost: number | null | undefined,
+  status?: "PENDING_COST" | string
+): string {
+  if (estimatedCost != null && Number.isFinite(estimatedCost) && estimatedCost > 0) {
+    return estimatedCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+  if (status === "PENDING_COST") return "Sem custo";
+  return "—";
+}

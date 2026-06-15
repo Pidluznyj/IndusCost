@@ -6,6 +6,7 @@ import { sumSimulatedRootProductCost } from "./projectsEngineeringCostRollup.js"
 import {
   buildProjectStructureSnapshotGroups,
   filterPrimaryStructureTableLines,
+  resolveSnapshotGroupSimulatedCost,
 } from "./projectsStructureSnapshotGroups.js";
 import type { ProjectStructureLineRow } from "@/src/types/projects.js";
 
@@ -293,10 +294,79 @@ describe("projectsStructureSnapshotGroups", () => {
   it("exclusão de snapshot usa rota dedicada sem gravar cadastro oficial", () => {
     const routes = readFileSync(join(process.cwd(), "src", "lib", "projectsRoutes.ts"), "utf8");
     const module = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
+    const service = readFileSync(join(process.cwd(), "src", "lib", "projectsService.ts"), "utf8");
     assert.match(routes, /structure-snapshot/);
     assert.match(routes, /snapshotRootProductId/);
     assert.match(module, /structureSnapshot/);
+    assert.match(service, /deleteProjectStructureSnapshot/);
+    assert.match(service, /snapshotRootProductId/);
     assert.equal(routes.includes("prisma.product.update"), false);
     assert.equal(routes.includes("prisma.productBOM.delete"), false);
+  });
+
+  it("custo do grupo usa fallback em folhas quando rollup hierárquico zera", () => {
+    const lines = [
+      line({
+        id: "parent",
+        snapshotRootProductId: ROOT_A,
+        parentLineId: null,
+        lineType: "COMPONENT",
+        officialUnitCostSnapshot: 0,
+        unitCostSnapshot: 0,
+        totalCost: 0,
+        countsInSimulatedProductCost: true,
+      }),
+      line({
+        id: "child-pp",
+        snapshotRootProductId: ROOT_A,
+        parentLineId: "parent",
+        lineType: "RAW_MATERIAL",
+        officialUnitCostSnapshot: 12,
+        unitCostSnapshot: 12,
+        quantity: 0.04,
+        lossPercent: 5,
+        totalCost: 0.5,
+        countsInSimulatedProductCost: true,
+      }),
+      line({
+        id: "child-mb",
+        snapshotRootProductId: ROOT_A,
+        parentLineId: "parent",
+        lineType: "RAW_MATERIAL",
+        officialUnitCostSnapshot: 20,
+        unitCostSnapshot: 20,
+        quantity: 0.01,
+        totalCost: 0.2,
+        countsInSimulatedProductCost: true,
+      }),
+    ];
+
+    const rollupOnly = sumSimulatedRootProductCost(
+      lines.map((l) => ({
+        id: l.id,
+        parentLineId: l.parentLineId,
+        snapshotRootProductId: l.snapshotRootProductId,
+        lineType: l.lineType,
+        quantity: l.quantity,
+        lossPercent: l.lossPercent ?? 0,
+        unitCostSnapshot: l.unitCostSnapshot,
+        totalCost: l.totalCost,
+        officialQuantitySnapshot: l.officialQuantitySnapshot,
+        officialLossPercentSnapshot: l.officialLossPercentSnapshot,
+        officialUnitCostSnapshot: l.officialUnitCostSnapshot,
+        countsInSimulatedProductCost: l.countsInSimulatedProductCost,
+        isChangedFromOfficial: l.isChangedFromOfficial,
+      }))
+    );
+    assert.equal(rollupOnly, 0);
+
+    const cost = resolveSnapshotGroupSimulatedCost(lines);
+    assert.ok(cost > 0);
+    assert.ok(Math.abs(cost - 0.7) < 0.01);
+
+    const { snapshotGroups } = buildProjectStructureSnapshotGroups(lines, {
+      rootProducts: { [ROOT_A]: { sku: "310.01AA", name: "Corpo Torneira" } },
+    });
+    assert.ok(snapshotGroups[0]!.simulatedCost > 0);
   });
 });

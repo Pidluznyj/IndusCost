@@ -6,11 +6,7 @@ import {
   PROJECT_GUIDED_MASTER_NOTICE,
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
-
-function formatMoney(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
+import { formatProjectGuidedItemCost } from "@/src/lib/projectsUiUtils";
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
@@ -75,7 +71,7 @@ export function ProjectItemsTab({
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Custo estimado</th>
               <th className="px-3 py-2">Última atualização</th>
-              <th className="px-3 py-2" />
+              <th className="px-3 py-2">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -104,7 +100,9 @@ export function ProjectItemsTab({
                       {item.statusLabel}
                     </span>
                   </td>
-                  <td className="px-3 py-2">{formatMoney(item.estimatedCost)}</td>
+                  <td className="px-3 py-2">
+                    {formatProjectGuidedItemCost(item.estimatedCost, item.status)}
+                  </td>
                   <td className="px-3 py-2">{formatDate(item.updatedAt)}</td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
@@ -121,7 +119,7 @@ export function ProjectItemsTab({
                           className="rounded-lg border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
                           onClick={() => onDeleteItem(item)}
                         >
-                          Excluir
+                          Remover
                         </button>
                       ) : null}
                     </div>

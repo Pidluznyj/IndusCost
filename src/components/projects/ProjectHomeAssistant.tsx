@@ -10,6 +10,7 @@ import {
   PROJECT_GUIDED_MASTER_NOTICE,
   type ProjectGuidedItemRow,
 } from "@/src/lib/projectsGuidedFlow";
+import { formatProjectGuidedItemCost } from "@/src/lib/projectsUiUtils";
 import type { ProjectDetail } from "@/src/types/projects";
 
 function formatMoney(value: number | null | undefined) {
@@ -54,6 +55,7 @@ type Props = {
   onCreateMold: () => void;
   onCreateOtherCost: () => void;
   onOpenItem?: (item: ProjectGuidedItemRow) => void;
+  onDeleteItem?: (item: ProjectGuidedItemRow) => void;
 };
 
 export function ProjectHomeAssistant({
@@ -63,6 +65,7 @@ export function ProjectHomeAssistant({
   onCreateMold,
   onCreateOtherCost,
   onOpenItem,
+  onDeleteItem,
 }: Props) {
   const items = buildProjectGuidedItems(detail);
   const costs = computeProjectGuidedCosts(detail);
@@ -146,7 +149,7 @@ export function ProjectHomeAssistant({
                   <th className="px-3 py-2">Tipo</th>
                   <th className="px-3 py-2">Nome</th>
                   <th className="px-3 py-2">Custo estimado</th>
-                  <th className="px-3 py-2" />
+                  <th className="px-3 py-2">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -154,17 +157,30 @@ export function ProjectHomeAssistant({
                   <tr key={`${item.entityKind}-${item.id}`} className="border-b border-border/60">
                     <td className="px-3 py-2">{item.itemTypeLabel}</td>
                     <td className="px-3 py-2">{item.name}</td>
-                    <td className="px-3 py-2">{formatMoney(item.estimatedCost)}</td>
-                    <td className="px-3 py-2 text-right">
-                      {onOpenItem ? (
-                        <button
-                          type="button"
-                          className="rounded-lg border px-2 py-1 text-xs hover:bg-muted"
-                          onClick={() => onOpenItem(item)}
-                        >
-                          Abrir
-                        </button>
-                      ) : null}
+                    <td className="px-3 py-2">
+                      {formatProjectGuidedItemCost(item.estimatedCost, item.status)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex justify-end gap-1">
+                        {onOpenItem ? (
+                          <button
+                            type="button"
+                            className="rounded-lg border px-2 py-1 text-xs hover:bg-muted"
+                            onClick={() => onOpenItem(item)}
+                          >
+                            Abrir
+                          </button>
+                        ) : null}
+                        {canManage && onDeleteItem ? (
+                          <button
+                            type="button"
+                            className="rounded-lg border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                            onClick={() => onDeleteItem(item)}
+                          >
+                            Remover
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}

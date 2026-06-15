@@ -10,6 +10,7 @@ import {
 } from "./projectsGuidedFlow.js";
 import { serializeMoldNotes } from "./projectsMoldCostLines.js";
 import { buildOtherCostNotes } from "./projectsOtherCostGroups.js";
+import { formatProjectGuidedItemCost } from "./projectsUiUtils.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
 
 function minimalDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
@@ -297,6 +298,52 @@ describe("projectsGuidedFlow", () => {
     assert.ok((imported?.estimatedCost ?? 0) > 0);
     assert.equal(imported?.itemTypeLabel, "Produto oficial");
   });
+
+  it("produto oficial sem custo exibe status pendente", () => {
+    const rootId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    const detail = minimalDetail({
+      structureLines: [
+        {
+          id: "mat-zero",
+          simulatedProductId: null,
+          parentLineId: null,
+          level: 0,
+          treePath: null,
+          snapshotRootProductId: rootId,
+          lineType: "RAW_MATERIAL",
+          sourceType: "EXISTING_MATERIAL",
+          existingProductId: null,
+          existingMaterialId: "material-z",
+          simulatedItemId: null,
+          sourceOfficialBomId: null,
+          sourceOfficialRoutingId: null,
+          descriptionSnapshot: "Material sem custo",
+          unitSnapshot: "KG",
+          quantity: 1,
+          lossPercent: 0,
+          officialQuantitySnapshot: 1,
+          officialLossPercentSnapshot: 0,
+          officialUnitCostSnapshot: 0,
+          unitCostSnapshot: 0,
+          totalCost: 0,
+          costSource: "OFFICIAL_COST_ANALYSIS",
+          isChangedFromOfficial: false,
+          isMissingCost: true,
+          countsInSimulatedProductCost: true,
+          supplierNameSnapshot: null,
+          notes: `snapshot:${rootId}`,
+          sortOrder: 0,
+        },
+      ],
+      snapshotRootProducts: {
+        [rootId]: { sku: "999.99", name: "Produto sem custo" },
+      },
+    });
+    const items = buildProjectGuidedItems(detail);
+    const imported = items.find((i) => i.snapshotRootProductId === rootId);
+    assert.equal(imported?.status, "PENDING_COST");
+    assert.equal(imported?.estimatedCost, null);
+  });
 });
 
 describe("ProjectsModule UI — fluxo guiado", () => {
@@ -389,6 +436,33 @@ describe("ProjectsModule UI — fluxo guiado", () => {
       "utf8"
     );
     assert.match(home, /Nenhum item adicionado ao projeto ainda/i);
+  });
+
+  it("grade da home exibe ação Remover e coluna Ações", () => {
+    const home = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectHomeAssistant.tsx"),
+      "utf8"
+    );
+    assert.match(home, /Ações/);
+    assert.match(home, /Remover/);
+    assert.match(home, /onDeleteItem/);
+    assert.equal(home.includes("ProjectDeleteConfirmModal"), false);
+    assert.equal(home.includes("window.confirm"), false);
+  });
+
+  it("ProjectsModule repassa exclusão para a grade da home", () => {
+    const mod = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
+    assert.match(mod, /onDeleteItem=\{canManage \? handleGuidedItemDelete/);
+    assert.match(mod, /handleGuidedItemDelete/);
+    assert.match(mod, /structure-snapshot/);
+    assert.match(mod, /Remover item do projeto/);
+    assert.equal(mod.includes("window.confirm"), false);
+  });
+
+  it("custo pendente exibe Sem custo em vez de traço", () => {
+    assert.equal(formatProjectGuidedItemCost(null, "PENDING_COST"), "Sem custo");
+    assert.equal(formatProjectGuidedItemCost(0, "PENDING_COST"), "Sem custo");
+    assert.match(formatProjectGuidedItemCost(12.5, "CALCULATED"), /12,50/);
   });
 
   it("fluxo de projeto não importa Prisma/backend no frontend", () => {

@@ -889,6 +889,7 @@ function ProjectDetailView({
           onCreateMold={openCreateMold}
           onCreateOtherCost={openCreateOtherCost}
           onOpenItem={handleGuidedItemOpen}
+          onDeleteItem={canManage ? handleGuidedItemDelete : undefined}
         />
       ) : null}
 
@@ -1197,17 +1198,14 @@ function ProjectDetailView({
         title={
           deleteTarget?.kind === "project"
             ? "Excluir projeto inteiro?"
-            : deleteTarget?.kind === "structureSnapshot"
-              ? "Remover este produto do projeto?"
-              : "Confirmar exclusão"
+            : "Remover item do projeto?"
         }
         description={
           deleteTarget?.kind === "project"
             ? "Esta ação remove o projeto, versões, estruturas simuladas, itens e moldes vinculados. Os cadastros oficiais (produtos, materiais, BOM) não serão alterados. Apenas super administrador pode executar esta exclusão."
-            : deleteTarget?.kind === "structureSnapshot"
-              ? "Esta ação remove apenas o snapshot de engenharia deste projeto. O cadastro oficial do produto, materiais, BOM e roteiro não será alterado."
-              : "Esta ação removerá o item apenas deste projeto/simulação. Nenhum cadastro oficial será alterado."
+            : "Este item será removido apenas deste projeto. O cadastro oficial, a simulação original e a engenharia oficial não serão alterados."
         }
+        confirmLabel={deleteTarget?.kind === "project" ? "Excluir" : "Remover item"}
         itemLabel={deleteTarget?.label}
         saving={saving}
         error={deleteError}

@@ -7,6 +7,7 @@ type Props = {
   title?: string;
   itemLabel?: string;
   description?: string;
+  confirmLabel?: string;
   saving?: boolean;
   error?: string | null;
   onClose: () => void;
@@ -18,6 +19,7 @@ export function ProjectDeleteConfirmModal({
   title = "Confirmar exclusão",
   itemLabel,
   description = "Esta ação removerá o item apenas deste projeto/simulação. Nenhum cadastro oficial será alterado.",
+  confirmLabel = "Excluir",
   saving,
   error,
   onClose,
@@ -46,7 +48,7 @@ export function ProjectDeleteConfirmModal({
             className="inline-flex items-center gap-2 rounded-lg bg-destructive px-4 py-2 text-sm text-destructive-foreground disabled:opacity-60"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Excluir
+            {confirmLabel}
           </button>
         </>
       }
