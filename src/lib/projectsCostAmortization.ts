@@ -3,7 +3,7 @@ import {
   buildProjectGuidedItems,
   type ProjectGuidedItemRow,
 } from "./projectsGuidedFlow.js";
-import { isGuidedOtherCostItem, parseOtherCostMeta } from "./projectsOtherCostGroups.js";
+import { isGuidedOtherCostItem, parseOtherCostMeta, resolveOtherCostItemLineTotal } from "./projectsOtherCostGroups.js";
 import { sanitizeFinite } from "./projectsCalculations.js";
 import type { ProjectDetail, ProjectMoldRow } from "@/src/types/projects";
 
@@ -269,7 +269,7 @@ export function resolveOtherCostBatchTotal(detail: ProjectDetail, batchId: strin
     const meta = parseOtherCostMeta(item.notes);
     const key = meta.batchId ?? item.id;
     if (key !== batchId) continue;
-    total += item.quotedUnitCost ?? item.estimatedUnitCost ?? 0;
+    total += resolveOtherCostItemLineTotal(item);
   }
   return roundProjectMoney(total);
 }
@@ -292,7 +292,7 @@ export function listAmortizableCostSources(detail: ProjectDetail): AmortizableCo
     const meta = parseOtherCostMeta(item.notes);
     const batchId = meta.batchId ?? item.id;
     const current = batches.get(batchId) ?? { description: item.description, total: 0 };
-    current.total += item.quotedUnitCost ?? item.estimatedUnitCost ?? 0;
+    current.total += resolveOtherCostItemLineTotal(item);
     batches.set(batchId, current);
   }
   for (const [batchId, batch] of batches) {

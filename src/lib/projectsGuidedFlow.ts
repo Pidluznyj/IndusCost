@@ -4,6 +4,7 @@ import {
   isGuidedOtherCostItem,
   OTHER_COST_GROUP_LABEL,
   parseOtherCostMeta,
+  resolveOtherCostItemLineTotal,
 } from "@/src/lib/projectsOtherCostGroups";
 import { isGuidedSimulationItem } from "@/src/lib/projectsSimulationRefs";
 import type {
@@ -315,10 +316,7 @@ function otherCostRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
 
   const rows: ProjectGuidedItemRow[] = [];
   for (const [batchId, items] of batches) {
-    const total = items.reduce(
-      (acc, i) => acc + (i.quotedUnitCost ?? i.estimatedUnitCost ?? 0),
-      0
-    );
+    const total = items.reduce((acc, i) => acc + resolveOtherCostItemLineTotal(i), 0);
     const meta = parseOtherCostMeta(items[0]?.notes);
     const groupLabel = OTHER_COST_GROUP_LABEL[meta.group];
     const status = resolveStatus(detail.status, total > 0);
@@ -364,7 +362,7 @@ export function computeProjectGuidedCosts(detail: ProjectDetail): ProjectGuidedC
   const initialInvestment = detail.costBreakdown.separateMoldCost ?? 0;
   const otherProjectCosts = detail.simulatedItems
     .filter((i) => isGuidedOtherCostItem(i.notes))
-    .reduce((acc, i) => acc + (i.quotedUnitCost ?? i.estimatedUnitCost ?? 0), 0);
+    .reduce((acc, i) => acc + resolveOtherCostItemLineTotal(i), 0);
 
   return {
     itemCount: items.length,

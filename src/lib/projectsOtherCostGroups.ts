@@ -3,6 +3,8 @@ import type { ProjectSimulatedItemRow } from "@/src/types/projects";
 
 export const OTHER_COST_MARKER = "guided-other-cost";
 export const OTHER_COST_BATCH_PREFIX = "batch:";
+export const OTHER_COST_LINE_PREFIX = "__OTHER_COST_LINE__=";
+export const OTHER_COST_USER_NOTES_PREFIX = "__USER_NOTES__=";
 
 export type ProjectOtherCostGroupKey =
   | "DEVELOPMENT"
@@ -41,6 +43,11 @@ export type ProjectOtherCostLine = {
   notes: string | null;
 };
 
+export type OtherCostLinePersistedDetail = {
+  quantity: number;
+  unitCost: number;
+};
+
 export function isGuidedOtherCostItem(notes: string | null | undefined): boolean {
   return notes?.includes(OTHER_COST_MARKER) === true;
 }
@@ -58,20 +65,78 @@ export function parseOtherCostMeta(notes: string | null | undefined): {
   };
 }
 
+export function parseOtherCostLineDetail(
+  notes: string | null | undefined
+): OtherCostLinePersistedDetail | null {
+  if (!notes?.trim()) return null;
+  for (const part of notes.split("\n")) {
+    if (!part.startsWith(OTHER_COST_LINE_PREFIX)) continue;
+    try {
+      const parsed = JSON.parse(part.slice(OTHER_COST_LINE_PREFIX.length)) as OtherCostLinePersistedDetail;
+      const quantity = Number(parsed.quantity);
+      const unitCost = Number(parsed.unitCost);
+      if (!Number.isFinite(quantity) || !Number.isFinite(unitCost)) return null;
+      if (quantity <= 0) return null;
+      return { quantity, unitCost };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function parseOtherCostUserNotes(notes: string | null | undefined): string | null {
+  if (!notes?.trim()) return null;
+  for (const part of notes.split("\n")) {
+    if (part.startsWith(OTHER_COST_USER_NOTES_PREFIX)) {
+      return part.slice(OTHER_COST_USER_NOTES_PREFIX.length).trim() || null;
+    }
+  }
+  return null;
+}
+
 export function buildOtherCostNotes(
   group: ProjectOtherCostGroupKey,
   batchId: string,
-  lineNotes?: string | null
+  detail?: {
+    quantity: number;
+    unitCost: number;
+    userNotes?: string | null;
+  }
 ): string {
-  const base = `${OTHER_COST_MARKER}\ngroup:${group}\n${OTHER_COST_BATCH_PREFIX}${batchId}`;
-  const extra = lineNotes?.trim();
-  return extra ? `${base}\n${extra}` : base;
+  const parts = [OTHER_COST_MARKER, `group:${group}`, `${OTHER_COST_BATCH_PREFIX}${batchId}`];
+  if (detail && Number.isFinite(detail.quantity) && Number.isFinite(detail.unitCost) && detail.quantity > 0) {
+    parts.push(
+      `${OTHER_COST_LINE_PREFIX}${JSON.stringify({
+        quantity: detail.quantity,
+        unitCost: detail.unitCost,
+      })}`
+    );
+  }
+  const userNotes = detail?.userNotes?.trim();
+  if (userNotes) parts.push(`${OTHER_COST_USER_NOTES_PREFIX}${userNotes}`);
+  return parts.join("\n");
 }
 
 export function computeOtherCostLineTotal(quantity: number, unitCost: number): number {
   const q = Number.isFinite(quantity) ? quantity : 0;
   const u = Number.isFinite(unitCost) ? unitCost : 0;
-  return q * u;
+  const total = q * u;
+  if (!Number.isFinite(total)) return 0;
+  return Math.round((total + Number.EPSILON) * 100) / 100;
+}
+
+export function sumOtherCostLines(lines: ProjectOtherCostLine[]): number {
+  return lines.reduce((acc, line) => acc + computeOtherCostLineTotal(line.quantity, line.unitCost), 0);
+}
+
+export function resolveOtherCostItemLineTotal(item: ProjectSimulatedItemRow): number {
+  const detail = parseOtherCostLineDetail(item.notes);
+  if (detail) {
+    return computeOtherCostLineTotal(detail.quantity, detail.unitCost);
+  }
+  const stored = item.quotedUnitCost ?? item.estimatedUnitCost ?? 0;
+  return Number.isFinite(stored) ? stored : 0;
 }
 
 export function createEmptyOtherCostLine(
@@ -92,7 +157,23 @@ export function createEmptyOtherCostLine(
 
 export function simulatedItemToOtherCostLine(item: ProjectSimulatedItemRow): ProjectOtherCostLine {
   const meta = parseOtherCostMeta(item.notes);
-  const total = item.quotedUnitCost ?? item.estimatedUnitCost ?? 0;
+  const detail = parseOtherCostLineDetail(item.notes);
+  const storedTotal = item.quotedUnitCost ?? item.estimatedUnitCost ?? 0;
+
+  if (detail) {
+    return {
+      id: item.id,
+      group: meta.group,
+      description: item.description,
+      supplierName: item.supplierName,
+      quantity: detail.quantity,
+      unit: item.unit,
+      unitCost: detail.unitCost,
+      totalCost: computeOtherCostLineTotal(detail.quantity, detail.unitCost),
+      notes: parseOtherCostUserNotes(item.notes),
+    };
+  }
+
   return {
     id: item.id,
     group: meta.group,
@@ -100,9 +181,9 @@ export function simulatedItemToOtherCostLine(item: ProjectSimulatedItemRow): Pro
     supplierName: item.supplierName,
     quantity: 1,
     unit: item.unit,
-    unitCost: total,
-    totalCost: total,
-    notes: item.notes,
+    unitCost: storedTotal,
+    totalCost: storedTotal,
+    notes: parseOtherCostUserNotes(item.notes),
   };
 }
 

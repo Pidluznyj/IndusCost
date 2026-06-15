@@ -1142,7 +1142,11 @@ function ProjectDetailView({
                   estimatedUnitCost: line.totalCost,
                   quotedUnitCost: line.totalCost,
                   supplierName: line.supplierName,
-                  notes: buildOtherCostNotes(line.group, batchId, line.notes),
+                  notes: buildOtherCostNotes(line.group, batchId, {
+                    quantity: line.quantity,
+                    unitCost: line.unitCost,
+                    userNotes: line.notes,
+                  }),
                 }),
               });
             }
