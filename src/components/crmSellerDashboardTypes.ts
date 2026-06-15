@@ -1,4 +1,4 @@
-/** Tipos do GET /api/crm/seller-dashboard (Fase 1J-B). */
+/** Tipos do GET /api/crm/seller-dashboard (Fase 3 — base: SalesOrder). */
 
 export type SellerDashboardFilters = {
   externalSellerId: number | null;
@@ -11,7 +11,14 @@ export type SellerOption = {
   externalSellerId: number | null;
   responsible: string | null;
   ordersCount: number;
-  proposalsCount: number;
+};
+
+export type SellerDashboardTopProduct = {
+  productId: string;
+  productName: string;
+  sku: string;
+  revenue: number;
+  quantity: number;
 };
 
 export type SellerDashboardSummary = {
@@ -19,15 +26,13 @@ export type SellerDashboardSummary = {
   ordersValue: number;
   invoicedOrdersCount: number;
   invoicedOrdersValue: number;
-  notInvoicedOrdersCount: number;
-  notInvoicedOrdersValue: number;
-  proposalsCount: number;
-  openProposalsCount: number;
-  openProposalsValue: number;
-  proposalsWithLinkedOrderCount: number;
-  proposalsWithoutLinkedOrderCount: number;
-  proposalsWithoutLinkedOrderValue: number;
-  ordersWithLinkedProposalCount: number;
+  openOrdersCount: number;
+  openOrdersValue: number;
+  cancelledOrdersCount: number;
+  uniqueCustomersCount: number;
+  ticketAverage: number;
+  topProduct: SellerDashboardTopProduct | null;
+  /** Qualidade de rastreabilidade — não é KPI principal de performance. */
   ordersWithoutLinkedProposalCount: number;
 };
 
@@ -38,10 +43,8 @@ export type SellerDashboardBySeller = {
   ordersValue: number;
   invoicedOrdersCount: number;
   invoicedOrdersValue: number;
-  notInvoicedOrdersCount: number;
-  notInvoicedOrdersValue: number;
-  openProposalsWithoutLinkedOrderCount: number;
-  openProposalsWithoutLinkedOrderValue: number;
+  openOrdersCount: number;
+  openOrdersValue: number;
 };
 
 export type SellerDashboardOrder = {
@@ -65,30 +68,13 @@ export type SellerDashboardOrder = {
   isInvoiced?: boolean;
 };
 
-export type SellerDashboardProposalWithoutLinkedOrder = {
-  proposalId: string;
-  number: number;
-  externalProposalId: number | null;
-  externalProposalCode: string | null;
-  customerId: string;
-  customerName: string;
-  responsible: string | null;
-  externalSellerId: number | null;
-  status: string;
-  totalNetValue: number;
-  createdAt: string | null;
-  updatedAt: string | null;
-  daysOpen: number;
-};
-
 export type SellerDashboardResponse = {
   generatedAt: string;
   filters: SellerDashboardFilters;
   sellerOptions: SellerOption[];
   summary: SellerDashboardSummary;
   bySeller: SellerDashboardBySeller[];
-  notInvoicedOrders: SellerDashboardOrder[];
+  openPortfolioOrders: SellerDashboardOrder[];
   invoicedOrders: SellerDashboardOrder[];
-  openProposalsWithoutLinkedOrder: SellerDashboardProposalWithoutLinkedOrder[];
   ordersWithoutLinkedProposal: SellerDashboardOrder[];
 };
