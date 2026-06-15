@@ -4,9 +4,17 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { buildOtherCostNotes } from "./projectsOtherCostGroups.js";
 import {
+  buildProjectAmortizationTargets,
+  buildProjectCostAmortizationSummary,
+  computeAmortizationConfig,
+  type ProjectCostAmortizationRow,
+} from "./projectsCostAmortization.js";
+import { calculateSalePriceFromCost } from "./pricingCalculations.js";
+import {
   buildProjectPricingView,
   computeProjectPricingItem,
   listProjectPricingEligibleTargets,
+  resolveProjectPricingItemCosts,
 } from "./projectsPricing.js";
 import { buildProjectExecutiveReport } from "./projectsExecutiveReport.js";
 import { canManageProjects, canViewProjects } from "./projectsPermissions.js";
@@ -137,6 +145,88 @@ function buildDetailFixture(): ProjectDetail {
   };
 }
 
+const MANGOTE_BASE = 0.164381;
+const MANGOTE_AMORT = 0.46;
+
+function buildMangoteAmortizationRows(detail: ProjectDetail): ProjectCostAmortizationRow[] {
+  const itemId = detail.simulatedItems[0]!.id;
+  const mold = detail.molds[0]!;
+  const targets = buildProjectAmortizationTargets(detail);
+  const computed = computeAmortizationConfig(
+    {
+      sourceType: "MOLD",
+      sourceId: mold.id,
+      sourceDescriptionSnapshot: mold.name,
+      sourceTotalCostSnapshot: 46_000,
+      passThroughPercent: 100,
+      allocations: [
+        {
+          targetItemId: itemId,
+          targetItemType: "SIMULATION",
+          targetDescriptionSnapshot: "Mangote mini Iris",
+          targetBaseUnitCostSnapshot: MANGOTE_BASE,
+          allocationPercent: 100,
+          amortizationQuantity: 100_000,
+        },
+      ],
+    },
+    targets
+  );
+  return [{ id: "amort-mangote", projectId: detail.id, ...computed }];
+}
+
+function buildMangoteDetailFixture(): ProjectDetail {
+  const itemId = "aaaaaaaa-aaaa-4111-8111-aaaaaaaaaaaa";
+  const moldId = "cccccccc-cccc-4111-8111-cccccccccccc";
+  const detail: ProjectDetail = {
+    ...buildDetailFixture(),
+    simulatedItems: [
+      {
+        id: itemId,
+        provisionalCode: "MNG",
+        description: "Mangote mini Iris",
+        itemType: "COMPONENT",
+        unit: "UN",
+        estimatedUnitCost: MANGOTE_BASE,
+        quotedUnitCost: null,
+        supplierName: null,
+        leadTimeDays: null,
+        estimatedWeight: null,
+        lossPercent: 0,
+        requiresQuotation: false,
+        requiresEngineeringReview: false,
+        canBecomeOfficial: false,
+        notes: "guided-origin:SIMULATION\nguided-simulation-id:11111111-1111-1111-1111-111111111111",
+      },
+    ],
+    molds: [
+      {
+        id: moldId,
+        name: "24 Machos para o molde",
+        moldType: "Novo",
+        cavities: 1,
+        estimatedLifeCycles: null,
+        supplierName: null,
+        constructionCost: 46_000,
+        maintenanceCost: null,
+        changeCost: null,
+        leadTimeDays: null,
+        chargeMode: "CHARGED_SEPARATELY",
+        amortizationQuantity: null,
+        amortizedCostPerUnit: null,
+        ownership: "UNDEFINED",
+        notes: null,
+      },
+    ],
+  };
+  const amortizations = buildMangoteAmortizationRows(detail);
+  return {
+    ...detail,
+    costAmortizations: amortizations,
+    costAmortizationSummary: buildProjectCostAmortizationSummary(detail, amortizations),
+  };
+}
+
 describe("projectsPricing — integração", () => {
   it("aba Custos do Projeto exibe seção Precificação comercial", () => {
     const tab = readFileSync(
@@ -203,7 +293,8 @@ describe("projectsPricing — integração", () => {
   });
 
   it("usa custo final unitário com amortização", () => {
-    const detail = buildDetailFixture();
+    const detail = buildMangoteDetailFixture();
+    const rollup = detail.costAmortizationSummary!.itemRollups[0]!;
     const view = buildProjectPricingView({
       detail,
       taxRules: TAX_RULES,
@@ -211,11 +302,150 @@ describe("projectsPricing — integração", () => {
     });
     const item = view.items[0];
     assert.ok(item);
+    assert.equal(item.displayName, "Mangote mini Iris");
+    assert.equal(item.costBaseUnit, rollup.baseUnitCost);
+    assert.equal(item.amortizationUnitCost, rollup.unitAmortizedCost);
+    assert.equal(item.finalUnitCost, rollup.finalUnitCost);
+    assert.ok(item.suggestedPrice != null && item.suggestedPrice > item.finalUnitCost);
+  });
+
+  it("não usa apenas custo base quando existe amortização", () => {
+    const detail = buildMangoteDetailFixture();
+    const view = buildProjectPricingView({
+      detail,
+      taxRules: TAX_RULES,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 35 },
+    });
+    const item = view.items[0]!;
+    assert.notEqual(item.finalUnitCost, item.costBaseUnit);
+    assert.ok(item.amortizationUnitCost > 0);
+  });
+
+  it("Mangote mini Iris — preço calculado sobre custo final com amortização", () => {
+    const detail = buildMangoteDetailFixture();
+    const rollup = detail.costAmortizationSummary!.itemRollups[0]!;
+    const view = buildProjectPricingView({
+      detail,
+      taxRules: TAX_RULES,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 35 },
+    });
+    const item = view.items[0]!;
+    const expected = calculateSalePriceFromCost({
+      cost: rollup.finalUnitCost,
+      taxPercent: 27.25,
+      targetMarginPercent: 35,
+    });
+    assert.equal(expected.ok, true);
+    if (!expected.ok) return;
+    assert.equal(item.suggestedPrice, expected.suggestedPrice);
+    assert.ok(item.suggestedPrice! > rollup.finalUnitCost);
+  });
+
+  it("composição usa amortização unitária e custo final = base + amortização", () => {
+    const detail = buildMangoteDetailFixture();
+    const rollup = detail.costAmortizationSummary!.itemRollups[0]!;
+    const costs = resolveProjectPricingItemCosts(
+      { targetItemId: "a", baseUnitCost: rollup.baseUnitCost },
+      rollup
+    );
+    const item = computeProjectPricingItem(
+      {
+        targetItemId: "a",
+        targetItemType: "SIMULATION",
+        displayName: "Mangote mini Iris",
+        baseUnitCost: costs.costBaseUnit,
+        unitAmortizedCost: costs.amortizationUnitCost,
+        finalUnitCost: costs.pricingCost,
+      },
+      {
+        fiscalRuleId: "tax-1",
+        fiscalRuleName: "Mercado Interno",
+        taxPercent: 27.25,
+        targetMarginPercent: 35,
+      }
+    );
+    assert.equal(item.amortizationUnitCost, rollup.unitAmortizedCost);
+    assert.equal(item.finalUnitCost, rollup.finalUnitCost);
+    assert.ok(item.amortizationUnitCost > 0);
+    assert.ok(item.finalUnitCost > item.costBaseUnit);
+  });
+
+  it("preço sugerido é calculado sobre custo final com amortização", () => {
+    const detail = buildMangoteDetailFixture();
+    const rollup = detail.costAmortizationSummary!.itemRollups[0]!;
+    const withAmort = computeProjectPricingItem(
+      {
+        targetItemId: "a",
+        targetItemType: "SIMULATION",
+        displayName: "Mangote mini Iris",
+        baseUnitCost: rollup.baseUnitCost,
+        unitAmortizedCost: rollup.unitAmortizedCost,
+        finalUnitCost: rollup.finalUnitCost,
+      },
+      {
+        fiscalRuleId: "tax-1",
+        fiscalRuleName: "MI",
+        taxPercent: 27.25,
+        targetMarginPercent: 35,
+      }
+    );
+    const baseOnly = computeProjectPricingItem(
+      {
+        targetItemId: "a",
+        targetItemType: "SIMULATION",
+        displayName: "Mangote mini Iris",
+        baseUnitCost: rollup.baseUnitCost,
+        unitAmortizedCost: 0,
+        finalUnitCost: rollup.baseUnitCost,
+      },
+      {
+        fiscalRuleId: "tax-1",
+        fiscalRuleName: "MI",
+        taxPercent: 27.25,
+        targetMarginPercent: 35,
+      }
+    );
+    assert.ok(withAmort.suggestedPrice != null && baseOnly.suggestedPrice != null);
+    assert.ok(withAmort.suggestedPrice! > baseOnly.suggestedPrice!);
+  });
+
+  it("consome detail.costAmortizations quando savedAmortizations não é passado", () => {
+    const detail = buildMangoteDetailFixture();
+    const view = buildProjectPricingView({
+      detail,
+      taxRules: TAX_RULES,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 35 },
+    });
+    assert.equal(view.items[0]?.amortizationUnitCost, MANGOTE_AMORT);
+  });
+
+  it("ProjectPricingSection repassa costAmortizations para buildProjectPricingView", () => {
+    const section = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectPricingSection.tsx"),
+      "utf8"
+    );
+    assert.match(section, /detail\.costAmortizations/);
+    assert.match(section, /savedAmortizations/);
+  });
+
+  it("item sem amortização continua usando custo base", () => {
+    const detail = buildDetailFixture();
+    const view = buildProjectPricingView({
+      detail,
+      taxRules: TAX_RULES,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 35 },
+    });
+    const item = view.items[0]!;
+    assert.equal(item.amortizationUnitCost, 0);
+    assert.equal(item.finalUnitCost, item.costBaseUnit);
+  });
+
+  it("computeProjectPricingItem usa finalUnitCost no cálculo do preço", () => {
     const computed = computeProjectPricingItem(
       {
-        targetItemId: item.targetItemId,
-        targetItemType: item.targetItemType,
-        displayName: item.displayName,
+        targetItemId: "a",
+        targetItemType: "SIMULATION",
+        displayName: "Haste IRIS",
         baseUnitCost: 1.30901,
         unitAmortizedCost: 1.248,
         finalUnitCost: 2.55701,
@@ -229,6 +459,16 @@ describe("projectsPricing — integração", () => {
     );
     assert.equal(computed.finalUnitCost, 2.55701);
     assert.ok(computed.suggestedPrice != null && computed.suggestedPrice > computed.finalUnitCost);
+  });
+
+  it("snapshot salvo preserva base, amortização e custo final separadamente", () => {
+    const service = readFileSync(
+      join(process.cwd(), "src", "lib", "projectsPricingService.ts"),
+      "utf8"
+    );
+    assert.match(service, /costBaseUnitSnapshot: item\.costBaseUnit/);
+    assert.match(service, /amortizationUnitCostSnapshot: item\.amortizationUnitCost/);
+    assert.match(service, /finalUnitCostSnapshot: item\.finalUnitCost/);
   });
 
   it("usa margem padrão cadastrada no projeto", () => {
@@ -288,36 +528,26 @@ describe("projectsPricing — integração", () => {
   });
 
   it("relatório gerencial exibe precificação quando salva", () => {
-    const detail = buildDetailFixture();
+    const detail = buildMangoteDetailFixture();
+    const priced = buildProjectPricingView({
+      detail,
+      taxRules: TAX_RULES,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 35 },
+    });
+    const pricedItem = priced.items[0]!;
+    const rollup = detail.costAmortizationSummary!.itemRollups[0]!;
     detail.projectPricing = {
       config: { fiscalRuleId: "tax-1", defaultMarginPercent: 35 },
       taxRules: TAX_RULES,
       hasSavedPricing: true,
-      items: [
-        {
-          targetItemId: "aaaaaaaa-aaaa-4111-8111-aaaaaaaaaaaa",
-          targetItemType: "SIMULATION",
-          displayName: "Haste IRIS",
-          costBaseUnit: 1.30901,
-          amortizationUnitCost: 0,
-          finalUnitCost: 1.30901,
-          fiscalRuleId: "tax-1",
-          fiscalRuleName: "Mercado Interno",
-          taxPercent: 27.25,
-          targetMarginPercent: 35,
-          suggestedPrice: 3.468348,
-          taxAmount: 0.944,
-          marginAmount: 1.214,
-          status: "CALCULATED",
-          statusLabel: "Calculado",
-          errorMessage: null,
-        },
-      ],
+      items: priced.items,
     };
     const report = buildProjectExecutiveReport(detail);
     assert.equal(report.economicAnalysis.pending, false);
     assert.ok(report.economicAnalysis.suggestedPrice != null);
     assert.equal(report.economicAnalysis.pricingItems.length, 1);
+    assert.equal(report.economicAnalysis.pricingItems[0]?.finalUnitCost, rollup.finalUnitCost);
+    assert.equal(report.economicAnalysis.suggestedPrice, pricedItem.suggestedPrice);
   });
 
   it("relatório gerencial mostra pendente quando não há precificação", () => {

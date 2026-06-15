@@ -4,8 +4,10 @@ import { cn } from "@/src/lib/utils";
 import {
   buildProjectPricingView,
   computeProjectPricingItem,
+  resolveProjectPricingItemCosts,
   type ProjectPricingItemView,
 } from "@/src/lib/projectsPricing";
+import type { ProjectCostAmortizationRow } from "@/src/lib/projectsCostAmortization";
 import type { ProjectDetail, ProjectPricingView } from "@/src/types/projects";
 
 function formatMoney(value: number | null | undefined, digits = 6) {
@@ -137,6 +139,7 @@ export function ProjectPricingSection({
   const computedItems = useMemo(() => {
     if (!pricingView) return [];
     const marginDefault = defaultMargin.trim() ? Number(defaultMargin) : null;
+    const savedAmortizations = (detail.costAmortizations ?? []) as ProjectCostAmortizationRow[];
     const draft = buildProjectPricingView({
       detail,
       taxRules,
@@ -145,6 +148,7 @@ export function ProjectPricingSection({
         defaultMarginPercent: Number.isFinite(marginDefault) ? marginDefault : detail.targetMarginPercent,
       },
       savedItems: [],
+      savedAmortizations,
     });
 
     return draft.items.map((item) => {
@@ -157,15 +161,23 @@ export function ProjectPricingSection({
           : Number.isFinite(marginDefault)
             ? marginDefault
             : item.targetMarginPercent;
+      const costs = resolveProjectPricingItemCosts(
+        { targetItemId: item.targetItemId, baseUnitCost: item.costBaseUnit },
+        {
+          baseUnitCost: item.costBaseUnit,
+          unitAmortizedCost: item.amortizationUnitCost,
+          finalUnitCost: item.finalUnitCost,
+        }
+      );
 
       return computeProjectPricingItem(
         {
           targetItemId: item.targetItemId,
           targetItemType: item.targetItemType,
           displayName: item.displayName,
-          baseUnitCost: item.costBaseUnit,
-          unitAmortizedCost: item.amortizationUnitCost,
-          finalUnitCost: item.finalUnitCost,
+          baseUnitCost: costs.costBaseUnit,
+          unitAmortizedCost: costs.amortizationUnitCost,
+          finalUnitCost: costs.pricingCost,
         },
         {
           fiscalRuleId: itemRule,

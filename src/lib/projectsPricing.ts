@@ -3,6 +3,7 @@ import {
   buildProjectCostAmortizationSummary,
   roundProjectMoney,
   type ProjectCostAmortizationRow,
+  type ProjectCostAmortizationSummary,
   type ProjectCostAmortizationTargetType,
 } from "./projectsCostAmortization.js";
 import {
@@ -76,6 +77,15 @@ const STATUS_LABEL: Record<ProjectPricingItemStatus, string> = {
   ERROR: "Erro",
 };
 
+export const PROJECT_PRICING_INCOMPLETE_AMORTIZATION_LABEL =
+  "Precificação com amortização incompleta";
+
+const INCOMPLETE_AMORTIZATION_STATUSES = new Set([
+  "INCOMPLETE",
+  "EXCESS",
+  "NOT_CONFIGURED",
+]);
+
 /** Primeira entrega: somente itens simulados (referência de Simulações). */
 export function listProjectPricingEligibleTargets(detail: ProjectDetail) {
   return buildProjectAmortizationTargets(detail).filter(
@@ -90,8 +100,42 @@ export function resolveTaxRulePercentFromOption(rule: ProjectPricingTaxRuleOptio
 function resolveCostSummary(
   detail: ProjectDetail,
   savedAmortizations: ProjectCostAmortizationRow[] = []
-) {
-  return buildProjectCostAmortizationSummary(detail, savedAmortizations);
+): ProjectCostAmortizationSummary {
+  if (detail.costAmortizationSummary) {
+    return detail.costAmortizationSummary as ProjectCostAmortizationSummary;
+  }
+  const amortizations =
+    savedAmortizations.length > 0
+      ? savedAmortizations
+      : ((detail.costAmortizations ?? []) as ProjectCostAmortizationRow[]);
+  return buildProjectCostAmortizationSummary(detail, amortizations);
+}
+
+/** Mesma origem da tabela de Custos do Projeto (base + amortização = custo final). */
+export function resolveProjectPricingItemCosts(
+  target: { targetItemId: string; baseUnitCost: number },
+  rollup?: {
+    baseUnitCost: number;
+    unitAmortizedCost: number;
+    finalUnitCost: number;
+  }
+): {
+  costBaseUnit: number;
+  amortizationUnitCost: number;
+  finalUnitCost: number;
+  pricingCost: number;
+} {
+  const costBaseUnit = roundPricingMoney(rollup?.baseUnitCost ?? target.baseUnitCost);
+  const amortizationUnitCost = roundPricingMoney(rollup?.unitAmortizedCost ?? 0);
+  const finalUnitCost = roundPricingMoney(
+    rollup != null ? rollup.finalUnitCost : costBaseUnit + amortizationUnitCost
+  );
+  return {
+    costBaseUnit,
+    amortizationUnitCost,
+    finalUnitCost,
+    pricingCost: finalUnitCost,
+  };
 }
 
 export function computeProjectPricingItem(
@@ -241,6 +285,9 @@ export function buildProjectPricingView(input: {
     input.config?.defaultMarginPercent ?? detail.targetMarginPercent ?? null;
   const defaultFiscalRuleId = input.config?.fiscalRuleId ?? null;
   const defaultTaxRule = taxRules.find((rule) => rule.id === defaultFiscalRuleId);
+  const incompleteAmortization = summary.amortizations.some((row) =>
+    INCOMPLETE_AMORTIZATION_STATUSES.has(row.status)
+  );
 
   const items = listProjectPricingEligibleTargets(detail).map((target) => {
     const rollup = rollupById.get(target.targetItemId);
@@ -249,15 +296,16 @@ export function buildProjectPricingView(input: {
     const taxRule = taxRules.find((rule) => rule.id === fiscalRuleId);
     const taxPercent = saved?.taxPercentSnapshot ?? resolveTaxRulePercentFromOption(taxRule);
     const margin = saved?.targetMarginPercent ?? defaultMargin;
+    const costs = resolveProjectPricingItemCosts(target, rollup);
 
-    return computeProjectPricingItem(
+    const computed = computeProjectPricingItem(
       {
         targetItemId: target.targetItemId,
         targetItemType: target.targetItemType,
         displayName: target.displayName,
-        baseUnitCost: rollup?.baseUnitCost ?? target.baseUnitCost,
-        unitAmortizedCost: rollup?.unitAmortizedCost ?? 0,
-        finalUnitCost: rollup?.finalUnitCost ?? target.baseUnitCost,
+        baseUnitCost: costs.costBaseUnit,
+        unitAmortizedCost: costs.amortizationUnitCost,
+        finalUnitCost: costs.pricingCost,
       },
       {
         fiscalRuleId,
@@ -266,6 +314,19 @@ export function buildProjectPricingView(input: {
         targetMarginPercent: margin,
       }
     );
+
+    if (
+      incompleteAmortization &&
+      computed.status !== "NO_COST" &&
+      computed.status !== "ERROR"
+    ) {
+      return {
+        ...computed,
+        statusLabel: PROJECT_PRICING_INCOMPLETE_AMORTIZATION_LABEL,
+      };
+    }
+
+    return computed;
   });
 
   const hasSavedPricing = (input.savedItems ?? []).some(
