@@ -71,6 +71,7 @@ export const PERMISSION_TEMPLATES: Record<
       "proposals.print",
       "proposals.indicators.view",
       "proposals.material_report.view",
+      "reports.material_demand.view",
       "sales_orders.view",
       "sales_orders.detail.view",
       "sales_orders.invoice.view",

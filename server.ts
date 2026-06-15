@@ -21,13 +21,14 @@ import { CustomerImportConfig } from "./src/lib/importer/CustomerConfig.js";
 import crypto from "crypto";
 import {
   buildCustomerAbcRanking,
-} from "./src/lib/customerCommercialIntel.js";
+} from "./src/lib/customerCommercialShared.js";
 import {
   buildPortfolioAbcFromSalesOrders,
   normalizeCustomerDocument,
   salesOrderHasInvoicing,
   salesOrderMatchesCustomer,
 } from "./src/lib/customerCommercialSalesOrderView.js";
+import { MATERIAL_DEMAND_VIEW_PERMISSIONS } from "./src/lib/commercialMaterialDemandPermissions.js";
 import { buildCrmCommercialIntelligenceResponse } from "./src/lib/crmCommercialIntelligence.js";
 import { buildCrmManagementDashboardResponse } from "./src/lib/crmManagementDashboardService.js";
 import {
@@ -9752,7 +9753,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     };
   };
 
-  const materialDemandViewPermissions = ["proposals.material_report.view", "products.view", "sales_orders.view"];
+  const materialDemandViewPermissions = [...MATERIAL_DEMAND_VIEW_PERMISSIONS];
   const materialDemandRouteGuard = [requireAppAuth, requireAnyPermission(materialDemandViewPermissions)] as const;
 
   const handleMaterialDemandSummary = async (req: express.Request, res: express.Response) => {

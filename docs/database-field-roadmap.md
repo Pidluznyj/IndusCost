@@ -142,8 +142,8 @@ Campos relevantes para mix/análise: `id`, `sku`, `name`, `type` (enum `ItemType
 ### 4.5 O que já é calculado hoje na aplicação (sem coluna dedicada)
 
 - **Probabilidade de fechamento** e **valor ponderado** por status: heurísticas em `src/lib/salesFunnel.ts` (derivado).
-- **Health score, segmento comercial, ABC, janela de recompra:** em `src/lib/customerCommercialIntel.ts` e APIs que agregam propostas (calculado / derivado).
-- **Curva ABC da carteira:** `groupBy` em propostas `APPROVED` no endpoint da visão comercial (calculado na leitura).
+- **Health score, segmento comercial, ABC, janela de recompra:** em `src/lib/customerCommercialSalesOrderView.ts` e APIs CRM/360 que agregam **Pedidos de Venda** (calculado / derivado). O motor legado baseado em propostas (`customerCommercialProposalLegacy.ts`) está **deprecated** e não é usado em runtime.
+- **Curva ABC da carteira:** `groupBy` em pedidos de venda válidos (`status` ≠ CANCELLED/ERROR) nos endpoints comercial-360 e CRM.
 
 ### 4.6 `CostCalculationLog` (engenharia / custo — já no schema)
 

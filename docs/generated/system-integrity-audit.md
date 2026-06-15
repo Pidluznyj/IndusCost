@@ -45,8 +45,8 @@ Priorizar **fonte única de verdade por domínio** (status de veículo, custo CI
 | **Pedidos** | KPIs comerciais | Deveria ser agregação server única | `/api/reports/data` vs `SalesOrdersIndicatorsDashboard` (client) | Alto |
 | **Clientes** | Cadastro | `Customer` Prisma | `CustomerModule` paginado; legacy array em Propostas/Pedidos | Médio — escala e busca |
 | **Clientes** | Inteligência CNPJ | `companyCnpjLookup.ts` + cache | `/api/company-intelligence/*`, `/api/customers/:id/company-intelligence` | Baixo pós-proteção de contatos |
-| **Clientes** | Visão comercial 360 | Propostas APPROVED + ABC | `GET /api/customers/:id/commercial-360` | Alto vs CRM intel (usa SalesOrder) |
-| **CRM** | Histórico compra | SalesOrder READY/SENT | `GET /api/crm/customers/:id/commercial-intelligence` | Alto vs Commercial 360 |
+| **Clientes** | Visão comercial 360 | Pedidos de Venda (`SalesOrder`) + ABC | `GET /api/customers/:id/commercial-360` | Alinhado com CRM intel (SalesOrder) — migração 2026-06 |
+| **CRM** | Histórico compra | SalesOrder READY/SENT | `GET /api/crm/customers/:id/commercial-intelligence` | Alinhado com Commercial 360 |
 | **CRM** | Lista clientes | `GET /api/crm/customers` | `CrmModule` | Médio — offset vs page, busca CNPJ diferente |
 | **Frota** | Status operacional | `recalculateVehicleOperationalStatus()` | Grid lê DB; manutenção usa recalc; uso/reserva nem sempre | **Crítico** |
 | **Dashboard** | KPI industrial | `/api/dashboard` | `DashboardModule` | Baixo (domínio distinto de reports) |
@@ -119,15 +119,15 @@ Priorizar **fonte única de verdade por domínio** (status de veículo, custo CI
 | **Evidência** | `nomusBomControlledApply.ts` L1194–1199 vs `server.ts` cost-impact handler |
 | **Correção** | Passar mesmo snapshot no preview |
 
-#### INT-006 — Commercial 360 vs CRM commercial-intelligence (compra)
+#### INT-006 — Commercial 360 vs CRM commercial-intelligence (compra) — **RESOLVIDO (2026-06)**
 
 | Campo | Detalhe |
 |-------|---------|
 | **Módulo** | Clientes / CRM |
-| **Severidade** | Alta |
-| **Descrição** | 360 usa propostas APPROVED; CRM intel usa `SalesOrder` para histórico de compra. |
-| **Evidência** | `CustomerCommercial360.tsx`, `server.ts` commercial-360 vs crm commercial-intelligence |
-| **Correção** | Unificar semântica ou rotular UI com fonte explícita |
+| **Severidade** | ~~Alta~~ Resolvido |
+| **Descrição** | Commercial 360 e CRM intel usam `SalesOrder` para histórico de compra, ABC e health score. Propostas permanecem apenas no módulo pré-venda. |
+| **Evidência** | `CustomerCommercial360.tsx`, `customerCommercialSalesOrderView.ts`, `server.ts` commercial-360 |
+| **Correção aplicada** | Migração Fases 0–8; legado `computeCommercialPhase2` isolado em `customerCommercialProposalLegacy.ts` |
 
 #### INT-007 — SalesOrdersIndicatorsDashboard vs `/api/reports/data`
 
@@ -231,7 +231,7 @@ Priorizar **fonte única de verdade por domínio** (status de veículo, custo CI
 | INT-031 | Prisma | Status String em Customer/Product vs enums | `schema.prisma` |
 | INT-032 | Prisma | `FleetMaintenance.priority` String vs enum Maintenance | `schema.prisma` |
 | INT-033 | Server | Import preview `upload.single` duplicado | `server.ts` |
-| INT-034 | Docs | `customerCommercialIntel.ts` comentário “sem pedidos” desatualizado | `customerCommercialIntel.ts` |
+| INT-034 | Docs | ~~`customerCommercialIntel.ts` comentário “sem pedidos” desatualizado~~ | Resolvido — legado em `customerCommercialProposalLegacy.ts`; ativo em `customerCommercialSalesOrderView.ts` |
 | INT-035 | Activities | Timeline sem paginação offset | commercial-activities API |
 | INT-036 | Material demand | Rotas espelhadas products/sales-orders | `server.ts` ~9591 |
 | INT-037 | Permissões | Audit report desatualizado (73 vs 99 keys) | `docs/generated/permissions-audit-report.md` |
@@ -263,8 +263,8 @@ Priorizar **fonte única de verdade por domínio** (status de veículo, custo CI
 | Grid produtos (CIU) | Modal Análise de Custo | Timing pós-edição (mitigado por reload token) |
 | Análise de Custo | Nomus Cost Impact | Material simulado vs ProductBOM salva |
 | Nomus Cost Impact | Apply Preview BOM | Gates de custo / unresolved lines |
-| Commercial 360 | CRM Ficha intel | Última compra, ABC, risco |
-| Commercial 360 | Propostas lista | Status pipeline aberto |
+| Commercial 360 | CRM Ficha intel | ~~Última compra, ABC, risco~~ — alinhados em SalesOrder (2026-06) |
+| Commercial 360 | Propostas lista | Pipeline pré-venda (propostas) vs carteira/pedidos no 360 — intencional |
 | Indicadores Pedidos (contextual) | Relatórios comercial | Totais, margem média, filtros |
 | Grid Frota status | Manutenções / Uso | Status DB vs bloqueios reais |
 | CustomerModule lista | CRM lista clientes | Mesmo CNPJ, resultados de busca diferentes |

@@ -21,7 +21,7 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import type { Customer, SalesOrderLinkStatus } from "@/src/types/commercial";
-import type { PortfolioAbcResult } from "@/src/lib/customerCommercialIntel";
+import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import {
   COMMERCIAL_SALES_ORDER_BASIS_NOTE,
   computeCommercialPhase2FromSalesOrders,

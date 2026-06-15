@@ -45,6 +45,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // —— Geral ——
   perm({ key: "dashboard.view", label: "Dashboard", group: G, module: "dashboard", description: "Visualizar painel principal.", type: "menu" }),
   perm({ key: "reports.view", label: "Relatórios", group: G, module: "reports", description: "Acessar relatórios e BI.", type: "menu" }),
+  perm({
+    key: "reports.material_demand.view",
+    label: "Relatórios — Demanda de matéria-prima",
+    group: G,
+    module: "reports",
+    description:
+      "Relatório consolidado de demanda de MP (baseado em pedidos de venda). Substitui nomenclatura legada proposals.material_report.view.",
+    type: "section",
+    parentKey: "reports.view",
+    requires: ["reports.view"],
+  }),
   perm({ key: "guide.view", label: "Guia do Sistema", group: G, module: "guide", description: "Acessar o guia funcional do sistema.", type: "menu" }),
 
   // —— Financeiro ——
@@ -269,10 +280,11 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   }),
   perm({
     key: "proposals.material_report.view",
-    label: "Propostas — Relatório Geral de MP",
+    label: "Propostas — Relatório Geral de MP (legado)",
     group: PROP,
     module: "proposals",
-    description: "Relatório consolidado de matéria-prima.",
+    description:
+      "LEGADO — alias de reports.material_demand.view. Mantido por compatibilidade com perfis existentes.",
     type: "section",
     parentKey: "proposals.view",
     requires: ["proposals.view"],

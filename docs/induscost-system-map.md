@@ -172,8 +172,11 @@ modelo Prisma de cada fluxo.
 - `POST /api/nomus/engineering-sync/apply`
 
 ### Customers / CRM
+
+**Fonte comercial principal (2026-06):** Pedidos de Venda (`SalesOrder`). Propostas = pré-venda, CRUD, impressão e geração de pedido — não são proxy de receita/pipeline nos dashboards globais. Ver `docs/commercial/SALES_ORDER_AS_COMMERCIAL_SOURCE.md`.
+
 - Importer + CRUD + `GET /api/customers/indicators[/drilldown]`
-- `GET /api/customers/:id/commercial-360`
+- `GET /api/customers/:id/commercial-360` — SalesOrder + ABC
 - `GET/POST/PATCH /api/customers/:customerId/commercial-activities[/:id]`
 - `GET /api/crm/dashboard/basic` · `/management-dashboard` · `/seller-dashboard`
 - `GET /api/crm/customers` · `/:customerId/profile` · `/commercial-intelligence`

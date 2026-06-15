@@ -129,3 +129,21 @@ Novos helpers em `executiveDashboardHelpers.ts` (somente dashboard executivo):
 ---
 
 *Relatório gerado após correção da fonte comercial e formatação executiva.*
+
+---
+
+## 11. Alinhamento pós-migração (2026-06)
+
+Após as Fases 0–8 da migração Proposta → Pedido de Venda:
+
+| Área | Fonte comercial |
+|------|-----------------|
+| Visão Executiva (dashboard) | SalesOrder |
+| Commercial 360 | SalesOrder |
+| CRM Cockpit / Management / Seller | SalesOrder |
+| Indicadores de clientes | SalesOrder (`withSalesOrderCount`) |
+| Funil de Vendas (aba dedicada) | Proposal (pré-venda — legítimo) |
+| Módulo Propostas (CRUD/impressão/gerar pedido) | Proposal (legítimo) |
+
+Documentação canônica: `docs/commercial/SALES_ORDER_AS_COMMERCIAL_SOURCE.md`.
+

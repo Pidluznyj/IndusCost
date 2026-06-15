@@ -14,7 +14,7 @@ import {
   HEALTH_LEVEL_LABEL_PT,
   REPURCHASE_WINDOW_LABEL_PT,
   COMMERCIAL_INTEL_VERSION,
-} from "@/src/lib/customerCommercialIntel";
+} from "@/src/lib/customerCommercialShared";
 import {
   isCancelledSalesOrderStatus,
   isOpenPortfolioOrder,
