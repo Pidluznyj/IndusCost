@@ -66,6 +66,10 @@ import {
   executiveYtdMetricsAreFinite,
 } from "./financeCashFlowExecutiveYtd.js";
 import {
+  buildFinanceCashFlowExecutiveSummary,
+  executiveSummaryMetricsAreFinite,
+} from "./financeCashFlowExecutiveSummary.js";
+import {
   buildCashFlowReconciliation,
   cashFlowViewModeSlices,
   computeCashFlowLedgerPeriodTotals,
@@ -850,6 +854,18 @@ export function buildFinanceCashFlowDashboard(
     referenceDate
   );
   const executiveYtdReading = buildCashFlowExecutiveYtdReading(executiveYtd);
+  const executiveSummary = buildFinanceCashFlowExecutiveSummary(
+    arRows,
+    apRows,
+    filters,
+    referenceDate,
+    {
+      inflowAmount: period.inflow,
+      outflowAmount: period.outflow,
+      netFlowAmount: period.net,
+      accumulatedBalance: period.accumulated,
+    }
+  );
 
   const cashHealthScore = buildCashHealthScore(partialPayload);
   const executiveInsights = buildCashFlowExecutiveInsights(
@@ -912,6 +928,7 @@ export function buildFinanceCashFlowDashboard(
 
   return {
     ...partialPayload,
+    executiveSummary,
     executiveYtd,
     executiveYtdReading,
     cashHealthScore,
@@ -1009,6 +1026,7 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
   }
   if (!cashFlowCfoMetricsAreFinite(payload.executiveInsights)) return false;
   if (!executiveYtdMetricsAreFinite(payload.executiveYtd)) return false;
+  if (!executiveSummaryMetricsAreFinite(payload.executiveSummary)) return false;
   const rec = payload.reconciliation;
   for (const v of [
     rec.netCashFlow,

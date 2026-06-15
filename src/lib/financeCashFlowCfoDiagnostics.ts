@@ -439,6 +439,7 @@ export type FinanceCashFlowInsightsInput = Omit<
   | "dailyCalendar"
   | "cashHealthScore"
   | "executiveReading"
+  | "executiveSummary"
   | "executiveYtd"
   | "executiveYtdReading"
   | "reconciliation"

@@ -12,6 +12,7 @@ import type {
   FinanceCashFlowExecutiveInsights,
 } from "./financeCashFlowCfoDiagnostics.js";
 import type { FinanceCashFlowExecutiveYtd } from "./financeCashFlowExecutiveYtd.js";
+import type { FinanceCashFlowExecutiveSummary } from "./financeCashFlowExecutiveSummary.js";
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 
 export type FinanceCashFlowViewMode = "projected" | "realized" | "combined";
@@ -152,7 +153,9 @@ export type FinanceCashFlowDashboardPayload = {
   cards: FinanceCashFlowDashboardCards;
   /** Frases determinísticas para leitura gerencial do caixa (período filtrado). */
   executiveReading: string[];
-  /** Resumo executivo YTD — topo da tela, independente do mês filtrado. */
+  /** Visão executiva anual — recebido/pago YTD, projeção até fim do ano e estimativa líquida. */
+  executiveSummary: FinanceCashFlowExecutiveSummary;
+  /** Resumo executivo YTD — complemento com tendência e carteira. */
   executiveYtd: FinanceCashFlowExecutiveYtd;
   /** Leitura executiva do bloco YTD. */
   executiveYtdReading: string[];

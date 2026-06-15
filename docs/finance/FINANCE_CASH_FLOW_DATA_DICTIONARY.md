@@ -125,13 +125,41 @@ Filtros em `FinanceCashFlowPage` → query `buildFinanceCashFlowDashboardQuery` 
 
 ## 4. Cards / KPIs da tela
 
-### 4.1 Visão Geral — KPIs do período (`cards` — seção `cash-flow-period-kpis`)
+### 4.0 Visão executiva anual (`executiveSummary` — topo da tela)
+
+Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mês** filtrado para métricas anuais; o recorte **Período filtrado** espelha `cards.inflowAmount` / `outflowAmount` / `netFlowAmount`.
+
+| Card (UI) | Campo | Conceito | Fórmula | Fonte | Data |
+|-----------|-------|----------|---------|-------|------|
+| **Recebido YTD** | `receivable.receivedYtd` | Caixa já recebido no ano | `SUM(amountReceived)` | `NomusAccountsReceivable` | `settlementDate` 01/01 → corte |
+| **A receber até 31/12** | `receivable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano | `SUM(balanceReceivable)` | AR | `dueDate` hoje → 31/12 |
+| **Estimativa AR do ano** | `receivable.estimatedYearTotal` | Entrada total estimada | Recebido YTD + A receber até 31/12 | AR | Misto |
+| **Pago YTD** | `payable.paidYtd` | Caixa já pago no ano | `SUM(amountPaid)` | `NomusAccountsPayable` | `paymentDate` ?? `settlementDate` |
+| **A pagar até 31/12** | `payable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano | `SUM(balancePayable)` | AP | `dueDate` hoje → 31/12 |
+| **Estimativa AP do ano** | `payable.estimatedYearTotal` | Saída total estimada | Pago YTD + A pagar até 31/12 | AP | Misto |
+| **Saldo realizado YTD** | `net.realizedYtd` | Caixa líquido realizado | Recebido YTD − Pago YTD | AR + AP | Liquidação |
+| **Saldo projetado restante** | `net.projectedRemaining` | Fluxo futuro no ano | A receber até 31/12 − A pagar até 31/12 | AR + AP | Vencimento |
+| **Estimativa líquida anual** | `net.estimatedYearNet` | Resultado anual previsto | Estimativa AR − Estimativa AP | AR + AP | Misto |
+
+**Período filtrado** (`executiveSummary.period`): espelha `cards` — entradas/saídas/saldo/acumulado do recorte mês/ano conforme `viewMode`.
+
+**Linha do tempo mensal** (`executiveSummary.monthlyTimeline`): por mês — recebido, a receber (aberto por vencimento), entradas estimadas, pago, a pagar, saídas estimadas, saldo líquido, acumulado.
+
+**Ano passado:** quando `hoje > 31/12` do ano selecionado, `openFromTodayToYearEnd` = 0 (sem projeção futura).
+
+**Origem Com NF / Sem NF:** afeta apenas AR (`invoiceIssued`).
+
+**Service:** `buildFinanceCashFlowExecutiveSummary` (`financeCashFlowExecutiveSummary.ts`).
+
+### 4.1 Visão Geral — KPIs do período (`cards` / `executiveSummary.period`)
 
 | Card (UI) | Campo | Conceito | Fórmula | Fonte | Conferência AR/AP |
 |-----------|-------|----------|---------|-------|-------------------|
 | **Entradas do período** | `inflowAmount` | Caixa entrada no período | `SUM` movimentos AR no período (série mensal) | `buildFinanceCashFlowMonthlySeries` | Modo previsto: ≈ AR em aberto no período; realizado: ≈ recebido por `settlementDate` |
 | **Saídas do período** | `outflowAmount` | Caixa saída | Idem AP | Idem | Modo previsto: ≈ AP em aberto; realizado: ≈ pago |
 | **Saldo líquido** | `netFlowAmount` | Resultado do período | `inflowAmount − outflowAmount` | `sumPeriodAmounts` | `netCashFlow` na reconciliação |
+
+Exibidos no bloco **Período filtrado** do painel executivo (`data-testid="cash-flow-executive-summary"`).
 
 ### 4.2 Carteira e posição (payload `cards` — usados em painéis YTD, risco, CFO)
 

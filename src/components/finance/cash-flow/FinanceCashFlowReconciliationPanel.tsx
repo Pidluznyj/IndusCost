@@ -73,6 +73,10 @@ export function FinanceCashFlowReconciliationPanel({
           {periodLabel} — entradas de Contas a Receber, saídas de Contas a Pagar. Saldo = entradas −
           saídas.
         </p>
+        <p className="text-[10px] text-[#6B7280] mt-1 italic">
+          Faturamento (NF-e) não entra no caixa. Os valores abaixo refletem apenas títulos AR/AP do
+          período filtrado.
+        </p>
       </div>
       <div className="p-5 space-y-4">
         <div className={`${financeBiCardClass} p-4`}>

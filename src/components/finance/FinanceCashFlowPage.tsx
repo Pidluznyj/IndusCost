@@ -38,7 +38,8 @@ import { FinanceCashFlowScenarioChart } from "@/src/components/finance/cash-flow
 import { FinanceCashFlowRecommendations } from "@/src/components/finance/cash-flow/FinanceCashFlowRecommendations";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
-import { FinanceCashFlowKpiCard } from "@/src/components/finance/cash-flow/FinanceCashFlowKpiCard";
+import { FinanceCashFlowExecutiveSummaryPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel";
+import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
 import { FinanceCashFlowReconciliationPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowReconciliationPanel";
 import {
   FinanceFilterScopeBanner,
@@ -450,42 +451,19 @@ export function FinanceCashFlowPage() {
 
       {payload && activeTab === "overview" ? (
         <div className="space-y-6">
-          <section className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="cash-flow-period-kpis">
-            <FinanceCashFlowKpiCard
-              testId="cash-flow-inflow-kpi"
-              label="Entradas do período"
-              hint="Contas a Receber — valores financeiros do filtro"
-              value={formatFinanceCurrency(cards?.inflowAmount ?? 0)}
-              valueFull={formatFinanceCurrency(cards?.inflowAmount ?? 0)}
-              icon={TrendingUp}
-              colorClass="text-[#059669]"
-              valueClassName="text-[#059669] font-bold tabular-nums text-xl sm:text-2xl"
-            />
-            <FinanceCashFlowKpiCard
-              testId="cash-flow-outflow-kpi"
-              label="Saídas do período"
-              hint="Contas a Pagar — valores financeiros do filtro"
-              value={formatFinanceCurrency(cards?.outflowAmount ?? 0)}
-              valueFull={formatFinanceCurrency(cards?.outflowAmount ?? 0)}
-              icon={TrendingDown}
-              colorClass="text-[#DC2626]"
-              valueClassName="text-[#DC2626] font-bold tabular-nums text-xl sm:text-2xl"
-            />
-            <FinanceCashFlowKpiCard
-              testId="cash-flow-net-kpi"
-              label="Saldo líquido"
-              hint="Entradas − saídas no período filtrado"
-              featured
-              value={formatFinanceCurrency(cards?.netFlowAmount ?? 0)}
-              valueFull={formatFinanceCurrency(cards?.netFlowAmount ?? 0)}
-              valueClassName={cn(
-                "font-bold tabular-nums text-xl sm:text-2xl",
-                (cards?.netFlowAmount ?? 0) >= 0 ? "text-[#059669]" : "text-[#DC2626]"
-              )}
-            />
-          </section>
+          <FinanceCashFlowExecutiveSummaryPanel
+            summary={payload.executiveSummary}
+            cashHealthScore={payload.cashHealthScore}
+            filtersActive={filtersActive}
+            appliedFiltersLabel={appliedFiltersLabel}
+          />
 
           <FinanceCashFlowReconciliationPanel reconciliation={payload.reconciliation} />
+
+          <FinanceCashFlowMonthlyTimelineTable
+            rows={payload.executiveSummary.monthlyTimeline}
+            year={payload.executiveSummary.metadata.year}
+          />
 
           <FinanceCashFlowYtdSummary
             executiveYtd={payload.executiveYtd}

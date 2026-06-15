@@ -81,6 +81,38 @@ export function buildFinanceCashFlowExportCsv(
   );
 
   const rec = payload.reconciliation;
+  const exec = payload.executiveSummary;
+  const summaryRows: Array<[string, number]> = [
+    ["resumo_recebido_ytd", exec.receivable.receivedYtd],
+    ["resumo_a_receber_ate_fim_ano", exec.receivable.openFromTodayToYearEnd],
+    ["resumo_estimativa_ar_ano", exec.receivable.estimatedYearTotal],
+    ["resumo_pago_ytd", exec.payable.paidYtd],
+    ["resumo_a_pagar_ate_fim_ano", exec.payable.openFromTodayToYearEnd],
+    ["resumo_estimativa_ap_ano", exec.payable.estimatedYearTotal],
+    ["resumo_saldo_realizado_ytd", exec.net.realizedYtd],
+    ["resumo_saldo_projetado_restante", exec.net.projectedRemaining],
+    ["resumo_estimativa_liquida_anual", exec.net.estimatedYearNet],
+  ];
+  for (const [tipo, valor] of summaryRows) {
+    lines.push(
+      [
+        csvEscape(tipo),
+        csvEscape(exec.metadata.year),
+        csvEscape(""),
+        csvEscape(valor),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+      ].join(",")
+    );
+  }
+
   lines.push(
     [
       csvEscape("conferencia_entradas"),
