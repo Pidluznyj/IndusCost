@@ -135,10 +135,13 @@ export const FINANCE_KPI_CF_ESTIMATED_AR_YEAR =
   "Estimativa total de entradas do ano: Recebido YTD + saldo em aberto a receber até 31/12. Fórmula: Recebido YTD + A receber até fim do ano." as const;
 
 export const FINANCE_KPI_CF_PAID_YTD =
-  "Soma dos valores pagos em Contas a Pagar no ano selecionado, usando paymentDate (ou settlementDate quando ausente). Fórmula: SUM(amountPaid) de 01/01 até a data de corte. Respeita filtros de empresa, fornecedor e demais filtros de AP." as const;
+  "Soma dos valores realizados em Contas a Pagar no ano selecionado, usando a data efetiva saneada (pagamento/liquidação; baixas sem numerário ou forçadas usam vencimento). Fórmula: SUM(realizedAmount) de 01/01 até a data de corte. Respeita filtros de empresa, fornecedor e demais filtros de AP." as const;
 
 export const FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END =
-  "Soma dos saldos em aberto (balancePayable) com vencimento entre hoje e 31/12 do ano selecionado. Fórmula: SUM(balancePayable) por dueDate. Não inclui títulos pagos." as const;
+  "Soma dos saldos em aberto saneados (openAmount) com vencimento entre hoje e 31/12 do ano selecionado. Fórmula: SUM(openAmount) por dueDate. Não inclui títulos baixados nem baixas especiais." as const;
+
+export const FINANCE_KPI_CF_PERIOD_OUTFLOW =
+  "Saídas do período filtrado, conforme modo e filtros aplicados. Fonte: Contas a Pagar com regra saneada (baixas sem numerário/forçadas posicionadas pelo vencimento)." as const;
 
 export const FINANCE_KPI_CF_ESTIMATED_AP_YEAR =
   "Estimativa total de saídas do ano: Pago YTD + saldo em aberto a pagar até 31/12. Fórmula: Pago YTD + A pagar até fim do ano." as const;
@@ -154,9 +157,6 @@ export const FINANCE_KPI_CF_ESTIMATED_YEAR_NET =
 
 export const FINANCE_KPI_CF_PERIOD_INFLOW =
   "Entradas do período filtrado (mês ou ano), conforme modo Previsto/Realizado/Combinado e filtros aplicados. Fonte: Contas a Receber." as const;
-
-export const FINANCE_KPI_CF_PERIOD_OUTFLOW =
-  "Saídas do período filtrado, conforme modo e filtros aplicados. Fonte: Contas a Pagar." as const;
 
 export const FINANCE_KPI_CF_PERIOD_NET =
   "Saldo líquido do período filtrado: Entradas − Saídas. Independente da visão anual/YTD acima." as const;

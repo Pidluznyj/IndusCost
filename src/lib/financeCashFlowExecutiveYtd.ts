@@ -8,6 +8,11 @@ import {
   classifyFinanceApTitle,
   isFinanceApOpen,
 } from "./financeAccountsPayableDashboard.js";
+import {
+  isFinanceApCancelledTitle,
+  resolveFinanceApOpenAmount,
+  resolveFinanceApRealizedAmount,
+} from "./financeAccountsPayableRules.js";
 import { formatFinanceCurrency } from "./financeAccountsReceivableFormat.js";
 import {
   filterFinanceArRows,
@@ -402,9 +407,10 @@ export function buildExecutiveYtdCarteiraTotals(
   let apPaid = 0;
   let apOpen = 0;
   for (const row of apRows) {
+    if (isFinanceApCancelledTitle(row)) continue;
     apTotal += row.amountPayable > 0 ? row.amountPayable : 0;
-    apPaid += row.amountPaid > 0 ? row.amountPaid : 0;
-    apOpen += row.balancePayable > 0 ? row.balancePayable : 0;
+    apPaid += resolveFinanceApRealizedAmount(row);
+    apOpen += resolveFinanceApOpenAmount(row);
   }
 
   return {
@@ -461,10 +467,12 @@ export function buildFinanceCashFlowExecutiveYtd(
   }
 
   for (const row of apRows) {
+    if (isFinanceApCancelledTitle(row)) continue;
     if (isFinanceApOpen(row)) {
-      totalPayableOpen += row.balancePayable;
+      const openAmount = resolveFinanceApOpenAmount(row);
+      totalPayableOpen += openAmount;
       if (classifyFinanceApTitle(row, referenceDate) === "overdue") {
-        overduePayable += row.balancePayable;
+        overduePayable += openAmount;
       }
     }
   }

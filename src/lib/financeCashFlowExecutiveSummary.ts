@@ -22,6 +22,11 @@ import {
   resolveYtdDateRange,
   sumArReceivedInPeriod,
 } from "./financeCashFlowExecutiveYtd.js";
+import {
+  resolveFinanceApEffectivePaymentDate,
+  resolveFinanceApOpenAmount,
+  resolveFinanceApRealizedAmount,
+} from "./financeAccountsPayableRules.js";
 
 export type FinanceCashFlowExecutiveSummaryMetadata = {
   year: number;
@@ -140,7 +145,7 @@ export function filterApRowsForYtdPaid(
 }
 
 export function resolveApPaymentDate(row: FinanceCashFlowApRow): Date | null {
-  return row.paymentDate ?? row.settlementDate ?? null;
+  return resolveFinanceApEffectivePaymentDate(row);
 }
 
 export function isApPaidInPeriod(
@@ -148,8 +153,9 @@ export function isApPaidInPeriod(
   startDate: Date,
   endDate: Date
 ): boolean {
-  if (row.amountPaid <= 0) return false;
-  const payDate = resolveApPaymentDate(row);
+  const realized = resolveFinanceApRealizedAmount(row);
+  if (realized <= 0) return false;
+  const payDate = resolveFinanceApEffectivePaymentDate(row);
   if (payDate == null) return false;
   const paid = startOfLocalDay(payDate).getTime();
   const start = startOfLocalDay(startDate).getTime();
@@ -165,7 +171,7 @@ export function sumApPaidInPeriod(
   let total = 0;
   for (const row of rows) {
     if (!isApPaidInPeriod(row, startDate, endDate)) continue;
-    total += row.amountPaid;
+    total += resolveFinanceApRealizedAmount(row);
   }
   return roundMoney(total);
 }
@@ -245,7 +251,7 @@ export function sumApOpenDueInPeriod(
   let total = 0;
   for (const row of rows) {
     if (!isApOpenDueInPeriod(row, startDate, endDate)) continue;
-    total += row.balancePayable;
+    total += resolveFinanceApOpenAmount(row);
   }
   return roundMoney(total);
 }

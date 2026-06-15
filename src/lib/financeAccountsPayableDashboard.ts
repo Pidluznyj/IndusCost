@@ -21,7 +21,17 @@ import {
   FINANCE_AP_COMPANY_SUMMARY_LIMIT,
   FINANCE_AP_SUPPLIER_RANKING_LIMIT,
 } from "./financeAccountsPayableDashboardTypes.js";
-import { buildFinanceApHorizonSummary } from "./financeHorizonAggregation.js";
+import {
+  buildFinanceApHorizonSummary,
+} from "./financeHorizonAggregation.js";
+import {
+  isFinanceApCancelledTitle,
+  isFinanceApOpenByRules,
+  isFinanceApSettledByRules,
+  resolveFinanceApEffectivePaymentDate,
+  resolveFinanceApOpenAmount,
+  resolveFinanceApRealizedAmount,
+} from "./financeAccountsPayableRules.js";
 
 export type FinanceApTitleStatus =
   | "open"
@@ -201,12 +211,12 @@ export function resolveFinanceApSupplierKey(
   return `id:${row.externalId}`;
 }
 
-export function isFinanceApOpen(row: Pick<FinanceApDashboardRow, "balancePayable">): boolean {
-  return row.balancePayable > 0;
+export function isFinanceApOpen(row: Pick<FinanceApDashboardRow, "balancePayable" | "suspendPayment" | "amountPayable" | "amountPaid" | "paymentDate" | "settlementDate" | "dueDate" | "paymentMethodName" | "description">): boolean {
+  return isFinanceApOpenByRules(row);
 }
 
-export function isFinanceApSettled(row: Pick<FinanceApDashboardRow, "balancePayable">): boolean {
-  return row.balancePayable <= 0;
+export function isFinanceApSettled(row: Pick<FinanceApDashboardRow, "balancePayable" | "amountPayable" | "amountPaid" | "paymentDate" | "settlementDate" | "dueDate" | "paymentMethodName" | "description">): boolean {
+  return isFinanceApSettledByRules(row);
 }
 
 /** Título com NF de origem vinculada no Nomus (`idNfe` ou `numeroNotaFiscalOrigem`). */
@@ -489,6 +499,7 @@ export function matchesFinanceApDashboardFilters(
   filters: FinanceApDashboardFilters,
   referenceDate: Date
 ): boolean {
+  if (isFinanceApCancelledTitle(row)) return false;
   const today = startOfLocalDay(referenceDate);
   const companyFilter = normalizeFilterText(filters.companyName);
   const personFilter = normalizeFilterText(filters.personName);
@@ -712,14 +723,21 @@ export function buildFinanceAccountsPayableDashboard(
   const dataQualityAcc = createFinanceApDataQualityAccumulator();
 
   for (const row of filteredRows) {
+    if (isFinanceApCancelledTitle(row)) continue;
     if (lastSyncAt == null || row.syncedAt > lastSyncAt) lastSyncAt = row.syncedAt;
 
     trackFinanceApDataQualityRow(dataQualityAcc, row, today);
     totalPayableAmount += row.amountPayable;
 
-    const paidAt = row.paymentDate ?? row.settlementDate;
-    if (paidAt && paidAt.getTime() >= monthStart.getTime() && paidAt.getTime() <= monthEnd.getTime()) {
-      paidThisMonthAmount += row.amountPaid;
+    const paidAt = resolveFinanceApEffectivePaymentDate(row);
+    const realized = resolveFinanceApRealizedAmount(row);
+    if (
+      paidAt &&
+      realized > 0 &&
+      paidAt.getTime() >= monthStart.getTime() &&
+      paidAt.getTime() <= monthEnd.getTime()
+    ) {
+      paidThisMonthAmount += realized;
       const companyName = row.companyName?.trim() || "Sem empresa";
       const company =
         companyAcc.get(companyName) ??
@@ -742,7 +760,7 @@ export function buildFinanceAccountsPayableDashboard(
         });
       companyAcc.set(companyName, {
         ...company,
-        paidThisMonthAmount: company.paidThisMonthAmount + row.amountPaid,
+        paidThisMonthAmount: company.paidThisMonthAmount + realized,
       });
     }
 
@@ -752,7 +770,7 @@ export function buildFinanceAccountsPayableDashboard(
     }
 
     openTitlesCount += 1;
-    const balance = row.balancePayable;
+    const balance = resolveFinanceApOpenAmount(row);
     totalOpenAmount += balance;
 
     const status = classifyFinanceApTitle(row, today);

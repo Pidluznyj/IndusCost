@@ -296,9 +296,9 @@ deltaOpenVsAp = cashFlowOpenPortfolio − apDashboardOpen
 |-------|---------------|
 | Entradas | `balanceReceivable` de títulos com `isFinanceArOpen`, não suspensos, valor > 0 |
 | Data | `dueDate` (ou `competenceDate` se `dateBase=issue`) |
-| Saídas | `balancePayable` aberto, não `suspendPayment` |
+| Saídas | `openAmount` saneado (`resolveFinanceApOpenAmount`), não `suspendPayment` |
 | Data AP | `dueDate` / competência |
-| Status excluídos | Liquidados (`balance <= 0`) não entram no previsto |
+| Status excluídos | Liquidados e baixas especiais não entram no previsto |
 | Vencidos | Entram com saldo em aberto; classificação `overdue` separada nos KPIs |
 | Sem data | Sem `dueDate` (previsto): **não entra no movimento do período** |
 | Zerados | `amount <= 0` ignorados |
@@ -310,9 +310,10 @@ deltaOpenVsAp = cashFlowOpenPortfolio − apDashboardOpen
 | Regra | Implementação |
 |-------|---------------|
 | Entradas | `amountReceived > 0` **e** `settlementDate != null` |
-| Saídas | `amountPaid > 0` **e** (`paymentDate` ou `settlementDate`) |
-| Data | Liquidação (UI força `dateBase=settlement`) |
-| Parciais | Valor recebido/pago integral do campo Nomus; saldo remanescente fica no previsto se ainda aberto |
+| Data AR | Liquidação (UI força `dateBase=settlement`) |
+| Saídas | `realizedAmount` saneado (`resolveFinanceApRealizedAmount`) com data efetiva (`resolveFinanceApEffectivePaymentDate`) |
+| Data AP | Pagamento/liquidação; **baixas sem numerário/forçadas usam `dueDate`** |
+| Parciais | Valor pago parcial em `realizedAmount`; saldo remanescente no previsto via `openAmount` |
 | Meses futuros | Série mensal com `null` (sem dados futuros) |
 
 ---
@@ -322,7 +323,7 @@ deltaOpenVsAp = cashFlowOpenPortfolio − apDashboardOpen
 | Regra | Implementação |
 |-------|---------------|
 | Fatias | `cashFlowViewModeSlices` → `["projected", "realized"]` |
-| Anti-duplicidade | Mesmo título: parte realizada soma em `amountReceived`/`amountPaid`; saldo aberto soma em `balance*` — não soma nominal duas vezes |
+| Anti-duplicidade | Mesmo título: parte realizada soma em `realizedAmount`; saldo aberto soma em `openAmount` — não soma nominal duas vezes |
 | Saldo período | Soma das duas fatias no bucket mensal |
 | Parcial | Pode aparecer nas duas fatias (recebido histórico + saldo futuro) |
 
@@ -366,7 +367,7 @@ Cenário stress                 = 60% / 30% + AP × 1,1
 ## 13. Regras de negócio
 
 1. Faturamento / NF-e de vendas **não** alimenta fluxo.
-2. Aberto = saldo > 0 (`balanceReceivable` / `balancePayable`).
+2. Aberto = saldo saneado (`openAmount` via `financeAccountsPayableRules.ts`).
 3. Cancelados/liquidados (saldo ≤ 0) não entram no **previsto**.
 4. Realizado exige data de liquidação preenchida.
 5. Previsto usa vencimento (default) ou competência.
@@ -379,6 +380,19 @@ Cenário stress                 = 60% / 30% + AP × 1,1
 12. YTD ignora filtro de mês.
 13. Sem saldo bancário inicial (`hasInitialBankBalance: false`).
 
+### Regra de Contas a Pagar no Fluxo de Caixa
+
+Fonte única: `src/lib/financeAccountsPayableRules.ts` (`normalizeAccountsPayableTitle`).
+
+| Situação | Data efetiva | Valor realizado | Em aberto |
+|----------|--------------|-----------------|-----------|
+| AP normal pago | `paymentDate` → `settlementDate` → `dueDate` | `amountPaid` (ou `amountPayable` se baixado sem valor pago) | 0 |
+| AP em aberto | `dueDate` (previsto) | 0 | `balancePayable` |
+| Baixa sem numerário / forçada | **`dueDate` obrigatoriamente** | `amountPaid > 0` ? `amountPaid` : `amountPayable` | 0 |
+| Cancelado (`CANCELLED`, `CANCELADO`, `ERROR`, …) | — | excluído das métricas | excluído |
+
+O Fluxo de Caixa (`financeCashFlowLedger.ts`, resumo executivo, YTD, CFO) consome os helpers `resolveFinanceApEffectivePaymentDate`, `resolveFinanceApRealizedAmount` e `resolveFinanceApOpenAmount` — mesma regra da tela Contas a Pagar.
+
 ---
 
 ## 14. Regras de saneamento
@@ -388,6 +402,7 @@ Cenário stress                 = 60% / 30% + AP × 1,1
 | Intercompany (Lazarios, Koppetel, SM) | `isFinanceInternalGroupPerson` |
 | Título fantasma AR | `isFinanceArGhostTitle` |
 | Agenda pedido compra AP | `isFinanceApPurchaseOrderAgenda` |
+| Baixa sem numerário / forçada AP | `normalizeAccountsPayableTitle` / `detectApSettlementKind` |
 | Pré-NF substituída | `deduplicateFinanceArRows` |
 | NaN/Infinity | `roundMoney`, `safeRatio`, `financeCashFlowMetricsAreFinite` |
 | Valores negativos em movimento | Ignorados se `amount <= 0` |
@@ -492,9 +507,9 @@ Cenário stress                 = 60% / 30% + AP × 1,1
 
 **UI:** `FinanceCashFlowPage.tsx`, `FinanceCashFlowCharts.tsx`, `FinanceCashFlowReconciliationPanel.tsx`, `FinanceCashFlowKpiCard.tsx`, `FinanceCashFlowCalendar.tsx`, `FinanceCashFlowCfoPanel.tsx`, `FinanceCashFlowYtdSummary.tsx`, `FinanceCashFlowRiskTab.tsx`, `FinanceCashFlowDetailTable.tsx`, `FinanceCashFlowScenarioChart.tsx`, `FinanceCashFlowCashNeedPanel.tsx`, `FinanceCashFlowRecommendations.tsx`, componentes `bi/*`.
 
-**Lib:** `financeCashFlowDashboard.ts`, `financeCashFlowDashboardTypes.ts`, `financeCashFlowLedger.ts`, `financeCashFlowRowFilters.ts`, `financeCashFlowForecast.ts`, `financeCashFlowCfoDiagnostics.ts`, `financeCashFlowExecutiveYtd.ts`, `financeCashFlowIntelligence.ts`, `financeCashFlowExport.ts`, `financeCashFlowRoutes.ts`, `financeCashFlowDisplay.ts`, `financeCrossModuleReconciliation.ts`, `financeAccountsReceivableDashboard.ts`, `financeAccountsPayableDashboard.ts`, `financeAccountsReceivableDeduplication.ts`, `financeInternalGroupExclusions.ts`, `financeFilterScope.ts`.
+**Lib:** `financeCashFlowDashboard.ts`, `financeCashFlowDashboardTypes.ts`, `financeCashFlowLedger.ts`, `financeAccountsPayableRules.ts`, `financeCashFlowRowFilters.ts`, `financeCashFlowForecast.ts`, `financeCashFlowCfoDiagnostics.ts`, `financeCashFlowExecutiveYtd.ts`, `financeCashFlowIntelligence.ts`, `financeCashFlowExport.ts`, `financeCashFlowRoutes.ts`, `financeCashFlowDisplay.ts`, `financeCrossModuleReconciliation.ts`, `financeAccountsReceivableDashboard.ts`, `financeAccountsPayableDashboard.ts`, `financeAccountsReceivableDeduplication.ts`, `financeInternalGroupExclusions.ts`, `financeFilterScope.ts`.
 
-**Testes:** `financeCashFlowDashboard.test.ts`, `financeCashFlowReconciliation.test.ts`, `financeCrossModuleReconciliation.test.ts`, `financeCashFlowForecast.test.ts`, `financeCashFlowCfoDiagnostics.test.ts`, `financeCashFlowExport.test.ts`, `financeCashFlowValidation.test.ts`, `financeCashFlowPageFilters.test.ts`.
+**Testes:** `financeAccountsPayableRules.test.ts`, `financeCashFlowDashboard.test.ts`, `financeCashFlowReconciliation.test.ts`, `financeCrossModuleReconciliation.test.ts`, `financeCashFlowForecast.test.ts`, `financeCashFlowCfoDiagnostics.test.ts`, `financeCashFlowExport.test.ts`, `financeCashFlowValidation.test.ts`, `financeCashFlowPageFilters.test.ts`.
 
 ### Pipeline de dados (resumo)
 

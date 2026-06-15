@@ -19,6 +19,7 @@ import type {
 } from "./financeCashFlowDashboard.js";
 import {
   cashFlowViewModeSlices,
+  resolveCashFlowApMovementDate,
   shouldIncludeCashFlowArMovement,
   shouldIncludeCashFlowApMovement,
 } from "./financeCashFlowLedger.js";
@@ -84,12 +85,7 @@ export function matchesCashFlowApPeriodScope(
   const modes = cashFlowViewModeSlices(filters.viewMode);
   for (const slice of modes) {
     if (!shouldIncludeCashFlowApMovement(row, slice)) continue;
-    const movementDate =
-      slice === "realized"
-        ? row.paymentDate ?? row.settlementDate
-        : filters.dateBase === "issue"
-          ? row.competenceDate ?? row.dueDate
-          : row.dueDate;
+    const movementDate = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
     if (dateInBounds(movementDate, from, toExclusive)) return true;
   }
   return false;

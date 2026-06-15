@@ -1,6 +1,6 @@
 import {
   classifyFinanceApTitle,
-  isFinanceApOpen,
+  isFinanceApSettled,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
 import { computeFinanceApDaysOverdue } from "./financeAccountsPayableOperational.js";
@@ -72,7 +72,7 @@ export function trackFinanceApDataQualityRow(
   referenceDate: Date
 ): void {
   const balance = row.balancePayable;
-  const open = isFinanceApOpen(row);
+  const hasOpenBalance = !isFinanceApSettled(row) && balance > 0;
 
   if (balance < 0) {
     bump(acc, "negativeBalance", Math.abs(balance));
@@ -81,10 +81,10 @@ export function trackFinanceApDataQualityRow(
     bump(acc, "paidGreaterThanPayable", row.amountPaid);
   }
   if (!row.paymentMethodName?.trim()) {
-    bump(acc, "missingPaymentMethod", open ? balance : 0);
+    bump(acc, "missingPaymentMethod", hasOpenBalance ? balance : 0);
   }
 
-  if (!open) return;
+  if (!hasOpenBalance) return;
 
   if (!row.personCnpj?.trim()) bump(acc, "missingPersonCnpj", balance);
   if (!row.dueDate) bump(acc, "missingDueDate", balance);
@@ -157,17 +157,21 @@ export function financeApDataQualityAlertsLegacy(
   };
 }
 
+function hasFinanceApQualityOpenBalance(row: FinanceApDashboardRow): boolean {
+  return !isFinanceApSettled(row) && row.balancePayable > 0;
+}
+
 export function rowMatchesFinanceApQualityAlert(
   row: FinanceApDashboardRow,
   alertKey: FinanceApDataQualityAlertKey,
   referenceDate: Date
 ): boolean {
-  const open = isFinanceApOpen(row);
+  const hasOpenBalance = hasFinanceApQualityOpenBalance(row);
   switch (alertKey) {
     case "missingPersonCnpj":
-      return open && !row.personCnpj?.trim();
+      return hasOpenBalance && !row.personCnpj?.trim();
     case "missingDueDate":
-      return open && !row.dueDate;
+      return hasOpenBalance && !row.dueDate;
     case "missingPaymentMethod":
       return !row.paymentMethodName?.trim();
     case "negativeBalance":
@@ -175,11 +179,11 @@ export function rowMatchesFinanceApQualityAlert(
     case "paidGreaterThanPayable":
       return row.amountPaid > row.amountPayable && row.amountPayable > 0;
     case "suspendedPaymentOpen":
-      return open && row.suspendPayment === true;
+      return hasOpenBalance && row.suspendPayment === true;
     case "overdueOver30Days":
     case "overdueOver60Days":
     case "overdueOver90Days": {
-      if (!open || !row.dueDate) return false;
+      if (!hasOpenBalance || !row.dueDate) return false;
       if (classifyFinanceApTitle(row, referenceDate) !== "overdue") return false;
       const days = computeFinanceApDaysOverdue(row, referenceDate);
       if (alertKey === "overdueOver30Days") return days > 30;

@@ -18,6 +18,10 @@ import {
   FinanceArFilterParseError,
 } from "./financeAccountsReceivableDashboard.js";
 import {
+  resolveFinanceApOpenAmount,
+  resolveFinanceApRealizedAmount,
+} from "./financeAccountsPayableRules.js";
+import {
   buildFinanceAccountsPayableDashboard,
   classifyFinanceApTitle,
   countFinanceApSanitizationInScope,
@@ -594,7 +598,8 @@ function buildCriticalMovements(
 
   for (const row of apRows) {
     const status = classifyFinanceApTitle(row, referenceDate);
-    if (isFinanceApOpen(row) && row.balancePayable > 0 && !row.suspendPayment) {
+    if (isFinanceApOpen(row) && resolveFinanceApOpenAmount(row) > 0 && !row.suspendPayment) {
+      const openAmount = resolveFinanceApOpenAmount(row);
       projectedOutflows.push({
         side: "outflow",
         externalId: row.externalId,
@@ -603,7 +608,7 @@ function buildCriticalMovements(
         personCnpj: row.personCnpj,
         dueDate: toIsoDate(row.dueDate),
         movementDate: toIsoDate(row.dueDate),
-        amount: row.balancePayable,
+        amount: openAmount,
         daysOverdue: status === "overdue" && row.dueDate
           ? Math.max(0, Math.floor((ref.getTime() - startOfLocalDay(row.dueDate).getTime()) / 86400000))
           : 0,
@@ -611,6 +616,7 @@ function buildCriticalMovements(
       });
     }
     if (status === "overdue" && isFinanceApOpen(row)) {
+      const openAmount = resolveFinanceApOpenAmount(row);
       overduePayables.push({
         side: "outflow",
         externalId: row.externalId,
@@ -619,7 +625,7 @@ function buildCriticalMovements(
         personCnpj: row.personCnpj,
         dueDate: toIsoDate(row.dueDate),
         movementDate: toIsoDate(row.dueDate),
-        amount: row.balancePayable,
+        amount: openAmount,
         daysOverdue: row.dueDate
           ? Math.max(0, Math.floor((ref.getTime() - startOfLocalDay(row.dueDate).getTime()) / 86400000))
           : 0,
@@ -720,15 +726,16 @@ export function buildFinanceCashFlowDashboard(
   for (const row of filteredAp) {
     if (lastSync == null || row.syncedAt > lastSync) lastSync = row.syncedAt;
     if (isFinanceApOpen(row)) {
-      totalPayableOpen += row.balancePayable;
+      const openAmount = resolveFinanceApOpenAmount(row);
+      totalPayableOpen += openAmount;
       supplierRows.push({
         key: resolveFinanceApSupplierKey(row),
         personName: row.personName,
         personCnpj: row.personCnpj,
-        amount: row.balancePayable,
+        amount: openAmount,
       });
       if (classifyFinanceApTitle(row, referenceDate) === "overdue") {
-        overduePayable += row.balancePayable;
+        overduePayable += openAmount;
       }
     }
   }
@@ -899,7 +906,7 @@ export function buildFinanceCashFlowDashboard(
   );
   const portfolio = computeCashFlowOpenPortfolioTotals(filteredAr, filteredAp);
   const apPaidInScope = filteredAp.reduce(
-    (sum, row) => sum + (row.amountPaid > 0 ? row.amountPaid : 0),
+    (sum, row) => sum + resolveFinanceApRealizedAmount(row),
     0
   );
   const openReceivableWithoutDueDate = filteredAr.filter(

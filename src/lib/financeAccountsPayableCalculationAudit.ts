@@ -15,6 +15,12 @@ import {
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
 import {
+  isFinanceApCancelledTitle,
+  resolveFinanceApEffectivePaymentDate,
+  resolveFinanceApOpenAmount,
+  resolveFinanceApRealizedAmount,
+} from "./financeAccountsPayableRules.js";
+import {
   computeFinanceApDaysOverdue,
   getAccountsPayableOperationalDueDate,
 } from "./financeAccountsPayableOperational.js";
@@ -81,14 +87,22 @@ export function computeFinanceApIndependentMetrics(
   const supplierAcc = new Map<string, number>();
 
   for (const row of filtered) {
-    const paidAt = row.paymentDate ?? row.settlementDate;
-    if (paidAt && paidAt.getTime() >= monthStart.getTime() && paidAt.getTime() <= monthEnd.getTime()) {
-      paidThisMonthAmount += row.amountPaid;
+    if (isFinanceApCancelledTitle(row)) continue;
+
+    const payAt = resolveFinanceApEffectivePaymentDate(row);
+    const realized = resolveFinanceApRealizedAmount(row);
+    if (
+      payAt &&
+      realized > 0 &&
+      payAt.getTime() >= monthStart.getTime() &&
+      payAt.getTime() <= monthEnd.getTime()
+    ) {
+      paidThisMonthAmount += realized;
     }
 
     if (isFinanceApSettled(row)) continue;
 
-    const balance = row.balancePayable;
+    const balance = resolveFinanceApOpenAmount(row);
     totalOpenAmount += balance;
     const status = classifyFinanceApTitle(row, today);
 
@@ -135,7 +149,7 @@ export function computeFinanceApIndependentMetrics(
         b.balancePayable - a.balancePayable
     )
     .slice(0, 20)
-    .reduce((sum, row) => sum + row.balancePayable, 0);
+    .reduce((sum, row) => sum + resolveFinanceApOpenAmount(row), 0);
 
   return {
     totalOpenAmount: roundMoney(totalOpenAmount),

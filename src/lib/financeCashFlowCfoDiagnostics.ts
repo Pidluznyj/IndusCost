@@ -4,7 +4,6 @@ import {
   roundMoney,
   startOfLocalDay,
 } from "./financeAccountsReceivableDashboard.js";
-import { isFinanceApOpen } from "./financeAccountsPayableDashboard.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -19,6 +18,8 @@ import {
   cashFlowViewModeSlices,
   resolveCashFlowArMovementDate,
   resolveCashFlowApMovementDate,
+  resolveCashFlowApAmount,
+  shouldIncludeCashFlowApMovement,
 } from "./financeCashFlowLedger.js";
 
 /** Limite de concentração (%) para alerta gerencial. */
@@ -272,19 +273,10 @@ function buildMovementBuckets(
       }
     }
     for (const row of apRows) {
-      if (slice === "projected") {
-        if (!isFinanceApOpen(row) || row.suspendPayment || row.balancePayable <= 0) continue;
-        const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
-        if (!date) continue;
-        add(dateKey(startOfLocalDay(date)), "outflow", row.balancePayable);
-      } else {
-        const payDate = row.paymentDate ?? row.settlementDate;
-        if (row.amountPaid > 0 && payDate) {
-          const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
-          if (!date) continue;
-          add(dateKey(startOfLocalDay(date)), "outflow", row.amountPaid);
-        }
-      }
+      if (!shouldIncludeCashFlowApMovement(row, slice)) continue;
+      const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
+      if (!date) continue;
+      add(dateKey(startOfLocalDay(date)), "outflow", resolveCashFlowApAmount(row, slice));
     }
   }
 

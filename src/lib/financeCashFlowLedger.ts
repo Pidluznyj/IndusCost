@@ -4,6 +4,13 @@
  */
 import { isFinanceArOpen, roundMoney } from "./financeAccountsReceivableDashboard.js";
 import { isFinanceApOpen } from "./financeAccountsPayableDashboard.js";
+import {
+  isFinanceApCancelledTitle,
+  resolveFinanceApEffectivePaymentDate,
+  resolveFinanceApOpenAmount,
+  resolveFinanceApRealizedAmount,
+  FINANCE_AP_CASH_FLOW_RULES_NOTE,
+} from "./financeAccountsPayableRules.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -41,7 +48,7 @@ export function resolveCashFlowApMovementDate(
   slice: CashFlowMovementSlice,
   dateBase: FinanceCashFlowDateBase
 ): Date | null {
-  if (slice === "realized") return row.paymentDate ?? row.settlementDate;
+  if (slice === "realized") return resolveFinanceApEffectivePaymentDate(row);
   if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
   return row.dueDate;
 }
@@ -63,9 +70,9 @@ export function resolveCashFlowApAmount(
 ): number {
   if (slice === "projected") {
     if (!isFinanceApOpen(row) || row.suspendPayment) return 0;
-    return row.balancePayable;
+    return resolveFinanceApOpenAmount(row);
   }
-  return row.amountPaid > 0 ? row.amountPaid : 0;
+  return resolveFinanceApRealizedAmount(row);
 }
 
 export function shouldIncludeCashFlowArMovement(
@@ -82,11 +89,13 @@ export function shouldIncludeCashFlowApMovement(
   row: FinanceCashFlowApRow,
   slice: CashFlowMovementSlice
 ): boolean {
+  if (isFinanceApCancelledTitle(row)) return false;
   if (slice === "projected") {
-    return isFinanceApOpen(row) && !row.suspendPayment && row.balancePayable > 0;
+    return isFinanceApOpen(row) && !row.suspendPayment && resolveFinanceApOpenAmount(row) > 0;
   }
-  const payDate = row.paymentDate ?? row.settlementDate;
-  return row.amountPaid > 0 && payDate != null;
+  const realized = resolveFinanceApRealizedAmount(row);
+  const payDate = resolveFinanceApEffectivePaymentDate(row);
+  return realized > 0 && payDate != null;
 }
 
 export type CashFlowPeriodBounds = {
@@ -187,7 +196,7 @@ export function computeCashFlowOpenPortfolioTotals(
   }
   for (const row of apRows) {
     if (isFinanceApOpen(row) && !row.suspendPayment) {
-      payableOpen += row.balancePayable;
+      payableOpen += resolveFinanceApOpenAmount(row);
     }
   }
 
@@ -270,6 +279,7 @@ export function buildCashFlowReconciliation(
     "Entradas = Contas a Receber (NomusAccountsReceivable). Saídas = Contas a Pagar (NomusAccountsPayable).",
     "Saldo líquido do período = entradas − saídas (valores financeiros, não quantidade de títulos).",
     `Modo ${viewModeLabel(filters.viewMode)}: previsto usa saldo em aberto e vencimento; realizado usa valor liquidado e data de baixa/pagamento.`,
+    FINANCE_AP_CASH_FLOW_RULES_NOTE,
     "Faturamento não alimenta este fluxo — apenas AR/AP saneados.",
   ];
 
