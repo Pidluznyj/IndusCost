@@ -5,7 +5,7 @@ import {
 } from "@/src/lib/projectsCalculations.js";
 import { buildProjectEngineeringTree, type ProjectEngineeringTreeNode } from "@/src/lib/projectsEngineeringTree.js";
 import {
-  applyBaselineDeltaRollup,
+  sumSimulatedRootProductCost,
   type EngineeringRollupLine,
 } from "@/src/lib/projectsEngineeringCostRollup.js";
 import type { ProjectSimulatedProductRow, ProjectStructureLineRow } from "@/src/types/projects.js";
@@ -44,6 +44,19 @@ export type ProjectStructureGroupingResult = {
 };
 
 export type RootProductMeta = { sku: string; name: string };
+
+/** IDs de produtos oficiais importados como raiz de snapshot no projeto. */
+export function collectSnapshotRootProductIds(
+  lines: ProjectStructureLineRow[]
+): string[] {
+  const ids = new Set<string>();
+  for (const line of lines) {
+    if (line.snapshotRootProductId) ids.add(line.snapshotRootProductId);
+    const snapshotMatch = line.notes?.match(/snapshot:([0-9a-f-]{36})/i);
+    if (snapshotMatch?.[1]) ids.add(snapshotMatch[1]);
+  }
+  return [...ids];
+}
 
 function lineBelongsToSnapshot(line: ProjectStructureLineRow, rootId: string): boolean {
   return (
@@ -191,22 +204,10 @@ function resolveRootMeta(
     };
   }
 
-  const topLevel = groupLines
-    .filter((l) => l.parentLineId == null)
-    .sort((a, b) => a.sortOrder - b.sortOrder)[0];
-  if (topLevel?.descriptionSnapshot.includes(" — ")) {
-    const [code, ...rest] = topLevel.descriptionSnapshot.split(" — ");
-    return {
-      rootCode: code,
-      rootDescription: rest.join(" — "),
-      simulatedProductId: topLevel.simulatedProductId,
-    };
-  }
-
   return {
     rootCode: rootId.slice(0, 8),
     rootDescription: "Produto importado",
-    simulatedProductId: topLevel?.simulatedProductId ?? null,
+    simulatedProductId: null,
   };
 }
 
@@ -234,10 +235,9 @@ export function buildProjectStructureSnapshotGroups(
   const snapshotGroups: ProjectStructureSnapshotGroup[] = [...snapshotRootIds].map((rootId) => {
     const groupLines = lines.filter((l) => lineBelongsToSnapshot(l, rootId));
     const rollupLines = groupLines.map(toRollupLine);
-    const rollup = applyBaselineDeltaRollup(rollupLines);
     const officialCost = sumOfficialRootCost(groupLines);
-    const simulatedCost = officialCost + rollup.totalProjectDelta;
-    const differenceAmount = rollup.totalProjectDelta;
+    const simulatedCost = sumSimulatedRootProductCost(rollupLines);
+    const differenceAmount = simulatedCost - officialCost;
     const differencePercent =
       officialCost > 0 ? sanitizeFinite((differenceAmount / officialCost) * 100) ?? 0 : 0;
 

@@ -139,6 +139,7 @@ function minimalDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
     },
     alerts: [],
     conversionAvailable: false,
+    snapshotRootProducts: {},
     ...overrides,
   };
 }
@@ -210,6 +211,91 @@ describe("projectsGuidedFlow", () => {
     const sim = items.find((i) => i.entityKind === "simulation_ref");
     assert.equal(sim?.origin, "FROM_SIMULATION");
     assert.equal(sim?.estimatedCost, 50);
+  });
+
+  it("produto oficial importado lista nome do produto pai, não matéria-prima da BOM", () => {
+    const rootId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const detail = minimalDetail({
+      structureLines: [
+        {
+          id: "mat-1",
+          simulatedProductId: null,
+          parentLineId: null,
+          level: 0,
+          treePath: null,
+          snapshotRootProductId: rootId,
+          lineType: "RAW_MATERIAL",
+          sourceType: "EXISTING_MATERIAL",
+          existingProductId: null,
+          existingMaterialId: "material-1",
+          simulatedItemId: null,
+          sourceOfficialBomId: "bom-1",
+          sourceOfficialRoutingId: null,
+          descriptionSnapshot: "115.01-- — *PP* Polipropileno H 503",
+          unitSnapshot: "KG",
+          quantity: 0.04,
+          lossPercent: 5,
+          officialQuantitySnapshot: 0.04,
+          officialLossPercentSnapshot: 5,
+          officialUnitCostSnapshot: 12,
+          unitCostSnapshot: 12,
+          totalCost: 0.5,
+          costSource: "OFFICIAL_COST_ANALYSIS",
+          isChangedFromOfficial: false,
+          isMissingCost: false,
+          countsInSimulatedProductCost: true,
+          supplierNameSnapshot: null,
+          notes: `snapshot:${rootId}`,
+          sortOrder: 0,
+        },
+        {
+          id: "mat-2",
+          simulatedProductId: null,
+          parentLineId: null,
+          level: 0,
+          treePath: null,
+          snapshotRootProductId: rootId,
+          lineType: "RAW_MATERIAL",
+          sourceType: "EXISTING_MATERIAL",
+          existingProductId: null,
+          existingMaterialId: "material-2",
+          simulatedItemId: null,
+          sourceOfficialBomId: "bom-2",
+          sourceOfficialRoutingId: null,
+          descriptionSnapshot: "121.16-- — MasterBatch Branco",
+          unitSnapshot: "KG",
+          quantity: 0.01,
+          lossPercent: 0,
+          officialQuantitySnapshot: 0.01,
+          officialLossPercentSnapshot: 0,
+          officialUnitCostSnapshot: 20,
+          unitCostSnapshot: 20,
+          totalCost: 0.2,
+          costSource: "OFFICIAL_COST_ANALYSIS",
+          isChangedFromOfficial: false,
+          isMissingCost: false,
+          countsInSimulatedProductCost: true,
+          supplierNameSnapshot: null,
+          notes: `snapshot:${rootId}`,
+          sortOrder: 1,
+        },
+      ],
+      snapshotRootProducts: {
+        [rootId]: {
+          sku: "310.01AA",
+          name: "Corpo Torneira EGM30 Branco",
+        },
+      },
+    });
+
+    const items = buildProjectGuidedItems(detail);
+    const imported = items.find((i) => i.snapshotRootProductId === rootId);
+    assert.ok(imported);
+    assert.equal(imported?.name, "Corpo Torneira EGM30 Branco");
+    assert.equal(imported?.code, "310.01AA");
+    assert.notEqual(imported?.name, "*PP* Polipropileno H 503");
+    assert.ok((imported?.estimatedCost ?? 0) > 0);
+    assert.equal(imported?.itemTypeLabel, "Produto oficial");
   });
 });
 

@@ -53,6 +53,7 @@ function minimalDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
     },
     alerts: [],
     conversionAvailable: false,
+    snapshotRootProducts: {},
     ...overrides,
   };
 }

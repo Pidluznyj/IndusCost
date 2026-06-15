@@ -21,6 +21,7 @@ import {
   type EngineeringRollupLine,
 } from "@/src/lib/projectsEngineeringCostRollup.js";
 import { computeSimulatedProductRefLineUpdate } from "@/src/lib/projectsSimulatedProductRefs.js";
+import { collectSnapshotRootProductIds } from "@/src/lib/projectsStructureSnapshotGroups.js";
 import type {
   ProjectAlert,
   ProjectCostBreakdown,
@@ -561,6 +562,24 @@ export async function serializeProjectListRow(
   };
 }
 
+async function loadSnapshotRootProductsMap(
+  structureLines: ProjectStructureLineRow[]
+): Promise<Record<string, { sku: string; name: string }>> {
+  const ids = collectSnapshotRootProductIds(structureLines);
+  if (ids.length === 0) return {};
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, sku: true, name: true },
+  });
+
+  const map: Record<string, { sku: string; name: string }> = {};
+  for (const product of products) {
+    map[product.id] = { sku: product.sku, name: product.name };
+  }
+  return map;
+}
+
 export async function loadProjectDetail(projectId: string): Promise<ProjectDetail | null> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -606,6 +625,8 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
     marginPercent: costBreakdown.targetMarginPercent,
   });
 
+  const snapshotRootProducts = await loadSnapshotRootProductsMap(structureLines);
+
   return {
     id: project.id,
     code: project.code,
@@ -629,6 +650,7 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
     simulatedItems,
     structureLines,
     molds,
+    snapshotRootProducts,
     costBreakdown,
     alerts,
     conversionAvailable: false,

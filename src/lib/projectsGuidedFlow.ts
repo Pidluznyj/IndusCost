@@ -171,6 +171,7 @@ function resolveStatus(
 function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
   const { snapshotGroups } = buildProjectStructureSnapshotGroups(detail.structureLines, {
     simulatedProducts: detail.simulatedProducts,
+    rootProducts: detail.snapshotRootProducts,
   });
 
   const rows: ProjectGuidedItemRow[] = [];
@@ -206,16 +207,16 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
     rows.push({
       id: group.groupKey,
       entityKind: "engineering_clone",
-      itemType: "COMPONENT",
-      itemTypeLabel: "Clone de engenharia",
+      itemType: "PRODUCT",
+      itemTypeLabel: "Produto oficial",
       code: group.rootCode,
       name: group.rootDescription,
       description: group.rootDescription,
       origin: "CLONED_FROM_OFFICIAL",
       originLabel: ORIGIN_LABEL.CLONED_FROM_OFFICIAL,
-      status: resolveStatus(detail.status, !group.hasMissingCost),
-      statusLabel: STATUS_LABEL[resolveStatus(detail.status, !group.hasMissingCost)],
-      estimatedCost: group.simulatedCost,
+      status: resolveStatus(detail.status, group.simulatedCost > 0),
+      statusLabel: STATUS_LABEL[resolveStatus(detail.status, group.simulatedCost > 0)],
+      estimatedCost: group.simulatedCost > 0 ? group.simulatedCost : null,
       costKind: "unit",
       updatedAt: detail.updatedAt,
       snapshotRootProductId: group.snapshotRootProductId,

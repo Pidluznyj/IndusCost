@@ -126,6 +126,36 @@ describe("projectsStructureSnapshotGroups", () => {
     assert.equal(primary.some((l) => l.id === "child-mat"), false);
   });
 
+  it("não usa primeira matéria-prima da BOM como nome do produto raiz", () => {
+    const lines = [
+      line({
+        id: "mat-1",
+        snapshotRootProductId: ROOT_A,
+        parentLineId: null,
+        lineType: "RAW_MATERIAL",
+        sourceType: "EXISTING_MATERIAL",
+        descriptionSnapshot: "115.01-- — *PP* Polipropileno H 503",
+        countsInSimulatedProductCost: true,
+        unitCostSnapshot: 12,
+        officialUnitCostSnapshot: 12,
+        quantity: 0.04,
+        lossPercent: 5,
+        totalCost: 0.5,
+      }),
+    ];
+
+    const withoutMeta = buildProjectStructureSnapshotGroups(lines).snapshotGroups[0]!;
+    assert.equal(withoutMeta.rootDescription, "Produto importado");
+    assert.notEqual(withoutMeta.rootDescription, "*PP* Polipropileno H 503");
+
+    const withMeta = buildProjectStructureSnapshotGroups(lines, {
+      rootProducts: { [ROOT_A]: { sku: "310.01AA", name: "Corpo Torneira EGM30 Branco" } },
+    }).snapshotGroups[0]!;
+    assert.equal(withMeta.rootCode, "310.01AA");
+    assert.equal(withMeta.rootDescription, "Corpo Torneira EGM30 Branco");
+    assert.ok(withMeta.simulatedCost > 0);
+  });
+
   it("agrupamento visual não altera total simulado do projeto", () => {
     const lines = [
       line({

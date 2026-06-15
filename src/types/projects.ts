@@ -211,6 +211,8 @@ export type ProjectDetail = {
   simulatedItems: ProjectSimulatedItemRow[];
   structureLines: ProjectStructureLineRow[];
   molds: ProjectMoldRow[];
+  /** SKU/nome dos produtos oficiais importados (chave = snapshotRootProductId). */
+  snapshotRootProducts: Record<string, { sku: string; name: string }>;
   costBreakdown: ProjectCostBreakdown;
   alerts: ProjectAlert[];
   conversionAvailable: false;
