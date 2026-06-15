@@ -1,5 +1,6 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { isCostAnalysisFailure } from "@/src/lib/productCostSnapshot.js";
+import { extractOfficialProductFinalUnitCost } from "./productOfficialFinalCost.js";
 import {
   computeOfficialBomLineTotal,
   projectUnitCostFromOfficialLineTotal,
@@ -431,9 +432,15 @@ export async function loadOfficialProductEngineeringSnapshot(
   if (resolver) {
     try {
       const analysis = await resolver(productId);
-      if (analysis && !isCostAnalysisFailure(analysis) && "totalIndustrialCost" in analysis) {
-        officialIndustrialCost = toFiniteNumber(analysis.totalIndustrialCost);
-        costAnalysisPartial = Boolean(analysis.costAnalysisPartial);
+      const officialUnit = extractOfficialProductFinalUnitCost(analysis);
+      if (officialUnit != null) {
+        officialIndustrialCost = toFiniteNumber(officialUnit);
+        costAnalysisPartial = Boolean(
+          analysis &&
+            typeof analysis === "object" &&
+            "costAnalysisPartial" in analysis &&
+            (analysis as { costAnalysisPartial?: boolean }).costAnalysisPartial
+        );
       }
     } catch {
       alerts.push("Não foi possível carregar custo industrial oficial.");

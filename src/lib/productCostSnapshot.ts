@@ -1,4 +1,5 @@
 import type { CurrentCostSnapshot } from "@/src/lib/nomusEffectiveBomCostImpact.js";
+import { resolveOfficialProductFinalCostFromAnalysis } from "./productOfficialFinalCost.js";
 
 /** Mesmo predicado usado em server.ts para falhas do motor getProductCostAnalysis. */
 export function isCostAnalysisFailure(x: unknown): x is { error: string; message?: string } {
@@ -32,6 +33,9 @@ export function buildCurrentCostSnapshotFromAnalysis(
 
   if (a.productId == null || a.sku == null) return null;
 
+  const resolved = resolveOfficialProductFinalCostFromAnalysis(analysis);
+  if (!resolved.ok) return null;
+
   const detailsMaterials = a.details?.materials;
 
   return {
@@ -40,8 +44,8 @@ export function buildCurrentCostSnapshotFromAnalysis(
     totalMaterialCost: Number(a.totalMaterialCost),
     totalHH_Unit: Number(a.totalHH_Unit),
     totalHM_Unit: Number(a.totalHM_Unit),
-    totalIndustrialCost: Number(a.totalIndustrialCost),
-    costAnalysisPartial: Boolean(a.costAnalysisPartial),
+    totalIndustrialCost: resolved.finalUnitCost,
+    costAnalysisPartial: resolved.costAnalysisPartial,
     materials: Array.isArray(detailsMaterials) ? detailsMaterials : undefined,
   };
 }

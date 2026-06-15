@@ -185,6 +185,12 @@ import {
 } from "./src/lib/nomusEffectiveBomCostImpact.js";
 import { buildCurrentCostSnapshotFromAnalysis } from "./src/lib/productCostSnapshot.js";
 import {
+  extractOfficialProductFinalUnitCost,
+  OFFICIAL_PRODUCT_FINAL_COST_SOURCE,
+  resolveOfficialProductFinalCostFromAnalysis,
+  isOfficialProductFinalCostFailure,
+} from "./src/lib/productOfficialFinalCost.js";
+import {
   clearReviewDecision,
   listReviewDecisionsForParentCode,
   saveReviewDecision,
@@ -3537,17 +3543,25 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               },
             };
           }
-          const ok = a as {
-            totalIndustrialCost: number;
-            costAnalysisPartial?: boolean;
-          };
+          const resolved = resolveOfficialProductFinalCostFromAnalysis(a);
+          if (isOfficialProductFinalCostFailure(resolved)) {
+            const diag = resolved.diagnostics[0];
+            return {
+              ...p,
+              costSummary: {
+                error: true as const,
+                code: diag?.code ?? "CUSTO_OFICIAL_NAO_CALCULADO",
+                message: diag?.message,
+              },
+            };
+          }
+          const ciu = resolved.finalUnitCost;
           return {
             ...p,
             costSummary: {
-              totalIndustrialCost: Number(ok.totalIndustrialCost),
-              partial: Boolean(ok.costAnalysisPartial),
-              /** Mesmo motor que GET /api/products/:id/cost-analysis (includeDetails=false no resumo). */
-              source: "cost-analysis-motor" as const,
+              totalIndustrialCost: ciu,
+              partial: resolved.costAnalysisPartial,
+              source: OFFICIAL_PRODUCT_FINAL_COST_SOURCE,
             },
           };
         })
@@ -6030,16 +6044,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             });
           }
 
-          const summaryData = (costData as any).summary || costData;
-          const custoFabril = Number(summaryData.costPerUnit || summaryData.totalIndustrialCost);
-          if (!Number.isFinite(custoFabril) || custoFabril <= 0) {
+          const custoFabril = extractOfficialProductFinalUnitCost(costData);
+          if (custoFabril == null || custoFabril <= 0) {
             summary.itemsSkipped += 1;
             summary.errors.push({
               code: "NO_COST_AVAILABLE",
               productId: product.id,
               sku: product.sku,
               productName: product.name,
-              frozenTotalCost: Number.isFinite(custoFabril) ? custoFabril : null,
+              frozenTotalCost: custoFabril,
               salePrice: null,
               message:
                 "Produto sem custo calculável (> 0). PriceTableItem não foi criado para evitar preço comercial inválido.",
@@ -6128,9 +6141,9 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
               sku: product.sku,
               productName: product.name,
               frozenTotalCost: custoFabril,
-              frozenMaterialCost: Number((costData as any).totalMaterialCost ?? summaryData.totalMaterialCost ?? 0),
-              frozenHhCost: Number((costData as any).totalHH_Unit ?? summaryData.totalHH_Unit ?? 0),
-              frozenHmCost: Number((costData as any).totalHM_Unit ?? summaryData.totalHM_Unit ?? 0),
+              frozenMaterialCost: Number((costData as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0),
+              frozenHhCost: Number((costData as { totalHH_Unit?: unknown }).totalHH_Unit ?? 0),
+              frozenHmCost: Number((costData as { totalHM_Unit?: unknown }).totalHM_Unit ?? 0),
               frozenTaxCost,
               frozenOtherCost,
               marginPct: defaultMarginPct,
@@ -6630,15 +6643,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             if (!costData || isCostAnalysisFailure(costData)) {
               return { ...pricing, suggestedPrice: null };
             }
-            const summary = (costData as any).summary || costData;
-            const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
+            const ciu = extractOfficialProductFinalUnitCost(costData);
+            if (ciu == null) {
+              return { ...pricing, suggestedPrice: null };
+            }
             const taxRate = pricing.TaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
             const commRate = Number(pricing.commission) / 100;
             const marginRate = Number(pricing.desiredMargin) / 100;
             const otherRate = Number(pricing.otherVariables) / 100;
             const freight = Number(pricing.freightOut);
             const divisor = 1 - taxRate - commRate - otherRate - marginRate;
-            if (!Number.isFinite(ciu) || divisor <= 0) {
+            if (divisor <= 0) {
               return { ...pricing, suggestedPrice: null };
             }
             return { ...pricing, suggestedPrice: (ciu + freight) / divisor };
@@ -6729,9 +6744,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
       if (!pricing) return res.status(404).json({ error: "Configuração de preço não encontrada" });
 
-      const summary = (costData as any).summary || costData;
-      const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
-      const opex = Number(summary.totalOPEX_Unit);
+      const ciu = extractOfficialProductFinalUnitCost(costData);
+      if (ciu == null) {
+        return res.status(400).json({ error: "Custo final da engenharia indisponível para o produto." });
+      }
+      const opex = Number((costData as { totalOPEX_Unit?: unknown }).totalOPEX_Unit);
     
     // Custo Fabril Completo = CIU (que já inclui CIF)
     const custoFabril = ciu;
@@ -6905,9 +6922,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         where: { productId_taxRuleId: { productId: String(productId), taxRuleId: String(taxRuleId) } },
       });
 
-      const summary = (costData as any).summary || costData;
-      const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
-      const opex = Number(summary.totalOPEX_Unit);
+      const ciu = extractOfficialProductFinalUnitCost(costData);
+      if (ciu == null) {
+        return res.status(400).json({ error: "Custo final da engenharia indisponível para o produto." });
+      }
+      const opex = Number((costData as { totalOPEX_Unit?: unknown }).totalOPEX_Unit);
       const custoFabril = ciu;
       const custoGerencial = ciu + opex;
 
@@ -7067,8 +7086,20 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             continue;
           }
 
-          const summary = (costData as any).summary || costData;
-          const ciu = Number(summary.costPerUnit || summary.totalIndustrialCost);
+          const ciu = extractOfficialProductFinalUnitCost(costData);
+          if (ciu == null) {
+            errorCount++;
+            const summary = (costData as { sku?: string; name?: string }) ?? {};
+            results.push({
+              productId: pid,
+              sku: summary.sku,
+              name: summary.name,
+              status: "ERROR",
+              message: "Custo final da engenharia indisponível.",
+            });
+            continue;
+          }
+          const summary = (costData as { sku?: string; name?: string }) ?? {};
           
           if (divisor <= 0) {
             errorCount++;
@@ -7166,8 +7197,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
       // Simular o retorno do endpoint de cálculo para manter compatibilidade
       const taxRateBase = pricing.TaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
-      const ciuBase = Number((baseData as any).totalIndustrialCost);
-      const opexBase = Number((baseData as any).totalOPEX_Unit);
+      const ciuBase = extractOfficialProductFinalUnitCost(baseData);
+      if (ciuBase == null) {
+        return res.status(400).json({ error: "Custo final da engenharia indisponível para o produto base." });
+      }
+      const opexBase = Number((baseData as { totalOPEX_Unit?: unknown }).totalOPEX_Unit);
       const freightBase = Number(pricing.freightOut);
       const commRateBase = Number(pricing.commission) / 100;
       const marginRateBase = Number(pricing.desiredMargin) / 100;
@@ -8876,6 +8910,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           totalGerencialCost: analysis.totalGerencialCost
         },
         calculationExplainability,
+        officialCostSource: OFFICIAL_PRODUCT_FINAL_COST_SOURCE,
         // O breakdown de materiais e operações agora vem direto dos details do motor
         audit: { calculatedAt: new Date().toISOString() },
         openBook,
@@ -8926,8 +8961,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const otherRate = Number(pricing?.otherVariables || 0) / 100;
       const freight = Number(pricing?.freightOut || 0);
 
+      const officialCost = resolveOfficialProductFinalCostFromAnalysis(analysis);
+      if (isOfficialProductFinalCostFailure(officialCost)) {
+        const diag = officialCost.diagnostics[0];
+        return res.status(400).json({
+          error: diag?.code ?? "CUSTO_OFICIAL_NAO_CALCULADO",
+          message: diag?.message,
+        });
+      }
+
       const divisor = 1 - taxRate - commRate - otherRate - marginRate;
-      const suggestedPrice = divisor > 0 ? (analysis.totalIndustrialCost + freight) / divisor : 0;
+      const suggestedPrice = divisor > 0 ? (officialCost.finalUnitCost + freight) / divisor : 0;
 
       const calculationExplainability = buildPricingSnapshotExplainability({
         analysis: analysis as any,
@@ -8942,14 +8986,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
       // marginPerc = premissa de margem desejada na formação de preço (compat.); preferir desiredMarginPremissaPct
       res.json({
-        unitCost: analysis.totalIndustrialCost,
+        unitCost: officialCost.finalUnitCost,
         suggestedPrice,
         taxesPerc: taxRate * 100,
         commissionPerc: commRate * 100,
         freightValue: freight,
         desiredMarginPremissaPct: marginRate * 100,
         marginPerc: marginRate * 100,
-        costBase: "CIU_MOTOR",
+        costBase: OFFICIAL_PRODUCT_FINAL_COST_SOURCE,
+        officialCostSource: officialCost.source,
+        costAnalysisPartial: officialCost.costAnalysisPartial,
         calculationExplainability,
       });
     } catch (error) {
@@ -10253,20 +10299,24 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         if (isCostAnalysisFailure(analysis)) {
           err = analysis.error;
         } else {
-          totalIndustrial = analysis.totalIndustrialCost;
-          const pricing = await prisma.productPricing.findFirst({
-            where: { productId: pid },
-            include: { TaxRule: { include: { TaxComponent: true } } },
-          });
-          if (pricing) {
-            const taxRate =
-              pricing.TaxRule?.TaxComponent?.reduce((acc, c) => acc + Number(c.percentage), 0) / 100 || 0;
-            const commRate = Number(pricing.commission) / 100;
-            const marginRate = Number(pricing.desiredMargin) / 100;
-            const otherRate = Number(pricing.otherVariables) / 100;
-            const freight = Number(pricing.freightOut);
-            const divisor = 1 - taxRate - commRate - otherRate - marginRate;
-            suggested = divisor > 0 ? (analysis.totalIndustrialCost + freight) / divisor : 0;
+          totalIndustrial = extractOfficialProductFinalUnitCost(analysis);
+          if (totalIndustrial != null) {
+            const pricing = await prisma.productPricing.findFirst({
+              where: { productId: pid },
+              include: { TaxRule: { include: { TaxComponent: true } } },
+            });
+            if (pricing) {
+              const taxRate =
+                pricing.TaxRule?.TaxComponent?.reduce((acc, c) => acc + Number(c.percentage), 0) / 100 || 0;
+              const commRate = Number(pricing.commission) / 100;
+              const marginRate = Number(pricing.desiredMargin) / 100;
+              const otherRate = Number(pricing.otherVariables) / 100;
+              const freight = Number(pricing.freightOut);
+              const divisor = 1 - taxRate - commRate - otherRate - marginRate;
+              suggested = divisor > 0 && totalIndustrial != null ? (totalIndustrial + freight) / divisor : 0;
+            }
+          } else {
+            err = "INVALID_COST_VALUE";
           }
         }
         const nw = negPriceByProduct.get(pid);

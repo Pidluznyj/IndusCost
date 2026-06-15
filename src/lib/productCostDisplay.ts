@@ -1,4 +1,5 @@
 import { formatAdaptiveCurrency } from "@/src/lib/proposalMaterialConsolidation";
+import { resolveOfficialProductFinalCostFromAnalysis } from "./productOfficialFinalCost.js";
 
 /** Mesmo motor que GET /api/products/:id/cost-analysis (ProductBOM salva). */
 export const PRODUCT_COST_MOTOR_HINT =
@@ -33,15 +34,10 @@ export type CostSummaryFromAnalysis = {
 
 /** Extrai CIU e flag parcial de GET /api/products/:id/cost-analysis. */
 export function costSummaryFromCostAnalysis(data: unknown): CostSummaryFromAnalysis | null {
-  if (!data || typeof data !== "object") return null;
-  if ("error" in (data as object)) return null;
-  const summary = (data as { summary?: { totalIndustrialCost?: unknown } }).summary;
-  const direct = (data as { totalIndustrialCost?: unknown }).totalIndustrialCost;
-  const raw = summary?.totalIndustrialCost ?? direct;
-  const total = Number(raw);
-  if (!Number.isFinite(total)) return null;
+  const resolved = resolveOfficialProductFinalCostFromAnalysis(data);
+  if (!resolved.ok) return null;
   return {
-    totalIndustrialCost: total,
-    partial: Boolean((data as { costAnalysisPartial?: boolean }).costAnalysisPartial),
+    totalIndustrialCost: resolved.finalUnitCost,
+    partial: resolved.costAnalysisPartial,
   };
 }

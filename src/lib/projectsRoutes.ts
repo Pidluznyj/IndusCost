@@ -33,6 +33,7 @@ import {
   setProjectsProductCostResolver,
   type ProjectsProductCostResolver,
 } from "@/src/lib/projectsProductCostResolver.js";
+import { extractOfficialProductFinalUnitCost } from "@/src/lib/productOfficialFinalCost.js";
 import { toFiniteNumber } from "@/src/lib/projectsCalculations.js";
 import {
   importProductEngineeringSnapshotToProject,
@@ -878,13 +879,9 @@ export function registerProjectsRoutes(
         if (resolver) {
           try {
             const analysis = await resolver(existingProduct.id);
-            if (
-              analysis &&
-              !("error" in analysis) &&
-              analysis.totalIndustrialCost != null &&
-              Number.isFinite(Number(analysis.totalIndustrialCost))
-            ) {
-              unitCostOverride = toFiniteNumber(analysis.totalIndustrialCost);
+            const officialUnit = extractOfficialProductFinalUnitCost(analysis);
+            if (officialUnit != null && officialUnit > 0) {
+              unitCostOverride = toFiniteNumber(officialUnit);
             }
           } catch {
             /* custo oficial indisponível — linha seguirá com isMissingCost */

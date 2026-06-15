@@ -17,6 +17,8 @@
  *  - Mensagens de UI fixas para evitar variação acidental.
  */
 
+import { resolveOfficialProductFinalCostFromAnalysis } from "./productOfficialFinalCost.js";
+
 export type CostSummaryViewKind =
   | "idle"
   | "loading"
@@ -147,15 +149,10 @@ export function buildProductCostSummaryView(input: CostSummaryInput): CostSummar
 export function pickCostSummaryFromAnalysis(
   data: unknown
 ): CostSummaryInput["cost"] {
-  if (!data || typeof data !== "object") return null;
-  if ("error" in (data as object)) return null;
-  const o = data as {
-    summary?: { totalIndustrialCost?: unknown };
-    totalIndustrialCost?: unknown;
-    costAnalysisPartial?: boolean;
+  const resolved = resolveOfficialProductFinalCostFromAnalysis(data);
+  if (!resolved.ok) return null;
+  return {
+    totalIndustrialCost: resolved.finalUnitCost,
+    partial: resolved.costAnalysisPartial,
   };
-  const raw = o.summary?.totalIndustrialCost ?? o.totalIndustrialCost;
-  const total = safeFinite(raw);
-  if (total == null) return null;
-  return { totalIndustrialCost: total, partial: Boolean(o.costAnalysisPartial) };
 }
