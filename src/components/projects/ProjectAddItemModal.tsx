@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Beaker, Box, Loader2, Package, Puzzle } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { PROJECT_GUIDED_MASTER_NOTICE } from "@/src/lib/projectsGuidedFlow";
+import type { ProjectSimulationLookupRow } from "@/src/lib/projectsSimulationLookup";
 import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
 
 export type ProjectAddItemKind =
@@ -11,13 +12,7 @@ export type ProjectAddItemKind =
 
 type ProductLookupRow = { id: string; sku: string; name: string };
 
-type SimulationLookupRow = {
-  id: string;
-  name: string;
-  productName: string;
-  productSku: string | null;
-  unitCost: number | null;
-};
+type SimulationLookupRow = ProjectSimulationLookupRow;
 
 type Props = {
   open: boolean;
@@ -77,6 +72,7 @@ export function ProjectAddItemModal({
   const [selectedProductId, setSelectedProductId] = useState("");
   const [selectedSimulationId, setSelectedSimulationId] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -88,6 +84,7 @@ export function ProjectAddItemModal({
     setSelectedProductId("");
     setSelectedSimulationId("");
     setLocalError(null);
+    setSearchError(null);
   }, [open]);
 
   useEffect(() => {
@@ -96,10 +93,12 @@ export function ProjectAddItemModal({
     if (q.length < 2) {
       setProductRows([]);
       setSimulationRows([]);
+      setSearchError(null);
       return;
     }
     const timer = window.setTimeout(async () => {
       setSearching(true);
+      setSearchError(null);
       try {
         if (kind === "SIMULATION") {
           const res = await fetchJsonOk<{ rows: SimulationLookupRow[] }>(
@@ -112,9 +111,10 @@ export function ProjectAddItemModal({
           );
           setProductRows(res.rows ?? []);
         }
-      } catch {
+      } catch (e) {
         setProductRows([]);
         setSimulationRows([]);
+        setSearchError(e instanceof Error ? e.message : "Erro ao buscar itens.");
       } finally {
         setSearching(false);
       }
@@ -149,6 +149,11 @@ export function ProjectAddItemModal({
       } else if (kind === "SIMULATION") {
         if (!selectedSimulationId) {
           setLocalError("Selecione uma simulação.");
+          return;
+        }
+        const selected = simulationRows.find((row) => row.id === selectedSimulationId);
+        if (selected && !selected.selectable) {
+          setLocalError(selected.selectionBlockedReason ?? "Esta simulação não pode ser adicionada.");
           return;
         }
         await fetchJsonOk(`/api/projects/${projectId}/simulation-references`, {
@@ -233,25 +238,60 @@ export function ProjectAddItemModal({
 
           {kind === "SIMULATION" ? (
             <ul className="max-h-64 space-y-1 overflow-y-auto rounded-lg border">
-              {simulationRows.length === 0 && search.trim().length >= 2 ? (
-                <li className="px-3 py-4 text-sm text-muted-foreground">Nenhuma simulação encontrada.</li>
+              {searchError ? (
+                <li className="px-3 py-4 text-sm text-destructive">{searchError}</li>
+              ) : null}
+              {!searchError && simulationRows.length === 0 && search.trim().length >= 2 && !searching ? (
+                <li className="px-3 py-4 text-sm text-muted-foreground">
+                  Nenhuma simulação encontrada. Verifique o nome salvo em Simulações → Simular novo
+                  produto.
+                </li>
               ) : null}
               {simulationRows.map((row) => (
                 <li key={row.id}>
                   <button
                     type="button"
-                    className={`flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-muted/50 ${
-                      selectedSimulationId === row.id ? "bg-primary/10" : ""
-                    }`}
-                    onClick={() => setSelectedSimulationId(row.id)}
+                    disabled={!row.selectable}
+                    className={`flex w-full flex-col px-3 py-2 text-left text-sm ${
+                      row.selectable ? "hover:bg-muted/50" : "cursor-not-allowed opacity-70"
+                    } ${selectedSimulationId === row.id ? "bg-primary/10" : ""}`}
+                    onClick={() => {
+                      if (!row.selectable) {
+                        setLocalError(row.selectionBlockedReason);
+                        return;
+                      }
+                      setLocalError(null);
+                      setSelectedSimulationId(row.id);
+                    }}
                   >
-                    <span className="font-medium">{row.productName}</span>
-                    <span className="text-muted-foreground">
-                      {row.name}
-                      {row.productSku ? ` · ${row.productSku}` : ""}
-                      {" · "}
-                      {formatMoney(row.unitCost)}
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{row.name}</span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                          row.status === "SAVED"
+                            ? "bg-emerald-500/15 text-emerald-800"
+                            : "bg-blue-500/15 text-blue-800"
+                        }`}
+                      >
+                        {row.statusLabel}
+                      </span>
                     </span>
+                    <span className="text-muted-foreground">
+                      Produto: {row.productName}
+                      {row.productSku ? ` · ${row.productSku}` : ""}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Custo industrial: {formatMoney(row.unitCost)}
+                      {row.margin != null ? ` · Margem: ${row.margin.toFixed(1)}%` : ""}
+                    </span>
+                    {!row.selectable && row.selectionBlockedReason ? (
+                      <span className="mt-1 text-xs text-amber-800">{row.selectionBlockedReason}</span>
+                    ) : null}
+                    {row.missingCost && row.status === "SAVED" ? (
+                      <span className="mt-1 text-xs text-amber-800">
+                        Simulação sem custo calculado no snapshot.
+                      </span>
+                    ) : null}
                   </button>
                 </li>
               ))}

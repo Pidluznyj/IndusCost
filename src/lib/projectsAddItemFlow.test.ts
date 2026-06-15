@@ -146,6 +146,18 @@ describe("projectsAddItemFlow", () => {
     assert.match(modal, /Produto simulado/);
     assert.match(modal, /simulation-references/);
     assert.match(modal, /import-product-snapshot/);
+    assert.match(modal, /statusLabel/);
+    assert.match(modal, /selectable/);
+  });
+
+  it("lookup usa mesma tabela NewProductSimulation sem filtrar só SAVED no serviço", () => {
+    const service = readFileSync(
+      join(process.cwd(), "src", "lib", "projectsSimulationItemService.ts"),
+      "utf8"
+    );
+    assert.match(service, /newProductSimulation\.findMany/);
+    assert.equal(service.includes('status: "SAVED"'), false);
+    assert.match(service, /filterAndSerializeSimulationLookupRows/);
   });
 
   it("rotas expõem lookup e referência de simulação", () => {

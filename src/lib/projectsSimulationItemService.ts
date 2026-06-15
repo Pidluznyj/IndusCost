@@ -1,4 +1,10 @@
 import { prisma } from "@/src/lib/prisma";
+import { persistedStatusFromApiRecord } from "@/src/lib/newProductSimulationSnapshot";
+import {
+  buildSimulationLookupPrismaWhere,
+  filterAndSerializeSimulationLookupRows,
+  type ProjectSimulationLookupRow,
+} from "@/src/lib/projectsSimulationLookup";
 import {
   buildSimulationRefNotes,
   GUIDED_SIMULATION_ID_PREFIX,
@@ -8,53 +14,33 @@ import {
 } from "@/src/lib/projectsSimulationRefs";
 import { recalculateAndPersistVersionCosts, serializeSimulatedItem } from "@/src/lib/projectsService";
 
-export type ProjectSimulationLookupRow = {
-  id: string;
-  name: string;
-  productName: string;
-  productSku: string | null;
-  status: string;
-  savedAt: string | null;
-  unitCost: number | null;
-};
+export type { ProjectSimulationLookupRow };
+
+const SIMULATION_LOOKUP_TAKE = 100;
 
 export async function lookupProjectSimulations(query: string): Promise<ProjectSimulationLookupRow[]> {
   const q = query.trim();
+  if (q.length < 2) return [];
+
   const rows = await prisma.newProductSimulation.findMany({
-    where: {
-      status: "SAVED",
-      ...(q.length >= 2
-        ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { productName: { contains: q, mode: "insensitive" } },
-              { productSku: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: { savedAt: "desc" },
-    take: 30,
+    where: buildSimulationLookupPrismaWhere(q),
+    orderBy: [{ savedAt: "desc" }, { updatedAt: "desc" }, { createdAt: "desc" }],
+    take: SIMULATION_LOOKUP_TAKE,
     select: {
       id: true,
       name: true,
       productName: true,
       productSku: true,
       status: true,
+      notes: true,
       savedAt: true,
+      createdAt: true,
+      updatedAt: true,
       snapshot: true,
     },
   });
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    productName: row.productName,
-    productSku: row.productSku,
-    status: row.status,
-    savedAt: row.savedAt?.toISOString() ?? null,
-    unitCost: resolveSimulationSnapshotUnitCost(row.snapshot),
-  }));
+  return filterAndSerializeSimulationLookupRows(rows, q);
 }
 
 export async function addSimulationReferenceToProject(input: {
@@ -66,8 +52,15 @@ export async function addSimulationReferenceToProject(input: {
   const simulation = await prisma.newProductSimulation.findUnique({
     where: { id: input.simulationId },
   });
-  if (!simulation || simulation.status !== "SAVED") {
-    throw new Error("Simulação não encontrada ou não está salva.");
+  if (!simulation) {
+    throw new Error("Simulação não encontrada.");
+  }
+
+  const effectiveStatus = persistedStatusFromApiRecord(simulation);
+  if (effectiveStatus !== "SAVED") {
+    throw new Error(
+      "Somente simulações salvas podem ser adicionadas ao projeto. Salve o snapshot em Simulações antes de continuar."
+    );
   }
 
   const unitCost = resolveSimulationSnapshotUnitCost(simulation.snapshot);
