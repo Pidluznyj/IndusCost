@@ -345,36 +345,78 @@ export function ProjectExecutiveReport({ report }: Props) {
           {economicAnalysis.pending ? (
             <p className="text-sm text-slate-700">{economicAnalysis.message}</p>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <SummaryCard
-                label="Custo final unitário"
-                value={formatExecutiveReportMoney(economicAnalysis.finalUnitCost)}
-              />
-              <SummaryCard
-                label="Preço sugerido"
-                value={formatExecutiveReportMoney(economicAnalysis.suggestedPrice)}
-              />
-              <SummaryCard
-                label="Margem estimada"
-                value={formatExecutiveReportPercent(economicAnalysis.estimatedMarginPercent)}
-              />
-              <SummaryCard
-                label="Receita estimada"
-                value={formatExecutiveReportMoney(economicAnalysis.estimatedRevenue)}
-              />
-              <SummaryCard
-                label="Lucro bruto estimado"
-                value={formatExecutiveReportMoney(economicAnalysis.estimatedGrossProfit)}
-              />
-              <SummaryCard
-                label="Quantidade base de amortização"
-                value={
-                  economicAnalysis.amortizationBaseQuantity != null
-                    ? economicAnalysis.amortizationBaseQuantity.toLocaleString("pt-BR")
-                    : "—"
-                }
-              />
-            </div>
+            <>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <SummaryCard
+                  label="Custo final unitário"
+                  value={formatExecutiveReportMoney(economicAnalysis.finalUnitCost)}
+                />
+                <SummaryCard
+                  label="Preço sugerido"
+                  value={formatExecutiveReportMoney(economicAnalysis.suggestedPrice)}
+                />
+                <SummaryCard
+                  label="Regra fiscal"
+                  value={economicAnalysis.fiscalRuleName ?? "—"}
+                />
+                <SummaryCard
+                  label="Impostos %"
+                  value={formatExecutiveReportPercent(economicAnalysis.taxPercent)}
+                />
+                <SummaryCard
+                  label="Valor impostos"
+                  value={formatExecutiveReportMoney(economicAnalysis.taxAmount)}
+                />
+                <SummaryCard
+                  label="Margem desejada"
+                  value={formatExecutiveReportPercent(economicAnalysis.estimatedMarginPercent)}
+                />
+                <SummaryCard
+                  label="Valor margem"
+                  value={formatExecutiveReportMoney(economicAnalysis.marginAmount)}
+                />
+                <SummaryCard
+                  label="Receita estimada"
+                  value={formatExecutiveReportMoney(economicAnalysis.estimatedRevenue)}
+                />
+                <SummaryCard
+                  label="Lucro bruto estimado"
+                  value={formatExecutiveReportMoney(economicAnalysis.estimatedGrossProfit)}
+                />
+              </div>
+              {economicAnalysis.pricingItems.length > 0 ? (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="project-executive-report-table w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left">
+                        <th className="px-2 py-2">Item</th>
+                        <th className="px-2 py-2">Custo final</th>
+                        <th className="px-2 py-2">Preço sugerido</th>
+                        <th className="px-2 py-2">Impostos %</th>
+                        <th className="px-2 py-2">Margem %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {economicAnalysis.pricingItems.map((item) => (
+                        <tr key={item.displayName} className="border-b border-slate-100">
+                          <td className="px-2 py-2">{item.displayName}</td>
+                          <td className="px-2 py-2">
+                            {formatExecutiveReportMoney(item.finalUnitCost)}
+                          </td>
+                          <td className="px-2 py-2">
+                            {formatExecutiveReportMoney(item.suggestedPrice)}
+                          </td>
+                          <td className="px-2 py-2">{formatExecutiveReportPercent(item.taxPercent)}</td>
+                          <td className="px-2 py-2">
+                            {formatExecutiveReportPercent(item.targetMarginPercent)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </>
           )}
         </Section>
 

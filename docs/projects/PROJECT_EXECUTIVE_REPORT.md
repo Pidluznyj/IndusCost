@@ -81,8 +81,10 @@ Testes automatizados: `npm run test:projects` (`projectsExecutiveReport.test.ts`
 
 - Anexo técnico desabilitado (próxima versão)
 - Sem geração de PDF no backend
-- Resultado comercial depende de `costBreakdown.suggestedPrice`; se ausente, exibe análise pendente
+- Resultado comercial usa precificação salva em `ProjectPricingItem`; se ausente, exibe análise pendente
 - Custo total do projeto segue visão legada do fluxo guiado (`unitCost + moldes + outros custos`)
+
+Ver também: [PROJECT_PRICING.md](./PROJECT_PRICING.md)
 
 ## Arquivos principais
 

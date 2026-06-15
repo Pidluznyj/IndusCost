@@ -168,6 +168,20 @@ export type ProjectExecutiveReportPayload = {
     estimatedRevenue: number | null;
     estimatedGrossProfit: number | null;
     amortizationBaseQuantity: number | null;
+    fiscalRuleName: string | null;
+    taxPercent: number | null;
+    taxAmount: number | null;
+    marginAmount: number | null;
+    pricingItems: Array<{
+      displayName: string;
+      finalUnitCost: number;
+      suggestedPrice: number;
+      taxPercent: number;
+      targetMarginPercent: number;
+      taxAmount: number | null;
+      marginAmount: number | null;
+      fiscalRuleName: string | null;
+    }>;
   };
   risks: {
     technicalRisks: string[];
@@ -442,7 +456,13 @@ export function buildProjectExecutiveReport(
     });
   }
   const suggestedPrice = detail.costBreakdown.suggestedPrice;
-  if (suggestedPrice == null || !Number.isFinite(suggestedPrice) || suggestedPrice <= 0) {
+  const savedPricing = detail.projectPricing;
+  const pricingPrimary =
+    savedPricing?.items.find((item) => item.suggestedPrice != null && item.suggestedPrice > 0) ??
+    null;
+  const hasSavedProjectPricing = savedPricing?.hasSavedPricing === true;
+
+  if (!hasSavedProjectPricing && (suggestedPrice == null || !Number.isFinite(suggestedPrice) || suggestedPrice <= 0)) {
     alerts.push({
       code: "PRICE_MARGIN_UNDEFINED",
       message: "Preço/margem não definidos.",
@@ -469,17 +489,28 @@ export function buildProjectExecutiveReport(
     summary.totalAbsorbedAmount
   )} absorvidos internamente pela empresa.`;
 
-  const finalUnitCost = summary.finalItemsUnitCostWithAmortization;
-  const economicPending =
-    suggestedPrice == null || !Number.isFinite(suggestedPrice) || suggestedPrice <= 0;
-  const estimatedMarginPercent =
-    !economicPending && Number.isFinite(finalUnitCost)
-      ? roundProjectMoney(((suggestedPrice! - finalUnitCost) / suggestedPrice!) * 100)
-      : null;
+  const finalUnitCost = pricingPrimary?.finalUnitCost ?? summary.finalItemsUnitCostWithAmortization;
+  const economicPending = !hasSavedProjectPricing;
+  const reportSuggestedPrice = pricingPrimary?.suggestedPrice ?? null;
+  const estimatedMarginPercent = pricingPrimary?.targetMarginPercent ?? null;
   const amortizationBaseQuantity =
     amortizationMemory.length > 0
       ? Math.max(...amortizationMemory.map((row) => row.amortizationQuantity))
       : null;
+
+  const pricingItems =
+    savedPricing?.items
+      .filter((item) => item.suggestedPrice != null && item.suggestedPrice > 0)
+      .map((item) => ({
+        displayName: item.displayName,
+        finalUnitCost: item.finalUnitCost,
+        suggestedPrice: item.suggestedPrice!,
+        taxPercent: item.taxPercent,
+        targetMarginPercent: item.targetMarginPercent,
+        taxAmount: item.taxAmount,
+        marginAmount: item.marginAmount,
+        fiscalRuleName: item.fiscalRuleName,
+      })) ?? [];
 
   const versionLabel = detail.currentVersion
     ? `v${detail.currentVersion.versionNumber}`
@@ -534,17 +565,24 @@ export function buildProjectExecutiveReport(
       pending: economicPending,
       message: "Análise comercial pendente de definição de preço e margem.",
       finalUnitCost: Number.isFinite(finalUnitCost) ? finalUnitCost : null,
-      suggestedPrice: economicPending ? null : suggestedPrice,
+      suggestedPrice: reportSuggestedPrice,
       estimatedMarginPercent,
       estimatedRevenue:
-        !economicPending && amortizationBaseQuantity
-          ? roundProjectMoney(suggestedPrice! * amortizationBaseQuantity)
+        reportSuggestedPrice != null && amortizationBaseQuantity
+          ? roundProjectMoney(reportSuggestedPrice * amortizationBaseQuantity)
           : null,
       estimatedGrossProfit:
-        !economicPending && amortizationBaseQuantity && Number.isFinite(finalUnitCost)
-          ? roundProjectMoney((suggestedPrice! - finalUnitCost) * amortizationBaseQuantity)
+        reportSuggestedPrice != null &&
+        amortizationBaseQuantity &&
+        Number.isFinite(finalUnitCost)
+          ? roundProjectMoney((reportSuggestedPrice - finalUnitCost) * amortizationBaseQuantity)
           : null,
       amortizationBaseQuantity,
+      fiscalRuleName: pricingPrimary?.fiscalRuleName ?? null,
+      taxPercent: pricingPrimary?.taxPercent ?? null,
+      taxAmount: pricingPrimary?.taxAmount ?? null,
+      marginAmount: pricingPrimary?.marginAmount ?? null,
+      pricingItems,
     },
     risks: {
       technicalRisks: detail.alerts

@@ -3,6 +3,7 @@ import { AlertTriangle, Settings2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { ProjectCostAmortizationModal } from "@/src/components/projects/ProjectCostAmortizationModal";
 import { ProjectExecutiveReportButton } from "@/src/components/projects/ProjectExecutiveReportButton";
+import { ProjectPricingSection } from "@/src/components/projects/ProjectPricingSection";
 import { buildProjectStructureSnapshotGroups } from "@/src/lib/projectsStructureSnapshotGroups";
 import { computeProjectGuidedCosts } from "@/src/lib/projectsGuidedFlow";
 import {
@@ -300,6 +301,13 @@ export function ProjectGuidedCostsTab({
           </div>
         </div>
       ) : null}
+
+      <ProjectPricingSection
+        detail={detail}
+        projectId={projectId}
+        canManage={canManage}
+        onDetailRefresh={onDetailRefresh}
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <StatCard label="Custo MP (unitário)" value={formatMoney(cost.rawMaterialCost)} />

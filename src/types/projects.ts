@@ -284,6 +284,43 @@ export type ProjectDetail = {
   conversionAvailable: false;
   costAmortizations?: ProjectCostAmortizationSavedRow[];
   costAmortizationSummary?: ProjectCostAmortizationSummaryView;
+  projectPricing?: ProjectPricingView;
+};
+
+export type ProjectPricingTaxRuleOption = {
+  id: string;
+  name: string;
+  description: string | null;
+  taxPercent: number;
+};
+
+export type ProjectPricingItemView = {
+  targetItemId: string;
+  targetItemType: "OFFICIAL_PRODUCT" | "OFFICIAL_COMPONENT" | "SIMULATION" | "LEGACY";
+  displayName: string;
+  costBaseUnit: number;
+  amortizationUnitCost: number;
+  finalUnitCost: number;
+  fiscalRuleId: string | null;
+  fiscalRuleName: string | null;
+  taxPercent: number;
+  targetMarginPercent: number;
+  suggestedPrice: number | null;
+  taxAmount: number | null;
+  marginAmount: number | null;
+  status: string;
+  statusLabel: string;
+  errorMessage: string | null;
+};
+
+export type ProjectPricingView = {
+  config: {
+    fiscalRuleId: string | null;
+    defaultMarginPercent: number | null;
+  };
+  items: ProjectPricingItemView[];
+  taxRules: ProjectPricingTaxRuleOption[];
+  hasSavedPricing: boolean;
 };
 
 export type ProjectDashboardPayload = {

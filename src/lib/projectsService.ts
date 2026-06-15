@@ -663,7 +663,19 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
   };
 
   const costAmortizations = await loadProjectCostAmortizations(projectId);
-  return enrichProjectDetailWithAmortization(baseDetail, costAmortizations);
+  const withAmortization = enrichProjectDetailWithAmortization(baseDetail, costAmortizations);
+  return enrichProjectDetailWithPricing(withAmortization);
+}
+
+export async function enrichProjectDetailWithPricing(
+  detail: ProjectDetail
+): Promise<ProjectDetail> {
+  const { loadProjectPricingPayload } = await import("./projectsPricingService.js");
+  const pricing = await loadProjectPricingPayload(detail.id, detail);
+  return {
+    ...detail,
+    projectPricing: pricing.view,
+  };
 }
 
 export async function createProjectWithVersion(data: {

@@ -85,6 +85,10 @@ import {
   type UpsertProjectCostAmortizationPayload,
 } from "@/src/lib/projectsCostAmortizationService.js";
 import {
+  loadProjectPricingPayload,
+  upsertProjectPricing,
+} from "@/src/lib/projectsPricingService.js";
+import {
   buildProjectCostAmortizationSummary,
   validateAmortizationSourceRef,
 } from "@/src/lib/projectsCostAmortization.js";
@@ -1291,4 +1295,52 @@ export function registerProjectsRoutes(
       }
     }
   );
+
+  app.get("/api/projects/:id/pricing", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+      const pricing = await loadProjectPricingPayload(req.params.id, detail);
+      res.json(pricing);
+    } catch (e: unknown) {
+      console.error("GET project pricing", e);
+      res.status(500).json({ error: "Erro ao carregar precificação do projeto." });
+    }
+  });
+
+  app.put("/api/projects/:id/pricing", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const detail = await loadProjectDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "Projeto não encontrado." });
+
+      const body = req.body ?? {};
+      const items = Array.isArray(body.items) ? body.items : [];
+      const pricing = await upsertProjectPricing(req.params.id, detail, {
+        fiscalRuleId:
+          body.fiscalRuleId === null || typeof body.fiscalRuleId === "string"
+            ? body.fiscalRuleId
+            : undefined,
+        defaultMarginPercent: optNum(body.defaultMarginPercent),
+        items: items.map((row: Record<string, unknown>) => ({
+          targetItemId: String(row.targetItemId ?? ""),
+          targetItemType: String(row.targetItemType ?? "SIMULATION"),
+          fiscalRuleId:
+            row.fiscalRuleId === null || typeof row.fiscalRuleId === "string"
+              ? row.fiscalRuleId
+              : undefined,
+          targetMarginPercent: optNum(row.targetMarginPercent),
+        })),
+      });
+
+      const refreshed = await loadProjectDetail(req.params.id);
+      res.json({ ...pricing, project: refreshed });
+    } catch (e: unknown) {
+      console.error("PUT project pricing", e);
+      res.status(400).json({
+        error: e instanceof Error ? e.message : "Erro ao salvar precificação.",
+      });
+    }
+  });
 }
