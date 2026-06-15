@@ -19,9 +19,9 @@ export type ManagementDashboardSummary = {
   overdueFollowUps: number;
   upcomingFollowUpsNext7Days: number;
   upcomingFollowUpsNext30Days: number;
-  openProposalsCount: number;
-  openProposalsValue: number;
-  proposalsWithoutFollowUpCount: number;
+  openOrdersCount: number;
+  openOrdersValue: number;
+  ordersWithoutFollowUpCount: number;
   customersAtHighRisk: number;
 };
 
@@ -35,8 +35,8 @@ export type ManagementRiskCustomer = {
   riskReasons: string[];
   daysSinceLastPurchase: number | null;
   daysSinceLastContact: number | null;
-  openProposalsCount: number;
-  openProposalsValue: number;
+  openOrdersCount: number;
+  openOrdersValue: number;
   nextFollowUpAt: string | null;
   relationshipLevel: string | null;
   commercialTemperature: string | null;
@@ -49,7 +49,7 @@ export type ManagementOpportunityCustomer = {
   daysSinceLastPurchase: number | null;
   daysSinceLastContact: number | null;
   totalPurchasedLast12Months: number;
-  openProposalsCount: number;
+  openOrdersCount: number;
   suggestedAction: string;
 };
 
@@ -65,9 +65,9 @@ export type ManagementFollowUp = {
   daysUntil?: number;
 };
 
-export type ManagementProposalWithoutFollowUp = {
-  proposalId: string;
-  number: number;
+export type ManagementOrderWithoutFollowUp = {
+  salesOrderId: string;
+  orderCode: string;
   customerId: string;
   displayName: string;
   status: string;
@@ -94,7 +94,7 @@ export type ManagementDashboardResponse = {
   opportunityCustomers: ManagementOpportunityCustomer[];
   overdueFollowUps: ManagementFollowUp[];
   upcomingFollowUps: ManagementFollowUp[];
-  openProposalsWithoutFollowUp: ManagementProposalWithoutFollowUp[];
+  ordersWithoutFollowUp: ManagementOrderWithoutFollowUp[];
   topCustomersLast12Months: ManagementTopCustomer[];
   activityBreakdown: {
     periodDays: number;

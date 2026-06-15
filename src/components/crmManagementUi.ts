@@ -21,9 +21,12 @@ export type ManagementKpiCard = {
 };
 
 export const MANAGEMENT_RISK_REASON_LABELS: Record<string, string> = {
-  PROPOSAL_WITHOUT_FOLLOW_UP: "Proposta sem follow-up",
+  ORDER_WITHOUT_FOLLOW_UP: "Pedido em carteira sem follow-up",
   NO_PURCHASE_90D: "Sem compra há 90+ dias",
   NO_VALID_PURCHASE: "Sem compra válida",
+  OPEN_ORDERS_IN_PORTFOLIO: "Pedidos em carteira",
+  OVERDUE_OPEN_ORDER: "Pedido em carteira atrasado",
+  PROPOSAL_WITHOUT_FOLLOW_UP: "Proposta sem follow-up",
   OPEN_PROPOSALS: "Propostas abertas",
 };
 
@@ -46,32 +49,32 @@ export function buildManagementKpiCards(
   return [
     {
       label: "Clientes em alto risco",
-      description: "Proposta sem follow-up ou sem compra há 90+ dias",
+      description: "Pedido em carteira sem follow-up ou sem compra há 90+ dias",
       value: formatNumberPt(summary?.customersAtHighRisk),
       icon: AlertTriangle,
       cardClass: "border-red-200/80 bg-gradient-to-br from-red-50/60 to-card",
       iconClass: "text-red-700 bg-red-100",
     },
     {
-      label: "Propostas abertas",
-      description: "Pipeline em andamento",
-      value: formatNumberPt(summary?.openProposalsCount),
+      label: "Pedidos em carteira",
+      description: "Carteira aberta (sem NF processada)",
+      value: formatNumberPt(summary?.openOrdersCount),
       icon: FileSpreadsheet,
       cardClass: "border-violet-200/80 bg-gradient-to-br from-violet-50/50 to-card",
       iconClass: "text-violet-800 bg-violet-100",
     },
     {
-      label: "Valor em propostas abertas",
-      description: "Soma do valor líquido aberto",
-      value: formatIntelCurrency(summary?.openProposalsValue),
+      label: "Valor em carteira",
+      description: "Soma do valor líquido em carteira aberta",
+      value: formatIntelCurrency(summary?.openOrdersValue),
       icon: TrendingUp,
       cardClass: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/50 to-card",
       iconClass: "text-emerald-800 bg-emerald-100",
     },
     {
-      label: "Propostas sem follow-up",
-      description: "Exigem contato após atualização",
-      value: formatNumberPt(summary?.proposalsWithoutFollowUpCount),
+      label: "Pedidos sem follow-up",
+      description: "Carteira aberta sem contato após atualização",
+      value: formatNumberPt(summary?.ordersWithoutFollowUpCount),
       icon: Target,
       cardClass: "border-amber-200/80 bg-gradient-to-br from-amber-50/50 to-card",
       iconClass: "text-amber-800 bg-amber-100",

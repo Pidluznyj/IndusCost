@@ -79,8 +79,8 @@ export const CrmManagementLists: React.FC<CrmManagementListsProps> = ({
                   {row.daysSinceLastContact !== null
                     ? ` · Sem contato: ${formatIntelDaysSinceLastPurchase(row.daysSinceLastContact)}`
                     : ""}
-                  {row.openProposalsCount > 0
-                    ? ` · ${row.openProposalsCount} proposta(s) · ${formatIntelCurrency(row.openProposalsValue)}`
+                  {row.openOrdersCount > 0
+                    ? ` · ${row.openOrdersCount} pedido(s) em carteira · ${formatIntelCurrency(row.openOrdersValue)}`
                     : ""}
                 </p>
               </button>
@@ -116,8 +116,8 @@ export const CrmManagementLists: React.FC<CrmManagementListsProps> = ({
                     : "—"}
                   {" · "}
                   12m: {formatIntelCurrency(row.totalPurchasedLast12Months)}
-                  {row.openProposalsCount > 0
-                    ? ` · ${row.openProposalsCount} proposta(s) aberta(s)`
+                  {row.openOrdersCount > 0
+                    ? ` · ${row.openOrdersCount} pedido(s) em carteira`
                     : ""}
                 </p>
               </button>
@@ -127,21 +127,21 @@ export const CrmManagementLists: React.FC<CrmManagementListsProps> = ({
       </ManagementListPanel>
 
       <ManagementListPanel
-        title="Propostas sem follow-up"
-        description="Propostas abertas sem contato após atualização."
-        emptyMessage="Todas as propostas abertas têm follow-up."
-        isEmpty={data.openProposalsWithoutFollowUp.length === 0}
+        title="Pedidos sem follow-up"
+        description="Pedidos em carteira sem contato após atualização."
+        emptyMessage="Todos os pedidos em carteira têm follow-up."
+        isEmpty={data.ordersWithoutFollowUp.length === 0}
       >
         <ul className="space-y-1.5">
-          {data.openProposalsWithoutFollowUp.map((row) => (
-            <li key={row.proposalId}>
+          {data.ordersWithoutFollowUp.map((row) => (
+            <li key={row.salesOrderId}>
               <button
                 type="button"
                 onClick={() => onSelectCustomer(row.customerId, { displayName: row.displayName })}
                 className="w-full text-left rounded-lg border border-border/70 bg-background/80 px-3 py-2.5 hover:border-primary/40 hover:bg-accent/30 transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-semibold text-foreground">Proposta #{row.number}</p>
+                  <p className="text-xs font-semibold text-foreground">{row.orderCode}</p>
                   <span className="text-[10px] font-medium text-amber-800 tabular-nums shrink-0">
                     {row.daysWithoutFollowUp}d sem follow-up
                   </span>

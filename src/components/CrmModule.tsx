@@ -47,7 +47,7 @@ import type {
   ManagementDashboardSummary,
   ManagementFollowUp,
   ManagementOpportunityCustomer,
-  ManagementProposalWithoutFollowUp,
+  ManagementOrderWithoutFollowUp,
   ManagementRiskCustomer,
   ManagementTopCustomer,
 } from "@/src/components/crmManagementTypes";
@@ -58,7 +58,7 @@ export type {
   ManagementDashboardSummary,
   ManagementFollowUp,
   ManagementOpportunityCustomer,
-  ManagementProposalWithoutFollowUp,
+  ManagementOrderWithoutFollowUp,
   ManagementRiskCustomer,
   ManagementTopCustomer,
 };
@@ -71,7 +71,6 @@ import type {
   SellerOption,
   SellerDashboardBySeller,
   SellerDashboardOrder,
-  SellerDashboardProposalWithoutLinkedOrder,
 } from "@/src/components/crmSellerDashboardTypes";
 
 export type {
@@ -80,7 +79,6 @@ export type {
   SellerOption,
   SellerDashboardBySeller,
   SellerDashboardOrder,
-  SellerDashboardProposalWithoutLinkedOrder,
 };
 import {
   SELLER_KEY_ALL,
