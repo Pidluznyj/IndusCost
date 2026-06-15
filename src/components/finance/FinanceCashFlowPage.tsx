@@ -457,7 +457,8 @@ export function FinanceCashFlowPage() {
               hint="Contas a Receber — valores financeiros do filtro"
               value={formatFinanceCurrency(cards?.inflowAmount ?? 0)}
               valueFull={formatFinanceCurrency(cards?.inflowAmount ?? 0)}
-              icon={<TrendingUp className="h-4 w-4 text-[#059669]" />}
+              icon={TrendingUp}
+              colorClass="text-[#059669]"
               valueClassName="text-[#059669] font-bold tabular-nums text-xl sm:text-2xl"
             />
             <FinanceCashFlowKpiCard
@@ -466,7 +467,8 @@ export function FinanceCashFlowPage() {
               hint="Contas a Pagar — valores financeiros do filtro"
               value={formatFinanceCurrency(cards?.outflowAmount ?? 0)}
               valueFull={formatFinanceCurrency(cards?.outflowAmount ?? 0)}
-              icon={<TrendingDown className="h-4 w-4 text-[#DC2626]" />}
+              icon={TrendingDown}
+              colorClass="text-[#DC2626]"
               valueClassName="text-[#DC2626] font-bold tabular-nums text-xl sm:text-2xl"
             />
             <FinanceCashFlowKpiCard
