@@ -40,11 +40,12 @@ import { ProductMaterialDemandDashboard } from "@/src/components/contextual/Prod
 import { ProductBomWhereUsedDashboard } from "@/src/components/contextual/ProductBomWhereUsedDashboard";
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
 import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/SalesOrdersIndicatorsDashboard";
+import { SoldProductsReportPage } from "@/src/components/commercial/SoldProductsReportPage";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { fetchJsonOk } from "@/src/lib/http";
-import { AlertCircle, Factory, Layers, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
+import { AlertCircle, BarChart3, Factory, Layers, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
 
 type BootstrapAdminStatus = {
   enabled: boolean;
@@ -573,6 +574,17 @@ export default function App() {
           }
         />
         <Route
+          path="sales-orders/sold-products"
+          element={
+            <ModulePageShell
+              title="Produtos Vendidos"
+              description="Ranking de produtos por quantidade vendida com base em pedidos de venda."
+            >
+              <SoldProductsReportPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="sales-orders/:id"
           element={
             <ModulePageShell
@@ -591,6 +603,13 @@ export default function App() {
               description="Pedidos internos originados de propostas aprovadas. Integração Nomus (POST /rest/pedidos) ainda não ativa."
               headerActions={
                 <>
+                  <Link
+                    to="/sales-orders/sold-products"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <BarChart3 className="h-4 w-4 text-primary" />
+                    Produtos Vendidos
+                  </Link>
                   <Link
                     to="/sales-orders/material-demand"
                     className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"

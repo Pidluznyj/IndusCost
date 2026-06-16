@@ -1,0 +1,24 @@
+@media print {
+  body.sold-products-print-route * {
+    visibility: hidden;
+  }
+
+  body.sold-products-print-route #sold-products-print-root,
+  body.sold-products-print-route #sold-products-print-root * {
+    visibility: visible;
+  }
+
+  body.sold-products-print-route #sold-products-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 16px;
+    background: white;
+    color: #111827;
+  }
+
+  .sold-products-no-print {
+    display: none !important;
+  }
+}

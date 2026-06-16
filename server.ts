@@ -100,6 +100,7 @@ import { registerFinanceAccountsReceivableRoutes } from "./src/lib/financeAccoun
 import { registerFinanceAccountsPayableRoutes } from "./src/lib/financeAccountsPayableRoutes.js";
 import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js";
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
+import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
 import { registerProjectsRoutes } from "./src/lib/projectsRoutes.js";
 import {
   getNomusDailySyncStatus,
@@ -12948,6 +12949,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerFinanceCashFlowRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerSalesProductRankingRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
