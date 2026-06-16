@@ -24,10 +24,11 @@ import {
   shouldIncludeCashFlowApMovement,
 } from "./financeCashFlowLedger.js";
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
+import { isFinanceApExcludedFromManagement } from "./financeInternalGroupExclusions.js";
 import {
-  isFinanceApExcludedFromManagement,
-  isFinanceArExcludedFromManagement,
-} from "./financeInternalGroupExclusions.js";
+  isFinanceArExcludedFromReports,
+  type NomusArReportSyncCutoff,
+} from "./financeNomusArReportFreshness.js";
 
 function dateInBounds(
   date: Date | null | undefined,
@@ -120,12 +121,13 @@ export function filterCashFlowArRowsScoped(
   rows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
   arFilters: FinanceArDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowArRow[] {
   const portfolio = rows.filter(
     (row) =>
       matchesCashFlowArPortfolio(row, arFilters, referenceDate) &&
-      !isFinanceArExcludedFromManagement(row)
+      !isFinanceArExcludedFromReports(row, syncCutoff)
   );
   const deduped = deduplicateFinanceArRows(portfolio);
   return deduped.rows.filter((row) =>
@@ -151,7 +153,8 @@ export function filterCashFlowApRowsScoped(
 export function buildCashFlowArPrismaWhere(
   filters: FinanceCashFlowDashboardFilters,
   arFilters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): Prisma.NomusAccountsReceivableWhereInput {
   const { from, toExclusive, empty } = resolveFinanceArDueDateBounds({
     year: filters.year,
@@ -163,11 +166,12 @@ export function buildCashFlowArPrismaWhere(
 
   const portfolioWhere = buildFinanceArPrismaWhere(
     { ...arFilters, year: undefined, month: undefined, dueDateFrom: undefined, dueDateTo: undefined },
-    referenceDate
+    referenceDate,
+    syncCutoff
   );
 
   if (filters.viewMode === "projected") {
-    return buildFinanceArPrismaWhere(arFilters, referenceDate);
+    return buildFinanceArPrismaWhere(arFilters, referenceDate, syncCutoff);
   }
 
   const dueClause: Prisma.NomusAccountsReceivableWhereInput = {};

@@ -58,6 +58,7 @@ export type FinanceDataSanitization = {
   ignoredInternalGroupReceivables: number;
   ignoredInternalGroupPayables: number;
   ignoredGhostReceivables: number;
+  ignoredStaleReceivables: number;
   ignoredPurchaseOrderAgendaPayables: number;
   supersededPreInvoiceReceivables: number;
   supersededPreInvoiceAmount: number;
@@ -190,6 +191,7 @@ export function totalFinanceDataSanitizationIgnored(
     data.ignoredInternalGroupReceivables +
     data.ignoredInternalGroupPayables +
     data.ignoredGhostReceivables +
+    data.ignoredStaleReceivables +
     data.ignoredPurchaseOrderAgendaPayables
   );
 }
@@ -201,6 +203,7 @@ export function mergeFinanceDataSanitization(
     ignoredInternalGroupReceivables: 0,
     ignoredInternalGroupPayables: 0,
     ignoredGhostReceivables: 0,
+    ignoredStaleReceivables: 0,
     ignoredPurchaseOrderAgendaPayables: 0,
     supersededPreInvoiceReceivables: 0,
     supersededPreInvoiceAmount: 0,
@@ -210,6 +213,7 @@ export function mergeFinanceDataSanitization(
       part.ignoredInternalGroupReceivables ?? 0;
     merged.ignoredInternalGroupPayables += part.ignoredInternalGroupPayables ?? 0;
     merged.ignoredGhostReceivables += part.ignoredGhostReceivables ?? 0;
+    merged.ignoredStaleReceivables += part.ignoredStaleReceivables ?? 0;
     merged.ignoredPurchaseOrderAgendaPayables +=
       part.ignoredPurchaseOrderAgendaPayables ?? 0;
     merged.supersededPreInvoiceReceivables +=

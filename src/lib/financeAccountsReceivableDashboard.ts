@@ -6,14 +6,19 @@ import {
   trackFinanceArDataQualityRow,
 } from "./financeAccountsReceivableDataQuality.js";
 import { buildCustomerSuggestedAction } from "./financeAccountsReceivableActions.js";
-import {
-  isFinanceArExcludedFromManagement,
-  isFinanceArGhostTitle,
-  isFinanceInternalGroupPerson,
-  type FinanceDataSanitization,
-} from "./financeInternalGroupExclusions.js";
-import { buildFinanceArHorizonSummary } from "./financeHorizonAggregation.js";
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
+import {
+  isFinanceArExcludedFromReports,
+  isNomusArStaleForReports,
+  mergeFinanceArPrismaWhereWithSyncCutoff,
+  resolveEffectiveNomusArReportSyncCutoff,
+  type NomusArReportSyncCutoff,
+} from "./financeNomusArReportFreshness.js";
+import { isFinanceArGhostTitle, isFinanceInternalGroupPerson } from "./financeInternalGroupExclusions.js";
+import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import { buildFinanceArHorizonSummary } from "./financeHorizonAggregation.js";
+
+export type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 export type FinanceArTitleStatus =
   | "open"
@@ -395,7 +400,8 @@ function financeArNotSuspendedClause(): Prisma.NomusAccountsReceivableWhereInput
 /** Pré-filtro seguro no banco — complementa `filterFinanceArRows` em memória. */
 export function buildFinanceArPrismaWhere(
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): Prisma.NomusAccountsReceivableWhereInput {
   const and: Prisma.NomusAccountsReceivableWhereInput[] = [];
   const { from, toExclusive, empty } = resolveFinanceArDueDateBounds(filters);
@@ -465,7 +471,10 @@ export function buildFinanceArPrismaWhere(
     });
   }
 
-  return and.length > 0 ? { AND: and } : {};
+  return mergeFinanceArPrismaWhereWithSyncCutoff(
+    and.length > 0 ? { AND: and } : {},
+    syncCutoff
+  );
 }
 
 export function matchesFinanceArDashboardFilters(
@@ -517,11 +526,13 @@ export function matchesFinanceArDashboardFilters(
 export function countFinanceArSanitizationInScope(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): Pick<
   FinanceDataSanitization,
   | "ignoredInternalGroupReceivables"
   | "ignoredGhostReceivables"
+  | "ignoredStaleReceivables"
   | "supersededPreInvoiceReceivables"
   | "supersededPreInvoiceAmount"
 > {
@@ -530,13 +541,16 @@ export function countFinanceArSanitizationInScope(
     return {
       ignoredInternalGroupReceivables: 0,
       ignoredGhostReceivables: 0,
+      ignoredStaleReceivables: 0,
       supersededPreInvoiceReceivables: 0,
       supersededPreInvoiceAmount: 0,
     };
   }
 
+  const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
   let ignoredInternalGroupReceivables = 0;
   let ignoredGhostReceivables = 0;
+  let ignoredStaleReceivables = 0;
   const preDedup: FinanceArDashboardRow[] = [];
 
   for (const row of rows) {
@@ -550,6 +564,8 @@ export function countFinanceArSanitizationInScope(
       ignoredInternalGroupReceivables += 1;
     } else if (isFinanceArGhostTitle(row)) {
       ignoredGhostReceivables += 1;
+    } else if (isNomusArStaleForReports(row, effectiveCutoff)) {
+      ignoredStaleReceivables += 1;
     } else {
       preDedup.push(row);
     }
@@ -559,6 +575,7 @@ export function countFinanceArSanitizationInScope(
   return {
     ignoredInternalGroupReceivables,
     ignoredGhostReceivables,
+    ignoredStaleReceivables,
     supersededPreInvoiceReceivables: deduped.supersededPreInvoiceCount,
     supersededPreInvoiceAmount: deduped.supersededPreInvoiceAmount,
   };
@@ -567,15 +584,17 @@ export function countFinanceArSanitizationInScope(
 export function filterFinanceArRows(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArDashboardRow[] {
   const { empty } = resolveFinanceArDueDateBounds(filters);
   if (empty) return [];
 
+  const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
   const matched = rows.filter(
     (row) =>
       matchesFinanceArDashboardFilters(row, filters, referenceDate) &&
-      !isFinanceArExcludedFromManagement(row)
+      !isFinanceArExcludedFromReports(row, effectiveCutoff)
   );
   return deduplicateFinanceArRows(matched).rows;
 }
@@ -583,9 +602,10 @@ export function filterFinanceArRows(
 export function buildFinanceAccountsReceivableDashboard(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters = { status: "all" },
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ) {
-  const filteredRows = filterFinanceArRows(rows, filters, referenceDate);
+  const filteredRows = filterFinanceArRows(rows, filters, referenceDate, syncCutoff);
   const today = startOfLocalDay(referenceDate);
   const in7Days = endOfLocalDay(addLocalDays(today, 7));
   const in30Days = endOfLocalDay(addLocalDays(today, 30));

@@ -25,6 +25,7 @@ import type {
 } from "./financeCashFlowDashboard.js";
 import type { FinanceCashFlowMonthlyPoint } from "./financeCashFlowDashboardTypes.js";
 import { buildNetCashPositionMetrics } from "./financeCashFlowIntelligence.js";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 export type FinanceCashFlowYtdTrendDirection = "improving" | "worsening" | "stable";
 
@@ -150,10 +151,11 @@ function toReceivedArLoadFilters(
 export function filterArRowsForYtdReceived(
   rows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowArRow[] {
   const arFilters = toReceivedArLoadFilters(filters);
-  return filterFinanceArRows(rows, arFilters, referenceDate) as FinanceCashFlowArRow[];
+  return filterFinanceArRows(rows, arFilters, referenceDate, syncCutoff) as FinanceCashFlowArRow[];
 }
 
 export function isArReceivedInPeriod(

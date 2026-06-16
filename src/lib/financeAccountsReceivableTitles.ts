@@ -17,6 +17,7 @@ import {
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 export type FinanceArTitlesSortBy = "dueDate" | "balanceReceivable" | "externalId";
 export type FinanceArTitlesSortDirection = "asc" | "desc";
@@ -178,9 +179,10 @@ export function mapRowToTitleListItem(
 export function buildFinanceArTitlesPayload(
   rows: FinanceArDashboardRow[],
   query: FinanceArTitlesQuery,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArTitlesPayload {
-  let filtered = filterFinanceArRows(rows, query.filters, referenceDate);
+  let filtered = filterFinanceArRows(rows, query.filters, referenceDate, syncCutoff);
 
   const effectiveLocalFilter =
     query.localFilter !== "all"

@@ -21,6 +21,7 @@ import {
   financeCashFlowExportFilename,
 } from "@/src/lib/financeCashFlowExport.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { resolveNomusArReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusArReportFreshness.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -56,9 +57,10 @@ function parseFiltersOrRespond(res: express.Response, query: Record<string, unkn
 }
 
 async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowDashboardFilters>) {
+  const syncCutoff = await resolveNomusArReportSyncCutoffFromPrisma(prisma);
   const arFilters = toArLoadFilters(filters);
   const apFilters = toApLoadFilters(filters);
-  const arWhere = buildCashFlowArPrismaWhere(filters, arFilters);
+  const arWhere = buildCashFlowArPrismaWhere(filters, arFilters, new Date(), syncCutoff);
   const apWhere = buildCashFlowApPrismaWhere(filters, apFilters);
 
   const [arPrisma, apPrisma] = await Promise.all([
@@ -77,6 +79,7 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
   return {
     arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
+    syncCutoff,
   };
 }
 
@@ -89,8 +92,8 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const { arRows, apRows } = await loadCashFlowRows(filters);
-      const payload = buildFinanceCashFlowDashboard(arRows, apRows, filters);
+      const { arRows, apRows, syncCutoff } = await loadCashFlowRows(filters);
+      const payload = buildFinanceCashFlowDashboard(arRows, apRows, filters, new Date(), syncCutoff);
       res.json(payload);
     }
   );
@@ -103,8 +106,8 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const { arRows, apRows } = await loadCashFlowRows(filters);
-      const payload = buildFinanceCashFlowDashboard(arRows, apRows, filters);
+      const { arRows, apRows, syncCutoff } = await loadCashFlowRows(filters);
+      const payload = buildFinanceCashFlowDashboard(arRows, apRows, filters, new Date(), syncCutoff);
       const csv = buildFinanceCashFlowExportCsv(payload);
       const filename = financeCashFlowExportFilename(filters.year);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");

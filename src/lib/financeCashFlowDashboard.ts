@@ -89,6 +89,7 @@ import {
   filterCashFlowArRowsScoped,
   filterCashFlowApRowsScoped,
 } from "./financeCashFlowRowFilters.js";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
   constructor(message: string) {
@@ -363,9 +364,10 @@ export function toApLoadFilters(cf: FinanceCashFlowDashboardFilters): FinanceApD
 export function filterCashFlowArRows(
   rows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowArRow[] {
-  return filterCashFlowArRowsScoped(rows, filters, toArLoadFilters(filters), referenceDate);
+  return filterCashFlowArRowsScoped(rows, filters, toArLoadFilters(filters), referenceDate, syncCutoff);
 }
 
 export function filterCashFlowApRows(
@@ -676,9 +678,10 @@ export function buildFinanceCashFlowDashboard(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
   filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowDashboardPayload {
-  const filteredAr = filterCashFlowArRows(arRows, filters, referenceDate);
+  const filteredAr = filterCashFlowArRows(arRows, filters, referenceDate, syncCutoff);
   const filteredAp = filterCashFlowApRows(apRows, filters, referenceDate);
   const monthlySeries = buildFinanceCashFlowMonthlySeries(
     filteredAr,
@@ -791,7 +794,7 @@ export function buildFinanceCashFlowDashboard(
   });
 
   const dataSanitization = mergeFinanceDataSanitization(
-    countFinanceArSanitizationInScope(arRows, toArLoadFilters(filters), referenceDate),
+    countFinanceArSanitizationInScope(arRows, toArLoadFilters(filters), referenceDate, syncCutoff),
     countFinanceApSanitizationInScope(apRows, toApLoadFilters(filters), referenceDate)
   );
 
@@ -844,7 +847,7 @@ export function buildFinanceCashFlowDashboard(
   };
 
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
-  const ytdAr = filterCashFlowArRows(arRows, ytdFilters, referenceDate);
+  const ytdAr = filterCashFlowArRows(arRows, ytdFilters, referenceDate, syncCutoff);
   const ytdAp = filterCashFlowApRows(apRows, ytdFilters, referenceDate);
   const ytdMonthlySeries = buildFinanceCashFlowMonthlySeries(
     ytdAr,
@@ -871,7 +874,8 @@ export function buildFinanceCashFlowDashboard(
       outflowAmount: period.outflow,
       netFlowAmount: period.net,
       accumulatedBalance: period.accumulated,
-    }
+    },
+    syncCutoff
   );
 
   const cashHealthScore = buildCashHealthScore(partialPayload);
@@ -891,7 +895,8 @@ export function buildFinanceCashFlowDashboard(
   const arDash = buildFinanceAccountsReceivableDashboard(
     filteredAr,
     toArLoadFilters(filters),
-    referenceDate
+    referenceDate,
+    syncCutoff
   );
   const apDash = buildFinanceAccountsPayableDashboard(
     filteredAp,

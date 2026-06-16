@@ -8,6 +8,7 @@ import {
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import { formatFinanceCalculatedStatus } from "./financeAccountsReceivableFormat.js";
 
 export const FINANCE_AR_EXPORT_HEADERS = [
@@ -87,9 +88,10 @@ export function mapFinanceArRowToExportCells(
 export function buildFinanceArExportCsv(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): string {
-  const filtered = filterFinanceArRows(rows, filters, referenceDate);
+  const filtered = filterFinanceArRows(rows, filters, referenceDate, syncCutoff);
   const dataRows = filtered.map((row) => mapFinanceArRowToExportCells(row, referenceDate));
   return fleetRowsToCsv([...FINANCE_AR_EXPORT_HEADERS], dataRows);
 }
