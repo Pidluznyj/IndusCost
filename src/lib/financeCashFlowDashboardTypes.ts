@@ -13,7 +13,10 @@ import type {
 } from "./financeCashFlowCfoDiagnostics.js";
 import type { FinanceCashFlowExecutiveYtd } from "./financeCashFlowExecutiveYtd.js";
 import type { FinanceCashFlowExecutiveSummary } from "./financeCashFlowExecutiveSummary.js";
-import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import type {
+  FinanceDataSanitization,
+  FinanceManagementScope,
+} from "./financeInternalGroupExclusions.js";
 
 export type FinanceCashFlowViewMode = "projected" | "realized" | "combined";
 export type FinanceCashFlowDateBase = "due" | "settlement" | "issue";
@@ -74,6 +77,7 @@ export type FinanceCashFlowDashboardFiltersApplied = {
   paymentMethodName?: string;
   bankAccountName?: string;
   invoiceIssued?: string;
+  cashFlowScope?: FinanceManagementScope;
 };
 
 export type NetCashPositionStatus = "surplus" | "deficit";

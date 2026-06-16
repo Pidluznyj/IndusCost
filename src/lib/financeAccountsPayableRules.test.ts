@@ -285,4 +285,54 @@ describe("financeAccountsPayableRules", () => {
       "2026-03-10"
     );
   });
+
+  it("AP externo entra no dashboard com empresa pagadora do grupo", () => {
+    const rows = [
+      cashFlowApRow({
+        companyName: "KOPPETEL",
+        personName: "Fornecedor Externo SA",
+        personCnpj: "11.111.111/0001-11",
+        balancePayable: 1200,
+        dueDate: new Date(2026, 5, 10),
+      }),
+    ];
+    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all", year: 2026 }, REF);
+    assert.equal(dash.cards.totalOpenAmount, 1200);
+  });
+
+  it("AP intercompany entre empresas do grupo sai do dashboard", () => {
+    const rows = [
+      cashFlowApRow({
+        companyName: "KOPPETEL",
+        personName: "Lazarios Comercio de Plasticos LTDA",
+        personCnpj: "72.569.510/0001-95",
+        balancePayable: 900,
+        dueDate: new Date(2026, 5, 10),
+      }),
+      cashFlowApRow({
+        companyName: "KOPPETEL",
+        personName: "Fornecedor Externo",
+        personCnpj: "22.222.222/0001-22",
+        balancePayable: 100,
+        dueDate: new Date(2026, 5, 12),
+      }),
+    ];
+    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all", year: 2026 }, REF);
+    assert.equal(dash.cards.totalOpenAmount, 100);
+    assert.equal(dash.dataSanitization.ignoredInternalGroupPayables, 1);
+  });
+
+  it("pedido de compra continua excluído da visão gerencial", () => {
+    const rows = [
+      cashFlowApRow({
+        companyName: "KOPPETEL",
+        description: "PEDIDO DE COMPRA 999",
+        balancePayable: 500,
+        dueDate: new Date(2026, 5, 10),
+      }),
+    ];
+    const dash = buildFinanceAccountsPayableDashboard(rows, { status: "all", year: 2026 }, REF);
+    assert.equal(dash.cards.openTitlesCount, 0);
+    assert.equal(dash.dataSanitization.ignoredPurchaseOrderAgendaPayables, 1);
+  });
 });

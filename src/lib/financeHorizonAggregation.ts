@@ -5,8 +5,12 @@ import type { FinanceArDashboardFilters, FinanceArDashboardRow } from "./finance
 import { isFinanceArOpen, matchesFinanceArDashboardFilters } from "./financeAccountsReceivableDashboard.js";
 import {
   isFinanceApExcludedFromManagement,
-  isFinanceArExcludedFromManagement,
 } from "./financeInternalGroupExclusions.js";
+import {
+  isFinanceArExcludedFromReports,
+  resolveEffectiveNomusArReportSyncCutoff,
+  type NomusArReportSyncCutoff,
+} from "./financeNomusArReportFreshness.js";
 import {
   bucketizeFinanceHorizonRows,
   type FinanceHorizonAggregation,
@@ -51,7 +55,9 @@ export function buildFinanceApHorizonRows(
   const horizonRows: FinanceHorizonRow[] = [];
 
   for (const row of rows) {
-    if (isFinanceApExcludedFromManagement(row)) continue;
+    if (isFinanceApExcludedFromManagement(row)) {
+      continue;
+    }
     if (!matchesFinanceApHorizonEntityFilters(row, horizonFilters, referenceDate)) continue;
     if (row.suspendPayment === true) continue;
     if (!isFinanceApOpen(row)) continue;
@@ -76,13 +82,15 @@ export function matchesFinanceApHorizonEntityFilters(
 export function buildFinanceArHorizonRows(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceHorizonRow[] {
   const horizonFilters = stripHorizonPeriodFilters(filters);
   const horizonRows: FinanceHorizonRow[] = [];
+  const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
 
   for (const row of rows) {
-    if (isFinanceArExcludedFromManagement(row)) continue;
+    if (isFinanceArExcludedFromReports(row, effectiveCutoff)) continue;
     if (!matchesFinanceArHorizonEntityFilters(row, horizonFilters, referenceDate)) continue;
     if (row.suspendCollection === true) continue;
     if (!isFinanceArOpen(row)) continue;
@@ -126,10 +134,11 @@ export function buildFinanceApHorizonSummary(
 export function buildFinanceArHorizonSummary(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceHorizonSummary {
   const aggregation = bucketizeFinanceHorizonRows(
-    buildFinanceArHorizonRows(rows, filters, referenceDate),
+    buildFinanceArHorizonRows(rows, filters, referenceDate, syncCutoff),
     referenceDate
   );
   return {

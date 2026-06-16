@@ -14,12 +14,20 @@ import { buildFinanceArExportCsv } from "./financeAccountsReceivableExport.js";
 import { buildFinanceApExportCsv } from "./financeAccountsPayableExport.js";
 import { buildFinanceCashFlowDashboard } from "./financeCashFlowDashboard.js";
 import {
+  isEconomicGroupCnpj,
   isFinanceApPurchaseOrderAgenda,
   isFinanceArGhostTitle,
   isFinanceInternalGroupPerson,
+  isFinanceApExcludedFromManagement,
+  isIntercompanyPayable,
+  isInternalGroupCompany,
   normalizeFinanceCnpj,
   normalizeFinancePersonText,
 } from "./financeInternalGroupExclusions.js";
+import {
+  financeManagementSanitizationScopeMessage,
+  FINANCE_MANAGEMENT_SANITIZATION_SCOPE,
+} from "./financeFilterScope.js";
 
 const REF = new Date(2026, 5, 9);
 
@@ -209,6 +217,156 @@ describe("financeInternalGroupExclusions", () => {
       false
     );
   });
+
+  it("isIntercompanyPayable exige pagador e credor do grupo", () => {
+    assert.equal(
+      isIntercompanyPayable({
+        companyName: "KOPPETEL",
+        personName: "Fornecedor Externo Ltda",
+        personCnpj: "22.222.222/0001-22",
+      }),
+      false
+    );
+    assert.equal(
+      isIntercompanyPayable({
+        companyName: "KOPPETEL",
+        personName: "Lazarios Comercio de Plasticos LTDA",
+        personCnpj: "72.569.510/0001-95",
+      }),
+      true
+    );
+    assert.equal(
+      isIntercompanyPayable({
+        companyName: "LAZARIOS",
+        personName: "Koppetel Comercio de Plasticos LTDA",
+        personCnpj: "14.055.501/0001-80",
+      }),
+      true
+    );
+    assert.equal(
+      isIntercompanyPayable({
+        companyName: "SM",
+        personName: "Lazarios Comercio de Plasticos LTDA",
+        personCnpj: "72.569.510/0001-95",
+      }),
+      true
+    );
+  });
+
+  it("fornecedor do grupo sem empresa pagadora do grupo não é excluído em AP", () => {
+    assert.equal(
+      isFinanceApExcludedFromManagement({
+        companyName: "Empresa Externa XYZ",
+        personName: "Koppetel Comercio de Plasticos LTDA",
+        personCnpj: "14.055.501/0001-80",
+      }),
+      false
+    );
+  });
+
+  it("Koppetel + fornecedor externo não é excluído", () => {
+    assert.equal(
+      isFinanceApExcludedFromManagement({
+        companyName: "KOPPETEL",
+        personName: "Distribuidora ABC",
+        personCnpj: "12.345.678/0001-90",
+      }),
+      false
+    );
+  });
+
+  it("SM pagando fornecedor externo entra", () => {
+    assert.equal(
+      isFinanceApExcludedFromManagement({
+        companyName: "SM",
+        personName: "Fornecedor Nacional Ltda",
+        personCnpj: "33.333.333/0001-33",
+      }),
+      false
+    );
+    assert.equal(
+      isIntercompanyPayable({
+        companyName: "SM",
+        personName: "Fornecedor Nacional Ltda",
+        personCnpj: "33.333.333/0001-33",
+      }),
+      false
+    );
+  });
+
+  it("Koppetel pagando Koppetel sai como intercompany", () => {
+    assert.equal(
+      isIntercompanyPayable({
+        companyName: "KOPPETEL",
+        personName: "Koppetel Comercio de Plasticos LTDA",
+        personCnpj: "14.055.501/0001-80",
+      }),
+      true
+    );
+    assert.equal(
+      isFinanceApExcludedFromManagement({
+        companyName: "KOPPETEL",
+        personName: "Koppetel Comercio de Plasticos LTDA",
+        personCnpj: "14.055.501/0001-80",
+      }),
+      true
+    );
+  });
+
+  it("Lazarios pagando Lazarios sai como intercompany", () => {
+    assert.equal(
+      isIntercompanyPayable({
+        companyName: "LAZARIOS",
+        personName: "Lazarios Comercio de Plasticos LTDA",
+        personCnpj: "72.569.510/0001-95",
+      }),
+      true
+    );
+  });
+
+  it("SM pagando SM sai como intercompany", () => {
+    assert.equal(
+      isIntercompanyPayable({
+        companyName: "SM",
+        personName: "SM Comercio de Plasticos LTDA - SM",
+        personCnpj: "55.717.719/0001-30",
+      }),
+      true
+    );
+  });
+
+  it("CNPJ do grupo com e sem pontuação em isEconomicGroupCnpj", () => {
+    assert.equal(isEconomicGroupCnpj("72.569.510/0001-95"), true);
+    assert.equal(isEconomicGroupCnpj("72569510000195"), true);
+    assert.equal(isEconomicGroupCnpj("11.111.111/0001-11"), false);
+  });
+
+  it("isInternalGroupCompany reconhece empresas do grupo", () => {
+    assert.equal(isInternalGroupCompany("KOPPETEL"), true);
+    assert.equal(isInternalGroupCompany("lazários"), true);
+    assert.equal(isInternalGroupCompany("SM"), true);
+    assert.equal(isInternalGroupCompany("Empresa Terceira"), false);
+  });
+
+  it("não gera falso positivo por nome parcial na contraparte", () => {
+    assert.equal(
+      isFinanceInternalGroupPerson({ personName: "OSMAR SUPRIMENTOS INDUSTRIAIS" }),
+      false
+    );
+    assert.equal(isIntercompanyPayable({
+      companyName: "KOPPETEL",
+      personName: "OSMAR SUPRIMENTOS INDUSTRIAIS",
+    }), false);
+  });
+
+  it("mensagem de saneamento descreve intercompany", () => {
+    assert.equal(financeManagementSanitizationScopeMessage("company"), FINANCE_MANAGEMENT_SANITIZATION_SCOPE);
+    assert.equal(
+      financeManagementSanitizationScopeMessage("group_consolidated"),
+      FINANCE_MANAGEMENT_SANITIZATION_SCOPE
+    );
+    assert.ok(FINANCE_MANAGEMENT_SANITIZATION_SCOPE.includes("intercompany"));
+  });
 });
 
 describe("financeDataSanitization — AR", () => {
@@ -267,7 +425,7 @@ describe("financeDataSanitization — AR", () => {
 describe("financeDataSanitization — AP", () => {
   const filters = { status: "all" as const, year: 2026 };
 
-  it("exclui pedido de compra e grupo interno", () => {
+  it("exclui pedido de compra e intercompany; mantém fornecedor externo", () => {
     const rows = [
       apRow({ externalId: 1 }),
       apRow({
@@ -285,6 +443,28 @@ describe("financeDataSanitization — AP", () => {
     const filtered = filterFinanceApRows(rows, filters, REF);
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0]?.externalId, 1);
+  });
+
+  it("intercompany Koppetel→Lazarios é excluído independente de escopo", () => {
+    const rows = [
+      apRow({ externalId: 1 }),
+      apRow({
+        externalId: 4,
+        companyName: "KOPPETEL",
+        personName: "Lazarios Comercio de Plasticos LTDA",
+        personCnpj: "72.569.510/0001-95",
+        balancePayable: 900,
+      }),
+    ];
+    const filtered = filterFinanceApRows(rows, filters, REF);
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0]?.externalId, 1);
+    const consolidated = filterFinanceApRows(
+      rows,
+      { ...filters, managementScope: "group_consolidated" },
+      REF
+    );
+    assert.equal(consolidated.length, 1);
   });
 
   it("cards e export não contam registros excluídos", () => {

@@ -35,6 +35,12 @@ import {
   FinanceApFilterParseError,
 } from "./financeAccountsPayableDashboard.js";
 import { mergeFinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import {
+  DEFAULT_FINANCE_MANAGEMENT_SCOPE,
+  parseFinanceManagementScope,
+  type FinanceManagementScope,
+} from "./financeInternalGroupExclusions.js";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type {
   FinanceCashFlowCriticalMovement,
   FinanceCashFlowDashboardFiltersApplied,
@@ -89,7 +95,6 @@ import {
   filterCashFlowArRowsScoped,
   filterCashFlowApRowsScoped,
 } from "./financeCashFlowRowFilters.js";
-import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
   constructor(message: string) {
@@ -111,6 +116,8 @@ export type FinanceCashFlowDashboardFilters = {
   paymentMethodName?: string;
   bankAccountName?: string;
   invoiceIssued?: FinanceArInvoiceIssuedFilter;
+  /** Padrão: company — inclui AP a fornecedores do grupo na visão por empresa. */
+  cashFlowScope?: FinanceManagementScope;
 };
 
 export type FinanceCashFlowArRow = FinanceArDashboardRow & {
@@ -262,6 +269,7 @@ export function parseFinanceCashFlowDashboardFilters(
     paymentMethodName: parseOptionalQueryString(query.paymentMethodName) ?? undefined,
     bankAccountName: parseOptionalQueryString(query.bankAccountName) ?? undefined,
     invoiceIssued: parseInvoiceIssued(query.invoiceIssued),
+    cashFlowScope: parseFinanceManagementScope(query.cashFlowScope),
   };
 }
 
@@ -358,6 +366,7 @@ export function toApLoadFilters(cf: FinanceCashFlowDashboardFilters): FinanceApD
     month: cf.month,
     paymentMethodName: cf.paymentMethodName,
     bankAccountName: cf.bankAccountName,
+    managementScope: cf.cashFlowScope ?? DEFAULT_FINANCE_MANAGEMENT_SCOPE,
   };
 }
 
@@ -764,6 +773,7 @@ export function buildFinanceCashFlowDashboard(
     paymentMethodName: filters.paymentMethodName,
     bankAccountName: filters.bankAccountName,
     invoiceIssued: filters.invoiceIssued,
+    cashFlowScope: filters.cashFlowScope ?? DEFAULT_FINANCE_MANAGEMENT_SCOPE,
   };
 
   const cashForecast = buildCashFlowForecast(filteredAr, filteredAp, filters, referenceDate);

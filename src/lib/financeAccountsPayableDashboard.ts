@@ -14,8 +14,10 @@ import {
 import {
   isFinanceApExcludedFromManagement,
   isFinanceApPurchaseOrderAgenda,
-  isFinanceInternalGroupPerson,
+  isIntercompanyPayable,
+  parseFinanceManagementScope,
   type FinanceDataSanitization,
+  type FinanceManagementScope,
 } from "./financeInternalGroupExclusions.js";
 import {
   FINANCE_AP_COMPANY_SUMMARY_LIMIT,
@@ -57,6 +59,7 @@ export type FinanceApDashboardFilters = {
   bankAccountName?: string;
   documentQuery?: string;
   suspendPayment?: FinanceApSuspendPaymentFilter;
+  managementScope?: FinanceManagementScope;
 };
 
 export class FinanceApFilterParseError extends Error {
@@ -446,6 +449,9 @@ export function parseFinanceApDashboardFilters(query: Record<string, unknown>): 
     bankAccountName: typeof query.bankAccountName === "string" ? query.bankAccountName : undefined,
     documentQuery: documentQuery ?? undefined,
     suspendPayment: parseSuspendPaymentFilter(query.suspendPayment),
+    managementScope: parseFinanceManagementScope(
+      query.managementScope ?? query.cashFlowScope
+    ),
   };
 }
 
@@ -592,12 +598,7 @@ export function auditFinanceApPurchaseOrderExclusionsInScope(
 
   for (const row of rows) {
     if (!matchesFinanceApDashboardFilters(row, filters, referenceDate)) continue;
-    if (
-      isFinanceInternalGroupPerson({
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-      })
-    ) {
+    if (isIntercompanyPayable(row)) {
       ignoredInternalGroupPayables += 1;
     } else if (isFinanceApPurchaseOrderAgenda(row)) {
       ignoredPurchaseOrderAgendaPayables += 1;

@@ -301,4 +301,60 @@ describe("financeCashFlowDashboard", () => {
     assert.equal(payload.scenarioChartPoints.length, 12);
     assert.equal(financeCashFlowMetricsAreFinite(payload), true);
   });
+
+  it("fluxo inclui AP externo da Koppetel e exclui intercompany", () => {
+    const rows = [
+      apRow({
+        externalId: 10,
+        companyName: "KOPPETEL",
+        personName: "Fornecedor Externo SA",
+        personCnpj: "44.444.444/0001-44",
+        balancePayable: 600,
+        dueDate: new Date(2026, 5, 10),
+      }),
+      apRow({
+        externalId: 11,
+        companyName: "KOPPETEL",
+        personName: "Lazarios Comercio de Plasticos LTDA",
+        personCnpj: "72.569.510/0001-95",
+        balancePayable: 400,
+        dueDate: new Date(2026, 5, 15),
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      rows,
+      {
+        viewMode: "projected",
+        dateBase: "due",
+        status: "all",
+        year: 2026,
+        month: 6,
+        companyName: "KOPPETEL",
+      },
+      REF
+    );
+    const jun = payload.monthlySeries.find((p) => p.month === 6);
+    assert.equal(jun!.outflowAmount, 600);
+    assert.equal(payload.dataSanitization.ignoredInternalGroupPayables, 1);
+  });
+
+  it("AP mensal usa dueDate mesmo com scheduleDate futuro", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      [
+        apRow({
+          balancePayable: 750,
+          dueDate: new Date(2026, 4, 25),
+          scheduleDate: new Date(2026, 6, 1),
+        }),
+      ],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF
+    );
+    const may = payload.monthlySeries.find((p) => p.month === 5);
+    const jul = payload.monthlySeries.find((p) => p.month === 7);
+    assert.equal(may!.outflowAmount, 750);
+    assert.equal(jul!.outflowAmount ?? 0, 0);
+  });
 });

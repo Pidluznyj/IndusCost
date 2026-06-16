@@ -2,11 +2,11 @@ import React from "react";
 import { Filter, ShieldCheck } from "lucide-react";
 import {
   FINANCE_FILTER_APPLIED_SCOPE,
-  FINANCE_MANAGEMENT_SANITIZATION_SCOPE,
+  financeManagementSanitizationScopeMessage,
 } from "@/src/lib/financeFilterScope";
 import type { FinanceApPurchaseOrderScheduleAudit } from "@/src/lib/financeAccountsPayableDashboardTypes";
 import { formatFinanceCurrency, formatFinanceInteger } from "@/src/lib/financeAccountsPayableFormat";
-import type { FinanceDataSanitization } from "@/src/lib/financeInternalGroupExclusions";
+import type { FinanceDataSanitization, FinanceManagementScope } from "@/src/lib/financeInternalGroupExclusions";
 import { totalFinanceDataSanitizationIgnored } from "@/src/lib/financeInternalGroupExclusions";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 
@@ -70,21 +70,24 @@ export function FinanceApPurchaseOrderScheduleAuditNote({
 
 export function FinanceManagementSanitizationNote({
   dataSanitization,
+  managementScope = "company",
   className,
 }: {
   dataSanitization?: FinanceDataSanitization | null;
+  managementScope?: FinanceManagementScope;
   className?: string;
 }) {
   const ignored = dataSanitization ? totalFinanceDataSanitizationIgnored(dataSanitization) : 0;
+  const scopeMessage = financeManagementSanitizationScopeMessage(managementScope);
   return (
     <div
       data-testid="finance-management-sanitization-note"
       className={`${financeBiCardClass} border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 flex items-start gap-2 ${className ?? ""}`.trim()}
-      title={FINANCE_MANAGEMENT_SANITIZATION_SCOPE}
+      title={scopeMessage}
     >
       <ShieldCheck className="h-3.5 w-3.5 text-[#6B7280] shrink-0 mt-0.5" />
       <p className="text-[10px] text-[#6B7280] leading-snug">
-        {FINANCE_MANAGEMENT_SANITIZATION_SCOPE}
+        {scopeMessage}
         {ignored > 0 ? ` (${ignored} registros ignorados por saneamento financeiro.)` : ""}
       </p>
     </div>

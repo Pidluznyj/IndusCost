@@ -236,7 +236,10 @@ export function FinanceCashFlowPage() {
       />
 
       <FinanceFilterScopeBanner active={filtersActive} />
-      <FinanceManagementSanitizationNote dataSanitization={payload?.dataSanitization} />
+      <FinanceManagementSanitizationNote
+        dataSanitization={payload?.dataSanitization}
+        managementScope={payload?.filtersApplied?.cashFlowScope ?? "company"}
+      />
 
       <div data-testid="cash-flow-filters">
       <FinanceBiFilterPanel

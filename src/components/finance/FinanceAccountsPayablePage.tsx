@@ -769,7 +769,10 @@ export function FinanceAccountsPayablePage() {
       </FinanceBiFilterPanel>
 
       <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
-      <FinanceManagementSanitizationNote dataSanitization={data?.dataSanitization} />
+      <FinanceManagementSanitizationNote
+        dataSanitization={data?.dataSanitization}
+        managementScope={data?.filtersApplied?.managementScope ?? "company"}
+      />
       <FinanceApPurchaseOrderScheduleAuditNote audit={data?.purchaseOrderScheduleAudit} />
 
       <section className={financeBiSectionClass}>
@@ -963,6 +966,7 @@ export function FinanceAccountsPayablePage() {
               dataSanitization={data?.dataSanitization}
               purchaseOrderAudit={data?.purchaseOrderScheduleAudit}
               appliedFiltersLabel={appliedFilterChips.map((c) => c.label).join(" · ")}
+              managementScope={data?.filtersApplied?.managementScope ?? "company"}
               onViewTitles={handleViewTitlesFromAlert}
             />
           ) : null}

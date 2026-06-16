@@ -358,12 +358,14 @@ export function FinanceApAuditTab({
   dataSanitization,
   purchaseOrderAudit,
   appliedFiltersLabel,
+  managementScope = "company",
   onViewTitles,
 }: {
   alerts: FinanceApDataQualityAlertItem[];
   dataSanitization?: FinanceDataSanitization;
   purchaseOrderAudit?: FinanceApPurchaseOrderScheduleAudit;
   appliedFiltersLabel: string;
+  managementScope?: import("@/src/lib/financeInternalGroupExclusions").FinanceManagementScope;
   onViewTitles: (key: FinanceApDataQualityAlertKey) => void;
 }) {
   return (
@@ -378,7 +380,10 @@ export function FinanceApAuditTab({
           Escopo: {appliedFiltersLabel || "filtros padrão do ano corrente."}
         </p>
       </div>
-      <FinanceManagementSanitizationNote dataSanitization={dataSanitization} />
+      <FinanceManagementSanitizationNote
+        dataSanitization={dataSanitization}
+        managementScope={managementScope}
+      />
       <FinanceApPurchaseOrderScheduleAuditNote audit={purchaseOrderAudit} />
       <FinanceAccountsPayableDataQualityPanel alerts={alerts} onViewTitles={onViewTitles} />
     </div>

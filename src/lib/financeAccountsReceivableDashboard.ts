@@ -1072,10 +1072,10 @@ export function buildFinanceAccountsReceivableDashboard(
     dataQualityAlerts: financeArDataQualityAlertsLegacy(dataQualityAcc),
     dataQualitySummary: buildFinanceArDataQualitySummary(dataQualityAcc),
     dataSanitization: {
-      ...countFinanceArSanitizationInScope(rows, filters, referenceDate),
+      ...countFinanceArSanitizationInScope(rows, filters, referenceDate, syncCutoff),
       ignoredInternalGroupPayables: 0,
       ignoredPurchaseOrderAgendaPayables: 0,
     },
-    financialHorizon: buildFinanceArHorizonSummary(rows, filters, referenceDate),
+    financialHorizon: buildFinanceArHorizonSummary(rows, filters, referenceDate, syncCutoff),
   };
 }

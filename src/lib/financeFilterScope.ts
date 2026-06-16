@@ -1,5 +1,7 @@
 /** Rótulos de escopo de filtros — regra transversal do módulo Financeiro. */
 
+import type { FinanceManagementScope } from "./financeInternalGroupExclusions.js";
+
 /** Indicadores derivados do payload com filtros aplicados na query. */
 export const FINANCE_FILTER_APPLIED_SCOPE =
   "Indicadores abaixo refletem os filtros aplicados." as const;
@@ -69,7 +71,21 @@ export const FINANCE_CASH_FLOW_COMBINED_SCOPE =
 
 /** Saneamento gerencial AR/AP/Cash Flow — dados brutos preservados no banco. */
 export const FINANCE_MANAGEMENT_SANITIZATION_SCOPE =
-  "Movimentações internas do grupo, títulos fantasma e agendas de pedido de compra são desconsiderados da visão gerencial." as const;
+  "Movimentos intercompany entre empresas do grupo são desconsiderados da visão gerencial. Títulos fantasma (contas a receber) e agendas de pedido de compra também são desconsiderados." as const;
+
+/** @deprecated Mesma mensagem para todos os escopos — exclusão AP é por intercompany. */
+export const FINANCE_MANAGEMENT_SANITIZATION_SCOPE_COMPANY =
+  FINANCE_MANAGEMENT_SANITIZATION_SCOPE;
+
+/** @deprecated Mesma mensagem para todos os escopos — exclusão AP é por intercompany. */
+export const FINANCE_MANAGEMENT_SANITIZATION_SCOPE_CONSOLIDATED =
+  FINANCE_MANAGEMENT_SANITIZATION_SCOPE;
+
+export function financeManagementSanitizationScopeMessage(
+  _scope: FinanceManagementScope = "company"
+): string {
+  return FINANCE_MANAGEMENT_SANITIZATION_SCOPE;
+}
 
 export const FINANCE_CASH_FLOW_SANITIZED_SCOPE =
   "Recebido/pago realizados + saldos em aberto por vencimento." as const;

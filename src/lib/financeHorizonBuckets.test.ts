@@ -7,6 +7,7 @@ import {
   buildFinanceArHorizonRows,
   buildFinanceBillingHorizonSummary,
 } from "./financeHorizonAggregation.js";
+import { buildNomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type { FinanceApDashboardRow } from "./financeAccountsPayableDashboard.js";
 import type { FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
 import {
@@ -172,6 +173,33 @@ describe("financeHorizonAggregation AR", () => {
     );
     const agg = bucketizeFinanceHorizonRows(rows, REF);
     assert.equal(agg.buckets.find((b) => b.key === "16_30")?.amount, 180);
+  });
+
+  it("exclui títulos stale Nomus quando syncCutoff é informado", () => {
+    const latestSync = new Date("2026-06-16T10:00:00.000Z");
+    const staleSync = new Date("2026-06-08T10:00:00.000Z");
+    const cutoff = buildNomusArReportSyncCutoff(latestSync)!;
+    const horizonRows = buildFinanceArHorizonRows(
+      [
+        arRow({
+          externalId: 1,
+          dueDate: addDays(REF, 10),
+          balanceReceivable: 200,
+          syncedAt: latestSync,
+        }),
+        arRow({
+          externalId: 2,
+          dueDate: addDays(REF, 12),
+          balanceReceivable: 500,
+          syncedAt: staleSync,
+        }),
+      ],
+      { status: "all" },
+      REF,
+      cutoff
+    );
+    assert.equal(horizonRows.length, 1);
+    assert.equal(horizonRows[0]?.value, 200);
   });
 });
 

@@ -1,6 +1,14 @@
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+import {
+  FINANCE_AP_INTERCOMPANY_GROUP,
+  isIntercompanyPayable,
+} from "./financeInternalGroupExclusions.js";
+
 export type FinanceApOperationalRow = {
+  companyName?: string | null;
+  personName?: string | null;
+  personCnpj?: string | null;
   dueDate?: Date | null;
   scheduleDate?: Date | null;
   balancePayable?: number;
@@ -77,6 +85,9 @@ export function computeFinanceApDaysOverdue(
 export function getAccountsPayableExcludedReason(row: FinanceApOperationalRow): string {
   if (isAccountsPayablePurchaseOrderSchedule(row)) {
     return "Agenda de pedido de compra";
+  }
+  if (isIntercompanyPayable(row)) {
+    return `Movimento intercompany (${FINANCE_AP_INTERCOMPANY_GROUP})`;
   }
   return "";
 }

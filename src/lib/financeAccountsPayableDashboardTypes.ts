@@ -18,6 +18,7 @@ export type FinanceApDashboardFiltersApplied = {
   paymentMethodName?: string;
   bankAccountName?: string;
   documentNumber?: string;
+  managementScope?: import("./financeInternalGroupExclusions.js").FinanceManagementScope;
 };
 
 export type FinanceApDashboardCards = {

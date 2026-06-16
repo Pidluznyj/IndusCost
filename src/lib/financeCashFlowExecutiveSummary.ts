@@ -133,6 +133,7 @@ function toPaidApLoadFilters(
     status,
     paymentMethodName: filters.paymentMethodName,
     bankAccountName: filters.bankAccountName,
+    managementScope: filters.cashFlowScope,
   };
 }
 
