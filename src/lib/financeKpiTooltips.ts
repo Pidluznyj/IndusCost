@@ -40,7 +40,7 @@ export const FINANCE_KPI_AP_TOTAL_PAYABLE =
   "Soma do valor original dos títulos no universo filtrado. Respeita filtros de ano, mês, fornecedor, empresa e status aplicados na tela." as const;
 
 export const FINANCE_KPI_AP_PAID_THIS_MONTH =
-  "Pagamentos registrados no mês calendário atual (mês/ano de hoje), dentre os títulos que passam pelo filtro. Não usa o filtro de vencimento como referência temporal." as const;
+  "Pagamentos realizados alocados no mês calendário atual pelo vencimento (dueDate), dentre os títulos que passam pelo filtro. A data de baixa/pagamento é mantida apenas para auditoria operacional." as const;
 
 export const FINANCE_KPI_AP_OPEN =
   "Saldo em aberto na visão gerencial: títulos com saldo positivo após filtros. Exclui agendas de pedido de compra da visão gerencial." as const;
@@ -135,13 +135,13 @@ export const FINANCE_KPI_CF_ESTIMATED_AR_YEAR =
   "Estimativa total de entradas do ano: Recebido YTD + saldo em aberto a receber até 31/12. Fórmula: Recebido YTD + A receber até fim do ano." as const;
 
 export const FINANCE_KPI_CF_PAID_YTD =
-  "Soma dos valores realizados em Contas a Pagar no ano selecionado, usando a data efetiva saneada (pagamento/liquidação; baixas sem numerário ou forçadas usam vencimento). Fórmula: SUM(realizedAmount) de 01/01 até a data de corte. Respeita filtros de empresa, fornecedor e demais filtros de AP." as const;
+  "Soma dos valores realizados em Contas a Pagar no ano selecionado, alocados pela data de vencimento (dueDate). Fórmula: SUM(realizedAmount) de 01/01 até a data de corte. A data de baixa/pagamento é mantida apenas para auditoria operacional. Respeita filtros de empresa, fornecedor e demais filtros de AP." as const;
 
 export const FINANCE_KPI_CF_OPEN_AP_TO_YEAR_END =
   "Soma dos saldos em aberto saneados (openAmount) com vencimento entre hoje e 31/12 do ano selecionado. Fórmula: SUM(openAmount) por dueDate. Não inclui títulos baixados nem baixas especiais." as const;
 
 export const FINANCE_KPI_CF_PERIOD_OUTFLOW =
-  "Saídas do período filtrado, conforme modo e filtros aplicados. Fonte: Contas a Pagar com regra saneada (baixas sem numerário/forçadas posicionadas pelo vencimento)." as const;
+  "Saídas do período filtrado, conforme modo e filtros aplicados. Fonte: Contas a Pagar alocadas por vencimento para fins gerenciais." as const;
 
 export const FINANCE_KPI_CF_ESTIMATED_AP_YEAR =
   "Estimativa total de saídas do ano: Pago YTD + saldo em aberto a pagar até 31/12. Fórmula: Pago YTD + A pagar até fim do ano." as const;

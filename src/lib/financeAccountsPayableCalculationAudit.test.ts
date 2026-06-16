@@ -47,7 +47,7 @@ describe("financeAccountsPayableCalculationAudit", () => {
       balancePayable: 0,
       amountPaid: 450,
       paymentDate: new Date(2026, 5, 4),
-      dueDate: new Date(2026, 4, 1),
+      dueDate: new Date(2026, 5, 4),
     }),
   ];
 
@@ -56,7 +56,7 @@ describe("financeAccountsPayableCalculationAudit", () => {
     assert.equal(result.ok, true, result.mismatches.join("; "));
   });
 
-  it("paidThisMonth usa calendário atual — exceção rotulada", () => {
+  it("paidThisMonth aloca por vencimento no calendário atual", () => {
     const ind = computeFinanceApIndependentMetrics(fixture, { status: "all", year: 2026 }, REF);
     assert.equal(ind.paidThisMonthAmount, 450);
     const page = readFileSync(
@@ -64,7 +64,7 @@ describe("financeAccountsPayableCalculationAudit", () => {
       "utf8"
     );
     assert.ok(page.includes("FINANCE_KPI_AP_PAID_THIS_MONTH"));
-    assert.ok(FINANCE_AP_PAID_THIS_MONTH_SCOPE.includes("calendário atual"));
+    assert.ok(FINANCE_AP_PAID_THIS_MONTH_SCOPE.includes("vencimento"));
   });
 
   it("UI AP possui resumo executivo e filtros principais visíveis", () => {

@@ -161,16 +161,18 @@ describe("financeCashFlowExecutiveSummary", () => {
     );
   });
 
-  it("Pago YTD soma amountPaid por paymentDate no ano", () => {
+  it("Pago YTD soma realizedAmount por dueDate no ano", () => {
     const rows = [
       apRow({
         amountPaid: 150,
+        dueDate: new Date(2026, 0, 10),
         paymentDate: new Date(2026, 0, 15),
         balancePayable: 0,
       }),
       apRow({
         externalId: 3,
         amountPaid: 50,
+        dueDate: new Date(2026, 1, 1),
         settlementDate: new Date(2026, 1, 1),
         paymentDate: null,
         balancePayable: 0,
@@ -178,6 +180,19 @@ describe("financeCashFlowExecutiveSummary", () => {
     ];
     assert.equal(isApPaidInPeriod(rows[0]!, new Date(2026, 0, 1), REF), true);
     assert.equal(sumApPaidInPeriod(rows, new Date(2026, 0, 1), REF), 200);
+  });
+
+  it("Pago YTD ignora paymentDate quando vencimento é anterior", () => {
+    const rows = [
+      apRow({
+        amountPaid: 1000,
+        dueDate: new Date(2025, 11, 10),
+        paymentDate: new Date(2026, 5, 15),
+        balancePayable: 0,
+      }),
+    ];
+    assert.equal(isApPaidInPeriod(rows[0]!, new Date(2026, 5, 1), REF), false);
+    assert.equal(isApPaidInPeriod(rows[0]!, new Date(2025, 11, 1), new Date(2025, 11, 31)), true);
   });
 
   it("A pagar até fim do ano soma balancePayable por dueDate de hoje até 31/12", () => {
@@ -195,6 +210,7 @@ describe("financeCashFlowExecutiveSummary", () => {
       [
         apRow({
           amountPaid: 400,
+          dueDate: new Date(2026, 1, 1),
           paymentDate: new Date(2026, 1, 1),
           balancePayable: 0,
         }),
@@ -226,6 +242,7 @@ describe("financeCashFlowExecutiveSummary", () => {
       [
         apRow({
           amountPaid: 300,
+          dueDate: new Date(2026, 2, 1),
           paymentDate: new Date(2026, 2, 1),
           balancePayable: 0,
         }),
@@ -268,6 +285,7 @@ describe("financeCashFlowExecutiveSummary", () => {
       [
         apRow({
           amountPaid: 500,
+          dueDate: new Date(2026, 0, 20),
           paymentDate: new Date(2026, 0, 20),
           balancePayable: 0,
         }),
@@ -389,6 +407,7 @@ describe("financeCashFlowExecutiveSummary", () => {
       [
         apRow({
           amountPaid: 40,
+          dueDate: new Date(2026, 0, 20),
           paymentDate: new Date(2026, 0, 20),
           balancePayable: 0,
         }),

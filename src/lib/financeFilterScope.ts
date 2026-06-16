@@ -43,7 +43,7 @@ export const FINANCE_AR_LAST_SYNC_FILTERED_SCOPE =
 
 /** Contas a Pagar — exceções e defaults explícitos na UI. */
 export const FINANCE_AP_PAID_THIS_MONTH_SCOPE =
-  "Pago no mês — calendário atual (mês/ano de hoje), não o filtro de vencimento. Dentre títulos filtrados." as const;
+  "Pago no mês — calendário atual (mês/ano de hoje), alocado por vencimento. Dentre títulos filtrados." as const;
 
 export const FINANCE_AP_DEFAULT_YEAR_SCOPE =
   "Ano corrente aplicado por padrão quando nenhum período é informado — limpe filtros para ver todos os anos (period=all)." as const;
@@ -72,7 +72,7 @@ export const FINANCE_MANAGEMENT_SANITIZATION_SCOPE =
   "Movimentações internas do grupo, títulos fantasma e agendas de pedido de compra são desconsiderados da visão gerencial." as const;
 
 export const FINANCE_CASH_FLOW_SANITIZED_SCOPE =
-  "Visão gerencial saneada." as const;
+  "Recebido/pago realizados + saldos em aberto por vencimento." as const;
 
 export const FINANCE_BILLING_FORECAST_SCOPE =
   "Previsão de faturamento — pedidos não faturados por SalesOrder.expectedDeliveryDate (dataEntregaPadrao Nomus). Não é faturamento realizado." as const;

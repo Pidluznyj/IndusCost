@@ -1,7 +1,8 @@
 /**
  * Regras saneadas de Contas a Pagar — fonte única para AP e Fluxo de Caixa.
  *
- * Baixas sem numerário / forçadas: tratadas como SETTLED com data efetiva = vencimento.
+ * Dashboards gerenciais alocam títulos AP (abertos e quitados) pela data de vencimento.
+ * paymentDate/settlementDate permanecem apenas para auditoria operacional.
  */
 
 export type FinanceApSettlementKind = "NORMAL" | "WITHOUT_CASH" | "FORCED";
@@ -29,6 +30,9 @@ export type NormalizedAccountsPayableTitle = {
   dueDate: Date | null;
   originalPaymentDate: Date | null;
   originalSettlementDate: Date | null;
+  /** Data de alocação gerencial — sempre vencimento para títulos não cancelados. */
+  effectiveDashboardDate: Date | null;
+  /** Compatível com dashboards — quitados usam vencimento, não data de baixa. */
   effectivePaymentDate: Date | null;
   effectiveStatus: FinanceApEffectiveStatus;
   settlementKind: FinanceApSettlementKind;
@@ -150,13 +154,11 @@ export function normalizeAccountsPayableTitle(
 
   const openAmount = isOpen ? balancePayable : 0;
 
+  const effectiveDashboardDate = isCancelled ? null : dueDate;
+
   let effectivePaymentDate: Date | null = null;
   if (!isCancelled && (isSettled || amountPaid > 0)) {
-    if (isSpecialWriteOff) {
-      effectivePaymentDate = dueDate;
-    } else {
-      effectivePaymentDate = originalPaymentDate ?? originalSettlementDate ?? dueDate;
-    }
+    effectivePaymentDate = dueDate;
   }
 
   const effectiveStatus: FinanceApEffectiveStatus = isCancelled
@@ -170,6 +172,7 @@ export function normalizeAccountsPayableTitle(
     dueDate,
     originalPaymentDate,
     originalSettlementDate,
+    effectiveDashboardDate,
     effectivePaymentDate,
     effectiveStatus,
     settlementKind,
@@ -193,6 +196,10 @@ export function isFinanceApSettledByRules(row: FinanceApRulesInput): boolean {
   return normalizeAccountsPayableTitle(row).isSettled;
 }
 
+export function resolveFinanceApEffectiveDashboardDate(row: FinanceApRulesInput): Date | null {
+  return normalizeAccountsPayableTitle(row).effectiveDashboardDate;
+}
+
 export function resolveFinanceApEffectivePaymentDate(row: FinanceApRulesInput): Date | null {
   return normalizeAccountsPayableTitle(row).effectivePaymentDate;
 }
@@ -206,4 +213,4 @@ export function resolveFinanceApOpenAmount(row: FinanceApRulesInput): number {
 }
 
 export const FINANCE_AP_CASH_FLOW_RULES_NOTE =
-  "Saídas realizadas seguem a regra saneada de Contas a Pagar. Baixas sem numerário ou forçadas são posicionadas pela data de vencimento." as const;
+  "Contas a Pagar são alocadas por vencimento para fins gerenciais. A data de baixa/pagamento é mantida apenas para auditoria operacional." as const;

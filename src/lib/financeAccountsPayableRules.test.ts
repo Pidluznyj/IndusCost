@@ -103,7 +103,7 @@ describe("financeAccountsPayableRules", () => {
     assert.equal(normalized.settlementKind, "FORCED");
   });
 
-  it("título normal pago usa paymentDate e amountPaid", () => {
+  it("título normal pago usa dueDate no dashboard e amountPaid como realizedAmount", () => {
     const normalized = normalizeAccountsPayableTitle(
       apInput({
         amountPayable: 1000,
@@ -111,13 +111,62 @@ describe("financeAccountsPayableRules", () => {
         balancePayable: 0,
         dueDate: new Date(2026, 2, 10),
         paymentDate: new Date(2026, 3, 5),
+        settlementDate: new Date(2026, 3, 5),
       })
     );
     assert.equal(normalized.isOpen, false);
     assert.equal(normalized.openAmount, 0);
     assert.equal(normalized.realizedAmount, 1000);
-    assert.equal(normalized.effectivePaymentDate?.toISOString().slice(0, 10), "2026-04-05");
+    assert.equal(normalized.effectiveDashboardDate?.toISOString().slice(0, 10), "2026-03-10");
+    assert.equal(normalized.effectivePaymentDate?.toISOString().slice(0, 10), "2026-03-10");
+    assert.equal(normalized.originalPaymentDate?.toISOString().slice(0, 10), "2026-04-05");
     assert.equal(normalized.settlementKind, "NORMAL");
+  });
+
+  it("título pago com vencimento anterior não infla mês da baixa (cenário A)", () => {
+    const normalized = normalizeAccountsPayableTitle(
+      apInput({
+        amountPayable: 1000,
+        amountPaid: 1000,
+        balancePayable: 0,
+        dueDate: new Date(2025, 11, 10),
+        paymentDate: new Date(2026, 5, 15),
+        settlementDate: new Date(2026, 5, 15),
+      })
+    );
+    assert.equal(normalized.effectiveDashboardDate?.toISOString().slice(0, 10), "2025-12-10");
+    assert.equal(normalized.effectivePaymentDate?.toISOString().slice(0, 10), "2025-12-10");
+    assert.equal(normalized.realizedAmount, 1000);
+    assert.equal(normalized.isOpen, false);
+  });
+
+  it("título pago com baixa em junho aloca no vencimento de março (cenário B)", () => {
+    const normalized = normalizeAccountsPayableTitle(
+      apInput({
+        amountPayable: 2000,
+        amountPaid: 2000,
+        balancePayable: 0,
+        dueDate: new Date(2026, 2, 10),
+        paymentDate: new Date(2026, 5, 15),
+      })
+    );
+    assert.equal(normalized.effectivePaymentDate?.toISOString().slice(0, 10), "2026-03-10");
+    assert.equal(normalized.realizedAmount, 2000);
+  });
+
+  it("título pago com amountPaid zerado usa amountPayable como realizedAmount", () => {
+    const normalized = normalizeAccountsPayableTitle(
+      apInput({
+        amountPayable: 800,
+        amountPaid: 0,
+        balancePayable: 0,
+        dueDate: new Date(2026, 1, 5),
+        paymentDate: new Date(2026, 5, 1),
+      })
+    );
+    assert.equal(normalized.isSettled, true);
+    assert.equal(normalized.realizedAmount, 800);
+    assert.equal(normalized.effectivePaymentDate?.toISOString().slice(0, 10), "2026-02-05");
   });
 
   it("título em aberto usa dueDate na previsão e mantém openAmount", () => {
@@ -163,15 +212,14 @@ describe("financeAccountsPayableRules", () => {
     assert.ok(Number.isFinite(normalized.openAmount));
   });
 
-  it("fluxo financeiro lança baixa especial em março, não em junho", () => {
+  it("fluxo financeiro lança título pago normal no vencimento, não na baixa", () => {
     const ap = cashFlowApRow({
       amountPayable: 1000,
-      amountPaid: 0,
-      balancePayable: 1000,
+      amountPaid: 1000,
+      balancePayable: 0,
       dueDate: new Date(2026, 2, 10),
       paymentDate: new Date(2026, 5, 15),
       settlementDate: new Date(2026, 5, 15),
-      paymentMethodName: "Baixa sem numerário",
     });
     const payload = buildFinanceCashFlowDashboard(
       [],

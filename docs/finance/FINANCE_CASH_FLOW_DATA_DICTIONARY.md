@@ -70,8 +70,8 @@ O **Fluxo de Caixa** consolida movimentos financeiros de entrada e saída a part
 | `balancePayable` | Saldo em aberto — **previsto** |
 | `amountPaid` | Valor pago — **realizado** |
 | `amountPayable` | Valor nominal (carteira YTD) |
-| `dueDate` | Vencimento — previsto |
-| `paymentDate` ?? `settlementDate` | Liquidação — realizado (prioriza `paymentDate`) |
+| `dueDate` | Vencimento — previsto e **realizado gerencial** |
+| `paymentDate`, `settlementDate` | Auditoria operacional (não definem mês do dashboard AP) |
 | `competenceDate` | Se `dateBase=issue` |
 | `suspendPayment` | Exclui do previsto |
 | `documentNumber`, `sourceInvoiceId` | Documento (não usado no filtro “origem NF” do fluxo) |
@@ -134,7 +134,7 @@ Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mê
 | **Recebido YTD** | `receivable.receivedYtd` | Caixa já recebido no ano | `SUM(amountReceived)` | `NomusAccountsReceivable` | `settlementDate` 01/01 → corte |
 | **A receber até 31/12** | `receivable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano | `SUM(balanceReceivable)` | AR | `dueDate` hoje → 31/12 |
 | **Estimativa AR do ano** | `receivable.estimatedYearTotal` | Entrada total estimada | Recebido YTD + A receber até 31/12 | AR | Misto |
-| **Pago YTD** | `payable.paidYtd` | Caixa já pago no ano | `SUM(amountPaid)` | `NomusAccountsPayable` | `paymentDate` ?? `settlementDate` |
+| **Pago YTD** | `payable.paidYtd` | Caixa já pago no ano (gerencial) | `SUM(realizedAmount)` | `NomusAccountsPayable` | `dueDate` (via `effectivePaymentDate`) 01/01 → corte |
 | **A pagar até 31/12** | `payable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano | `SUM(balancePayable)` | AP | `dueDate` hoje → 31/12 |
 | **Estimativa AP do ano** | `payable.estimatedYearTotal` | Saída total estimada | Pago YTD + A pagar até 31/12 | AP | Misto |
 | **Saldo realizado YTD** | `net.realizedYtd` | Caixa líquido realizado | Recebido YTD − Pago YTD | AR + AP | Liquidação |
@@ -312,7 +312,7 @@ deltaOpenVsAp = cashFlowOpenPortfolio − apDashboardOpen
 | Entradas | `amountReceived > 0` **e** `settlementDate != null` |
 | Data AR | Liquidação (UI força `dateBase=settlement`) |
 | Saídas | `realizedAmount` saneado (`resolveFinanceApRealizedAmount`) com data efetiva (`resolveFinanceApEffectivePaymentDate`) |
-| Data AP | Pagamento/liquidação; **baixas sem numerário/forçadas usam `dueDate`** |
+| Data AP | **`dueDate`** (vencimento) para todos os títulos quitados e em aberto |
 | Parciais | Valor pago parcial em `realizedAmount`; saldo remanescente no previsto via `openAmount` |
 | Meses futuros | Série mensal com `null` (sem dados futuros) |
 
@@ -384,12 +384,14 @@ Cenário stress                 = 60% / 30% + AP × 1,1
 
 Fonte única: `src/lib/financeAccountsPayableRules.ts` (`normalizeAccountsPayableTitle`).
 
-| Situação | Data efetiva | Valor realizado | Em aberto |
-|----------|--------------|-----------------|-----------|
-| AP normal pago | `paymentDate` → `settlementDate` → `dueDate` | `amountPaid` (ou `amountPayable` se baixado sem valor pago) | 0 |
-| AP em aberto | `dueDate` (previsto) | 0 | `balancePayable` |
-| Baixa sem numerário / forçada | **`dueDate` obrigatoriamente** | `amountPaid > 0` ? `amountPaid` : `amountPayable` | 0 |
+| Situação | Data efetiva (dashboard) | Valor realizado | Em aberto |
+|----------|--------------------------|-----------------|-----------|
+| AP normal pago | **`dueDate`** | `amountPaid` (ou `amountPayable` se baixado sem valor pago) | 0 |
+| AP em aberto | `dueDate` | 0 | `balancePayable` |
+| Baixa sem numerário / forçada | **`dueDate`** | `amountPaid > 0` ? `amountPaid` : `amountPayable` | 0 |
 | Cancelado (`CANCELLED`, `CANCELADO`, `ERROR`, …) | — | excluído das métricas | excluído |
+
+`paymentDate` e `settlementDate` originais permanecem em `originalPaymentDate` / `originalSettlementDate` para auditoria operacional.
 
 O Fluxo de Caixa (`financeCashFlowLedger.ts`, resumo executivo, YTD, CFO) consome os helpers `resolveFinanceApEffectivePaymentDate`, `resolveFinanceApRealizedAmount` e `resolveFinanceApOpenAmount` — mesma regra da tela Contas a Pagar.
 

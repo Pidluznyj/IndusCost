@@ -86,6 +86,7 @@ describe("financeCrossModuleReconciliation", () => {
         apRow({
           balancePayable: 0,
           amountPaid: 25_000,
+          dueDate: new Date(2026, 1, 10),
           paymentDate: new Date(2026, 1, 10),
         }),
       ],
