@@ -27,6 +27,13 @@ import {
   buildFinanceApHorizonSummary,
 } from "./financeHorizonAggregation.js";
 import {
+  isFinanceApExcludedFromReports,
+  isNomusApStaleForReports,
+  mergeFinanceApPrismaWhereWithSyncCutoff,
+  resolveEffectiveNomusApReportSyncCutoff,
+  type NomusApReportSyncCutoff,
+} from "./financeNomusApReportFreshness.js";
+import {
   isFinanceApCancelledTitle,
   isFinanceApOpenByRules,
   isFinanceApSettledByRules,
@@ -34,6 +41,8 @@ import {
   resolveFinanceApOpenAmount,
   resolveFinanceApRealizedAmount,
 } from "./financeAccountsPayableRules.js";
+
+export type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 
 export type FinanceApTitleStatus =
   | "open"
@@ -375,7 +384,8 @@ function pushFinanceApPrismaContains(
 }
 
 export function buildFinanceApPrismaWhere(
-  filters: FinanceApDashboardFilters
+  filters: FinanceApDashboardFilters,
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): Prisma.NomusAccountsPayableWhereInput {
   const and: Prisma.NomusAccountsPayableWhereInput[] = [];
   const { from, toExclusive, empty } = resolveFinanceApDueDateBounds(filters);
@@ -413,7 +423,10 @@ export function buildFinanceApPrismaWhere(
     and.push({ OR: [{ suspendPayment: false }, { suspendPayment: null }] });
   }
 
-  return and.length > 0 ? { AND: and } : {};
+  return mergeFinanceApPrismaWhereWithSyncCutoff(
+    and.length > 0 ? { AND: and } : {},
+    syncCutoff
+  );
 }
 
 function parseSuspendPaymentFilter(value: unknown): FinanceApSuspendPaymentFilter {
@@ -556,15 +569,26 @@ export function matchesFinanceApDashboardFilters(
 export function countFinanceApSanitizationInScope(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): Pick<
   FinanceDataSanitization,
-  "ignoredInternalGroupPayables" | "ignoredPurchaseOrderAgendaPayables"
+  "ignoredInternalGroupPayables" | "ignoredPurchaseOrderAgendaPayables" | "ignoredStalePayables"
 > {
   const audit = auditFinanceApPurchaseOrderExclusionsInScope(rows, filters, referenceDate);
+  const { empty } = resolveFinanceApDueDateBounds(filters);
+  let ignoredStalePayables = 0;
+  if (!empty) {
+    const effectiveCutoff = resolveEffectiveNomusApReportSyncCutoff(rows, syncCutoff);
+    for (const row of rows) {
+      if (!matchesFinanceApDashboardFilters(row, filters, referenceDate)) continue;
+      if (isNomusApStaleForReports(row, effectiveCutoff)) ignoredStalePayables += 1;
+    }
+  }
   return {
     ignoredInternalGroupPayables: audit.ignoredInternalGroupPayables,
     ignoredPurchaseOrderAgendaPayables: audit.ignoredPurchaseOrderAgendaPayables,
+    ignoredStalePayables,
   };
 }
 
@@ -621,24 +645,27 @@ export function auditFinanceApPurchaseOrderExclusionsInScope(
 export function filterFinanceApRows(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceApDashboardRow[] {
   const { empty } = resolveFinanceApDueDateBounds(filters);
   if (empty) return [];
 
+  const effectiveCutoff = resolveEffectiveNomusApReportSyncCutoff(rows, syncCutoff);
   return rows.filter(
     (row) =>
       matchesFinanceApDashboardFilters(row, filters, referenceDate) &&
-      !isFinanceApExcludedFromManagement(row)
+      !isFinanceApExcludedFromReports(row, effectiveCutoff)
   );
 }
 
 export function buildFinanceAccountsPayableDashboard(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters = { status: "all" },
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
 ) {
-  const filteredRows = filterFinanceApRows(rows, filters, referenceDate);
+  const filteredRows = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
   const today = startOfLocalDay(referenceDate);
   const in7Days = endOfLocalDay(addLocalDays(today, 7));
   const in30Days = endOfLocalDay(addLocalDays(today, 30));
@@ -1098,8 +1125,7 @@ export function buildFinanceAccountsPayableDashboard(
     dataSanitization: {
       ignoredInternalGroupReceivables: 0,
       ignoredGhostReceivables: 0,
-      ignoredInternalGroupPayables: exclusionAudit.ignoredInternalGroupPayables,
-      ignoredPurchaseOrderAgendaPayables: exclusionAudit.ignoredPurchaseOrderAgendaPayables,
+      ...countFinanceApSanitizationInScope(rows, filters, referenceDate, syncCutoff),
     },
     purchaseOrderScheduleAudit: {
       excludedCount: exclusionAudit.ignoredPurchaseOrderAgendaPayables,
@@ -1107,6 +1133,6 @@ export function buildFinanceAccountsPayableDashboard(
       rescheduledOpenCount: exclusionAudit.rescheduledOpenCount,
       rescheduledOpenAmount: exclusionAudit.rescheduledOpenAmount,
     },
-    financialHorizon: buildFinanceApHorizonSummary(rows, filters, referenceDate),
+    financialHorizon: buildFinanceApHorizonSummary(rows, filters, referenceDate, syncCutoff),
   };
 }

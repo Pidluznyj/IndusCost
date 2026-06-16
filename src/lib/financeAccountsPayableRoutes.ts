@@ -20,6 +20,7 @@ import {
   mapPrismaRowToFinanceApTitleRow,
   parseFinanceApTitlesQuery,
 } from "@/src/lib/financeAccountsPayableTitles.js";
+import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {
@@ -48,13 +49,14 @@ const FINANCE_AP_DASHBOARD_SELECT = {
 } as const;
 
 async function loadFinanceApRows(filters: FinanceApDashboardFilters) {
-  const where = buildFinanceApPrismaWhere(filters);
+  const syncCutoff = await resolveNomusApReportSyncCutoffFromPrisma(prisma);
+  const where = buildFinanceApPrismaWhere(filters, syncCutoff);
   const rows = await prisma.nomusAccountsPayable.findMany({
     where,
     select: FINANCE_AP_DASHBOARD_SELECT,
     orderBy: { dueDate: "asc" },
   });
-  return rows.map(mapPrismaRowToFinanceApDashboardRow);
+  return { rows: rows.map(mapPrismaRowToFinanceApDashboardRow), syncCutoff };
 }
 
 function resolveFinanceApLoadFilters(
@@ -111,8 +113,8 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
       const query = req.query as Record<string, unknown>;
       const filters = resolveFinanceApLoadFilters(res, query);
       if (!filters) return;
-      const rows = await loadFinanceApRows(filters);
-      const payload = buildFinanceAccountsPayableDashboard(rows, filters);
+      const { rows, syncCutoff } = await loadFinanceApRows(filters);
+      const payload = buildFinanceAccountsPayableDashboard(rows, filters, new Date(), syncCutoff);
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/dashboard", error);
@@ -131,16 +133,22 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
       const query = parseFinanceApTitlesOrRespond(res, rawQuery);
       if (!query) return;
       const loadFilters = resolveFinanceApDashboardFiltersForLoad(rawQuery, query.filters);
+      const syncCutoff = await resolveNomusApReportSyncCutoffFromPrisma(prisma);
       const rows = await prisma.nomusAccountsPayable.findMany({
-        where: buildFinanceApPrismaWhere(loadFilters),
+        where: buildFinanceApPrismaWhere(loadFilters, syncCutoff),
         select: FINANCE_AP_TITLE_SELECT,
         orderBy: { dueDate: "asc" },
       });
       const mapped = rows.map(mapPrismaRowToFinanceApTitleRow);
-      const payload = buildFinanceApTitlesPayload(mapped, {
-        ...query,
-        filters: loadFilters,
-      });
+      const payload = buildFinanceApTitlesPayload(
+        mapped,
+        {
+          ...query,
+          filters: loadFilters,
+        },
+        new Date(),
+        syncCutoff
+      );
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/titles", error);
@@ -158,8 +166,8 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
       const query = req.query as Record<string, unknown>;
       const filters = resolveFinanceApLoadFilters(res, query);
       if (!filters) return;
-      const rows = await loadFinanceApRows(filters);
-      const csv = buildFinanceApExportCsv(rows, filters);
+      const { rows, syncCutoff } = await loadFinanceApRows(filters);
+      const csv = buildFinanceApExportCsv(rows, filters, new Date(), syncCutoff);
       const filename = financeApExportFilename();
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

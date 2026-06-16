@@ -41,6 +41,7 @@ import {
   type FinanceManagementScope,
 } from "./financeInternalGroupExclusions.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import type {
   FinanceCashFlowCriticalMovement,
   FinanceCashFlowDashboardFiltersApplied,
@@ -382,9 +383,10 @@ export function filterCashFlowArRows(
 export function filterCashFlowApRows(
   rows: FinanceCashFlowApRow[],
   filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowApRow[] {
-  return filterCashFlowApRowsScoped(rows, filters, toApLoadFilters(filters), referenceDate);
+  return filterCashFlowApRowsScoped(rows, filters, toApLoadFilters(filters), referenceDate, syncCutoff);
 }
 
 type MonthBucket = {
@@ -688,10 +690,11 @@ export function buildFinanceCashFlowDashboard(
   apRows: FinanceCashFlowApRow[],
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date = new Date(),
-  syncCutoff?: NomusArReportSyncCutoff | null
+  arSyncCutoff?: NomusArReportSyncCutoff | null,
+  apSyncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowDashboardPayload {
-  const filteredAr = filterCashFlowArRows(arRows, filters, referenceDate, syncCutoff);
-  const filteredAp = filterCashFlowApRows(apRows, filters, referenceDate);
+  const filteredAr = filterCashFlowArRows(arRows, filters, referenceDate, arSyncCutoff);
+  const filteredAp = filterCashFlowApRows(apRows, filters, referenceDate, apSyncCutoff);
   const monthlySeries = buildFinanceCashFlowMonthlySeries(
     filteredAr,
     filteredAp,
@@ -804,8 +807,8 @@ export function buildFinanceCashFlowDashboard(
   });
 
   const dataSanitization = mergeFinanceDataSanitization(
-    countFinanceArSanitizationInScope(arRows, toArLoadFilters(filters), referenceDate, syncCutoff),
-    countFinanceApSanitizationInScope(apRows, toApLoadFilters(filters), referenceDate)
+    countFinanceArSanitizationInScope(arRows, toArLoadFilters(filters), referenceDate, arSyncCutoff),
+    countFinanceApSanitizationInScope(apRows, toApLoadFilters(filters), referenceDate, apSyncCutoff)
   );
 
   const partialPayload = {
@@ -857,8 +860,8 @@ export function buildFinanceCashFlowDashboard(
   };
 
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
-  const ytdAr = filterCashFlowArRows(arRows, ytdFilters, referenceDate, syncCutoff);
-  const ytdAp = filterCashFlowApRows(apRows, ytdFilters, referenceDate);
+  const ytdAr = filterCashFlowArRows(arRows, ytdFilters, referenceDate, arSyncCutoff);
+  const ytdAp = filterCashFlowApRows(apRows, ytdFilters, referenceDate, apSyncCutoff);
   const ytdMonthlySeries = buildFinanceCashFlowMonthlySeries(
     ytdAr,
     ytdAp,
@@ -885,7 +888,8 @@ export function buildFinanceCashFlowDashboard(
       netFlowAmount: period.net,
       accumulatedBalance: period.accumulated,
     },
-    syncCutoff
+    arSyncCutoff,
+    apSyncCutoff
   );
 
   const cashHealthScore = buildCashHealthScore(partialPayload);
@@ -906,12 +910,13 @@ export function buildFinanceCashFlowDashboard(
     filteredAr,
     toArLoadFilters(filters),
     referenceDate,
-    syncCutoff
+    arSyncCutoff
   );
   const apDash = buildFinanceAccountsPayableDashboard(
     filteredAp,
     toApLoadFilters(filters),
-    referenceDate
+    referenceDate,
+    apSyncCutoff
   );
   const ledgerPeriod = computeCashFlowLedgerPeriodTotals(
     filteredAr,

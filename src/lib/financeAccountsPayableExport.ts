@@ -6,6 +6,7 @@ import {
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
 } from "./financeAccountsPayableDashboard.js";
+import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import {
   computeFinanceApDaysOverdue,
   getAccountsPayableExcludedReason,
@@ -108,9 +109,10 @@ export function mapFinanceApRowToExportCells(
 export function buildFinanceApExportCsv(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): string {
-  const filtered = filterFinanceApRows(rows, filters, referenceDate);
+  const filtered = filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
   const dataRows = filtered.map((row) => mapFinanceApRowToExportCells(row, referenceDate));
   return fleetRowsToCsv([...FINANCE_AP_EXPORT_HEADERS], dataRows);
 }

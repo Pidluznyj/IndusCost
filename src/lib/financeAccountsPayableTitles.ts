@@ -15,6 +15,11 @@ import {
 } from "./financeAccountsPayableDashboard.js";
 import { isFinanceApExcludedFromManagement } from "./financeInternalGroupExclusions.js";
 import {
+  isNomusApStaleForReports,
+  resolveEffectiveNomusApReportSyncCutoff,
+  type NomusApReportSyncCutoff,
+} from "./financeNomusApReportFreshness.js";
+import {
   computeFinanceApDaysOverdue,
   getAccountsPayableOperationalDueDate,
   isAccountsPayablePurchaseOrderSchedule,
@@ -205,21 +210,27 @@ export function mapRowToTitleListItem(
 function filterRowsForTitlesGrid(
   rows: FinanceApDashboardRow[],
   query: FinanceApTitlesQuery,
-  referenceDate: Date
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceApDashboardRow[] {
-  const { empty } = resolveFinanceApDueDateBounds(query.filters);
-  if (empty) return [];
-
   const includeExcluded =
     query.localFilter === "excluded" || query.localFilter === "purchaseOrder";
 
-  let filtered = rows.filter((row) =>
-    matchesFinanceApDashboardFilters(row, query.filters, referenceDate)
-  );
-
   if (!includeExcluded) {
-    filtered = filtered.filter((row) => !isFinanceApExcludedFromManagement(row));
+    const filtered = filterFinanceApRows(rows, query.filters, referenceDate, syncCutoff);
+    return filterApTitleRowsByLocalFilter(filtered, query.localFilter, referenceDate);
   }
+
+  const { empty } = resolveFinanceApDueDateBounds(query.filters);
+  if (empty) return [];
+
+  const effectiveCutoff = resolveEffectiveNomusApReportSyncCutoff(rows, syncCutoff);
+  let filtered = rows.filter(
+    (row) =>
+      matchesFinanceApDashboardFilters(row, query.filters, referenceDate) &&
+      !isNomusApStaleForReports(row, effectiveCutoff) &&
+      isFinanceApExcludedFromManagement(row)
+  );
 
   return filterApTitleRowsByLocalFilter(filtered, query.localFilter, referenceDate);
 }
@@ -227,9 +238,10 @@ function filterRowsForTitlesGrid(
 export function buildFinanceApTitlesPayload(
   rows: FinanceApDashboardRow[],
   query: FinanceApTitlesQuery,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceApTitlesPayload {
-  let filtered = filterRowsForTitlesGrid(rows, query, referenceDate);
+  let filtered = filterRowsForTitlesGrid(rows, query, referenceDate, syncCutoff);
 
   if (query.overdueOnly) {
     filtered = filtered.filter(

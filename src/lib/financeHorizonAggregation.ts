@@ -4,8 +4,10 @@ import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOp
 import type { FinanceArDashboardFilters, FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
 import { isFinanceArOpen, matchesFinanceArDashboardFilters } from "./financeAccountsReceivableDashboard.js";
 import {
-  isFinanceApExcludedFromManagement,
-} from "./financeInternalGroupExclusions.js";
+  isFinanceApExcludedFromReports,
+  resolveEffectiveNomusApReportSyncCutoff,
+  type NomusApReportSyncCutoff,
+} from "./financeNomusApReportFreshness.js";
 import {
   isFinanceArExcludedFromReports,
   resolveEffectiveNomusArReportSyncCutoff,
@@ -49,13 +51,15 @@ function stripHorizonPeriodFilters<T extends { year?: number; month?: number; du
 export function buildFinanceApHorizonRows(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceHorizonRow[] {
   const horizonFilters = stripHorizonPeriodFilters(filters);
   const horizonRows: FinanceHorizonRow[] = [];
+  const effectiveCutoff = resolveEffectiveNomusApReportSyncCutoff(rows, syncCutoff);
 
   for (const row of rows) {
-    if (isFinanceApExcludedFromManagement(row)) {
+    if (isFinanceApExcludedFromReports(row, effectiveCutoff)) {
       continue;
     }
     if (!matchesFinanceApHorizonEntityFilters(row, horizonFilters, referenceDate)) continue;
@@ -115,10 +119,11 @@ export function matchesFinanceArHorizonEntityFilters(
 export function buildFinanceApHorizonSummary(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceHorizonSummary {
   const aggregation = bucketizeFinanceHorizonRows(
-    buildFinanceApHorizonRows(rows, filters, referenceDate),
+    buildFinanceApHorizonRows(rows, filters, referenceDate, syncCutoff),
     referenceDate
   );
   return {

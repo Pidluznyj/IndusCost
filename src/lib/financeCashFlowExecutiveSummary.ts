@@ -23,6 +23,7 @@ import {
   sumArReceivedInPeriod,
 } from "./financeCashFlowExecutiveYtd.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import {
   resolveFinanceApEffectivePaymentDate,
   resolveFinanceApOpenAmount,
@@ -140,10 +141,11 @@ function toPaidApLoadFilters(
 export function filterApRowsForYtdPaid(
   rows: FinanceCashFlowApRow[],
   filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowApRow[] {
   const apFilters = toPaidApLoadFilters(filters);
-  return filterFinanceApRows(rows, apFilters, referenceDate) as FinanceCashFlowApRow[];
+  return filterFinanceApRows(rows, apFilters, referenceDate, syncCutoff) as FinanceCashFlowApRow[];
 }
 
 export function resolveApPaymentDate(row: FinanceCashFlowApRow): Date | null {
@@ -330,7 +332,8 @@ export function buildFinanceCashFlowExecutiveSummary(
     netFlowAmount: number;
     accumulatedBalance: number;
   },
-  syncCutoff?: NomusArReportSyncCutoff | null
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  apSyncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowExecutiveSummary {
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
   const year = ytdFilters.year!;
@@ -338,7 +341,7 @@ export function buildFinanceCashFlowExecutiveSummary(
   const forward = resolveForwardYearRange(year, referenceDate);
 
   const arYtd = filterArRowsForYtdReceived(allArRows, ytdFilters, referenceDate, syncCutoff);
-  const apYtd = filterApRowsForYtdPaid(allApRows, ytdFilters, referenceDate);
+  const apYtd = filterApRowsForYtdPaid(allApRows, ytdFilters, referenceDate, apSyncCutoff);
 
   const receivedYtd = sumArReceivedInPeriod(arYtd, startDate, endDate);
   const paidYtd = sumApPaidInPeriod(apYtd, startDate, endDate);

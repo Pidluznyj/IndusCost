@@ -22,6 +22,7 @@ import {
 } from "@/src/lib/financeCashFlowExport.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusArReportFreshness.js";
+import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -57,11 +58,14 @@ function parseFiltersOrRespond(res: express.Response, query: Record<string, unkn
 }
 
 async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowDashboardFilters>) {
-  const syncCutoff = await resolveNomusArReportSyncCutoffFromPrisma(prisma);
+  const [arSyncCutoff, apSyncCutoff] = await Promise.all([
+    resolveNomusArReportSyncCutoffFromPrisma(prisma),
+    resolveNomusApReportSyncCutoffFromPrisma(prisma),
+  ]);
   const arFilters = toArLoadFilters(filters);
   const apFilters = toApLoadFilters(filters);
-  const arWhere = buildCashFlowArPrismaWhere(filters, arFilters, new Date(), syncCutoff);
-  const apWhere = buildCashFlowApPrismaWhere(filters, apFilters);
+  const arWhere = buildCashFlowArPrismaWhere(filters, arFilters, new Date(), arSyncCutoff);
+  const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, new Date(), apSyncCutoff);
 
   const [arPrisma, apPrisma] = await Promise.all([
     prisma.nomusAccountsReceivable.findMany({
@@ -79,7 +83,8 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
   return {
     arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
-    syncCutoff,
+    arSyncCutoff,
+    apSyncCutoff,
   };
 }
 
@@ -92,8 +97,15 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const { arRows, apRows, syncCutoff } = await loadCashFlowRows(filters);
-      const payload = buildFinanceCashFlowDashboard(arRows, apRows, filters, new Date(), syncCutoff);
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff } = await loadCashFlowRows(filters);
+      const payload = buildFinanceCashFlowDashboard(
+        arRows,
+        apRows,
+        filters,
+        new Date(),
+        arSyncCutoff,
+        apSyncCutoff
+      );
       res.json(payload);
     }
   );
@@ -106,8 +118,15 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const { arRows, apRows, syncCutoff } = await loadCashFlowRows(filters);
-      const payload = buildFinanceCashFlowDashboard(arRows, apRows, filters, new Date(), syncCutoff);
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff } = await loadCashFlowRows(filters);
+      const payload = buildFinanceCashFlowDashboard(
+        arRows,
+        apRows,
+        filters,
+        new Date(),
+        arSyncCutoff,
+        apSyncCutoff
+      );
       const csv = buildFinanceCashFlowExportCsv(payload);
       const filename = financeCashFlowExportFilename(filters.year);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");

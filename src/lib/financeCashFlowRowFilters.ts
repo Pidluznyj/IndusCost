@@ -24,7 +24,10 @@ import {
   shouldIncludeCashFlowApMovement,
 } from "./financeCashFlowLedger.js";
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
-import { isFinanceApExcludedFromManagement } from "./financeInternalGroupExclusions.js";
+import {
+  isFinanceApExcludedFromReports,
+  type NomusApReportSyncCutoff,
+} from "./financeNomusApReportFreshness.js";
 import {
   isFinanceArExcludedFromReports,
   type NomusArReportSyncCutoff,
@@ -139,12 +142,13 @@ export function filterCashFlowApRowsScoped(
   rows: FinanceCashFlowApRow[],
   filters: FinanceCashFlowDashboardFilters,
   apFilters: FinanceApDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowApRow[] {
   return rows.filter(
     (row) =>
       matchesCashFlowApPortfolio(row, apFilters, referenceDate) &&
-      !isFinanceApExcludedFromManagement(row) &&
+      !isFinanceApExcludedFromReports(row, syncCutoff) &&
       matchesCashFlowApPeriodScope(row, filters, referenceDate)
   );
 }
@@ -188,7 +192,8 @@ export function buildCashFlowArPrismaWhere(
 export function buildCashFlowApPrismaWhere(
   filters: FinanceCashFlowDashboardFilters,
   apFilters: FinanceApDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
 ): Prisma.NomusAccountsPayableWhereInput {
   const { from, toExclusive, empty } = resolveFinanceApDueDateBounds({
     year: filters.year,
@@ -204,10 +209,10 @@ export function buildCashFlowApPrismaWhere(
     month: undefined,
     dueDateFrom: undefined,
     dueDateTo: undefined,
-  });
+  }, syncCutoff);
 
   if (filters.viewMode === "projected") {
-    return buildFinanceApPrismaWhere(apFilters);
+    return buildFinanceApPrismaWhere(apFilters, syncCutoff);
   }
 
   const dueFilter: Prisma.DateTimeNullableFilter = {};
