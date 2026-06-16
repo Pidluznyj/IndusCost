@@ -293,25 +293,27 @@ describe("fleetPublicReservation driver CNH helpers", () => {
 });
 
 describe("fleetPublicReservationSlots", () => {
-  it("default slots cover 06:00–20:00 in 3h blocks including 17:00–20:00", () => {
+  it("default slots cover 06:00–20:00 in 1h blocks ending at 19:00–20:00", () => {
     const slots = buildFleetPublicReservationSlots({
       startHour: 6,
       endHour: 20,
-      slotMinutes: 180,
+      slotMinutes: 60,
     });
     assert.deepEqual(
       slots.map((s) => s.key),
       FLEET_PUBLIC_DEFAULT_SLOTS.map((s) => s.key)
     );
-    assert.ok(slots.some((s) => s.start === "17:00" && s.end === "20:00"));
-    assert.ok(!slots.some((s) => s.start === "18:00" && s.end === "21:00"));
+    assert.equal(slots.length, 14);
+    assert.ok(slots.some((s) => s.start === "06:00" && s.end === "07:00"));
+    assert.ok(slots.some((s) => s.start === "19:00" && s.end === "20:00"));
+    assert.ok(!slots.some((s) => s.end === "21:00"));
   });
 
   it("does not generate slot after 20:00", () => {
     const slots = buildFleetPublicReservationSlots({
       startHour: 6,
       endHour: 20,
-      slotMinutes: 180,
+      slotMinutes: 60,
     });
     assert.equal(
       slots.find((s) => s.end === "21:00"),
@@ -324,7 +326,7 @@ describe("fleetPublicReservationSlots", () => {
     const now = combineDateAndTimeLocal(dateStr, "14:30");
     const filtered = filterPastSlotsForToday(FLEET_PUBLIC_DEFAULT_SLOTS, dateStr, now);
     assert.ok(!filtered.some((s) => s.end === "09:00"));
-    assert.ok(filtered.some((s) => s.start === "17:00"));
+    assert.ok(filtered.some((s) => s.start === "15:00"));
   });
 
   it("builds date range for week availability", () => {
@@ -339,11 +341,11 @@ describe("fleetPublicReservationSlots", () => {
     const cfg = parseFleetPublicSlotConfig({
       publicReservationStartHour: "6",
       publicReservationEndHour: "20",
-      publicReservationSlotMinutes: "180",
+      publicReservationSlotMinutes: "60",
     });
     assert.equal(cfg.startHour, 6);
     assert.equal(cfg.endHour, 20);
-    assert.equal(cfg.slotMinutes, 180);
+    assert.equal(cfg.slotMinutes, 60);
   });
 });
 
@@ -354,7 +356,7 @@ describe("fleetPublicSlotSelection multi-slot", () => {
     const consolidated = consolidateSelectedSlots([allSlots[0]!]);
     assert.ok(consolidated);
     assert.equal(consolidated.startTime, "06:00");
-    assert.equal(consolidated.endTime, "09:00");
+    assert.equal(consolidated.endTime, "07:00");
     assert.equal(
       resolveSlotsForConsolidatedPeriod(allSlots, consolidated.startTime, consolidated.endTime)?.length,
       1
@@ -362,23 +364,23 @@ describe("fleetPublicSlotSelection multi-slot", () => {
   });
 
   it("contiguous slots consolidate to first start and last end", () => {
-    const selected = selectSlotsByKeys(allSlots, ["06:00-09:00", "09:00-12:00", "12:00-15:00"]);
+    const selected = selectSlotsByKeys(allSlots, ["06:00-07:00", "07:00-08:00", "08:00-09:00"]);
     const consolidated = consolidateSelectedSlots(selected);
     assert.ok(consolidated);
     assert.equal(consolidated.startTime, "06:00");
-    assert.equal(consolidated.endTime, "15:00");
+    assert.equal(consolidated.endTime, "09:00");
     assert.deepEqual(
-      resolveSlotsForConsolidatedPeriod(allSlots, "06:00", "15:00")?.map((s) => s.key),
-      ["06:00-09:00", "09:00-12:00", "12:00-15:00"]
+      resolveSlotsForConsolidatedPeriod(allSlots, "06:00", "09:00")?.map((s) => s.key),
+      ["06:00-07:00", "07:00-08:00", "08:00-09:00"]
     );
   });
 
-  it("overlapping contiguous slots consolidate correctly (15–18 + 17–20)", () => {
-    const selected = selectSlotsByKeys(allSlots, ["15:00-18:00", "17:00-20:00"]);
+  it("adjacent 1h slots consolidate correctly (15:00–16:00 + 16:00–17:00)", () => {
+    const selected = selectSlotsByKeys(allSlots, ["15:00-16:00", "16:00-17:00"]);
     const consolidated = consolidateSelectedSlots(selected);
     assert.ok(consolidated);
     assert.equal(consolidated.startTime, "15:00");
-    assert.equal(consolidated.endTime, "20:00");
+    assert.equal(consolidated.endTime, "17:00");
   });
 
   it("all day slots consolidate to 06:00–20:00 with full-day label", () => {
@@ -397,7 +399,7 @@ describe("fleetPublicSlotSelection multi-slot", () => {
   });
 
   it("non-contiguous slots are rejected", () => {
-    const selected = selectSlotsByKeys(allSlots, ["06:00-09:00", "15:00-18:00"]);
+    const selected = selectSlotsByKeys(allSlots, ["06:00-07:00", "15:00-16:00"]);
     assert.equal(consolidateSelectedSlots(selected), null);
     assert.equal(areSlotsContiguous(selected), false);
     assert.equal(FLEET_PUBLIC_SLOT_SELECTION_GAP_MESSAGE.length > 10, true);

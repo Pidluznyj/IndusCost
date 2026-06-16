@@ -274,7 +274,7 @@ export function buildExecutiveMonthlyTimeline(
   referenceDate: Date
 ): FinanceCashFlowExecutiveMonthlyRow[] {
   const isCurrentYear = year === referenceDate.getFullYear();
-  const endMonth = isCurrentYear ? referenceDate.getMonth() + 1 : 12;
+  const endMonth = 12;
   const capDate = isCurrentYear ? startOfLocalDay(referenceDate) : null;
   const rows: FinanceCashFlowExecutiveMonthlyRow[] = [];
   let accumulated = 0;

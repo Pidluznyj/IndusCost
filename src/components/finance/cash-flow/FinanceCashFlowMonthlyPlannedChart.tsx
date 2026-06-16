@@ -90,6 +90,7 @@ export function FinanceCashFlowMonthlyPlannedChart({
           <ReferenceLine y={0} stroke={FINANCE_BI_COLORS.textSecondary} strokeWidth={1.5} />
           <XAxis
             dataKey="name"
+            interval={0}
             tick={{ fontSize: 10, fill: FINANCE_BI_COLORS.textSecondary }}
             axisLine={false}
             tickLine={false}

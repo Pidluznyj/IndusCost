@@ -163,6 +163,8 @@ describe("financeCashFlowExecutiveChart", () => {
       REF
     );
 
+    assert.equal(timeline.length, 12);
+
     const jan = timeline.find((r) => r.month === 1);
     const fev = timeline.find((r) => r.month === 2);
     assert.equal(jan?.netFlow, 150);
@@ -170,6 +172,9 @@ describe("financeCashFlowExecutiveChart", () => {
     assert.equal(fev?.accumulatedNet, 220);
 
     const chart = buildExecutiveMonthlyPlannedChartRows(timeline);
+    assert.equal(chart.length, 12);
+    assert.equal(chart[0]!.name, "Jan");
+    assert.equal(chart[11]!.name, "Dez");
     assert.equal(chart[1]!.accumulatedBalance, chart[0]!.netBalance + chart[1]!.netBalance);
   });
 

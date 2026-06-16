@@ -419,7 +419,11 @@ describe("financeCashFlowExecutiveSummary", () => {
       2026,
       REF
     );
-    assert.ok(timeline.length >= 6);
+    assert.equal(timeline.length, 12);
+    assert.deepEqual(
+      timeline.map((r) => r.month),
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    );
     const jan = timeline.find((r) => r.month === 1);
     assert.equal(jan?.received, 100);
     assert.equal(jan?.paid, 40);

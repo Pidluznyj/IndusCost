@@ -11,16 +11,9 @@ export type FleetPublicSlotConfig = {
   slotMinutes: number;
 };
 
-const DEFAULT_SLOT_MINUTES = 180;
-
-/** Slots fixos padrão: 06–09, 09–12, 12–15, 15–18 e 17–20 (último termina às 20:00). */
-export const FLEET_PUBLIC_DEFAULT_SLOTS: FleetPublicSlot[] = [
-  { start: "06:00", end: "09:00", label: "06:00–09:00", key: "06:00-09:00" },
-  { start: "09:00", end: "12:00", label: "09:00–12:00", key: "09:00-12:00" },
-  { start: "12:00", end: "15:00", label: "12:00–15:00", key: "12:00-15:00" },
-  { start: "15:00", end: "18:00", label: "15:00–18:00", key: "15:00-18:00" },
-  { start: "17:00", end: "20:00", label: "17:00–20:00", key: "17:00-20:00" },
-];
+const DEFAULT_START_HOUR = 6;
+const DEFAULT_END_HOUR = 20;
+const DEFAULT_SLOT_MINUTES = 60;
 
 export function parseFleetPublicSlotConfig(settings: Record<string, string>): FleetPublicSlotConfig {
   const startHour = clampHour(parseInt(settings.publicReservationStartHour ?? "6", 10), 6);
@@ -48,25 +41,8 @@ function slotKey(start: string, end: string): string {
   return `${start}-${end}`;
 }
 
-/**
- * Gera slots de 3h dentro da janela diária.
- * Inclui slot final que termina exatamente em endHour (ex.: 17:00–20:00).
- * Não gera slot que ultrapasse endHour (ex.: 18:00–21:00).
- */
-export function buildFleetPublicReservationSlots(config: FleetPublicSlotConfig): FleetPublicSlot[] {
+function buildSlotsFromConfig(config: FleetPublicSlotConfig): FleetPublicSlot[] {
   const durationHours = config.slotMinutes / 60;
-  if (!Number.isFinite(durationHours) || durationHours <= 0) {
-    return [...FLEET_PUBLIC_DEFAULT_SLOTS];
-  }
-
-  if (
-    config.startHour === 6 &&
-    config.endHour === 20 &&
-    config.slotMinutes === DEFAULT_SLOT_MINUTES
-  ) {
-    return [...FLEET_PUBLIC_DEFAULT_SLOTS];
-  }
-
   const slots: FleetPublicSlot[] = [];
   const seen = new Set<string>();
 
@@ -94,6 +70,37 @@ export function buildFleetPublicReservationSlots(config: FleetPublicSlotConfig):
   }
 
   return slots.sort((a, b) => a.start.localeCompare(b.start));
+}
+
+const DEFAULT_SLOT_CONFIG: FleetPublicSlotConfig = {
+  startHour: DEFAULT_START_HOUR,
+  endHour: DEFAULT_END_HOUR,
+  slotMinutes: DEFAULT_SLOT_MINUTES,
+};
+
+/** Slots padrão: 06:00–20:00 em blocos de 1 hora. */
+export const FLEET_PUBLIC_DEFAULT_SLOTS: FleetPublicSlot[] = buildSlotsFromConfig(DEFAULT_SLOT_CONFIG);
+
+/**
+ * Gera slots dentro da janela diária.
+ * Inclui slot final que termina exatamente em endHour (ex.: 19:00–20:00 com duração de 1h).
+ * Não gera slot que ultrapasse endHour (ex.: 20:00–21:00).
+ */
+export function buildFleetPublicReservationSlots(config: FleetPublicSlotConfig): FleetPublicSlot[] {
+  const durationHours = config.slotMinutes / 60;
+  if (!Number.isFinite(durationHours) || durationHours <= 0) {
+    return [...FLEET_PUBLIC_DEFAULT_SLOTS];
+  }
+
+  if (
+    config.startHour === DEFAULT_START_HOUR &&
+    config.endHour === DEFAULT_END_HOUR &&
+    config.slotMinutes === DEFAULT_SLOT_MINUTES
+  ) {
+    return [...FLEET_PUBLIC_DEFAULT_SLOTS];
+  }
+
+  return buildSlotsFromConfig(config);
 }
 
 /** Monta DateTime de reserva no fuso local do servidor (parede de relógio YYYY-MM-DD + HH:mm). */
