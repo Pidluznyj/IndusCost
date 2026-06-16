@@ -37,6 +37,10 @@ import type {
 } from "@/src/lib/nomusBomControlledApplyTypes";
 import type { EffectivePricingBomResult } from "@/src/lib/nomusEffectivePricingBomTypes";
 import {
+  findProductBomRowsForNomusComponent,
+  resolveNomusIncludedComponentFromProductBom,
+} from "@/src/lib/nomusBomControlledApplyResolve";
+import {
   isEffectiveLineRemovableByControlledApply,
   isProductBomRowEligibleForExcludedComponentRemoval,
 } from "@/src/lib/nomusBomControlledApplyRemoval";
@@ -194,8 +198,19 @@ function riskForAction(
 }
 
 function rowsForComponentCode(componentCode: string, currentRows: CurrentBomRow[]): CurrentBomRow[] {
-  const codeKey = normalizeComponentCode(componentCode);
-  return currentRows.filter((r) => normalizeComponentCode(r.componentCode) === codeKey);
+  const snapshots = currentRows.map((row) => ({
+    id: row.id,
+    componentCode: row.componentCode,
+    materialId: row.materialId,
+    childProductId: row.childProductId,
+    quantity: row.quantity,
+    isNomusControlled: row.isNomusControlled,
+    nomusComponentCode: row.nomusComponentCode,
+  }));
+  const ids = new Set(
+    findProductBomRowsForNomusComponent(componentCode, snapshots).map((r) => r.id)
+  );
+  return currentRows.filter((r) => ids.has(r.id));
 }
 
 function sumRowQuantities(rows: CurrentBomRow[]): number {
@@ -572,39 +587,51 @@ async function buildDesiredTargets(
     }
 
     const res = resolvedByCode.get(normalizeComponentCode(line.componentCode));
-    if (!res || res.resolvedKind === "NONE") {
-      unresolved.push(line);
+    if (res && res.resolvedKind !== "NONE") {
+      const link = pickNomusApplyRegistryLink({
+        componentCode: line.componentCode,
+        resolvedKind: res.resolvedKind,
+        productId: res.productId ?? null,
+        materialId: res.materialId ?? null,
+        inactiveMaterialIds: res.inactiveMaterialIds,
+        inactiveProductIds: res.inactiveProductIds,
+      });
+
+      if (link.ok) {
+        targets.push({
+          componentCode: line.componentCode,
+          componentDescription: line.componentDescription ?? null,
+          componentKind: componentKindFromResolution(link.resolvedKind, false),
+          materialId: link.materialId,
+          childProductId: link.childProductId,
+          productBomLineId: null,
+          quantity: qty,
+          effectiveLine: line,
+        });
+        continue;
+      }
+    }
+
+    const fromExisting = resolveNomusIncludedComponentFromProductBom(
+      line.componentCode,
+      qty,
+      currentRows
+    );
+    if (fromExisting.resolutionKind !== "UNRESOLVED") {
+      targets.push({
+        componentCode: line.componentCode,
+        componentDescription: line.componentDescription ?? null,
+        componentKind: fromExisting.materialId ? "Material" : "Produto",
+        materialId: fromExisting.materialId,
+        childProductId: fromExisting.childProductId,
+        productBomLineId: fromExisting.productBomLineId,
+        quantity: qty,
+        effectiveLine: line,
+      });
       continue;
     }
 
-    const link = pickNomusApplyRegistryLink({
-      componentCode: line.componentCode,
-      resolvedKind: res.resolvedKind,
-      productId: res.productId ?? null,
-      materialId: res.materialId ?? null,
-      inactiveMaterialIds: res.inactiveMaterialIds,
-      inactiveProductIds: res.inactiveProductIds,
-    });
-
-    if (!link.ok) {
-      unresolved.push(line);
-      continue;
-    }
-
-    const materialId = link.materialId;
-    const childProductId = link.childProductId;
-    const resolvedKind = link.resolvedKind;
-
-    targets.push({
-      componentCode: line.componentCode,
-      componentDescription: line.componentDescription ?? null,
-      componentKind: componentKindFromResolution(resolvedKind, false),
-      materialId,
-      childProductId,
-      productBomLineId: null,
-      quantity: qty,
-      effectiveLine: line,
-    });
+    unresolved.push(line);
   }
 
   return { targets, unresolved };
@@ -691,7 +718,7 @@ function buildRemovalLineReasons(
   return reasons;
 }
 
-function buildActions(
+export function buildActions(
   currentRows: CurrentBomRow[],
   targets: DesiredTarget[],
   unresolved: EffectivePricingBomLine[],
