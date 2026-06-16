@@ -232,10 +232,11 @@ describe("financeCashFlowExecutiveYtd", () => {
     assert.ok(kpi.full.includes("4.920.000"));
   });
 
-  it("recebido YTD usa settlementDate e amountReceived", () => {
+  it("recebido YTD alocado por dueDate e amountReceived", () => {
     const rows = [
       arRow({
         externalId: 1,
+        dueDate: new Date(2026, 2, 10),
         settlementDate: new Date(2026, 2, 10),
         amountReceived: 1500,
         balanceReceivable: 0,
@@ -296,6 +297,7 @@ describe("financeCashFlowExecutiveYtd", () => {
     const rows = [
       arRow({
         externalId: 1,
+        dueDate: new Date(2026, 2, 5),
         settlementDate: new Date(2026, 2, 5),
         amountReceived: 800,
         balanceReceivable: 0,
@@ -316,6 +318,7 @@ describe("financeCashFlowExecutiveYtd", () => {
       arRow({
         externalId: 1,
         companyName: "Empresa A",
+        dueDate: new Date(2026, 1, 1),
         settlementDate: new Date(2026, 1, 1),
         amountReceived: 100,
         balanceReceivable: 0,
@@ -323,6 +326,7 @@ describe("financeCashFlowExecutiveYtd", () => {
       arRow({
         externalId: 2,
         companyName: "Empresa B",
+        dueDate: new Date(2026, 1, 2),
         settlementDate: new Date(2026, 1, 2),
         amountReceived: 200,
         balanceReceivable: 0,
@@ -341,12 +345,14 @@ describe("financeCashFlowExecutiveYtd", () => {
     const rows = [
       arRow({
         externalId: 1,
+        dueDate: new Date(2026, 1, 1),
         settlementDate: new Date(2026, 1, 1),
         amountReceived: 1200,
         balanceReceivable: 0,
       }),
       arRow({
         externalId: 2,
+        dueDate: new Date(2025, 1, 1),
         settlementDate: new Date(2025, 1, 1),
         amountReceived: 1000,
         balanceReceivable: 0,
@@ -369,6 +375,7 @@ describe("financeCashFlowExecutiveYtd", () => {
     const cmp = buildYtdReceivedComparison(
       [
         arRow({
+          dueDate: new Date(2026, 0, 10),
           settlementDate: new Date(2026, 0, 10),
           amountReceived: 500,
           balanceReceivable: 0,
@@ -401,12 +408,14 @@ describe("financeCashFlowExecutiveYtd", () => {
     const rows = [
       arRow({
         externalId: 1,
+        dueDate: new Date(2026, 1, 1),
         settlementDate: new Date(2026, 1, 1),
         amountReceived: 1500,
         balanceReceivable: 0,
       }),
       arRow({
         externalId: 2,
+        dueDate: new Date(2025, 1, 1),
         settlementDate: new Date(2025, 1, 1),
         amountReceived: 1000,
         balanceReceivable: 0,

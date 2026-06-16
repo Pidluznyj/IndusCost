@@ -266,7 +266,7 @@ function buildMovementBuckets(
         const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
         if (!date) continue;
         add(dateKey(startOfLocalDay(date)), "inflow", row.balanceReceivable);
-      } else if (row.amountReceived > 0 && row.settlementDate) {
+      } else if (row.amountReceived > 0 && row.dueDate) {
         const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
         if (!date) continue;
         add(dateKey(startOfLocalDay(date)), "inflow", row.amountReceived);

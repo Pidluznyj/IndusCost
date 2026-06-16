@@ -161,11 +161,13 @@ export function isArReceivedInPeriod(
   startDate: Date,
   endDate: Date
 ): boolean {
-  if (row.amountReceived <= 0 || row.settlementDate == null) return false;
-  const settled = startOfLocalDay(row.settlementDate).getTime();
+  // Fluxo de Caixa planejado aloca entradas/saídas pelo vencimento (dueDate),
+  // mantendo settlementDate apenas como auditoria operacional.
+  if (row.amountReceived <= 0 || row.dueDate == null) return false;
+  const due = startOfLocalDay(row.dueDate).getTime();
   const start = startOfLocalDay(startDate).getTime();
   const end = startOfLocalDay(endDate).getTime();
-  return settled >= start && settled <= end;
+  return due >= start && due <= end;
 }
 
 export function sumArReceivedInPeriod(

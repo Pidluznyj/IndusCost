@@ -143,17 +143,18 @@ describe("financeCashFlowDashboard", () => {
     assert.equal(payload.cards.arRecords, 1);
   });
 
-  it("entrada realizada usa settlementDate e amountReceived", () => {
+  it("entrada realizada alocada por dueDate e amountReceived", () => {
     const payload = buildFinanceCashFlowDashboard(
       [
         arRow({
           balanceReceivable: 0,
           amountReceived: 1500,
-          settlementDate: new Date(2026, 1, 8),
+          dueDate: new Date(2026, 1, 8),
+          settlementDate: new Date(2026, 2, 15),
         }),
       ],
       [],
-      { viewMode: "realized", dateBase: "settlement", status: "all", year: 2026 },
+      { viewMode: "realized", dateBase: "due", status: "all", year: 2026 },
       REF
     );
     const fev = payload.monthlySeries.find((p) => p.month === 2);

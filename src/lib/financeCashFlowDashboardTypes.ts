@@ -295,8 +295,9 @@ export function normalizeFinanceCashFlowUiFilters(
   const month = merged.month.trim();
   const normalized =
     month && !year ? { ...merged, year: String(new Date().getFullYear()) } : merged;
+  // Para o Fluxo de Caixa gerencial planejado, a alocação é sempre por vencimento.
   if (normalized.viewMode === "realized") {
-    return { ...normalized, dateBase: "settlement" };
+    return { ...normalized, dateBase: "due" };
   }
   return normalized;
 }

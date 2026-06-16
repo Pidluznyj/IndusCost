@@ -126,7 +126,7 @@ export const FINANCE_HORIZON_AR_BUCKET_TOOLTIPS = {
 } as const;
 
 export const FINANCE_KPI_CF_RECEIVED_YTD =
-  "Soma dos valores recebidos em Contas a Receber no ano selecionado, usando a data de liquidação (settlementDate). Fórmula: SUM(amountReceived) de 01/01 até a data de corte. Não usa vencimento nem valor nominal. Respeita filtros de empresa, cliente, origem Com NF/Sem NF e demais filtros de AR." as const;
+  "Soma dos valores recebidos em Contas a Receber no ano selecionado, alocados pelo vencimento (dueDate). settlementDate permanece apenas para auditoria operacional. Fórmula: SUM(amountReceived) de 01/01 até a data de corte." as const;
 
 export const FINANCE_KPI_CF_OPEN_AR_TO_YEAR_END =
   "Soma dos saldos em aberto (balanceReceivable) com vencimento entre hoje e 31/12 do ano selecionado. Fórmula: SUM(balanceReceivable) por dueDate. Não inclui títulos liquidados. Respeita origem Com NF/Sem NF e filtros de AR." as const;

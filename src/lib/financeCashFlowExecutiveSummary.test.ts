@@ -83,23 +83,26 @@ const filters = {
 };
 
 describe("financeCashFlowExecutiveSummary", () => {
-  it("Recebido YTD soma amountReceived por settlementDate no ano", () => {
+  it("Recebido YTD soma amountReceived por dueDate no ano", () => {
     const rows = [
       arRow({
         amountReceived: 300,
-        settlementDate: new Date(2026, 1, 10),
+        dueDate: new Date(2026, 1, 10),
+        settlementDate: new Date(2026, 2, 10),
         balanceReceivable: 0,
       }),
       arRow({
         externalId: 2,
         amountReceived: 200,
-        settlementDate: new Date(2026, 3, 5),
+        dueDate: new Date(2026, 3, 5),
+        settlementDate: new Date(2026, 4, 5),
         balanceReceivable: 0,
       }),
       arRow({
         externalId: 3,
         amountReceived: 100,
-        settlementDate: new Date(2025, 11, 20),
+        dueDate: new Date(2025, 11, 20),
+        settlementDate: new Date(2026, 0, 20),
         balanceReceivable: 0,
       }),
     ];
@@ -400,7 +403,8 @@ describe("financeCashFlowExecutiveSummary", () => {
       [
         arRow({
           amountReceived: 100,
-          settlementDate: new Date(2026, 0, 15),
+          dueDate: new Date(2026, 0, 15),
+          settlementDate: new Date(2026, 5, 15),
           balanceReceivable: 0,
         }),
       ],

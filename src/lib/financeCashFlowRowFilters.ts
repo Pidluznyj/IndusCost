@@ -58,13 +58,8 @@ export function matchesCashFlowArPeriodScope(
   const modes = cashFlowViewModeSlices(filters.viewMode);
   for (const slice of modes) {
     if (!shouldIncludeCashFlowArMovement(row, slice)) continue;
-    const movementDate =
-      slice === "realized"
-        ? row.settlementDate
-        : filters.dateBase === "issue"
-          ? row.competenceDate ?? row.dueDate
-          : row.dueDate;
-    if (dateInBounds(movementDate, from, toExclusive)) return true;
+    // Fluxo planejado: sempre aloca pelo vencimento (dueDate).
+    if (dateInBounds(row.dueDate ?? null, from, toExclusive)) return true;
   }
   return false;
 }
@@ -175,23 +170,14 @@ export function buildCashFlowArPrismaWhere(
     return buildFinanceArPrismaWhere(arFilters, referenceDate);
   }
 
-  const periodClauses: Prisma.NomusAccountsReceivableWhereInput[] = [];
   const dueClause: Prisma.NomusAccountsReceivableWhereInput = {};
   const dueFilter: Prisma.DateTimeNullableFilter = {};
   if (from != null) dueFilter.gte = from;
   if (toExclusive != null) dueFilter.lt = toExclusive;
   dueClause.dueDate = dueFilter;
-  periodClauses.push(dueClause);
-
-  const settlementClause: Prisma.NomusAccountsReceivableWhereInput = {};
-  const settlementFilter: Prisma.DateTimeNullableFilter = {};
-  if (from != null) settlementFilter.gte = from;
-  if (toExclusive != null) settlementFilter.lt = toExclusive;
-  settlementClause.settlementDate = settlementFilter;
-  periodClauses.push(settlementClause);
 
   return {
-    AND: [portfolioWhere, { OR: periodClauses }],
+    AND: [portfolioWhere, dueClause],
   };
 }
 
@@ -220,20 +206,12 @@ export function buildCashFlowApPrismaWhere(
     return buildFinanceApPrismaWhere(apFilters);
   }
 
-  const periodClauses: Prisma.NomusAccountsPayableWhereInput[] = [];
   const dueFilter: Prisma.DateTimeNullableFilter = {};
   if (from != null) dueFilter.gte = from;
   if (toExclusive != null) dueFilter.lt = toExclusive;
-  periodClauses.push({ dueDate: dueFilter });
-
-  const payFilter: Prisma.DateTimeNullableFilter = {};
-  if (from != null) payFilter.gte = from;
-  if (toExclusive != null) payFilter.lt = toExclusive;
-  periodClauses.push({
-    OR: [{ paymentDate: payFilter }, { settlementDate: payFilter }],
-  });
+  const dueClause = { dueDate: dueFilter } as Prisma.NomusAccountsPayableWhereInput;
 
   return {
-    AND: [portfolioWhere, { OR: periodClauses }],
+    AND: [portfolioWhere, dueClause],
   };
 }

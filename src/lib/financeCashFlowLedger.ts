@@ -32,15 +32,15 @@ export function cashFlowViewModeSlices(
   return ["projected"];
 }
 
-/** Previsto: vencimento (ou competência se data base = emissão). Realizado: sempre liquidação. */
+/** Previsto/Realizado no Fluxo planejado: sempre aloca pelo vencimento (dueDate). */
 export function resolveCashFlowArMovementDate(
   row: FinanceCashFlowArRow,
   slice: CashFlowMovementSlice,
   dateBase: FinanceCashFlowDateBase
 ): Date | null {
-  if (slice === "realized") return row.settlementDate;
-  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
-  return row.dueDate;
+  // Fluxo de Caixa planejado: sempre aloca pelo vencimento (dueDate),
+  // independentemente de modo (previsto/realizado) ou filtros de auditoria.
+  return row.dueDate ?? null;
 }
 
 export function resolveCashFlowApMovementDate(
@@ -48,9 +48,8 @@ export function resolveCashFlowApMovementDate(
   slice: CashFlowMovementSlice,
   dateBase: FinanceCashFlowDateBase
 ): Date | null {
-  if (slice === "realized") return resolveFinanceApEffectivePaymentDate(row);
-  if (dateBase === "issue") return row.competenceDate ?? row.dueDate;
-  return row.dueDate;
+  // Fluxo de Caixa planejado: sempre alocar pelo vencimento (dueDate).
+  return row.dueDate ?? null;
 }
 
 export function resolveCashFlowArAmount(
@@ -82,7 +81,7 @@ export function shouldIncludeCashFlowArMovement(
   if (slice === "projected") {
     return isFinanceArOpen(row) && !row.suspendCollection && row.balanceReceivable > 0;
   }
-  return row.amountReceived > 0 && row.settlementDate != null;
+  return row.amountReceived > 0 && row.dueDate != null;
 }
 
 export function shouldIncludeCashFlowApMovement(
@@ -308,7 +307,7 @@ export function buildCashFlowReconciliation(
 
   if (filters.viewMode === "realized") {
     notes.push(
-      "No modo realizado, entradas usam settlementDate; o card Recebido do AR filtra por vencimento — totais do período podem diferir do card Recebido."
+      "No modo realizado, entradas e recebidos são alocados pelo vencimento (dueDate). settlementDate permanece apenas para auditoria operacional."
     );
   }
 

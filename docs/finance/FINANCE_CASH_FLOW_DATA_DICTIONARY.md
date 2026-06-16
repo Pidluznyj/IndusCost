@@ -131,7 +131,7 @@ Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mê
 
 | Card (UI) | Campo | Conceito | Fórmula | Fonte | Data |
 |-----------|-------|----------|---------|-------|------|
-| **Recebido YTD** | `receivable.receivedYtd` | Caixa já recebido no ano | `SUM(amountReceived)` | `NomusAccountsReceivable` | `settlementDate` 01/01 → corte |
+| **Recebido YTD** | `receivable.receivedYtd` | Caixa já recebido no ano | `SUM(amountReceived)` | `NomusAccountsReceivable` | `dueDate` 01/01 → corte |
 | **A receber até 31/12** | `receivable.openFromTodayToYearEnd` | Saldo em aberto futuro no ano | `SUM(balanceReceivable)` | AR | `dueDate` hoje → 31/12 |
 | **Estimativa AR do ano** | `receivable.estimatedYearTotal` | Entrada total estimada | Recebido YTD + A receber até 31/12 | AR | Misto |
 | **Pago YTD** | `payable.paidYtd` | Caixa já pago no ano (gerencial) | `SUM(realizedAmount)` | `NomusAccountsPayable` | `dueDate` (via `effectivePaymentDate`) 01/01 → corte |
@@ -155,7 +155,7 @@ Bloco principal em `FinanceCashFlowExecutiveSummaryPanel`. Independente do **mê
 
 | Card (UI) | Campo | Conceito | Fórmula | Fonte | Conferência AR/AP |
 |-----------|-------|----------|---------|-------|-------------------|
-| **Entradas do período** | `inflowAmount` | Caixa entrada no período | `SUM` movimentos AR no período (série mensal) | `buildFinanceCashFlowMonthlySeries` | Modo previsto: ≈ AR em aberto no período; realizado: ≈ recebido por `settlementDate` |
+| **Entradas do período** | `inflowAmount` | Caixa entrada no período | `SUM` movimentos AR no período (série mensal) | `buildFinanceCashFlowMonthlySeries` | Modo previsto: ≈ AR em aberto no período; realizado: ≈ recebido por `dueDate` |
 | **Saídas do período** | `outflowAmount` | Caixa saída | Idem AP | Idem | Modo previsto: ≈ AP em aberto; realizado: ≈ pago |
 | **Saldo líquido** | `netFlowAmount` | Resultado do período | `inflowAmount − outflowAmount` | `sumPeriodAmounts` | `netCashFlow` na reconciliação |
 
@@ -187,7 +187,7 @@ Exibidos no bloco **Período filtrado** do painel executivo (`data-testid="cash-
 Independente do **mês** filtrado (`buildYtdDashboardFilters` remove `month`). Inclui:
 
 - Carteira YTD (aberto, vencidos, meses negativos).
-- **Recebido YTD** por `settlementDate` (`buildYtdReceivedComparison`) — comparativo com mesmo intervalo ano anterior.
+- **Recebido YTD** por `dueDate` (`buildYtdReceivedComparison`) — comparativo com mesmo intervalo ano anterior.
 - Totais carteira: `totals.receivable` / `totals.payable` (nominal, recebido/pago, aberto).
 
 ### 4.4 CFO / Risco
@@ -283,7 +283,7 @@ deltaOpenVsAp = cashFlowOpenPortfolio − apDashboardOpen
 
 - Divergência interna cards × ledger.
 - Carteira fluxo × dashboard AR/AP.
-- Modo realizado: card “Recebido” do AR pode divergir (AR filtra por vencimento; fluxo usa `settlementDate`).
+- Modo realizado: card “Recebido” do AR pode divergir (AR pode usar critério operacional; fluxo aloca por `dueDate` para fins gerenciais).
 - Títulos em aberto sem `dueDate` não entram no fluxo do período previsto.
 
 **Faturamento:** mencionado apenas como contexto excluído.
@@ -309,8 +309,8 @@ deltaOpenVsAp = cashFlowOpenPortfolio − apDashboardOpen
 
 | Regra | Implementação |
 |-------|---------------|
-| Entradas | `amountReceived > 0` **e** `settlementDate != null` |
-| Data AR | Liquidação (UI força `dateBase=settlement`) |
+| Entradas | `amountReceived > 0` **e** `dueDate != null` |
+| Data AR | Vencimento (`dueDate`) (alocação gerencial) |
 | Saídas | `realizedAmount` saneado (`resolveFinanceApRealizedAmount`) com data efetiva (`resolveFinanceApEffectivePaymentDate`) |
 | Data AP | **`dueDate`** (vencimento) para todos os títulos quitados e em aberto |
 | Parciais | Valor pago parcial em `realizedAmount`; saldo remanescente no previsto via `openAmount` |
@@ -345,7 +345,7 @@ deltaOpenVsAp = cashFlowOpenPortfolio − apDashboardOpen
 ```
 // Ledger — financeCashFlowLedger.ts
 Entradas previstas (linha)     = balanceReceivable  (se aberto, não suspenso)
-Entradas realizadas (linha)    = amountReceived     (se > 0 e settlementDate)
+Entradas realizadas (linha)    = amountReceived     (se > 0 e dueDate)
 Saídas previstas (linha)       = balancePayable
 Saídas realizadas (linha)      = amountPaid
 
@@ -369,8 +369,8 @@ Cenário stress                 = 60% / 30% + AP × 1,1
 1. Faturamento / NF-e de vendas **não** alimenta fluxo.
 2. Aberto = saldo saneado (`openAmount` via `financeAccountsPayableRules.ts`).
 3. Cancelados/liquidados (saldo ≤ 0) não entram no **previsto**.
-4. Realizado exige data de liquidação preenchida.
-5. Previsto usa vencimento (default) ou competência.
+4. Realizado exige `amountReceived > 0` e `dueDate` preenchido.
+5. Previsto/Realizado usa vencimento (`dueDate`).
 6. Origem Com/Sem NF afeta **somente AR**.
 7. Fluxo usa **valores financeiros**, não contagem de títulos nos KPIs principais.
 8. Exportação e cards usam o mesmo `buildFinanceCashFlowDashboard`.
@@ -456,7 +456,7 @@ O Fluxo de Caixa (`financeCashFlowLedger.ts`, resumo executivo, YTD, CFO) consom
 
 1. AR → filtrar títulos baixados no mês (ou usar card recebido com atenção à data).
 2. Fluxo → **Realizado**, mesmo mês.
-3. Entradas ≈ soma `amountReceived` com `settlementDate` no mês (entre linhas do escopo).
+3. Entradas ≈ soma `amountReceived` com `dueDate` no mês (entre linhas do escopo).
 
 ### Realizado + Previsto
 
@@ -481,7 +481,7 @@ O Fluxo de Caixa (`financeCashFlowLedger.ts`, resumo executivo, YTD, CFO) consom
 | ID | Descrição | Arquivo | Impacto | Esperado | Atual | Correção | Prioridade |
 |----|-----------|---------|---------|----------|-------|----------|------------|
 | INC-01 | Tooltip do gráfico mensal diz “A receber” / “A pagar” mas plota movimentos do período | `FinanceCashFlowCharts.tsx` | Interpretação errada no modo realizado | Rótulos “Entradas” / “Saídas” | “A receber” / “A pagar” | Ajustar labels do tooltip | P2 |
-| INC-02 | Modo realizado: card Recebido do AR usa critério de vencimento; fluxo usa `settlementDate` | `financeCashFlowLedger.ts` / AR dashboard | Divergência esperada documentada em `reconciliation.notes` | Alinhar ou documentar na UI AR | Nota só no painel conferência | Tooltip no AR ou KPI alinhado | P1 |
+| INC-02 | Modo realizado: card Recebido do AR pode usar critério operacional; fluxo aloca por `dueDate` | `financeCashFlowLedger.ts` / AR dashboard | Divergência esperada documentada em `reconciliation.notes` | Alinhar ou documentar na UI AR | Nota só no painel conferência | Tooltip no AR ou KPI alinhado | P1 |
 | INC-03 | Abas Acumulado, Detalhado, Entradas, Saídas desabilitadas | `FinanceCashFlowPage.tsx` | UX incompleta | Abas funcionais | `PHASE1_FINANCE_CASH_FLOW_TABS` | Implementar fase 2 | P2 |
 | INC-04 | `totalReceivableOpen` no fluxo é carteira das **linhas no escopo do período**, não carteira global | `financeCashFlowDashboard.ts` | Usuário pode comparar com AR sem mesmo escopo | Documentar / rotular “no escopo” | Label genérico “carteira” | Clarificar UI | P1 |
 | INC-05 | Reconciliação cross-module em `combined` não exige igualdade inflow=AR open | `financeCrossModuleReconciliation.ts` | Validação parcial | Regra explícita combined | Só ledger | Documentar + testes | P2 |
