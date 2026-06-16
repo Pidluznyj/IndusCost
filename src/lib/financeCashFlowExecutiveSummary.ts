@@ -155,14 +155,14 @@ export function isApPaidInPeriod(
   startDate: Date,
   endDate: Date
 ): boolean {
+  // Fluxo de Caixa planejado aloca entradas/saídas pelo vencimento (dueDate),
+  // mantendo paymentDate apenas como auditoria operacional.
   const realized = resolveFinanceApRealizedAmount(row);
-  if (realized <= 0) return false;
-  const payDate = resolveFinanceApEffectivePaymentDate(row);
-  if (payDate == null) return false;
-  const paid = startOfLocalDay(payDate).getTime();
+  if (realized <= 0 || row.dueDate == null) return false;
+  const due = startOfLocalDay(row.dueDate).getTime();
   const start = startOfLocalDay(startDate).getTime();
   const end = startOfLocalDay(endDate).getTime();
-  return paid >= start && paid <= end;
+  return due >= start && due <= end;
 }
 
 export function sumApPaidInPeriod(
@@ -258,14 +258,7 @@ export function sumApOpenDueInPeriod(
   return roundMoney(total);
 }
 
-function monthEnd(year: number, month: number, capDate: Date | null): Date {
-  if (
-    capDate &&
-    capDate.getFullYear() === year &&
-    capDate.getMonth() + 1 === month
-  ) {
-    return startOfLocalDay(capDate);
-  }
+function calendarMonthEnd(year: number, month: number): Date {
   return startOfLocalDay(new Date(year, month, 0));
 }
 
@@ -275,15 +268,12 @@ export function buildExecutiveMonthlyTimeline(
   year: number,
   referenceDate: Date
 ): FinanceCashFlowExecutiveMonthlyRow[] {
-  const isCurrentYear = year === referenceDate.getFullYear();
-  const endMonth = 12;
-  const capDate = isCurrentYear ? startOfLocalDay(referenceDate) : null;
   const rows: FinanceCashFlowExecutiveMonthlyRow[] = [];
   let accumulated = 0;
 
-  for (let m = 1; m <= endMonth; m += 1) {
+  for (let m = 1; m <= 12; m += 1) {
     const monthStart = startOfLocalDay(new Date(year, m - 1, 1));
-    const monthEndDate = monthEnd(year, m, capDate);
+    const monthEndDate = calendarMonthEnd(year, m);
     const received = sumArReceivedInPeriod(arRows, monthStart, monthEndDate);
     const receivableOpenDue = sumArOpenDueInPeriod(arRows, monthStart, monthEndDate);
     const paid = sumApPaidInPeriod(apRows, monthStart, monthEndDate);

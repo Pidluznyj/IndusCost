@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildFinanceAccountsPayableDashboard,
+  type FinanceApDashboardRow,
+} from "./financeAccountsPayableDashboard.js";
+import {
   buildExecutiveMonthlyTimeline,
   buildFinanceCashFlowExecutiveSummary,
   executiveSummaryMetricsAreFinite,
@@ -20,6 +24,7 @@ import {
   type FinanceCashFlowArRow,
 } from "./financeCashFlowDashboard.js";
 import { buildFinanceCashFlowExportCsv } from "./financeCashFlowExport.js";
+import { buildExecutiveMonthlyPlannedChartRows } from "./financeCashFlowExecutiveChart.js";
 import { isArReceivedInPeriod, sumArReceivedInPeriod } from "./financeCashFlowExecutiveYtd.js";
 
 const REF = new Date(2026, 5, 9);
@@ -396,6 +401,168 @@ describe("financeCashFlowExecutiveSummary", () => {
     const csv = buildFinanceCashFlowExportCsv(payload);
     assert.ok(csv.includes("resumo_recebido_ytd"));
     assert.ok(csv.includes("resumo_estimativa_liquida_anual"));
+  });
+
+  it("linha do tempo mensal soma AP aberto por dueDate do mês inteiro, inclusive vencidos em aberto", () => {
+    const rows = [
+      apRow({
+        externalId: 1,
+        balancePayable: 400,
+        dueDate: new Date(2026, 5, 3),
+      }),
+      apRow({
+        externalId: 2,
+        balancePayable: 300,
+        dueDate: new Date(2026, 5, 25),
+      }),
+      apRow({
+        externalId: 3,
+        balancePayable: 200,
+        dueDate: new Date(2026, 5, 30),
+      }),
+    ];
+    const timeline = buildExecutiveMonthlyTimeline([], rows, 2026, REF);
+    const jun = timeline.find((r) => r.month === 6);
+    assert.equal(jun?.payableOpenDue, 900);
+    assert.equal(jun?.estimatedOutflow, 900);
+  });
+
+  it("linha do tempo mensal não limita AP aberto a partir de hoje no mês corrente", () => {
+    const rows = [
+      apRow({
+        externalId: 1,
+        balancePayable: 150,
+        dueDate: new Date(2026, 5, 5),
+      }),
+      apRow({
+        externalId: 2,
+        balancePayable: 250,
+        dueDate: new Date(2026, 5, 20),
+      }),
+    ];
+    const timeline = buildExecutiveMonthlyTimeline([], rows, 2026, REF);
+    const jun = timeline.find((r) => r.month === 6);
+    assert.equal(jun?.payableOpenDue, 400);
+  });
+
+  it("junho/2026 fixture bate pago, aberto e saídas estimadas por dueDate", () => {
+    const paid = 428_664.3;
+    const open = 821_235.13;
+    const rows = [
+      apRow({
+        externalId: 1,
+        amountPayable: paid,
+        amountPaid: paid,
+        balancePayable: 0,
+        dueDate: new Date(2026, 5, 10),
+        paymentDate: new Date(2026, 5, 8),
+      }),
+      apRow({
+        externalId: 2,
+        amountPayable: open,
+        amountPaid: 0,
+        balancePayable: open,
+        dueDate: new Date(2026, 5, 28),
+      }),
+    ];
+    const timeline = buildExecutiveMonthlyTimeline([], rows, 2026, REF);
+    const jun = timeline.find((r) => r.month === 6);
+    assert.equal(jun?.paid, paid);
+    assert.equal(jun?.payableOpenDue, open);
+    assert.equal(jun?.estimatedOutflow, 1_249_899.43);
+  });
+
+  it("timeline mensal bate com base Contas a Pagar no mesmo filtro de mês", () => {
+    const rows: FinanceApDashboardRow[] = [
+      apRow({
+        externalId: 1,
+        companyName: "KOPPETEL",
+        amountPayable: 600,
+        amountPaid: 200,
+        balancePayable: 400,
+        dueDate: new Date(2026, 5, 8),
+        paymentDate: new Date(2026, 5, 7),
+      }),
+      apRow({
+        externalId: 2,
+        companyName: "KOPPETEL",
+        amountPayable: 350,
+        amountPaid: 0,
+        balancePayable: 350,
+        dueDate: new Date(2026, 5, 22),
+      }),
+    ];
+    const apFilters = {
+      status: "all" as const,
+      year: 2026,
+      month: 6,
+      companyName: "KOPPETEL",
+    };
+    const cashFilters = {
+      viewMode: "projected" as const,
+      dateBase: "due" as const,
+      status: "all" as const,
+      year: 2026,
+      month: 6,
+      companyName: "KOPPETEL",
+    };
+    const apDashboard = buildFinanceAccountsPayableDashboard(rows, apFilters, REF);
+    const cashFlow = buildFinanceCashFlowDashboard([], rows, cashFilters, REF);
+    const jun = cashFlow.executiveSummary.monthlyTimeline.find((r) => r.month === 6);
+
+    assert.equal(apDashboard.cards.totalPayableAmount, 950);
+    assert.equal(apDashboard.cards.totalOpenAmount, 750);
+    assert.equal(jun?.paid, 200);
+    assert.equal(jun?.payableOpenDue, 750);
+    assert.equal(jun?.estimatedOutflow, 950);
+  });
+
+  it("timeline mensal exclui intercompany e pedido de compra como Contas a Pagar", () => {
+    const rows: FinanceApDashboardRow[] = [
+      apRow({
+        externalId: 1,
+        companyName: "LAZARIOS",
+        personName: "Fornecedor Nacional Ltda",
+        personCnpj: "33.333.333/0001-33",
+        balancePayable: 500,
+        amountPayable: 500,
+        dueDate: new Date(2026, 5, 12),
+      }),
+      apRow({
+        externalId: 2,
+        companyName: "LAZARIOS",
+        personName: "Koppetel Comercio de Plasticos LTDA",
+        personCnpj: "14.055.501/0001-80",
+        balancePayable: 800,
+        amountPayable: 800,
+        dueDate: new Date(2026, 5, 15),
+      }),
+      apRow({
+        externalId: 3,
+        companyName: "LAZARIOS",
+        personName: "Fornecedor PC",
+        description: "Pedido de compra PC 7788",
+        balancePayable: 300,
+        amountPayable: 300,
+        dueDate: new Date(2026, 5, 18),
+      }),
+    ];
+    const filters = {
+      viewMode: "projected" as const,
+      dateBase: "due" as const,
+      status: "all" as const,
+      year: 2026,
+      companyName: "LAZARIOS",
+    };
+    const timeline = buildFinanceCashFlowDashboard([], rows, filters, REF).executiveSummary
+      .monthlyTimeline;
+    const jun = timeline.find((r) => r.month === 6);
+    const chart = buildExecutiveMonthlyPlannedChartRows(timeline).find((r) => r.name === "Jun");
+
+    assert.equal(jun?.payableOpenDue, 500);
+    assert.equal(jun?.estimatedOutflow, 500);
+    assert.equal(chart?.payableOpen, 500);
+    assert.equal(chart?.estimatedOutflow, 500);
   });
 
   it("linha do tempo mensal agrega meses do ano", () => {
