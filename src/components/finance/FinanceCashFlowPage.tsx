@@ -29,13 +29,9 @@ import {
   canExportFinanceCashFlow,
   canViewFinanceCashFlow,
 } from "@/src/lib/financeCashFlowPermissions";
-import { FinanceCashFlowMonthlyChart } from "@/src/components/finance/FinanceCashFlowCharts";
 import { FinanceCashFlowCalendar } from "@/src/components/finance/cash-flow/FinanceCashFlowCalendar";
-import { FinanceCashFlowCashNeedPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowCashNeedPanel";
 import { FinanceCashFlowCfoPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowCfoPanel";
 import { FinanceCashFlowRiskTab } from "@/src/components/finance/cash-flow/FinanceCashFlowRiskTab";
-import { FinanceCashFlowScenarioChart } from "@/src/components/finance/cash-flow/FinanceCashFlowScenarioChart";
-import { FinanceCashFlowRecommendations } from "@/src/components/finance/cash-flow/FinanceCashFlowRecommendations";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
 import { FinanceCashFlowExecutiveSummaryPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel";
@@ -55,7 +51,7 @@ import {
   FINANCE_CASH_FLOW_NOT_BILLING_SCOPE,
   FINANCE_CASH_FLOW_SYNC_SCOPE,
 } from "@/src/lib/financeFilterScope";
-import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
+import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 
 function filterFieldClass() {
@@ -166,10 +162,6 @@ export function FinanceCashFlowPage() {
       }),
     [appliedFilters, draftFilters]
   );
-
-  const viewModeLabel =
-    FINANCE_CASH_FLOW_VIEW_OPTIONS.find((o) => o.value === appliedFilters.viewMode)?.label ??
-    "Previsto";
 
   if (!canView) {
     return (
@@ -482,40 +474,6 @@ export function FinanceCashFlowPage() {
           />
 
           <FinanceCashFlowCfoPanel insights={payload.executiveInsights} />
-
-          <section className={financeBiSectionClass}>
-            <div className="px-5 py-3 border-b border-[#E5E7EB]">
-              <h2 className="text-sm font-bold text-[#111827]">Fluxo mensal — período filtrado</h2>
-              <p className="text-[11px] text-[#6B7280] mt-0.5">
-                {viewModeLabel} · respeita filtros aplicados (mês, empresa, status, etc.)
-              </p>
-            </div>
-            <div className="p-4">
-              <FinanceCashFlowMonthlyChart
-                points={payload.monthlySeries}
-                viewModeLabel={viewModeLabel}
-              />
-            </div>
-          </section>
-
-          <section className={financeBiSectionClass}>
-            <div className="px-5 py-4 border-b border-[#E5E7EB]">
-              <h2 className="text-sm font-bold text-[#111827]">Previsão e cenários de caixa</h2>
-              <p className="text-[11px] text-[#6B7280] mt-0.5">
-                Horizonte de 12 meses a partir do mês de referência — filtros aplicados
-              </p>
-            </div>
-            <div className="p-5 space-y-4">
-              <FinanceCashFlowScenarioChart points={payload.scenarioChartPoints} />
-              <FinanceCashFlowCashNeedPanel
-                cards={payload.cards}
-                cashForecast={payload.cashForecast}
-                conservativeScenario={payload.conservativeScenario}
-                stressScenario={payload.stressScenario}
-              />
-              <FinanceCashFlowRecommendations lines={payload.operationalRecommendations} />
-            </div>
-          </section>
 
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CriticalList

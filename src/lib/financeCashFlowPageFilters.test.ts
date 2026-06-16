@@ -62,12 +62,17 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(page.includes("appliedFilters"));
     assert.ok(page.includes('data-testid="cash-flow-page"'));
     assert.ok(page.includes('data-testid="cash-flow-filters"'));
-    assert.ok(page.includes("Fluxo mensal — período filtrado"));
+    assert.ok(page.includes("FinanceCashFlowMonthlyPlannedChart"));
+    assert.ok(page.includes("FinanceCashFlowMonthlyTimelineTable"));
+    assert.ok(!page.includes("FinanceCashFlowMonthlyChart"));
+    assert.ok(!page.includes("Previsão e cenários de caixa"));
+    assert.ok(!page.includes("FinanceCashFlowScenarioChart"));
     assert.ok(page.includes("FinanceCashFlowCfoPanel"));
     assert.ok(page.includes("FinanceCashFlowRiskTab"));
     assert.ok(page.includes("FinanceCashFlowCalendar"));
     assert.ok(charts.includes("FINANCE_CASH_FLOW_CHART_HEIGHT"));
     assert.ok(charts.includes("cash-flow-main-chart"));
+    assert.ok(!page.includes("FinanceCashFlowMonthlyChart"));
     assert.ok(!page.includes("financeControlRoomTheme"));
   });
 

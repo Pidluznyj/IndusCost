@@ -108,7 +108,7 @@ describe("financeCashFlowDisplay", () => {
     assert.ok(full.includes("4.920.000"));
   });
 
-  it("gráfico principal usa altura explícita e posição líquida mensal", () => {
+  it("gráfico principal permanece no módulo, mas fora da página overview", () => {
     const charts = readFileSync(
       join(process.cwd(), "src", "components", "finance", "FinanceCashFlowCharts.tsx"),
       "utf8"
@@ -120,6 +120,7 @@ describe("financeCashFlowDisplay", () => {
     assert.ok(charts.includes("FINANCE_CASH_FLOW_CHART_HEIGHT"));
     assert.ok(charts.includes("cash-flow-main-chart"));
     assert.ok(charts.includes("Posição Líquida Mensal"));
+    assert.ok(!page.includes("FinanceCashFlowMonthlyChart"));
     assert.ok(page.includes("executiveYtd"));
     assert.ok(page.includes("FinanceCashFlowYtdSummary"));
   });
