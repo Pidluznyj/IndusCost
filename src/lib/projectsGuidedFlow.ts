@@ -8,6 +8,7 @@ import {
 } from "@/src/lib/projectsOtherCostGroups";
 import { isGuidedSimulationItem } from "@/src/lib/projectsSimulationRefs";
 import type {
+  ProjectCostBreakdown,
   ProjectDetail,
   ProjectMoldRow,
   ProjectSimulatedItemRow,
@@ -346,6 +347,20 @@ export function buildProjectGuidedItems(detail: ProjectDetail): ProjectGuidedIte
   return [...productRows(detail), ...moldRows(detail), ...otherCostRows(detail)];
 }
 
+export function resolveProjectEstimatedTotalCost(
+  costBreakdown: Pick<ProjectCostBreakdown, "unitCost" | "separateMoldCost">,
+  simulatedItems: ProjectSimulatedItemRow[]
+): number {
+  const estimatedUnitCost = costBreakdown.unitCost ?? 0;
+  const initialInvestment = costBreakdown.separateMoldCost ?? 0;
+  const otherProjectCosts = simulatedItems
+    .filter((item) => isGuidedOtherCostItem(item.notes))
+    .reduce((acc, item) => acc + resolveOtherCostItemLineTotal(item), 0);
+
+  const total = estimatedUnitCost + initialInvestment + otherProjectCosts;
+  return Number.isFinite(total) ? total : 0;
+}
+
 export function computeProjectGuidedCosts(detail: ProjectDetail): ProjectGuidedCostSummary {
   const items = buildProjectGuidedItems(detail);
   const productCount = items.filter(
@@ -358,11 +373,10 @@ export function computeProjectGuidedCosts(detail: ProjectDetail): ProjectGuidedC
   const otherCostCount = items.filter((i) => i.entityKind === "other_cost").length;
   const pendingCount = items.filter((i) => i.status === "PENDING_COST").length;
 
-  const estimatedUnitCost = detail.costBreakdown.unitCost ?? 0;
-  const initialInvestment = detail.costBreakdown.separateMoldCost ?? 0;
-  const otherProjectCosts = detail.simulatedItems
-    .filter((i) => isGuidedOtherCostItem(i.notes))
-    .reduce((acc, i) => acc + resolveOtherCostItemLineTotal(i), 0);
+  const totalProjectCost = resolveProjectEstimatedTotalCost(
+    detail.costBreakdown,
+    detail.simulatedItems
+  );
 
   return {
     itemCount: items.length,
@@ -370,10 +384,12 @@ export function computeProjectGuidedCosts(detail: ProjectDetail): ProjectGuidedC
     moldCount,
     otherCostCount,
     pendingCount,
-    estimatedUnitCost,
-    initialInvestment,
-    otherProjectCosts,
-    totalProjectCost: estimatedUnitCost + initialInvestment + otherProjectCosts,
+    estimatedUnitCost: detail.costBreakdown.unitCost ?? 0,
+    initialInvestment: detail.costBreakdown.separateMoldCost ?? 0,
+    otherProjectCosts: detail.simulatedItems
+      .filter((i) => isGuidedOtherCostItem(i.notes))
+      .reduce((acc, i) => acc + resolveOtherCostItemLineTotal(i), 0),
+    totalProjectCost,
   };
 }
 

@@ -117,6 +117,11 @@ function formatMoney(value: number | null | undefined) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function formatProjectEstimatedValue(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "Sem custo estimado";
+  return formatMoney(value);
+}
+
 function formatPercent(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${value.toFixed(1)}%`;
@@ -352,7 +357,7 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
                   <td className="px-4 py-3">{PROJECT_STATUS_LABEL[row.status]}</td>
                   <td className="px-4 py-3">{row.commercialOwner ?? "—"}</td>
                   <td className="px-4 py-3">{row.technicalOwner ?? "—"}</td>
-                  <td className="px-4 py-3">{formatMoney(row.estimatedValue)}</td>
+                  <td className="px-4 py-3">{formatProjectEstimatedValue(row.estimatedValue)}</td>
                   <td className="px-4 py-3">{formatPercent(row.marginPercent)}</td>
                   <td className="px-4 py-3">{formatDate(row.updatedAt)}</td>
                   <td className="px-4 py-3">

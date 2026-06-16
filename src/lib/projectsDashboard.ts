@@ -2,6 +2,7 @@ import { prisma } from "@/src/lib/prisma.js";
 import {
   dec,
   OPEN_STATUSES,
+  PROJECT_LIST_CURRENT_VERSION_INCLUDE,
   PROJECT_STATUSES,
   serializeProjectListRow,
 } from "@/src/lib/projectsService.js";
@@ -22,14 +23,14 @@ export async function buildProjectsDashboard(): Promise<ProjectDashboardPayload>
   const [projects, recent] = await Promise.all([
     prisma.project.findMany({
       include: {
-        versions: { where: { isCurrent: true }, take: 1 },
+        versions: PROJECT_LIST_CURRENT_VERSION_INCLUDE,
       },
     }),
     prisma.project.findMany({
       orderBy: { updatedAt: "desc" },
       take: 10,
       include: {
-        versions: { where: { isCurrent: true }, take: 1 },
+        versions: PROJECT_LIST_CURRENT_VERSION_INCLUDE,
       },
     }),
   ]);

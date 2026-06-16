@@ -67,6 +67,7 @@ import {
   resolveMoldAmortizedCost,
   resolveStructureLineSnapshots,
   serializeMold,
+  PROJECT_LIST_CURRENT_VERSION_INCLUDE,
   serializeProjectListRow,
   serializeSimulatedItem,
   serializeSimulatedProduct,
@@ -199,7 +200,7 @@ export function registerProjectsRoutes(
           orderBy: { updatedAt: "desc" },
           skip,
           take: pageSize,
-          include: { versions: { where: { isCurrent: true }, take: 1 } },
+          include: { versions: PROJECT_LIST_CURRENT_VERSION_INCLUDE },
         }),
         prisma.project.count({ where }),
       ]);

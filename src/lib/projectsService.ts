@@ -27,6 +27,11 @@ import {
   loadProjectCostAmortizations,
   removeAmortizationAllocationsForTargetItem,
 } from "@/src/lib/projectsCostAmortizationService.js";
+import { resolveProjectEstimatedTotalCost } from "@/src/lib/projectsGuidedFlow.js";
+import {
+  isGuidedOtherCostItem,
+  resolveOtherCostItemLineTotal,
+} from "@/src/lib/projectsOtherCostGroups.js";
 import type {
   ProjectAlert,
   ProjectCostBreakdown,
@@ -72,6 +77,21 @@ const OPEN_STATUSES: ProjectStatus[] = [
   "SENT_TO_CUSTOMER",
   "NEGOTIATION",
 ];
+
+/** Include da versão atual para listagem/dashboard com custo estimado do projeto. */
+export const PROJECT_LIST_CURRENT_VERSION_INCLUDE = {
+  where: { isCurrent: true },
+  take: 1,
+  include: {
+    molds: {
+      select: {
+        chargeMode: true,
+        constructionCost: true,
+      },
+    },
+    simulatedItems: true,
+  },
+} as const;
 
 export function isValidProjectType(value: unknown): value is ProjectType {
   return typeof value === "string" && PROJECT_TYPES.includes(value as ProjectType);
@@ -549,8 +569,55 @@ export function assertSimulatedItemIsolation(): true {
   return true;
 }
 
+export function computeSeparateMoldInvestment(
+  molds: Pick<ProjectMold, "chargeMode" | "constructionCost">[]
+): number {
+  let separateMoldCost = 0;
+  for (const mold of molds) {
+    if (mold.chargeMode !== "CHARGED_SEPARATELY") continue;
+    separateMoldCost += toFiniteNumber(dec(mold.constructionCost));
+  }
+  return sanitizeFinite(separateMoldCost) ?? 0;
+}
+
+export type ProjectListVersionSource = ProjectVersion & {
+  molds?: Pick<ProjectMold, "chargeMode" | "constructionCost">[];
+  simulatedItems?: ProjectSimulatedItem[];
+};
+
+export function computeProjectListEstimatedValue(
+  version: ProjectListVersionSource | null | undefined
+): number | null {
+  if (!version) return null;
+
+  const unitCost = dec(version.unitCost) ?? dec(version.totalEstimatedCost);
+  const separateMoldCost = computeSeparateMoldInvestment(version.molds ?? []);
+  const simulatedItems = (version.simulatedItems ?? []).map(serializeSimulatedItem);
+  const total = resolveProjectEstimatedTotalCost(
+    {
+      unitCost: unitCost ?? 0,
+      separateMoldCost,
+    },
+    simulatedItems
+  );
+
+  if (!Number.isFinite(total)) return null;
+
+  const hasCostSignal =
+    unitCost != null ||
+    dec(version.totalEstimatedCost) != null ||
+    separateMoldCost > 0 ||
+    simulatedItems.some(
+      (item) => isGuidedOtherCostItem(item.notes) && resolveOtherCostItemLineTotal(item) > 0
+    ) ||
+    total > 0;
+
+  if (!hasCostSignal) return null;
+  return total;
+}
+
 export async function serializeProjectListRow(
-  project: Project & { versions: ProjectVersion[] }
+  project: Project & { versions: ProjectListVersionSource[] }
 ): Promise<ProjectListRow> {
   const current = project.versions.find((v) => v.isCurrent) ?? project.versions[0];
   return {
@@ -562,7 +629,7 @@ export async function serializeProjectListRow(
     status: project.status as ProjectStatus,
     commercialOwner: project.commercialOwner,
     technicalOwner: project.technicalOwner,
-    estimatedValue: current ? dec(current.suggestedPrice) : null,
+    estimatedValue: computeProjectListEstimatedValue(current),
     marginPercent: current ? dec(current.marginPercent) : null,
     updatedAt: project.updatedAt.toISOString(),
   };
