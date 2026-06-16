@@ -445,6 +445,7 @@ describe("FinanceCashFlowExecutiveSummary UI", () => {
       "utf8"
     );
     assert.match(page, /FinanceCashFlowExecutiveSummaryPanel/);
+    assert.match(page, /FinanceCashFlowMonthlyPlannedChart/);
     assert.match(page, /FinanceCashFlowMonthlyTimelineTable/);
     assert.match(page, /executiveSummary/);
   });

@@ -12,6 +12,7 @@ export function FinanceCashFlowChartShell({
   empty,
   emptyDescription,
   testId,
+  chartHeight = FINANCE_CASH_FLOW_CHART_HEIGHT,
 }: {
   title: string;
   subtitle?: string;
@@ -19,6 +20,7 @@ export function FinanceCashFlowChartShell({
   empty?: boolean;
   emptyDescription?: string;
   testId?: string;
+  chartHeight?: number;
 }) {
   if (empty) {
     return (
@@ -38,7 +40,7 @@ export function FinanceCashFlowChartShell({
         <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
         {subtitle ? <p className="text-[11px] text-[#6B7280] mt-0.5">{subtitle}</p> : null}
       </div>
-      <div style={{ width: "100%", height: FINANCE_CASH_FLOW_CHART_HEIGHT }}>{children}</div>
+      <div style={{ width: "100%", height: chartHeight }}>{children}</div>
     </div>
   );
 }

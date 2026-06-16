@@ -39,6 +39,7 @@ import { FinanceCashFlowRecommendations } from "@/src/components/finance/cash-fl
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
 import { FinanceCashFlowExecutiveSummaryPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel";
+import { FinanceCashFlowMonthlyPlannedChart } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyPlannedChart";
 import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
 import { FinanceCashFlowReconciliationPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowReconciliationPanel";
 import {
@@ -459,6 +460,11 @@ export function FinanceCashFlowPage() {
           />
 
           <FinanceCashFlowReconciliationPanel reconciliation={payload.reconciliation} />
+
+          <FinanceCashFlowMonthlyPlannedChart
+            year={payload.executiveSummary.metadata.year}
+            rows={payload.executiveSummary.monthlyTimeline}
+          />
 
           <FinanceCashFlowMonthlyTimelineTable
             rows={payload.executiveSummary.monthlyTimeline}
