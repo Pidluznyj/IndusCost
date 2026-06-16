@@ -242,6 +242,34 @@ export const EMPTY_FINANCE_AR_UI_FILTERS: FinanceArUiFilters = {
   bankAccountName: "",
 };
 
+/** Filtros iniciais seguros: ano corrente como período padrão de vencimento. */
+export function createDefaultFinanceArUiFilters(referenceDate = new Date()): FinanceArUiFilters {
+  return {
+    ...EMPTY_FINANCE_AR_UI_FILTERS,
+    year: String(referenceDate.getFullYear()),
+  };
+}
+
+export function isDefaultFinanceArUiFilters(
+  filters: FinanceArUiFilters,
+  referenceDate = new Date()
+): boolean {
+  const defaults = createDefaultFinanceArUiFilters(referenceDate);
+  return (
+    filters.companyName === defaults.companyName &&
+    filters.personName === defaults.personName &&
+    filters.personCnpj === defaults.personCnpj &&
+    filters.status === defaults.status &&
+    filters.year === defaults.year &&
+    filters.month === defaults.month &&
+    filters.dueDateFrom === defaults.dueDateFrom &&
+    filters.dueDateTo === defaults.dueDateTo &&
+    filters.invoiceIssued === defaults.invoiceIssued &&
+    filters.paymentMethodName === defaults.paymentMethodName &&
+    filters.bankAccountName === defaults.bankAccountName
+  );
+}
+
 export function buildFinanceArYearOptions(referenceYear = new Date().getFullYear()) {
   const options: Array<{ value: string; label: string }> = [{ value: "", label: "Todos" }];
   for (let y = referenceYear + 1; y >= referenceYear - 5; y -= 1) {

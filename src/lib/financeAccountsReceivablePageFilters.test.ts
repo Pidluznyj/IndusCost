@@ -5,9 +5,13 @@ import { describe, it } from "node:test";
 import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
+  createDefaultFinanceArUiFilters,
   EMPTY_FINANCE_AR_UI_FILTERS,
+  isDefaultFinanceArUiFilters,
   normalizeFinanceArUiFilters,
 } from "./financeAccountsReceivableDashboardTypes.js";
+
+const REF = new Date(2026, 5, 6, 12, 0, 0, 0);
 
 describe("financeAccountsReceivablePageFilters", () => {
   it("página possui draft/applied e banner de escopo de filtros", () => {
@@ -43,10 +47,18 @@ describe("financeAccountsReceivablePageFilters", () => {
     assert.ok(page.includes("setAppliedFilters(normalizeFinanceArUiFilters(nextDraft))"));
   });
 
+  it("limpar filtros volta para padrão seguro com ano corrente", () => {
+    const defaults = createDefaultFinanceArUiFilters(REF);
+    assert.equal(defaults.year, "2026");
+    assert.equal(isDefaultFinanceArUiFilters(defaults, REF), true);
+    const cleared = normalizeFinanceArUiFilters(defaults);
+    assert.equal(buildFinanceArDashboardQuery(cleared), "year=2026");
+  });
+
   it("alterar rascunho não altera query aplicada até aplicar manualmente", () => {
-    const defaults = normalizeFinanceArUiFilters(EMPTY_FINANCE_AR_UI_FILTERS);
+    const defaults = normalizeFinanceArUiFilters(createDefaultFinanceArUiFilters(REF));
     const draft = normalizeFinanceArUiFilters({
-      ...EMPTY_FINANCE_AR_UI_FILTERS,
+      ...createDefaultFinanceArUiFilters(REF),
       personName: "Cliente X",
     });
     assert.notEqual(
@@ -63,8 +75,7 @@ describe("financeAccountsReceivablePageFilters", () => {
 
   it("export usa mesma query dos filtros aplicados", () => {
     const applied = normalizeFinanceArUiFilters({
-      ...EMPTY_FINANCE_AR_UI_FILTERS,
-      year: "2026",
+      ...createDefaultFinanceArUiFilters(REF),
       month: "6",
       status: "overdue",
       invoiceIssued: "yes",
@@ -83,6 +94,7 @@ describe("financeAccountsReceivablePageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivablePage.tsx"),
       "utf8"
     );
+    assert.ok(page.includes("createDefaultFinanceArUiFilters"));
     assert.ok(page.includes("buildFinanceArDashboardQuery(appliedFilters)"));
     assert.ok(page.includes("FinanceArAgingChart"));
     assert.ok(page.includes("FinanceArTopDebtorsChart"));

@@ -17,6 +17,7 @@ import {
 import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
+  createDefaultFinanceArUiFilters,
   EMPTY_FINANCE_AR_UI_FILTERS,
   normalizeFinanceArUiFilters,
 } from "./financeAccountsReceivableDashboardTypes.js";
@@ -57,6 +58,8 @@ describe("financeFilterCompliance", () => {
     const page = readPage("FinanceAccountsReceivablePage.tsx");
     assert.ok(page.includes("buildFinanceArDashboardQuery(appliedFilters)"));
     assert.ok(page.includes("buildFinanceArExportQuery(appliedFilters)"));
+    assert.ok(page.includes("createDefaultFinanceArUiFilters"));
+    assert.ok(page.includes("isDefaultFinanceArUiFilters"));
     assert.ok(page.includes("FinanceFilterScopeBanner"));
     assert.ok(page.includes("withAppliedFilterSub"));
     assert.ok(page.includes("setAppliedFilters(normalizeFinanceArUiFilters(nextDraft))"));
@@ -121,8 +124,7 @@ describe("financeFilterCompliance", () => {
 
   it("queries AR/AP refletem filtros aplicados (ano, mês, status)", () => {
     const arApplied = normalizeFinanceArUiFilters({
-      ...EMPTY_FINANCE_AR_UI_FILTERS,
-      year: "2026",
+      ...createDefaultFinanceArUiFilters(REF),
       month: "6",
       status: "overdue",
       personName: "Cliente",

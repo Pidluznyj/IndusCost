@@ -21,7 +21,8 @@ import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
   buildFinanceArYearOptions,
-  EMPTY_FINANCE_AR_UI_FILTERS,
+  createDefaultFinanceArUiFilters,
+  isDefaultFinanceArUiFilters,
   FINANCE_AR_INVOICE_ISSUED_OPTIONS,
   FINANCE_AR_MONTH_OPTIONS,
   FINANCE_AR_STATUS_OPTIONS,
@@ -478,9 +479,11 @@ export function FinanceAccountsReceivablePage() {
 
   const [activeTab, setActiveTab] = useState<FinanceArTabId>("titles");
   const [titlesQualityAlert, setTitlesQualityAlert] = useState<FinanceArDataQualityAlertKey | null>(null);
-  const [draftFilters, setDraftFilters] = useState<FinanceArUiFilters>(EMPTY_FINANCE_AR_UI_FILTERS);
+  const [draftFilters, setDraftFilters] = useState<FinanceArUiFilters>(() =>
+    createDefaultFinanceArUiFilters()
+  );
   const [appliedFilters, setAppliedFilters] = useState<FinanceArUiFilters>(() =>
-    normalizeFinanceArUiFilters(EMPTY_FINANCE_AR_UI_FILTERS)
+    normalizeFinanceArUiFilters(createDefaultFinanceArUiFilters())
   );
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
@@ -567,9 +570,10 @@ export function FinanceAccountsReceivablePage() {
   const handleApplyFilters = () => setAppliedFilters(normalizedDraftFilters);
 
   const handleClearFilters = () => {
-    const empty = normalizeFinanceArUiFilters(EMPTY_FINANCE_AR_UI_FILTERS);
-    setDraftFilters(EMPTY_FINANCE_AR_UI_FILTERS);
-    setAppliedFilters(empty);
+    const defaults = createDefaultFinanceArUiFilters();
+    const normalized = normalizeFinanceArUiFilters(defaults);
+    setDraftFilters(defaults);
+    setAppliedFilters(normalized);
     setTitlesQualityAlert(null);
   };
 
@@ -580,18 +584,7 @@ export function FinanceAccountsReceivablePage() {
   };
 
   const cards = data?.cards;
-  const filtersActive =
-    appliedFilters.companyName ||
-    appliedFilters.personName ||
-    appliedFilters.personCnpj ||
-    appliedFilters.status !== "all" ||
-    appliedFilters.year ||
-    appliedFilters.month ||
-    appliedFilters.dueDateFrom ||
-    appliedFilters.dueDateTo ||
-    appliedFilters.invoiceIssued !== "all" ||
-    appliedFilters.paymentMethodName ||
-    appliedFilters.bankAccountName;
+  const filtersActive = !isDefaultFinanceArUiFilters(appliedFilters);
 
   const filterStatus = useMemo(
     () => resolveFinanceBiFilterStatus(Boolean(filtersActive), hasPendingFilterChanges),
@@ -601,6 +594,7 @@ export function FinanceAccountsReceivablePage() {
   const handleRemoveFilterChip = useCallback((field: keyof FinanceArUiFilters) => {
     const next: FinanceArUiFilters = { ...appliedFilters };
     if (field === "status" || field === "invoiceIssued") next[field] = "all";
+    else if (field === "year") next[field] = String(new Date().getFullYear());
     else next[field] = "";
     const normalized = normalizeFinanceArUiFilters(next);
     setDraftFilters(normalized);
