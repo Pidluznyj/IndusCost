@@ -3,6 +3,7 @@ import type { BrandingSettingsDTO } from "@/src/types/branding";
 import { PrintDocumentShell } from "@/src/components/print/PrintDocumentShell";
 import { PrintHeader } from "@/src/components/print/PrintHeader";
 import { PrintSection } from "@/src/components/print/PrintSection";
+import { PrintTable } from "@/src/components/print/PrintTable";
 import {
   buildSoldProductsPrintFilterSummary,
   formatSoldProductsPrintDate,
@@ -50,23 +51,21 @@ export function SoldProductsPrintDocument({
     metaLines.push({ label: "Emitido por", value: emitterName.trim() });
   }
 
+  const footerLine = `${branding.companyName} · Documento gerado pelo IndusCost em ${formatSoldProductsPrintDateTime(payload.generatedAt)}`;
+
   return (
     <PrintDocumentShell
       rootId="sold-products-print-root"
       className="sold-products-print-document"
       footer={
         <>
-          <p>
-            {branding.companyName} · Documento gerado pelo IndusCost ·{" "}
-            {formatSoldProductsPrintDateTime(payload.generatedAt)}
-          </p>
+          <p>{footerLine}</p>
           <p className="sold-products-print-footer-note">{SOLD_PRODUCTS_PRINT_FOOTER_NOTE}</p>
         </>
       }
     >
       <PrintHeader
         branding={branding}
-        documentKind="Relatório gerencial"
         documentTitle="RELATÓRIO"
         documentHighlight="PRODUTOS VENDIDOS"
         metaLines={metaLines}
@@ -76,7 +75,7 @@ export function SoldProductsPrintDocument({
 
       <h1 className="sold-products-print-main-title">{SOLD_PRODUCTS_PRINT_TITLE}</h1>
 
-      <table className="sold-products-print-meta-table">
+      <PrintTable className="sold-products-print-meta-table">
         <tbody>
           <tr>
             <th>Tipo de data</th>
@@ -95,10 +94,10 @@ export function SoldProductsPrintDocument({
             <td colSpan={3}>{filterSummary}</td>
           </tr>
         </tbody>
-      </table>
+      </PrintTable>
 
       <PrintSection title="Resumo executivo" className="sold-products-print-section">
-        <table className="sold-products-print-kpi-table">
+        <PrintTable className="sold-products-print-kpi-table">
           <tbody>
             <tr>
               <th>Quantidade total</th>
@@ -123,7 +122,7 @@ export function SoldProductsPrintDocument({
               <td colSpan={2}>{formatSoldProductsPrintLeader(summary?.topProductByAmount ?? null)}</td>
             </tr>
           </tbody>
-        </table>
+        </PrintTable>
       </PrintSection>
 
       <PrintSection
@@ -134,48 +133,52 @@ export function SoldProductsPrintDocument({
         {ranking.length === 0 ? (
           <p className="sold-products-print-empty">Nenhum produto vendido no período selecionado.</p>
         ) : (
-          <table className="sold-products-print-ranking-table">
-            <colgroup>
-              <col className="col-rank" />
-              <col className="col-code" />
-              <col className="col-product" />
-              <col className="col-qty" />
-              <col className="col-money" />
-              <col className="col-money" />
-              <col className="col-count" />
-              <col className="col-count" />
-              <col className="col-date" />
-              <col className="col-pct" />
-              <col className="col-pct" />
-            </colgroup>
+          <PrintTable
+            className="sold-products-print-ranking-table"
+            colGroup={
+              <colgroup>
+                <col className="col-rank" />
+                <col className="col-code" />
+                <col className="col-product" />
+                <col className="col-qty" />
+                <col className="col-money" />
+                <col className="col-money" />
+                <col className="col-count" />
+                <col className="col-count" />
+                <col className="col-date" />
+                <col className="col-pct" />
+                <col className="col-pct" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr>
-                <th>#</th>
-                <th>Código</th>
-                <th>Produto</th>
-                <th className="col-num">Qtd.</th>
-                <th className="col-money">Valor vendido</th>
-                <th className="col-money">Preço médio</th>
-                <th className="col-num">Pedidos</th>
-                <th className="col-num">Clientes</th>
-                <th className="col-date">Última venda</th>
-                <th className="col-num">% qtd</th>
-                <th className="col-num">% valor</th>
+                <th className="col-rank">#</th>
+                <th className="col-code">Código</th>
+                <th className="col-product">Produto</th>
+                <th className="col-num col-nowrap">Qtd.</th>
+                <th className="col-money col-nowrap">Valor vendido</th>
+                <th className="col-money col-nowrap">Preço médio</th>
+                <th className="col-num col-nowrap">Pedidos</th>
+                <th className="col-num col-nowrap">Clientes</th>
+                <th className="col-date col-nowrap">Última venda</th>
+                <th className="col-num col-nowrap">% qtd</th>
+                <th className="col-num col-nowrap">% valor</th>
               </tr>
             </thead>
             <tbody>
               {ranking.map((row) => (
                 <tr key={row.productId}>
-                  <td className="col-num">{row.rank}</td>
-                  <td className="col-code">{row.productCode ?? "—"}</td>
+                  <td className="col-rank col-nowrap">{row.rank}</td>
+                  <td className="col-code col-nowrap">{row.productCode ?? "—"}</td>
                   <td className="col-product">{row.productName}</td>
                   <td className="col-num col-nowrap">{formatSoldProductsPrintQty(row.quantitySold)}</td>
                   <td className="col-money col-nowrap">{formatSoldProductsPrintMoney(row.amountSold)}</td>
                   <td className="col-money col-nowrap">
                     {formatSoldProductsPrintMoney(row.averageUnitPrice)}
                   </td>
-                  <td className="col-num">{row.ordersCount}</td>
-                  <td className="col-num">{row.customersCount}</td>
+                  <td className="col-num col-nowrap">{row.ordersCount}</td>
+                  <td className="col-num col-nowrap">{row.customersCount}</td>
                   <td className="col-date col-nowrap">
                     {formatSoldProductsPrintDate(row.lastSaleDate)}
                   </td>
@@ -188,7 +191,7 @@ export function SoldProductsPrintDocument({
                 </tr>
               ))}
             </tbody>
-          </table>
+          </PrintTable>
         )}
       </PrintSection>
     </PrintDocumentShell>

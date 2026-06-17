@@ -38,10 +38,15 @@
     visibility: visible !important;
   }
 
-  body.proposal-print-route .print-doc-header-row,
-  body.proposal-print-route .print-doc-company,
+  body.proposal-print-route .print-doc-header-grid {
+    display: grid !important;
+    visibility: visible !important;
+  }
+
+  body.proposal-print-route .print-doc-logo-wrap,
+  body.proposal-print-route .print-doc-company-text,
   body.proposal-print-route .print-doc-meta {
-    display: flex !important;
+    display: block !important;
     visibility: visible !important;
   }
 

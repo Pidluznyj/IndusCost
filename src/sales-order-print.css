@@ -32,10 +32,15 @@
     visibility: visible !important;
   }
 
-  body.sales-order-print-route .print-doc-header-row,
-  body.sales-order-print-route .print-doc-company,
+  body.sales-order-print-route .print-doc-header-grid {
+    display: grid !important;
+    visibility: visible !important;
+  }
+
+  body.sales-order-print-route .print-doc-logo-wrap,
+  body.sales-order-print-route .print-doc-company-text,
   body.sales-order-print-route .print-doc-meta {
-    display: flex !important;
+    display: block !important;
     visibility: visible !important;
   }
 

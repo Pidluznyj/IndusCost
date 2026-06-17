@@ -10,9 +10,13 @@ function read(rel: string): string {
 }
 
 describe("printDocumentShell", () => {
-  it("PrintHeader usa div.print-doc-header", () => {
+  it("PrintHeader usa grid de 3 colunas (logo, empresa, documento)", () => {
     const header = read("src/components/print/PrintHeader.tsx");
-    assert.ok(header.includes('<div className={`print-doc-header'));
+    assert.ok(header.includes("print-doc-header-grid"));
+    assert.ok(header.includes("print-doc-logo-wrap"));
+    assert.ok(header.includes("print-doc-company-text"));
+    assert.ok(header.includes("print-doc-meta"));
+    assert.ok(header.includes("print-doc-header-rule"));
   });
 
   it("proposta print contém logo, PROPOSTA, data e vendedor", () => {
@@ -40,11 +44,19 @@ describe("printDocumentShell", () => {
     const css = read("src/components/commercial/sold-products-print.css");
     assert.ok(doc.includes("PrintHeader"));
     assert.ok(doc.includes('documentHighlight="PRODUTOS VENDIDOS"'));
+    assert.ok(!doc.includes('documentKind="Relatório gerencial"'));
+    assert.ok(doc.includes("PrintTable"));
     assert.ok(doc.includes("Período"));
     assert.ok(doc.includes("Resumo executivo"));
+    assert.ok(doc.includes("Documento gerado pelo IndusCost"));
     assert.ok(css.includes("A4 landscape"));
     assert.ok(css.includes("overflow: visible"));
-    assert.ok(css.includes("print-doc-header"));
+    assert.ok(css.includes("print-doc-header-grid"));
+    assert.ok(css.includes("col-rank"));
+    assert.ok(css.includes("8mm"));
+    assert.ok(css.includes("white-space: nowrap"));
+    assert.ok(!css.includes(".print-doc-header *"));
+    assert.ok(css.includes("table-header-group"));
   });
 
   it("CSS AR overdue não oculta header global fora da rota de impressão", () => {

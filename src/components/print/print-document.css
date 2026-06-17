@@ -24,6 +24,7 @@
     break-inside: auto;
     overflow: visible !important;
     background: #fff !important;
+    box-sizing: border-box;
   }
 
   .print-doc-header {
@@ -31,6 +32,20 @@
     visibility: visible !important;
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  .print-doc-header-grid {
+    display: grid !important;
+    grid-template-columns: 28mm minmax(0, 1fr) 56mm !important;
+    column-gap: 4mm !important;
+    align-items: start !important;
+  }
+
+  .print-doc-logo-wrap,
+  .print-doc-company-text,
+  .print-doc-meta {
+    display: block !important;
+    min-width: 0 !important;
   }
 
   .print-section {
@@ -43,23 +58,36 @@
     page-break-inside: auto;
   }
 
-  .print-document table {
+  .print-document table,
+  .print-table {
     width: 100%;
     border-collapse: collapse;
     page-break-inside: auto;
+    table-layout: fixed;
+    box-sizing: border-box;
   }
 
-  .print-document thead {
+  .print-document thead,
+  .print-table thead {
     display: table-header-group;
   }
 
-  .print-document tfoot {
+  .print-document tfoot,
+  .print-table tfoot {
     display: table-footer-group;
   }
 
-  .print-document tbody tr {
+  .print-document tbody tr,
+  .print-table tbody tr {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  .print-document th,
+  .print-document td,
+  .print-table th,
+  .print-table td {
+    box-sizing: border-box;
   }
 
   .print-document-footer {
@@ -73,46 +101,40 @@
 
 /* Pré-visualização na tela */
 .print-doc-header {
-  border-bottom: 1px solid #cbd5e1;
-  padding-bottom: 12px;
-  margin-bottom: 12px;
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 10px;
 }
 
-.print-doc-header-row {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.print-doc-header-grid {
+  display: grid;
+  grid-template-columns: 28mm minmax(0, 1fr) 56mm;
+  column-gap: 16px;
+  align-items: start;
 }
 
-@media (min-width: 640px) {
-  .print-doc-header-row {
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 24px;
-  }
-}
-
-.print-doc-company {
-  display: flex;
-  gap: 12px;
+.print-doc-logo-wrap {
   min-width: 0;
-  flex: 1;
 }
 
 .print-doc-logo {
   height: 64px;
   width: auto;
-  max-width: 240px;
+  max-width: 100%;
   object-fit: contain;
-  object-position: left;
-  flex-shrink: 0;
+  object-position: left top;
+  display: block;
 }
 
 .print-doc-company-text {
   font-size: 11px;
-  line-height: 1.35;
+  line-height: 1.4;
   color: #334155;
+  min-width: 0;
+}
+
+.print-doc-company-text p {
+  margin: 0 0 2px;
 }
 
 .print-doc-company-name {
@@ -120,6 +142,7 @@
   font-weight: 700;
   color: #0f172a;
   line-height: 1.2;
+  margin-bottom: 4px !important;
 }
 
 .print-doc-company-slogan {
@@ -134,22 +157,16 @@
 }
 
 .print-doc-meta {
-  flex-shrink: 0;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.45;
   color: #334155;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 8px;
+  border-left: 1px solid #e2e8f0;
+  padding-left: 14px;
+  min-width: 0;
 }
 
-@media (min-width: 640px) {
-  .print-doc-meta {
-    border-top: none;
-    border-left: 1px solid #e2e8f0;
-    padding-top: 0;
-    padding-left: 20px;
-    min-width: 220px;
-  }
+.print-doc-meta p {
+  margin: 0 0 3px;
 }
 
 .print-doc-meta-kind {
@@ -164,17 +181,32 @@
   font-size: 13px;
   font-weight: 800;
   color: #0f172a;
-  margin: 2px 0 6px;
+  margin: 0 0 6px !important;
+  line-height: 1.25;
+}
+
+.print-doc-meta-line {
+  line-height: 1.35;
+}
+
+.print-doc-meta-value {
+  word-break: break-word;
 }
 
 .print-doc-subtitle {
-  margin-top: 8px;
+  margin: 8px 0 0;
   font-size: 11px;
   color: #64748b;
 }
 
+.print-doc-header-rule {
+  margin-top: 8px;
+  border-top: 1px solid #cbd5e1;
+  height: 0;
+}
+
 .print-section-title {
-  margin: 16px 0 8px;
+  margin: 14px 0 8px;
   padding-top: 8px;
   border-top: 1px solid #cbd5e1;
   font-size: 11px;
@@ -188,4 +220,15 @@
   margin-top: 0;
   border-top: none;
   padding-top: 0;
+}
+
+.print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.print-table th,
+.print-table td {
+  box-sizing: border-box;
 }

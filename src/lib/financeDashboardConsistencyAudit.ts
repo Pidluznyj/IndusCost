@@ -20,8 +20,8 @@ import {
   buildFinanceCashFlowDashboard,
   type FinanceCashFlowApRow,
   type FinanceCashFlowArRow,
+  type FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
-import type { FinanceCashFlowDashboardFiltersApplied } from "./financeCashFlowDashboardTypes.js";
 import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
@@ -35,7 +35,7 @@ export function auditFinanceArStaleExclusionAcrossViews(
   rows: FinanceArDashboardRow[],
   cashFlowArRows: FinanceCashFlowArRow[],
   filters: FinanceArDashboardFilters,
-  cashFlowFilters: FinanceCashFlowDashboardFiltersApplied,
+  cashFlowFilters: FinanceCashFlowDashboardFilters,
   referenceDate: Date,
   syncCutoff: NomusArReportSyncCutoff | null,
   apSyncCutoff: NomusApReportSyncCutoff | null = null,
