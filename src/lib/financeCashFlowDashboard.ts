@@ -935,7 +935,7 @@ export function buildFinanceCashFlowDashboardFromDataset(
     filteredAp,
     filters,
     referenceDate,
-    { monthlySeries }
+    { monthlySeries, executiveMonthlyTimeline: executiveSummary.monthlyTimeline }
   );
   const dailyCalendar = buildCashFlowDailyCalendarFromMovements(
     filteredAr,
@@ -1112,12 +1112,24 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
   }
   const calRec = payload.calendar.reconciliation;
   for (const v of [
-    calRec.calendarInflow,
-    calRec.timelineInflow,
-    calRec.inflowDiff,
-    calRec.calendarOutflow,
-    calRec.timelineOutflow,
-    calRec.outflowDiff,
+    calRec.calendarReceived,
+    calRec.timelineReceived,
+    calRec.receivedDiff,
+    calRec.calendarOpenReceivable,
+    calRec.timelineOpenReceivable,
+    calRec.openReceivableDiff,
+    calRec.calendarEstimatedInflow,
+    calRec.timelineEstimatedInflow,
+    calRec.estimatedInflowDiff,
+    calRec.calendarPaid,
+    calRec.timelinePaid,
+    calRec.paidDiff,
+    calRec.calendarOpenPayable,
+    calRec.timelineOpenPayable,
+    calRec.openPayableDiff,
+    calRec.calendarEstimatedOutflow,
+    calRec.timelineEstimatedOutflow,
+    calRec.estimatedOutflowDiff,
     calRec.calendarNet,
     calRec.timelineNet,
     calRec.netDiff,
@@ -1128,6 +1140,10 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
     payload.calendar.monthSummary.inflow,
     payload.calendar.monthSummary.outflow,
     payload.calendar.monthSummary.net,
+    payload.calendar.monthSummary.inflowRealized,
+    payload.calendar.monthSummary.inflowOpen,
+    payload.calendar.monthSummary.outflowRealized,
+    payload.calendar.monthSummary.outflowOpen,
   ]) {
     if (!Number.isFinite(v)) return false;
   }

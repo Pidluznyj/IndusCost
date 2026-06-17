@@ -163,13 +163,19 @@ describe("financeCashFlowCalendar", () => {
     assert.equal(emptyDay.movements.length, 0);
   });
 
-  it("CR recebido não entra como previsto", () => {
+  it("visão Previsto inclui CR recebido (realizado) e CR aberto", () => {
     const calendar = buildFinanceCashFlowCalendar(
       [
         arRow({
           balanceReceivable: 0,
           amountReceived: 800,
+          amountReceivable: 800,
           settlementDate: new Date(2026, 5, 8),
+          dueDate: new Date(2026, 5, 8),
+        }),
+        arRow({
+          externalId: 2,
+          balanceReceivable: 500,
           dueDate: new Date(2026, 5, 8),
         }),
       ],
@@ -177,26 +183,103 @@ describe("financeCashFlowCalendar", () => {
       defaultFilters,
       REF
     );
-    const day = getCalendarDayByDate(calendar, "2026-06-08");
-    assert.equal(day?.inflow ?? 0, 0);
+    const day = getCalendarDayByDate(calendar, "2026-06-08")!;
+    assert.equal(day.inflow, 1300);
+    assert.equal(day.movements.filter((m) => m.nature === "AR_REALIZED").length, 1);
+    assert.equal(day.movements.filter((m) => m.nature === "AR_OPEN").length, 1);
   });
 
-  it("CP pago não entra como previsto", () => {
+  it("visão Previsto inclui CP pago (realizado) e CP aberto", () => {
     const calendar = buildFinanceCashFlowCalendar(
       [],
       [
         apRow({
           balancePayable: 0,
           amountPaid: 500,
+          amountPayable: 500,
           paymentDate: new Date(2026, 5, 9),
+          dueDate: new Date(2026, 5, 9),
+        }),
+        apRow({
+          externalId: 5,
+          balancePayable: 300,
           dueDate: new Date(2026, 5, 9),
         }),
       ],
       defaultFilters,
       REF
     );
-    const day = getCalendarDayByDate(calendar, "2026-06-09");
-    assert.equal(day?.outflow ?? 0, 0);
+    const day = getCalendarDayByDate(calendar, "2026-06-09")!;
+    assert.equal(day.outflow, 800);
+    assert.equal(day.movements.filter((m) => m.nature === "AP_REALIZED").length, 1);
+    assert.equal(day.movements.filter((m) => m.nature === "AP_OPEN").length, 1);
+  });
+
+  it("título recebido não entra também como aberto", () => {
+    const calendar = buildFinanceCashFlowCalendar(
+      [
+        arRow({
+          balanceReceivable: 0,
+          amountReceived: 800,
+          amountReceivable: 800,
+          dueDate: new Date(2026, 5, 8),
+        }),
+      ],
+      [],
+      defaultFilters,
+      REF
+    );
+    const day = getCalendarDayByDate(calendar, "2026-06-08")!;
+    assert.equal(day.inflow, 800);
+    assert.equal(day.movements.length, 1);
+    assert.equal(day.movements[0]!.nature, "AR_REALIZED");
+  });
+
+  it("título pago não entra também como aberto", () => {
+    const calendar = buildFinanceCashFlowCalendar(
+      [],
+      [
+        apRow({
+          balancePayable: 0,
+          amountPaid: 500,
+          amountPayable: 500,
+          dueDate: new Date(2026, 5, 9),
+        }),
+      ],
+      defaultFilters,
+      REF
+    );
+    const day = getCalendarDayByDate(calendar, "2026-06-09")!;
+    assert.equal(day.outflow, 500);
+    assert.equal(day.movements.length, 1);
+    assert.equal(day.movements[0]!.nature, "AP_REALIZED");
+  });
+
+  it("visão Realizado inclui somente CR recebido e CP pago", () => {
+    const calendar = buildFinanceCashFlowCalendar(
+      [
+        arRow({
+          balanceReceivable: 400,
+          amountReceived: 600,
+          amountReceivable: 1000,
+          dueDate: new Date(2026, 5, 11),
+        }),
+      ],
+      [
+        apRow({
+          balancePayable: 200,
+          amountPaid: 300,
+          amountPayable: 500,
+          dueDate: new Date(2026, 5, 11),
+        }),
+      ],
+      { ...defaultFilters, viewMode: "realized" },
+      REF
+    );
+    const day = getCalendarDayByDate(calendar, "2026-06-11")!;
+    assert.equal(day.inflow, 600);
+    assert.equal(day.outflow, 300);
+    assert.ok(day.movements.every((m) => m.nature === "AR_REALIZED" || m.nature === "AP_REALIZED"));
   });
 
   it("AP com scheduleDate futuro entra no dia do scheduleDate, não no dueDate", () => {
@@ -373,7 +456,7 @@ describe("financeCashFlowCalendar", () => {
     assert.equal(totals.net, day.net);
   });
 
-  it("soma dos dias do mês bate com total mensal da linha do tempo", () => {
+  it("soma dos dias do mês bate com linha do tempo executiva (Entradas/Saídas est.)", () => {
     const payload = buildFinanceCashFlowDashboard(
       [
         arRow({ balanceReceivable: 2000, dueDate: new Date(2026, 5, 4) }),
@@ -385,13 +468,13 @@ describe("financeCashFlowCalendar", () => {
     );
     const monthInflow = payload.calendar.days.reduce((s, d) => s + d.inflow, 0);
     const monthOutflow = payload.calendar.days.reduce((s, d) => s + d.outflow, 0);
-    const jun = payload.monthlySeries.find((p) => p.month === 6)!;
-    assert.equal(monthInflow, jun.inflowAmount);
-    assert.equal(monthOutflow, jun.outflowAmount);
+    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    assert.equal(monthInflow, jun.estimatedInflow);
+    assert.equal(monthOutflow, jun.estimatedOutflow);
     assert.equal(payload.calendar.reconciliation.status, "ok");
   });
 
-  it("soma dos CP do calendário bate com base AP saneada do mês", () => {
+  it("soma dos CP do calendário bate com Saídas est. da linha do tempo", () => {
     const payload = buildFinanceCashFlowDashboard(
       [],
       [
@@ -402,10 +485,11 @@ describe("financeCashFlowCalendar", () => {
       REF
     );
     const calendarOutflow = payload.calendar.days.reduce((s, d) => s + d.outflow, 0);
-    assert.equal(calendarOutflow, payload.cards.outflowAmount);
+    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    assert.equal(calendarOutflow, jun.estimatedOutflow);
   });
 
-  it("soma dos CR do calendário bate com base AR saneada do mês", () => {
+  it("soma dos CR do calendário bate com Entradas est. da linha do tempo", () => {
     const payload = buildFinanceCashFlowDashboard(
       [
         arRow({ balanceReceivable: 800, dueDate: new Date(2026, 5, 3) }),
@@ -415,7 +499,72 @@ describe("financeCashFlowCalendar", () => {
       REF
     );
     const calendarInflow = payload.calendar.days.reduce((s, d) => s + d.inflow, 0);
-    assert.equal(calendarInflow, payload.cards.inflowAmount);
+    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    assert.equal(calendarInflow, jun.estimatedInflow);
+  });
+
+  it("fixture Junho/2026 Previsto — Entradas est. e Saídas est. batem com linha do tempo", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [
+        arRow({
+          amountReceived: 868_480.08,
+          balanceReceivable: 0,
+          amountReceivable: 868_480.08,
+          dueDate: new Date(2026, 5, 5),
+        }),
+        arRow({
+          externalId: 2,
+          balanceReceivable: 450_512.18,
+          amountReceivable: 450_512.18,
+          dueDate: new Date(2026, 5, 10),
+        }),
+      ],
+      [
+        apRow({
+          amountPaid: 564_303.07,
+          balancePayable: 0,
+          amountPayable: 564_303.07,
+          dueDate: new Date(2026, 5, 7),
+        }),
+        apRow({
+          externalId: 6,
+          balancePayable: 706_470.24,
+          amountPayable: 706_470.24,
+          dueDate: new Date(2026, 5, 12),
+        }),
+      ],
+      defaultFilters,
+      REF
+    );
+    assert.equal(payload.calendar.monthSummary.inflow, 1_318_992.26);
+    assert.equal(payload.calendar.monthSummary.outflow, 1_270_773.31);
+    assert.equal(payload.calendar.monthSummary.net, 48_218.95);
+    assert.equal(payload.calendar.reconciliation.status, "ok");
+    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
+    assert.equal(jun.estimatedInflow, 1_318_992.26);
+    assert.equal(jun.estimatedOutflow, 1_270_773.31);
+    assert.equal(jun.netFlow, 48_218.95);
+  });
+
+  it("monthNav usa totais estimados na visão Previsto", () => {
+    const calendar = buildFinanceCashFlowCalendar(
+      [
+        arRow({
+          amountReceived: 100,
+          balanceReceivable: 0,
+          amountReceivable: 100,
+          dueDate: new Date(2026, 5, 3),
+        }),
+        arRow({ externalId: 2, balanceReceivable: 50, dueDate: new Date(2026, 5, 3) }),
+      ],
+      [],
+      defaultFilters,
+      REF
+    );
+    const junNav = calendar.monthNav.find((m) => m.month === 6)!;
+    assert.equal(junNav.inflow, 150);
+    assert.equal(junNav.inflowRealized, 100);
+    assert.equal(junNav.inflowOpen, 50);
   });
 
   it("resumo semanal bate com soma diária", () => {

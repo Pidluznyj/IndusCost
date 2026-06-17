@@ -6,6 +6,7 @@ import {
   resolveCalendarDisplayMonth,
   sumCalendarDays,
 } from "./financeCashFlowCalendar.js";
+import { buildExecutiveMonthlyTimeline } from "./financeCashFlowExecutiveSummary.js";
 import {
   buildFinanceCashFlowDashboard,
   type FinanceCashFlowApRow,
@@ -93,7 +94,7 @@ describe("financeCashFlowCalendarReconciliation", () => {
     assert.equal(payload.calendar.monthSummary.inflow, 5000);
   });
 
-  it("calendário com CR de milhões soma corretamente no dia", () => {
+  it("calendário com CR de milhões soma corretamente no dia (realizado + aberto)", () => {
     const calendar = buildFinanceCashFlowCalendar(
       [
         arRow({ externalId: 1, balanceReceivable: 1_200_000, dueDate: new Date(2026, 5, 10) }),
@@ -101,7 +102,18 @@ describe("financeCashFlowCalendarReconciliation", () => {
       ],
       [apRow({ externalId: 3, balancePayable: 900_000, dueDate: new Date(2026, 5, 10) })],
       { viewMode: "projected", dateBase: "due", status: "all", year: 2026, month: 6 },
-      REF
+      REF,
+      {
+        executiveMonthlyTimeline: buildExecutiveMonthlyTimeline(
+          [
+            arRow({ externalId: 1, balanceReceivable: 1_200_000, dueDate: new Date(2026, 5, 10) }),
+            arRow({ externalId: 2, balanceReceivable: 850_000, dueDate: new Date(2026, 5, 10) }),
+          ],
+          [apRow({ externalId: 3, balancePayable: 900_000, dueDate: new Date(2026, 5, 10) })],
+          2026,
+          REF
+        ),
+      }
     );
     const day = calendar.days.find((d) => d.date.endsWith("-10"))!;
     assert.equal(day.inflow, 2_050_000);
@@ -110,7 +122,7 @@ describe("financeCashFlowCalendarReconciliation", () => {
     assert.equal(day.movements.length, 3);
   });
 
-  it("soma dos dias do mês bate com linha do tempo e conciliação OK", () => {
+  it("soma dos dias do mês bate com Entradas/Saídas est. e conciliação OK", () => {
     const payload = buildFinanceCashFlowDashboard(
       [
         arRow({ externalId: 1, balanceReceivable: 1_200_000, dueDate: new Date(2026, 5, 10) }),
@@ -123,10 +135,11 @@ describe("financeCashFlowCalendarReconciliation", () => {
     const monthInflow = payload.calendar.days.reduce((s, d) => s + d.inflow, 0);
     assert.equal(monthInflow, payload.calendar.monthSummary.inflow);
     assert.equal(payload.calendar.reconciliation.status, "ok");
-    assert.equal(payload.calendar.reconciliation.calendarInflow, monthInflow);
+    assert.equal(payload.calendar.reconciliation.calendarEstimatedInflow, monthInflow);
+    const jun = payload.executiveSummary.monthlyTimeline.find((p) => p.month === 6)!;
     assert.equal(
-      payload.calendar.reconciliation.timelineInflow,
-      payload.monthlySeries.find((p) => p.month === 6)!.inflowAmount
+      payload.calendar.reconciliation.timelineEstimatedInflow,
+      jun.estimatedInflow
     );
   });
 
@@ -150,15 +163,79 @@ describe("financeCashFlowCalendarReconciliation", () => {
     assert.equal(navTotal, 40);
   });
 
-  it("buildCalendarReconciliation detecta divergência", () => {
+  it("buildCalendarReconciliation detecta divergência nas Entradas est.", () => {
     const rec = buildCalendarReconciliation(
       2026,
       6,
-      { inflow: 100, outflow: 50, net: 50, receivableCount: 1, payableCount: 1, movementCount: 2 },
-      [{ year: 2026, month: 6, monthLabel: "Jun", inflowAmount: 90, outflowAmount: 50, netFlowAmount: 40, accumulatedBalance: 40, status: "positive", inflowCount: 1, outflowCount: 1 }]
+      {
+        inflow: 100,
+        outflow: 50,
+        net: 50,
+        inflowRealized: 60,
+        inflowOpen: 40,
+        outflowRealized: 30,
+        outflowOpen: 20,
+        receivableCount: 1,
+        payableCount: 1,
+        movementCount: 2,
+      },
+      [
+        {
+          year: 2026,
+          month: 6,
+          monthLabel: "Jun",
+          received: 60,
+          receivableOpenDue: 30,
+          estimatedInflow: 90,
+          paid: 30,
+          payableOpenDue: 20,
+          estimatedOutflow: 50,
+          netFlow: 40,
+          accumulatedNet: 40,
+        },
+      ],
+      "projected"
     );
     assert.equal(rec.status, "mismatch");
-    assert.equal(rec.inflowDiff, 10);
+    assert.equal(rec.estimatedInflowDiff, 10);
+  });
+
+  it("buildCalendarReconciliation OK na visão Realizado (Recebido/Pago)", () => {
+    const rec = buildCalendarReconciliation(
+      2026,
+      6,
+      {
+        inflow: 100,
+        outflow: 50,
+        net: 50,
+        inflowRealized: 100,
+        inflowOpen: 0,
+        outflowRealized: 50,
+        outflowOpen: 0,
+        receivableCount: 1,
+        payableCount: 1,
+        movementCount: 2,
+      },
+      [
+        {
+          year: 2026,
+          month: 6,
+          monthLabel: "Jun",
+          received: 100,
+          receivableOpenDue: 0,
+          estimatedInflow: 100,
+          paid: 50,
+          payableOpenDue: 0,
+          estimatedOutflow: 50,
+          netFlow: 50,
+          accumulatedNet: 50,
+        },
+      ],
+      "realized"
+    );
+    assert.equal(rec.status, "ok");
+    assert.equal(rec.calendarReceived, 100);
+    assert.equal(rec.timelineReceived, 100);
   });
 
   it("sumCalendarDays bate com soma manual dos dias", () => {

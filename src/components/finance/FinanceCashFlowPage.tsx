@@ -537,6 +537,7 @@ export function FinanceCashFlowPage() {
       {payload && activeTab === "calendar" ? (
         <FinanceCashFlowCalendar
           calendar={payload.calendar}
+          viewMode={appliedFilters.viewMode}
           filterYearLabel={appliedFilters.year.trim() || String(payload.calendar.year)}
           viewModeLabel={
             appliedFilters.viewMode === "realized"

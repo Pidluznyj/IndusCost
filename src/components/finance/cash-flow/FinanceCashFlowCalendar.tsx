@@ -6,9 +6,11 @@ import type {
   FinanceCashFlowCalendarWeekSummary,
 } from "@/src/lib/financeCashFlowCalendar";
 import {
+  CALENDAR_MOVEMENT_NATURE_LABELS,
   filterCalendarMovements,
   sumCalendarMovementAmounts,
 } from "@/src/lib/financeCashFlowCalendar";
+import type { FinanceCashFlowViewMode } from "@/src/lib/financeCashFlowDashboardTypes";
 import {
   DEFAULT_CALENDAR_MOVEMENT_SORT,
   sortCalendarMovements,
@@ -221,6 +223,9 @@ function CalendarDayDetail({
             <thead className="bg-[#F9FAFB] border-b border-[#E5E7EB]">
               <tr>
                 <SortableTh label="Tipo" sortKey="type" sort={sort} onSort={handleSort} />
+                <th className="px-3 py-2 text-[10px] font-bold text-[#6B7280] whitespace-nowrap text-left">
+                  Natureza
+                </th>
                 <SortableTh label="Empresa" sortKey="companyName" sort={sort} onSort={handleSort} />
                 <SortableTh
                   label="Cliente/Fornecedor"
@@ -290,6 +295,9 @@ function CalendarDayDetail({
                     >
                       {isCr ? "CR" : "CP"}
                     </td>
+                    <td className="px-3 py-2 text-[10px] text-[#374151] whitespace-nowrap">
+                      {CALENDAR_MOVEMENT_NATURE_LABELS[row.nature]}
+                    </td>
                     <td className="px-3 py-2 text-xs text-[#111827]">
                       {displayFinanceText(row.companyName)}
                     </td>
@@ -338,7 +346,7 @@ function CalendarDayDetail({
             </tbody>
             <tfoot className="bg-[#F9FAFB] border-t border-[#E5E7EB]">
               <tr>
-                <td colSpan={8} className="px-3 py-2 text-[11px] font-semibold text-[#6B7280]">
+                <td colSpan={9} className="px-3 py-2 text-[11px] font-semibold text-[#6B7280]">
                   Total do grid ({rows.length} título{rows.length === 1 ? "" : "s"})
                 </td>
                 <td
@@ -366,11 +374,13 @@ function CalendarDayDetail({
 
 export function FinanceCashFlowCalendar({
   calendar,
+  viewMode,
   viewModeLabel,
   filterYearLabel,
   onDisplayMonthChange,
 }: {
   calendar: FinanceCashFlowCalendarPayload;
+  viewMode: FinanceCashFlowViewMode;
   viewModeLabel: string;
   filterYearLabel: string;
   onDisplayMonthChange?: (month: number) => void;
@@ -400,6 +410,15 @@ export function FinanceCashFlowCalendar({
   }
 
   const { monthSummary, reconciliation } = calendar;
+  const isProjectedView = viewMode === "projected" || viewMode === "combined";
+
+  const formatMonthNavLabel = (item: (typeof calendar.monthNav)[number]) => {
+    if (item.movementCount === 0) return item.monthLabel;
+    if (isProjectedView) {
+      return `${item.monthLabel} (Entradas est. ${formatFinanceCurrency(item.inflow)} / Saídas est. ${formatFinanceCurrency(item.outflow)})`;
+    }
+    return `${item.monthLabel} (Recebido ${formatFinanceCurrency(item.inflowRealized)} / Pago ${formatFinanceCurrency(item.outflowRealized)})`;
+  };
 
   return (
     <section className={financeBiSectionClass} data-testid="cash-flow-calendar">
@@ -449,10 +468,7 @@ export function FinanceCashFlowCalendar({
               >
                 {calendar.monthNav.map((item) => (
                   <option key={item.month} value={item.month}>
-                    {item.monthLabel}
-                    {item.movementCount > 0
-                      ? ` (${formatFinanceCurrency(item.inflow)} / ${formatFinanceCurrency(item.outflow)})`
-                      : ""}
+                    {formatMonthNavLabel(item)}
                   </option>
                 ))}
               </select>
@@ -475,33 +491,75 @@ export function FinanceCashFlowCalendar({
           className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-[11px]"
           data-testid="cash-flow-calendar-month-summary"
         >
-          <div>
-            <span className="text-[#6B7280]">CR do mês</span>
-            <p className="font-bold text-[#059669] tabular-nums">
-              {formatFinanceCurrency(monthSummary.inflow)}
-            </p>
-          </div>
-          <div>
-            <span className="text-[#6B7280]">CP do mês</span>
-            <p className="font-bold text-[#DC2626] tabular-nums">
-              {formatFinanceCurrency(monthSummary.outflow)}
-            </p>
-          </div>
-          <div>
-            <span className="text-[#6B7280]">Saldo do mês</span>
-            <p
-              className={cn(
-                "font-bold tabular-nums",
-                monthSummary.net < 0
-                  ? "text-[#DC2626]"
-                  : monthSummary.net > 0
-                    ? "text-[#059669]"
-                    : "text-[#111827]"
-              )}
-            >
-              {formatFinanceCurrency(monthSummary.net)}
-            </p>
-          </div>
+          {isProjectedView ? (
+            <>
+              <div>
+                <span className="text-[#6B7280]">Entradas estimadas do mês</span>
+                <p className="font-bold text-[#059669] tabular-nums">
+                  {formatFinanceCurrency(monthSummary.inflow)}
+                </p>
+                <p className="text-[10px] text-[#6B7280] tabular-nums mt-0.5">
+                  Recebido {formatFinanceCurrency(monthSummary.inflowRealized)} + Aberto{" "}
+                  {formatFinanceCurrency(monthSummary.inflowOpen)}
+                </p>
+              </div>
+              <div>
+                <span className="text-[#6B7280]">Saídas estimadas do mês</span>
+                <p className="font-bold text-[#DC2626] tabular-nums">
+                  {formatFinanceCurrency(monthSummary.outflow)}
+                </p>
+                <p className="text-[10px] text-[#6B7280] tabular-nums mt-0.5">
+                  Pago {formatFinanceCurrency(monthSummary.outflowRealized)} + Aberto{" "}
+                  {formatFinanceCurrency(monthSummary.outflowOpen)}
+                </p>
+              </div>
+              <div>
+                <span className="text-[#6B7280]">Saldo estimado do mês</span>
+                <p
+                  className={cn(
+                    "font-bold tabular-nums",
+                    monthSummary.net < 0
+                      ? "text-[#DC2626]"
+                      : monthSummary.net > 0
+                        ? "text-[#059669]"
+                        : "text-[#111827]"
+                  )}
+                >
+                  {formatFinanceCurrency(monthSummary.net)}
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <span className="text-[#6B7280]">Recebido no mês</span>
+                <p className="font-bold text-[#059669] tabular-nums">
+                  {formatFinanceCurrency(monthSummary.inflowRealized)}
+                </p>
+              </div>
+              <div>
+                <span className="text-[#6B7280]">Pago no mês</span>
+                <p className="font-bold text-[#DC2626] tabular-nums">
+                  {formatFinanceCurrency(monthSummary.outflowRealized)}
+                </p>
+              </div>
+              <div>
+                <span className="text-[#6B7280]">Saldo realizado</span>
+                <p
+                  className={cn(
+                    "font-bold tabular-nums",
+                    monthSummary.net < 0
+                      ? "text-[#DC2626]"
+                      : monthSummary.net > 0
+                        ? "text-[#059669]"
+                        : "text-[#111827]"
+                  )}
+                >
+                  {formatFinanceCurrency(monthSummary.net)}
+                </p>
+              </div>
+            </>
+          )}
           <div>
             <span className="text-[#6B7280]">Movimentos</span>
             <p className="font-semibold text-[#111827]">
@@ -524,16 +582,32 @@ export function FinanceCashFlowCalendar({
             Conciliação com linha do tempo — {displayMonthLabel}/{calendar.year}:{" "}
             {reconciliation.status === "ok" ? "OK" : "Divergência"}
           </p>
-          <p className="mt-0.5 tabular-nums">
-            Calendário CR {formatFinanceCurrency(reconciliation.calendarInflow)} · Linha do tempo{" "}
-            {formatFinanceCurrency(reconciliation.timelineInflow)}
-            {reconciliation.status === "mismatch"
-              ? ` · Δ ${formatFinanceCurrency(reconciliation.inflowDiff)}`
-              : ""}
-            {" | "}
-            CP calendário {formatFinanceCurrency(reconciliation.calendarOutflow)} · linha{" "}
-            {formatFinanceCurrency(reconciliation.timelineOutflow)}
-          </p>
+          {isProjectedView ? (
+            <p className="mt-0.5 tabular-nums">
+              Entradas est. calendário {formatFinanceCurrency(reconciliation.calendarEstimatedInflow)}{" "}
+              · linha {formatFinanceCurrency(reconciliation.timelineEstimatedInflow)}
+              {reconciliation.status === "mismatch"
+                ? ` · Δ ${formatFinanceCurrency(reconciliation.estimatedInflowDiff)}`
+                : ""}
+              {" | "}
+              Saídas est. calendário {formatFinanceCurrency(reconciliation.calendarEstimatedOutflow)} ·
+              linha {formatFinanceCurrency(reconciliation.timelineEstimatedOutflow)}
+              {" | "}
+              Saldo calendário {formatFinanceCurrency(reconciliation.calendarNet)} · linha{" "}
+              {formatFinanceCurrency(reconciliation.timelineNet)}
+            </p>
+          ) : (
+            <p className="mt-0.5 tabular-nums">
+              Recebido calendário {formatFinanceCurrency(reconciliation.calendarReceived)} · linha{" "}
+              {formatFinanceCurrency(reconciliation.timelineReceived)}
+              {" | "}
+              Pago calendário {formatFinanceCurrency(reconciliation.calendarPaid)} · linha{" "}
+              {formatFinanceCurrency(reconciliation.timelinePaid)}
+              {" | "}
+              Saldo calendário {formatFinanceCurrency(reconciliation.calendarNet)} · linha{" "}
+              {formatFinanceCurrency(reconciliation.timelineNet)}
+            </p>
+          )}
         </div>
       </div>
       <div className="p-5">

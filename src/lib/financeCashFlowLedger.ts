@@ -34,6 +34,29 @@ export function cashFlowViewModeSlices(
   return ["projected"];
 }
 
+/** Slices do calendário diário — Previsto inclui realizado + aberto (Entradas/Saídas est.). */
+export function calendarCashFlowMovementSlices(
+  viewMode: FinanceCashFlowViewMode
+): CashFlowMovementSlice[] {
+  if (viewMode === "realized") return ["realized"];
+  if (viewMode === "combined") return ["projected", "realized"];
+  return ["realized", "projected"];
+}
+
+/** Alinha CP realizado do calendário com a linha do tempo executiva (dueDate). */
+export function shouldIncludeCalendarApRealizedMovement(
+  row: FinanceCashFlowApRow
+): boolean {
+  if (isFinanceApCancelledTitle(row)) return false;
+  return resolveFinanceApRealizedAmount(row) > 0 && row.dueDate != null;
+}
+
+export function resolveCalendarApRealizedMovementDate(
+  row: FinanceCashFlowApRow
+): Date | null {
+  return row.dueDate ?? null;
+}
+
 /** Previsto/Realizado no Fluxo planejado: sempre aloca pelo vencimento (dueDate). */
 export function resolveCashFlowArMovementDate(
   row: FinanceCashFlowArRow,

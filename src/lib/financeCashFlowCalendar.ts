@@ -14,21 +14,45 @@ import type {
   FinanceCashFlowArRow,
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
-import type { FinanceCashFlowMonthlyPoint } from "./financeCashFlowDashboardTypes.js";
+import type {
+  FinanceCashFlowMonthlyPoint,
+  FinanceCashFlowViewMode,
+} from "./financeCashFlowDashboardTypes.js";
 import type { FinanceCashFlowDailyPoint } from "./financeCashFlowCfoDiagnostics.js";
+import type { FinanceCashFlowExecutiveMonthlyRow } from "./financeCashFlowExecutiveSummary.js";
 import {
-  cashFlowViewModeSlices,
+  calendarCashFlowMovementSlices,
+  resolveCalendarApRealizedMovementDate,
   resolveCashFlowApAmount,
   resolveCashFlowApMovementDate,
   resolveCashFlowArAmount,
   resolveCashFlowArMovementDate,
+  shouldIncludeCalendarApRealizedMovement,
   shouldIncludeCashFlowApMovement,
   shouldIncludeCashFlowArMovement,
+  type CashFlowMovementSlice,
 } from "./financeCashFlowLedger.js";
+
+export type FinanceCashFlowCalendarMovementNature =
+  | "AR_REALIZED"
+  | "AR_OPEN"
+  | "AP_REALIZED"
+  | "AP_OPEN";
+
+export const CALENDAR_MOVEMENT_NATURE_LABELS: Record<
+  FinanceCashFlowCalendarMovementNature,
+  string
+> = {
+  AR_REALIZED: "CR realizado",
+  AR_OPEN: "CR aberto",
+  AP_REALIZED: "CP pago",
+  AP_OPEN: "CP aberto",
+};
 
 export type FinanceCashFlowCalendarMovement = {
   id: string;
   type: "AR" | "AP";
+  nature: FinanceCashFlowCalendarMovementNature;
   source: "NomusAccountsReceivable" | "NomusAccountsPayable";
   externalId: string | null;
   documentNumber: string | null;
@@ -80,6 +104,10 @@ export type FinanceCashFlowCalendarMonthSummary = {
   inflow: number;
   outflow: number;
   net: number;
+  inflowRealized: number;
+  inflowOpen: number;
+  outflowRealized: number;
+  outflowOpen: number;
   receivableCount: number;
   payableCount: number;
   movementCount: number;
@@ -93,12 +121,25 @@ export type FinanceCashFlowCalendarMonthNavItem = FinanceCashFlowCalendarMonthSu
 export type FinanceCashFlowCalendarReconciliation = {
   month: number;
   year: number;
-  calendarInflow: number;
-  timelineInflow: number;
-  inflowDiff: number;
-  calendarOutflow: number;
-  timelineOutflow: number;
-  outflowDiff: number;
+  viewMode: FinanceCashFlowViewMode;
+  calendarReceived: number;
+  timelineReceived: number;
+  receivedDiff: number;
+  calendarOpenReceivable: number;
+  timelineOpenReceivable: number;
+  openReceivableDiff: number;
+  calendarEstimatedInflow: number;
+  timelineEstimatedInflow: number;
+  estimatedInflowDiff: number;
+  calendarPaid: number;
+  timelinePaid: number;
+  paidDiff: number;
+  calendarOpenPayable: number;
+  timelineOpenPayable: number;
+  openPayableDiff: number;
+  calendarEstimatedOutflow: number;
+  timelineEstimatedOutflow: number;
+  estimatedOutflowDiff: number;
   calendarNet: number;
   timelineNet: number;
   netDiff: number;
@@ -156,9 +197,17 @@ function resolveArDocument(row: FinanceCashFlowArRow): string | null {
   return row.sourceInvoiceNumber?.trim() || null;
 }
 
+function movementNature(
+  type: "AR" | "AP",
+  slice: CashFlowMovementSlice
+): FinanceCashFlowCalendarMovementNature {
+  if (type === "AR") return slice === "realized" ? "AR_REALIZED" : "AR_OPEN";
+  return slice === "realized" ? "AP_REALIZED" : "AP_OPEN";
+}
+
 function mapArMovement(
   row: FinanceCashFlowArRow,
-  slice: "projected" | "realized",
+  slice: CashFlowMovementSlice,
   calendarAmount: number,
   calendarDate: string,
   referenceDate: Date
@@ -167,6 +216,7 @@ function mapArMovement(
   return {
     id: `AR-${row.externalId}-${calendarDate}-${slice}`,
     type: "AR",
+    nature: movementNature("AR", slice),
     source: "NomusAccountsReceivable",
     externalId: String(row.externalId),
     documentNumber: resolveArDocument(row),
@@ -191,7 +241,7 @@ function mapArMovement(
 
 function mapApMovement(
   row: FinanceCashFlowApRow,
-  slice: "projected" | "realized",
+  slice: CashFlowMovementSlice,
   calendarAmount: number,
   calendarDate: string,
   referenceDate: Date
@@ -200,6 +250,7 @@ function mapApMovement(
   return {
     id: `AP-${row.externalId}-${calendarDate}-${slice}`,
     type: "AP",
+    nature: movementNature("AP", slice),
     source: "NomusAccountsPayable",
     externalId: String(row.externalId),
     documentNumber: row.documentNumber,
@@ -231,7 +282,7 @@ export function buildFinanceCashFlowCalendarMovements(
 ): FinanceCashFlowCalendarMovement[] {
   const movements: FinanceCashFlowCalendarMovement[] = [];
 
-  for (const slice of cashFlowViewModeSlices(filters.viewMode)) {
+  for (const slice of calendarCashFlowMovementSlices(filters.viewMode)) {
     for (const row of arRows) {
       if (!shouldIncludeCashFlowArMovement(row, slice)) continue;
       const amount = resolveCashFlowArAmount(row, slice);
@@ -243,10 +294,17 @@ export function buildFinanceCashFlowCalendarMovements(
     }
 
     for (const row of apRows) {
-      if (!shouldIncludeCashFlowApMovement(row, slice)) continue;
+      const includeAp =
+        slice === "realized"
+          ? shouldIncludeCalendarApRealizedMovement(row)
+          : shouldIncludeCashFlowApMovement(row, slice);
+      if (!includeAp) continue;
       const amount = resolveCashFlowApAmount(row, slice);
       if (amount <= 0) continue;
-      const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
+      const date =
+        slice === "realized"
+          ? resolveCalendarApRealizedMovementDate(row)
+          : resolveCashFlowApMovementDate(row, slice, filters.dateBase);
       if (!date) continue;
       const calendarDate = dateKey(startOfLocalDay(date));
       movements.push(mapApMovement(row, slice, amount, calendarDate, referenceDate));
@@ -268,11 +326,26 @@ function aggregateDayFromMovements(
   const outflow = roundMoney(apMovements.reduce((sum, m) => sum + m.calendarAmount, 0));
   const net = roundMoney(inflow - outflow);
   const largeThreshold = maxFlow > 0 ? maxFlow * 0.35 : 0;
+  const breakdown = sumMovementBreakdown(movements);
 
   const parts: string[] = [];
   if (inflow > 0) parts.push(`CR +${formatFinanceCurrency(inflow)}`);
   if (outflow > 0) parts.push(`CP −${formatFinanceCurrency(outflow)}`);
   if (inflow > 0 || outflow > 0) parts.push(`Saldo ${formatFinanceCurrency(net)}`);
+
+  const detailParts: string[] = [];
+  if (breakdown.inflowRealized > 0) {
+    detailParts.push(`CR realizado +${formatFinanceCurrency(breakdown.inflowRealized)}`);
+  }
+  if (breakdown.inflowOpen > 0) {
+    detailParts.push(`CR aberto +${formatFinanceCurrency(breakdown.inflowOpen)}`);
+  }
+  if (breakdown.outflowRealized > 0) {
+    detailParts.push(`CP pago −${formatFinanceCurrency(breakdown.outflowRealized)}`);
+  }
+  if (breakdown.outflowOpen > 0) {
+    detailParts.push(`CP aberto −${formatFinanceCurrency(breakdown.outflowOpen)}`);
+  }
 
   return {
     date,
@@ -287,7 +360,12 @@ function aggregateDayFromMovements(
     status: net > 0 ? "positive" : net < 0 ? "negative" : "neutral",
     hasLargeInflow: inflow >= largeThreshold && largeThreshold > 0,
     hasLargeOutflow: outflow >= largeThreshold && largeThreshold > 0,
-    summary: parts.length > 0 ? parts.join(" · ") : "Sem movimentos",
+    summary:
+      detailParts.length > 0
+        ? `${parts.join(" · ")} (${detailParts.join(" · ")})`
+        : parts.length > 0
+          ? parts.join(" · ")
+          : "Sem movimentos",
   };
 }
 
@@ -366,25 +444,65 @@ function nearlyEqual(a: number, b: number): boolean {
   return Math.abs(a - b) < RECONCILIATION_EPSILON;
 }
 
+function sumMovementBreakdown(movements: FinanceCashFlowCalendarMovement[]): {
+  inflowRealized: number;
+  inflowOpen: number;
+  outflowRealized: number;
+  outflowOpen: number;
+} {
+  let inflowRealized = 0;
+  let inflowOpen = 0;
+  let outflowRealized = 0;
+  let outflowOpen = 0;
+  for (const movement of movements) {
+    switch (movement.nature) {
+      case "AR_REALIZED":
+        inflowRealized += movement.calendarAmount;
+        break;
+      case "AR_OPEN":
+        inflowOpen += movement.calendarAmount;
+        break;
+      case "AP_REALIZED":
+        outflowRealized += movement.calendarAmount;
+        break;
+      case "AP_OPEN":
+        outflowOpen += movement.calendarAmount;
+        break;
+      default:
+        break;
+    }
+  }
+  return {
+    inflowRealized: roundMoney(inflowRealized),
+    inflowOpen: roundMoney(inflowOpen),
+    outflowRealized: roundMoney(outflowRealized),
+    outflowOpen: roundMoney(outflowOpen),
+  };
+}
+
 export function sumCalendarDays(days: FinanceCashFlowCalendarDay[]): FinanceCashFlowCalendarMonthSummary {
   let inflow = 0;
   let outflow = 0;
   let receivableCount = 0;
   let payableCount = 0;
   let movementCount = 0;
+  const allMovements: FinanceCashFlowCalendarMovement[] = [];
   for (const day of days) {
     inflow += day.inflow;
     outflow += day.outflow;
     receivableCount += day.receivableCount;
     payableCount += day.payableCount;
     movementCount += day.movementCount;
+    allMovements.push(...day.movements);
   }
+  const breakdown = sumMovementBreakdown(allMovements);
   const inflowRounded = roundMoney(inflow);
   const outflowRounded = roundMoney(outflow);
   return {
     inflow: inflowRounded,
     outflow: outflowRounded,
     net: roundMoney(inflowRounded - outflowRounded),
+    ...breakdown,
     receivableCount,
     payableCount,
     movementCount,
@@ -395,34 +513,73 @@ export function buildCalendarReconciliation(
   year: number,
   month: number,
   monthSummary: FinanceCashFlowCalendarMonthSummary,
-  monthlySeries: FinanceCashFlowMonthlyPoint[]
+  executiveTimeline: FinanceCashFlowExecutiveMonthlyRow[],
+  viewMode: FinanceCashFlowViewMode
 ): FinanceCashFlowCalendarReconciliation {
-  const point = monthlySeries.find((p) => p.year === year && p.month === month);
-  const timelineInflow = point?.inflowAmount ?? 0;
-  const timelineOutflow = point?.outflowAmount ?? 0;
-  const timelineNet = point?.netFlowAmount ?? roundMoney(timelineInflow - timelineOutflow);
+  const point = executiveTimeline.find((p) => p.year === year && p.month === month);
+  const timelineReceived = point?.received ?? 0;
+  const timelineOpenReceivable = point?.receivableOpenDue ?? 0;
+  const timelineEstimatedInflow = point?.estimatedInflow ?? 0;
+  const timelinePaid = point?.paid ?? 0;
+  const timelineOpenPayable = point?.payableOpenDue ?? 0;
+  const timelineEstimatedOutflow = point?.estimatedOutflow ?? 0;
+  const timelineNet =
+    viewMode === "realized"
+      ? roundMoney(timelineReceived - timelinePaid)
+      : (point?.netFlow ?? roundMoney(timelineEstimatedInflow - timelineEstimatedOutflow));
 
-  const inflowDiff = roundMoney(monthSummary.inflow - timelineInflow);
-  const outflowDiff = roundMoney(monthSummary.outflow - timelineOutflow);
-  const netDiff = roundMoney(monthSummary.net - timelineNet);
+  const calendarReceived = monthSummary.inflowRealized;
+  const calendarOpenReceivable = monthSummary.inflowOpen;
+  const calendarEstimatedInflow = monthSummary.inflow;
+  const calendarPaid = monthSummary.outflowRealized;
+  const calendarOpenPayable = monthSummary.outflowOpen;
+  const calendarEstimatedOutflow = monthSummary.outflow;
+  const calendarNet = monthSummary.net;
 
-  const status =
-    nearlyEqual(monthSummary.inflow, timelineInflow) &&
-    nearlyEqual(monthSummary.outflow, timelineOutflow) &&
-    nearlyEqual(monthSummary.net, timelineNet)
-      ? "ok"
-      : "mismatch";
+  const receivedDiff = roundMoney(calendarReceived - timelineReceived);
+  const openReceivableDiff = roundMoney(calendarOpenReceivable - timelineOpenReceivable);
+  const estimatedInflowDiff = roundMoney(calendarEstimatedInflow - timelineEstimatedInflow);
+  const paidDiff = roundMoney(calendarPaid - timelinePaid);
+  const openPayableDiff = roundMoney(calendarOpenPayable - timelineOpenPayable);
+  const estimatedOutflowDiff = roundMoney(calendarEstimatedOutflow - timelineEstimatedOutflow);
+  const netDiff = roundMoney(calendarNet - timelineNet);
+
+  const status: "ok" | "mismatch" =
+    viewMode === "realized"
+      ? nearlyEqual(calendarReceived, timelineReceived) &&
+        nearlyEqual(calendarPaid, timelinePaid) &&
+        nearlyEqual(calendarNet, timelineNet)
+        ? "ok"
+        : "mismatch"
+      : nearlyEqual(calendarEstimatedInflow, timelineEstimatedInflow) &&
+          nearlyEqual(calendarEstimatedOutflow, timelineEstimatedOutflow) &&
+          nearlyEqual(calendarNet, timelineNet)
+        ? "ok"
+        : "mismatch";
 
   return {
     month,
     year,
-    calendarInflow: monthSummary.inflow,
-    timelineInflow,
-    inflowDiff,
-    calendarOutflow: monthSummary.outflow,
-    timelineOutflow,
-    outflowDiff,
-    calendarNet: monthSummary.net,
+    viewMode,
+    calendarReceived,
+    timelineReceived,
+    receivedDiff,
+    calendarOpenReceivable,
+    timelineOpenReceivable,
+    openReceivableDiff,
+    calendarEstimatedInflow,
+    timelineEstimatedInflow,
+    estimatedInflowDiff,
+    calendarPaid,
+    timelinePaid,
+    paidDiff,
+    calendarOpenPayable,
+    timelineOpenPayable,
+    openPayableDiff,
+    calendarEstimatedOutflow,
+    timelineEstimatedOutflow,
+    estimatedOutflowDiff,
+    calendarNet,
     timelineNet,
     netDiff,
     status,
@@ -476,7 +633,10 @@ export function buildFinanceCashFlowCalendar(
   apRows: FinanceCashFlowApRow[],
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date,
-  options?: { monthlySeries?: FinanceCashFlowMonthlyPoint[] }
+  options?: {
+    monthlySeries?: FinanceCashFlowMonthlyPoint[];
+    executiveMonthlyTimeline?: FinanceCashFlowExecutiveMonthlyRow[];
+  }
 ): FinanceCashFlowCalendarPayload {
   const calendarYear = filters.year ?? referenceDate.getFullYear();
   const displayMonth = resolveCalendarDisplayMonth(filters, referenceDate);
@@ -513,7 +673,7 @@ export function buildFinanceCashFlowCalendar(
   const displayMovements = byMonth.get(displayMonth) ?? [];
   const days = buildCalendarDaysForMonth(calendarYear, displayMonth, displayMovements);
   const monthSummary = sumCalendarDays(days);
-  const monthlySeries = options?.monthlySeries ?? [];
+  const executiveTimeline = options?.executiveMonthlyTimeline ?? [];
 
   return {
     filterMonth,
@@ -525,7 +685,8 @@ export function buildFinanceCashFlowCalendar(
       calendarYear,
       displayMonth,
       monthSummary,
-      monthlySeries
+      executiveTimeline,
+      filters.viewMode
     ),
     monthNav,
     yearMovementCount: yearMovements.length,
@@ -585,6 +746,8 @@ export function filterCalendarMovements(
     if (!normalizedSearch) return true;
     const haystack = [
       m.type,
+      m.nature,
+      CALENDAR_MOVEMENT_NATURE_LABELS[m.nature],
       m.source,
       m.companyName,
       m.personName,

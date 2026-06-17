@@ -19,8 +19,10 @@ import type {
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
 import {
-  cashFlowViewModeSlices,
+  calendarCashFlowMovementSlices,
+  resolveCalendarApRealizedMovementDate,
   resolveCashFlowApMovementDate,
+  shouldIncludeCalendarApRealizedMovement,
   shouldIncludeCashFlowArMovement,
   shouldIncludeCashFlowApMovement,
   type CashFlowMovementSlice,
@@ -77,13 +79,23 @@ export function matchesCashFlowArPeriodScope(
   });
   if (empty) return false;
 
-  const modes = cashFlowViewModeSlices(filters.viewMode);
+  const modes = calendarCashFlowMovementSlices(filters.viewMode);
   for (const slice of modes) {
     if (!contributesToCashFlowArPeriodScope(row, slice)) continue;
     // Fluxo planejado: sempre aloca pelo vencimento (dueDate).
     if (dateInBounds(row.dueDate ?? null, from, toExclusive)) return true;
   }
   return false;
+}
+
+function contributesToCashFlowApPeriodScope(
+  row: FinanceCashFlowApRow,
+  slice: CashFlowMovementSlice
+): boolean {
+  if (slice === "realized") {
+    return shouldIncludeCalendarApRealizedMovement(row);
+  }
+  return shouldIncludeCashFlowApMovement(row, slice);
 }
 
 export function matchesCashFlowApPeriodScope(
@@ -99,10 +111,13 @@ export function matchesCashFlowApPeriodScope(
   });
   if (empty) return false;
 
-  const modes = cashFlowViewModeSlices(filters.viewMode);
+  const modes = calendarCashFlowMovementSlices(filters.viewMode);
   for (const slice of modes) {
-    if (!shouldIncludeCashFlowApMovement(row, slice)) continue;
-    const movementDate = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
+    if (!contributesToCashFlowApPeriodScope(row, slice)) continue;
+    const movementDate =
+      slice === "realized"
+        ? resolveCalendarApRealizedMovementDate(row)
+        : resolveCashFlowApMovementDate(row, slice, filters.dateBase);
     if (dateInBounds(movementDate, from, toExclusive)) return true;
   }
   return false;
