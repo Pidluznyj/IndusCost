@@ -78,10 +78,16 @@ export function FinanceCashFlowPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [calendarDisplayMonth, setCalendarDisplayMonth] = useState(() => new Date().getMonth() + 1);
 
   const appliedQuery = useMemo(
-    () => buildFinanceCashFlowDashboardQuery(appliedFilters),
-    [appliedFilters]
+    () =>
+      buildFinanceCashFlowDashboardQuery(appliedFilters, {
+        calendarDisplayMonth: appliedFilters.month.trim()
+          ? undefined
+          : calendarDisplayMonth,
+      }),
+    [appliedFilters, calendarDisplayMonth]
   );
   const draftQuery = useMemo(
     () => buildFinanceCashFlowDashboardQuery(draftFilters),
@@ -112,6 +118,21 @@ export function FinanceCashFlowPage() {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    if (appliedFilters.month.trim()) return;
+    const year = appliedFilters.year.trim()
+      ? Number(appliedFilters.year)
+      : new Date().getFullYear();
+    const now = new Date();
+    setCalendarDisplayMonth(year === now.getFullYear() ? now.getMonth() + 1 : 1);
+  }, [appliedFilters.year, appliedFilters.month]);
+
+  useEffect(() => {
+    if (payload?.calendar.displayMonth) {
+      setCalendarDisplayMonth(payload.calendar.displayMonth);
+    }
+  }, [payload?.calendar.displayMonth]);
 
   const handleApplyFilters = () => {
     setAppliedFilters(normalizeFinanceCashFlowUiFilters(draftFilters));
@@ -516,21 +537,18 @@ export function FinanceCashFlowPage() {
       {payload && activeTab === "calendar" ? (
         <FinanceCashFlowCalendar
           calendar={payload.calendar}
-          monthLabel={
-            appliedFilters.month
-              ? (FINANCE_CASH_FLOW_MONTH_OPTIONS.find((o) => o.value === appliedFilters.month)
-                  ?.label ?? "Mês selecionado")
-              : new Date(payload.referenceDate).toLocaleDateString("pt-BR", {
-                  month: "long",
-                  year: "numeric",
-                })
-          }
+          filterYearLabel={appliedFilters.year.trim() || String(payload.calendar.year)}
           viewModeLabel={
             appliedFilters.viewMode === "realized"
               ? "Realizado"
               : appliedFilters.viewMode === "combined"
                 ? "Realizado + Previsto"
                 : "Previsto"
+          }
+          onDisplayMonthChange={
+            appliedFilters.month.trim()
+              ? undefined
+              : (month) => setCalendarDisplayMonth(month)
           }
         />
       ) : null}

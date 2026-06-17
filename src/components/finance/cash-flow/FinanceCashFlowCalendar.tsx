@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { CalendarDays, ChevronDown, ChevronUp, Search } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Search } from "lucide-react";
 import type {
   FinanceCashFlowCalendarDay,
   FinanceCashFlowCalendarPayload,
@@ -366,12 +366,14 @@ function CalendarDayDetail({
 
 export function FinanceCashFlowCalendar({
   calendar,
-  monthLabel,
   viewModeLabel,
+  filterYearLabel,
+  onDisplayMonthChange,
 }: {
   calendar: FinanceCashFlowCalendarPayload;
-  monthLabel: string;
   viewModeLabel: string;
+  filterYearLabel: string;
+  onDisplayMonthChange?: (month: number) => void;
 }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const rows = useMemo(() => buildCalendarRows(calendar), [calendar]);
@@ -380,29 +382,167 @@ export function FinanceCashFlowCalendar({
     [calendar.days, selectedDate]
   );
 
-  const hasAnyMovement = calendar.days.some((d) => d.movementCount > 0);
+  const displayMonthLabel =
+    calendar.monthNav.find((m) => m.month === calendar.displayMonth)?.monthLabel ??
+    String(calendar.displayMonth);
 
-  if (!hasAnyMovement) {
+  const prevMonth = calendar.displayMonth > 1 ? calendar.displayMonth - 1 : null;
+  const nextMonth = calendar.displayMonth < 12 ? calendar.displayMonth + 1 : null;
+  const canNavigate = calendar.isAnnualFilter && onDisplayMonthChange != null;
+
+  if (calendar.yearMovementCount === 0) {
     return (
       <FinanceBiEmptyState
         title="Calendário financeiro"
-        description="Sem movimentos diários para o mês e filtros aplicados."
+        description="Sem movimentos diários para o ano e filtros aplicados."
       />
     );
   }
 
+  const { monthSummary, reconciliation } = calendar;
+
   return (
     <section className={financeBiSectionClass} data-testid="cash-flow-calendar">
-      <div className="px-5 py-4 border-b border-[#E5E7EB] flex items-center gap-2">
-        <CalendarDays className="h-4 w-4 text-[#2563EB]" />
-        <div>
-          <h2 className="text-sm font-bold text-[#111827]">Calendário financeiro</h2>
-          <p className="text-[11px] text-[#6B7280]">
-            {monthLabel} — CR, CP e saldo líquido por dia · clique no dia para detalhar títulos
+      <div className="px-5 py-4 border-b border-[#E5E7EB] space-y-3">
+        <div className="flex items-start gap-2">
+          <CalendarDays className="h-4 w-4 text-[#2563EB] mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-bold text-[#111827]">
+              Calendário financeiro — {displayMonthLabel}/{calendar.year}
+            </h2>
+            <p className="text-[11px] text-[#6B7280] mt-0.5">
+              Escopo: Filtro {calendar.isAnnualFilter ? "anual" : "mensal"}{" "}
+              {filterYearLabel} | Mês exibido: {displayMonthLabel} | {viewModeLabel}
+            </p>
+            {calendar.isAnnualFilter ? (
+              <p
+                className="text-[11px] text-[#92400E] bg-[#FFFBEB] border border-[#FDE68A] rounded-md px-2 py-1 mt-2 inline-block"
+                data-testid="cash-flow-calendar-annual-notice"
+              >
+                O filtro está anual (Mês = Todos). O calendário exibe um mês por vez — os cards
+                da visão geral somam o ano inteiro.
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        {canNavigate ? (
+          <div className="flex flex-wrap items-center gap-2" data-testid="cash-flow-calendar-month-nav">
+            <button
+              type="button"
+              disabled={prevMonth == null}
+              onClick={() => prevMonth != null && onDisplayMonthChange(prevMonth)}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-[#E5E7EB] disabled:opacity-40"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              {prevMonth
+                ? calendar.monthNav.find((m) => m.month === prevMonth)?.monthLabel
+                : "Anterior"}
+            </button>
+            <label className="text-[11px] text-[#6B7280] flex items-center gap-1.5">
+              Mês exibido:
+              <select
+                value={calendar.displayMonth}
+                onChange={(e) => onDisplayMonthChange(Number(e.target.value))}
+                className="rounded-md border border-[#E5E7EB] px-2 py-1 text-xs text-[#111827] bg-white"
+                data-testid="cash-flow-calendar-month-select"
+              >
+                {calendar.monthNav.map((item) => (
+                  <option key={item.month} value={item.month}>
+                    {item.monthLabel}
+                    {item.movementCount > 0
+                      ? ` (${formatFinanceCurrency(item.inflow)} / ${formatFinanceCurrency(item.outflow)})`
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={nextMonth == null}
+              onClick={() => nextMonth != null && onDisplayMonthChange(nextMonth)}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-[#E5E7EB] disabled:opacity-40"
+            >
+              {nextMonth
+                ? calendar.monthNav.find((m) => m.month === nextMonth)?.monthLabel
+                : "Próximo"}
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
+
+        <div
+          className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-[11px]"
+          data-testid="cash-flow-calendar-month-summary"
+        >
+          <div>
+            <span className="text-[#6B7280]">CR do mês</span>
+            <p className="font-bold text-[#059669] tabular-nums">
+              {formatFinanceCurrency(monthSummary.inflow)}
+            </p>
+          </div>
+          <div>
+            <span className="text-[#6B7280]">CP do mês</span>
+            <p className="font-bold text-[#DC2626] tabular-nums">
+              {formatFinanceCurrency(monthSummary.outflow)}
+            </p>
+          </div>
+          <div>
+            <span className="text-[#6B7280]">Saldo do mês</span>
+            <p
+              className={cn(
+                "font-bold tabular-nums",
+                monthSummary.net < 0
+                  ? "text-[#DC2626]"
+                  : monthSummary.net > 0
+                    ? "text-[#059669]"
+                    : "text-[#111827]"
+              )}
+            >
+              {formatFinanceCurrency(monthSummary.net)}
+            </p>
+          </div>
+          <div>
+            <span className="text-[#6B7280]">Movimentos</span>
+            <p className="font-semibold text-[#111827]">
+              CR {monthSummary.receivableCount} · CP {monthSummary.payableCount} · Total{" "}
+              {monthSummary.movementCount}
+            </p>
+          </div>
+        </div>
+
+        <div
+          className={cn(
+            "rounded-lg border px-4 py-2 text-[11px]",
+            reconciliation.status === "ok"
+              ? "border-emerald-200 bg-emerald-50/50 text-[#065F46]"
+              : "border-amber-200 bg-amber-50/60 text-[#92400E]"
+          )}
+          data-testid="cash-flow-calendar-reconciliation"
+        >
+          <p className="font-semibold">
+            Conciliação com linha do tempo — {displayMonthLabel}/{calendar.year}:{" "}
+            {reconciliation.status === "ok" ? "OK" : "Divergência"}
+          </p>
+          <p className="mt-0.5 tabular-nums">
+            Calendário CR {formatFinanceCurrency(reconciliation.calendarInflow)} · Linha do tempo{" "}
+            {formatFinanceCurrency(reconciliation.timelineInflow)}
+            {reconciliation.status === "mismatch"
+              ? ` · Δ ${formatFinanceCurrency(reconciliation.inflowDiff)}`
+              : ""}
+            {" | "}
+            CP calendário {formatFinanceCurrency(reconciliation.calendarOutflow)} · linha{" "}
+            {formatFinanceCurrency(reconciliation.timelineOutflow)}
           </p>
         </div>
       </div>
       <div className="p-5">
+        {monthSummary.movementCount === 0 ? (
+          <p className="text-sm text-[#6B7280] mb-4">
+            Nenhum movimento previsto/realizado neste mês nos filtros aplicados. Navegue para outro
+            mês para ver os títulos.
+          </p>
+        ) : null}
         <div className="grid grid-cols-7 gap-1 mb-2">
           {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
             <div
@@ -446,15 +586,19 @@ export function FinanceCashFlowCalendar({
                     >
                       <p className="font-bold text-[#111827]">{cell.dayNumber}</p>
                       {day.inflow > 0 ? (
-                        <p className="text-[#059669] truncate">CR +{formatFinanceCurrency(day.inflow)}</p>
+                        <p className="text-[#059669] leading-tight break-all">
+                          CR +{formatFinanceCurrency(day.inflow)}
+                        </p>
                       ) : null}
                       {day.outflow > 0 ? (
-                        <p className="text-[#DC2626] truncate">CP −{formatFinanceCurrency(day.outflow)}</p>
+                        <p className="text-[#DC2626] leading-tight break-all">
+                          CP −{formatFinanceCurrency(day.outflow)}
+                        </p>
                       ) : null}
                       {(day.inflow > 0 || day.outflow > 0) && (
                         <p
                           className={cn(
-                            "font-semibold truncate",
+                            "font-semibold leading-tight break-all",
                             day.net < 0
                               ? "text-[#DC2626]"
                               : day.net > 0

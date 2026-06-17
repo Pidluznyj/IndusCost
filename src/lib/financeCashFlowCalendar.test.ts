@@ -388,6 +388,7 @@ describe("financeCashFlowCalendar", () => {
     const jun = payload.monthlySeries.find((p) => p.month === 6)!;
     assert.equal(monthInflow, jun.inflowAmount);
     assert.equal(monthOutflow, jun.outflowAmount);
+    assert.equal(payload.calendar.reconciliation.status, "ok");
   });
 
   it("soma dos CP do calendário bate com base AP saneada do mês", () => {

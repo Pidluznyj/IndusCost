@@ -310,12 +310,16 @@ export function normalizeFinanceCashFlowUiFilters(
 }
 
 export function buildFinanceCashFlowDashboardQuery(
-  filters: Partial<FinanceCashFlowUiFilters>
+  filters: Partial<FinanceCashFlowUiFilters>,
+  options?: { calendarDisplayMonth?: number }
 ): string {
   const n = normalizeFinanceCashFlowUiFilters(filters);
   const q = new URLSearchParams();
   if (n.year.trim()) q.set("year", n.year.trim());
   if (n.month.trim()) q.set("month", n.month.trim());
+  else if (options?.calendarDisplayMonth != null) {
+    q.set("calendarDisplayMonth", String(options.calendarDisplayMonth));
+  }
   if (n.companyName.trim()) q.set("companyName", n.companyName.trim());
   if (n.viewMode !== "projected") q.set("viewMode", n.viewMode);
   if (n.dateBase !== "due") q.set("dateBase", n.dateBase);

@@ -14,6 +14,7 @@ import type {
   FinanceCashFlowArRow,
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
+import type { FinanceCashFlowMonthlyPoint } from "./financeCashFlowDashboardTypes.js";
 import type { FinanceCashFlowDailyPoint } from "./financeCashFlowCfoDiagnostics.js";
 import {
   cashFlowViewModeSlices,
@@ -75,12 +76,69 @@ export type FinanceCashFlowCalendarWeekSummary = {
   movementCount: number;
 };
 
-export type FinanceCashFlowCalendarPayload = {
+export type FinanceCashFlowCalendarMonthSummary = {
+  inflow: number;
+  outflow: number;
+  net: number;
+  receivableCount: number;
+  payableCount: number;
+  movementCount: number;
+};
+
+export type FinanceCashFlowCalendarMonthNavItem = FinanceCashFlowCalendarMonthSummary & {
+  month: number;
+  monthLabel: string;
+};
+
+export type FinanceCashFlowCalendarReconciliation = {
   month: number;
   year: number;
+  calendarInflow: number;
+  timelineInflow: number;
+  inflowDiff: number;
+  calendarOutflow: number;
+  timelineOutflow: number;
+  outflowDiff: number;
+  calendarNet: number;
+  timelineNet: number;
+  netDiff: number;
+  status: "ok" | "mismatch";
+};
+
+export type FinanceCashFlowCalendarPayload = {
+  /** Mês fixado no filtro global; null quando filtro anual (Mês = Todos). */
+  filterMonth: number | null;
+  /** Mês efetivamente exibido no calendário diário. */
+  displayMonth: number;
+  year: number;
+  isAnnualFilter: boolean;
+  monthSummary: FinanceCashFlowCalendarMonthSummary;
+  reconciliation: FinanceCashFlowCalendarReconciliation;
+  /** Totais por mês do ano — navegação sem recalcular motor. */
+  monthNav: FinanceCashFlowCalendarMonthNavItem[];
+  /** Total de movimentos no ano (ledger completo, sem top N). */
+  yearMovementCount: number;
+  month: number;
   days: FinanceCashFlowCalendarDay[];
   weeks: FinanceCashFlowCalendarWeekSummary[];
 };
+
+const CALENDAR_MONTH_LABELS = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+] as const;
+
+const RECONCILIATION_EPSILON = 0.01;
 
 function dateKey(date: Date): string {
   const y = date.getFullYear();
@@ -290,26 +348,106 @@ function buildWeekSummaries(
   return weeks;
 }
 
-export function buildFinanceCashFlowCalendar(
-  arRows: FinanceCashFlowArRow[],
-  apRows: FinanceCashFlowApRow[],
+export function resolveCalendarDisplayMonth(
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date
-): FinanceCashFlowCalendarPayload {
+): number {
+  if (filters.month != null) return filters.month;
+  const override = filters.calendarDisplayMonth;
+  if (override != null && override >= 1 && override <= 12) return override;
   const calendarYear = filters.year ?? referenceDate.getFullYear();
-  const calendarMonth = filters.month ?? referenceDate.getMonth() + 1;
-  const allMovements = buildFinanceCashFlowCalendarMovements(
-    arRows,
-    apRows,
-    filters,
-    referenceDate
-  );
+  if (calendarYear === referenceDate.getFullYear()) {
+    return referenceDate.getMonth() + 1;
+  }
+  return 1;
+}
 
-  const monthMovements = allMovements.filter((m) => {
-    const [y, mo] = m.calendarDate.split("-").map(Number);
-    return y === calendarYear && mo === calendarMonth;
-  });
+function nearlyEqual(a: number, b: number): boolean {
+  return Math.abs(a - b) < RECONCILIATION_EPSILON;
+}
 
+export function sumCalendarDays(days: FinanceCashFlowCalendarDay[]): FinanceCashFlowCalendarMonthSummary {
+  let inflow = 0;
+  let outflow = 0;
+  let receivableCount = 0;
+  let payableCount = 0;
+  let movementCount = 0;
+  for (const day of days) {
+    inflow += day.inflow;
+    outflow += day.outflow;
+    receivableCount += day.receivableCount;
+    payableCount += day.payableCount;
+    movementCount += day.movementCount;
+  }
+  const inflowRounded = roundMoney(inflow);
+  const outflowRounded = roundMoney(outflow);
+  return {
+    inflow: inflowRounded,
+    outflow: outflowRounded,
+    net: roundMoney(inflowRounded - outflowRounded),
+    receivableCount,
+    payableCount,
+    movementCount,
+  };
+}
+
+export function buildCalendarReconciliation(
+  year: number,
+  month: number,
+  monthSummary: FinanceCashFlowCalendarMonthSummary,
+  monthlySeries: FinanceCashFlowMonthlyPoint[]
+): FinanceCashFlowCalendarReconciliation {
+  const point = monthlySeries.find((p) => p.year === year && p.month === month);
+  const timelineInflow = point?.inflowAmount ?? 0;
+  const timelineOutflow = point?.outflowAmount ?? 0;
+  const timelineNet = point?.netFlowAmount ?? roundMoney(timelineInflow - timelineOutflow);
+
+  const inflowDiff = roundMoney(monthSummary.inflow - timelineInflow);
+  const outflowDiff = roundMoney(monthSummary.outflow - timelineOutflow);
+  const netDiff = roundMoney(monthSummary.net - timelineNet);
+
+  const status =
+    nearlyEqual(monthSummary.inflow, timelineInflow) &&
+    nearlyEqual(monthSummary.outflow, timelineOutflow) &&
+    nearlyEqual(monthSummary.net, timelineNet)
+      ? "ok"
+      : "mismatch";
+
+  return {
+    month,
+    year,
+    calendarInflow: monthSummary.inflow,
+    timelineInflow,
+    inflowDiff,
+    calendarOutflow: monthSummary.outflow,
+    timelineOutflow,
+    outflowDiff,
+    calendarNet: monthSummary.net,
+    timelineNet,
+    netDiff,
+    status,
+  };
+}
+
+function groupMovementsByMonth(
+  movements: FinanceCashFlowCalendarMovement[],
+  calendarYear: number
+): Map<number, FinanceCashFlowCalendarMovement[]> {
+  const buckets = new Map<number, FinanceCashFlowCalendarMovement[]>();
+  for (let m = 1; m <= 12; m += 1) buckets.set(m, []);
+  for (const movement of movements) {
+    const [y, mo] = movement.calendarDate.split("-").map(Number);
+    if (y !== calendarYear || mo == null || mo < 1 || mo > 12) continue;
+    buckets.get(mo)!.push(movement);
+  }
+  return buckets;
+}
+
+function buildCalendarDaysForMonth(
+  calendarYear: number,
+  calendarMonth: number,
+  monthMovements: FinanceCashFlowCalendarMovement[]
+): FinanceCashFlowCalendarDay[] {
   let maxFlow = 0;
   for (const m of monthMovements) {
     maxFlow = Math.max(maxFlow, m.calendarAmount);
@@ -321,9 +459,6 @@ export function buildFinanceCashFlowCalendar(
   for (let d = 1; d <= daysInMonth; d += 1) {
     const key = `${calendarYear}-${String(calendarMonth).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const dayMovements = monthMovements.filter((m) => m.calendarDate === key);
-    for (const m of dayMovements) {
-      maxFlow = Math.max(maxFlow, m.calendarAmount);
-    }
     days.push(aggregateDayFromMovements(key, d, dayMovements, maxFlow));
   }
 
@@ -333,11 +468,70 @@ export function buildFinanceCashFlowCalendar(
     day.hasLargeOutflow = day.outflow >= largeThreshold && largeThreshold > 0;
   }
 
+  return days;
+}
+
+export function buildFinanceCashFlowCalendar(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date,
+  options?: { monthlySeries?: FinanceCashFlowMonthlyPoint[] }
+): FinanceCashFlowCalendarPayload {
+  const calendarYear = filters.year ?? referenceDate.getFullYear();
+  const displayMonth = resolveCalendarDisplayMonth(filters, referenceDate);
+  const filterMonth = filters.month ?? null;
+  const isAnnualFilter = filterMonth == null;
+
+  const allMovements = buildFinanceCashFlowCalendarMovements(
+    arRows,
+    apRows,
+    filters,
+    referenceDate
+  );
+
+  const yearMovements = allMovements.filter((m) => {
+    const [y] = m.calendarDate.split("-").map(Number);
+    return y === calendarYear;
+  });
+
+  const byMonth = groupMovementsByMonth(yearMovements, calendarYear);
+  const monthNav: FinanceCashFlowCalendarMonthNavItem[] = [];
+
+  for (let m = 1; m <= 12; m += 1) {
+    const movements = byMonth.get(m) ?? [];
+    const summary = sumCalendarDays(
+      buildCalendarDaysForMonth(calendarYear, m, movements)
+    );
+    monthNav.push({
+      month: m,
+      monthLabel: CALENDAR_MONTH_LABELS[m - 1]!,
+      ...summary,
+    });
+  }
+
+  const displayMovements = byMonth.get(displayMonth) ?? [];
+  const days = buildCalendarDaysForMonth(calendarYear, displayMonth, displayMovements);
+  const monthSummary = sumCalendarDays(days);
+  const monthlySeries = options?.monthlySeries ?? [];
+
   return {
-    month: calendarMonth,
+    filterMonth,
+    displayMonth,
     year: calendarYear,
+    isAnnualFilter,
+    monthSummary,
+    reconciliation: buildCalendarReconciliation(
+      calendarYear,
+      displayMonth,
+      monthSummary,
+      monthlySeries
+    ),
+    monthNav,
+    yearMovementCount: yearMovements.length,
+    month: displayMonth,
     days,
-    weeks: buildWeekSummaries(calendarYear, calendarMonth, days),
+    weeks: buildWeekSummaries(calendarYear, displayMonth, days),
   };
 }
 

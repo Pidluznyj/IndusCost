@@ -128,6 +128,8 @@ export type FinanceCashFlowDashboardFilters = {
   invoiceIssued?: FinanceArInvoiceIssuedFilter;
   /** Padrão: company — inclui AP a fornecedores do grupo na visão por empresa. */
   cashFlowScope?: FinanceManagementScope;
+  /** Mês exibido no calendário quando filtro global é anual (Mês = Todos). */
+  calendarDisplayMonth?: number;
 };
 
 export type FinanceCashFlowArRow = FinanceArDashboardRow & {
@@ -268,9 +270,11 @@ export function parseFinanceCashFlowDashboardFilters(
 ): FinanceCashFlowDashboardFilters {
   const year = parseYearFilter(query.year);
   const month = parseMonthFilter(query.month, year != null);
+  const calendarDisplayMonth = parseMonthFilter(query.calendarDisplayMonth, true);
   return {
     year,
     month,
+    calendarDisplayMonth: month == null ? calendarDisplayMonth : undefined,
     companyName: parseOptionalQueryString(query.companyName) ?? undefined,
     viewMode: parseViewMode(query.viewMode),
     dateBase: parseDateBase(query.dateBase),
@@ -930,7 +934,8 @@ export function buildFinanceCashFlowDashboardFromDataset(
     filteredAr,
     filteredAp,
     filters,
-    referenceDate
+    referenceDate,
+    { monthlySeries }
   );
   const dailyCalendar = buildCashFlowDailyCalendarFromMovements(
     filteredAr,
@@ -1104,6 +1109,27 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
     for (const v of [w.inflow, w.outflow, w.net]) {
       if (!Number.isFinite(v)) return false;
     }
+  }
+  const calRec = payload.calendar.reconciliation;
+  for (const v of [
+    calRec.calendarInflow,
+    calRec.timelineInflow,
+    calRec.inflowDiff,
+    calRec.calendarOutflow,
+    calRec.timelineOutflow,
+    calRec.outflowDiff,
+    calRec.calendarNet,
+    calRec.timelineNet,
+    calRec.netDiff,
+  ]) {
+    if (!Number.isFinite(v)) return false;
+  }
+  for (const v of [
+    payload.calendar.monthSummary.inflow,
+    payload.calendar.monthSummary.outflow,
+    payload.calendar.monthSummary.net,
+  ]) {
+    if (!Number.isFinite(v)) return false;
   }
   if (!cashFlowCfoMetricsAreFinite(payload.executiveInsights)) return false;
   if (!executiveYtdMetricsAreFinite(payload.executiveYtd)) return false;
