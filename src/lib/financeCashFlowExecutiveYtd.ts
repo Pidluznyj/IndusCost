@@ -14,9 +14,9 @@ import {
   resolveFinanceApRealizedAmount,
 } from "./financeAccountsPayableRules.js";
 import { formatFinanceCurrency } from "./financeAccountsReceivableFormat.js";
-import {
-  filterFinanceArRows,
-  type FinanceArDashboardFilters,
+import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
+import type {
+  FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
 import type {
   FinanceCashFlowApRow,
@@ -155,7 +155,7 @@ export function filterArRowsForYtdReceived(
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowArRow[] {
   const arFilters = toReceivedArLoadFilters(filters);
-  return filterFinanceArRows(rows, arFilters, referenceDate, syncCutoff) as FinanceCashFlowArRow[];
+  return filterFinanceArManagementReportRows(rows, arFilters, referenceDate, syncCutoff) as FinanceCashFlowArRow[];
 }
 
 export function isArReceivedInPeriod(

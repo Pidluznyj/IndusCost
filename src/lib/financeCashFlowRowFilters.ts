@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import {
   buildFinanceArPrismaWhere,
+  isFinanceArAllowedInManagementReport,
   matchesFinanceArDashboardFilters,
   resolveFinanceArDueDateBounds,
   startOfLocalDay,
@@ -164,7 +165,8 @@ export function filterCashFlowArPortfolioRows(
   const portfolio = rows.filter(
     (row) =>
       matchesCashFlowArPortfolio(row, arFilters, referenceDate) &&
-      !isFinanceArExcludedFromReports(row, effectiveCutoff)
+      !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
+      isFinanceArAllowedInManagementReport(row, referenceDate)
   );
   return deduplicateFinanceArRows(portfolio).rows;
 }
@@ -201,7 +203,8 @@ export function filterCashFlowArRowsScoped(
   const portfolio = rows.filter(
     (row) =>
       matchesCashFlowArPortfolio(row, arFilters, referenceDate) &&
-      !isFinanceArExcludedFromReports(row, effectiveCutoff)
+      !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
+      isFinanceArAllowedInManagementReport(row, referenceDate)
   );
   const deduped = deduplicateFinanceArRows(portfolio);
   return deduped.rows.filter((row) =>

@@ -17,6 +17,7 @@ import {
   type FinanceArOverdueUiFilters,
 } from "@/src/lib/financeAccountsReceivableOverdueTypes";
 import { financeArOverdueExportFilename } from "@/src/lib/financeAccountsReceivableOverdueExport";
+import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "@/src/lib/financeAccountsReceivableManagement";
 import {
   displayFinanceText,
   formatFinanceCurrency,
@@ -177,6 +178,12 @@ export function FinanceAccountsReceivableOverdueTab({
             <h3 className="text-base font-bold text-[#111827]">Atrasados</h3>
             <p className="text-sm text-[#6B7280]">
               Títulos vencidos em aberto para análise e cobrança
+            </p>
+            <p
+              className="text-[11px] text-[#9CA3AF] mt-1 max-w-2xl"
+              title={FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE}
+            >
+              {FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

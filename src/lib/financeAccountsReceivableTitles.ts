@@ -10,13 +10,13 @@ import {
 import {
   classifyFinanceArTitle,
   computeDaysOverdue,
-  filterFinanceArRows,
   mapPrismaRowToFinanceArDashboardRow,
   parseFinanceArDashboardFilters,
   roundMoney,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
+import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 export type FinanceArTitlesSortBy = "dueDate" | "balanceReceivable" | "externalId";
@@ -182,7 +182,7 @@ export function buildFinanceArTitlesPayload(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArTitlesPayload {
-  let filtered = filterFinanceArRows(rows, query.filters, referenceDate, syncCutoff);
+  let filtered = filterFinanceArManagementReportRows(rows, query.filters, referenceDate, syncCutoff);
 
   const effectiveLocalFilter =
     query.localFilter !== "all"

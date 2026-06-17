@@ -208,6 +208,31 @@ describe("financeCashFlowAudit", () => {
     assert.equal(audit.traces.topReceivableCustomers.length, 0);
   });
 
+  it("vencido aberto sem NF não entra em Vencidos a receber do Fluxo", () => {
+    const rows = [
+      arRow({
+        externalId: 77001,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        balanceReceivable: 18270,
+        dueDate: new Date(2026, 2, 10),
+      }),
+      arRow({
+        externalId: 77002,
+        sourceInvoiceId: 900,
+        sourceInvoiceNumber: "NF-900",
+        balanceReceivable: 500,
+        dueDate: new Date(2026, 2, 10),
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(rows, [apRow()], BASE_FILTERS, REF, arCutoff());
+    assert.equal(payload.overdueReceivables.length, 1);
+    assert.equal(payload.overdueReceivables[0]!.externalId, 77002);
+    const dataset = buildDataset({ ar: rows });
+    assert.equal(dataset.blocks.overdueReceivables.length, 1);
+    assert.equal(dataset.blocks.overdueReceivables[0]!.externalId, 77002);
+  });
+
   it("fixture Mexichem R$ 98k aberto aparece nos blocos aplicáveis", () => {
     const payload = buildFinanceCashFlowDashboard(
       [mexichemOpen()],

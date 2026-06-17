@@ -107,7 +107,7 @@ describe("financeAccountsReceivableTitlesLocalFilter", () => {
       localFilter: "open",
     };
     const payload = buildFinanceArTitlesPayload(rows, query, REF);
-    assert.equal(payload.total, 5);
+    assert.equal(payload.total, 4);
     assert.ok(payload.items.every((i) => i.balanceReceivable > 0));
   });
 

@@ -8,6 +8,9 @@ import {
   buildFinanceArPrismaWhere,
   filterFinanceArManagementReportRows,
   filterFinanceArRows,
+  FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE,
+  isFinanceArAllowedInManagementReport,
+  isFinanceArOverdueWithoutFiscalDocument,
   mapPrismaRowToFinanceArDashboardRow,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
@@ -47,6 +50,9 @@ export {
   buildFinanceArPrismaWhere,
   filterFinanceArManagementReportRows,
   filterFinanceArRows,
+  FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE,
+  isFinanceArAllowedInManagementReport,
+  isFinanceArOverdueWithoutFiscalDocument,
 };
 
 export async function loadFinanceArManagementRowsFromPrisma(

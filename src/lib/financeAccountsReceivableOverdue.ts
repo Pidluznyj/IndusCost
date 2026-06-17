@@ -2,6 +2,7 @@ import {
   classifyFinanceArTitle,
   computeDaysOverdue,
   hasFinanceArSourceInvoice,
+  isFinanceArOverdueWithoutFiscalDocument,
   isFinanceArReceivedOrSettled,
   parseFinanceArDashboardFilters,
   roundMoney,
@@ -92,7 +93,9 @@ export function isFinanceArOverdueRow(
   if (row.suspendCollection === true) return false;
   if (isFinanceArReceivedOrSettled(row)) return false;
   if (!row.dueDate) return false;
-  return classifyFinanceArTitle(row, referenceDate) === "overdue";
+  if (classifyFinanceArTitle(row, referenceDate) !== "overdue") return false;
+  if (isFinanceArOverdueWithoutFiscalDocument(row, referenceDate)) return false;
+  return true;
 }
 
 /** @deprecated Use {@link isFinanceArOverdueRow}. */

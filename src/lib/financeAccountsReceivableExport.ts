@@ -2,12 +2,12 @@ import { fleetCsvEscape, fleetRowsToCsv } from "./fleetCsv.js";
 import {
   classifyFinanceArTitle,
   computeDaysOverdue,
-  filterFinanceArRows,
   hasFinanceArSourceInvoice,
   roundMoney,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
+import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import { formatFinanceCalculatedStatus } from "./financeAccountsReceivableFormat.js";
 
@@ -91,7 +91,7 @@ export function buildFinanceArExportCsv(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusArReportSyncCutoff | null
 ): string {
-  const filtered = filterFinanceArRows(rows, filters, referenceDate, syncCutoff);
+  const filtered = filterFinanceArManagementReportRows(rows, filters, referenceDate, syncCutoff);
   const dataRows = filtered.map((row) => mapFinanceArRowToExportCells(row, referenceDate));
   return fleetRowsToCsv([...FINANCE_AR_EXPORT_HEADERS], dataRows);
 }

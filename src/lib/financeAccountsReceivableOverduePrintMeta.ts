@@ -1,4 +1,5 @@
 import type { FinanceArUiFilters } from "./financeAccountsReceivableDashboardTypes.js";
+import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "./financeAccountsReceivableManagement.js";
 import {
   FINANCE_AR_OVERDUE_AGING_BUCKETS,
   type FinanceArOverdueTitleRow,
@@ -8,7 +9,8 @@ import {
 export const FINANCE_AR_OVERDUE_PRINT_TITLE = "Relatório de Contas a Receber em Atraso";
 export const FINANCE_AR_OVERDUE_PRINT_SUBTITLE = "Documento de apoio ao processo de cobrança";
 export const FINANCE_AR_OVERDUE_PRINT_FOOTER_NOTE =
-  "Valores sujeitos à atualização conforme novas baixas, recebimentos ou sincronizações com o Nomus.";
+  "Valores sujeitos à atualização conforme novas baixas, recebimentos ou sincronizações com o Nomus. " +
+  FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE;
 export const FINANCE_AR_OVERDUE_PRINT_TOP_CUSTOMERS = 10;
 
 function pad2(n: number): string {

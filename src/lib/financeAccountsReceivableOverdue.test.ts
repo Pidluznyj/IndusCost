@@ -378,7 +378,7 @@ describe("financeAccountsReceivableOverdue", () => {
     assert.ok(Math.abs(sumPercent - 100) < 0.02);
   });
 
-  it("filtro com NF/sem NF respeita origem", () => {
+  it("filtro com NF/sem NF respeita origem e regra global de lastro fiscal", () => {
     const rows = [
       arRow({ externalId: 1, sourceInvoiceId: 10, sourceInvoiceNumber: "NF-1" }),
       arRow({
@@ -387,7 +387,21 @@ describe("financeAccountsReceivableOverdue", () => {
         sourceInvoiceNumber: null,
         balanceReceivable: 700,
       }),
+      arRow({
+        externalId: 3,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        dueDate: new Date(2026, 8, 1),
+        balanceReceivable: 400,
+      }),
     ];
+    const all = buildFinanceArOverduePayload(
+      rows,
+      { status: "all", year: 2026, invoiceIssued: "all" },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
     const withNf = buildFinanceArOverduePayload(
       rows,
       { status: "all", year: 2026, invoiceIssued: "yes" },
@@ -402,10 +416,11 @@ describe("financeAccountsReceivableOverdue", () => {
       cutoff(),
       { paginate: false }
     );
+    assert.equal(all.summary.overdueTitlesCount, 1);
+    assert.equal(all.overdueTitles[0]!.externalId, 1);
     assert.equal(withNf.summary.overdueTitlesCount, 1);
-    assert.equal(withoutNf.summary.overdueTitlesCount, 1);
     assert.equal(withNf.overdueTitles[0]!.externalId, 1);
-    assert.equal(withoutNf.overdueTitles[0]!.externalId, 2);
+    assert.equal(withoutNf.summary.overdueTitlesCount, 0);
   });
 
   it("filtro faixa de atraso e mínimo de dias", () => {

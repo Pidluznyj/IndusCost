@@ -15,6 +15,7 @@ const EMPTY_SANITIZATION = {
   ignoredStaleReceivables: 0,
   ignoredStalePayables: 0,
   ignoredPurchaseOrderAgendaPayables: 0,
+  ignoredOverdueWithoutFiscalDocumentReceivables: 0,
   supersededPreInvoiceReceivables: 0,
   supersededPreInvoiceAmount: 0,
 };

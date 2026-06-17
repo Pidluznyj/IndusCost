@@ -2,7 +2,7 @@ import type { FinanceApDashboardFilters, FinanceApDashboardRow } from "./finance
 import { isFinanceApOpen, matchesFinanceApDashboardFilters } from "./financeAccountsPayableDashboard.js";
 import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import type { FinanceArDashboardFilters, FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
-import { isFinanceArOpen, matchesFinanceArDashboardFilters } from "./financeAccountsReceivableDashboard.js";
+import { isFinanceArOpen, isFinanceArAllowedInManagementReport, matchesFinanceArDashboardFilters } from "./financeAccountsReceivableDashboard.js";
 import {
   isFinanceApExcludedFromReports,
   resolveEffectiveNomusApReportSyncCutoff,
@@ -95,6 +95,7 @@ export function buildFinanceArHorizonRows(
 
   for (const row of rows) {
     if (isFinanceArExcludedFromReports(row, effectiveCutoff)) continue;
+    if (!isFinanceArAllowedInManagementReport(row, referenceDate)) continue;
     if (!matchesFinanceArHorizonEntityFilters(row, horizonFilters, referenceDate)) continue;
     if (row.suspendCollection === true) continue;
     if (!isFinanceArOpen(row)) continue;

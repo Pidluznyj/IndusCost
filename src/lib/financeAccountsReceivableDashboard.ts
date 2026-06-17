@@ -221,6 +221,32 @@ export function hasFinanceArSourceInvoice(
   return row.sourceInvoiceId != null || Boolean(row.sourceInvoiceNumber?.trim());
 }
 
+/**
+ * Regra de lastro fiscal para vencidos de Contas a Receber:
+ * títulos com vencimento anterior à data-base só entram na visão gerencial se tiverem NF vinculada.
+ */
+export function isFinanceArOverdueWithoutFiscalDocument(
+  row: Pick<FinanceArDashboardRow, "dueDate" | "sourceInvoiceId" | "sourceInvoiceNumber">,
+  referenceDate: Date
+): boolean {
+  if (!row.dueDate) return false;
+  const due = startOfLocalDay(row.dueDate);
+  const today = startOfLocalDay(referenceDate);
+  if (due.getTime() >= today.getTime()) return false;
+  return !hasFinanceArSourceInvoice(row);
+}
+
+/** Visão gerencial AR — futuros sem NF permanecem; vencidos exigem NF. */
+export function isFinanceArAllowedInManagementReport(
+  row: Pick<FinanceArDashboardRow, "dueDate" | "sourceInvoiceId" | "sourceInvoiceNumber">,
+  referenceDate: Date
+): boolean {
+  return !isFinanceArOverdueWithoutFiscalDocument(row, referenceDate);
+}
+
+export const FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE =
+  "Títulos vencidos sem NF são excluídos da visão gerencial de atraso. Títulos futuros sem NF permanecem como previsão.";
+
 function normalizeFilterText(value: string | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -550,6 +576,7 @@ export function countFinanceArSanitizationInScope(
   | "ignoredInternalGroupReceivables"
   | "ignoredGhostReceivables"
   | "ignoredStaleReceivables"
+  | "ignoredOverdueWithoutFiscalDocumentReceivables"
   | "supersededPreInvoiceReceivables"
   | "supersededPreInvoiceAmount"
 > {
@@ -559,6 +586,7 @@ export function countFinanceArSanitizationInScope(
       ignoredInternalGroupReceivables: 0,
       ignoredGhostReceivables: 0,
       ignoredStaleReceivables: 0,
+      ignoredOverdueWithoutFiscalDocumentReceivables: 0,
       supersededPreInvoiceReceivables: 0,
       supersededPreInvoiceAmount: 0,
     };
@@ -568,6 +596,7 @@ export function countFinanceArSanitizationInScope(
   let ignoredInternalGroupReceivables = 0;
   let ignoredGhostReceivables = 0;
   let ignoredStaleReceivables = 0;
+  let ignoredOverdueWithoutFiscalDocumentReceivables = 0;
   const preDedup: FinanceArDashboardRow[] = [];
 
   for (const row of rows) {
@@ -583,6 +612,8 @@ export function countFinanceArSanitizationInScope(
       ignoredGhostReceivables += 1;
     } else if (isNomusArStaleForReports(row, effectiveCutoff)) {
       ignoredStaleReceivables += 1;
+    } else if (isFinanceArOverdueWithoutFiscalDocument(row, referenceDate)) {
+      ignoredOverdueWithoutFiscalDocumentReceivables += 1;
     } else {
       preDedup.push(row);
     }
@@ -593,6 +624,7 @@ export function countFinanceArSanitizationInScope(
     ignoredInternalGroupReceivables,
     ignoredGhostReceivables,
     ignoredStaleReceivables,
+    ignoredOverdueWithoutFiscalDocumentReceivables,
     supersededPreInvoiceReceivables: deduped.supersededPreInvoiceCount,
     supersededPreInvoiceAmount: deduped.supersededPreInvoiceAmount,
   };
@@ -616,14 +648,15 @@ export function filterFinanceArRows(
   return deduplicateFinanceArRows(matched).rows;
 }
 
-/** Fonte única de AR gerencial para dashboards (stale, grupo interno, fantasma, dedup). */
+/** Fonte única de AR gerencial (stale, grupo interno, fantasma, dedup, lastro fiscal vencidos). */
 export function filterFinanceArManagementReportRows(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
   referenceDate: Date = new Date(),
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArDashboardRow[] {
-  return filterFinanceArRows(rows, filters, referenceDate, syncCutoff);
+  const base = filterFinanceArRows(rows, filters, referenceDate, syncCutoff);
+  return base.filter((row) => isFinanceArAllowedInManagementReport(row, referenceDate));
 }
 
 export function buildFinanceAccountsReceivableDashboard(
@@ -632,7 +665,12 @@ export function buildFinanceAccountsReceivableDashboard(
   referenceDate: Date = new Date(),
   syncCutoff?: NomusArReportSyncCutoff | null
 ) {
-  const filteredRows = filterFinanceArRows(rows, filters, referenceDate, syncCutoff);
+  const filteredRows = filterFinanceArManagementReportRows(
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff
+  );
   const today = startOfLocalDay(referenceDate);
   const in7Days = endOfLocalDay(addLocalDays(today, 7));
   const in30Days = endOfLocalDay(addLocalDays(today, 30));

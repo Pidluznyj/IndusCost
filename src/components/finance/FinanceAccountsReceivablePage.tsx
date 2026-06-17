@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
+import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "@/src/lib/financeAccountsReceivableManagement";
 import {
   buildFinanceArDashboardQuery,
   buildFinanceArExportQuery,
@@ -83,6 +84,7 @@ import {
 import { cn } from "@/src/lib/utils";
 import {
   FinanceFilterScopeBanner,
+  FinanceFilterScopeNote,
   FinanceManagementSanitizationNote,
 } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
@@ -780,6 +782,11 @@ export function FinanceAccountsReceivablePage() {
 
       <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
       <FinanceManagementSanitizationNote dataSanitization={data?.dataSanitization} />
+      <FinanceFilterScopeNote className="px-1">
+        <span title={FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE}>
+          {FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE}
+        </span>
+      </FinanceFilterScopeNote>
 
       {/* ─── RESUMO EXECUTIVO ─── */}
       <section className={financeBiSectionClass}>

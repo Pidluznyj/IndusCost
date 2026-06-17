@@ -64,6 +64,7 @@ export type FinanceDataSanitization = {
   ignoredStaleReceivables: number;
   ignoredStalePayables: number;
   ignoredPurchaseOrderAgendaPayables: number;
+  ignoredOverdueWithoutFiscalDocumentReceivables: number;
   supersededPreInvoiceReceivables: number;
   supersededPreInvoiceAmount: number;
 };
@@ -275,6 +276,7 @@ export function mergeFinanceDataSanitization(
     ignoredStaleReceivables: 0,
     ignoredStalePayables: 0,
     ignoredPurchaseOrderAgendaPayables: 0,
+    ignoredOverdueWithoutFiscalDocumentReceivables: 0,
     supersededPreInvoiceReceivables: 0,
     supersededPreInvoiceAmount: 0,
   };
@@ -287,6 +289,8 @@ export function mergeFinanceDataSanitization(
     merged.ignoredStalePayables += part.ignoredStalePayables ?? 0;
     merged.ignoredPurchaseOrderAgendaPayables +=
       part.ignoredPurchaseOrderAgendaPayables ?? 0;
+    merged.ignoredOverdueWithoutFiscalDocumentReceivables +=
+      part.ignoredOverdueWithoutFiscalDocumentReceivables ?? 0;
     merged.supersededPreInvoiceReceivables +=
       part.supersededPreInvoiceReceivables ?? 0;
     merged.supersededPreInvoiceAmount += part.supersededPreInvoiceAmount ?? 0;
