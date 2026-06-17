@@ -3,6 +3,8 @@ import { CheckCircle2, AlertTriangle } from "lucide-react";
 import type { FinanceCashFlowReconciliation } from "@/src/lib/financeCashFlowDashboardTypes";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
+import { FINANCE_CF_HELP_RECONCILIATION } from "@/src/lib/financeCashFlowBlockHelp";
+import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
 import { cn } from "@/src/lib/utils";
 
 function MatchBadge({ ok, label }: { ok: boolean; label: string }) {
@@ -68,11 +70,12 @@ export function FinanceCashFlowReconciliationPanel({
   return (
     <section className={financeBiSectionClass} data-testid="cash-flow-reconciliation">
       <div className="px-5 py-3 border-b border-[#E5E7EB]">
-        <h2 className="text-sm font-bold text-[#111827]">Conferência do período</h2>
-        <p className="text-[11px] text-[#6B7280] mt-0.5">
-          {periodLabel} — entradas de Contas a Receber, saídas de Contas a Pagar. Saldo = entradas −
-          saídas.
-        </p>
+        <FinanceCashFlowBlockTitle
+          testId="cash-flow-reconciliation-header"
+          title="Conferência do período"
+          subtitle={`${periodLabel} — entradas de Contas a Receber, saídas de Contas a Pagar. Saldo = entradas − saídas.`}
+          help={FINANCE_CF_HELP_RECONCILIATION}
+        />
         <p className="text-[10px] text-[#6B7280] mt-1 italic">
           Faturamento (NF-e) não entra no caixa. Os valores abaixo refletem apenas títulos AR/AP do
           período filtrado.

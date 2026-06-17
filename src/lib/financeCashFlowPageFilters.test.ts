@@ -70,12 +70,16 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(!page.includes("FinanceCashFlowCfoPanel"));
     assert.ok(!page.includes('title="Alertas"'));
     assert.ok(!page.includes("cash-flow-watchlist"));
+    assert.ok(!page.includes("financeControlRoomTheme"));
+    assert.ok(page.includes("FinanceCashFlowNumbersAuditSection"));
+    assert.ok(page.includes("cash-flow-overdue-receivables"));
+    assert.ok(page.includes("cash-flow-overdue-payables"));
+    assert.ok(page.includes("FinanceCashFlowBlockTitle"));
     assert.ok(page.includes("FinanceCashFlowRiskTab"));
     assert.ok(page.includes("FinanceCashFlowCalendar"));
     assert.ok(charts.includes("FINANCE_CASH_FLOW_CHART_HEIGHT"));
     assert.ok(charts.includes("cash-flow-main-chart"));
     assert.ok(!page.includes("FinanceCashFlowMonthlyChart"));
-    assert.ok(!page.includes("financeControlRoomTheme"));
   });
 
   it("tokens BI seguem paleta executiva no fluxo de caixa", () => {

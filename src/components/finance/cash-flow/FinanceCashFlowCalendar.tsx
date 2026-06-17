@@ -24,6 +24,8 @@ import {
 } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
+import { FINANCE_CF_HELP_CALENDAR } from "@/src/lib/financeCashFlowBlockHelp";
+import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
 import { cn } from "@/src/lib/utils";
 
 type CalendarCell =
@@ -424,15 +426,14 @@ export function FinanceCashFlowCalendar({
     <section className={financeBiSectionClass} data-testid="cash-flow-calendar">
       <div className="px-5 py-4 border-b border-[#E5E7EB] space-y-3">
         <div className="flex items-start gap-2">
-          <CalendarDays className="h-4 w-4 text-[#2563EB] mt-0.5" />
+          <CalendarDays className="h-4 w-4 text-[#2563EB] mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-bold text-[#111827]">
-              Calendário financeiro — {displayMonthLabel}/{calendar.year}
-            </h2>
-            <p className="text-[11px] text-[#6B7280] mt-0.5">
-              Escopo: Filtro {calendar.isAnnualFilter ? "anual" : "mensal"}{" "}
-              {filterYearLabel} | Mês exibido: {displayMonthLabel} | {viewModeLabel}
-            </p>
+            <FinanceCashFlowBlockTitle
+              testId="cash-flow-calendar-header"
+              title={`Calendário financeiro — ${displayMonthLabel}/${calendar.year}`}
+              subtitle={`Escopo: Filtro ${calendar.isAnnualFilter ? "anual" : "mensal"} ${filterYearLabel} | Mês exibido: ${displayMonthLabel} | ${viewModeLabel}`}
+              help={FINANCE_CF_HELP_CALENDAR}
+            />
             {calendar.isAnnualFilter ? (
               <p
                 className="text-[11px] text-[#92400E] bg-[#FFFBEB] border border-[#FDE68A] rounded-md px-2 py-1 mt-2 inline-block"

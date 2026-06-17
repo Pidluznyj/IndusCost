@@ -2,6 +2,8 @@ import React from "react";
 import type { FinanceCashFlowExecutiveMonthlyRow } from "@/src/lib/financeCashFlowExecutiveSummary";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
+import { FINANCE_CF_HELP_MONTHLY_TIMELINE } from "@/src/lib/financeCashFlowBlockHelp";
+import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
 import { cn } from "@/src/lib/utils";
 
 export function FinanceCashFlowMonthlyTimelineTable({
@@ -17,11 +19,12 @@ export function FinanceCashFlowMonthlyTimelineTable({
       className={financeBiSectionClass}
     >
       <div className="px-5 py-4 border-b border-[#E5E7EB]">
-        <h3 className="text-sm font-bold text-[#111827]">Linha do tempo mensal — {year}</h3>
-        <p className="text-[11px] text-[#6B7280] mt-0.5">
-          Recebido/pago realizados + saldos em aberto por vencimento. Estimativas por mês
-          independentes do modo Previsto/Realizado do período filtrado.
-        </p>
+        <FinanceCashFlowBlockTitle
+          testId="cash-flow-monthly-timeline-header"
+          title={`Linha do tempo mensal — ${year}`}
+          subtitle="Recebido/pago realizados + saldos em aberto por vencimento. Estimativas mensais independentes do modo Previsto/Realizado do filtro global."
+          help={FINANCE_CF_HELP_MONTHLY_TIMELINE}
+        />
       </div>
       {rows.length === 0 ? (
         <p className="px-5 py-8 text-xs text-[#6B7280]">Sem dados para o ano selecionado.</p>

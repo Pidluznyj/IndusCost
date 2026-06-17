@@ -11,6 +11,8 @@ export function FinanceBiCollapsibleSection({
   alert,
   children,
   className,
+  testId,
+  onExpandedChange,
 }: {
   title: string;
   subtitle?: string;
@@ -19,14 +21,24 @@ export function FinanceBiCollapsibleSection({
   alert?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  testId?: string;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
+  const toggle = () => {
+    setExpanded((v) => {
+      const next = !v;
+      onExpandedChange?.(next);
+      return next;
+    });
+  };
+
   return (
-    <section className={cn(financeBiSectionClass, className)}>
+    <section className={cn(financeBiSectionClass, className)} data-testid={testId}>
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={toggle}
         aria-expanded={expanded}
         className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-[#F9FAFB] transition-colors text-left"
       >

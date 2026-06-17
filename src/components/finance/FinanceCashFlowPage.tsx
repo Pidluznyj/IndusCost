@@ -37,6 +37,17 @@ import { FinanceCashFlowExecutiveSummaryPanel } from "@/src/components/finance/c
 import { FinanceCashFlowMonthlyPlannedChart } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyPlannedChart";
 import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
 import { FinanceCashFlowReconciliationPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowReconciliationPanel";
+import { FinanceCashFlowNumbersAuditSection } from "@/src/components/finance/cash-flow/FinanceCashFlowNumbersAuditSection";
+import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
+import {
+  FINANCE_CF_HELP_CALENDAR,
+  FINANCE_CF_HELP_LARGEST_PROJECTED_INFLOWS,
+  FINANCE_CF_HELP_LARGEST_PROJECTED_OUTFLOWS,
+  FINANCE_CF_HELP_OVERDUE_PAYABLES,
+  FINANCE_CF_HELP_OVERDUE_RECEIVABLES,
+  FINANCE_CF_HELP_TOP_CUSTOMERS,
+  FINANCE_CF_HELP_TOP_SUPPLIERS,
+} from "@/src/lib/financeCashFlowBlockHelp";
 import {
   FinanceFilterScopeBanner,
   FinanceManagementSanitizationNote,
@@ -476,6 +487,8 @@ export function FinanceCashFlowPage() {
 
           <FinanceCashFlowReconciliationPanel reconciliation={payload.reconciliation} />
 
+          <FinanceCashFlowNumbersAuditSection appliedQuery={appliedQuery} payload={payload} />
+
           <FinanceCashFlowMonthlyPlannedChart
             year={payload.executiveSummary.metadata.year}
             rows={payload.executiveSummary.monthlyTimeline}
@@ -496,24 +509,41 @@ export function FinanceCashFlowPage() {
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CriticalList
               title="Maiores entradas previstas"
+              help={FINANCE_CF_HELP_LARGEST_PROJECTED_INFLOWS}
+              testId="cash-flow-largest-inflows"
               items={payload.largestProjectedInflows}
             />
             <CriticalList
               title="Maiores saídas previstas"
+              help={FINANCE_CF_HELP_LARGEST_PROJECTED_OUTFLOWS}
+              testId="cash-flow-largest-outflows"
               items={payload.largestProjectedOutflows}
               outflow
             />
           </section>
 
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CriticalList title="Vencidos a receber" items={payload.overdueReceivables} />
-            <CriticalList title="Pagamentos vencidos" items={payload.overduePayables} outflow />
+            <CriticalList
+              title="Vencidos a receber"
+              help={FINANCE_CF_HELP_OVERDUE_RECEIVABLES}
+              testId="cash-flow-overdue-receivables"
+              items={payload.overdueReceivables}
+            />
+            <CriticalList
+              title="Pagamentos vencidos"
+              help={FINANCE_CF_HELP_OVERDUE_PAYABLES}
+              testId="cash-flow-overdue-payables"
+              items={payload.overduePayables}
+              outflow
+            />
           </section>
 
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <PartyList
               title="Top clientes por entrada"
               subtitle="Saldo em aberto AR — filtros aplicados"
+              help={FINANCE_CF_HELP_TOP_CUSTOMERS}
+              testId="cash-flow-top-customers"
               items={payload.topCustomers}
               emptyLabel="Nenhum cliente com saldo em aberto."
               inflow
@@ -521,6 +551,8 @@ export function FinanceCashFlowPage() {
             <PartyList
               title="Top fornecedores por saída"
               subtitle="Saldo em aberto AP — filtros aplicados"
+              help={FINANCE_CF_HELP_TOP_SUPPLIERS}
+              testId="cash-flow-top-suppliers"
               items={payload.topSuppliers}
               emptyLabel="Nenhum fornecedor com saldo em aberto."
               outflow
@@ -563,6 +595,8 @@ export function FinanceCashFlowPage() {
 function PartyList({
   title,
   subtitle,
+  help,
+  testId,
   items,
   emptyLabel,
   inflow = true,
@@ -570,17 +604,16 @@ function PartyList({
 }: {
   title: string;
   subtitle: string;
+  help?: string;
+  testId?: string;
   items: FinanceCashFlowDashboardPayload["topCustomers"];
   emptyLabel: string;
   inflow?: boolean;
   outflow?: boolean;
 }) {
   return (
-    <div className={`${financeBiCardClass} p-5 space-y-3`}>
-      <div>
-        <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
-        <p className="text-[11px] text-[#6B7280]">{subtitle}</p>
-      </div>
+    <div className={`${financeBiCardClass} p-5 space-y-3`} data-testid={testId}>
+      <FinanceCashFlowBlockTitle title={title} subtitle={subtitle} help={help} />
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">{emptyLabel}</p>
       ) : (
@@ -610,23 +643,30 @@ function PartyList({
 
 function CriticalList({
   title,
+  help,
+  testId,
   items,
   outflow = false,
 }: {
   title: string;
+  help?: string;
+  testId?: string;
   items: FinanceCashFlowDashboardPayload["largestProjectedInflows"];
   outflow?: boolean;
 }) {
   return (
-    <div className={`${financeBiCardClass} p-5 space-y-3`}>
-      <div className="flex items-center gap-2">
-        {outflow ? (
-          <TrendingDown className="h-4 w-4 text-red-600" />
-        ) : (
-          <TrendingUp className="h-4 w-4 text-emerald-600" />
-        )}
-        <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
-      </div>
+    <div className={`${financeBiCardClass} p-5 space-y-3`} data-testid={testId}>
+      <FinanceCashFlowBlockTitle
+        title={title}
+        help={help}
+        icon={
+          outflow ? (
+            <TrendingDown className="h-4 w-4 text-red-600 shrink-0" />
+          ) : (
+            <TrendingUp className="h-4 w-4 text-emerald-600 shrink-0" />
+          )
+        }
+      />
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhum título nesta categoria.</p>
       ) : (

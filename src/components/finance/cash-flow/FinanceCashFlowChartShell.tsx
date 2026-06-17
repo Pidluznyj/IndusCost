@@ -1,6 +1,7 @@
 import React from "react";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
+import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
 
 /** Altura explícita — ResponsiveContainer com height="100%" colapsa em flex sem altura definida. */
 export const FINANCE_CASH_FLOW_CHART_HEIGHT = 280;
@@ -8,6 +9,7 @@ export const FINANCE_CASH_FLOW_CHART_HEIGHT = 280;
 export function FinanceCashFlowChartShell({
   title,
   subtitle,
+  help,
   children,
   empty,
   emptyDescription,
@@ -16,6 +18,7 @@ export function FinanceCashFlowChartShell({
 }: {
   title: string;
   subtitle?: string;
+  help?: string;
   children: React.ReactNode;
   empty?: boolean;
   emptyDescription?: string;
@@ -36,10 +39,7 @@ export function FinanceCashFlowChartShell({
       data-testid={testId}
       className={`${financeBiCardClass} p-5 space-y-3 flex flex-col`}
     >
-      <div>
-        <h3 className="text-sm font-bold text-[#111827]">{title}</h3>
-        {subtitle ? <p className="text-[11px] text-[#6B7280] mt-0.5">{subtitle}</p> : null}
-      </div>
+      <FinanceCashFlowBlockTitle title={title} subtitle={subtitle} help={help} testId={testId} />
       <div style={{ width: "100%", height: chartHeight }}>{children}</div>
     </div>
   );
