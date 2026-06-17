@@ -236,6 +236,8 @@ describe("salesProductRanking", () => {
     );
     assert.ok(page.includes("Imprimir / PDF"));
     assert.ok(page.includes("Exportar Excel"));
+    assert.ok(page.includes("CSV do ranking"));
+    assert.ok(page.includes("Ranking completo de produtos"));
     assert.ok(page.includes("sold-products-print-route"));
     assert.ok(page.includes("sold-products-no-print"));
     assert.ok(page.includes("/api/commercial/sold-products/export.xlsx"));
