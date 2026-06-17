@@ -229,9 +229,21 @@ describe("salesProductRanking", () => {
     assert.equal(n.topN, "50");
   });
 
+  it("query string inclui productId quando informado", () => {
+    const qs = buildSoldProductsDashboardQuery({
+      ...createDefaultSoldProductsUiFilters(),
+      productId: "prod-uuid-1",
+    });
+    assert.match(qs, /productId=prod-uuid-1/);
+  });
+
   it("página possui impressão e export Excel", () => {
     const page = readFileSync(
       join(process.cwd(), "src", "components", "commercial", "SoldProductsReportPage.tsx"),
+      "utf8"
+    );
+    const printDoc = readFileSync(
+      join(process.cwd(), "src", "components", "commercial", "SoldProductsPrintDocument.tsx"),
       "utf8"
     );
     assert.ok(page.includes("Imprimir / PDF"));
@@ -240,6 +252,20 @@ describe("salesProductRanking", () => {
     assert.ok(page.includes("Ranking completo de produtos"));
     assert.ok(page.includes("sold-products-print-route"));
     assert.ok(page.includes("sold-products-no-print"));
+    assert.ok(page.includes("createPortal"));
+    assert.ok(page.includes("SoldProductsPrintDocument"));
+    assert.ok(page.includes("/api/commercial/sold-products/filter-options"));
+    assert.ok(page.includes("FilterSearchableSelect"));
     assert.ok(page.includes("/api/commercial/sold-products/export.xlsx"));
+    assert.ok(printDoc.includes('id="sold-products-print-root"'));
+    assert.ok(printDoc.includes("sold-products-print-ranking-table"));
+    assert.ok(printDoc.includes("Resumo executivo"));
+
+    const routes = readFileSync(
+      join(process.cwd(), "src", "lib", "salesProductRankingRoutes.ts"),
+      "utf8"
+    );
+    assert.ok(routes.includes("/api/commercial/sold-products/filter-options"));
+    assert.ok(routes.includes("buildSoldProductsFilterOptions"));
   });
 });

@@ -72,6 +72,7 @@ export const EMPTY_SOLD_PRODUCTS_UI_FILTERS: SoldProductsUiFilters = {
   customerName: "",
   customerTaxId: "",
   customerId: "",
+  productId: "",
   productCode: "",
   productName: "",
   sellerKey: "",
@@ -246,6 +247,7 @@ export function parseSalesProductRankingFilters(
     customerName: typeof query.customerName === "string" ? query.customerName.trim() : "",
     customerTaxId: typeof query.customerTaxId === "string" ? query.customerTaxId.trim() : "",
     customerId: typeof query.customerId === "string" ? query.customerId.trim() : "",
+    productId: typeof query.productId === "string" ? query.productId.trim() : "",
     productCode: typeof query.productCode === "string" ? query.productCode.trim() : "",
     productName: typeof query.productName === "string" ? query.productName.trim() : "",
     sellerKey: typeof query.sellerKey === "string" ? query.sellerKey.trim() : "",
@@ -273,6 +275,7 @@ export function parseSalesProductRankingFilters(
     customerName: ui.customerName || undefined,
     customerTaxId: ui.customerTaxId || undefined,
     customerId: ui.customerId || undefined,
+    productId: ui.productId || undefined,
     productCode: ui.productCode || undefined,
     productName: ui.productName || undefined,
     sellerExternalId: seller.sellerExternalId,
@@ -300,6 +303,7 @@ export function buildSoldProductsDashboardQuery(filters: SoldProductsUiFilters):
   set("customerName", filters.customerName);
   set("customerTaxId", filters.customerTaxId);
   set("customerId", filters.customerId);
+  set("productId", filters.productId);
   set("productCode", filters.productCode);
   set("productName", filters.productName);
   set("sellerKey", filters.sellerKey);
@@ -395,6 +399,7 @@ export function buildSoldProductsAppliedFiltersLabel(
     customerName: ui.customerName || undefined,
     customerTaxId: ui.customerTaxId || undefined,
     customerId: ui.customerId || undefined,
+    productId: ui.productId || undefined,
     productCode: ui.productCode || undefined,
     productName: ui.productName || undefined,
     sellerLabel,
@@ -430,6 +435,7 @@ export function soldProductsFilterSummaryLines(
   if (applied.customerName) lines.push(`Cliente: ${applied.customerName}`);
   if (applied.customerTaxId) lines.push(`CNPJ/CPF: ${applied.customerTaxId}`);
   if (applied.customerId) lines.push(`ID cliente: ${applied.customerId}`);
+  if (applied.productId) lines.push(`ID produto: ${applied.productId}`);
   if (applied.productCode) lines.push(`Código produto: ${applied.productCode}`);
   if (applied.productName) lines.push(`Produto: ${applied.productName}`);
   if (applied.sellerLabel) lines.push(`Vendedor: ${applied.sellerLabel}`);

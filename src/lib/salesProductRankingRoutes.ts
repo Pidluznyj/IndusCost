@@ -1,7 +1,7 @@
 import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { buildSalesProductRanking } from "@/src/lib/salesProductRanking.js";
+import { buildSalesProductRanking, buildSoldProductsFilterOptions } from "@/src/lib/salesProductRanking.js";
 import {
   SoldProductsFilterParseError,
   parseSalesProductRankingFilters,
@@ -64,6 +64,16 @@ function parseFiltersOrRespond(res: express.Response, query: Record<string, unkn
 export function registerSalesProductRankingRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
   const guard = [requireAppAuth, requireAnyPermission([...SOLD_PRODUCTS_VIEW_PERMISSIONS])] as const;
+
+  app.get("/api/commercial/sold-products/filter-options", ...guard, async (_req, res) => {
+    try {
+      const payload = await buildSoldProductsFilterOptions();
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/commercial/sold-products/filter-options", error);
+      return res.status(500).json({ error: "Não foi possível carregar opções de filtro." });
+    }
+  });
 
   app.get("/api/commercial/sold-products", ...guard, async (req, res) => {
     try {

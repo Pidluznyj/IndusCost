@@ -1,3 +1,7 @@
+#sold-products-print-root {
+  display: none;
+}
+
 @media print {
   @page {
     size: A4 landscape;
@@ -12,6 +16,10 @@
     background: #fff !important;
     margin: 0 !important;
     padding: 0 !important;
+  }
+
+  body.sold-products-print-route #root {
+    display: none !important;
   }
 
   body.sold-products-print-route * {
@@ -33,6 +41,8 @@
   #sold-products-print-root {
     display: block !important;
     position: static !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     max-width: none !important;
     height: auto !important;
@@ -41,8 +51,9 @@
     padding: 0 !important;
     margin: 0 !important;
     background: #fff !important;
-    color: #111827 !important;
+    color: #111 !important;
     box-shadow: none !important;
+    border-radius: 0 !important;
   }
 
   #sold-products-print-root * {
@@ -52,54 +63,271 @@
     border-radius: 0 !important;
   }
 
-  #sold-products-print-root .sold-products-print-table {
+  #sold-products-print-root .sold-products-print-document {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8px;
+    line-height: 1.35;
+    color: #111;
+  }
+
+  #sold-products-print-root .sold-products-print-doc-header {
+    border-bottom: 2px solid #333;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #sold-products-print-root .sold-products-print-header-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+
+  #sold-products-print-root .sold-products-print-company {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  #sold-products-print-root .sold-products-print-logo {
+    height: 42px;
+    width: auto;
+    max-width: 160px;
+    object-fit: contain;
+    object-position: left top;
+    flex-shrink: 0;
+  }
+
+  #sold-products-print-root .sold-products-print-company-text {
+    min-width: 0;
+    font-size: 7.5px;
+    line-height: 1.35;
+  }
+
+  #sold-products-print-root .sold-products-print-company-name {
+    font-size: 11px;
+    font-weight: 700;
+    margin: 0 0 1px;
+    color: #000;
+  }
+
+  #sold-products-print-root .sold-products-print-company-slogan {
+    font-size: 7px;
+    font-style: italic;
+    color: #555;
+    margin: 0 0 2px;
+  }
+
+  #sold-products-print-root .sold-products-print-company-text p {
+    margin: 0 0 1px;
+  }
+
+  #sold-products-print-root .sold-products-print-label {
+    font-weight: 700;
+    color: #444;
+  }
+
+  #sold-products-print-root .sold-products-print-report-meta {
+    flex-shrink: 0;
+    min-width: 38%;
+    border-left: 1px solid #ccc;
+    padding-left: 10px;
+    font-size: 7.5px;
+    line-height: 1.45;
+  }
+
+  #sold-products-print-root .sold-products-print-report-kind {
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #555;
+    margin: 0 0 2px;
+  }
+
+  #sold-products-print-root .sold-products-print-report-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    color: #000;
+  }
+
+  #sold-products-print-root .sold-products-print-report-meta p {
+    margin: 0 0 2px;
+  }
+
+  #sold-products-print-root .sold-products-print-doc-subtitle {
+    font-size: 8px;
+    color: #444;
+    margin: 0 0 5px;
+  }
+
+  #sold-products-print-root table {
     width: 100% !important;
+    max-width: 100% !important;
     border-collapse: collapse !important;
     table-layout: fixed !important;
-    font-size: 7.5px;
     page-break-inside: auto;
   }
 
-  #sold-products-print-root .sold-products-print-table thead {
+  #sold-products-print-root thead {
     display: table-header-group;
   }
 
-  #sold-products-print-root .sold-products-print-table th,
-  #sold-products-print-root .sold-products-print-table td {
+  #sold-products-print-root tfoot {
+    display: table-footer-group;
+  }
+
+  #sold-products-print-root th,
+  #sold-products-print-root td {
     border: 1px solid #bbb;
     padding: 2px 4px;
     vertical-align: top;
     word-wrap: break-word;
-    overflow-wrap: anywhere;
   }
 
-  #sold-products-print-root .sold-products-print-table thead th {
-    background: #e5e7eb;
+  #sold-products-print-root .sold-products-print-meta-table {
+    font-size: 7px;
+  }
+
+  #sold-products-print-root .sold-products-print-meta-table th {
+    width: 12%;
+    background: #f3f4f6;
     font-weight: 700;
     text-align: left;
   }
 
-  #sold-products-print-root .sold-products-print-table tbody tr {
+  #sold-products-print-root .sold-products-print-section {
+    margin-bottom: 8px;
+  }
+
+  #sold-products-print-root .sold-products-print-section-title {
+    font-size: 9px;
+    font-weight: 700;
+    margin: 0 0 3px;
+    color: #000;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  #sold-products-print-root .sold-products-print-kpi-table th {
+    background: #f3f4f6;
+    font-weight: 700;
+    width: 11%;
+    font-size: 7px;
+  }
+
+  #sold-products-print-root .sold-products-print-kpi-table td {
+    font-weight: 600;
+    width: 22%;
+    font-size: 7.5px;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table thead th {
+    background: #e5e7eb;
+    font-weight: 700;
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    vertical-align: bottom;
+    line-height: 1.2;
+  }
+
+  #sold-products-print-root .sold-products-print-ranking-table tbody tr {
     page-break-inside: avoid;
     break-inside: avoid;
   }
 
-  #sold-products-print-root .sold-products-print-table tbody tr:nth-child(even) {
+  #sold-products-print-root .sold-products-print-ranking-table tbody tr:nth-child(even) {
     background: #f9fafb;
   }
 
+  #sold-products-print-root .col-rank {
+    width: 3%;
+  }
+
+  #sold-products-print-root .col-code {
+    width: 7%;
+  }
+
+  #sold-products-print-root .col-product {
+    width: 24%;
+  }
+
+  #sold-products-print-root .col-qty {
+    width: 9%;
+  }
+
+  #sold-products-print-root .col-money {
+    width: 9%;
+  }
+
+  #sold-products-print-root .col-count {
+    width: 6%;
+  }
+
+  #sold-products-print-root .col-date {
+    width: 8%;
+  }
+
+  #sold-products-print-root .col-pct {
+    width: 7%;
+  }
+
   #sold-products-print-root .col-num {
+    text-align: center !important;
+  }
+
+  #sold-products-print-root .col-money,
+  #sold-products-print-root td.col-money {
     text-align: right !important;
     font-variant-numeric: tabular-nums;
   }
-}
 
-#sold-products-print-root {
-  display: none;
-}
+  #sold-products-print-root .col-date {
+    text-align: center !important;
+  }
 
-@media print {
-  #sold-products-print-root {
-    display: block !important;
+  #sold-products-print-root .col-nowrap {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+  }
+
+  #sold-products-print-root td.col-product {
+    font-size: 7.5px;
+    line-height: 1.25;
+  }
+
+  #sold-products-print-root td.col-code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 7px;
+  }
+
+  #sold-products-print-root .sold-products-print-empty {
+    font-size: 8px;
+    color: #555;
+    margin: 0;
+  }
+
+  #sold-products-print-root .sold-products-print-doc-footer {
+    margin-top: 10px;
+    padding-top: 4px;
+    border-top: 1px solid #999;
+    font-size: 6.5px;
+    color: #444;
+    text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #sold-products-print-root .sold-products-print-footer-note {
+    margin-top: 2px;
+    font-style: italic;
   }
 }

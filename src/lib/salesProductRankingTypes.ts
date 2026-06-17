@@ -21,6 +21,7 @@ export type SoldProductsUiFilters = {
   customerName: string;
   customerTaxId: string;
   customerId: string;
+  productId: string;
   productCode: string;
   productName: string;
   sellerKey: string;
@@ -38,6 +39,7 @@ export type SoldProductsDashboardFilters = {
   customerName?: string;
   customerTaxId?: string;
   customerId?: string;
+  productId?: string;
   productCode?: string;
   productName?: string;
   sellerExternalId?: number;
@@ -140,6 +142,12 @@ export type SoldProductsDashboardPayload = {
   };
 };
 
+export type SoldProductsFilterOptionsPayload = {
+  customers: Array<{ id: string; companyName: string; taxId: string | null }>;
+  products: Array<{ id: string; sku: string | null; name: string }>;
+  sellers: Array<{ key: string; label: string }>;
+};
+
 export type SoldProductsDashboardFiltersApplied = {
   periodLabel: string;
   dateBasis: SoldProductsDateBasis;
@@ -147,6 +155,7 @@ export type SoldProductsDashboardFiltersApplied = {
   customerName?: string;
   customerTaxId?: string;
   customerId?: string;
+  productId?: string;
   productCode?: string;
   productName?: string;
   sellerLabel?: string;

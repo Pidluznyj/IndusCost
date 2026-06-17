@@ -10,12 +10,14 @@ import {
   orderMatchesSoldProductsStatus,
   parseSalesProductRankingFilters,
   salesOrderStatusLabelPt,
+  formatSellerKey,
 } from "@/src/lib/salesProductRankingFilters.js";
 import type {
   SoldProductsCustomerMixRow,
   SoldProductsDashboardFilters,
   SoldProductsDashboardPayload,
   SoldProductsDetailRow,
+  SoldProductsFilterOptionsPayload,
   SoldProductsMonthlyEvolutionRow,
   SoldProductsRankingRow,
   SoldProductsSortBy,
@@ -455,6 +457,9 @@ function buildPrismaWhere(
   }
 
   const itemWhere: Prisma.SalesOrderItemWhereInput = {};
+  if (filters.productId) {
+    itemWhere.productId = filters.productId;
+  }
   if (filters.productCode) {
     itemWhere.OR = [
       { skuSnapshot: { contains: filters.productCode, mode: "insensitive" } },
@@ -510,6 +515,9 @@ async function loadLineContexts(
   if (invoiceOrderIds && invoiceOrderIds.length === 0) return [];
 
   const itemFilters: Prisma.SalesOrderItemWhereInput[] = [];
+  if (filters.productId) {
+    itemFilters.push({ productId: filters.productId });
+  }
   if (filters.productCode) {
     itemFilters.push({
       OR: [
@@ -677,6 +685,60 @@ export async function buildSalesProductRanking(
       total,
       totalPages: Math.max(1, Math.ceil(total / filters.detailLimit)),
     },
+  };
+}
+
+export async function buildSoldProductsFilterOptions(): Promise<SoldProductsFilterOptionsPayload> {
+  const [customers, products, sellerRows] = await Promise.all([
+    prisma.customer.findMany({
+      where: { salesOrders: { some: {} } },
+      select: {
+        id: true,
+        companyName: true,
+        tradeName: true,
+        taxId: true,
+      },
+      orderBy: { companyName: "asc" },
+    }),
+    prisma.product.findMany({
+      where: { SalesOrderItem: { some: {} } },
+      select: { id: true, sku: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.salesOrder.findMany({
+      where: {
+        status: { notIn: ["CANCELLED", "ERROR"] },
+        OR: [{ responsible: { not: null } }, { externalSellerId: { not: null } }],
+      },
+      select: { responsible: true, externalSellerId: true },
+      distinct: ["responsible", "externalSellerId"],
+    }),
+  ]);
+
+  const sellerMap = new Map<string, string>();
+  for (const row of sellerRows) {
+    const key = formatSellerKey(row.externalSellerId, row.responsible);
+    if (!key || sellerMap.has(key)) continue;
+    const label =
+      row.responsible?.trim() ||
+      (row.externalSellerId != null ? `Vendedor ID ${row.externalSellerId}` : key);
+    sellerMap.set(key, label);
+  }
+
+  return {
+    customers: customers.map((c) => ({
+      id: c.id,
+      companyName: (c.companyName || c.tradeName || "Cliente").trim(),
+      taxId: c.taxId?.trim() || null,
+    })),
+    products: products.map((p) => ({
+      id: p.id,
+      sku: p.sku?.trim() || null,
+      name: p.name,
+    })),
+    sellers: [...sellerMap.entries()]
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR")),
   };
 }
 

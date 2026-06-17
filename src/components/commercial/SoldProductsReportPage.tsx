@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Bar,
   BarChart,
@@ -50,14 +51,29 @@ import {
   SOLD_PRODUCTS_ORDER_STATUS_OPTIONS,
   SOLD_PRODUCTS_SORT_OPTIONS,
   SOLD_PRODUCTS_TOP_N_OPTIONS,
-  soldProductsFilterSummaryLines,
 } from "@/src/lib/salesProductRankingFilters.js";
+import { SearchableSelect, type SelectOption } from "@/src/components/shared/SearchableSelect";
+import {
+  buildSoldProductsCustomerSelectOptions,
+  buildSoldProductsProductSelectOptions,
+  buildSoldProductsSellerSelectOptions,
+  buildSoldProductsTaxIdSelectOptions,
+  resolveSoldProductsCustomerChipLabel,
+  resolveSoldProductsProductChipLabel,
+  soldProductsCustomerIdPatch,
+  soldProductsProductIdPatch,
+  syncCustomerIdFromTaxId,
+  syncCustomerTaxIdFromId,
+} from "@/src/lib/soldProductsFilterOptions.js";
 import type {
   SoldProductsDashboardPayload,
+  SoldProductsFilterOptionsPayload,
   SoldProductsRankingRow,
   SoldProductsUiFilters,
 } from "@/src/lib/salesProductRankingTypes.js";
+import { SoldProductsPrintDocument } from "@/src/components/commercial/SoldProductsPrintDocument";
 import "@/src/components/commercial/sold-products-print.css";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
 type TabId = "overview" | "customerMix" | "monthly" | "detail";
 
@@ -121,9 +137,44 @@ function FilterInput({
   );
 }
 
+function FilterSearchableSelect({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  searchInputPlaceholder,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: SelectOption[];
+  placeholder?: string;
+  searchInputPlaceholder?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide">{label}</span>
+      <SearchableSelect
+        value={value}
+        onChange={onChange}
+        options={options}
+        placeholder={placeholder ?? "Selecione…"}
+        searchInputPlaceholder={searchInputPlaceholder ?? "Pesquisar…"}
+        pinOptionValues={[""]}
+        disabled={disabled}
+        className="[&_button]:rounded-lg [&_button]:border-[#E5E7EB] [&_button]:bg-white [&_button]:px-3 [&_button]:py-2 [&_button]:text-sm [&_button]:text-[#111827] [&_button]:shadow-none"
+      />
+    </label>
+  );
+}
+
 function buildSoldProductsFilterChips(
   filters: SoldProductsUiFilters,
-  onRemove: (field: keyof SoldProductsUiFilters) => void
+  onRemove: (field: keyof SoldProductsUiFilters) => void,
+  filterOptions: SoldProductsFilterOptionsPayload
 ): FinanceBiFilterChip[] {
   const chips: FinanceBiFilterChip[] = [];
   const push = (id: keyof SoldProductsUiFilters, label: string) => {
@@ -143,10 +194,21 @@ function buildSoldProductsFilterChips(
     );
   }
   if (filters.customerName.trim()) push("customerName", `Cliente: ${filters.customerName}`);
+  if (filters.customerId.trim()) {
+    push("customerId", resolveSoldProductsCustomerChipLabel(filters.customerId, filterOptions.customers));
+  }
   if (filters.customerTaxId.trim()) push("customerTaxId", `CNPJ: ${filters.customerTaxId}`);
+  if (filters.productId.trim()) {
+    push("productId", resolveSoldProductsProductChipLabel(filters.productId, filterOptions.products));
+  }
   if (filters.productCode.trim()) push("productCode", `Código: ${filters.productCode}`);
   if (filters.productName.trim()) push("productName", `Produto: ${filters.productName}`);
-  if (filters.sellerKey.trim()) push("sellerKey", `Vendedor: ${filters.sellerKey.replace(/^r:/, "")}`);
+  if (filters.sellerKey.trim()) {
+    const sellerLabel =
+      filterOptions.sellers.find((s) => s.key === filters.sellerKey)?.label ??
+      filters.sellerKey.replace(/^r:/, "").replace(/^id:/, "ID ");
+    push("sellerKey", `Vendedor: ${sellerLabel}`);
+  }
   if (filters.company !== "all") {
     push("company", SOLD_PRODUCTS_COMPANY_OPTIONS.find((o) => o.value === filters.company)?.label ?? filters.company);
   }
@@ -304,10 +366,19 @@ export function SoldProductsReportPage() {
   );
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [data, setData] = useState<SoldProductsDashboardPayload | null>(null);
+  const [filterOptions, setFilterOptions] = useState<SoldProductsFilterOptionsPayload>({
+    customers: [],
+    products: [],
+    sellers: [],
+  });
+  const [filterOptionsLoading, setFilterOptionsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [error, setError] = useState<string | null>(null);
   const [detailPage, setDetailPage] = useState(1);
+  const printCleanupRef = useRef<number | null>(null);
 
   const normalizedDraft = useMemo(() => normalizeSoldProductsUiFilters(draftFilters), [draftFilters]);
 
@@ -368,6 +439,32 @@ export function SoldProductsReportPage() {
     void loadDashboard();
   }, [loadDashboard]);
 
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
+  }, []);
+
+  useEffect(() => {
+    setFilterOptionsLoading(true);
+    void fetchJsonOk<SoldProductsFilterOptionsPayload>("/api/commercial/sold-products/filter-options")
+      .then((payload) =>
+        setFilterOptions({
+          customers: Array.isArray(payload.customers) ? payload.customers : [],
+          products: Array.isArray(payload.products) ? payload.products : [],
+          sellers: Array.isArray(payload.sellers) ? payload.sellers : [],
+        })
+      )
+      .catch(() =>
+        setFilterOptions({
+          customers: [],
+          products: [],
+          sellers: [],
+        })
+      )
+      .finally(() => setFilterOptionsLoading(false));
+  }, []);
+
   const handleApply = () => {
     setAppliedFilters(normalizedDraft);
     setDetailPage(1);
@@ -390,7 +487,15 @@ export function SoldProductsReportPage() {
       else if (field === "company") next.company = "all";
       else if (field === "sortBy") next.sortBy = "quantity";
       else if (field === "topN") next.topN = "all";
-      else next[field] = "";
+      else if (field === "customerId") {
+        next.customerId = "";
+        next.customerTaxId = "";
+      } else if (field === "customerTaxId") {
+        next.customerTaxId = "";
+        next.customerId = "";
+      } else if (field === "productId") {
+        next.productId = "";
+      } else next[field] = "";
       const normalized = normalizeSoldProductsUiFilters(next);
       setDraftFilters(normalized);
       setAppliedFilters(normalized);
@@ -399,9 +504,26 @@ export function SoldProductsReportPage() {
     [appliedFilters]
   );
 
+  const customerSelectOptions = useMemo(
+    () => buildSoldProductsCustomerSelectOptions(filterOptions.customers),
+    [filterOptions.customers]
+  );
+  const taxIdSelectOptions = useMemo(
+    () => buildSoldProductsTaxIdSelectOptions(filterOptions.customers),
+    [filterOptions.customers]
+  );
+  const productSelectOptions = useMemo(
+    () => buildSoldProductsProductSelectOptions(filterOptions.products),
+    [filterOptions.products]
+  );
+  const sellerSelectOptions = useMemo(
+    () => buildSoldProductsSellerSelectOptions(filterOptions.sellers),
+    [filterOptions.sellers]
+  );
+
   const chips = useMemo(
-    () => buildSoldProductsFilterChips(appliedFilters, handleRemoveChip),
-    [appliedFilters, handleRemoveChip]
+    () => buildSoldProductsFilterChips(appliedFilters, handleRemoveChip, filterOptions),
+    [appliedFilters, handleRemoveChip, filterOptions]
   );
 
   const handleExportExcel = async () => {
@@ -437,15 +559,37 @@ export function SoldProductsReportPage() {
     );
   };
 
-  const handlePrint = () => {
+  const handlePrint = useCallback(() => {
+    if (printing || loading || !data) return;
+
+    const clearPrintRoute = () => {
+      if (printCleanupRef.current != null) {
+        window.clearTimeout(printCleanupRef.current);
+        printCleanupRef.current = null;
+      }
+      document.body.classList.remove("sold-products-print-route");
+      setPrinting(false);
+    };
+
+    setPrinting(true);
+    const onAfterPrint = () => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintRoute();
+    };
+    window.addEventListener("afterprint", onAfterPrint);
+    printCleanupRef.current = window.setTimeout(() => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintRoute();
+    }, 60_000);
+
     document.body.classList.add("sold-products-print-route");
+    document.title = "Produtos Vendidos";
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        window.print();
-        document.body.classList.remove("sold-products-print-route");
+        setTimeout(() => window.print(), 200);
       });
     });
-  };
+  }, [data, loading, printing]);
 
   const chartData = useMemo(() => {
     return (data?.ranking ?? []).slice(0, 10).map((r) => ({
@@ -484,27 +628,6 @@ export function SoldProductsReportPage() {
 
   return (
     <>
-      <div id="sold-products-print-root">
-        <div className="space-y-4 text-sm">
-          <div>
-            <p className="text-xs text-gray-500">IndusCost · Lazarios Koppetel</p>
-            <h1 className="text-xl font-bold">Relatório de Produtos Vendidos</h1>
-            <p className="text-gray-600">
-              Período: {applied?.periodLabel ?? "—"} · Gerado em{" "}
-              {data?.generatedAt ? new Date(data.generatedAt).toLocaleString("pt-BR") : "—"}
-            </p>
-          </div>
-          {applied ? (
-            <ul className="text-xs text-gray-600 list-disc pl-4">
-              {soldProductsFilterSummaryLines(applied).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          ) : null}
-          <SoldProductsPrintRankingTable rows={rankingRows} />
-        </div>
-      </div>
-
       <FinanceBiDashboardShell className="sold-products-no-print">
         <FinanceBiExecutiveHeader
           eyebrow="Comercial · Relatórios"
@@ -539,9 +662,11 @@ export function SoldProductsReportPage() {
             },
             {
               id: "print",
-              label: "Imprimir / PDF",
+              label: printing ? "Preparando PDF…" : "Imprimir / PDF",
               onClick: handlePrint,
-              icon: <Printer className="h-4 w-4" />,
+              disabled: printing || loading || !data,
+              loading: printing,
+              icon: printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />,
             },
           ]}
         />
@@ -629,35 +754,59 @@ export function SoldProductsReportPage() {
               onChange={(v) => setDraftFilters((f) => ({ ...f, endDate: v }))}
               placeholder="YYYY-MM-DD"
             />
-            <FilterInput
+            <FilterSearchableSelect
               label="Cliente"
-              value={draftFilters.customerName}
-              onChange={(v) => setDraftFilters((f) => ({ ...f, customerName: v }))}
-            />
-            <FilterInput
-              label="CNPJ/CPF cliente"
-              value={draftFilters.customerTaxId}
-              onChange={(v) => setDraftFilters((f) => ({ ...f, customerTaxId: v }))}
-            />
-            <FilterInput
-              label="Código produto"
-              value={draftFilters.productCode}
-              onChange={(v) => setDraftFilters((f) => ({ ...f, productCode: v }))}
-            />
-            <FilterInput
-              label="Nome produto"
-              value={draftFilters.productName}
-              onChange={(v) => setDraftFilters((f) => ({ ...f, productName: v }))}
-            />
-            <FilterInput
-              label="Vendedor / responsável"
-              value={draftFilters.sellerKey.replace(/^r:/, "")}
-              onChange={(v) =>
+              value={draftFilters.customerId}
+              onChange={(customerId) =>
                 setDraftFilters((f) => ({
                   ...f,
-                  sellerKey: v.trim() ? `r:${v.trim()}` : "",
+                  ...soldProductsCustomerIdPatch(customerId),
+                  customerTaxId: syncCustomerTaxIdFromId(customerId, filterOptions.customers),
                 }))
               }
+              options={customerSelectOptions}
+              placeholder="Todos os clientes"
+              searchInputPlaceholder="Buscar cliente…"
+              disabled={filterOptionsLoading}
+            />
+            <FilterSearchableSelect
+              label="CNPJ/CPF cliente"
+              value={draftFilters.customerTaxId}
+              onChange={(customerTaxId) =>
+                setDraftFilters((f) => ({
+                  ...f,
+                  customerTaxId,
+                  customerName: "",
+                  customerId: syncCustomerIdFromTaxId(customerTaxId, filterOptions.customers),
+                }))
+              }
+              options={taxIdSelectOptions}
+              placeholder="Todos os CNPJ/CPF"
+              searchInputPlaceholder="Buscar documento…"
+              disabled={filterOptionsLoading}
+            />
+            <FilterSearchableSelect
+              label="Produto"
+              value={draftFilters.productId}
+              onChange={(productId) =>
+                setDraftFilters((f) => ({
+                  ...f,
+                  ...soldProductsProductIdPatch(productId),
+                }))
+              }
+              options={productSelectOptions}
+              placeholder="Todos os produtos"
+              searchInputPlaceholder="Buscar código ou nome…"
+              disabled={filterOptionsLoading}
+            />
+            <FilterSearchableSelect
+              label="Vendedor / responsável"
+              value={draftFilters.sellerKey}
+              onChange={(sellerKey) => setDraftFilters((f) => ({ ...f, sellerKey }))}
+              options={sellerSelectOptions}
+              placeholder="Todos os vendedores"
+              searchInputPlaceholder="Buscar vendedor…"
+              disabled={filterOptionsLoading}
             />
             <FilterSelect
               label="Empresa"
@@ -876,60 +1025,14 @@ export function SoldProductsReportPage() {
           </ReportSection>
         ) : null}
       </FinanceBiDashboardShell>
-    </>
-  );
-}
 
-function SoldProductsPrintRankingTable({ rows }: { rows: SoldProductsRankingRow[] }) {
-  return (
-    <table className="sold-products-print-table">
-      <thead>
-        <tr>
-          <th style={{ width: "4%" }}>#</th>
-          <th style={{ width: "8%" }}>Código</th>
-          <th style={{ width: "22%" }}>Produto</th>
-          <th className="col-num" style={{ width: "8%" }}>
-            Qtd vendida
-          </th>
-          <th className="col-num" style={{ width: "10%" }}>
-            Valor vendido
-          </th>
-          <th className="col-num" style={{ width: "9%" }}>
-            Preço médio
-          </th>
-          <th className="col-num" style={{ width: "7%" }}>
-            Pedidos
-          </th>
-          <th className="col-num" style={{ width: "7%" }}>
-            Clientes
-          </th>
-          <th style={{ width: "9%" }}>Última venda</th>
-          <th className="col-num" style={{ width: "7%" }}>
-            % qtd
-          </th>
-          <th className="col-num" style={{ width: "7%" }}>
-            % valor
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.productId}>
-            <td>{r.rank}</td>
-            <td>{r.productCode ?? "—"}</td>
-            <td>{r.productName}</td>
-            <td className="col-num">{fmtQty(r.quantitySold)}</td>
-            <td className="col-num">{fmtMoney(r.amountSold)}</td>
-            <td className="col-num">{r.averageUnitPrice != null ? fmtMoney(r.averageUnitPrice) : "—"}</td>
-            <td className="col-num">{r.ordersCount}</td>
-            <td className="col-num">{r.customersCount}</td>
-            <td>{r.lastSaleDate ?? "—"}</td>
-            <td className="col-num">{r.quantitySharePercent.toFixed(1)}%</td>
-            <td className="col-num">{r.amountSharePercent.toFixed(1)}%</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+      {data && typeof document !== "undefined"
+        ? createPortal(
+            <SoldProductsPrintDocument payload={data} branding={branding} />,
+            document.body
+          )
+        : null}
+    </>
   );
 }
 
