@@ -1,0 +1,345 @@
+/**
+ * Contrato central do Relatório Presidencial (Financeiro → Relatório Presidencial).
+ *
+ * Regra fundamental: este módulo define tipos e referências de fontes oficiais.
+ * NÃO implementa cálculos divergentes de AR/AP/Fluxo/Faturamento/Pedidos.
+ * A montagem do payload (fase posterior) deve delegar aos builders listados em
+ * `FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES`.
+ */
+import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import type { FinanceArDashboardPayload } from "./financeAccountsReceivableDashboardTypes.js";
+import type { FinanceApDashboardPayload } from "./financeAccountsPayableDashboardTypes.js";
+import type { FinanceCashFlowDashboardPayload } from "./financeCashFlowDashboardTypes.js";
+import type { FinanceCashFlowCalendarPayload } from "./financeCashFlowCalendar.js";
+import type { FinanceCashFlowExecutiveSummary } from "./financeCashFlowExecutiveSummary.js";
+import type { FinanceBillingDashboardPayload } from "./financeBillingDashboardTypes.js";
+import type {
+  BillingDashboardTab,
+  SalesOrdersDashboardTab,
+} from "./executiveDashboardTypes.js";
+import type { FinanceBillingSource } from "./financeBillingSourceTypes.js";
+
+/** Modo de geração — snapshot reservado para persistência futura. */
+export type FinanceExecutiveReportMode = "live" | "snapshot";
+
+/** Filtros globais do relatório presidencial. */
+export type FinanceExecutiveReportFilters = {
+  /** Ano de referência (ex.: 2026). */
+  year: number;
+  /** Mês calendário 1–12; omitir/null = visão anual ou mês corrente conforme seção. */
+  month?: number | null;
+  /** Data de corte para leitura executiva (ISO date ou Date serializado). */
+  asOfDate: string;
+  /** Empresa/filial quando aplicável (Nomus companyName). */
+  company?: string;
+  /** Segmentação de clientes — reservado; hoje faturamento usa filtro de mercado interno. */
+  customerType?: "all" | "market" | "internal";
+  /** Incluir contrapartes do grupo econômico (default false nas visões gerenciais). */
+  includeInternalCompanies?: boolean;
+  /** Fonte de faturamento oficial — default recomendado: NF-e fiscal. */
+  nfeFilter?: FinanceBillingSource;
+  /** Limite de linhas em rankings (clientes, fornecedores, títulos críticos). */
+  topN?: number;
+  mode: FinanceExecutiveReportMode;
+};
+
+/** Referência documentada a um builder oficial — não executa nada por si só. */
+export type FinanceExecutiveReportDataSourceRef = {
+  module: string;
+  builder: string;
+  description: string;
+};
+
+/**
+ * Mapa das fontes oficiais que o assembler do relatório DEVE reutilizar.
+ * Alterações de cálculo devem ocorrer apenas nos módulos referenciados.
+ */
+export const FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES = {
+  accountsReceivable: {
+    module: "financeAccountsReceivableManagement.ts",
+    builder: "loadFinanceArManagementRowsFromPrisma → buildFinanceAccountsReceivableDashboard",
+    description:
+      "Base saneada Nomus AR com syncCutoff, exclusão de stale/fantasma/intercompany e filtros gerenciais.",
+  },
+  accountsPayable: {
+    module: "financeAccountsPayableDashboard.ts",
+    builder: "filterFinanceApManagementReportRows → buildFinanceAccountsPayableDashboard",
+    description:
+      "Base saneada Nomus AP com exclusão de intercompany, pedido de compra na agenda e freshness AP.",
+  },
+  cashFlow: {
+    module: "financeCashFlowDashboard.ts",
+    builder: "buildFinanceCashFlowDashboard",
+    description:
+      "Motor único de entradas/saídas, posição líquida, cenários e reconciliação AR/AP × fluxo.",
+  },
+  cashFlowCalendar: {
+    module: "financeCashFlowCalendar.ts",
+    builder: "buildFinanceCashFlowCalendar",
+    description: "Agenda/calendário financeiro mensal com saldo, fluxo líquido e acumulado.",
+  },
+  cashFlowExecutiveSummary: {
+    module: "financeCashFlowExecutiveSummary.ts",
+    builder: "buildCashFlowExecutiveSummary (via buildFinanceCashFlowDashboard)",
+    description: "Visão YTD/projeção anual de caixa — complemento do dashboard de fluxo.",
+  },
+  billing: {
+    module: "financeBillingDashboard.ts",
+    builder: "buildFinanceBillingDashboard → buildBillingDashboardFromNfes | buildBillingDashboardTab",
+    description:
+      "Faturamento oficial NF-e (recomendado) ou fallback pedidos; comparativos multi-ano e projeções.",
+  },
+  billingMetrics: {
+    module: "billingDashboardMetrics.ts",
+    builder: "buildBillingDashboardTab",
+    description: "Métricas de faturamento de mercado, metas (+30%), média diária e projeção.",
+  },
+  salesOrders: {
+    module: "salesOrdersDashboardMetrics.ts",
+    builder: "buildSalesOrdersDashboardTab",
+    description:
+      "Pedidos de venda (SalesOrder/SalesOrderItem) — metas, projeção comercial e carteira; não usa Proposta comercial.",
+  },
+  salesOrderRules: {
+    module: "salesOrderDashboardRules.ts",
+    builder: "computeAchievementPercent, computeMonthProjection, computeGrowthTarget, …",
+    description: "Regras puras compartilhadas entre faturamento e pedidos (metas +30%).",
+  },
+  executiveSummary: {
+    module: "executiveDashboardService.ts",
+    builder: "buildExecutiveDashboardSummary",
+    description: "Agregador existente de abas Pedidos + Faturamento + Funil (referência, não substituto do relatório).",
+  },
+} as const satisfies Record<string, FinanceExecutiveReportDataSourceRef>;
+
+export type FinanceExecutiveReportOfficialSourceKey =
+  keyof typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES;
+
+/** Lacunas conhecidas na montagem do relatório — auditoria inicial. */
+export type FinanceExecutiveReportKnownGap = {
+  id: string;
+  label: string;
+  status: "available" | "partial" | "missing";
+  notes: string;
+};
+
+export const FINANCE_EXECUTIVE_REPORT_KNOWN_GAPS: FinanceExecutiveReportKnownGap[] = [
+  {
+    id: "billing-multi-year-comparison",
+    label: "Comparativo mensal 2024/2025/2026 (faturamento)",
+    status: "available",
+    notes: "BillingDashboardTab.multiYearMonthly / multiYearSummary em financeBillingChartData.ts.",
+  },
+  {
+    id: "billing-target-achievement",
+    label: "% atingimento meta do mês (faturamento)",
+    status: "available",
+    notes: "DashboardTargetBlock.achievementPercent via billingDashboardMetrics / salesOrderDashboardRules.",
+  },
+  {
+    id: "billing-projection",
+    label: "Média diária, faturado, projetado, meta anual",
+    status: "available",
+    notes: "BillingProjectionBlock + BillingYearComparison + BillingRealizedVsProjected.",
+  },
+  {
+    id: "ar-ap-cards-charts",
+    label: "Cards e gráficos AR/AP no formato presidencial",
+    status: "partial",
+    notes: "Payloads oficiais existem; layout/ seleção de KPIs para print ainda não definidos neste contrato.",
+  },
+  {
+    id: "calendar-agenda",
+    label: "Agenda financeira mensal (saldo, líquido, acumulado)",
+    status: "available",
+    notes: "FinanceCashFlowCalendarPayload.monthSummary + days/weeks.",
+  },
+  {
+    id: "sales-orders-projection",
+    label: "Pedidos — meta mês e projeção comercial",
+    status: "available",
+    notes: "SalesOrdersDashboardTab.targets + projection.",
+  },
+  {
+    id: "persisted-snapshot",
+    label: "Modo snapshot persistido",
+    status: "missing",
+    notes: "Filtro mode=snapshot previsto; storage/API não implementados nesta etapa.",
+  },
+  {
+    id: "custom-meta-table",
+    label: "Metas cadastradas em tabela/config",
+    status: "missing",
+    notes: "Metas atuais são derivadas (+30% sobre período anterior) — não há tabela de metas editável.",
+  },
+  {
+    id: "executive-narrative-ai",
+    label: "Narrativa executiva automática",
+    status: "missing",
+    notes: "Seção executiveNarrative reservada; geração de texto não implementada.",
+  },
+];
+
+export type FinanceExecutiveReportDataQuality = {
+  sanitization: FinanceDataSanitization | null;
+  warnings: string[];
+  unavailableSections: string[];
+};
+
+export type FinanceExecutiveReportCover = {
+  title: string;
+  subtitle?: string;
+  reportDateLabel: string;
+  periodLabel: string;
+  companyLabel?: string;
+};
+
+export type FinanceExecutiveReportExecutiveSummary = {
+  headlineMetrics: Array<{
+    id: string;
+    label: string;
+    value: number | null;
+    formatted: string;
+    source: FinanceExecutiveReportOfficialSourceKey;
+  }>;
+  highlights: string[];
+};
+
+/** Seção 2–4: faturamento comparativo e projeção — espelha BillingDashboardTab oficial. */
+export type FinanceExecutiveReportBillingComparison = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.billing;
+  payload: Pick<
+    FinanceBillingDashboardPayload,
+    "selectedYear" | "previousYear" | "currentMonth" | "billingSource" | "periodLabel"
+  >;
+  tab: Pick<
+    BillingDashboardTab,
+    | "summaryCards"
+    | "target"
+    | "yearComparison"
+    | "monthlySeries"
+    | "chartSeries"
+    | "multiYearMonthly"
+    | "multiYearSummary"
+    | "cumulativeBilling"
+  >;
+};
+
+export type FinanceExecutiveReportBillingProjection = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.billing;
+  tab: Pick<
+    BillingDashboardTab,
+    "projection" | "realizedVsProjected" | "accumulatedEvolution" | "forecast"
+  >;
+};
+
+/** Seção 7: Contas a Receber — payload oficial completo ou subconjunto documentado. */
+export type FinanceExecutiveReportAccountsReceivable = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.accountsReceivable;
+  payload: Pick<
+    FinanceArDashboardPayload,
+    | "cards"
+    | "agingBuckets"
+    | "topDebtors"
+    | "monthlyDueSchedule"
+    | "scheduleBuckets"
+    | "criticalTitles"
+    | "dataSanitization"
+    | "financialHorizon"
+  >;
+};
+
+/** Seção 8: Contas a Pagar — payload oficial. */
+export type FinanceExecutiveReportAccountsPayable = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.accountsPayable;
+  payload: Pick<
+    FinanceApDashboardPayload,
+    | "cards"
+    | "agingBuckets"
+    | "topSuppliers"
+    | "monthlyDueSchedule"
+    | "criticalTitles"
+    | "dataSanitization"
+    | "financialHorizon"
+  >;
+};
+
+/** Seção 8 (continuação): Fluxo de Caixa — motor saneado. */
+export type FinanceExecutiveReportCashFlow = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.cashFlow;
+  payload: Pick<
+    FinanceCashFlowDashboardPayload,
+    | "cards"
+    | "executiveSummary"
+    | "executiveYtd"
+    | "monthlySeries"
+    | "cashForecast"
+    | "dataSanitization"
+    | "reconciliation"
+    | "executiveReading"
+  >;
+};
+
+/** Seção 9: Agenda financeira mensal. */
+export type FinanceExecutiveReportCalendarAgenda = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.cashFlowCalendar;
+  calendar: FinanceCashFlowCalendarPayload;
+  executiveSummary?: Pick<
+    FinanceCashFlowExecutiveSummary,
+    "monthlyTimeline" | "period" | "net"
+  >;
+};
+
+/** Seção 10: Pedidos de venda — SalesOrder, não Propostas. */
+export type FinanceExecutiveReportSalesOrders = {
+  source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.salesOrders;
+  tab: Pick<
+    SalesOrdersDashboardTab,
+    | "summaryCards"
+    | "targets"
+    | "target"
+    | "projection"
+    | "monthlySeries"
+    | "chartSeries"
+    | "accumulatedEvolution"
+    | "statusBreakdown"
+    | "overdueOrders"
+  >;
+};
+
+/** Narrativa executiva — reservada; preenchimento futuro (manual ou assistida). */
+export type FinanceExecutiveReportNarrative = {
+  sections: Array<{
+    id: string;
+    title: string;
+    body: string;
+    sourceRefs: FinanceExecutiveReportOfficialSourceKey[];
+  }>;
+};
+
+/**
+ * Payload completo do Relatório Presidencial.
+ * Montagem: fase posterior — consumir builders oficiais e mapear para este contrato.
+ */
+export type FinanceExecutiveReport = {
+  generatedAt: string;
+  asOfDate: string;
+  year: number;
+  month: number | null;
+  company: string | null;
+  filters: FinanceExecutiveReportFilters;
+  mode: FinanceExecutiveReportMode;
+  dataSources: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES;
+  dataQuality: FinanceExecutiveReportDataQuality;
+  knownGaps: FinanceExecutiveReportKnownGap[];
+  cover: FinanceExecutiveReportCover;
+  executiveSummary: FinanceExecutiveReportExecutiveSummary;
+  billingComparison: FinanceExecutiveReportBillingComparison;
+  billingProjection: FinanceExecutiveReportBillingProjection;
+  accountsReceivable: FinanceExecutiveReportAccountsReceivable;
+  accountsPayable: FinanceExecutiveReportAccountsPayable;
+  cashFlow: FinanceExecutiveReportCashFlow;
+  calendarAgenda: FinanceExecutiveReportCalendarAgenda;
+  salesOrders: FinanceExecutiveReportSalesOrders;
+  executiveNarrative: FinanceExecutiveReportNarrative | null;
+};
