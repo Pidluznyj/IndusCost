@@ -54,6 +54,11 @@ import type {
   FinanceCashFlowViewMode,
 } from "./financeCashFlowDashboardTypes.js";
 import {
+  buildFinanceCashFlowDataset,
+  isFinanceCashFlowArOpenRow,
+  type FinanceCashFlowDataset,
+} from "./financeCashFlowDataset.js";
+import {
   buildCashFlowExecutiveReading,
   buildNetCashPositionMetrics,
   resolveMonthlyNetStatus,
@@ -728,8 +733,33 @@ export function buildFinanceCashFlowDashboard(
   arSyncCutoff?: NomusArReportSyncCutoff | null,
   apSyncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowDashboardPayload {
-  const filteredAr = filterCashFlowArRows(arRows, filters, referenceDate, arSyncCutoff);
-  const filteredAp = filterCashFlowApRows(apRows, filters, referenceDate, apSyncCutoff);
+  const arFilters = toArLoadFilters(filters);
+  const apFilters = toApLoadFilters(filters);
+  const dataset = buildFinanceCashFlowDataset(
+    arRows,
+    apRows,
+    filters,
+    arFilters,
+    apFilters,
+    referenceDate,
+    arSyncCutoff,
+    apSyncCutoff
+  );
+  return buildFinanceCashFlowDashboardFromDataset(dataset, arRows, apRows, filters, referenceDate, arSyncCutoff, apSyncCutoff);
+}
+
+export function buildFinanceCashFlowDashboardFromDataset(
+  dataset: FinanceCashFlowDataset,
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date = new Date(),
+  arSyncCutoff?: NomusArReportSyncCutoff | null,
+  apSyncCutoff?: NomusApReportSyncCutoff | null
+): FinanceCashFlowDashboardPayload {
+  const filteredAr = dataset.arRowsSanitized;
+  const filteredAp = dataset.apRowsSanitized;
+  const { blocks } = dataset;
   const monthlySeries = buildFinanceCashFlowMonthlySeries(
     filteredAr,
     filteredAp,
@@ -738,76 +768,24 @@ export function buildFinanceCashFlowDashboard(
   );
   const period = sumPeriodAmounts(monthlySeries, filters.month);
 
-  let totalReceivableOpen = 0;
-  let totalPayableOpen = 0;
-  let overdueReceivable = 0;
-  let overduePayable = 0;
   let lastSync: Date | null = null;
-
-  const customerRows: Array<{
-    key: string;
-    personName: string | null;
-    personCnpj: string | null;
-    amount: number;
-  }> = [];
-  const supplierRows: Array<{
-    key: string;
-    personName: string | null;
-    personCnpj: string | null;
-    amount: number;
-  }> = [];
-
-  for (const row of filteredAr) {
+  for (const row of [...filteredAr, ...filteredAp]) {
     if (lastSync == null || row.syncedAt > lastSync) lastSync = row.syncedAt;
-    if (isFinanceArOpen(row)) {
-      totalReceivableOpen += row.balanceReceivable;
-      customerRows.push({
-        key: resolveFinanceArCustomerKey(row),
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-        amount: row.balanceReceivable,
-      });
-      if (classifyFinanceArTitle(row, referenceDate) === "overdue") {
-        overdueReceivable += row.balanceReceivable;
-      }
-    }
   }
 
-  for (const row of filteredAp) {
-    if (lastSync == null || row.syncedAt > lastSync) lastSync = row.syncedAt;
-    if (isFinanceApOpen(row)) {
-      const openAmount = resolveFinanceApOpenAmount(row);
-      totalPayableOpen += openAmount;
-      supplierRows.push({
-        key: resolveFinanceApSupplierKey(row),
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-        amount: openAmount,
-      });
-      if (classifyFinanceApTitle(row, referenceDate) === "overdue") {
-        overduePayable += openAmount;
-      }
-    }
-  }
-
-  const critical = buildCriticalMovements(
-    filteredAr,
-    filteredAp,
-    filterFinanceArRows(arRows, toArLoadFilters(filters), referenceDate, arSyncCutoff),
-    filterFinanceApManagementReportRows(
-      apRows,
-      toApLoadFilters(filters),
-      referenceDate,
-      apSyncCutoff
-    ),
-    referenceDate
-  );
-
-  const totalReceivableRounded = roundMoney(totalReceivableOpen);
-  const totalPayableRounded = roundMoney(totalPayableOpen);
+  const totalReceivableRounded = blocks.totalReceivableOpen;
+  const totalPayableRounded = blocks.totalPayableOpen;
+  const overdueReceivable = blocks.overdueReceivableAmount;
+  const overduePayable = blocks.overduePayableAmount;
   const netPosition = buildNetCashPositionMetrics(totalReceivableRounded, totalPayableRounded);
-  const topCustomers = buildPartySummaries(customerRows, 10);
-  const topSuppliers = buildPartySummaries(supplierRows, 10);
+  const topCustomers = blocks.topReceivableCustomers;
+  const topSuppliers = blocks.topPayableSuppliers;
+  const critical = {
+    largestInflows: blocks.largestExpectedInflows,
+    largestOutflows: blocks.largestExpectedOutflows,
+    overdueReceivables: blocks.overdueReceivables,
+    overduePayables: blocks.overduePayables,
+  };
 
   const filtersApplied: FinanceCashFlowDashboardFiltersApplied = {
     year: filters.year,
@@ -976,7 +954,7 @@ export function buildFinanceCashFlowDashboard(
     0
   );
   const openReceivableWithoutDueDate = filteredAr.filter(
-    (r) => isFinanceArOpen(r) && !r.suspendCollection && !r.dueDate
+    (r) => isFinanceCashFlowArOpenRow(r) && !r.dueDate
   ).length;
 
   const reconciliation = buildCashFlowReconciliation(

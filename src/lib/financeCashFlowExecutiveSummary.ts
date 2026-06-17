@@ -8,9 +8,9 @@ import {
 import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 import {
   filterFinanceArRows,
-  isFinanceArOpen,
   type FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
+import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -240,7 +240,7 @@ export function isArOpenDueInPeriod(
   startDate: Date,
   endDate: Date
 ): boolean {
-  if (!isFinanceArOpen(row) || row.suspendCollection || row.dueDate == null) return false;
+  if (!isFinanceCashFlowArOpenRow(row) || row.dueDate == null) return false;
   const due = startOfLocalDay(row.dueDate).getTime();
   const start = startOfLocalDay(startDate).getTime();
   const end = startOfLocalDay(endDate).getTime();

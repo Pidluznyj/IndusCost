@@ -18,6 +18,10 @@ import {
   toArLoadFilters,
 } from "@/src/lib/financeCashFlowDashboard.js";
 import {
+  buildFinanceCashFlowAuditPayload,
+  buildFinanceCashFlowDataset,
+} from "@/src/lib/financeCashFlowDataset.js";
+import {
   buildFinanceCashFlowExportCsv,
   financeCashFlowExportFilename,
 } from "@/src/lib/financeCashFlowExport.js";
@@ -92,6 +96,30 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
 
 export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGuards) {
   app.get(
+    "/api/finance/cash-flow/audit",
+    auth.requireAppAuth,
+    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    async (req, res) => {
+      const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
+      if (!filters) return;
+
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff } = await loadCashFlowRows(filters);
+      const dataset = buildFinanceCashFlowDataset(
+        arRows,
+        apRows,
+        filters,
+        toArLoadFilters(filters),
+        toApLoadFilters(filters),
+        new Date(),
+        arSyncCutoff,
+        apSyncCutoff
+      );
+      const audit = buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length);
+      res.json(audit);
+    }
+  );
+
+  app.get(
     "/api/finance/cash-flow/dashboard",
     auth.requireAppAuth,
     auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
@@ -100,6 +128,20 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       if (!filters) return;
 
       const { arRows, apRows, arSyncCutoff, apSyncCutoff } = await loadCashFlowRows(filters);
+      const auditMode = String(req.query.audit ?? "").trim() === "1";
+      if (auditMode) {
+        const dataset = buildFinanceCashFlowDataset(
+          arRows,
+          apRows,
+          filters,
+          toArLoadFilters(filters),
+          toApLoadFilters(filters),
+          new Date(),
+          arSyncCutoff,
+          apSyncCutoff
+        );
+        return res.json(buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length));
+      }
       const payload = buildFinanceCashFlowDashboard(
         arRows,
         apRows,

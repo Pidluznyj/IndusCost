@@ -8,6 +8,7 @@ import {
 } from "./financeAccountsReceivableDashboard.js";
 import {
   buildFinanceApPrismaWhere,
+  filterFinanceApManagementReportRows,
   matchesFinanceApDashboardFilters,
   resolveFinanceApDueDateBounds,
   type FinanceApDashboardFilters,
@@ -120,6 +121,43 @@ function matchesCashFlowApPortfolio(
     dueDateTo: undefined,
   };
   return matchesFinanceApDashboardFilters(row, portfolioFilters, referenceDate);
+}
+
+export function filterCashFlowArPortfolioRows(
+  rows: FinanceCashFlowArRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  arFilters: FinanceArDashboardFilters,
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
+): FinanceCashFlowArRow[] {
+  const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
+  const portfolio = rows.filter(
+    (row) =>
+      matchesCashFlowArPortfolio(row, arFilters, referenceDate) &&
+      !isFinanceArExcludedFromReports(row, effectiveCutoff)
+  );
+  return deduplicateFinanceArRows(portfolio).rows;
+}
+
+export function filterCashFlowApPortfolioRows(
+  rows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  apFilters: FinanceApDashboardFilters,
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null
+): FinanceCashFlowApRow[] {
+  return filterFinanceApManagementReportRows(
+    rows,
+    {
+      ...apFilters,
+      year: undefined,
+      month: undefined,
+      dueDateFrom: undefined,
+      dueDateTo: undefined,
+    },
+    referenceDate,
+    syncCutoff
+  );
 }
 
 export function filterCashFlowArRowsScoped(
