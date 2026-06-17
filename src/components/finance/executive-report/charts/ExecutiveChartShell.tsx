@@ -1,6 +1,6 @@
 import React from "react";
+import { cn } from "@/src/lib/utils";
 import { EXECUTIVE_REPORT_EMPTY_MESSAGE } from "@/src/lib/financeExecutiveReportPresentation";
-
 export const EXECUTIVE_CHART_HEIGHT = 380;
 
 export function ExecutiveChartShell({
@@ -20,7 +20,7 @@ export function ExecutiveChartShell({
 }) {
   if (empty) {
     return (
-      <div className="executive-chart-shell executive-chart-shell--empty" data-testid={testId}>
+      <div className="executive-chart-shell executive-chart executive-chart-shell--empty" data-testid={testId}>
         <ExecutiveChartHeader title={title} subtitle={subtitle} />
         <p className="executive-chart-empty-message">{EXECUTIVE_REPORT_EMPTY_MESSAGE}</p>
       </div>
@@ -28,7 +28,7 @@ export function ExecutiveChartShell({
   }
 
   return (
-    <div className="executive-chart-shell" data-testid={testId}>
+    <div className={cn("executive-chart-shell executive-chart", empty && "executive-chart-shell--empty")} data-testid={testId}>
       <ExecutiveChartHeader title={title} subtitle={subtitle} />
       <div className="executive-chart-body" style={{ height }}>
         {children}

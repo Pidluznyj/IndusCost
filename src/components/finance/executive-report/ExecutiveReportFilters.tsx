@@ -40,7 +40,7 @@ export function ExecutiveReportFilters({
 
   return (
     <div
-      className="finance-executive-report-print-no-print rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-4"
+      className="no-print executive-report-filters finance-executive-report-print-no-print rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-4"
       data-testid="executive-report-filters"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -50,12 +50,12 @@ export function ExecutiveReportFilters({
           </p>
           <h1 className="text-xl font-bold text-[#111827]">Visão executiva consolidada</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="print-actions flex flex-wrap gap-2">
           <button
             type="button"
             onClick={onRefresh}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60"
+            className="no-print inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Atualizar
@@ -63,7 +63,9 @@ export function ExecutiveReportFilters({
           <button
             type="button"
             onClick={onPrint}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#1e3a5f] px-3 py-2 text-sm font-semibold text-white hover:bg-[#16304f]"
+            disabled={loading}
+            data-testid="executive-report-print-button"
+            className="no-print inline-flex items-center gap-2 rounded-lg bg-[#1e3a5f] px-3 py-2 text-sm font-semibold text-white hover:bg-[#16304f] disabled:opacity-60"
           >
             <Printer className="h-4 w-4" />
             Imprimir / Salvar PDF
@@ -197,7 +199,7 @@ export function ExecutiveReportFilters({
             type="button"
             onClick={onApply}
             disabled={applyDisabled || loading}
-            className="w-full rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            className="no-print w-full rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
             Aplicar filtros
           </button>

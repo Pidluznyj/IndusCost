@@ -23,7 +23,7 @@ export function ExecutiveReportSection({
     <section
       id={id}
       className={cn(
-        "finance-executive-report-section",
+        "finance-executive-report-section executive-section",
         pageBreakBefore && "finance-executive-report-section--page-break",
         className
       )}

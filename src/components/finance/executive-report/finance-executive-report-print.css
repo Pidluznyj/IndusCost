@@ -1,0 +1,354 @@
+/* Impressão / PDF — Relatório Presidencial Financeiro (A4 landscape) */
+
+@page {
+  size: A4 landscape;
+  margin: 8mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    overflow: visible !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  body.finance-executive-report-route,
+  body.finance-executive-report-route * {
+    visibility: visible !important;
+  }
+
+  .no-print,
+  .print-actions,
+  .executive-report-filters,
+  .finance-executive-report-print-no-print,
+  body.finance-executive-report-route button,
+  body.finance-executive-report-route #root > * > aside,
+  body.finance-executive-report-route #root > * > header,
+  body.finance-executive-report-route nav.finance-module-tabs,
+  body.finance-executive-report-route .executive-report-screen-only {
+    display: none !important;
+  }
+
+  body.finance-executive-report-route .finance-executive-report-page {
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .executive-report-print-root,
+  .finance-executive-report-document.executive-report-print-root {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+
+  .executive-print-page {
+    break-after: page;
+    page-break-after: always;
+    min-height: auto;
+    overflow: visible !important;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 3mm;
+    padding: 0;
+    background: #fff !important;
+  }
+
+  .executive-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .executive-print-page-body {
+    flex: 1 1 auto;
+    overflow: visible !important;
+  }
+
+  .executive-print-page-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4mm;
+    border-bottom: 0.4mm solid #cbd5e1;
+    padding-bottom: 2mm;
+    margin-bottom: 2mm;
+    font-size: 8pt;
+    color: #334155;
+  }
+
+  .executive-print-page-logo {
+    max-height: 10mm;
+    max-width: 36mm;
+    object-fit: contain;
+  }
+
+  .executive-print-page-brand-text,
+  .executive-print-cover-brand-fallback {
+    font-weight: 700;
+    font-size: 10pt;
+    color: #1e3a5f;
+  }
+
+  .executive-print-page-header-doc {
+    font-weight: 800;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #0f172a;
+    margin: 0;
+  }
+
+  .executive-print-page-header-meta {
+    margin: 0;
+    font-size: 7.5pt;
+    color: #64748b;
+  }
+
+  .executive-print-page-header-source {
+    font-size: 7pt;
+    color: #64748b;
+    white-space: nowrap;
+  }
+
+  .executive-print-page-footer {
+    display: flex !important;
+    justify-content: space-between;
+    gap: 3mm;
+    border-top: 0.3mm solid #e2e8f0;
+    padding-top: 2mm;
+    margin-top: 2mm;
+    font-size: 7pt;
+    color: #64748b;
+  }
+
+  .executive-print-cover {
+    min-height: 170mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #334155 100%) !important;
+    color: #f8fafc !important;
+    padding: 16mm 12mm;
+    border-radius: 0 !important;
+  }
+
+  .executive-print-cover-logo {
+    max-height: 22mm;
+    max-width: 70mm;
+    object-fit: contain;
+    margin-bottom: 6mm;
+  }
+
+  .executive-print-cover-title {
+    font-size: 28pt;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    margin: 0 0 4mm;
+    color: #fff !important;
+  }
+
+  .executive-print-cover-subtitle {
+    font-size: 11pt;
+    color: #cbd5e1 !important;
+    margin: 0 0 8mm;
+    max-width: 140mm;
+  }
+
+  .executive-print-cover-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4mm;
+    width: 100%;
+    max-width: 240mm;
+    margin-top: 4mm;
+  }
+
+  .executive-print-cover-label {
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8 !important;
+    margin: 0 0 1mm;
+  }
+
+  .executive-print-cover-value {
+    font-size: 11pt;
+    font-weight: 700;
+    margin: 0;
+    color: #f8fafc !important;
+  }
+
+  .executive-print-cover-source {
+    margin-top: 10mm;
+    font-size: 8pt;
+    color: #94a3b8 !important;
+  }
+
+  .finance-executive-report-cover {
+    display: none !important;
+  }
+
+  .executive-print-page .finance-executive-report-section,
+  .executive-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+    border: 0.3mm solid #e2e8f0 !important;
+    border-radius: 2mm !important;
+    padding: 4mm !important;
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  .finance-executive-report-section-title {
+    font-size: 14pt !important;
+    margin-bottom: 1mm !important;
+  }
+
+  .finance-executive-report-section-subtitle {
+    font-size: 8.5pt !important;
+    margin-bottom: 3mm !important;
+  }
+
+  .finance-executive-section-eyebrow {
+    font-size: 7pt !important;
+  }
+
+  .executive-kpi-grid,
+  .finance-executive-kpi-grid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 2.5mm !important;
+  }
+
+  .finance-executive-kpi-grid[data-columns="5"] {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+
+  .finance-executive-kpi-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    min-height: auto !important;
+    padding: 2.5mm 3mm !important;
+    border-radius: 1.5mm !important;
+  }
+
+  .finance-executive-kpi-value {
+    font-size: 13pt !important;
+  }
+
+  .finance-executive-kpi-label {
+    font-size: 6.5pt !important;
+  }
+
+  .executive-chart,
+  .executive-chart-shell {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: 0.3mm solid #e2e8f0 !important;
+    padding: 2.5mm !important;
+    background: #fff !important;
+  }
+
+  .executive-chart-body {
+    height: 68mm !important;
+    min-height: 68mm !important;
+    overflow: visible !important;
+  }
+
+  .executive-chart-body .recharts-responsive-container,
+  .executive-chart-body .recharts-wrapper,
+  .executive-chart-body svg {
+    overflow: visible !important;
+  }
+
+  .finance-executive-narrative-box,
+  .finance-executive-reading {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    font-size: 9pt !important;
+    padding: 2.5mm 3mm !important;
+  }
+
+  .executive-print-data-quality {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-top: 3mm;
+    padding: 2.5mm 3mm;
+    border: 0.3mm solid #fcd34d;
+    background: #fffbeb !important;
+    border-radius: 1.5mm;
+    font-size: 7.5pt;
+    color: #78350f !important;
+  }
+
+  .executive-print-data-quality-title {
+    font-weight: 700;
+    margin: 0 0 1.5mm;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .executive-alerts-panel {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .finance-executive-page-break,
+  .finance-executive-report-section--page-break {
+    break-before: auto !important;
+    page-break-before: auto !important;
+  }
+
+  .finance-executive-report-footer {
+    display: none !important;
+  }
+
+  .executive-print-generated-at {
+    margin-top: 4mm;
+    font-size: 8pt;
+    color: #64748b;
+    text-align: right;
+  }
+
+  * {
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+@media screen {
+  .executive-print-page-header,
+  .executive-print-page-footer {
+    display: none;
+  }
+
+  .executive-print-cover {
+    display: none;
+  }
+
+  .executive-print-page + .executive-print-page {
+    margin-top: 0;
+  }
+}
+
+@media print {
+  .executive-report-screen-cover,
+  .executive-report-screen-only {
+    display: none !important;
+  }
+}

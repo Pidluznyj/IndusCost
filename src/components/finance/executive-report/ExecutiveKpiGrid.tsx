@@ -12,7 +12,7 @@ export function ExecutiveKpiGrid({
 }) {
   return (
     <div
-      className={cn("finance-executive-kpi-grid", className)}
+      className={cn("finance-executive-kpi-grid executive-kpi-grid", className)}
       data-columns={columns}
     >
       {children}

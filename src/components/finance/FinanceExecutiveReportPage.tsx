@@ -12,6 +12,11 @@ import {
   normalizeFinanceExecutiveReportUiFilters,
   type FinanceExecutiveReportUiFilters,
 } from "@/src/lib/financeExecutiveReportViewModel";
+import {
+  EXECUTIVE_REPORT_PRINT_BLOCK_LOADING_MESSAGE,
+  resolveExecutiveReportPrintAction,
+} from "@/src/lib/financeExecutiveReportPrint";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { ExecutiveReportFilters } from "@/src/components/finance/executive-report/ExecutiveReportFilters";
 import { ExecutiveReportDocument } from "@/src/components/finance/executive-report/ExecutiveReportDocument";
 import { ExecutiveDataQualityAlert } from "@/src/components/finance/executive-report/ExecutiveDataQualityAlert";
@@ -29,6 +34,7 @@ export function FinanceExecutiveReportPage() {
     createDefaultFinanceExecutiveReportUiFilters()
   );
   const [report, setReport] = useState<FinanceExecutiveReport | null>(null);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,9 +46,16 @@ export function FinanceExecutiveReportPage() {
 
   useEffect(() => {
     document.body.classList.add(ROUTE_BODY_CLASS);
+    document.title = "Relatório Presidencial — Financeiro";
     return () => {
       document.body.classList.remove(ROUTE_BODY_CLASS);
     };
+  }, []);
+
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
   }, []);
 
   const loadReport = useCallback(async () => {
@@ -79,6 +92,19 @@ export function FinanceExecutiveReportPage() {
   };
 
   const handlePrint = () => {
+    const action = resolveExecutiveReportPrintAction({
+      loading,
+      report,
+      confirmFn: (message) => window.confirm(message),
+    });
+
+    if (action === "blocked-loading") {
+      window.alert(EXECUTIVE_REPORT_PRINT_BLOCK_LOADING_MESSAGE);
+      return;
+    }
+    if (action === "blocked-cancelled") {
+      return;
+    }
     window.print();
   };
 
@@ -120,8 +146,10 @@ export function FinanceExecutiveReportPage() {
 
       {report ? (
         <>
-          <ExecutiveDataQualityAlert dataQuality={report.dataQuality} />
-          <ExecutiveReportDocument report={report} />
+          <div className="executive-report-screen-only">
+            <ExecutiveDataQualityAlert dataQuality={report.dataQuality} />
+          </div>
+          <ExecutiveReportDocument report={report} branding={branding} />
         </>
       ) : null}
     </div>
