@@ -1,249 +1,273 @@
-@page {
-  size: A4 landscape;
-  margin: 10mm;
+#ar-overdue-print-root {
+  display: none;
 }
 
 @media print {
-  body * {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.ar-overdue-print-route * {
     visibility: hidden;
   }
 
-  .finance-ar-overdue-root,
-  .finance-ar-overdue-root * {
+  body.ar-overdue-print-route #ar-overdue-print-root,
+  body.ar-overdue-print-route #ar-overdue-print-root * {
     visibility: visible;
   }
 
-  .finance-ar-overdue-root {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    padding: 0;
-    margin: 0;
-    background: white;
-    color: #111;
-  }
-
+  .ar-overdue-no-print,
   .finance-ar-overdue-screen-only,
-  .finance-ar-overdue-filters,
+  .sold-products-no-print,
   nav,
   aside,
-  header,
-  [data-testid="app-sidebar"],
-  [data-testid="finance-bi-filter-panel"] {
+  header:not(.finance-ar-overdue-print-doc-header),
+  button {
     display: none !important;
   }
 
-  .finance-ar-overdue-print-only {
+  #ar-overdue-print-root {
     display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
   }
 
-  .finance-ar-overdue-print-document {
+  #ar-overdue-print-root * {
+    overflow: visible !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-document {
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 9px;
-    line-height: 1.35;
+    font-size: 7.5px;
+    line-height: 1.3;
     color: #111;
   }
 
-  .finance-ar-overdue-print-doc-header {
+  #ar-overdue-print-root .finance-ar-overdue-print-doc-header {
     border-bottom: 2px solid #333;
-    padding-bottom: 8px;
-    margin-bottom: 10px;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
-  .finance-ar-overdue-print-brand {
+  #ar-overdue-print-root .finance-ar-overdue-print-brand {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
 
-  .finance-ar-overdue-print-brand-main {
-    font-size: 11px;
+  #ar-overdue-print-root .finance-ar-overdue-print-brand-main {
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
 
-  .finance-ar-overdue-print-brand-sub {
-    font-size: 9px;
+  #ar-overdue-print-root .finance-ar-overdue-print-brand-sub {
+    font-size: 8px;
     color: #555;
   }
 
-  .finance-ar-overdue-print-doc-title {
-    font-size: 16px;
+  #ar-overdue-print-root .finance-ar-overdue-print-doc-title {
+    font-size: 14px;
     font-weight: 700;
     margin: 0 0 2px;
     color: #000;
   }
 
-  .finance-ar-overdue-print-doc-subtitle {
-    font-size: 10px;
+  #ar-overdue-print-root .finance-ar-overdue-print-doc-subtitle {
+    font-size: 9px;
     color: #444;
-    margin: 0 0 8px;
+    margin: 0 0 6px;
   }
 
-  .finance-ar-overdue-print-meta-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 8px;
+  #ar-overdue-print-root table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+    page-break-inside: auto;
   }
 
-  .finance-ar-overdue-print-meta-table th,
-  .finance-ar-overdue-print-meta-table td {
-    border: 1px solid #ccc;
-    padding: 3px 5px;
+  #ar-overdue-print-root thead {
+    display: table-header-group;
+  }
+
+  #ar-overdue-print-root tfoot {
+    display: table-footer-group;
+  }
+
+  #ar-overdue-print-root tbody tr,
+  #ar-overdue-print-root .finance-ar-overdue-print-group-header {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  #ar-overdue-print-root th,
+  #ar-overdue-print-root td {
+    border: 1px solid #bbb;
+    padding: 2px 3px;
     vertical-align: top;
-    text-align: left;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
   }
 
-  .finance-ar-overdue-print-meta-table th {
-    width: 14%;
+  #ar-overdue-print-root .finance-ar-overdue-print-meta-table {
+    font-size: 7px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-meta-table th {
+    width: 12%;
     background: #f3f4f6;
     font-weight: 700;
-    color: #333;
   }
 
-  .finance-ar-overdue-print-section {
-    margin-bottom: 10px;
-    break-inside: avoid-page;
-    page-break-inside: avoid;
+  #ar-overdue-print-root .finance-ar-overdue-print-section {
+    margin-bottom: 8px;
   }
 
-  .finance-ar-overdue-print-section-title {
-    font-size: 10px;
+  #ar-overdue-print-root .finance-ar-overdue-print-section-title {
+    font-size: 9px;
     font-weight: 700;
-    margin: 0 0 4px;
+    margin: 0 0 3px;
     color: #000;
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
 
-  .finance-ar-overdue-print-kpi-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 8px;
-  }
-
-  .finance-ar-overdue-print-kpi-table th,
-  .finance-ar-overdue-print-kpi-table td {
-    border: 1px solid #ccc;
-    padding: 4px 6px;
-  }
-
-  .finance-ar-overdue-print-kpi-table th {
+  #ar-overdue-print-root .finance-ar-overdue-print-kpi-table th {
     background: #f3f4f6;
     font-weight: 700;
-    width: 12%;
-    color: #333;
+    width: 11%;
   }
 
-  .finance-ar-overdue-print-kpi-table td {
+  #ar-overdue-print-root .finance-ar-overdue-print-kpi-table td {
     font-weight: 600;
-    width: 21%;
+    width: 22%;
   }
 
-  .finance-ar-overdue-print-data-table,
-  .finance-ar-overdue-print-detail-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 8px;
-  }
-
-  .finance-ar-overdue-print-data-table th,
-  .finance-ar-overdue-print-data-table td,
-  .finance-ar-overdue-print-detail-table th,
-  .finance-ar-overdue-print-detail-table td {
-    border: 1px solid #bbb;
-    padding: 3px 4px;
-    vertical-align: top;
-  }
-
-  .finance-ar-overdue-print-data-table thead th,
-  .finance-ar-overdue-print-detail-table thead th {
+  #ar-overdue-print-root .finance-ar-overdue-print-data-table thead th,
+  #ar-overdue-print-root .finance-ar-overdue-print-detail-table thead th {
     background: #e5e7eb;
     font-weight: 700;
-    color: #111;
-    text-align: left;
-  }
-
-  .finance-ar-overdue-print-data-table tbody tr:nth-child(even),
-  .finance-ar-overdue-print-detail-table tbody tr:nth-child(even) {
-    background: #f9fafb;
-  }
-
-  .finance-ar-overdue-print-detail-table thead {
-    display: table-header-group;
-  }
-
-  .finance-ar-overdue-print-detail-table tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .finance-ar-overdue-print-customer-group {
-    margin-bottom: 8px;
-    break-inside: auto;
-    page-break-inside: auto;
-  }
-
-  .finance-ar-overdue-print-group-header {
-    background: #f3f4f6;
-    border: 1px solid #bbb;
-    border-bottom: none;
-    padding: 4px 6px;
-    font-size: 8px;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .col-num {
-    text-align: center !important;
-    white-space: nowrap;
-  }
-
-  .col-money {
-    text-align: right !important;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .col-date {
-    text-align: center !important;
-    white-space: nowrap;
-  }
-
-  .col-wrap {
-    word-break: break-word;
-    max-width: 90px;
-  }
-
-  .col-obs {
-    max-width: 110px;
     font-size: 7px;
   }
 
-  .finance-ar-overdue-print-empty {
-    font-size: 9px;
+  #ar-overdue-print-root .finance-ar-overdue-print-data-table tbody tr:nth-child(even),
+  #ar-overdue-print-root .finance-ar-overdue-print-detail-table tbody tr:nth-child(even) {
+    background: #f9fafb;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-customer-group {
+    margin-bottom: 6px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-group-header {
+    background: #f3f4f6;
+    border: 1px solid #bbb;
+    border-bottom: none;
+    padding: 3px 4px;
+    font-size: 7px;
+    font-weight: 600;
+  }
+
+  #ar-overdue-print-root .col-num {
+    text-align: center !important;
+  }
+
+  #ar-overdue-print-root .col-money {
+    text-align: right !important;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #ar-overdue-print-root .col-date {
+    text-align: center !important;
+  }
+
+  #ar-overdue-print-root .col-doc {
+    width: 11%;
+  }
+
+  #ar-overdue-print-root .col-nf {
+    width: 6%;
+  }
+
+  #ar-overdue-print-root .col-pay {
+    width: 8%;
+  }
+
+  #ar-overdue-print-root .col-due {
+    width: 7%;
+  }
+
+  #ar-overdue-print-root .col-days {
+    width: 4%;
+  }
+
+  #ar-overdue-print-root .col-aging {
+    width: 8%;
+  }
+
+  #ar-overdue-print-root .col-amt {
+    width: 8%;
+  }
+
+  #ar-overdue-print-root .col-company {
+    width: 8%;
+  }
+
+  #ar-overdue-print-root .col-obs {
+    width: 12%;
+    font-size: 6.5px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-empty {
+    font-size: 8px;
     color: #555;
     margin: 0;
   }
 
-  .finance-ar-overdue-print-doc-footer {
-    margin-top: 12px;
-    padding-top: 6px;
+  #ar-overdue-print-root .finance-ar-overdue-print-doc-footer {
+    margin-top: 10px;
+    padding-top: 4px;
     border-top: 1px solid #999;
-    font-size: 7px;
+    font-size: 6.5px;
     color: #444;
     text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
-  .finance-ar-overdue-print-footer-note {
-    margin-top: 4px;
+  #ar-overdue-print-root .finance-ar-overdue-print-footer-note {
+    margin-top: 2px;
     font-style: italic;
   }
-}
-
-.finance-ar-overdue-print-only {
-  display: none;
 }

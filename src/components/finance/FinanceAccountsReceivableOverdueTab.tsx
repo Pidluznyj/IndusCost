@@ -1,6 +1,7 @@
 import "./finance-ar-overdue-print.css";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Loader2, Printer, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -62,7 +63,6 @@ export function FinanceAccountsReceivableOverdueTab({
   canExport: boolean;
 }) {
   const auth = useAuth();
-  const printRef = useRef<HTMLDivElement>(null);
   const [overdueFilters, setOverdueFilters] = useState<FinanceArOverdueUiFilters>(
     DEFAULT_FINANCE_AR_OVERDUE_UI_FILTERS
   );
@@ -131,17 +131,21 @@ export function FinanceAccountsReceivableOverdueTab({
         `/api/finance/accounts-receivable/overdue?${q}`
       );
       setPrintPayload(fullPayload);
+      document.body.classList.add("ar-overdue-print-route");
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => {
-          setTimeout(() => {
-            window.print();
-            resolve();
-          }, 150);
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              window.print();
+              resolve();
+            }, 200);
+          });
         });
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao preparar impressão.");
     } finally {
+      document.body.classList.remove("ar-overdue-print-route");
       setPrinting(false);
     }
   };
@@ -164,11 +168,10 @@ export function FinanceAccountsReceivableOverdueTab({
   }, [globalFilters, overdueFilters]);
 
   const emitterName = auth.authUser?.name ?? null;
-  const printSource = printPayload ?? payload;
 
   return (
-    <div className="finance-ar-overdue-root" ref={printRef}>
-      <div className="finance-ar-overdue-screen-only space-y-4">
+    <>
+      <div className="ar-overdue-no-print space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-base font-bold text-[#111827]">Atrasados</h3>
@@ -495,16 +498,17 @@ export function FinanceAccountsReceivableOverdueTab({
         )}
       </div>
 
-      {printSource ? (
-        <div className="finance-ar-overdue-print-only">
-          <FinanceAccountsReceivableOverduePrintDocument
-            payload={printSource}
-            globalFilters={globalFilters}
-            overdueFilters={overdueFilters}
-            emitterName={emitterName}
-          />
-        </div>
-      ) : null}
-    </div>
+      {printPayload && typeof document !== "undefined"
+        ? createPortal(
+            <FinanceAccountsReceivableOverduePrintDocument
+              payload={printPayload}
+              globalFilters={globalFilters}
+              overdueFilters={overdueFilters}
+              emitterName={emitterName}
+            />,
+            document.body
+          )
+        : null}
+    </>
   );
 }

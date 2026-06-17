@@ -323,6 +323,9 @@ describe("FinanceAccountsReceivableOverdue UI", () => {
     assert.ok(tab.includes("Exportar Excel"));
     assert.ok(tab.includes("Imprimir / PDF"));
     assert.ok(tab.includes("buildFinanceArOverdueExportQuery"));
+    assert.ok(tab.includes("createPortal"));
+    assert.ok(tab.includes("ar-overdue-print-route"));
+    assert.ok(tab.includes("ar-overdue-no-print"));
     assert.ok(printMeta.includes("Relatório de Contas a Receber em Atraso"));
     assert.ok(printMeta.includes("Documento de apoio ao processo de cobrança"));
     assert.ok(printDoc.includes("FINANCE_AR_OVERDUE_PRINT_TITLE"));
@@ -330,18 +333,28 @@ describe("FinanceAccountsReceivableOverdue UI", () => {
     assert.ok(printDoc.includes("Clientes prioritários para cobrança"));
     assert.ok(printDoc.includes("Detalhamento dos títulos vencidos"));
     assert.ok(printDoc.includes("Total vencido"));
-    assert.ok(printDoc.includes("Forma de pagamento"));
-    assert.ok(printDoc.includes("Dias em atraso"));
+    assert.ok(printDoc.includes("Forma pgto."));
+    assert.ok(printDoc.includes("Vencimento"));
+    assert.ok(printDoc.includes("Dias"));
+    assert.ok(printDoc.includes("Aging"));
     assert.ok(printDoc.includes("Valor original"));
     assert.ok(printDoc.includes("Valor recebido"));
     assert.ok(printDoc.includes("Saldo em aberto"));
     assert.ok(printDoc.includes('id="ar-overdue-print-root"'));
+    assert.ok(!printDoc.includes("overflow-auto"));
+    assert.ok(!printDoc.includes("overflow-x-auto"));
+    assert.ok(!printDoc.includes("overflow-y-auto"));
+    assert.ok(!printDoc.includes("max-h-"));
+    assert.ok(!printDoc.includes("sticky"));
     const printCss = readFileSync(
       join(process.cwd(), "src/components/finance/finance-ar-overdue-print.css"),
       "utf8"
     );
     assert.ok(printCss.includes("@page"));
     assert.ok(printCss.includes("A4 landscape"));
+    assert.ok(printCss.includes("overflow: visible"));
+    assert.ok(printCss.includes("ar-overdue-no-print"));
     assert.ok(printCss.includes("table-header-group"));
+    assert.ok(printCss.includes("table-layout: fixed"));
   });
 });

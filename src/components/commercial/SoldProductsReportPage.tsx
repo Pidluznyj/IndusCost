@@ -484,7 +484,7 @@ export function SoldProductsReportPage() {
 
   return (
     <>
-      <div id="sold-products-print-root" className="hidden print:block">
+      <div id="sold-products-print-root">
         <div className="space-y-4 text-sm">
           <div>
             <p className="text-xs text-gray-500">IndusCost · Lazarios Koppetel</p>
@@ -501,7 +501,7 @@ export function SoldProductsReportPage() {
               ))}
             </ul>
           ) : null}
-          <RankingTable rows={rankingRows} loading={false} />
+          <SoldProductsPrintRankingTable rows={rankingRows} />
         </div>
       </div>
 
@@ -877,6 +877,59 @@ export function SoldProductsReportPage() {
         ) : null}
       </FinanceBiDashboardShell>
     </>
+  );
+}
+
+function SoldProductsPrintRankingTable({ rows }: { rows: SoldProductsRankingRow[] }) {
+  return (
+    <table className="sold-products-print-table">
+      <thead>
+        <tr>
+          <th style={{ width: "4%" }}>#</th>
+          <th style={{ width: "8%" }}>Código</th>
+          <th style={{ width: "22%" }}>Produto</th>
+          <th className="col-num" style={{ width: "8%" }}>
+            Qtd vendida
+          </th>
+          <th className="col-num" style={{ width: "10%" }}>
+            Valor vendido
+          </th>
+          <th className="col-num" style={{ width: "9%" }}>
+            Preço médio
+          </th>
+          <th className="col-num" style={{ width: "7%" }}>
+            Pedidos
+          </th>
+          <th className="col-num" style={{ width: "7%" }}>
+            Clientes
+          </th>
+          <th style={{ width: "9%" }}>Última venda</th>
+          <th className="col-num" style={{ width: "7%" }}>
+            % qtd
+          </th>
+          <th className="col-num" style={{ width: "7%" }}>
+            % valor
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.productId}>
+            <td>{r.rank}</td>
+            <td>{r.productCode ?? "—"}</td>
+            <td>{r.productName}</td>
+            <td className="col-num">{fmtQty(r.quantitySold)}</td>
+            <td className="col-num">{fmtMoney(r.amountSold)}</td>
+            <td className="col-num">{r.averageUnitPrice != null ? fmtMoney(r.averageUnitPrice) : "—"}</td>
+            <td className="col-num">{r.ordersCount}</td>
+            <td className="col-num">{r.customersCount}</td>
+            <td>{r.lastSaleDate ?? "—"}</td>
+            <td className="col-num">{r.quantitySharePercent.toFixed(1)}%</td>
+            <td className="col-num">{r.amountSharePercent.toFixed(1)}%</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
