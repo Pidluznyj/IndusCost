@@ -33,6 +33,10 @@ import {
   auditFinanceArOverdueParityWithDashboard,
   auditFinanceArStaleExclusionAcrossViews,
 } from "./financeDashboardConsistencyAudit.js";
+import {
+  auditCashFlowArOverdueParityWithAr,
+  buildCashFlowArApReconciliationReport,
+} from "./financeCashFlowArApReconciliation.js";
 import { buildNomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import {
   buildFinanceAccountsReceivableOverdueRows,
@@ -235,6 +239,26 @@ describe("financeDashboardConsistencyAudit — Contas a Receber", () => {
       payload.overdueTitles.map((r) => r.externalId)
     );
     assert.equal(payload.summary.totalOverdueAmount, 800);
+  });
+
+  it("vencidos do Fluxo batem com Atrasados AR nos mesmos filtros de portfólio", () => {
+    const rows = [
+      arRow({ externalId: 1, balanceReceivable: 800, dueDate: new Date(2026, 5, 1), syncedAt: LATEST_SYNC }),
+      arRow({
+        externalId: 2,
+        balanceReceivable: 5000,
+        dueDate: new Date(2026, 2, 1),
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        syncedAt: LATEST_SYNC,
+      }),
+    ];
+    const cfFilters = { viewMode: "projected" as const, dateBase: "due" as const, status: "all" as const, year: 2026 };
+    const audit = auditCashFlowArOverdueParityWithAr(rows, cfFilters, REF, arCutoff());
+    assert.equal(audit.ok, true, audit.mismatches.join("; "));
+
+    const report = buildCashFlowArApReconciliationReport(rows, [], cfFilters, REF, arCutoff());
+    assert.equal(report.ok, true, report.mismatches.join("; "));
   });
 });
 

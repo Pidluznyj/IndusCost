@@ -210,4 +210,16 @@ describe("financeCashFlowReconciliationMap", () => {
     assert.match(recon.apEquivalent!, /buildFinanceAccountsPayableDashboard/);
     assert.match(recon.sourceFunction, /buildCashFlowReconciliation/);
   });
+
+  it("mapa referencia módulo de auditoria AR/AP do Fluxo", () => {
+    const overdue = getReconciliationEntryById("overdue_receivables_list")!;
+    assert.match(overdue.arEquivalent!, /Overdue/);
+    const auditSrc = readFileSync(
+      join(process.cwd(), "src/lib/financeCashFlowArApReconciliation.ts"),
+      "utf8"
+    );
+    assert.match(auditSrc, /auditCashFlowArOverdueParityWithAr/);
+    assert.match(auditSrc, /auditCashFlowApOverdueParityWithAp/);
+    assert.match(auditSrc, /buildCashFlowArApReconciliationReport/);
+  });
 });
