@@ -11,6 +11,7 @@ import {
   buildFinanceCashFlowExecutiveSummary,
   executiveSummaryMetricsAreFinite,
   filterApRowsForCashFlowExecutiveTimeline,
+  isApOpenDueInPeriod,
   isApPaidInPeriod,
   isArOpenDueInPeriod,
   resolveForwardYearRange,
@@ -212,7 +213,7 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.equal(isApPaidInPeriod(rows[0]!, new Date(2025, 11, 1), new Date(2025, 11, 31)), true);
   });
 
-  it("A pagar até fim do ano soma balancePayable por dueDate de hoje até 31/12", () => {
+  it("A pagar até fim do ano soma balancePayable por data operacional de hoje até 31/12", () => {
     const forward = resolveForwardYearRange(2026, REF);
     const rows = [
       apRow({ balancePayable: 800, dueDate: new Date(2026, 7, 1) }),
@@ -412,7 +413,7 @@ describe("financeCashFlowExecutiveSummary", () => {
     assert.ok(csv.includes("resumo_estimativa_liquida_anual"));
   });
 
-  it("linha do tempo mensal soma AP aberto por dueDate do mês inteiro, inclusive vencidos em aberto", () => {
+  it("linha do tempo mensal soma AP aberto por data operacional do mês inteiro", () => {
     const rows = [
       apRow({
         externalId: 1,
@@ -615,6 +616,111 @@ describe("financeCashFlowExecutiveSummary", () => {
       REF
     );
     assert.equal(payload.executiveSummary.receivable.openFromTodayToYearEnd, 0);
+  });
+
+  it("linha do tempo mensal não aloca AP aberto remarcado (9745/9748/9749) em Jan/Abr/Mai 2026", () => {
+    const rescheduledRows: FinanceCashFlowApRow[] = [
+      apRow({
+        externalId: 9745,
+        companyName: "SM",
+        personName: "CONTA ADMINISTRATIVA",
+        description: "Notebook Dell Inspiron 15 (Parcela 8 de 12)",
+        balancePayable: 299.83,
+        amountPayable: 299.83,
+        dueDate: new Date(2026, 0, 11),
+        scheduleDate: new Date(2032, 5, 11),
+        syncedAt: LATEST_AP_SYNC,
+      }),
+      apRow({
+        externalId: 9748,
+        companyName: "SM",
+        personName: "CONTA ADMINISTRATIVA",
+        description: "Notebook Dell Inspiron 15 (Parcela 11 de 12)",
+        balancePayable: 299.83,
+        amountPayable: 299.83,
+        dueDate: new Date(2026, 3, 11),
+        scheduleDate: new Date(2035, 5, 11),
+        syncedAt: LATEST_AP_SYNC,
+      }),
+      apRow({
+        externalId: 9749,
+        companyName: "SM",
+        personName: "CONTA ADMINISTRATIVA",
+        description: "Notebook Dell Inspiron 15 (Parcela 12 de 12)",
+        balancePayable: 299.83,
+        amountPayable: 299.83,
+        dueDate: new Date(2026, 4, 11),
+        scheduleDate: new Date(2036, 5, 11),
+        syncedAt: LATEST_AP_SYNC,
+      }),
+    ];
+    const timeline = buildExecutiveMonthlyTimeline([], rescheduledRows, 2026, REF);
+    const jan = timeline.find((r) => r.month === 1);
+    const apr = timeline.find((r) => r.month === 4);
+    const mai = timeline.find((r) => r.month === 5);
+
+    assert.equal(jan?.payableOpenDue, 0);
+    assert.equal(apr?.payableOpenDue, 0);
+    assert.equal(mai?.payableOpenDue, 0);
+    assert.equal(jan?.estimatedOutflow, 0);
+    assert.equal(apr?.estimatedOutflow, 0);
+    assert.equal(mai?.estimatedOutflow, 0);
+  });
+
+  it("AP aberto fresh sem scheduleDate futuro entra no mês do dueDate", () => {
+    const row = apRow({
+      balancePayable: 450,
+      dueDate: new Date(2026, 2, 20),
+      syncedAt: LATEST_AP_SYNC,
+    });
+    const marStart = new Date(2026, 2, 1);
+    const marEnd = new Date(2026, 2, 31);
+    assert.equal(isApOpenDueInPeriod(row, marStart, marEnd), true);
+    const timeline = buildExecutiveMonthlyTimeline([], [row], 2026, REF);
+    const mar = timeline.find((r) => r.month === 3);
+    assert.equal(mar?.payableOpenDue, 450);
+    assert.equal(mar?.estimatedOutflow, 450);
+  });
+
+  it("AP aberto com scheduleDate futuro entra no mês do scheduleDate quando dentro do ano", () => {
+    const row = apRow({
+      balancePayable: 750,
+      dueDate: new Date(2026, 4, 25),
+      scheduleDate: new Date(2026, 6, 1),
+      syncedAt: LATEST_AP_SYNC,
+    });
+    const mayStart = new Date(2026, 4, 1);
+    const mayEnd = new Date(2026, 4, 31);
+    const julStart = new Date(2026, 6, 1);
+    const julEnd = new Date(2026, 6, 31);
+    assert.equal(isApOpenDueInPeriod(row, mayStart, mayEnd), false);
+    assert.equal(isApOpenDueInPeriod(row, julStart, julEnd), true);
+
+    const timeline = buildExecutiveMonthlyTimeline([], [row], 2026, REF);
+    const may = timeline.find((r) => r.month === 5);
+    const jul = timeline.find((r) => r.month === 7);
+    assert.equal(may?.payableOpenDue, 0);
+    assert.equal(jul?.payableOpenDue, 750);
+    assert.equal(may?.estimatedOutflow, 0);
+    assert.equal(jul?.estimatedOutflow, 750);
+  });
+
+  it("AP pago na timeline continua alocado por dueDate, não scheduleDate", () => {
+    const row = apRow({
+      amountPayable: 500,
+      amountPaid: 500,
+      balancePayable: 0,
+      dueDate: new Date(2026, 4, 10),
+      paymentDate: new Date(2026, 6, 5),
+      scheduleDate: new Date(2026, 6, 20),
+    });
+    const timeline = buildExecutiveMonthlyTimeline([], [row], 2026, REF);
+    const may = timeline.find((r) => r.month === 5);
+    const jul = timeline.find((r) => r.month === 7);
+    assert.equal(may?.paid, 500);
+    assert.equal(jul?.paid ?? 0, 0);
+    assert.equal(may?.payableOpenDue, 0);
+    assert.equal(jul?.payableOpenDue ?? 0, 0);
   });
 
   it("linha do tempo mensal não soma AP stale em A pagar (R$ 299,83 Jan/Abr/Mai)", () => {

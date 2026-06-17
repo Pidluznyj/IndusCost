@@ -28,6 +28,7 @@ import {
   resolveEffectiveNomusApReportSyncCutoff,
   type NomusApReportSyncCutoff,
 } from "./financeNomusApReportFreshness.js";
+import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import {
   resolveFinanceApEffectivePaymentDate,
   resolveFinanceApOpenAmount,
@@ -251,8 +252,10 @@ export function isApOpenDueInPeriod(
   startDate: Date,
   endDate: Date
 ): boolean {
-  if (!isFinanceApOpen(row) || row.suspendPayment || row.dueDate == null) return false;
-  const due = startOfLocalDay(row.dueDate).getTime();
+  if (!isFinanceApOpen(row) || row.suspendPayment) return false;
+  const operationalDueDate = getAccountsPayableOperationalDueDate(row);
+  if (!operationalDueDate) return false;
+  const due = startOfLocalDay(operationalDueDate).getTime();
   const start = startOfLocalDay(startDate).getTime();
   const end = startOfLocalDay(endDate).getTime();
   return due >= start && due <= end;
