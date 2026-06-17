@@ -102,6 +102,7 @@ import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js"
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
+import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import {
   buildSalesOrderListSummary,
   buildSalesOrderListWhere,
@@ -12970,6 +12971,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
+  });
+
+  registerCustomerIntelligenceRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
   });
 
   registerProjectsRoutes(
