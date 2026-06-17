@@ -30,6 +30,7 @@ describe("financeExecutiveReport", () => {
     assert.equal(filters.asOfDate, "2026-05-14");
     assert.equal(filters.company, "lazarios");
     assert.equal(filters.customerType, "external");
+    assert.equal(filters.invoiceIssuedFilter, "with-nfe");
     assert.equal(filters.topN, 100);
     assert.equal(mapExecutiveReportCompanyToFilter("lazarios"), "Lazarios");
   });

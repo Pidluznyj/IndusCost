@@ -38,6 +38,8 @@ export type FinanceExecutiveReportFilters = {
   includeInternalCompanies?: boolean;
   /** Fonte de faturamento oficial — default recomendado: NF-e fiscal. */
   nfeFilter?: FinanceBillingSource;
+  /** Filtro AR/Fluxo por emissão de NF-e (with-nfe / without-nfe / all). */
+  invoiceIssuedFilter?: "all" | "with-nfe" | "without-nfe";
   /** Limite de linhas em rankings (clientes, fornecedores, títulos críticos). */
   topN?: number;
   mode: FinanceExecutiveReportMode;
