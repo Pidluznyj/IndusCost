@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import * as XLSX from "xlsx";
 import {
   buildFinanceAccountsReceivableDashboard,
   type FinanceArDashboardRow,
@@ -11,8 +12,10 @@ import {
   financeArOverdueWorkbookToBytes,
 } from "./financeAccountsReceivableOverdueExport.js";
 import {
+  buildFinanceAccountsReceivableOverdueRows,
   buildFinanceArOverduePayload,
   isFinanceArOverdueOpenTitle,
+  isFinanceArOverdueRow,
   resolveOverdueAgingLabel,
   sumFinanceArOverdueOpenAmount,
 } from "./financeAccountsReceivableOverdue.js";
@@ -53,6 +56,55 @@ function arRow(overrides: Partial<FinanceArDashboardRow> = {}): FinanceArDashboa
   };
 }
 
+const MEXICHEM_CNPJ = "33.081.704/0001-00";
+
+function mexichemReceivedRow(overrides: Partial<FinanceArDashboardRow> = {}): FinanceArDashboardRow {
+  return arRow({
+    externalId: 98001,
+    personName: "MEXICHEM BRASIL LTDA",
+    personCnpj: MEXICHEM_CNPJ,
+    dueDate: new Date(2026, 2, 15),
+    amountReceivable: 98000,
+    amountReceived: 98000,
+    balanceReceivable: 0,
+    settlementDate: new Date(2026, 5, 10),
+    syncedAt: LATEST_SYNC,
+    ...overrides,
+  });
+}
+
+function mexichemOpenOverdueRow(overrides: Partial<FinanceArDashboardRow> = {}): FinanceArDashboardRow {
+  return arRow({
+    externalId: 98002,
+    personName: "MEXICHEN INDUSTRIA QUIMICA LTDA",
+    personCnpj: MEXICHEM_CNPJ,
+    dueDate: new Date(2026, 2, 15),
+    amountReceivable: 98000,
+    amountReceived: 0,
+    balanceReceivable: 98000,
+    settlementDate: null,
+    syncedAt: LATEST_SYNC,
+    ...overrides,
+  });
+}
+
+function assertMexichemAbsentFromOverduePayload(payload: ReturnType<typeof buildFinanceArOverduePayload>) {
+  const haystack = [
+    payload.summary.totalOverdueAmount,
+    payload.summary.overdueTitlesCount,
+    payload.summary.topOverdueCustomer?.name ?? "",
+    ...payload.agingBuckets.map((b) => b.amount),
+    ...payload.customerRanking.map((r) => r.customerName),
+    ...payload.overdueTitles.map((r) => r.customerName),
+  ].join("|");
+  assert.ok(!haystack.toUpperCase().includes("MEXICHEM"));
+  assert.ok(!haystack.toUpperCase().includes("MEXICHEN"));
+  assert.equal(payload.summary.totalOverdueAmount, 0);
+  assert.equal(payload.summary.overdueTitlesCount, 0);
+  assert.equal(payload.overdueTitles.length, 0);
+  assert.equal(payload.customerRanking.length, 0);
+}
+
 describe("financeAccountsReceivableOverdue", () => {
   it("dueDate anterior + saldo aberto aparece como atrasado", () => {
     const row = arRow({ dueDate: new Date(2026, 5, 1), balanceReceivable: 500 });
@@ -65,7 +117,134 @@ describe("financeAccountsReceivableOverdue", () => {
       amountReceived: 1000,
       settlementDate: new Date(2026, 5, 12),
     });
+    assert.equal(isFinanceArOverdueRow(row, REF), false);
     assert.equal(isFinanceArOverdueOpenTitle(row, REF), false);
+  });
+
+  it("título com settlementDate preenchido não entra em Atrasados mesmo com saldo residual", () => {
+    const row = arRow({
+      balanceReceivable: 12.5,
+      amountReceived: 987.5,
+      amountReceivable: 1000,
+      settlementDate: new Date(2026, 5, 12),
+    });
+    assert.equal(isFinanceArOverdueRow(row, REF), false);
+  });
+
+  it("título com amountReceived >= amountReceivable não entra em Atrasados", () => {
+    const row = arRow({
+      balanceReceivable: 50,
+      amountReceived: 1000,
+      amountReceivable: 1000,
+      settlementDate: null,
+    });
+    assert.equal(isFinanceArOverdueRow(row, REF), false);
+  });
+
+  it("título com balanceReceivable <= 0 não entra em Atrasados", () => {
+    const row = arRow({ balanceReceivable: 0, amountReceived: 500, amountReceivable: 500 });
+    assert.equal(isFinanceArOverdueRow(row, REF), false);
+  });
+
+  it("fixture Mexichem/Mexichen 98k recebido não aparece em cards, ranking, aging, tabela, Excel e PDF", () => {
+    const rows = [mexichemReceivedRow()];
+    const payload = buildFinanceArOverduePayload(
+      rows,
+      { status: "all", year: 2026 },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
+    assertMexichemAbsentFromOverduePayload(payload);
+
+    const exportPayload = buildFinanceArOverduePayload(
+      rows,
+      { status: "all", year: 2026, page: 1, limit: 5000 },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
+    const wb = buildFinanceArOverdueExportWorkbook(exportPayload, exportPayload.overdueTitles);
+    const titlesSheet = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+      wb.Sheets["Títulos Atrasados"]!
+    );
+    assert.equal(titlesSheet.length, 0);
+
+    const groups = groupArOverdueTitlesByCustomer(exportPayload.overdueTitles);
+    assert.equal(groups.length, 0);
+  });
+
+  it("fixture Mexichem/Mexichen 98k vencido e aberto aparece em Atrasados", () => {
+    const rows = [mexichemOpenOverdueRow()];
+    const payload = buildFinanceArOverduePayload(
+      rows,
+      { status: "all", year: 2026 },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
+    assert.equal(payload.summary.overdueTitlesCount, 1);
+    assert.equal(payload.summary.totalOverdueAmount, 98000);
+    assert.equal(payload.overdueTitles[0]!.balanceReceivable, 98000);
+    assert.equal(payload.customerRanking[0]!.overdueAmount, 98000);
+    assert.ok(payload.agingBuckets.some((b) => b.amount === 98000));
+  });
+
+  it("total vencido da aba bate com a soma da tabela detalhada", () => {
+    const rows = [
+      arRow({ externalId: 1, balanceReceivable: 1200 }),
+      arRow({ externalId: 2, balanceReceivable: 800, dueDate: new Date(2026, 4, 1) }),
+      mexichemReceivedRow(),
+    ];
+    const payload = buildFinanceArOverduePayload(
+      rows,
+      { status: "all", year: 2026 },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
+    const tableTotal = payload.overdueTitles.reduce((sum, row) => sum + row.balanceReceivable, 0);
+    assert.equal(payload.summary.totalOverdueAmount, tableTotal);
+  });
+
+  it("ranking por cliente bate com a mesma base da tabela", () => {
+    const rows = [
+      arRow({
+        externalId: 1,
+        personName: "Cliente A",
+        personCnpj: "11.111.111/0001-11",
+        balanceReceivable: 800,
+      }),
+      arRow({
+        externalId: 2,
+        personName: "Cliente A",
+        personCnpj: "11.111.111/0001-11",
+        balanceReceivable: 200,
+      }),
+    ];
+    const payload = buildFinanceArOverduePayload(
+      rows,
+      { status: "all", year: 2026 },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
+    const rankingTotal = payload.customerRanking.reduce((sum, row) => sum + row.overdueAmount, 0);
+    const tableTotal = payload.overdueTitles.reduce((sum, row) => sum + row.balanceReceivable, 0);
+    assert.equal(rankingTotal, tableTotal);
+    assert.equal(rankingTotal, payload.summary.totalOverdueAmount);
+  });
+
+  it("buildFinanceAccountsReceivableOverdueRows é a base única do payload", () => {
+    const rows = [mexichemOpenOverdueRow(), mexichemReceivedRow()];
+    const filters = { status: "all" as const, year: 2026 };
+    const baseRows = buildFinanceAccountsReceivableOverdueRows(rows, filters, REF, cutoff());
+    const payload = buildFinanceArOverduePayload(rows, filters, REF, cutoff(), { paginate: false });
+    assert.equal(baseRows.length, payload.overdueTitles.length);
+    assert.deepEqual(
+      baseRows.map((r) => r.externalId),
+      payload.overdueTitles.map((r) => r.externalId)
+    );
   });
 
   it("título futuro não aparece", () => {

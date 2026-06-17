@@ -3,6 +3,7 @@ import {
   computeDaysOverdue,
   filterFinanceArRows,
   hasFinanceArSourceInvoice,
+  isFinanceArReceivedOrSettled,
   parseFinanceArDashboardFilters,
   roundMoney,
   safeRatio,
@@ -84,15 +85,18 @@ export function parseFinanceArOverdueFilters(
   };
 }
 
-export function isFinanceArOverdueOpenTitle(
+export function isFinanceArOverdueRow(
   row: FinanceArDashboardRow,
   referenceDate: Date
 ): boolean {
   if (row.suspendCollection === true) return false;
-  if (row.balanceReceivable <= 0) return false;
+  if (isFinanceArReceivedOrSettled(row)) return false;
   if (!row.dueDate) return false;
   return classifyFinanceArTitle(row, referenceDate) === "overdue";
 }
+
+/** @deprecated Use {@link isFinanceArOverdueRow}. */
+export const isFinanceArOverdueOpenTitle = isFinanceArOverdueRow;
 
 export function resolveOverdueAgingKey(daysOverdue: number): FinanceArOverdueAgingBucketKey {
   if (daysOverdue <= 7) return "overdue1to7";
@@ -354,6 +358,26 @@ function sortOverdueTitles(
   });
 }
 
+export function buildFinanceAccountsReceivableOverdueRows(
+  rows: FinanceArDashboardRow[],
+  filters: FinanceArOverdueFilters,
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
+): FinanceArOverdueTitleRow[] {
+  const baseFilters: FinanceArDashboardFilters = { ...filters, status: "all" };
+  const scoped = filterFinanceArRows(rows, baseFilters, referenceDate, syncCutoff);
+  const overdueRows: FinanceArOverdueTitleRow[] = [];
+
+  for (const row of scoped) {
+    if (!isFinanceArOverdueRow(row, referenceDate)) continue;
+    const days = computeDaysOverdue(row.dueDate, referenceDate);
+    if (!matchesOverdueSpecificFilters(row, days, filters)) continue;
+    overdueRows.push(mapTitleRow(row, referenceDate));
+  }
+
+  return overdueRows;
+}
+
 export function buildFinanceArOverduePayload(
   rows: FinanceArDashboardRow[],
   filters: FinanceArOverdueFilters,
@@ -362,16 +386,12 @@ export function buildFinanceArOverduePayload(
   options?: { paginate?: boolean }
 ): FinanceArOverduePayload {
   const paginate = options?.paginate !== false;
-  const baseFilters: FinanceArDashboardFilters = { ...filters, status: "all" };
-  const scoped = filterFinanceArRows(rows, baseFilters, referenceDate, syncCutoff);
-
-  let overdueRows: FinanceArOverdueTitleRow[] = [];
-  for (const row of scoped) {
-    if (!isFinanceArOverdueOpenTitle(row, referenceDate)) continue;
-    const days = computeDaysOverdue(row.dueDate, referenceDate);
-    if (!matchesOverdueSpecificFilters(row, days, filters)) continue;
-    overdueRows.push(mapTitleRow(row, referenceDate));
-  }
+  let overdueRows = buildFinanceAccountsReceivableOverdueRows(
+    rows,
+    filters,
+    referenceDate,
+    syncCutoff
+  );
 
   if (filters.minOverdueTitlesPerCustomer != null && filters.minOverdueTitlesPerCustomer > 0) {
     const counts = new Map<string, number>();
@@ -427,7 +447,7 @@ export function filterFinanceArOverdueBaseRows(
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArDashboardRow[] {
   const base = filterFinanceArRows(rows, { ...filters, status: "all" }, referenceDate, syncCutoff);
-  return base.filter((row) => isFinanceArOverdueOpenTitle(row, referenceDate));
+  return base.filter((row) => isFinanceArOverdueRow(row, referenceDate));
 }
 
 export function sumFinanceArOverdueOpenAmount(

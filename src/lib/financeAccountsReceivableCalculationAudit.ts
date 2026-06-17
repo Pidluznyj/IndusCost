@@ -8,8 +8,7 @@ import {
   computeDaysOverdue,
   filterFinanceArRows,
   hasFinanceArSourceInvoice,
-  isFinanceArOpen,
-  isFinanceArSettled,
+  isFinanceArReceivedOrSettled,
   resolveFinanceArCustomerKey,
   roundMoney,
   safeRatio,
@@ -75,7 +74,7 @@ export function computeFinanceArIndependentMetrics(
       receivedThisMonthAmount += row.amountReceived;
     }
 
-    if (isFinanceArSettled(row)) continue;
+    if (isFinanceArReceivedOrSettled(row)) continue;
 
     const balance = row.balanceReceivable;
     totalOpenAmount += balance;
@@ -108,7 +107,7 @@ export function computeFinanceArIndependentMetrics(
     .reduce((sum, v) => sum + v, 0);
 
   const criticalTitlesOpenTotal = filtered
-    .filter((row) => isFinanceArOpen(row))
+    .filter((row) => !isFinanceArReceivedOrSettled(row))
     .sort(
       (a, b) =>
         computeDaysOverdue(b.dueDate, today) - computeDaysOverdue(a.dueDate, today) ||

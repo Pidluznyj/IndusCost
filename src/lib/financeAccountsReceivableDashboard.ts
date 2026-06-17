@@ -196,6 +196,24 @@ export function isFinanceArSettled(row: Pick<FinanceArDashboardRow, "balanceRece
   return row.balanceReceivable <= 0;
 }
 
+/** Título baixado/recebido — saldo zerado, liquidação registrada ou recebimento integral. */
+export function isFinanceArReceivedOrSettled(
+  row: Pick<
+    FinanceArDashboardRow,
+    "balanceReceivable" | "settlementDate" | "amountReceivable" | "amountReceived"
+  >
+): boolean {
+  if (row.balanceReceivable <= 0) return true;
+  if (row.settlementDate != null) return true;
+  if (
+    row.amountReceivable > 0 &&
+    roundMoney(row.amountReceived) >= roundMoney(row.amountReceivable)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /** Título com NF de origem vinculada no Nomus (`idNfe` ou `numeroNotaFiscalOrigem`). */
 export function hasFinanceArSourceInvoice(
   row: Pick<FinanceArDashboardRow, "sourceInvoiceId" | "sourceInvoiceNumber">
@@ -343,9 +361,8 @@ export function classifyFinanceArTitle(
   row: FinanceArDashboardRow,
   today: Date
 ): Exclude<FinanceArTitleStatus, "all"> | "unknown" {
-  if (row.suspendCollection === true && isFinanceArOpen(row)) return "suspended";
-  if (isFinanceArSettled(row)) return "settled";
-  if (!isFinanceArOpen(row)) return "settled";
+  if (row.suspendCollection === true && !isFinanceArReceivedOrSettled(row)) return "suspended";
+  if (isFinanceArReceivedOrSettled(row)) return "settled";
   if (!row.dueDate) return "unknown";
   const due = startOfLocalDay(row.dueDate);
   const t = startOfLocalDay(today);
@@ -517,8 +534,8 @@ export function matchesFinanceArDashboardFilters(
 
   if (filters.status === "all") return true;
   const status = classifyFinanceArTitle(row, today);
-  if (filters.status === "open") return isFinanceArOpen(row);
-  if (filters.status === "settled") return isFinanceArSettled(row);
+  if (filters.status === "open") return !isFinanceArReceivedOrSettled(row);
+  if (filters.status === "settled") return isFinanceArReceivedOrSettled(row);
   if (filters.status === "suspended") return status === "suspended";
   return status === filters.status;
 }
@@ -736,7 +753,7 @@ export function buildFinanceAccountsReceivableDashboard(
       });
     }
 
-    if (isFinanceArSettled(row)) {
+    if (isFinanceArReceivedOrSettled(row)) {
       settledTitlesCount += 1;
       continue;
     }
@@ -1003,7 +1020,7 @@ export function buildFinanceAccountsReceivableDashboard(
     }));
 
   const criticalTitles = filteredRows
-    .filter((row) => isFinanceArOpen(row))
+    .filter((row) => !isFinanceArReceivedOrSettled(row))
     .map((row) => {
       const calculatedStatus = classifyFinanceArTitle(row, today);
       return {
