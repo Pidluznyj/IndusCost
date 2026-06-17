@@ -21,7 +21,29 @@ import {
   Users,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import { formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
+import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
+import {
+  CUSTOMER_MIX_SORT_ACCESSORS,
+  DEFAULT_CUSTOMER_MIX_SORT,
+  DEFAULT_DETAIL_SORT,
+  DEFAULT_MONTHLY_SORT,
+  DEFAULT_RANKING_SORT,
+  DETAIL_SORT_ACCESSORS,
+  getSortDefaultDirection,
+  MONTHLY_SORT_ACCESSORS,
+  prepareRankingTableRows,
+  RANKING_SORT_ACCESSORS,
+  sortCustomerMixRows,
+  sortDetailRows,
+  sortIndicator,
+  sortMonthlyEvolutionRows,
+  toggleSortState,
+  type CustomerMixSortKey,
+  type DetailSortKey,
+  type MonthlySortKey,
+  type RankingSortKey,
+  type SortState,
+} from "@/src/lib/soldProductsTableSort.js";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
@@ -356,6 +378,39 @@ function rankBadgeClass(rank: number): string {
   return "bg-[#F3F4F6] text-[#6B7280]";
 }
 
+function SortableTh<TSortKey extends string>({
+  label,
+  sortKey,
+  sortState,
+  onSort,
+  align = "left",
+  className,
+}: {
+  label: string;
+  sortKey: TSortKey;
+  sortState: SortState<TSortKey>;
+  onSort: (key: TSortKey) => void;
+  align?: "left" | "right";
+  className?: string;
+}) {
+  const active = sortState.key === sortKey;
+  return (
+    <th
+      className={cn(
+        "px-3 py-3 cursor-pointer select-none transition-colors hover:bg-[#EFF6FF]/60",
+        align === "right" && "text-right",
+        active && "bg-[#EFF6FF]/80 text-[#2563EB]",
+        className
+      )}
+      title="Clique para ordenar"
+      onClick={() => onSort(sortKey)}
+    >
+      {label}
+      {sortIndicator(sortState, sortKey)}
+    </th>
+  );
+}
+
 export function SoldProductsReportPage() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [draftFilters, setDraftFilters] = useState<SoldProductsUiFilters>(() =>
@@ -378,6 +433,11 @@ export function SoldProductsReportPage() {
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [error, setError] = useState<string | null>(null);
   const [detailPage, setDetailPage] = useState(1);
+  const [rankingSort, setRankingSort] = useState(DEFAULT_RANKING_SORT);
+  const [rankingSearch, setRankingSearch] = useState("");
+  const [customerMixSort, setCustomerMixSort] = useState(DEFAULT_CUSTOMER_MIX_SORT);
+  const [monthlySort, setMonthlySort] = useState(DEFAULT_MONTHLY_SORT);
+  const [detailSort, setDetailSort] = useState(DEFAULT_DETAIL_SORT);
   const printCleanupRef = useRef<number | null>(null);
 
   const normalizedDraft = useMemo(() => normalizeSoldProductsUiFilters(draftFilters), [draftFilters]);
@@ -549,16 +609,6 @@ export function SoldProductsReportPage() {
     }
   };
 
-  const handleExportRankingCsv = () => {
-    const rows = data?.ranking ?? [];
-    if (!rows.length) return;
-    downloadTextFile(
-      `ranking-produtos-vendidos-${new Date().toISOString().slice(0, 10)}.csv`,
-      buildRankingCsv(rows),
-      "text/csv;charset=utf-8"
-    );
-  };
-
   const handlePrint = useCallback(() => {
     if (printing || loading || !data) return;
 
@@ -603,12 +653,65 @@ export function SoldProductsReportPage() {
   const applied = data?.filters;
   const rankingRows = data?.ranking ?? [];
 
+  const displayedRankingRows = useMemo(
+    () => prepareRankingTableRows(rankingRows, rankingSearch, rankingSort),
+    [rankingRows, rankingSearch, rankingSort]
+  );
+
+  const displayedCustomerMixRows = useMemo(
+    () => sortCustomerMixRows(data?.customerMix ?? [], customerMixSort),
+    [data?.customerMix, customerMixSort]
+  );
+
+  const displayedMonthlyRows = useMemo(
+    () => sortMonthlyEvolutionRows(data?.monthlyEvolution ?? [], monthlySort),
+    [data?.monthlyEvolution, monthlySort]
+  );
+
+  const displayedDetailRows = useMemo(
+    () => sortDetailRows(data?.detailRows ?? [], detailSort),
+    [data?.detailRows, detailSort]
+  );
+
+  const handleRankingSort = useCallback((key: RankingSortKey) => {
+    setRankingSort((current) =>
+      toggleSortState(current, key, getSortDefaultDirection(RANKING_SORT_ACCESSORS, key))
+    );
+  }, []);
+
+  const handleCustomerMixSort = useCallback((key: CustomerMixSortKey) => {
+    setCustomerMixSort((current) =>
+      toggleSortState(current, key, getSortDefaultDirection(CUSTOMER_MIX_SORT_ACCESSORS, key))
+    );
+  }, []);
+
+  const handleMonthlySort = useCallback((key: MonthlySortKey) => {
+    setMonthlySort((current) =>
+      toggleSortState(current, key, getSortDefaultDirection(MONTHLY_SORT_ACCESSORS, key))
+    );
+  }, []);
+
+  const handleDetailSort = useCallback((key: DetailSortKey) => {
+    setDetailSort((current) =>
+      toggleSortState(current, key, getSortDefaultDirection(DETAIL_SORT_ACCESSORS, key))
+    );
+  }, []);
+
+  const handleExportRankingCsv = () => {
+    if (!displayedRankingRows.length) return;
+    downloadTextFile(
+      `ranking-produtos-vendidos-${new Date().toISOString().slice(0, 10)}.csv`,
+      buildRankingCsv(displayedRankingRows),
+      "text/csv;charset=utf-8"
+    );
+  };
+
   const exportRankingActions = (
     <>
       <button
         type="button"
         onClick={handleExportRankingCsv}
-        disabled={!rankingRows.length || loading}
+        disabled={!displayedRankingRows.length || loading}
         className={financeBiButtonOutlineClass}
       >
         <Download className="h-4 w-4" />
@@ -920,10 +1023,23 @@ export function SoldProductsReportPage() {
             <ReportSection
               id="ranking-completo"
               title="Ranking completo de produtos"
-              description={`${rankingRows.length} produtos · ordenado por ${applied?.sortByLabel?.toLowerCase() ?? "quantidade vendida"}`}
+              description={`${displayedRankingRows.length} produtos · clique nos cabeçalhos para ordenar`}
               actions={exportRankingActions}
             >
-              <RankingTable rows={rankingRows} loading={loading} />
+              <div className="mb-4 max-w-md">
+                <FilterInput
+                  label="Busca rápida no ranking"
+                  value={rankingSearch}
+                  onChange={setRankingSearch}
+                  placeholder="Filtrar por código ou nome do produto…"
+                />
+              </div>
+              <RankingTable
+                rows={displayedRankingRows}
+                loading={loading}
+                sortState={rankingSort}
+                onSort={handleRankingSort}
+              />
             </ReportSection>
           </div>
         ) : null}
@@ -934,15 +1050,43 @@ export function SoldProductsReportPage() {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-[#E5E7EB] text-left text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                    <th className="px-3 py-3">Produto</th>
-                    <th className="px-3 py-3">Cliente</th>
-                    <th className="px-3 py-3 text-right">Quantidade</th>
-                    <th className="px-3 py-3 text-right">Valor</th>
-                    <th className="px-3 py-3 text-right">% no produto</th>
+                    <SortableTh
+                      label="Produto"
+                      sortKey="productName"
+                      sortState={customerMixSort}
+                      onSort={handleCustomerMixSort}
+                    />
+                    <SortableTh
+                      label="Cliente"
+                      sortKey="customerName"
+                      sortState={customerMixSort}
+                      onSort={handleCustomerMixSort}
+                    />
+                    <SortableTh
+                      label="Quantidade"
+                      sortKey="quantitySold"
+                      sortState={customerMixSort}
+                      onSort={handleCustomerMixSort}
+                      align="right"
+                    />
+                    <SortableTh
+                      label="Valor"
+                      sortKey="amountSold"
+                      sortState={customerMixSort}
+                      onSort={handleCustomerMixSort}
+                      align="right"
+                    />
+                    <SortableTh
+                      label="% no produto"
+                      sortKey="customerSharePercent"
+                      sortState={customerMixSort}
+                      onSort={handleCustomerMixSort}
+                      align="right"
+                    />
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.customerMix ?? []).map((r, i) => (
+                  {displayedCustomerMixRows.map((r, i) => (
                     <tr key={`${r.productId}-${r.customerId}-${i}`} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
                       <td className="px-3 py-2.5">{r.productName}</td>
                       <td className="px-3 py-2.5">{r.customerName}</td>
@@ -954,7 +1098,7 @@ export function SoldProductsReportPage() {
                 </tbody>
               </table>
             </div>
-            {!loading && (data?.customerMix?.length ?? 0) === 0 ? (
+            {!loading && displayedCustomerMixRows.length === 0 ? (
               <FinanceBiEmptyState title="Sem mix" description="Nenhum produto/cliente no período." />
             ) : null}
           </ReportSection>
@@ -966,14 +1110,36 @@ export function SoldProductsReportPage() {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-[#E5E7EB] text-left text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                    <th className="px-3 py-3">Produto</th>
-                    <th className="px-3 py-3">Mês/Ano</th>
-                    <th className="px-3 py-3 text-right">Quantidade</th>
-                    <th className="px-3 py-3 text-right">Valor</th>
+                    <SortableTh
+                      label="Produto"
+                      sortKey="productName"
+                      sortState={monthlySort}
+                      onSort={handleMonthlySort}
+                    />
+                    <SortableTh
+                      label="Mês/Ano"
+                      sortKey="period"
+                      sortState={monthlySort}
+                      onSort={handleMonthlySort}
+                    />
+                    <SortableTh
+                      label="Quantidade"
+                      sortKey="quantitySold"
+                      sortState={monthlySort}
+                      onSort={handleMonthlySort}
+                      align="right"
+                    />
+                    <SortableTh
+                      label="Valor"
+                      sortKey="amountSold"
+                      sortState={monthlySort}
+                      onSort={handleMonthlySort}
+                      align="right"
+                    />
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.monthlyEvolution ?? []).map((r, i) => (
+                  {displayedMonthlyRows.map((r, i) => (
                     <tr key={`${r.productId}-${r.year}-${r.month}-${i}`} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
                       <td className="px-3 py-2.5">{r.productName}</td>
                       <td className="px-3 py-2.5">
@@ -995,7 +1161,12 @@ export function SoldProductsReportPage() {
             description="Itens de pedido que compõem o relatório."
             actions={exportRankingActions}
           >
-            <DetailTable rows={data?.detailRows ?? []} loading={loading} />
+            <DetailTable
+              rows={displayedDetailRows}
+              loading={loading}
+              sortState={detailSort}
+              onSort={handleDetailSort}
+            />
             {data?.detailPagination ? (
               <div className="mt-4 flex items-center justify-between text-sm text-[#6B7280]">
                 <span>
@@ -1039,9 +1210,13 @@ export function SoldProductsReportPage() {
 function RankingTable({
   rows,
   loading,
+  sortState,
+  onSort,
 }: {
   rows: SoldProductsRankingRow[];
   loading: boolean;
+  sortState: SortState<RankingSortKey>;
+  onSort: (key: RankingSortKey) => void;
 }) {
   if (!loading && rows.length === 0) {
     return <FinanceBiEmptyState title="Sem ranking" description="Nenhum produto vendido no período." />;
@@ -1052,17 +1227,17 @@ function RankingTable({
       <table className="min-w-full text-sm">
         <thead className="sticky top-0 z-10 bg-[#F9FAFB] shadow-[0_1px_0_#E5E7EB]">
           <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-            <th className="px-3 py-3 w-12">#</th>
-            <th className="px-3 py-3 w-28">Código</th>
-            <th className="px-3 py-3 min-w-[220px]">Produto</th>
-            <th className="px-3 py-3 text-right">Qtd vendida</th>
-            <th className="px-3 py-3 text-right">Valor vendido</th>
-            <th className="px-3 py-3 text-right">Preço médio</th>
-            <th className="px-3 py-3 text-right">Pedidos</th>
-            <th className="px-3 py-3 text-right">Clientes</th>
-            <th className="px-3 py-3">Última venda</th>
-            <th className="px-3 py-3 text-right">% qtd</th>
-            <th className="px-3 py-3 text-right">% valor</th>
+            <SortableTh label="#" sortKey="rank" sortState={sortState} onSort={onSort} className="w-12" />
+            <SortableTh label="Código" sortKey="productCode" sortState={sortState} onSort={onSort} className="w-28" />
+            <SortableTh label="Produto" sortKey="productName" sortState={sortState} onSort={onSort} className="min-w-[220px]" />
+            <SortableTh label="Qtd vendida" sortKey="quantitySold" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="Valor vendido" sortKey="amountSold" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="Preço médio" sortKey="averageUnitPrice" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="Pedidos" sortKey="ordersCount" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="Clientes" sortKey="customersCount" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="Última venda" sortKey="lastSaleDate" sortState={sortState} onSort={onSort} />
+            <SortableTh label="% qtd" sortKey="quantitySharePercent" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="% valor" sortKey="amountSharePercent" sortState={sortState} onSort={onSort} align="right" />
           </tr>
         </thead>
         <tbody>
@@ -1114,9 +1289,13 @@ function RankingTable({
 function DetailTable({
   rows,
   loading,
+  sortState,
+  onSort,
 }: {
   rows: SoldProductsDashboardPayload["detailRows"];
   loading: boolean;
+  sortState: SortState<DetailSortKey>;
+  onSort: (key: DetailSortKey) => void;
 }) {
   if (!loading && rows.length === 0) {
     return <FinanceBiEmptyState title="Sem detalhamento" description="Nenhum item no período." />;
@@ -1126,15 +1305,17 @@ function DetailTable({
       <table className="min-w-full text-sm">
         <thead className="sticky top-0 z-10 bg-[#F9FAFB] shadow-[0_1px_0_#E5E7EB]">
           <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-            <th className="px-3 py-3">Data</th>
-            <th className="px-3 py-3">Pedido</th>
-            <th className="px-3 py-3">Cliente</th>
-            <th className="px-3 py-3">Vendedor</th>
-            <th className="px-3 py-3">Produto</th>
-            <th className="px-3 py-3 text-right">Qtd</th>
-            <th className="px-3 py-3 text-right">Unit.</th>
-            <th className="px-3 py-3 text-right">Total</th>
-            <th className="px-3 py-3">Status</th>
+            <SortableTh label="Data" sortKey="orderDate" sortState={sortState} onSort={onSort} />
+            <SortableTh label="Pedido" sortKey="orderCode" sortState={sortState} onSort={onSort} />
+            <SortableTh label="Cliente" sortKey="customerName" sortState={sortState} onSort={onSort} />
+            <SortableTh label="CNPJ/CPF" sortKey="customerTaxId" sortState={sortState} onSort={onSort} />
+            <SortableTh label="Produto" sortKey="productName" sortState={sortState} onSort={onSort} />
+            <SortableTh label="Qtd" sortKey="quantity" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="Unit." sortKey="unitPrice" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="Total" sortKey="lineAmount" sortState={sortState} onSort={onSort} align="right" />
+            <SortableTh label="Empresa" sortKey="companyLabel" sortState={sortState} onSort={onSort} />
+            <SortableTh label="Vendedor" sortKey="sellerName" sortState={sortState} onSort={onSort} />
+            <SortableTh label="Status" sortKey="orderStatusLabel" sortState={sortState} onSort={onSort} />
           </tr>
         </thead>
         <tbody>
@@ -1143,7 +1324,7 @@ function DetailTable({
               <td className="px-3 py-2.5 whitespace-nowrap">{r.orderDate}</td>
               <td className="px-3 py-2.5 font-mono text-xs">{r.orderCode}</td>
               <td className="px-3 py-2.5">{r.customerName}</td>
-              <td className="px-3 py-2.5 text-[#6B7280]">{r.sellerName ?? "—"}</td>
+              <td className="px-3 py-2.5 font-mono text-xs text-[#6B7280]">{r.customerTaxId ?? "—"}</td>
               <td className="px-3 py-2.5">
                 {r.productCode ? (
                   <span className="font-mono text-xs text-[#6B7280] mr-1">[{r.productCode}]</span>
@@ -1153,6 +1334,8 @@ function DetailTable({
               <td className="px-3 py-2.5 text-right tabular-nums">{fmtQty(r.quantity)}</td>
               <td className="px-3 py-2.5 text-right tabular-nums">{fmtMoney(r.unitPrice)}</td>
               <td className="px-3 py-2.5 text-right tabular-nums font-medium">{fmtMoney(r.lineAmount)}</td>
+              <td className="px-3 py-2.5 text-[#6B7280]">{r.companyLabel ?? "—"}</td>
+              <td className="px-3 py-2.5 text-[#6B7280]">{r.sellerName ?? "—"}</td>
               <td className="px-3 py-2.5 text-[#6B7280]">{r.orderStatusLabel}</td>
             </tr>
           ))}

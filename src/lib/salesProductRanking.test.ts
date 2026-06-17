@@ -257,6 +257,9 @@ describe("salesProductRanking", () => {
     assert.ok(page.includes("/api/commercial/sold-products/filter-options"));
     assert.ok(page.includes("FilterSearchableSelect"));
     assert.ok(page.includes("/api/commercial/sold-products/export.xlsx"));
+    assert.ok(page.includes("SortableTh"));
+    assert.ok(page.includes("Clique para ordenar"));
+    assert.ok(page.includes("prepareRankingTableRows"));
     assert.ok(printDoc.includes('id="sold-products-print-root"'));
     assert.ok(printDoc.includes("sold-products-print-ranking-table"));
     assert.ok(printDoc.includes("Resumo executivo"));
