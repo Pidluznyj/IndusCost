@@ -233,13 +233,6 @@ export const FINANCE_CASH_FLOW_RECONCILIATION_RISKS = [
     ],
     severity: "low" as const,
   },
-  {
-    id: "R8_dead_code_buildCriticalMovements",
-    description:
-      "buildCriticalMovements em financeCashFlowDashboard.ts não é chamado; blocos vivos vêm de buildBlocksFromPortfolio.",
-    affectedBlocks: ["largestProjectedInflows", "overdueReceivables"],
-    severity: "low" as const,
-  },
 ] as const;
 
 /**

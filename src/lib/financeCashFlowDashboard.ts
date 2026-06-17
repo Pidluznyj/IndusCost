@@ -1,17 +1,13 @@
 import type { Prisma } from "@prisma/client";
 import {
   buildFinanceAccountsReceivableDashboard,
-  classifyFinanceArTitle,
   countFinanceArSanitizationInScope,
   decimalFieldToNumber,
   filterFinanceArRows,
-  isFinanceArOpen,
   mapPrismaRowToFinanceArDashboardRow,
   parseFinanceArDashboardFilters,
-  resolveFinanceArCustomerKey,
   roundMoney,
   safeRatio,
-  startOfLocalDay,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
   type FinanceArInvoiceIssuedFilter,
@@ -23,14 +19,11 @@ import {
 } from "./financeAccountsPayableRules.js";
 import {
   buildFinanceAccountsPayableDashboard,
-  classifyFinanceApTitle,
   countFinanceApSanitizationInScope,
   filterFinanceApManagementReportRows,
   filterFinanceApRows,
-  isFinanceApOpen,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
-  resolveFinanceApSupplierKey,
   type FinanceApDashboardFilters,
   type FinanceApDashboardRow,
   FinanceApFilterParseError,
@@ -93,7 +86,7 @@ import {
   buildCashFlowReconciliation,
   cashFlowViewModeSlices,
   computeCashFlowLedgerPeriodTotals,
-  computeCashFlowOpenPortfolioTotals,
+  portfolioTotalsFromDatasetBlocks,
   resolveCashFlowArAmount,
   resolveCashFlowApAmount,
   resolveCashFlowArMovementDate,
@@ -408,6 +401,34 @@ export function toApLoadFilters(cf: FinanceCashFlowDashboardFilters): FinanceApD
   };
 }
 
+/** Filtros AR equivalentes ao portfólio do Fluxo (sem recorte de mês/ano). */
+export function toCashFlowPortfolioArFilters(
+  cfFilters: FinanceCashFlowDashboardFilters
+): FinanceArDashboardFilters {
+  const base = toArLoadFilters(cfFilters);
+  return {
+    ...base,
+    year: undefined,
+    month: undefined,
+    dueDateFrom: undefined,
+    dueDateTo: undefined,
+  };
+}
+
+/** Filtros AP equivalentes ao portfólio do Fluxo (sem recorte de mês/ano). */
+export function toCashFlowPortfolioApFilters(
+  cfFilters: FinanceCashFlowDashboardFilters
+): FinanceApDashboardFilters {
+  const base = toApLoadFilters(cfFilters);
+  return {
+    ...base,
+    year: undefined,
+    month: undefined,
+    dueDateFrom: undefined,
+    dueDateTo: undefined,
+  };
+}
+
 export function filterCashFlowArRows(
   rows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
@@ -553,156 +574,6 @@ export function buildFinanceCashFlowMonthlySeries(
   }
 
   return points;
-}
-
-function buildPartySummaries(
-  rows: Array<{ key: string; personName: string | null; personCnpj: string | null; amount: number }>,
-  limit: number
-): FinanceCashFlowPartySummary[] {
-  const map = new Map<
-    string,
-    { personName: string | null; personCnpj: string | null; amount: number; count: number }
-  >();
-  for (const row of rows) {
-    const existing = map.get(row.key);
-    if (existing) {
-      existing.amount += row.amount;
-      existing.count += 1;
-    } else {
-      map.set(row.key, {
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-        amount: row.amount,
-        count: 1,
-      });
-    }
-  }
-  const sorted = [...map.values()].sort((a, b) => b.amount - a.amount);
-  const total = sorted.reduce((s, r) => s + r.amount, 0);
-  return sorted.slice(0, limit).map((r) => ({
-    personName: r.personName,
-    personCnpj: r.personCnpj,
-    amount: roundMoney(r.amount),
-    titlesCount: r.count,
-    percentOfTotal: roundMoney(safeRatio(r.amount, total) * 100),
-  }));
-}
-
-function toIsoDate(date: Date | null): string | null {
-  if (!date) return null;
-  return date.toISOString();
-}
-
-function buildCriticalMovements(
-  arRows: FinanceCashFlowArRow[],
-  apRows: FinanceCashFlowApRow[],
-  arRowsForOverdue: FinanceCashFlowArRow[],
-  apRowsForOverdue: FinanceCashFlowApRow[],
-  referenceDate: Date
-): {
-  largestInflows: FinanceCashFlowCriticalMovement[];
-  largestOutflows: FinanceCashFlowCriticalMovement[];
-  overdueReceivables: FinanceCashFlowCriticalMovement[];
-  overduePayables: FinanceCashFlowCriticalMovement[];
-} {
-  const ref = startOfLocalDay(referenceDate);
-
-  const projectedInflows: FinanceCashFlowCriticalMovement[] = [];
-  const projectedOutflows: FinanceCashFlowCriticalMovement[] = [];
-  const overdueReceivables: FinanceCashFlowCriticalMovement[] = [];
-  const overduePayables: FinanceCashFlowCriticalMovement[] = [];
-
-  for (const row of arRows) {
-    const status = classifyFinanceArTitle(row, referenceDate);
-    if (isFinanceArOpen(row) && row.balanceReceivable > 0 && !row.suspendCollection) {
-      projectedInflows.push({
-        side: "inflow",
-        externalId: row.externalId,
-        companyName: row.companyName,
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-        dueDate: toIsoDate(row.dueDate),
-        movementDate: toIsoDate(row.dueDate),
-        amount: row.balanceReceivable,
-        daysOverdue: status === "overdue" && row.dueDate
-          ? Math.max(0, Math.floor((ref.getTime() - startOfLocalDay(row.dueDate).getTime()) / 86400000))
-          : 0,
-        documentLabel: row.sourceInvoiceNumber,
-      });
-    }
-  }
-
-  for (const row of arRowsForOverdue) {
-    const status = classifyFinanceArTitle(row, referenceDate);
-    if (status === "overdue" && isFinanceArOpen(row)) {
-      overdueReceivables.push({
-        side: "inflow",
-        externalId: row.externalId,
-        companyName: row.companyName,
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-        dueDate: toIsoDate(row.dueDate),
-        movementDate: toIsoDate(row.dueDate),
-        amount: row.balanceReceivable,
-        daysOverdue: row.dueDate
-          ? Math.max(0, Math.floor((ref.getTime() - startOfLocalDay(row.dueDate).getTime()) / 86400000))
-          : 0,
-        documentLabel: row.sourceInvoiceNumber,
-      });
-    }
-  }
-
-  for (const row of apRows) {
-    const status = classifyFinanceApTitle(row, referenceDate);
-    if (isFinanceApOpen(row) && resolveFinanceApOpenAmount(row) > 0 && !row.suspendPayment) {
-      const openAmount = resolveFinanceApOpenAmount(row);
-      projectedOutflows.push({
-        side: "outflow",
-        externalId: row.externalId,
-        companyName: row.companyName,
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-        dueDate: toIsoDate(row.dueDate),
-        movementDate: toIsoDate(row.dueDate),
-        amount: openAmount,
-        daysOverdue: status === "overdue" && row.dueDate
-          ? Math.max(0, Math.floor((ref.getTime() - startOfLocalDay(row.dueDate).getTime()) / 86400000))
-          : 0,
-        documentLabel: row.documentNumber,
-      });
-    }
-  }
-
-  for (const row of apRowsForOverdue) {
-    const status = classifyFinanceApTitle(row, referenceDate);
-    if (status === "overdue" && isFinanceApOpen(row)) {
-      const openAmount = resolveFinanceApOpenAmount(row);
-      overduePayables.push({
-        side: "outflow",
-        externalId: row.externalId,
-        companyName: row.companyName,
-        personName: row.personName,
-        personCnpj: row.personCnpj,
-        dueDate: toIsoDate(row.dueDate),
-        movementDate: toIsoDate(row.dueDate),
-        amount: openAmount,
-        daysOverdue: row.dueDate
-          ? Math.max(0, Math.floor((ref.getTime() - startOfLocalDay(row.dueDate).getTime()) / 86400000))
-          : 0,
-        documentLabel: row.documentNumber,
-      });
-    }
-  }
-
-  const sortDesc = (a: FinanceCashFlowCriticalMovement, b: FinanceCashFlowCriticalMovement) =>
-    b.amount - a.amount;
-
-  return {
-    largestInflows: projectedInflows.sort(sortDesc).slice(0, 10),
-    largestOutflows: projectedOutflows.sort(sortDesc).slice(0, 10),
-    overdueReceivables: overdueReceivables.sort(sortDesc).slice(0, 10),
-    overduePayables: overduePayables.sort(sortDesc).slice(0, 10),
-  };
 }
 
 function sumPeriodAmounts(
@@ -944,14 +815,26 @@ export function buildFinanceCashFlowDashboardFromDataset(
     referenceDate
   );
 
-  const arDash = buildFinanceAccountsReceivableDashboard(
-    filteredAr,
+  const arDashPortfolio = buildFinanceAccountsReceivableDashboard(
+    arRows,
+    toCashFlowPortfolioArFilters(filters),
+    referenceDate,
+    arSyncCutoff
+  );
+  const apDashPortfolio = buildFinanceAccountsPayableDashboard(
+    apRows,
+    toCashFlowPortfolioApFilters(filters),
+    referenceDate,
+    apSyncCutoff
+  );
+  const arDashPeriod = buildFinanceAccountsReceivableDashboard(
+    arRows,
     toArLoadFilters(filters),
     referenceDate,
     arSyncCutoff
   );
-  const apDash = buildFinanceAccountsPayableDashboard(
-    filteredAp,
+  const apDashPeriod = buildFinanceAccountsPayableDashboard(
+    apRows,
     toApLoadFilters(filters),
     referenceDate,
     apSyncCutoff
@@ -962,12 +845,12 @@ export function buildFinanceCashFlowDashboardFromDataset(
     filters,
     referenceDate
   );
-  const portfolio = computeCashFlowOpenPortfolioTotals(filteredAr, filteredAp);
+  const portfolio = portfolioTotalsFromDatasetBlocks(blocks);
   const apPaidInScope = filteredAp.reduce(
     (sum, row) => sum + resolveFinanceApRealizedAmount(row),
     0
   );
-  const openReceivableWithoutDueDate = filteredAr.filter(
+  const openReceivableWithoutDueDate = dataset.arPortfolioRows.filter(
     (r) => isFinanceCashFlowArOpenRow(r) && !r.dueDate
   ).length;
 
@@ -983,9 +866,11 @@ export function buildFinanceCashFlowDashboardFromDataset(
     ledgerPeriod,
     portfolio,
     {
-      arDashboardOpen: arDash.cards.totalOpenAmount,
-      arDashboardReceived: arDash.cards.totalReceivedAmount,
-      apDashboardOpen: apDash.cards.totalOpenAmount,
+      arDashboardOpenPortfolio: arDashPortfolio.cards.totalOpenAmount,
+      arDashboardOpenPeriod: arDashPeriod.cards.totalOpenAmount,
+      apDashboardOpenPortfolio: apDashPortfolio.cards.totalOpenAmount,
+      apDashboardOpenPeriod: apDashPeriod.cards.totalOpenAmount,
+      arDashboardReceived: arDashPeriod.cards.totalReceivedAmount,
       apDashboardPaid: roundMoney(apPaidInScope),
     },
     { openReceivableWithoutDueDate }

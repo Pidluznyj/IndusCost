@@ -2,8 +2,13 @@
  * Regras únicas de movimentação de caixa a partir de Contas a Receber e Contas a Pagar.
  * Usado pelo dashboard, previsão, calendário e reconciliação com AR/AP.
  */
-import { isFinanceArOpen, roundMoney } from "./financeAccountsReceivableDashboard.js";
+import { roundMoney } from "./financeAccountsReceivableDashboard.js";
 import { isFinanceApOpen } from "./financeAccountsPayableDashboard.js";
+import {
+  isFinanceCashFlowApOpenRow,
+  isFinanceCashFlowArOpenRow,
+  type FinanceCashFlowDatasetBlocks,
+} from "./financeCashFlowDataset.js";
 import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import {
   isFinanceApCancelledTitle,
@@ -12,7 +17,6 @@ import {
   resolveFinanceApRealizedAmount,
   FINANCE_AP_CASH_FLOW_RULES_NOTE,
 } from "./financeAccountsPayableRules.js";
-import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -208,6 +212,17 @@ export type CashFlowOpenPortfolioTotals = {
   netPosition: number;
 };
 
+export function portfolioTotalsFromDatasetBlocks(
+  blocks: FinanceCashFlowDatasetBlocks
+): CashFlowOpenPortfolioTotals {
+  return {
+    receivableOpen: blocks.totalReceivableOpen,
+    payableOpen: blocks.totalPayableOpen,
+    netPosition: roundMoney(blocks.totalReceivableOpen - blocks.totalPayableOpen),
+  };
+}
+
+/** Soma carteira aberta com as mesmas regras de buildBlocksFromPortfolio. */
 export function computeCashFlowOpenPortfolioTotals(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[]
@@ -216,14 +231,16 @@ export function computeCashFlowOpenPortfolioTotals(
   let payableOpen = 0;
 
   for (const row of arRows) {
-    if (isFinanceArOpen(row) && !row.suspendCollection) {
-      receivableOpen += row.balanceReceivable;
-    }
+    if (!isFinanceCashFlowArOpenRow(row)) continue;
+    const balance = roundMoney(row.balanceReceivable);
+    if (balance <= 0) continue;
+    receivableOpen += balance;
   }
   for (const row of apRows) {
-    if (isFinanceApOpen(row) && !row.suspendPayment) {
-      payableOpen += resolveFinanceApOpenAmount(row);
-    }
+    if (!isFinanceCashFlowApOpenRow(row)) continue;
+    const openAmount = roundMoney(resolveFinanceApOpenAmount(row));
+    if (openAmount <= 0) continue;
+    payableOpen += openAmount;
   }
 
   const receivableRounded = roundMoney(receivableOpen);
@@ -256,9 +273,15 @@ function nearlyEqual(a: number, b: number): boolean {
 }
 
 export type CashFlowReconciliationSourceTotals = {
-  arDashboardOpen: number;
+  /** Carteira aberta AR — escopo portfólio (sem mês/ano). */
+  arDashboardOpenPortfolio: number;
+  /** Carteira aberta AR — escopo período (filtro ano/mês). */
+  arDashboardOpenPeriod: number;
+  /** Carteira aberta AP — escopo portfólio. */
+  apDashboardOpenPortfolio: number;
+  /** Carteira aberta AP — escopo período. */
+  apDashboardOpenPeriod: number;
   arDashboardReceived: number;
-  apDashboardOpen: number;
   apDashboardPaid: number;
 };
 
@@ -286,19 +309,19 @@ export function buildCashFlowReconciliation(
 
   const openMatchesAr = nearlyEqual(
     cashFlow.totalReceivableOpen,
-    sourceTotals.arDashboardOpen
+    sourceTotals.arDashboardOpenPortfolio
   );
   const openMatchesAp = nearlyEqual(
     cashFlow.totalPayableOpen,
-    sourceTotals.apDashboardOpen
+    sourceTotals.apDashboardOpenPortfolio
   );
   const portfolioMatchesAr = nearlyEqual(
     portfolio.receivableOpen,
-    sourceTotals.arDashboardOpen
+    sourceTotals.arDashboardOpenPortfolio
   );
   const portfolioMatchesAp = nearlyEqual(
     portfolio.payableOpen,
-    sourceTotals.apDashboardOpen
+    sourceTotals.apDashboardOpenPortfolio
   );
 
   const notes: string[] = [
@@ -323,12 +346,32 @@ export function buildCashFlowReconciliation(
 
   if (!openMatchesAr) {
     notes.push(
-      `Carteira a receber: fluxo R$ ${cashFlow.totalReceivableOpen.toFixed(2)} vs AR Em Aberto R$ ${sourceTotals.arDashboardOpen.toFixed(2)}.`
+      `Carteira a receber: fluxo R$ ${cashFlow.totalReceivableOpen.toFixed(2)} vs AR Em Aberto (portfólio) R$ ${sourceTotals.arDashboardOpenPortfolio.toFixed(2)}.`
     );
   }
   if (!openMatchesAp) {
     notes.push(
-      `Carteira a pagar: fluxo R$ ${cashFlow.totalPayableOpen.toFixed(2)} vs AP Em Aberto R$ ${sourceTotals.apDashboardOpen.toFixed(2)}.`
+      `Carteira a pagar: fluxo R$ ${cashFlow.totalPayableOpen.toFixed(2)} vs AP Em Aberto (portfólio) R$ ${sourceTotals.apDashboardOpenPortfolio.toFixed(2)}.`
+    );
+  }
+  if (
+    !nearlyEqual(
+      sourceTotals.arDashboardOpenPeriod,
+      sourceTotals.arDashboardOpenPortfolio
+    )
+  ) {
+    notes.push(
+      `AR em aberto: portfólio R$ ${sourceTotals.arDashboardOpenPortfolio.toFixed(2)} vs período R$ ${sourceTotals.arDashboardOpenPeriod.toFixed(2)}.`
+    );
+  }
+  if (
+    !nearlyEqual(
+      sourceTotals.apDashboardOpenPeriod,
+      sourceTotals.apDashboardOpenPortfolio
+    )
+  ) {
+    notes.push(
+      `AP em aberto: portfólio R$ ${sourceTotals.apDashboardOpenPortfolio.toFixed(2)} vs período R$ ${sourceTotals.apDashboardOpenPeriod.toFixed(2)}.`
     );
   }
 
@@ -353,27 +396,27 @@ export function buildCashFlowReconciliation(
     receivable: {
       cashFlowInflow: cashFlow.inflowAmount,
       ledgerInflow: ledgerPeriod.inflow,
-      arDashboardOpen: sourceTotals.arDashboardOpen,
+      arDashboardOpen: sourceTotals.arDashboardOpenPeriod,
       arDashboardReceived: sourceTotals.arDashboardReceived,
       cashFlowOpenPortfolio: cashFlow.totalReceivableOpen,
       matchesLedger: inflowMatchesLedger,
       matchesArOpen: openMatchesAr && portfolioMatchesAr,
       deltaVsLedger: roundMoney(cashFlow.inflowAmount - ledgerPeriod.inflow),
       deltaOpenVsAr: roundMoney(
-        cashFlow.totalReceivableOpen - sourceTotals.arDashboardOpen
+        cashFlow.totalReceivableOpen - sourceTotals.arDashboardOpenPortfolio
       ),
     },
     payable: {
       cashFlowOutflow: cashFlow.outflowAmount,
       ledgerOutflow: ledgerPeriod.outflow,
-      apDashboardOpen: sourceTotals.apDashboardOpen,
+      apDashboardOpen: sourceTotals.apDashboardOpenPeriod,
       apDashboardPaid: sourceTotals.apDashboardPaid,
       cashFlowOpenPortfolio: cashFlow.totalPayableOpen,
       matchesLedger: outflowMatchesLedger,
       matchesApOpen: openMatchesAp && portfolioMatchesAp,
       deltaVsLedger: roundMoney(cashFlow.outflowAmount - ledgerPeriod.outflow),
       deltaOpenVsAp: roundMoney(
-        cashFlow.totalPayableOpen - sourceTotals.apDashboardOpen
+        cashFlow.totalPayableOpen - sourceTotals.apDashboardOpenPortfolio
       ),
     },
     netCashFlow: cashFlow.netFlowAmount,

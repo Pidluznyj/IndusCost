@@ -21,6 +21,8 @@ import {
   buildFinanceCashFlowDashboard,
   toApLoadFilters,
   toArLoadFilters,
+  toCashFlowPortfolioApFilters,
+  toCashFlowPortfolioArFilters,
   type FinanceCashFlowApRow,
   type FinanceCashFlowArRow,
   type FinanceCashFlowDashboardFilters,
@@ -50,33 +52,7 @@ function nearlyEqual(a: number, b: number): boolean {
   return Math.abs(a - b) < EPSILON;
 }
 
-/** Filtros AR equivalentes ao portfólio do Fluxo (sem recorte de mês/ano). */
-export function toCashFlowPortfolioArFilters(
-  cfFilters: FinanceCashFlowDashboardFilters
-): FinanceArDashboardFilters {
-  const base = toArLoadFilters(cfFilters);
-  return {
-    ...base,
-    year: undefined,
-    month: undefined,
-    dueDateFrom: undefined,
-    dueDateTo: undefined,
-  };
-}
-
-/** Filtros AP equivalentes ao portfólio do Fluxo (sem recorte de mês/ano). */
-export function toCashFlowPortfolioApFilters(
-  cfFilters: FinanceCashFlowDashboardFilters
-): FinanceApDashboardFilters {
-  const base = toApLoadFilters(cfFilters);
-  return {
-    ...base,
-    year: undefined,
-    month: undefined,
-    dueDateFrom: undefined,
-    dueDateTo: undefined,
-  };
-}
+export { toCashFlowPortfolioArFilters, toCashFlowPortfolioApFilters };
 
 function sumApOverdueOpenAmount(
   rows: FinanceApDashboardRow[],

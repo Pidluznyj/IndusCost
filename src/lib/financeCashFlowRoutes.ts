@@ -114,7 +114,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         arSyncCutoff,
         apSyncCutoff
       );
-      const audit = buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length);
+      const audit = buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length, arRows, apRows);
       res.json(audit);
     }
   );
@@ -140,7 +140,9 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           arSyncCutoff,
           apSyncCutoff
         );
-        return res.json(buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length));
+        return res.json(
+          buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length, arRows, apRows)
+        );
       }
       const payload = buildFinanceCashFlowDashboard(
         arRows,

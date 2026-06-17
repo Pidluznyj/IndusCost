@@ -202,7 +202,13 @@ describe("financeCashFlowAudit", () => {
       apCutoff()
     );
     assertMexichemAbsent(payload);
-    const audit = buildFinanceCashFlowAuditPayload(buildDataset({ ar: [mexichemReceived()] }), 1, 0);
+    const audit = buildFinanceCashFlowAuditPayload(
+      buildDataset({ ar: [mexichemReceived()] }),
+      1,
+      0,
+      [mexichemReceived()],
+      []
+    );
     assert.equal(audit.traces.overdueReceivables.length, 0);
     assert.equal(audit.traces.largestExpectedInflows.length, 0);
     assert.equal(audit.traces.topReceivableCustomers.length, 0);
@@ -317,15 +323,33 @@ describe("financeCashFlowAudit", () => {
     assert.ok(inflowSum >= overdueSum);
   });
 
-  it("audit endpoint payload expõe traces por bloco", () => {
-    const dataset = buildDataset({
-      ar: [arRow({ externalId: 55, balanceReceivable: 300, dueDate: new Date(2026, 5, 1) })],
+  it("audit endpoint payload expõe traces por bloco e exclusões", () => {
+    const stale = arRow({
+      externalId: 99,
+      balanceReceivable: 5000,
+      syncedAt: STALE_SYNC,
+      dueDate: new Date(2026, 2, 10),
     });
-    const audit = buildFinanceCashFlowAuditPayload(dataset, 1, 0);
+    const overdueNoNf = arRow({
+      externalId: 88,
+      sourceInvoiceId: null,
+      sourceInvoiceNumber: null,
+      balanceReceivable: 18270,
+      dueDate: new Date(2026, 2, 10),
+    });
+    const rawAr = [
+      arRow({ externalId: 55, balanceReceivable: 300, dueDate: new Date(2026, 5, 1) }),
+      stale,
+      overdueNoNf,
+    ];
+    const dataset = buildDataset({ ar: rawAr });
+    const audit = buildFinanceCashFlowAuditPayload(dataset, rawAr.length, 0, rawAr, []);
     assert.equal(audit.traces.overdueReceivables.length, 1);
     assert.equal(audit.traces.overdueReceivables[0]!.externalId, 55);
     assert.ok(audit.traces.overdueReceivables[0]!.usedInBlocks.includes("overdueReceivables"));
     assert.ok(audit.counts.arPortfolio >= 1);
+    assert.ok(audit.exclusions.arStale >= 1);
+    assert.ok(audit.exclusions.arOverdueWithoutFiscalDocument >= 1);
   });
 
   it("ranking por cliente bate com a mesma base das entradas previstas", () => {

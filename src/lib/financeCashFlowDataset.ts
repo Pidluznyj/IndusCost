@@ -9,6 +9,10 @@ import {
   type FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
 import {
+  isFinanceArAllowedInManagementReport,
+  isFinanceArOverdueWithoutFiscalDocument,
+} from "./financeAccountsReceivableManagement.js";
+import {
   classifyFinanceApTitle,
   isFinanceApOpen,
   resolveFinanceApSupplierKey,
@@ -17,6 +21,15 @@ import {
 import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import { isFinanceArOverdueRow } from "./financeAccountsReceivableOverdue.js";
 import { resolveFinanceApOpenAmount } from "./financeAccountsPayableRules.js";
+import { isFinanceApExcludedFromManagement } from "./financeInternalGroupExclusions.js";
+import {
+  isNomusApStaleForReports,
+  resolveEffectiveNomusApReportSyncCutoff,
+} from "./financeNomusApReportFreshness.js";
+import {
+  isNomusArStaleForReports,
+  resolveEffectiveNomusArReportSyncCutoff,
+} from "./financeNomusArReportFreshness.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -88,6 +101,16 @@ export type FinanceCashFlowDataset = {
   blocks: FinanceCashFlowDatasetBlocks;
 };
 
+export type FinanceCashFlowAuditExclusions = {
+  arStale: number;
+  arReceivedOrSettled: number;
+  arOverdueWithoutFiscalDocument: number;
+  arNotAllowedInManagementReport: number;
+  apStale: number;
+  apIntercompanyOrPurchaseOrder: number;
+  apPaidOrSettled: number;
+};
+
 export type FinanceCashFlowAuditPayload = {
   filters: FinanceCashFlowDashboardFilters;
   referenceDate: string;
@@ -103,6 +126,7 @@ export type FinanceCashFlowAuditPayload = {
     apPortfolio: number;
     apPeriod: number;
   };
+  exclusions: FinanceCashFlowAuditExclusions;
   blockTotals: {
     totalReceivableOpen: number;
     totalPayableOpen: number;
@@ -360,6 +384,9 @@ function traceForArRow(
   if (isFinanceCashFlowArOverdueRow(row, referenceDate)) {
     ruleNotes.push("vencido em aberto");
   }
+  if (isFinanceArOverdueWithoutFiscalDocument(row, referenceDate)) {
+    ruleNotes.push("vencido sem NF — excluído de vencidos/portfólio");
+  }
 
   const matchBlock = (list: FinanceCashFlowCriticalMovement[], block: string) => {
     if (list.some((m) => m.externalId === row.externalId)) usedInBlocks.push(block);
@@ -427,6 +454,9 @@ function traceForApRow(
   }
   if (isFinanceCashFlowApOverdueRow(row, referenceDate)) {
     ruleNotes.push("vencido operacionalmente");
+  }
+  if (isFinanceApExcludedFromManagement(row)) {
+    ruleNotes.push("intercompany ou pedido de compra/type=2 — excluído da agenda gerencial");
   }
 
   const matchBlock = (list: FinanceCashFlowCriticalMovement[], block: string) => {
@@ -552,10 +582,58 @@ export function buildFinanceCashFlowDataset(
   };
 }
 
+export function countCashFlowAuditExclusions(
+  arRows: FinanceCashFlowArRow[],
+  apRows: FinanceCashFlowApRow[],
+  referenceDate: Date,
+  arSyncCutoff?: NomusArReportSyncCutoff | null,
+  apSyncCutoff?: NomusApReportSyncCutoff | null
+): FinanceCashFlowAuditExclusions {
+  const arEffectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(arRows, arSyncCutoff);
+  const apEffectiveCutoff = resolveEffectiveNomusApReportSyncCutoff(apRows, apSyncCutoff);
+
+  let arStale = 0;
+  let arReceivedOrSettled = 0;
+  let arOverdueWithoutFiscalDocument = 0;
+  let arNotAllowedInManagementReport = 0;
+  let apStale = 0;
+  let apIntercompanyOrPurchaseOrder = 0;
+  let apPaidOrSettled = 0;
+
+  for (const row of arRows) {
+    if (isNomusArStaleForReports(row, arEffectiveCutoff)) arStale += 1;
+    if (isFinanceArReceivedOrSettled(row)) arReceivedOrSettled += 1;
+    if (isFinanceArOverdueWithoutFiscalDocument(row, referenceDate)) {
+      arOverdueWithoutFiscalDocument += 1;
+    }
+    if (!isFinanceArAllowedInManagementReport(row, referenceDate)) {
+      arNotAllowedInManagementReport += 1;
+    }
+  }
+
+  for (const row of apRows) {
+    if (isNomusApStaleForReports(row, apEffectiveCutoff)) apStale += 1;
+    if (isFinanceApExcludedFromManagement(row)) apIntercompanyOrPurchaseOrder += 1;
+    if (!isFinanceApOpen(row)) apPaidOrSettled += 1;
+  }
+
+  return {
+    arStale,
+    arReceivedOrSettled,
+    arOverdueWithoutFiscalDocument,
+    arNotAllowedInManagementReport,
+    apStale,
+    apIntercompanyOrPurchaseOrder,
+    apPaidOrSettled,
+  };
+}
+
 export function buildFinanceCashFlowAuditPayload(
   dataset: FinanceCashFlowDataset,
   arRawCount: number,
-  apRawCount: number
+  apRawCount: number,
+  arRows: FinanceCashFlowArRow[] = [],
+  apRows: FinanceCashFlowApRow[] = []
 ): FinanceCashFlowAuditPayload {
   const { blocks, arTrace, apTrace } = dataset;
   const traceUsed = (block: string) =>
@@ -581,6 +659,13 @@ export function buildFinanceCashFlowAuditPayload(
       apPortfolio: dataset.apPortfolioRows.length,
       apPeriod: dataset.apRowsSanitized.length,
     },
+    exclusions: countCashFlowAuditExclusions(
+      arRows,
+      apRows,
+      dataset.referenceDate,
+      dataset.arSyncCutoff,
+      dataset.apSyncCutoff
+    ),
     blockTotals: {
       totalReceivableOpen: blocks.totalReceivableOpen,
       totalPayableOpen: blocks.totalPayableOpen,

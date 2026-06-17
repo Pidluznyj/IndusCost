@@ -169,9 +169,11 @@ describe("financeCashFlowReconciliation", () => {
       { inflow: 0, outflow: 0, net: 0, inflowCount: 0, outflowCount: 0 },
       portfolio,
       {
-        arDashboardOpen: 2500,
+        arDashboardOpenPortfolio: 2500,
+        arDashboardOpenPeriod: 2500,
+        apDashboardOpenPortfolio: 900,
+        apDashboardOpenPeriod: 900,
         arDashboardReceived: 0,
-        apDashboardOpen: 900,
         apDashboardPaid: 0,
       }
     );
