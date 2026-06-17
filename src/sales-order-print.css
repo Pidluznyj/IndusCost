@@ -1,0 +1,65 @@
+/* Impressão — pedido de venda (mesmo padrão da proposta comercial) */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  .proposal-print-no-print,
+  .print-no-print {
+    display: none !important;
+  }
+
+  body.sales-order-print-route {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.sales-order-print-route,
+  body.sales-order-print-route * {
+    visibility: visible !important;
+  }
+
+  body.sales-order-print-route .print-doc-header,
+  body.sales-order-print-route .print-doc-header * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  body.sales-order-print-route .print-doc-header-row,
+  body.sales-order-print-route .print-doc-company,
+  body.sales-order-print-route .print-doc-meta {
+    display: flex !important;
+    visibility: visible !important;
+  }
+
+  .sales-order-print-page,
+  .sales-order-print-route-page,
+  .proposal-print-scroll {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .sales-order-print-document,
+  .proposal-print-document {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    overflow: visible !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

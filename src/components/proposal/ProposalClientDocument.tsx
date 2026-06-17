@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import type { Customer, Proposal, ProposalItem } from "@/src/types/commercial";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
+import { PrintHeader } from "@/src/components/print/PrintHeader";
 
 function safeNum(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -33,16 +34,6 @@ function nonEmpty(s: unknown): string | null {
 function formatItemLineNo(index: number): string {
   return String((index + 1) * 10).padStart(5, "0");
 }
-
-/**
- * Fallback institucional (dados da Lazarios/Koppetel) até existir configuração
- * estruturada de endereço/CNPJ/contato no branding — não persiste em banco.
- */
-const COMPANY_DOC_FALLBACK = {
-  taxId: "14.055.501/0001-80",
-  addressLine: "Rua Carlos Essenfelder, Boqueirão, Curitiba - PR, CEP 81730-060",
-  email: "paulo@grupolazarios.com.br",
-} as const;
 
 /** Unidade comercial quando o item não traz unidade — apenas rótulo visual. */
 function formatProposalUnit(unit?: string | null): string {
@@ -138,14 +129,6 @@ export function ProposalClientDocument({
       ? `${Number(deliveryDays)} dia(s)`
       : null;
 
-  const proposalLogoSrc =
-    typeof b.proposalLogoDataUrl === "string" &&
-    b.proposalLogoDataUrl.trim().length > 0 &&
-    b.proposalLogoDataUrl.trim().toLowerCase().startsWith("data:image/")
-      ? b.proposalLogoDataUrl.trim()
-      : null;
-  const sloganLine = nonEmpty(b.slogan);
-
   const cpHeading =
     proposalNumber != null && Number.isFinite(proposalNumber)
       ? `CP ${String(Math.floor(Number(proposalNumber))).padStart(5, "0")}`
@@ -161,46 +144,17 @@ export function ProposalClientDocument({
           Proposta comercial {cpHeading !== "Rascunho" ? cpHeading : ""}
         </h1>
 
-        {/* Cabeçalho compacto */}
-        <header className="proposal-compact-header proposal-print-section border-b border-slate-300 pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-            <div className="proposal-compact-company flex min-w-0 flex-1 gap-3">
-              {proposalLogoSrc ? (
-                <img
-                  src={proposalLogoSrc}
-                  alt={b.companyName}
-                  className="h-16 w-auto max-w-[240px] shrink-0 object-contain object-left sm:h-[4.5rem] sm:max-w-[280px] md:max-w-[300px]"
-                />
-              ) : null}
-              <div className="min-w-0 space-y-0.5 text-[11px] text-slate-700 sm:text-xs">
-                <p className="text-sm font-bold leading-tight text-slate-900 sm:text-base">{b.companyName}</p>
-                {sloganLine ? <p className="text-[10px] italic text-slate-500 sm:text-[11px]">{sloganLine}</p> : null}
-                <p>
-                  <span className="font-semibold text-slate-600">CNPJ: </span>
-                  {COMPANY_DOC_FALLBACK.taxId}
-                </p>
-                <p className="break-words">{COMPANY_DOC_FALLBACK.addressLine}</p>
-                <p>
-                  <span className="font-semibold text-slate-600">E-mail: </span>
-                  {COMPANY_DOC_FALLBACK.email}
-                </p>
-              </div>
-            </div>
-            <div className="proposal-compact-proposal-meta shrink-0 border-t border-slate-200 pt-2 text-[11px] sm:border-t-0 sm:border-l sm:pl-5 sm:pt-0 sm:text-xs">
-              <p className="text-sm font-extrabold tracking-tight text-slate-900 sm:text-base">
-                PROPOSTA: {cpHeading}
-              </p>
-              <p className="mt-1">
-                <span className="font-semibold text-slate-600">Data: </span>
-                {issuedAt || "—"}
-              </p>
-              <p className="mt-0.5">
-                <span className="font-semibold text-slate-600">Vendedor: </span>
-                {responsible ?? "—"}
-              </p>
-            </div>
-          </div>
-        </header>
+        {/* Cabeçalho institucional padrão IndusCost */}
+        <PrintHeader
+          branding={b}
+          documentTitle="PROPOSTA"
+          documentHighlight={cpHeading}
+          metaLines={[
+            { label: "Data", value: issuedAt || "—" },
+            { label: "Vendedor", value: responsible ?? "—" },
+          ]}
+          className="proposal-compact-header proposal-print-section"
+        />
 
         {/* Dados do cliente */}
         <section className="proposal-compact-section proposal-compact-client proposal-print-section mt-4">

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Loader2, Package } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2, Package, Printer } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { SearchableSelect, type SelectOption } from "@/src/components/shared/SearchableSelect";
@@ -441,6 +441,14 @@ function SalesOrderDetailView({ id }: { id: string }) {
         >
           <ArrowLeft className="h-4 w-4" />
           Lista
+        </button>
+        <button
+          type="button"
+          onClick={() => window.open(`/sales-orders/${row.id}/print`, "_blank", "noopener,noreferrer")}
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
+        >
+          <Printer className="h-4 w-4" />
+          Imprimir / PDF
         </button>
         <div className="flex items-center gap-2 text-muted-foreground">
           <Package className="h-5 w-5" />

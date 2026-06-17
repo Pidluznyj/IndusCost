@@ -32,6 +32,19 @@
     visibility: visible !important;
   }
 
+  body.proposal-print-route .print-doc-header,
+  body.proposal-print-route .print-doc-header * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  body.proposal-print-route .print-doc-header-row,
+  body.proposal-print-route .print-doc-company,
+  body.proposal-print-route .print-doc-meta {
+    display: flex !important;
+    visibility: visible !important;
+  }
+
   body.proposal-print-route .proposal-print-no-print {
     display: none !important;
   }
@@ -104,9 +117,12 @@
     page-break-inside: auto !important;
   }
 
-  header.proposal-compact-header {
+  header.proposal-compact-header,
+  .print-doc-header.proposal-compact-header {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+    display: block !important;
+    visibility: visible !important;
   }
 
   .proposal-print-items-section {

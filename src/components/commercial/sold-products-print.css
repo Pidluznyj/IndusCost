@@ -70,10 +70,27 @@
     color: #111;
   }
 
+  #sold-products-print-root .sold-products-print-main-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 8px 0 6px;
+  }
+
+  #sold-products-print-root .print-doc-header,
+  #sold-products-print-root .print-doc-header * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  #sold-products-print-root .print-doc-header-row,
+  #sold-products-print-root .print-doc-company,
+  #sold-products-print-root .print-doc-meta {
+    display: flex !important;
+    visibility: visible !important;
+  }
+
   #sold-products-print-root .sold-products-print-doc-header {
-    border-bottom: 2px solid #333;
-    padding-bottom: 6px;
-    margin-bottom: 8px;
     break-inside: avoid;
     page-break-inside: avoid;
   }

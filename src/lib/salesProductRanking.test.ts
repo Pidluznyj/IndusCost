@@ -286,9 +286,9 @@ describe("salesProductRanking", () => {
     assert.ok(page.includes('type="date"'));
     assert.ok(page.includes("formatSoldProductsIsoDateDisplay"));
     assert.ok(page.includes("prepareRankingTableRows"));
-    assert.ok(printDoc.includes('id="sold-products-print-root"'));
-    assert.ok(printDoc.includes("sold-products-print-ranking-table"));
-    assert.ok(printDoc.includes("Resumo executivo"));
+    assert.ok(printDoc.includes("rootId=\"sold-products-print-root\""));
+    assert.ok(printDoc.includes("PrintHeader"));
+    assert.ok(printDoc.includes("PRODUTOS VENDIDOS"));
 
     const routes = readFileSync(
       join(process.cwd(), "src", "lib", "salesProductRankingRoutes.ts"),

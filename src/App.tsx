@@ -42,6 +42,7 @@ import { CustomerIndicatorsDashboard } from "@/src/components/contextual/Custome
 import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/SalesOrdersIndicatorsDashboard";
 import { SoldProductsReportPage } from "@/src/components/commercial/SoldProductsReportPage";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
+import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -267,6 +268,7 @@ export default function App() {
       <Route path="/" element={<PublicLandingRoute />} />
       <Route path="/login" element={<PublicLoginRoute />} />
       <Route path="/proposals/:id/print" element={<ProposalPrintView />} />
+      <Route path="/sales-orders/:id/print" element={<SalesOrderPrintView />} />
       <Route path="/public/fleet/reservation/:token" element={<FleetPublicReservationPage />} />
       <Route
         path="/public/fleet/vehicle-checklist/:vehicleToken"

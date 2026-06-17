@@ -10,11 +10,7 @@ export const SOLD_PRODUCTS_PRINT_SUBTITLE =
 export const SOLD_PRODUCTS_PRINT_FOOTER_NOTE =
   "Quantidades e valores conforme filtros aplicados. Cancelados/erro respeitam o status selecionado.";
 
-export const SOLD_PRODUCTS_COMPANY_DOC_FALLBACK = {
-  taxId: "14.055.501/0001-80",
-  addressLine: "Rua Carlos Essenfelder, Boqueirão, Curitiba - PR, CEP 81730-060",
-  email: "paulo@grupolazarios.com.br",
-} as const;
+export { PRINT_COMPANY_DOC_FALLBACK as SOLD_PRODUCTS_COMPANY_DOC_FALLBACK } from "@/src/lib/printBranding";
 
 export function formatSoldProductsPrintDateTime(iso: string | null | undefined): string {
   if (!iso?.trim()) return "—";

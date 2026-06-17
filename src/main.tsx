@@ -4,6 +4,8 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.tsx";
 import { AuthProvider } from "./contexts/AuthContext.tsx";
 import "./index.css";
+import "./components/print/print-document.css";
+import "./sales-order-print.css";
 import "./reports-print.css";
 import "./material-demand-print.css";
 import "./proposal-print.css";

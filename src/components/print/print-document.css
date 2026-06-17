@@ -1,0 +1,191 @@
+/**
+ * Padrão IndusCost — documentos de impressão/PDF (proposta, pedido, relatórios).
+ * Usa .print-doc-header (div) em vez de <header> para evitar regras globais de print.
+ */
+@media print {
+  .print-no-print,
+  .print-actions,
+  button.print-no-print {
+    display: none !important;
+  }
+
+  .print-page {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .print-document {
+    page-break-inside: auto;
+    break-inside: auto;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .print-doc-header {
+    display: block !important;
+    visibility: visible !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-section--flow {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .print-document table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+
+  .print-document thead {
+    display: table-header-group;
+  }
+
+  .print-document tfoot {
+    display: table-footer-group;
+  }
+
+  .print-document tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-document-footer {
+    margin-top: 8mm;
+    padding-top: 3mm;
+    border-top: 1px solid #cbd5e1;
+    font-size: 8pt;
+    color: #64748b;
+  }
+}
+
+/* Pré-visualização na tela */
+.print-doc-header {
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+
+.print-doc-header-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .print-doc-header-row {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+  }
+}
+
+.print-doc-company {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.print-doc-logo {
+  height: 64px;
+  width: auto;
+  max-width: 240px;
+  object-fit: contain;
+  object-position: left;
+  flex-shrink: 0;
+}
+
+.print-doc-company-text {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #334155;
+}
+
+.print-doc-company-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.print-doc-company-slogan {
+  font-size: 10px;
+  font-style: italic;
+  color: #64748b;
+}
+
+.print-doc-label {
+  font-weight: 600;
+  color: #475569;
+}
+
+.print-doc-meta {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #334155;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 8px;
+}
+
+@media (min-width: 640px) {
+  .print-doc-meta {
+    border-top: none;
+    border-left: 1px solid #e2e8f0;
+    padding-top: 0;
+    padding-left: 20px;
+    min-width: 220px;
+  }
+}
+
+.print-doc-meta-kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.print-doc-meta-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 2px 0 6px;
+}
+
+.print-doc-subtitle {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.print-section-title {
+  margin: 16px 0 8px;
+  padding-top: 8px;
+  border-top: 1px solid #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #334155;
+}
+
+.print-section-title:first-child {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}

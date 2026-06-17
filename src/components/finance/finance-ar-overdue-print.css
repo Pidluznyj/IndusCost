@@ -29,11 +29,13 @@
 
   .ar-overdue-no-print,
   .finance-ar-overdue-screen-only,
-  .sold-products-no-print,
-  nav,
-  aside,
-  header:not(.finance-ar-overdue-print-doc-header),
   button {
+    display: none !important;
+  }
+
+  body.ar-overdue-print-route .sold-products-no-print,
+  body.ar-overdue-print-route nav,
+  body.ar-overdue-print-route aside {
     display: none !important;
   }
 
