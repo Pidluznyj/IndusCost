@@ -19,6 +19,7 @@ describe("financeNavigation", () => {
     assert.equal(getFinanceSectionPath("accounts-receivable"), "/finance/accounts-receivable");
     assert.equal(getFinanceSectionPath("accounts-payable"), "/finance/accounts-payable");
     assert.equal(getFinanceSectionPath("billing"), "/finance/billing");
+    assert.equal(getFinanceSectionPath("executive-report"), "/finance/executive-report");
     assert.equal(getFinanceDefaultPath(), "/finance/accounts-receivable");
     for (const section of FINANCE_SECTIONS) {
       assert.ok(section.path.startsWith("/finance/"), section.path);
@@ -31,6 +32,7 @@ describe("financeNavigation", () => {
     assert.equal(isFinanceCanonicalPath("/finance/accounts-receivable"), true);
     assert.equal(isFinanceCanonicalPath("/finance/accounts-payable"), true);
     assert.equal(isFinanceCanonicalPath("/finance/billing"), true);
+    assert.equal(isFinanceCanonicalPath("/finance/executive-report"), true);
     assert.equal(isFinanceCanonicalPath("/finance"), true);
     assert.equal(
       isFinanceCanonicalPath("/finance/accounts-receivable/accounts-payable"),
@@ -91,6 +93,7 @@ describe("financeNavigation", () => {
     assert.ok(nav.includes('"/finance/accounts-receivable"'));
     assert.ok(nav.includes('"/finance/accounts-payable"'));
     assert.ok(nav.includes('"/finance/billing"'));
+    assert.ok(nav.includes('"/finance/executive-report"'));
   });
 
   it("App.tsx redireciona /finance para rota canônica", () => {

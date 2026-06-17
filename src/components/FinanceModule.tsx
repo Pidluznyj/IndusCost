@@ -1,21 +1,24 @@
 import React from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { FileText, Loader2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FinanceAccountsReceivablePage } from "@/src/components/finance/FinanceAccountsReceivablePage";
 import { FinanceAccountsPayablePage } from "@/src/components/finance/FinanceAccountsPayablePage";
 import { FinanceBillingPage } from "@/src/components/finance/FinanceBillingPage";
 import { FinanceCashFlowPage } from "@/src/components/finance/FinanceCashFlowPage";
+import { FinanceExecutiveReportPage } from "@/src/components/finance/FinanceExecutiveReportPage";
 import {
   canViewFinanceAccountsPayable,
 } from "@/src/lib/financeAccountsPayablePermissions";
 import { canViewFinanceAccountsReceivable } from "@/src/lib/financeAccountsReceivablePermissions";
 import { canViewFinanceBilling } from "@/src/lib/financeBillingPermissions";
 import { canViewFinanceCashFlow } from "@/src/lib/financeCashFlowPermissions";
+import { canViewFinanceExecutiveReport } from "@/src/lib/financeExecutiveReportPermissions";
 import {
   FINANCE_SECTIONS,
   getFinanceDefaultPath,
+  getFinanceSectionPath,
   isFinanceCanonicalPath,
   resolveFinanceCanonicalPath,
   type FinanceSectionId,
@@ -34,12 +37,14 @@ export function FinanceModule() {
   const canViewAccountsPayable = canViewFinanceAccountsPayable(auth);
   const canViewBilling = canViewFinanceBilling(auth);
   const canViewCashFlow = canViewFinanceCashFlow(auth);
+  const canViewExecutiveReport = canViewFinanceExecutiveReport(auth);
 
   const visibleSections = FINANCE_SECTIONS.filter((section) => {
     if (section.id === "cash-flow") return canViewCashFlow;
     if (section.id === "accounts-receivable") return canViewAccountsReceivable;
     if (section.id === "accounts-payable") return canViewAccountsPayable;
     if (section.id === "billing") return canViewBilling;
+    if (section.id === "executive-report") return canViewExecutiveReport;
     return false;
   });
 
@@ -86,11 +91,38 @@ export function FinanceModule() {
         Sem permissão para Faturamento.
       </div>
     ),
+    "executive-report": canViewExecutiveReport ? (
+      <FinanceExecutiveReportPage />
+    ) : (
+      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+        Sem permissão para Relatório Presidencial.
+      </div>
+    ),
   };
 
   return (
     <div className="space-y-6">
-      <nav className="flex flex-wrap gap-2 border-b border-border pb-3">
+      {canViewExecutiveReport ? (
+        <div className="finance-executive-report-print-no-print flex justify-end">
+          <NavLink
+            to={getFinanceSectionPath("executive-report")}
+            className={({ isActive }) =>
+              cn(
+                "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
+                isActive
+                  ? "bg-[#1e3a5f] text-white"
+                  : "border border-[#1e3a5f]/30 bg-[#eff6ff] text-[#1e3a5f] hover:bg-[#dbeafe]"
+              )
+            }
+            data-testid="finance-executive-report-link"
+          >
+            <FileText className="h-4 w-4" />
+            Relatório Presidencial
+          </NavLink>
+        </div>
+      ) : null}
+
+      <nav className="finance-module-tabs flex flex-wrap gap-2 border-b border-border pb-3">
         {visibleSections.map((section) => (
           <NavLink
             key={section.id}
@@ -116,6 +148,7 @@ export function FinanceModule() {
         <Route path="accounts-receivable" element={sectionRoutes["accounts-receivable"]} />
         <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
         <Route path="billing" element={sectionRoutes.billing} />
+        <Route path="executive-report" element={sectionRoutes["executive-report"]} />
         <Route path="*" element={<FinanceCanonicalRedirect />} />
       </Routes>
     </div>

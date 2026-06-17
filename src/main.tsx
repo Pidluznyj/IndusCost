@@ -11,6 +11,7 @@ import "./material-demand-print.css";
 import "./proposal-print.css";
 import "./cnpj-intelligence-print.css";
 import "./project-executive-report-print.css";
+import "./components/finance/executive-report/finance-executive-report.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

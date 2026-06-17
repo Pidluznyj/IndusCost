@@ -1,0 +1,141 @@
+/* Relatório Presidencial — visual executivo e impressão */
+
+.finance-executive-report-page {
+  --exec-bg: #f4f6f9;
+  --exec-card: #ffffff;
+  --exec-ink: #0f172a;
+  --exec-muted: #64748b;
+  --exec-accent: #1e3a5f;
+  --exec-border: #e2e8f0;
+  background: var(--exec-bg);
+}
+
+.finance-executive-report-document {
+  color: var(--exec-ink);
+}
+
+.finance-executive-report-cover {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #334155 100%);
+  color: #f8fafc;
+  border-radius: 1.25rem;
+  padding: 3rem 2.5rem;
+  min-height: 22rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.finance-executive-report-section {
+  background: var(--exec-card);
+  border-radius: 1rem;
+  padding: 2rem;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 6%);
+  border: 1px solid var(--exec-border);
+}
+
+.finance-executive-report-section-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--exec-accent);
+  margin-bottom: 0.35rem;
+}
+
+.finance-executive-report-section-subtitle {
+  font-size: 0.875rem;
+  color: var(--exec-muted);
+  margin-bottom: 1.5rem;
+}
+
+.finance-executive-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem;
+}
+
+.finance-executive-kpi-card {
+  background: #f8fafc;
+  border: 1px solid var(--exec-border);
+  border-radius: 0.875rem;
+  padding: 1.25rem 1.35rem;
+  min-height: 7rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.finance-executive-kpi-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--exec-muted);
+}
+
+.finance-executive-kpi-value {
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--exec-ink);
+}
+
+.finance-executive-kpi-sub {
+  font-size: 0.75rem;
+  color: var(--exec-muted);
+}
+
+.finance-executive-reading {
+  border-left: 4px solid var(--exec-accent);
+  background: #f1f5f9;
+  border-radius: 0 0.75rem 0.75rem 0;
+  padding: 1rem 1.25rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: #334155;
+}
+
+.finance-executive-report-footer {
+  font-size: 0.7rem;
+  color: var(--exec-muted);
+  text-align: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+@media print {
+  body.finance-executive-report-route {
+    background: white !important;
+  }
+
+  body.finance-executive-report-route .finance-executive-report-print-no-print,
+  .finance-executive-report-print-no-print {
+    display: none !important;
+  }
+
+  body.finance-executive-report-route #root > * > aside,
+  body.finance-executive-report-route #root > * > header,
+  body.finance-executive-report-route nav.finance-module-tabs {
+    display: none !important;
+  }
+
+  .finance-executive-report-page {
+    background: white;
+    padding: 0 !important;
+  }
+
+  .finance-executive-report-section {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #cbd5e1;
+    margin-bottom: 1rem;
+  }
+
+  .finance-executive-report-cover {
+    break-after: page;
+    border-radius: 0;
+    min-height: auto;
+    padding: 4rem 2rem;
+  }
+}
