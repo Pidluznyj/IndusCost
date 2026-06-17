@@ -6,6 +6,17 @@ import type { BillingMultiYearMonthlyPoint } from "./financeBillingChartData.js"
 import { resolveFinanceBillingComparisonYears } from "./financeBillingChartTheme.js";
 import { formatExecutiveReportCurrency } from "./financeExecutiveReportUtils.js";
 import type { FinanceExecutiveReport } from "./financeExecutiveReportTypes.js";
+import {
+  formatExecutiveReportPresentationCurrency,
+  formatExecutiveReportPresentationPercent,
+} from "./financeExecutiveReportPresentation.js";
+
+export {
+  formatExecutiveReportPresentationCurrency,
+  formatExecutiveReportPresentationPercent,
+  EXECUTIVE_REPORT_EMPTY_MESSAGE,
+  EXECUTIVE_REPORT_NO_TARGET_MESSAGE,
+} from "./financeExecutiveReportPresentation.js";
 
 export type FinanceExecutiveReportCompany = "all" | "lazarios" | "koppetel" | "sm";
 export type FinanceExecutiveReportCustomerType = "external" | "all";
@@ -211,7 +222,7 @@ export function resolveExecutiveSummaryBillingByYear(
     return {
       year,
       value,
-      formatted: formatExecutiveReportCurrency(value),
+      formatted: formatExecutiveReportPresentationCurrency(value),
     };
   });
 }

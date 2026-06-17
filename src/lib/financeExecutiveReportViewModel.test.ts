@@ -7,6 +7,17 @@ import {
   resolveExecutiveReportCriticalMonths,
   resolveExecutiveSummaryBillingByYear,
 } from "./financeExecutiveReportViewModel.js";
+import {
+  EXECUTIVE_REPORT_EMPTY_MESSAGE,
+  executiveChartRowsPreserveMonthOrder,
+  formatExecutiveReportAxisCurrency,
+  formatExecutiveReportPresentationCurrency,
+  formatExecutiveReportPresentationPercent,
+  mapBillingMultiYearToBarComparison,
+  mapCashFlowTimelineToChart,
+  mapRealizedProjectedChart,
+  mapSalesOrdersMonthlyToChart,
+} from "./financeExecutiveReportPresentation.js";
 
 function minimalReport(overrides: Partial<FinanceExecutiveReport> = {}): FinanceExecutiveReport {
   return {
@@ -78,12 +89,35 @@ function minimalReport(overrides: Partial<FinanceExecutiveReport> = {}): Finance
             values: { 2024: 50, 2025: 70, 2026: 100 },
             targetValue: 91,
           },
+          {
+            month: 3,
+            monthLabel: "mar",
+            values: { 2024: 1_500_000, 2025: 2_000_000, 2026: 2_500_000 },
+            targetValue: 0,
+          },
         ],
         multiYearSummary: [],
         cumulativeBilling: [],
       },
     },
-    billingProjection: { source: {} as never, tab: {} as never },
+    billingProjection: {
+      source: {} as never,
+      tab: {
+        projection: {} as never,
+        realizedVsProjected: {
+          realized: 1_200_000,
+          projected: 1_500_000,
+          target: null,
+          formatted: {
+            realized: "R$ 1,2 Mi",
+            projected: "R$ 1,5 Mi",
+            target: "—",
+          },
+        },
+        accumulatedEvolution: [],
+        forecast: {} as never,
+      },
+    },
     accountsReceivable: { source: {} as never, payload: {} as never },
     accountsPayable: { source: {} as never, payload: {} as never },
     cashFlow: { source: {} as never, payload: {} as never },
@@ -104,6 +138,19 @@ function minimalReport(overrides: Partial<FinanceExecutiveReport> = {}): Finance
             estimatedOutflow: 100,
             netFlow: -100,
             accumulatedNet: -100,
+          },
+          {
+            year: 2026,
+            month: 5,
+            monthLabel: "Mai",
+            received: 50_000,
+            receivableOpenDue: 10_000,
+            estimatedInflow: 60_000,
+            paid: 20_000,
+            payableOpenDue: 15_000,
+            estimatedOutflow: 35_000,
+            netFlow: 25_000,
+            accumulatedNet: 25_000,
           },
         ],
         period: {} as never,
@@ -157,5 +204,118 @@ describe("financeExecutiveReportViewModel", () => {
       ),
       true
     );
+  });
+});
+
+describe("financeExecutiveReportPresentation", () => {
+  it("valores grandes viram R$ X Mi", () => {
+    assert.match(formatExecutiveReportPresentationCurrency(5_830_000), /Mi/);
+    assert.match(formatExecutiveReportAxisCurrency(5_830_000), /Mi/);
+  });
+
+  it("valores menores viram R$ X mil", () => {
+    assert.match(formatExecutiveReportPresentationCurrency(827_500), /mil/);
+    assert.match(formatExecutiveReportAxisCurrency(827_500), /mil/);
+  });
+
+  it("percentuais formatam com duas casas", () => {
+    assert.equal(formatExecutiveReportPresentationPercent(96.154, 2), "96,15%");
+  });
+
+  it("mês atual é destacado no comparativo de barras", () => {
+    const report = minimalReport();
+    const chart = mapBillingMultiYearToBarComparison(
+      report.billingComparison.tab.multiYearMonthly,
+      2026,
+      5
+    );
+    const current = chart.rows.find((r) => r.month === 5);
+    const other = chart.rows.find((r) => r.month === 3);
+    assert.equal(current?.isCurrentMonth, true);
+    assert.equal(other?.isCurrentMonth, false);
+  });
+
+  it("estado vazio não quebra mapeamento", () => {
+    const chart = mapBillingMultiYearToBarComparison([], 2026, 5);
+    assert.equal(chart.hasData, false);
+    assert.equal(chart.rows.length, 0);
+    assert.equal(EXECUTIVE_REPORT_EMPTY_MESSAGE.length > 0, true);
+
+    const realized = mapRealizedProjectedChart(
+      { realized: null, projected: null, target: null, formatted: { realized: "—", projected: "—", target: "—" } },
+      5
+    );
+    assert.equal(realized.hasData, false);
+    assert.equal(realized.hasTarget, false);
+  });
+
+  it("séries de gráfico preservam ordem dos meses", () => {
+    const report = minimalReport();
+    const chart = mapBillingMultiYearToBarComparison(
+      report.billingComparison.tab.multiYearMonthly,
+      2026,
+      5
+    );
+    const ordered = executiveChartRowsPreserveMonthOrder(chart.rows);
+    assert.deepEqual(
+      ordered.map((r) => r.month),
+      [3, 5]
+    );
+  });
+
+  it("dados negativos do fluxo são tratados corretamente", () => {
+    const report = minimalReport();
+    const cash = mapCashFlowTimelineToChart(
+      report.calendarAgenda.executiveSummary!.monthlyTimeline,
+      5
+    );
+    const negative = cash.rows.find((r) => r.netFlow < 0);
+    const positive = cash.rows.find((r) => r.netFlow > 0);
+    assert.equal(negative?.isNegative, true);
+    assert.equal(positive?.isNegative, false);
+    assert.equal(cash.hasData, true);
+  });
+
+  it("mapRealizedProjectedChart sinaliza meta ausente", () => {
+    const report = minimalReport();
+    const model = mapRealizedProjectedChart(
+      report.billingProjection.tab.realizedVsProjected,
+      5
+    );
+    assert.equal(model.hasTarget, false);
+    assert.equal(model.hasData, true);
+    assert.equal(model.currentMonthLabel, "Mai");
+  });
+
+  it("mapSalesOrdersMonthlyToChart preserva ordem mensal", () => {
+    const rows = mapSalesOrdersMonthlyToChart(
+      [
+        {
+          month: 8,
+          monthLabel: "Ago",
+          periodLabel: "ago/2026",
+          previousYearValue: 10,
+          currentYearValue: 20,
+          targetValue: 30,
+          projectedValue: 25,
+          achievementPercent: 66.6,
+          differenceToTarget: -10,
+        },
+        {
+          month: 2,
+          monthLabel: "Fev",
+          periodLabel: "fev/2026",
+          previousYearValue: 5,
+          currentYearValue: 8,
+          targetValue: 12,
+          projectedValue: 9,
+          achievementPercent: 66.6,
+          differenceToTarget: -4,
+        },
+      ],
+      2
+    );
+    assert.deepEqual(rows.rows.map((r) => r.month), [2, 8]);
+    assert.equal(rows.rows[0]?.isCurrentMonth, true);
   });
 });

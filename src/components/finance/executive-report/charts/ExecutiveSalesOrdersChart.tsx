@@ -1,0 +1,159 @@
+import React from "react";
+import {
+  Bar,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { ExecutiveSalesOrdersChartRow } from "@/src/lib/financeExecutiveReportPresentation";
+import type { DashboardChartSeriesConfig } from "@/src/lib/executiveDashboardTypes";
+import {
+  formatExecutiveReportAxisCurrency,
+  formatExecutiveReportPresentationCurrency,
+} from "@/src/lib/financeExecutiveReportPresentation";
+import {
+  ExecutiveChartShell,
+  ExecutiveTargetHint,
+} from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
+
+function SalesTooltip({
+  active,
+  payload,
+  label,
+  config,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey: string; value: number; color: string }>;
+  label?: string;
+  config: DashboardChartSeriesConfig;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="executive-chart-tooltip">
+      <p className="executive-chart-tooltip-title">Mês: {label}</p>
+      {payload.map((item) => {
+        const name =
+          item.dataKey === "previousYear"
+            ? config.labels.previousYearBar
+            : item.dataKey === "currentYear"
+              ? config.labels.currentYearBar
+              : item.dataKey === "target"
+                ? config.labels.targetLine
+                : "Projeção";
+        return (
+          <p key={item.dataKey} style={{ color: item.color }}>
+            {name}: {formatExecutiveReportPresentationCurrency(item.value)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ExecutiveSalesOrdersChart({
+  title,
+  subtitle,
+  rows,
+  config,
+  empty,
+  targetMissing,
+}: {
+  title: string;
+  subtitle?: string;
+  rows: ExecutiveSalesOrdersChartRow[];
+  config: DashboardChartSeriesConfig;
+  empty?: boolean;
+  targetMissing?: boolean;
+}) {
+  const data = rows.map((row) => ({
+    name: row.monthLabel,
+    month: row.month,
+    isCurrentMonth: row.isCurrentMonth,
+    previousYear: row.previousYear,
+    currentYear: row.currentYear ?? 0,
+    target: row.target,
+    projected: row.projected ?? 0,
+  }));
+
+  return (
+    <div className="space-y-2">
+      <ExecutiveTargetHint missing={targetMissing ?? false} />
+      <ExecutiveChartShell
+        title={title}
+        subtitle={subtitle ?? "Comparativo ano anterior × ano atual, meta e projeção"}
+        empty={empty ?? rows.length === 0}
+        testId="executive-sales-orders-chart"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 11, fill: "#64748B" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 11, fill: "#64748B" }}
+              tickFormatter={formatExecutiveReportAxisCurrency}
+              width={88}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip content={<SalesTooltip config={config} />} />
+            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+            <Bar
+              dataKey="previousYear"
+              name={config.labels.previousYearBar}
+              fill={config.colors.previousYearBar}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={24}
+            />
+            <Bar
+              dataKey="currentYear"
+              name={config.labels.currentYearBar}
+              fill={config.colors.currentYearBar}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={24}
+            >
+              {data.map((entry) => (
+                <Cell
+                  key={`current-${entry.name}`}
+                  fill={config.colors.currentYearBar}
+                  opacity={entry.isCurrentMonth ? 1 : 0.85}
+                  stroke={entry.isCurrentMonth ? "#0F172A" : undefined}
+                  strokeWidth={entry.isCurrentMonth ? 2 : 0}
+                />
+              ))}
+            </Bar>
+            <Line
+              type="monotone"
+              dataKey="target"
+              name={config.labels.targetLine}
+              stroke={config.colors.targetLine}
+              strokeWidth={2.5}
+              dot={false}
+            />
+            {config.colors.projectedLine ? (
+              <Line
+                type="monotone"
+                dataKey="projected"
+                name={config.labels.projectedLine ?? "Projeção"}
+                stroke={config.colors.projectedLine}
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                dot={false}
+              />
+            ) : null}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </ExecutiveChartShell>
+    </div>
+  );
+}
