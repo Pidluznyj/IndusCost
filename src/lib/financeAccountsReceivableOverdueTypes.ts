@@ -78,6 +78,7 @@ export type FinanceArOverdueTitleRow = {
   salesOrderNumber?: string;
   dueDate: string;
   daysOverdue: number;
+  agingLabel: string;
   amountReceivable: number;
   amountReceived: number;
   balanceReceivable: number;

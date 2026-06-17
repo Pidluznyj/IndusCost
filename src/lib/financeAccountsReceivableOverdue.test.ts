@@ -13,8 +13,13 @@ import {
 import {
   buildFinanceArOverduePayload,
   isFinanceArOverdueOpenTitle,
+  resolveOverdueAgingLabel,
   sumFinanceArOverdueOpenAmount,
 } from "./financeAccountsReceivableOverdue.js";
+import {
+  formatArOverduePrintPeriod,
+  groupArOverdueTitlesByCustomer,
+} from "./financeAccountsReceivableOverduePrintMeta.js";
 import { buildNomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 const LATEST_SYNC = new Date("2026-06-17T10:00:00.000Z");
@@ -138,10 +143,16 @@ describe("financeAccountsReceivableOverdue", () => {
       cutoff(),
       { paginate: false }
     );
+    // Total filtrado: 800 + 200 + 1100 = 2100
+    // Cliente B: 1100 / 2100 × 100 = 52,38
+    // Cliente A: 1000 / 2100 × 100 = 47,62
     assert.equal(payload.customerRanking.length, 2);
     assert.equal(payload.customerRanking[0]!.customerName, "Cliente B");
-    assert.equal(payload.customerRanking[0]!.percentOfTotal, 50);
+    assert.equal(payload.customerRanking[0]!.percentOfTotal, 52.38);
+    assert.equal(payload.customerRanking[1]!.percentOfTotal, 47.62);
     assert.ok(payload.customerRanking.every((r) => Number.isFinite(r.percentOfTotal)));
+    const sumPercent = payload.customerRanking.reduce((s, r) => s + r.percentOfTotal, 0);
+    assert.ok(Math.abs(sumPercent - 100) < 0.02);
   });
 
   it("filtro com NF/sem NF respeita origem", () => {
@@ -202,6 +213,17 @@ describe("financeAccountsReceivableOverdue", () => {
     assert.equal(overdueTotal, dash.cards.overdueAmount);
   });
 
+  it("título mapeado inclui faixa de aging", () => {
+    const payload = buildFinanceArOverduePayload(
+      [arRow({ externalId: 1, dueDate: new Date(2026, 5, 10) })],
+      { status: "all", year: 2026 },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
+    assert.equal(payload.overdueTitles[0]!.agingLabel, resolveOverdueAgingLabel(7));
+  });
+
   it("export XLSX gera bytes e abas esperadas", () => {
     const rows = [arRow({ externalId: 1 })];
     const payload = buildFinanceArOverduePayload(
@@ -222,6 +244,58 @@ describe("financeAccountsReceivableOverdue", () => {
   });
 });
 
+describe("financeAccountsReceivableOverdue print", () => {
+  it("período de impressão usa ano completo quando só ano informado", () => {
+    const period = formatArOverduePrintPeriod({
+      companyName: "",
+      personName: "",
+      personCnpj: "",
+      status: "all",
+      year: "2026",
+      month: "",
+      dueDateFrom: "",
+      dueDateTo: "",
+      invoiceIssued: "all",
+      paymentMethodName: "",
+      bankAccountName: "",
+    });
+    assert.equal(period, "01/01/2026 a 31/12/2026");
+  });
+
+  it("agrupamento por cliente preserva total vencido do payload", () => {
+    const rows = [
+      arRow({
+        externalId: 1,
+        personName: "Cliente A",
+        personCnpj: "11.111.111/0001-11",
+        balanceReceivable: 800,
+      }),
+      arRow({
+        externalId: 2,
+        personName: "Cliente A",
+        personCnpj: "11.111.111/0001-11",
+        balanceReceivable: 200,
+      }),
+      arRow({
+        externalId: 3,
+        personName: "Cliente B",
+        personCnpj: "22.222.222/0001-22",
+        balanceReceivable: 1100,
+      }),
+    ];
+    const payload = buildFinanceArOverduePayload(
+      rows,
+      { status: "all", year: 2026 },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
+    const groups = groupArOverdueTitlesByCustomer(payload.overdueTitles);
+    const groupedTotal = groups.reduce((sum, g) => sum + g.totalOverdue, 0);
+    assert.equal(groupedTotal, payload.summary.totalOverdueAmount);
+  });
+});
+
 describe("FinanceAccountsReceivableOverdue UI", () => {
   it("página AR inclui aba Atrasados e botões de exportação/impressão", () => {
     const page = readFileSync(
@@ -232,6 +306,14 @@ describe("FinanceAccountsReceivableOverdue UI", () => {
       join(process.cwd(), "src/components/finance/FinanceAccountsReceivableOverdueTab.tsx"),
       "utf8"
     );
+    const printDoc = readFileSync(
+      join(process.cwd(), "src/components/finance/FinanceAccountsReceivableOverduePrintDocument.tsx"),
+      "utf8"
+    );
+    const printMeta = readFileSync(
+      join(process.cwd(), "src/lib/financeAccountsReceivableOverduePrintMeta.ts"),
+      "utf8"
+    );
     const types = readFileSync(
       join(process.cwd(), "src/lib/financeAccountsReceivableDashboardTypes.ts"),
       "utf8"
@@ -240,6 +322,26 @@ describe("FinanceAccountsReceivableOverdue UI", () => {
     assert.ok(page.includes('activeTab === "overdue"'));
     assert.ok(tab.includes("Exportar Excel"));
     assert.ok(tab.includes("Imprimir / PDF"));
-    assert.ok(tab.includes("Relatório de Contas a Receber Atrasadas"));
+    assert.ok(tab.includes("buildFinanceArOverdueExportQuery"));
+    assert.ok(printMeta.includes("Relatório de Contas a Receber em Atraso"));
+    assert.ok(printMeta.includes("Documento de apoio ao processo de cobrança"));
+    assert.ok(printDoc.includes("FINANCE_AR_OVERDUE_PRINT_TITLE"));
+    assert.ok(printDoc.includes("Resumo executivo"));
+    assert.ok(printDoc.includes("Clientes prioritários para cobrança"));
+    assert.ok(printDoc.includes("Detalhamento dos títulos vencidos"));
+    assert.ok(printDoc.includes("Total vencido"));
+    assert.ok(printDoc.includes("Forma de pagamento"));
+    assert.ok(printDoc.includes("Dias em atraso"));
+    assert.ok(printDoc.includes("Valor original"));
+    assert.ok(printDoc.includes("Valor recebido"));
+    assert.ok(printDoc.includes("Saldo em aberto"));
+    assert.ok(printDoc.includes('id="ar-overdue-print-root"'));
+    const printCss = readFileSync(
+      join(process.cwd(), "src/components/finance/finance-ar-overdue-print.css"),
+      "utf8"
+    );
+    assert.ok(printCss.includes("@page"));
+    assert.ok(printCss.includes("A4 landscape"));
+    assert.ok(printCss.includes("table-header-group"));
   });
 });

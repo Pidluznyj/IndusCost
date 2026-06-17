@@ -4,7 +4,6 @@ import {
   filterFinanceArRows,
   hasFinanceArSourceInvoice,
   parseFinanceArDashboardFilters,
-  resolveFinanceArCustomerKey,
   roundMoney,
   safeRatio,
   startOfLocalDay,
@@ -95,7 +94,7 @@ export function isFinanceArOverdueOpenTitle(
   return classifyFinanceArTitle(row, referenceDate) === "overdue";
 }
 
-function resolveOverdueAgingKey(daysOverdue: number): FinanceArOverdueAgingBucketKey {
+export function resolveOverdueAgingKey(daysOverdue: number): FinanceArOverdueAgingBucketKey {
   if (daysOverdue <= 7) return "overdue1to7";
   if (daysOverdue <= 15) return "overdue8to15";
   if (daysOverdue <= 30) return "overdue16to30";
@@ -107,6 +106,11 @@ function resolveOverdueAgingKey(daysOverdue: number): FinanceArOverdueAgingBucke
 function resolveArSourceLabel(row: FinanceArDashboardRow): string {
   if (hasFinanceArSourceInvoice(row)) return "Com NF";
   return "Sem NF / pré-faturamento";
+}
+
+export function resolveOverdueAgingLabel(daysOverdue: number): string {
+  const key = resolveOverdueAgingKey(daysOverdue);
+  return FINANCE_AR_OVERDUE_AGING_BUCKETS.find((b) => b.key === key)?.label ?? "—";
 }
 
 function mapTitleRow(row: FinanceArDashboardRow, referenceDate: Date): FinanceArOverdueTitleRow {
@@ -121,6 +125,7 @@ function mapTitleRow(row: FinanceArDashboardRow, referenceDate: Date): FinanceAr
     salesOrderNumber: row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : undefined,
     dueDate: row.dueDate!.toISOString(),
     daysOverdue: days,
+    agingLabel: resolveOverdueAgingLabel(days),
     amountReceivable: roundMoney(row.amountReceivable),
     amountReceived: roundMoney(row.amountReceived),
     balanceReceivable: roundMoney(row.balanceReceivable),
