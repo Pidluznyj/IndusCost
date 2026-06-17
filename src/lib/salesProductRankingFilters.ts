@@ -131,6 +131,15 @@ function parseYmd(raw: string, field: string): Date | null {
   return d;
 }
 
+/** Exibe YYYY-MM-DD em DD/MM/AAAA para chips e rótulos. */
+export function formatSoldProductsIsoDateDisplay(ymd: string): string {
+  const s = ymd.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return ymd;
+  const d = new Date(`${s}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return ymd;
+  return d.toLocaleDateString("pt-BR");
+}
+
 export function resolveSoldProductsDateRange(
   filters: Pick<SoldProductsUiFilters, "startDate" | "endDate" | "year" | "month">,
   referenceDate = new Date()

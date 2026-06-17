@@ -64,6 +64,7 @@ import {
   buildSoldProductsDashboardQuery,
   buildSoldProductsYearOptions,
   createDefaultSoldProductsUiFilters,
+  formatSoldProductsIsoDateDisplay,
   isDefaultSoldProductsUiFilters,
   normalizeSoldProductsUiFilters,
   SOLD_PRODUCTS_COMPANY_OPTIONS,
@@ -140,19 +141,22 @@ function FilterInput({
   value,
   onChange,
   placeholder,
+  type = "text",
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  type?: string;
 }) {
   return (
     <label className="block space-y-1.5">
       <span className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide">{label}</span>
       <input
+        type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
+        placeholder={type === "date" ? undefined : placeholder}
         className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
       />
     </label>
@@ -207,8 +211,12 @@ function buildSoldProductsFilterChips(
     const m = SOLD_PRODUCTS_MONTH_OPTIONS.find((o) => o.value === filters.month)?.label ?? filters.month;
     push("month", `Mês: ${m}`);
   }
-  if (filters.startDate.trim()) push("startDate", `De: ${filters.startDate}`);
-  if (filters.endDate.trim()) push("endDate", `Até: ${filters.endDate}`);
+  if (filters.startDate.trim()) {
+    push("startDate", `De: ${formatSoldProductsIsoDateDisplay(filters.startDate)}`);
+  }
+  if (filters.endDate.trim()) {
+    push("endDate", `Até: ${formatSoldProductsIsoDateDisplay(filters.endDate)}`);
+  }
   if (filters.dateBasis !== "issueDate") {
     push(
       "dateBasis",
@@ -847,15 +855,15 @@ export function SoldProductsReportPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <FilterInput
               label="Data inicial"
+              type="date"
               value={draftFilters.startDate}
               onChange={(v) => setDraftFilters((f) => ({ ...f, startDate: v }))}
-              placeholder="YYYY-MM-DD"
             />
             <FilterInput
               label="Data final"
+              type="date"
               value={draftFilters.endDate}
               onChange={(v) => setDraftFilters((f) => ({ ...f, endDate: v }))}
-              placeholder="YYYY-MM-DD"
             />
             <FilterSearchableSelect
               label="Cliente"

@@ -15,6 +15,7 @@ import {
 import {
   buildSoldProductsDashboardQuery,
   createDefaultSoldProductsUiFilters,
+  formatSoldProductsIsoDateDisplay,
   isDefaultSoldProductsUiFilters,
   isGroupEconomyCustomer,
   matchesSoldProductsCustomerScope,
@@ -237,6 +238,28 @@ describe("salesProductRanking", () => {
     assert.match(qs, /productId=prod-uuid-1/);
   });
 
+  it("query string envia startDate e endDate em ISO YYYY-MM-DD", () => {
+    const qs = buildSoldProductsDashboardQuery({
+      ...createDefaultSoldProductsUiFilters(),
+      startDate: "2026-01-01",
+      endDate: "2026-06-17",
+    });
+    assert.match(qs, /startDate=2026-01-01/);
+    assert.match(qs, /endDate=2026-06-17/);
+  });
+
+  it("formatSoldProductsIsoDateDisplay exibe DD/MM/AAAA", () => {
+    assert.equal(formatSoldProductsIsoDateDisplay("2026-01-01"), "01/01/2026");
+    assert.equal(formatSoldProductsIsoDateDisplay("2026-06-17"), "17/06/2026");
+  });
+
+  it("limpar filtros restaura datas vazias", () => {
+    const defaults = createDefaultSoldProductsUiFilters(new Date(2026, 5, 17));
+    assert.equal(defaults.startDate, "");
+    assert.equal(defaults.endDate, "");
+    assert.equal(isDefaultSoldProductsUiFilters(defaults, new Date(2026, 5, 17)), true);
+  });
+
   it("página possui impressão e export Excel", () => {
     const page = readFileSync(
       join(process.cwd(), "src", "components", "commercial", "SoldProductsReportPage.tsx"),
@@ -259,6 +282,9 @@ describe("salesProductRanking", () => {
     assert.ok(page.includes("/api/commercial/sold-products/export.xlsx"));
     assert.ok(page.includes("SortableTh"));
     assert.ok(page.includes("Clique para ordenar"));
+    assert.ok(page.includes('label="Data inicial"'));
+    assert.ok(page.includes('type="date"'));
+    assert.ok(page.includes("formatSoldProductsIsoDateDisplay"));
     assert.ok(page.includes("prepareRankingTableRows"));
     assert.ok(printDoc.includes('id="sold-products-print-root"'));
     assert.ok(printDoc.includes("sold-products-print-ranking-table"));
