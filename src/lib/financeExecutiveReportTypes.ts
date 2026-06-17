@@ -33,7 +33,7 @@ export type FinanceExecutiveReportFilters = {
   /** Empresa/filial quando aplicável (Nomus companyName). */
   company?: string;
   /** Segmentação de clientes — reservado; hoje faturamento usa filtro de mercado interno. */
-  customerType?: "all" | "market" | "internal";
+  customerType?: "all" | "external" | "market" | "internal";
   /** Incluir contrapartes do grupo econômico (default false nas visões gerenciais). */
   includeInternalCompanies?: boolean;
   /** Fonte de faturamento oficial — default recomendado: NF-e fiscal. */
@@ -175,8 +175,8 @@ export const FINANCE_EXECUTIVE_REPORT_KNOWN_GAPS: FinanceExecutiveReportKnownGap
   {
     id: "executive-narrative-ai",
     label: "Narrativa executiva automática",
-    status: "missing",
-    notes: "Seção executiveNarrative reservada; geração de texto não implementada.",
+    status: "partial",
+    notes: "Frases determinísticas geradas a partir dos números oficiais; sem IA generativa.",
   },
 ];
 
@@ -184,6 +184,18 @@ export type FinanceExecutiveReportDataQuality = {
   sanitization: FinanceDataSanitization | null;
   warnings: string[];
   unavailableSections: string[];
+  /** Metas derivadas (+30% sobre período anterior) — não há cadastro editável. */
+  targetsDerived: boolean;
+  sync: {
+    accountsReceivableLastSyncAt: string | null;
+    accountsPayableLastSyncAt: string | null;
+    nfeLastSyncAt: string | null;
+    salesOrdersLastSyncAt: string | null;
+  };
+  freshness: {
+    arStaleExcluded: boolean;
+    apStaleExcluded: boolean;
+  };
 };
 
 export type FinanceExecutiveReportCover = {
