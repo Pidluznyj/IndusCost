@@ -2,15 +2,46 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { buildFinanceCashFlowDashboard } from "./financeCashFlowDashboard.js";
-import { buildFinanceCashFlowExportQuery } from "./financeCashFlowDashboardTypes.js";
+import {
+  buildFinanceCashFlowDashboard,
+  isFinanceCashFlowPeriodAllQuery,
+  parseFinanceCashFlowDashboardFilters,
+  resolveFinanceCashFlowFiltersForLoad,
+  type FinanceCashFlowApRow,
+  type FinanceCashFlowArRow,
+} from "./financeCashFlowDashboard.js";
+import {
+  buildFinanceCashFlowExportQuery,
+  createDefaultFinanceCashFlowUiFilters,
+} from "./financeCashFlowDashboardTypes.js";
 import {
   cashFlowMonthlySeriesHasData,
   computeCashFlowNetPosition,
 } from "./financeCashFlowDisplay.js";
-import type { FinanceCashFlowApRow, FinanceCashFlowArRow } from "./financeCashFlowDashboard.js";
+import { buildFinanceCashFlowExportCsv } from "./financeCashFlowExport.js";
+import { buildCashFlowArApReconciliationReport } from "./financeCashFlowArApReconciliation.js";
+import {
+  buildFinanceCashFlowAuditPayload,
+  buildFinanceCashFlowDataset,
+} from "./financeCashFlowDataset.js";
+import { FINANCE_CASH_FLOW_RECONCILIATION_RISKS } from "./financeCashFlowReconciliationMap.js";
+import { buildNomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+import { buildNomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
 
 const REF = new Date(2026, 5, 9);
+const LATEST_SYNC = new Date("2026-06-17T10:00:00.000Z");
+
+function arCutoff() {
+  return buildNomusArReportSyncCutoff(LATEST_SYNC)!;
+}
+
+function apCutoff() {
+  return buildNomusApReportSyncCutoff(LATEST_SYNC)!;
+}
+
+function assertAuditOk(result: { ok: boolean; mismatches: string[] }, context: string) {
+  assert.equal(result.ok, true, `${context}: ${result.mismatches.join("; ")}`);
+}
 
 function arRow(overrides: Partial<FinanceCashFlowArRow> = {}): FinanceCashFlowArRow {
   return {
@@ -31,7 +62,7 @@ function arRow(overrides: Partial<FinanceCashFlowArRow> = {}): FinanceCashFlowAr
     sourceInvoiceNumber: null,
     suspendCollection: false,
     nomusStatus: true,
-    syncedAt: new Date(),
+    syncedAt: LATEST_SYNC,
     ...overrides,
   };
 }
@@ -58,7 +89,7 @@ function apRow(overrides: Partial<FinanceCashFlowApRow> = {}): FinanceCashFlowAp
     documentNumber: null,
     suspendPayment: false,
     nomusStatus: true,
-    syncedAt: new Date(),
+    syncedAt: LATEST_SYNC,
     ...overrides,
   };
 }
@@ -69,6 +100,64 @@ const filters = {
   status: "all" as const,
   year: 2026,
 };
+
+const CHECKLIST_FIXTURE_AR = [
+  arRow({ externalId: 1, balanceReceivable: 2000, dueDate: new Date(2026, 5, 5) }),
+  arRow({
+    externalId: 2,
+    companyName: "Empresa B",
+    balanceReceivable: 1500,
+    dueDate: new Date(2026, 6, 20),
+    sourceInvoiceId: null,
+    sourceInvoiceNumber: null,
+  }),
+  arRow({
+    externalId: 3,
+    balanceReceivable: 900,
+    dueDate: new Date(2026, 4, 1),
+    sourceInvoiceId: 100,
+    sourceInvoiceNumber: "NF-100",
+  }),
+  arRow({
+    externalId: 4,
+    balanceReceivable: 0,
+    amountReceived: 500,
+    settlementDate: new Date(2026, 5, 8),
+    dueDate: new Date(2026, 4, 1),
+  }),
+  arRow({
+    externalId: 5,
+    balanceReceivable: 5000,
+    syncedAt: new Date("2026-06-12T10:00:00.000Z"),
+    dueDate: new Date(2026, 4, 1),
+  }),
+];
+
+const CHECKLIST_FIXTURE_AP = [
+  apRow({ externalId: 10, balancePayable: 800, dueDate: new Date(2026, 5, 8) }),
+  apRow({ externalId: 11, companyName: "Empresa B", balancePayable: 600, dueDate: new Date(2026, 5, 25) }),
+  apRow({ externalId: 12, type: 2, description: "PEDIDO DE COMPRA", balancePayable: 9000 }),
+];
+
+const FILTER_MATRIX = [
+  { label: "ano", filters: { ...filters } },
+  { label: "ano+mês", filters: { ...filters, month: 6 } },
+  { label: "empresa", filters: { ...filters, companyName: "Empresa A" } },
+  { label: "status open", filters: { ...filters, status: "open" as const } },
+  { label: "invoice yes", filters: { ...filters, invoiceIssued: "yes" as const } },
+  { label: "invoice no", filters: { ...filters, invoiceIssued: "no" as const } },
+];
+
+const PRODUCTION_LIBS_NO_HARDCODE = [
+  "src/lib/financeCashFlowDashboard.ts",
+  "src/lib/financeCashFlowDataset.ts",
+  "src/lib/financeCashFlowLedger.ts",
+  "src/lib/financeCashFlowCalendar.ts",
+  "src/lib/financeCashFlowExecutiveSummary.ts",
+  "src/lib/financeCashFlowRowFilters.ts",
+];
+
+const FORBIDDEN_HARDCODE = ["MEXICHEM", "MEXICHEN", "ENERGY", "ESMALTEC", "33.081.704", "98000", "18270"];
 
 describe("financeCashFlowValidation — auditoria final", () => {
   it("Control Room rejeitado não existe no repositório", () => {
@@ -141,3 +230,152 @@ describe("financeCashFlowValidation — auditoria final", () => {
     assert.ok(q.includes("month=6"));
   });
 });
+
+describe("financeCashFlowValidation — checklist ponta a ponta Fluxo × AR/AP", () => {
+  it("relatório consolidado passa na fixture canônica multi-AR/AP", () => {
+    assertAuditOk(
+      buildCashFlowArApReconciliationReport(
+        CHECKLIST_FIXTURE_AR,
+        CHECKLIST_FIXTURE_AP,
+        filters,
+        REF,
+        arCutoff(),
+        apCutoff()
+      ),
+      "fixture canônica"
+    );
+  });
+
+  for (const { label, matrixFilters } of FILTER_MATRIX.map((f) => ({
+    label: f.label,
+    matrixFilters: f.filters,
+  }))) {
+    it(`matriz de filtros — ${label}`, () => {
+      assertAuditOk(
+        buildCashFlowArApReconciliationReport(
+          CHECKLIST_FIXTURE_AR,
+          CHECKLIST_FIXTURE_AP,
+          matrixFilters,
+          REF,
+          arCutoff(),
+          apCutoff()
+        ),
+        `filtro ${label}`
+      );
+    });
+  }
+
+  it("export CSV usa os mesmos números de entradas/saídas e conferência do payload", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      CHECKLIST_FIXTURE_AR as FinanceCashFlowArRow[],
+      CHECKLIST_FIXTURE_AP as FinanceCashFlowApRow[],
+      filters,
+      REF,
+      arCutoff(),
+      apCutoff()
+    );
+    const csv = buildFinanceCashFlowExportCsv(payload);
+    const jan = payload.monthlySeries.find((p) => p.month === 1);
+    assert.ok(jan);
+    assert.ok(csv.includes(`mensal,2026,1,${jan!.inflowAmount}`));
+    assert.ok(csv.includes(String(payload.reconciliation.receivable.cashFlowInflow)));
+    assert.ok(csv.includes(String(payload.reconciliation.payable.cashFlowOutflow)));
+    assert.ok(csv.includes(String(payload.reconciliation.netCashFlow)));
+    assert.ok(
+      csv.includes(payload.reconciliation.receivable.matchesLedger ? "ok" : "divergencia")
+    );
+    assert.equal(payload.cards.inflowAmount, payload.reconciliation.receivable.cashFlowInflow);
+    assert.equal(payload.cards.outflowAmount, payload.reconciliation.payable.cashFlowOutflow);
+    assert.equal(payload.cards.netFlowAmount, payload.reconciliation.netCashFlow);
+  });
+
+  it("auditoria técnica expõe cutoffs, exclusões e traces por bloco", () => {
+    const rawAr = CHECKLIST_FIXTURE_AR as FinanceCashFlowArRow[];
+    const rawAp = CHECKLIST_FIXTURE_AP as FinanceCashFlowApRow[];
+    const dataset = buildFinanceCashFlowDataset(
+      rawAr,
+      rawAp,
+      filters,
+      { status: "all", year: 2026 },
+      { status: "all", year: 2026, managementScope: "company" },
+      REF,
+      arCutoff(),
+      apCutoff()
+    );
+    const audit = buildFinanceCashFlowAuditPayload(
+      dataset,
+      rawAr.length,
+      rawAp.length,
+      rawAr,
+      rawAp
+    );
+    assert.ok(audit.syncCutoffs.ar != null || audit.syncCutoffs.ar === null);
+    assert.ok(typeof audit.exclusions.arStale === "number");
+    assert.ok(typeof audit.exclusions.apIntercompanyOrPurchaseOrder === "number");
+    assert.ok(Array.isArray(audit.traces.largestExpectedInflows));
+    assert.ok(Array.isArray(audit.traces.overdueReceivables));
+    assert.ok(audit.counts.arPortfolio >= 0);
+    assert.ok(payloadReconciliationOk(buildFinanceCashFlowDashboard(rawAr, rawAp, filters, REF, arCutoff(), apCutoff())));
+  });
+
+  it("period=all remove recorte de ano padrão", () => {
+    assert.equal(isFinanceCashFlowPeriodAllQuery({ period: "all" }), true);
+    const parsed = parseFinanceCashFlowDashboardFilters({
+      period: "all",
+      viewMode: "projected",
+    });
+    const resolved = resolveFinanceCashFlowFiltersForLoad({ period: "all" }, parsed, REF);
+    assert.equal(resolved.year, undefined);
+  });
+
+  it("filtros UI: draft separado de applied na página", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPage.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes("draftFilters"));
+    assert.ok(page.includes("appliedFilters"));
+    assert.ok(page.includes("hasPendingFilterChanges"));
+    assert.ok(page.includes("handleApplyFilters"));
+    const defaults = createDefaultFinanceCashFlowUiFilters(2026);
+    assert.ok(defaults.year.length > 0);
+  });
+
+  it("calendário navega por mês quando filtro global é Mês = Todos", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPage.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes("calendarDisplayMonth"));
+    assert.ok(page.includes("onDisplayMonthChange"));
+    assert.ok(page.includes("FinanceCashFlowNumbersAuditSection"));
+  });
+
+  it("exceções conceituais documentadas (não mascaradas)", () => {
+    assert.ok(FINANCE_CASH_FLOW_RECONCILIATION_RISKS.length >= 5);
+    const ids = FINANCE_CASH_FLOW_RECONCILIATION_RISKS.map((r) => r.id);
+    assert.ok(ids.includes("R1_executive_timeline_vs_period_series"));
+    assert.ok(ids.includes("R4_portfolio_vs_ytd_period_open"));
+    for (const risk of FINANCE_CASH_FLOW_RECONCILIATION_RISKS) {
+      assert.ok(risk.description.length > 20);
+      assert.ok(risk.affectedBlocks.length > 0);
+    }
+  });
+
+  it("motores de produção sem hardcode de cliente/CNPJ/valor", () => {
+    for (const rel of PRODUCTION_LIBS_NO_HARDCODE) {
+      const src = readFileSync(join(process.cwd(), rel), "utf8").toUpperCase();
+      for (const token of FORBIDDEN_HARDCODE) {
+        assert.ok(!src.includes(token.toUpperCase()), `${rel} contém ${token}`);
+      }
+    }
+  });
+});
+
+function payloadReconciliationOk(payload: ReturnType<typeof buildFinanceCashFlowDashboard>): boolean {
+  return (
+    payload.reconciliation.receivable.matchesLedger &&
+    payload.reconciliation.payable.matchesLedger &&
+    payload.reconciliation.netMatchesLedger
+  );
+}

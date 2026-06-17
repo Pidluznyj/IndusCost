@@ -38,4 +38,38 @@ describe("financeCashFlowExport", () => {
     assert.ok(csv.includes("necessidade_caixa"));
     assert.ok(csv.includes("horizonte_12m"));
   });
+
+  it("linhas de conferência espelham reconciliation do payload", () => {
+    const payload = buildFinanceCashFlowDashboard(
+      [
+        {
+          externalId: 1,
+          companyName: "A",
+          personName: "C",
+          personCnpj: null,
+          description: null,
+          dueDate: new Date(2026, 0, 10),
+          settlementDate: null,
+          competenceDate: null,
+          amountReceivable: 100,
+          amountReceived: 0,
+          balanceReceivable: 100,
+          paymentMethodName: null,
+          bankAccountName: null,
+          sourceInvoiceId: 500,
+          sourceInvoiceNumber: "NF-1",
+          suspendCollection: false,
+          nomusStatus: true,
+          syncedAt: new Date(),
+        },
+      ],
+      [],
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 }
+    );
+    const csv = buildFinanceCashFlowExportCsv(payload);
+    assert.ok(csv.includes(`conferencia_entradas,${payload.reconciliation.periodLabel}`));
+    assert.ok(csv.includes(String(payload.reconciliation.receivable.cashFlowInflow)));
+    assert.ok(csv.includes(String(payload.reconciliation.payable.cashFlowOutflow)));
+    assert.equal(payload.cards.inflowAmount, payload.reconciliation.receivable.cashFlowInflow);
+  });
 });
