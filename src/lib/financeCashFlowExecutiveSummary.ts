@@ -1,10 +1,11 @@
 import {
-  filterFinanceApRows,
+  filterFinanceApManagementReportRows,
   isFinanceApOpen,
   roundMoney,
   startOfLocalDay,
   type FinanceApDashboardFilters,
 } from "./financeAccountsPayableDashboard.js";
+import { DEFAULT_FINANCE_MANAGEMENT_SCOPE } from "./financeInternalGroupExclusions.js";
 import {
   filterFinanceArRows,
   isFinanceArOpen,
@@ -23,7 +24,10 @@ import {
   sumArReceivedInPeriod,
 } from "./financeCashFlowExecutiveYtd.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
-import type { NomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
+import {
+  resolveEffectiveNomusApReportSyncCutoff,
+  type NomusApReportSyncCutoff,
+} from "./financeNomusApReportFreshness.js";
 import {
   resolveFinanceApEffectivePaymentDate,
   resolveFinanceApOpenAmount,
@@ -116,7 +120,8 @@ function formatPtBrDate(d: Date): string {
   return d.toLocaleDateString("pt-BR");
 }
 
-function toPaidApLoadFilters(
+/** Filtros AP gerenciais alinhados a Contas a Pagar (YTD anual, sem mês fixo na carteira). */
+export function toExecutiveApManagementFilters(
   filters: FinanceCashFlowDashboardFilters
 ): FinanceApDashboardFilters {
   const status =
@@ -132,20 +137,39 @@ function toPaidApLoadFilters(
     personName: filters.supplierName,
     personCnpj: filters.personCnpj,
     status,
+    year: filters.year,
+    month: undefined,
     paymentMethodName: filters.paymentMethodName,
     bankAccountName: filters.bankAccountName,
-    managementScope: filters.cashFlowScope,
+    managementScope: filters.cashFlowScope ?? DEFAULT_FINANCE_MANAGEMENT_SCOPE,
   };
 }
 
+/** Base saneada única para timeline executiva mensal e totais AP do resumo. */
+export function filterApRowsForCashFlowExecutiveTimeline(
+  rows: FinanceCashFlowApRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null
+): FinanceCashFlowApRow[] {
+  const apFilters = toExecutiveApManagementFilters(filters);
+  const effectiveCutoff = resolveEffectiveNomusApReportSyncCutoff(rows, syncCutoff);
+  return filterFinanceApManagementReportRows(
+    rows,
+    apFilters,
+    referenceDate,
+    effectiveCutoff
+  ) as FinanceCashFlowApRow[];
+}
+
+/** @deprecated Use filterApRowsForCashFlowExecutiveTimeline — alias mantido para testes legados. */
 export function filterApRowsForYtdPaid(
   rows: FinanceCashFlowApRow[],
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date,
   syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowApRow[] {
-  const apFilters = toPaidApLoadFilters(filters);
-  return filterFinanceApRows(rows, apFilters, referenceDate, syncCutoff) as FinanceCashFlowApRow[];
+  return filterApRowsForCashFlowExecutiveTimeline(rows, filters, referenceDate, syncCutoff);
 }
 
 export function resolveApPaymentDate(row: FinanceCashFlowApRow): Date | null {
@@ -341,7 +365,12 @@ export function buildFinanceCashFlowExecutiveSummary(
   const forward = resolveForwardYearRange(year, referenceDate);
 
   const arYtd = filterArRowsForYtdReceived(allArRows, ytdFilters, referenceDate, syncCutoff);
-  const apYtd = filterApRowsForYtdPaid(allApRows, ytdFilters, referenceDate, apSyncCutoff);
+  const apYtd = filterApRowsForCashFlowExecutiveTimeline(
+    allApRows,
+    ytdFilters,
+    referenceDate,
+    apSyncCutoff
+  );
 
   const receivedYtd = sumArReceivedInPeriod(arYtd, startDate, endDate);
   const paidYtd = sumApPaidInPeriod(apYtd, startDate, endDate);

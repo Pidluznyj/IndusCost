@@ -10,6 +10,7 @@ import {
   buildExecutiveMonthlyTimeline,
   buildFinanceCashFlowExecutiveSummary,
   executiveSummaryMetricsAreFinite,
+  filterApRowsForCashFlowExecutiveTimeline,
   isApPaidInPeriod,
   isArOpenDueInPeriod,
   resolveForwardYearRange,
@@ -26,6 +27,14 @@ import {
 import { buildFinanceCashFlowExportCsv } from "./financeCashFlowExport.js";
 import { buildExecutiveMonthlyPlannedChartRows } from "./financeCashFlowExecutiveChart.js";
 import { isArReceivedInPeriod, sumArReceivedInPeriod } from "./financeCashFlowExecutiveYtd.js";
+import { buildNomusApReportSyncCutoff } from "./financeNomusApReportFreshness.js";
+
+const LATEST_AP_SYNC = new Date("2026-06-17T10:00:00.000Z");
+const STALE_AP_SYNC = new Date("2026-06-12T10:00:00.000Z");
+
+function apSyncCutoff() {
+  return buildNomusApReportSyncCutoff(LATEST_AP_SYNC)!;
+}
 
 const REF = new Date(2026, 5, 9);
 
@@ -606,6 +615,142 @@ describe("financeCashFlowExecutiveSummary", () => {
       REF
     );
     assert.equal(payload.executiveSummary.receivable.openFromTodayToYearEnd, 0);
+  });
+
+  it("linha do tempo mensal não soma AP stale em A pagar (R$ 299,83 Jan/Abr/Mai)", () => {
+    const staleGhostRows: FinanceCashFlowApRow[] = [
+      apRow({
+        externalId: 9004,
+        personName: "CONTA ADMINISTRATIVA",
+        balancePayable: 299.83,
+        amountPayable: 299.83,
+        dueDate: new Date(2026, 0, 11),
+        syncedAt: STALE_AP_SYNC,
+      }),
+      apRow({
+        externalId: 9005,
+        personName: "CONTA ADMINISTRATIVA",
+        balancePayable: 299.83,
+        amountPayable: 299.83,
+        dueDate: new Date(2026, 3, 11),
+        syncedAt: STALE_AP_SYNC,
+      }),
+      apRow({
+        externalId: 9006,
+        personName: "CONTA ADMINISTRATIVA",
+        balancePayable: 299.83,
+        amountPayable: 299.83,
+        dueDate: new Date(2026, 4, 11),
+        syncedAt: STALE_AP_SYNC,
+      }),
+      apRow({
+        externalId: 9010,
+        personName: "Fornecedor Fresh Ltda",
+        balancePayable: 100,
+        amountPayable: 100,
+        dueDate: new Date(2026, 5, 10),
+        syncedAt: LATEST_AP_SYNC,
+      }),
+    ];
+    const yearFilters = {
+      viewMode: "projected" as const,
+      dateBase: "due" as const,
+      status: "all" as const,
+      year: 2026,
+    };
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      staleGhostRows,
+      yearFilters,
+      REF,
+      null,
+      apSyncCutoff()
+    );
+    const timeline = payload.executiveSummary.monthlyTimeline;
+    const jan = timeline.find((r) => r.month === 1);
+    const apr = timeline.find((r) => r.month === 4);
+    const mai = timeline.find((r) => r.month === 5);
+    const jun = timeline.find((r) => r.month === 6);
+
+    assert.equal(jan?.payableOpenDue, 0);
+    assert.equal(apr?.payableOpenDue, 0);
+    assert.equal(mai?.payableOpenDue, 0);
+    assert.equal(jun?.payableOpenDue, 100);
+    assert.equal(jan?.estimatedOutflow, 0);
+    assert.equal(apr?.estimatedOutflow, 0);
+    assert.equal(mai?.estimatedOutflow, 0);
+    assert.equal(jun?.estimatedOutflow, 100);
+  });
+
+  it("linha do tempo mensal bate com Contas a Pagar gerencial no mesmo filtro anual", () => {
+    const rows: FinanceApDashboardRow[] = [
+      apRow({
+        externalId: 1,
+        companyName: "KOPPETEL",
+        balancePayable: 400,
+        amountPayable: 400,
+        dueDate: new Date(2026, 0, 15),
+        syncedAt: LATEST_AP_SYNC,
+      }),
+      apRow({
+        externalId: 2,
+        companyName: "KOPPETEL",
+        balancePayable: 9999,
+        amountPayable: 9999,
+        dueDate: new Date(2026, 1, 15),
+        syncedAt: STALE_AP_SYNC,
+      }),
+    ];
+    const apFilters = { status: "all" as const, year: 2026, companyName: "KOPPETEL" };
+    const cashFilters = {
+      viewMode: "projected" as const,
+      dateBase: "due" as const,
+      status: "all" as const,
+      year: 2026,
+      companyName: "KOPPETEL",
+    };
+    const apDash = buildFinanceAccountsPayableDashboard(rows, apFilters, REF, apSyncCutoff());
+    const eligible = filterApRowsForCashFlowExecutiveTimeline(
+      rows as FinanceCashFlowApRow[],
+      cashFilters,
+      REF,
+      apSyncCutoff()
+    );
+    const timeline = buildExecutiveMonthlyTimeline([], eligible, 2026, REF);
+    const jan = timeline.find((r) => r.month === 1);
+
+    assert.equal(apDash.cards.totalOpenAmount, 400);
+    assert.equal(jan?.payableOpenDue, 400);
+    assert.equal(jan?.estimatedOutflow, 400);
+  });
+
+  it("cutoff AP null faz fallback para MAX(syncedAt) das linhas carregadas", () => {
+    const rows = [
+      apRow({
+        externalId: 1,
+        balancePayable: 299.83,
+        amountPayable: 299.83,
+        dueDate: new Date(2026, 0, 11),
+        syncedAt: STALE_AP_SYNC,
+      }),
+      apRow({
+        externalId: 2,
+        balancePayable: 100,
+        amountPayable: 100,
+        dueDate: new Date(2026, 5, 10),
+        syncedAt: LATEST_AP_SYNC,
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      rows,
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF,
+      null,
+      null
+    );
+    const jan = payload.executiveSummary.monthlyTimeline.find((r) => r.month === 1);
+    assert.equal(jan?.payableOpenDue, 0);
   });
 });
 

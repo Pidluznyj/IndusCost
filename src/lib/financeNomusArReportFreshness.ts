@@ -115,7 +115,7 @@ export function resolveEffectiveNomusArReportSyncCutoff(
   rows: NomusArReportFreshnessRow[],
   syncCutoff: NomusArReportSyncCutoff | null | undefined
 ): NomusArReportSyncCutoff | null {
-  if (syncCutoff !== undefined) return syncCutoff;
+  if (syncCutoff != null) return syncCutoff;
   return resolveNomusArReportSyncCutoffFromRows(rows);
 }
 
