@@ -1,5 +1,6 @@
 // src/components/CustomerModule.tsx
 import React, { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { 
   Plus, 
   Search, 
@@ -16,8 +17,10 @@ import {
   Download,
   BarChart3,
   SearchCheck,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import { Customer } from "@/src/types/commercial";
 import { motion } from "motion/react";
@@ -375,6 +378,13 @@ export const CustomerModule = () => {
                         >
                           <SearchCheck className="h-3.5 w-3.5" />
                         </button>
+                        <Link
+                          to={buildCustomerIntelligencePath(c.id)}
+                          title="Inteligência do Cliente"
+                          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                        </Link>
                         <button
                           type="button"
                           title="Visão comercial do cliente"

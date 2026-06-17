@@ -15,6 +15,7 @@ import { FinanceModule } from "./components/FinanceModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
 import { CrmModule } from "./components/CrmModule";
+import { CustomerIntelligencePage } from "./components/crm/CustomerIntelligencePage";
 import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { PurchaseModule } from "./components/PurchaseModule";
@@ -647,6 +648,28 @@ export default function App() {
               headerActions={<ModuleIndicatorsButton to="/customers/indicators" />}
             >
               <CustomerModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="crm/customers/:customerId/intelligence"
+          element={
+            <ModulePageShell
+              title="Inteligência do Cliente"
+              description="Central 360º — comercial, financeiro e CRM a partir do endpoint consolidado."
+            >
+              <CustomerIntelligencePage />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="customers/:customerId/intelligence"
+          element={
+            <ModulePageShell
+              title="Inteligência do Cliente"
+              description="Central 360º — comercial, financeiro e CRM a partir do endpoint consolidado."
+            >
+              <CustomerIntelligencePage />
             </ModulePageShell>
           }
         />

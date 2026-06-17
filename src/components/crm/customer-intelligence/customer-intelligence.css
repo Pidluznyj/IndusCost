@@ -1,0 +1,31 @@
+.customer-intelligence-page {
+  --ci-card-radius: 1rem;
+}
+
+.customer-intelligence-header {
+  border-radius: var(--ci-card-radius);
+}
+
+.customer-intelligence-kpi-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+}
+
+.customer-intelligence-tab-panel {
+  min-height: 12rem;
+}
+
+.customer-intelligence-data-quality {
+  font-size: 0.75rem;
+}
+
+@media print {
+  .customer-intelligence-no-print {
+    display: none !important;
+  }
+
+  .customer-intelligence-page {
+    padding: 0;
+  }
+}

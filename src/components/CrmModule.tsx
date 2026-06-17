@@ -1,5 +1,6 @@
 // src/components/CrmModule.tsx — CRM Comercial: cockpit comercial, carteira, perfil e timeline.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import {
   Loader2,
@@ -41,6 +42,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import type {
   ManagementBreakdownItem,
   ManagementDashboardResponse,
@@ -2719,6 +2721,15 @@ export const CrmModule = () => {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">
+                    {selectedId ? (
+                      <Link
+                        to={buildCustomerIntelligencePath(selectedId)}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/15"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Inteligência
+                      </Link>
+                    ) : null}
                     <button
                       type="button"
                       onClick={openModal}

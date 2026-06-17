@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   X,
   Loader2,
@@ -16,8 +17,10 @@ import {
   Sparkles,
   ListTodo,
   Target,
+  ExternalLink,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import type { Customer, SalesOrderLinkStatus } from "@/src/types/commercial";
@@ -435,14 +438,26 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
               {COMMERCIAL_SALES_ORDER_BASIS_NOTE} Indicadores respeitam os filtros abaixo.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-accent shrink-0"
-            aria-label="Fechar"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {customerId ? (
+              <Link
+                to={buildCustomerIntelligencePath(customerId)}
+                onClick={onClose}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/15"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Abrir Inteligência Completa
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-accent"
+              aria-label="Fechar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
