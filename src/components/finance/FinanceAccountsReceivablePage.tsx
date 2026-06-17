@@ -65,6 +65,7 @@ import {
 import { FinanceArInvoicePortfolioPanel } from "@/src/components/finance/FinanceAccountsReceivableInvoicePortfolioPanel";
 import { FinanceAccountsReceivableSyncPanel } from "@/src/components/finance/FinanceAccountsReceivableSyncPanel";
 import { FinanceArTitlesTab } from "@/src/components/finance/FinanceAccountsReceivableTitlesTab";
+import { FinanceAccountsReceivableOverdueTab } from "@/src/components/finance/FinanceAccountsReceivableOverdueTab";
 import {
   FinanceArAgingChart,
   FinanceArMonthlyScheduleChart,
@@ -996,6 +997,12 @@ export function FinanceAccountsReceivablePage() {
                 filters={appliedFilters}
                 qualityAlert={titlesQualityAlert}
                 onClearQualityAlert={() => setTitlesQualityAlert(null)}
+              />
+            ) : null}
+            {activeTab === "overdue" ? (
+              <FinanceAccountsReceivableOverdueTab
+                globalFilters={appliedFilters}
+                canExport={canExport}
               />
             ) : null}
             {activeTab === "payment-methods" ? (

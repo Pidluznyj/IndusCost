@@ -1,0 +1,44 @@
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .finance-ar-overdue-root,
+  .finance-ar-overdue-root * {
+    visibility: visible;
+  }
+
+  .finance-ar-overdue-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0.5in;
+    background: white;
+    color: black;
+  }
+
+  .finance-ar-overdue-screen-only,
+  .finance-ar-overdue-filters,
+  nav,
+  aside,
+  header,
+  [data-testid="app-sidebar"],
+  [data-testid="finance-bi-filter-panel"] {
+    display: none !important;
+  }
+
+  .finance-ar-overdue-print-header {
+    display: block !important;
+    margin-bottom: 1rem;
+  }
+
+  table {
+    font-size: 10px;
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+  }
+}

@@ -2,6 +2,10 @@
 
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import type { FinanceHorizonSummary } from "./financeHorizonAggregation.js";
+import {
+  DEFAULT_FINANCE_AR_OVERDUE_UI_FILTERS,
+  type FinanceArOverdueUiFilters,
+} from "./financeAccountsReceivableOverdueTypes.js";
 
 export type FinanceArDashboardFiltersApplied = {
   companyName?: string;
@@ -338,6 +342,7 @@ export function buildFinanceArTitlesQuery(
 /** Abas executivas principais (Objetivo 3). */
 export const FINANCE_AR_EXECUTIVE_TABS = [
   { id: "titles", label: "Títulos" },
+  { id: "overdue", label: "Atrasados" },
   { id: "customers", label: "Clientes" },
   { id: "aging", label: "Aging" },
   { id: "audit", label: "Auditoria" },
@@ -395,4 +400,35 @@ export function buildFinanceArDashboardQuery(
     q.set("bankAccountName", normalized.bankAccountName.trim());
   }
   return q.toString();
+}
+
+export function buildFinanceArOverdueQuery(
+  globalFilters: Partial<FinanceArUiFilters> & Pick<FinanceArUiFilters, "status">,
+  overdueFilters: Partial<FinanceArOverdueUiFilters> = {}
+): string {
+  const base = buildFinanceArDashboardQuery(globalFilters);
+  const q = new URLSearchParams(base);
+  const merged = { ...DEFAULT_FINANCE_AR_OVERDUE_UI_FILTERS, ...overdueFilters };
+  if (merged.agingBucket.trim()) q.set("agingBucket", merged.agingBucket.trim());
+  if (merged.minDaysOverdue.trim()) q.set("minDaysOverdue", merged.minDaysOverdue.trim());
+  if (merged.minOpenBalance.trim()) q.set("minOpenBalance", merged.minOpenBalance.trim());
+  if (merged.minOverdueTitlesPerCustomer.trim()) {
+    q.set("minOverdueTitlesPerCustomer", merged.minOverdueTitlesPerCustomer.trim());
+  }
+  if (merged.sortBy) q.set("sortBy", merged.sortBy);
+  if (merged.sortDirection) q.set("sortDirection", merged.sortDirection);
+  if (merged.page.trim()) q.set("page", merged.page.trim());
+  if (merged.limit.trim()) q.set("limit", merged.limit.trim());
+  return q.toString();
+}
+
+export function buildFinanceArOverdueExportQuery(
+  globalFilters: Partial<FinanceArUiFilters> & Pick<FinanceArUiFilters, "status">,
+  overdueFilters: Partial<FinanceArOverdueUiFilters> = {}
+): string {
+  return buildFinanceArOverdueQuery(globalFilters, {
+    ...overdueFilters,
+    limit: "5000",
+    page: "1",
+  });
 }

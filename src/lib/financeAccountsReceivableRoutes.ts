@@ -21,6 +21,7 @@ import {
 } from "@/src/lib/financeAccountsReceivableTitles.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusArReportFreshness.js";
+import { registerFinanceAccountsReceivableOverdueRoutes } from "@/src/lib/financeAccountsReceivableOverdueRoutes.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -158,4 +159,6 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       return res.status(500).json({ error: "Erro ao exportar contas a receber." });
     }
   });
+
+  registerFinanceAccountsReceivableOverdueRoutes(app, { requireAppAuth, requireAnyPermission });
 }
