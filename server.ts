@@ -101,6 +101,10 @@ import { registerFinanceAccountsPayableRoutes } from "./src/lib/financeAccountsP
 import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js";
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
+import {
+  buildSalesOrderListSummary,
+  buildSalesOrderListWhere,
+} from "./src/lib/salesOrdersListSummary.js";
 import { registerProjectsRoutes } from "./src/lib/projectsRoutes.js";
 import {
   getNomusDailySyncStatus,
@@ -12419,11 +12423,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   // --- API: Pedidos de venda internos (origem: proposta aprovada; envio Nomus em etapa futura) ---
-  const SALES_ORDER_STATUS_VALUES = ["DRAFT", "READY_TO_SEND", "SENT_TO_NOMUS", "CANCELLED", "ERROR"] as const;
-  function isValidSalesOrderStatus(value: unknown): value is (typeof SALES_ORDER_STATUS_VALUES)[number] {
-    return typeof value === "string" && SALES_ORDER_STATUS_VALUES.includes(value as any);
-  }
-
   // Futuro: POST /api/sales-orders/:id/send-to-nomus
   // Enviar corpo alinhado ao Nomus POST /rest/pedidos, ex.:
   // { codigoPedido, idEmpresa, idPessoaCliente, idPessoaVendedor, dataEmissao, condicaoPagamentoTexto, observacoes,
@@ -12438,25 +12437,19 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const startDate = parseDateQueryStart(req.query.startDate);
       const endDate = parseDateQueryEnd(req.query.endDate);
 
-      const where: Prisma.SalesOrderWhereInput = {
-        ...(status && isValidSalesOrderStatus(status) ? { status } : {}),
-        ...(customerId ? { customerId } : {}),
-        ...(responsible ? { responsible } : {}),
-        ...(startDate || endDate
-          ? {
-              issueDate: {
-                ...(startDate ? { gte: startDate } : {}),
-                ...(endDate ? { lte: endDate } : {}),
-              },
-            }
-          : {}),
-      };
+      const where = buildSalesOrderListWhere({
+        status: status || undefined,
+        customerId: customerId || undefined,
+        responsible: responsible || undefined,
+        startDate,
+        endDate,
+      });
 
       const page = parsePositiveIntQuery(req.query.page, 1);
       const pageSize = Math.min(parsePositiveIntQuery(req.query.pageSize, 20), 100);
       const skip = (page - 1) * pageSize;
 
-      const [rows, total] = await Promise.all([
+      const [rows, total, aggregate] = await Promise.all([
         prisma.salesOrder.findMany({
           where,
           orderBy: [{ createdAt: "desc" }, { issueDate: "desc" }],
@@ -12468,7 +12461,18 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           },
         }),
         prisma.salesOrder.count({ where }),
+        prisma.salesOrder.aggregate({
+          where,
+          _count: { _all: true },
+          _sum: { totalNetValue: true, totalItems: true },
+        }),
       ]);
+
+      const summary = buildSalesOrderListSummary({
+        totalOrders: aggregate._count._all,
+        totalNetAmount: aggregate._sum.totalNetValue,
+        totalItems: aggregate._sum.totalItems,
+      });
 
       res.json({
         data: rows,
@@ -12476,6 +12480,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         pageSize,
         total,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        summary,
       });
     } catch (e: any) {
       console.error("GET /api/sales-orders", e);

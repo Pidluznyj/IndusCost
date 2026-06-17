@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Loader2, Package, Printer } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { SearchableSelect, type SelectOption } from "@/src/components/shared/SearchableSelect";
+import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
 import type { Customer } from "@/src/types/commercial";
 
 type SalesOrderRow = {
@@ -58,6 +60,14 @@ type SalesOrderListResponse = {
   pageSize: number;
   total: number;
   totalPages: number;
+  summary?: SalesOrderListSummary;
+};
+
+const EMPTY_SALES_ORDER_LIST_SUMMARY: SalesOrderListSummary = {
+  totalOrders: 0,
+  totalNetAmount: 0,
+  totalItems: 0,
+  averageTicket: 0,
 };
 
 function isPaginatedSalesOrderList(value: unknown): value is SalesOrderListResponse {
@@ -87,6 +97,7 @@ function SalesOrderList() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
   const [status, setStatus] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [responsible, setResponsible] = useState("");
@@ -132,15 +143,29 @@ function SalesOrderList() {
           setTotal(data.length);
           setTotalPages(1);
           setCurrentPage(1);
+          let totalNetAmount = 0;
+          let totalItems = 0;
+          for (const row of data) {
+            totalNetAmount += Number(row.totalNetValue) || 0;
+            totalItems += row.totalItems ?? 0;
+          }
+          setSummary({
+            totalOrders: data.length,
+            totalNetAmount,
+            totalItems,
+            averageTicket: data.length > 0 ? totalNetAmount / data.length : 0,
+          });
         } else if (isPaginatedSalesOrderList(data)) {
           setRows(data.data);
           setTotal(Number.isFinite(Number(data.total)) ? Number(data.total) : 0);
           setTotalPages(Number.isFinite(Number(data.totalPages)) ? Math.max(1, Number(data.totalPages)) : 1);
           setCurrentPage(Number.isFinite(Number(data.page)) ? Number(data.page) : page);
+          setSummary(data.summary ?? EMPTY_SALES_ORDER_LIST_SUMMARY);
         } else {
           setRows([]);
           setTotal(0);
           setTotalPages(1);
+          setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
         }
       } catch (e) {
         if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
@@ -149,6 +174,7 @@ function SalesOrderList() {
         setRows([]);
         setTotal(0);
         setTotalPages(1);
+        setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
@@ -289,6 +315,37 @@ function SalesOrderList() {
           </>
         )}
       </p>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <FinanceBiKpiCard
+          icon={ShoppingBag}
+          label="Pedidos filtrados"
+          value={formatNumber(summary.totalOrders, 0)}
+          loading={loading}
+          hint="Quantidade total de pedidos que atendem aos filtros aplicados (não apenas a página atual)."
+        />
+        <FinanceBiKpiCard
+          icon={Receipt}
+          label="Valor líquido"
+          value={money(summary.totalNetAmount, 2)}
+          loading={loading}
+          hint="Soma do valor líquido de todos os pedidos filtrados."
+        />
+        <FinanceBiKpiCard
+          icon={Package}
+          label="Itens"
+          value={formatNumber(summary.totalItems, 0)}
+          loading={loading}
+          hint="Soma da quantidade de itens de todos os pedidos filtrados."
+        />
+        <FinanceBiKpiCard
+          icon={Ticket}
+          label="Ticket médio"
+          value={summary.totalOrders > 0 ? money(summary.averageTicket, 2) : "—"}
+          loading={loading}
+          hint="Valor líquido total ÷ quantidade de pedidos filtrados."
+        />
+      </div>
 
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
