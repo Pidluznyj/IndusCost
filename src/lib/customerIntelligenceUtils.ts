@@ -24,8 +24,14 @@ export class CustomerIntelligenceFilterParseError extends Error {
   }
 }
 
-/** Meses sem compra para classificar produto como abandonado. */
-export const CUSTOMER_INTELLIGENCE_ABANDONED_PRODUCT_MONTHS = 12;
+/** Dias sem compra do produto para classificar como abandonado. */
+export const CUSTOMER_INTELLIGENCE_ABANDONED_PRODUCT_DAYS = 180;
+
+/** Primeira compra nos últimos N dias classifica produto como novo no mix. */
+export const CUSTOMER_INTELLIGENCE_NEW_PRODUCT_DAYS = 180;
+
+/** @deprecated Use CUSTOMER_INTELLIGENCE_ABANDONED_PRODUCT_DAYS */
+export const CUSTOMER_INTELLIGENCE_ABANDONED_PRODUCT_MONTHS = 6;
 
 const MONTH_LABELS_PT = [
   "Jan",

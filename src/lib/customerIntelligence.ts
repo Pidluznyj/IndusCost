@@ -11,8 +11,6 @@ import {
   roundMoney as roundArMoney,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import {
-  applyTopNLimit,
-  CUSTOMER_INTELLIGENCE_ABANDONED_PRODUCT_MONTHS,
   daysBetweenDates,
   filterCustomerIntelligenceOrders,
   getCustomerIntelligenceMetricsOrders,
@@ -29,11 +27,11 @@ import {
   buildCustomerIntelligenceHistory,
   buildCustomerIntelligenceSeasonality,
 } from "@/src/lib/customerIntelligenceHistory.js";
+import { buildCustomerIntelligenceProducts } from "@/src/lib/customerIntelligenceProducts.js";
 import { buildCustomerIntelligenceExecutiveNarrative } from "@/src/lib/customerIntelligenceNarrative.js";
 import type {
   CustomerIntelligenceBuildInput,
   CustomerIntelligenceOpportunity,
-  CustomerIntelligenceProductRow,
   CustomerIntelligenceReport,
 } from "@/src/lib/customerIntelligenceTypes.js";
 import {
@@ -47,119 +45,6 @@ function median(values: number[]): number | null {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
-
-function buildProductMix(
-  metricsOrders: CustomerIntelligenceBuildInput["orders"],
-  topN: CustomerIntelligenceBuildInput["filters"]["topN"],
-  now: Date
-): CustomerIntelligenceReport["products"] {
-  const byProduct = new Map<
-    string,
-    {
-      productId: string;
-      sku: string;
-      name: string;
-      type: string | null;
-      quantity: number;
-      revenue: number;
-      orderIds: Set<string>;
-      lastPurchaseDate: Date | null;
-    }
-  >();
-
-  for (const order of metricsOrders) {
-    for (const item of order.items) {
-      const productId = item.productId;
-      const product = item.Product;
-      const qty = safeCommercialNumber(item.quantity);
-      const rev = safeCommercialNumber(item.totalNetValue);
-      const prev = byProduct.get(productId);
-      if (prev) {
-        prev.quantity += qty;
-        prev.revenue += rev;
-        prev.orderIds.add(order.id);
-        if (!prev.lastPurchaseDate || order.issueDate > prev.lastPurchaseDate) {
-          prev.lastPurchaseDate = order.issueDate;
-        }
-      } else {
-        byProduct.set(productId, {
-          productId,
-          sku: product?.sku ?? "—",
-          name: product?.name ?? "Produto",
-          type: product?.type ?? null,
-          quantity: qty,
-          revenue: rev,
-          orderIds: new Set([order.id]),
-          lastPurchaseDate: order.issueDate,
-        });
-      }
-    }
-  }
-
-  const toRow = (entry: (typeof byProduct extends Map<string, infer V> ? V : never)): CustomerIntelligenceProductRow => ({
-    productId: entry.productId,
-    sku: entry.sku,
-    name: entry.name,
-    type: entry.type,
-    quantity: roundMoney(entry.quantity) ?? 0,
-    revenue: roundMoney(entry.revenue) ?? 0,
-    ordersCount: entry.orderIds.size,
-    lastPurchaseDate: toIsoDateOnly(entry.lastPurchaseDate),
-  });
-
-  const allRows = [...byProduct.values()].map(toRow);
-  const topByRevenue = applyTopNLimit(
-    [...allRows].sort((a, b) => b.revenue - a.revenue),
-    topN
-  );
-  const topByQuantity = applyTopNLimit(
-    [...allRows].sort((a, b) => b.quantity - a.quantity),
-    topN
-  );
-
-  const cutoff = new Date(now);
-  cutoff.setMonth(cutoff.getMonth() - CUSTOMER_INTELLIGENCE_ABANDONED_PRODUCT_MONTHS);
-
-  const abandonedProducts = applyTopNLimit(
-    [...byProduct.values()]
-      .filter(
-        (p) =>
-          p.lastPurchaseDate != null &&
-          p.lastPurchaseDate < cutoff &&
-          p.orderIds.size >= 1
-      )
-      .map(toRow)
-      .sort((a, b) => b.revenue - a.revenue),
-    topN
-  );
-
-  const recurringProducts = applyTopNLimit(
-    [...byProduct.values()]
-      .filter((p) => p.orderIds.size >= 2)
-      .map(toRow)
-      .sort((a, b) => b.ordersCount - a.ordersCount),
-    topN
-  );
-
-  const totalRevenue = allRows.reduce((acc, r) => acc + r.revenue, 0);
-  const sortedRev = [...allRows].sort((a, b) => b.revenue - a.revenue);
-  const top1 = sortedRev[0]?.revenue ?? 0;
-  const top3 = sortedRev.slice(0, 3).reduce((acc, r) => acc + r.revenue, 0);
-
-  return {
-    topByRevenue,
-    topByQuantity,
-    abandonedProducts,
-    recurringProducts,
-    concentration: {
-      top1RevenueSharePercent:
-        totalRevenue > 0 ? roundMoney(safeDivide(top1, totalRevenue)! * 100) : null,
-      top3RevenueSharePercent:
-        totalRevenue > 0 ? roundMoney(safeDivide(top3, totalRevenue)! * 100) : null,
-      distinctProductsCount: allRows.length,
-    },
-  };
 }
 
 function buildRepurchase(
@@ -497,12 +382,21 @@ export function buildCustomerIntelligenceReport(
   const daysSinceLastOrder =
     lastOrderDate != null ? daysBetweenDates(lastOrderDate, now) : null;
 
-  const products = buildProductMix(metricsOrders, input.filters.topN, now);
+  const productsResult = buildCustomerIntelligenceProducts(
+    metricsOrders,
+    input.filters.topN,
+    now
+  );
+  const products = productsResult.products;
+  for (const w of productsResult.warnings) {
+    warnings.push(w);
+  }
+
   const leadingProduct = products.topByRevenue[0]
     ? {
         productId: products.topByRevenue[0].productId,
-        sku: products.topByRevenue[0].sku,
-        name: products.topByRevenue[0].name,
+        sku: products.topByRevenue[0].productCode,
+        name: products.topByRevenue[0].productName,
         revenue: products.topByRevenue[0].revenue,
       }
     : null;

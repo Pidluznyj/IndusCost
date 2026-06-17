@@ -10,6 +10,7 @@ import { CustomerIntelligenceKpiGrid } from "../components/crm/customer-intellig
 import { CustomerIntelligenceTabs } from "../components/crm/customer-intelligence/CustomerIntelligenceTabs.js";
 import { CustomerIntelligenceHeader } from "../components/crm/customer-intelligence/CustomerIntelligenceHeader.js";
 import { CustomerIntelligencePurchasesTab } from "../components/crm/customer-intelligence/CustomerIntelligencePurchasesTab.js";
+import { CustomerIntelligenceProductsTab } from "../components/crm/customer-intelligence/CustomerIntelligenceProductsTab.js";
 
 function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): CustomerIntelligenceReport {
   return {
@@ -132,13 +133,17 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
     products: {
       topByRevenue: [],
       topByQuantity: [],
+      topByMargin: [],
       abandonedProducts: [],
       recurringProducts: [],
+      newProducts: [],
       concentration: {
         top1RevenueSharePercent: null,
         top3RevenueSharePercent: null,
+        top5RevenueSharePercent: null,
         distinctProductsCount: 0,
       },
+      productOpportunities: [],
     },
     repurchase: {
       status: "INSUFICIENTE",
@@ -299,5 +304,83 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
     const html = renderToStaticMarkup(<CustomerIntelligencePurchasesTab report={mockReport()} />);
     assert.ok(html.includes("Ranking — meses mais fortes"));
     assert.ok(html.includes("Matriz de sazonalidade"));
+  });
+
+  it("aba Produtos exibe tabelas e cards", () => {
+    assert.ok(pageSrc.includes("CustomerIntelligenceProductsTab"));
+    const withProducts = mockReport({
+      products: {
+        topByRevenue: [
+          {
+            productId: "p1",
+            productCode: "SKU-A",
+            productName: "Produto A",
+            type: "FINAL",
+            ordersCount: 2,
+            quantity: 10,
+            revenue: 10000,
+            averageTicket: 5000,
+            marginAmount: 1000,
+            marginPercent: 10,
+            firstPurchaseDate: "2025-01-01",
+            lastPurchaseDate: "2025-12-01",
+            daysSinceLastPurchase: 45,
+            shareOfCustomerRevenue: 66.7,
+            confidence: "high",
+          },
+        ],
+        topByQuantity: [],
+        topByMargin: [],
+        abandonedProducts: [],
+        recurringProducts: [
+          {
+            productId: "p1",
+            productCode: "SKU-A",
+            productName: "Produto A",
+            type: "FINAL",
+            ordersCount: 2,
+            quantity: 10,
+            revenue: 10000,
+            averageTicket: 5000,
+            marginAmount: 1000,
+            marginPercent: 10,
+            firstPurchaseDate: "2025-01-01",
+            lastPurchaseDate: "2025-12-01",
+            daysSinceLastPurchase: 45,
+            shareOfCustomerRevenue: 66.7,
+            confidence: "high",
+          },
+        ],
+        newProducts: [],
+        concentration: {
+          top1RevenueSharePercent: 66.7,
+          top3RevenueSharePercent: 100,
+          top5RevenueSharePercent: 100,
+          distinctProductsCount: 1,
+        },
+        productOpportunities: [
+          {
+            kind: "low_mix",
+            severity: "MEDIUM",
+            title: "Mix baixo",
+            description: "Apenas 1 produto distinto.",
+            productId: null,
+            productCode: null,
+            productName: null,
+            confidence: "low",
+          },
+        ],
+      },
+    });
+    const html = renderToStaticMarkup(<CustomerIntelligenceProductsTab report={withProducts} />);
+    assert.ok(html.includes("Top produtos por receita"));
+    assert.ok(html.includes("Produto líder"));
+    assert.ok(html.includes("Oportunidades por produto"));
+    assert.ok(html.includes("Mix baixo"));
+  });
+
+  it("aba Produtos mostra empty state", () => {
+    const html = renderToStaticMarkup(<CustomerIntelligenceProductsTab report={mockReport()} />);
+    assert.ok(html.includes("Sem produtos no filtro aplicado"));
   });
 });

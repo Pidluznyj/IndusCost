@@ -30,6 +30,7 @@ import {
 } from "./customer-intelligence/CustomerIntelligenceTabs";
 import { CustomerIntelligenceOverviewTab } from "./customer-intelligence/CustomerIntelligenceOverviewTab";
 import { CustomerIntelligencePurchasesTab } from "./customer-intelligence/CustomerIntelligencePurchasesTab";
+import { CustomerIntelligenceProductsTab } from "./customer-intelligence/CustomerIntelligenceProductsTab";
 import "./customer-intelligence/customer-intelligence.css";
 
 function isEmptyReport(report: CustomerIntelligenceReport): boolean {
@@ -213,10 +214,7 @@ export function CustomerIntelligencePage() {
               <CustomerIntelligencePurchasesTab report={report} />
             ) : null}
             {activeTab === "products" ? (
-              <CustomerIntelligenceTabPlaceholder
-                title="Produtos"
-                description={`${report.products.topByRevenue.length} produto(s) no ranking por receita (dados já disponíveis na API).`}
-              />
+              <CustomerIntelligenceProductsTab report={report} />
             ) : null}
             {activeTab === "repurchase" ? (
               <CustomerIntelligenceTabPlaceholder

@@ -119,6 +119,8 @@ export async function loadCustomerIntelligenceData(customerId: string) {
         productId: item.productId,
         quantity: item.quantity,
         totalNetValue: item.totalNetValue,
+        marginValue: item.marginValue,
+        marginPerc: item.marginPerc,
         Product: item.Product,
       })),
     }));

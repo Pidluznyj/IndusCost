@@ -131,27 +131,59 @@ export type CustomerIntelligenceSeasonality = {
 
 export type CustomerIntelligenceProductRow = {
   productId: string;
-  sku: string;
-  name: string;
+  productCode: string;
+  productName: string;
   type: string | null;
+  ordersCount: number;
   quantity: number;
   revenue: number;
-  ordersCount: number;
+  averageTicket: number | null;
+  marginAmount: number | null;
+  marginPercent: number | null;
+  firstPurchaseDate: string | null;
   lastPurchaseDate: string | null;
+  daysSinceLastPurchase: number | null;
+  /** Participação na receita líquida do cliente no filtro (%). */
+  shareOfCustomerRevenue: number | null;
+  /** Confiança da leitura (ex.: abandono com pouca base). */
+  confidence: "low" | "medium" | "high" | null;
 };
 
 export type CustomerIntelligenceProductConcentration = {
   top1RevenueSharePercent: number | null;
   top3RevenueSharePercent: number | null;
+  top5RevenueSharePercent: number | null;
   distinctProductsCount: number;
+};
+
+export type CustomerIntelligenceProductOpportunityKind =
+  | "offer_again"
+  | "recurring_late"
+  | "low_mix"
+  | "concentrated_revenue"
+  | "cross_sell"
+  | "up_sell";
+
+export type CustomerIntelligenceProductOpportunity = {
+  kind: CustomerIntelligenceProductOpportunityKind;
+  severity: "LOW" | "MEDIUM" | "HIGH";
+  title: string;
+  description: string;
+  productId: string | null;
+  productCode: string | null;
+  productName: string | null;
+  confidence: "low" | "medium" | "high" | null;
 };
 
 export type CustomerIntelligenceProductMix = {
   topByRevenue: CustomerIntelligenceProductRow[];
   topByQuantity: CustomerIntelligenceProductRow[];
+  topByMargin: CustomerIntelligenceProductRow[];
   abandonedProducts: CustomerIntelligenceProductRow[];
   recurringProducts: CustomerIntelligenceProductRow[];
+  newProducts: CustomerIntelligenceProductRow[];
   concentration: CustomerIntelligenceProductConcentration;
+  productOpportunities: CustomerIntelligenceProductOpportunity[];
 };
 
 export type CustomerIntelligenceRepurchaseStatus =
@@ -226,6 +258,8 @@ export type CustomerIntelligenceOrderInput = {
     productId: string;
     quantity: unknown;
     totalNetValue: unknown;
+    marginValue?: unknown;
+    marginPerc?: unknown;
     Product?: {
       id: string;
       sku: string;
