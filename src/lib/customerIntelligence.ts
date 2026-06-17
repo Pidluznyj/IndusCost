@@ -17,7 +17,6 @@ import {
   filterCustomerIntelligenceOrders,
   getCustomerIntelligenceMetricsOrders,
   isInternalGroupCustomer,
-  monthLabelPt,
   resolveCustomerDisplayName,
   resolveCustomerIntelligenceRegion,
   roundMoney,
@@ -26,15 +25,16 @@ import {
   safeFiniteNumber,
   toIsoDateOnly,
 } from "@/src/lib/customerIntelligenceUtils.js";
+import {
+  buildCustomerIntelligenceHistory,
+  buildCustomerIntelligenceSeasonality,
+} from "@/src/lib/customerIntelligenceHistory.js";
 import { buildCustomerIntelligenceExecutiveNarrative } from "@/src/lib/customerIntelligenceNarrative.js";
 import type {
   CustomerIntelligenceBuildInput,
-  CustomerIntelligenceMonthBucket,
   CustomerIntelligenceOpportunity,
   CustomerIntelligenceProductRow,
   CustomerIntelligenceReport,
-  CustomerIntelligenceStrongMonth,
-  CustomerIntelligenceYearBucket,
 } from "@/src/lib/customerIntelligenceTypes.js";
 import {
   isCommercialOpenSalesOrder,
@@ -160,121 +160,6 @@ function buildProductMix(
       distinctProductsCount: allRows.length,
     },
   };
-}
-
-function buildHistory(
-  metricsOrders: CustomerIntelligenceBuildInput["orders"]
-): CustomerIntelligenceReport["history"] {
-  const byYearMap = new Map<number, CustomerIntelligenceYearBucket>();
-  const byMonthMap = new Map<string, CustomerIntelligenceMonthBucket>();
-  const monthAgg = new Map<number, { ordersCount: number; revenue: number }>();
-
-  for (const order of metricsOrders) {
-    const year = order.issueDate.getFullYear();
-    const month = order.issueDate.getMonth() + 1;
-    const net = safeCommercialNumber(order.totalNetValue);
-
-    const yearBucket = byYearMap.get(year) ?? { year, ordersCount: 0, revenue: 0 };
-    yearBucket.ordersCount += 1;
-    yearBucket.revenue += net;
-    byYearMap.set(year, yearBucket);
-
-    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
-    const monthBucket = byMonthMap.get(monthKey) ?? {
-      year,
-      month,
-      label: `${monthLabelPt(month)}/${year}`,
-      ordersCount: 0,
-      revenue: 0,
-    };
-    monthBucket.ordersCount += 1;
-    monthBucket.revenue += net;
-    byMonthMap.set(monthKey, monthBucket);
-
-    const cal = monthAgg.get(month) ?? { ordersCount: 0, revenue: 0 };
-    cal.ordersCount += 1;
-    cal.revenue += net;
-    monthAgg.set(month, cal);
-  }
-
-  const roundBucket = <T extends { revenue: number }>(b: T): T => ({
-    ...b,
-    revenue: roundMoney(b.revenue) ?? 0,
-  });
-
-  const byYear = [...byYearMap.values()]
-    .map(roundBucket)
-    .sort((a, b) => a.year - b.year);
-
-  const byMonth = [...byMonthMap.values()]
-    .map(roundBucket)
-    .sort((a, b) => a.year - b.year || a.month - b.month);
-
-  const byRevenue = [...monthAgg.entries()].sort((a, b) => b[1].revenue - a[1].revenue);
-  const byQty = [...monthAgg.entries()].sort((a, b) => b[1].ordersCount - a[1].ordersCount);
-
-  const revenueRank = new Map<number, number>();
-  byRevenue.forEach(([month], idx) => revenueRank.set(month, idx + 1));
-  const qtyRank = new Map<number, number>();
-  byQty.forEach(([month], idx) => qtyRank.set(month, idx + 1));
-
-  const strongestMonths: CustomerIntelligenceStrongMonth[] = byRevenue.slice(0, 5).map(
-    ([month, data]) => ({
-      month,
-      label: monthLabelPt(month),
-      ordersCount: data.ordersCount,
-      revenue: roundMoney(data.revenue) ?? 0,
-      rankByRevenue: revenueRank.get(month) ?? 0,
-      rankByQuantity: qtyRank.get(month) ?? 0,
-    })
-  );
-
-  return { byYear, byMonth, strongestMonths };
-}
-
-function buildSeasonality(
-  history: CustomerIntelligenceReport["history"]
-): CustomerIntelligenceReport["seasonality"] {
-  if (history.strongestMonths.length === 0) {
-    return { peakMonths: [], lowMonths: [], seasonalityNote: null };
-  }
-
-  const monthTotals = new Map<number, { ordersCount: number; revenue: number }>();
-  for (const bucket of history.byMonth) {
-    const prev = monthTotals.get(bucket.month) ?? { ordersCount: 0, revenue: 0 };
-    prev.ordersCount += bucket.ordersCount;
-    prev.revenue += bucket.revenue;
-    monthTotals.set(bucket.month, prev);
-  }
-
-  const ranked = [...monthTotals.entries()]
-    .map(([month, data]) => ({
-      month,
-      label: monthLabelPt(month),
-      ordersCount: data.ordersCount,
-      revenue: roundMoney(data.revenue) ?? 0,
-      rankByRevenue: 0,
-      rankByQuantity: 0,
-    }))
-    .sort((a, b) => b.revenue - a.revenue);
-
-  ranked.forEach((row, idx) => {
-    row.rankByRevenue = idx + 1;
-  });
-  const byQty = [...ranked].sort((a, b) => b.ordersCount - a.ordersCount);
-  byQty.forEach((row, idx) => {
-    row.rankByQuantity = idx + 1;
-  });
-
-  const peakMonths = ranked.slice(0, 3);
-  const lowMonths = [...ranked].reverse().slice(0, 3);
-
-  const note =
-    peakMonths.length > 0
-      ? `Maior concentração de receita nos meses ${peakMonths.map((m) => m.label).join(", ")}.`
-      : null;
-
-  return { peakMonths, lowMonths, seasonalityNote: note };
 }
 
 function buildRepurchase(
@@ -636,8 +521,8 @@ export function buildCustomerIntelligenceReport(
     leadingProduct,
   };
 
-  const history = buildHistory(metricsOrders);
-  const seasonality = buildSeasonality(history);
+  const history = buildCustomerIntelligenceHistory(metricsOrders, now);
+  const seasonality = buildCustomerIntelligenceSeasonality(history);
   const repurchase = buildRepurchase(metricsOrders, now);
   const financial = buildFinancial(input.arRows, input.arLinkedByCnpj, now);
   const crm = buildCrm(input.activities, now);

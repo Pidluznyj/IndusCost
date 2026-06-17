@@ -29,6 +29,7 @@ import {
   CustomerIntelligenceTabPlaceholder,
 } from "./customer-intelligence/CustomerIntelligenceTabs";
 import { CustomerIntelligenceOverviewTab } from "./customer-intelligence/CustomerIntelligenceOverviewTab";
+import { CustomerIntelligencePurchasesTab } from "./customer-intelligence/CustomerIntelligencePurchasesTab";
 import "./customer-intelligence/customer-intelligence.css";
 
 function isEmptyReport(report: CustomerIntelligenceReport): boolean {
@@ -209,10 +210,7 @@ export function CustomerIntelligencePage() {
           <div className="pt-2">
             {activeTab === "overview" ? <CustomerIntelligenceOverviewTab report={report} /> : null}
             {activeTab === "purchases" ? (
-              <CustomerIntelligenceTabPlaceholder
-                title="Compras"
-                description="Histórico de pedidos e evolução anual virão desta aba."
-              />
+              <CustomerIntelligencePurchasesTab report={report} />
             ) : null}
             {activeTab === "products" ? (
               <CustomerIntelligenceTabPlaceholder

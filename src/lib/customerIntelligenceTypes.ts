@@ -62,7 +62,13 @@ export type CustomerIntelligenceCommercialSummary = {
 export type CustomerIntelligenceYearBucket = {
   year: number;
   ordersCount: number;
+  validOrdersCount: number;
   revenue: number;
+  averageTicket: number | null;
+  marginAmount: number | null;
+  marginPercent: number | null;
+  /** null quando ano anterior sem receita (sem base). */
+  growthPercentVsPreviousYear: number | null;
 };
 
 export type CustomerIntelligenceMonthBucket = {
@@ -71,27 +77,56 @@ export type CustomerIntelligenceMonthBucket = {
   label: string;
   ordersCount: number;
   revenue: number;
+  averageTicket: number | null;
+  marginAmount: number | null;
+  marginPercent: number | null;
 };
 
 export type CustomerIntelligenceStrongMonth = {
   month: number;
-  label: string;
+  monthName: string;
+  totalRevenue: number;
   ordersCount: number;
-  revenue: number;
+  /** Proporção de anos com compra neste mês (0–1); null se histórico insuficiente. */
+  recurrenceScore: number | null;
   rankByRevenue: number;
   rankByQuantity: number;
+};
+
+export type CustomerIntelligenceSeasonalityMonth = {
+  month: number;
+  monthName: string;
+  totalRevenue: number;
+  ordersCount: number;
+};
+
+export type CustomerIntelligencePurchasesAnalysis = {
+  bestYear: number | null;
+  bestYearRevenue: number | null;
+  declinedYear: number | null;
+  declinedYearRevenue: number | null;
+  referenceYear: number | null;
+  referenceYearRevenue: number | null;
+  growthPercentVsPreviousYear: number | null;
+  growthStatus: "sem_base" | "growth" | "decline" | "stable" | "insufficient";
+  trendReading: string | null;
 };
 
 export type CustomerIntelligencePurchaseHistory = {
   byYear: CustomerIntelligenceYearBucket[];
   byMonth: CustomerIntelligenceMonthBucket[];
   strongestMonths: CustomerIntelligenceStrongMonth[];
+  analysis: CustomerIntelligencePurchasesAnalysis;
 };
 
 export type CustomerIntelligenceSeasonality = {
+  strongestMonth: CustomerIntelligenceSeasonalityMonth | null;
+  weakestMonth: CustomerIntelligenceSeasonalityMonth | null;
+  activeMonthsCount: number;
+  hasSeasonality: boolean;
+  reading: string | null;
   peakMonths: CustomerIntelligenceStrongMonth[];
   lowMonths: CustomerIntelligenceStrongMonth[];
-  seasonalityNote: string | null;
 };
 
 export type CustomerIntelligenceProductRow = {

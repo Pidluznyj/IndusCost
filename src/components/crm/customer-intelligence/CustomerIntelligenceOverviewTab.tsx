@@ -39,7 +39,7 @@ export function CustomerIntelligenceOverviewTab({ report }: { report: CustomerIn
           <ul className="mt-2 text-sm space-y-1">
             {report.history.strongestMonths.slice(0, 5).map((m) => (
               <li key={m.month}>
-                {m.label}: {formatCurrency(m.revenue)} ({m.ordersCount} pedido(s))
+                {m.monthName}: {formatCurrency(m.totalRevenue)} ({m.ordersCount} pedido(s))
               </li>
             ))}
           </ul>

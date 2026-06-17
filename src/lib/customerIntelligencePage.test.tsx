@@ -9,6 +9,7 @@ import { CustomerIntelligenceDataQuality } from "../components/crm/customer-inte
 import { CustomerIntelligenceKpiGrid } from "../components/crm/customer-intelligence/CustomerIntelligenceKpiGrid.js";
 import { CustomerIntelligenceTabs } from "../components/crm/customer-intelligence/CustomerIntelligenceTabs.js";
 import { CustomerIntelligenceHeader } from "../components/crm/customer-intelligence/CustomerIntelligenceHeader.js";
+import { CustomerIntelligencePurchasesTab } from "../components/crm/customer-intelligence/CustomerIntelligencePurchasesTab.js";
 
 function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): CustomerIntelligenceReport {
   return {
@@ -61,8 +62,73 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
         revenue: 10000,
       },
     },
-    history: { byYear: [], byMonth: [], strongestMonths: [] },
-    seasonality: { peakMonths: [], lowMonths: [], seasonalityNote: null },
+    history: {
+      byYear: [
+        {
+          year: 2025,
+          ordersCount: 2,
+          validOrdersCount: 2,
+          revenue: 12000,
+          averageTicket: 6000,
+          marginAmount: 1200,
+          marginPercent: 10,
+          growthPercentVsPreviousYear: 20,
+        },
+      ],
+      byMonth: [
+        {
+          year: 2025,
+          month: 5,
+          label: "Mai/2025",
+          ordersCount: 2,
+          revenue: 12000,
+          averageTicket: 6000,
+          marginAmount: 1200,
+          marginPercent: 10,
+        },
+      ],
+      strongestMonths: [
+        {
+          month: 5,
+          monthName: "Maio",
+          totalRevenue: 12000,
+          ordersCount: 2,
+          recurrenceScore: 1,
+          rankByRevenue: 1,
+          rankByQuantity: 1,
+        },
+      ],
+      analysis: {
+        bestYear: 2025,
+        bestYearRevenue: 12000,
+        declinedYear: 2025,
+        declinedYearRevenue: 12000,
+        referenceYear: 2025,
+        referenceYearRevenue: 12000,
+        growthPercentVsPreviousYear: 20,
+        growthStatus: "growth",
+        trendReading: "Crescimento de 20.0% em 2025 vs ano anterior.",
+      },
+    },
+    seasonality: {
+      strongestMonth: {
+        month: 5,
+        monthName: "Maio",
+        totalRevenue: 12000,
+        ordersCount: 2,
+      },
+      weakestMonth: {
+        month: 5,
+        monthName: "Maio",
+        totalRevenue: 12000,
+        ordersCount: 2,
+      },
+      activeMonthsCount: 1,
+      hasSeasonality: false,
+      reading: "Compras distribuídas em 1 mês(es); sem sazonalidade marcante. Mês mais forte: Maio.",
+      peakMonths: [],
+      lowMonths: [],
+    },
     products: {
       topByRevenue: [],
       topByQuantity: [],
@@ -185,5 +251,53 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
     );
     assert.ok(!kpiSrc.includes("customerIntelligence.ts"));
     assert.ok(!kpiSrc.includes("prisma"));
+  });
+
+  it("aba Compras exibe tabela anual e leitura gerencial", () => {
+    assert.ok(pageSrc.includes("CustomerIntelligencePurchasesTab"));
+    const html = renderToStaticMarkup(<CustomerIntelligencePurchasesTab report={mockReport()} />);
+    assert.ok(html.includes("Pedidos por ano"));
+    assert.ok(html.includes("Receita por ano"));
+    assert.ok(html.includes("Leitura gerencial"));
+    assert.ok(html.includes("Maio"));
+    assert.ok(html.includes("Melhor ano"));
+  });
+
+  it("aba Compras mostra empty state sem histórico", () => {
+    const empty = mockReport({
+      history: {
+        byYear: [],
+        byMonth: [],
+        strongestMonths: [],
+        analysis: {
+          bestYear: null,
+          bestYearRevenue: null,
+          declinedYear: null,
+          declinedYearRevenue: null,
+          referenceYear: null,
+          referenceYearRevenue: null,
+          growthPercentVsPreviousYear: null,
+          growthStatus: "insufficient",
+          trendReading: null,
+        },
+      },
+      seasonality: {
+        strongestMonth: null,
+        weakestMonth: null,
+        activeMonthsCount: 0,
+        hasSeasonality: false,
+        reading: null,
+        peakMonths: [],
+        lowMonths: [],
+      },
+    });
+    const html = renderToStaticMarkup(<CustomerIntelligencePurchasesTab report={empty} />);
+    assert.ok(html.includes("Sem histórico de compras"));
+  });
+
+  it("aba Compras exibe ranking de meses mais fortes", () => {
+    const html = renderToStaticMarkup(<CustomerIntelligencePurchasesTab report={mockReport()} />);
+    assert.ok(html.includes("Ranking — meses mais fortes"));
+    assert.ok(html.includes("Matriz de sazonalidade"));
   });
 });

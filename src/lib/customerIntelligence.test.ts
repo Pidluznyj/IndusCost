@@ -6,6 +6,9 @@ import {
   buildCustomerIntelligenceReport,
   isCommercialMetricsSalesOrder,
 } from "./customerIntelligence.js";
+import {
+  computeYearOverYearGrowthPercent,
+} from "./customerIntelligenceHistory.js";
 import { createDefaultCustomerIntelligenceFilters } from "./customerIntelligenceUtils.js";
 import type {
   CustomerIntelligenceBuildInput,
@@ -82,6 +85,7 @@ describe("buildCustomerIntelligenceReport", () => {
     assert.ok(report.dataQuality);
     assert.ok(report.commercialSummary);
     assert.ok(report.history);
+    assert.ok(report.history.analysis);
     assert.ok(report.seasonality);
     assert.ok(report.products);
     assert.ok(report.repurchase);
@@ -180,7 +184,125 @@ describe("buildCustomerIntelligenceReport", () => {
 
     assert.ok(report.history.strongestMonths.length > 0);
     assert.equal(report.history.strongestMonths[0]!.month, 5);
-    assert.equal(report.history.strongestMonths[0]!.revenue, 10000);
+    assert.equal(report.history.strongestMonths[0]!.totalRevenue, 10000);
+    assert.equal(report.history.strongestMonths[0]!.monthName, "Maio");
+  });
+
+  it("agrupa pedidos por mês com ticket e margem", () => {
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        filters: { ...createDefaultCustomerIntelligenceFilters(NOW), year: null },
+        orders: [
+          baseOrder({
+            id: "m1",
+            issueDate: new Date("2025-01-10T12:00:00.000Z"),
+            totalNetValue: 2000,
+          }),
+          baseOrder({
+            id: "m2",
+            issueDate: new Date("2025-01-20T12:00:00.000Z"),
+            totalNetValue: 3000,
+          }),
+        ],
+      })
+    );
+
+    const jan = report.history.byMonth.find((m) => m.year === 2025 && m.month === 1);
+    assert.equal(jan?.ordersCount, 2);
+    assert.equal(jan?.revenue, 5000);
+    assert.equal(jan?.averageTicket, 2500);
+  });
+
+  it("calcula crescimento anual vs ano anterior", () => {
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        filters: { ...createDefaultCustomerIntelligenceFilters(NOW), year: null },
+        orders: [
+          baseOrder({
+            id: "y2024",
+            issueDate: new Date("2024-05-10T12:00:00.000Z"),
+            totalNetValue: 4000,
+          }),
+          baseOrder({
+            id: "y2025",
+            issueDate: new Date("2025-05-10T12:00:00.000Z"),
+            totalNetValue: 6000,
+          }),
+        ],
+      })
+    );
+
+    const y2025 = report.history.byYear.find((y) => y.year === 2025);
+    assert.equal(y2025?.growthPercentVsPreviousYear, 50);
+    assert.equal(report.history.analysis.growthStatus, "growth");
+  });
+
+  it("evita Infinity quando ano anterior é zero (sem base)", () => {
+    assert.equal(computeYearOverYearGrowthPercent(5000, 0), null);
+    assert.equal(computeYearOverYearGrowthPercent(5000, null), null);
+
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        filters: { ...createDefaultCustomerIntelligenceFilters(NOW), year: null },
+        orders: [
+          baseOrder({
+            id: "only2025",
+            issueDate: new Date("2025-05-10T12:00:00.000Z"),
+            totalNetValue: 6000,
+          }),
+        ],
+      })
+    );
+
+    const y2025 = report.history.byYear.find((y) => y.year === 2025);
+    assert.equal(y2025?.growthPercentVsPreviousYear, null);
+    assert.equal(report.history.analysis.growthStatus, "insufficient");
+  });
+
+  it("identifica sazonalidade com base suficiente", () => {
+    const orders: CustomerIntelligenceOrderInput[] = [];
+    for (const year of [2024, 2025]) {
+      orders.push(
+        baseOrder({
+          id: `peak-${year}`,
+          issueDate: new Date(`${year}-05-15T12:00:00.000Z`),
+          totalNetValue: 9000,
+        }),
+        baseOrder({
+          id: `low-${year}`,
+          issueDate: new Date(`${year}-01-15T12:00:00.000Z`),
+          totalNetValue: 500,
+        })
+      );
+    }
+
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        filters: { ...createDefaultCustomerIntelligenceFilters(NOW), year: null },
+        orders,
+      })
+    );
+
+    assert.equal(report.seasonality.strongestMonth?.month, 5);
+    assert.ok(report.seasonality.activeMonthsCount >= 2);
+    assert.ok(typeof report.seasonality.hasSeasonality === "boolean");
+    assert.ok(report.seasonality.reading);
+    if (report.seasonality.hasSeasonality) {
+      assert.ok(report.seasonality.reading!.includes("Maio"));
+    }
+  });
+
+  it("cliente sem histórico retorna empty state seguro", () => {
+    const report = buildCustomerIntelligenceReport(buildInput());
+
+    assert.deepEqual(report.history.byYear, []);
+    assert.deepEqual(report.history.byMonth, []);
+    assert.deepEqual(report.history.strongestMonths, []);
+    assert.equal(report.history.analysis.bestYear, null);
+    assert.equal(report.history.analysis.trendReading, null);
+    assert.equal(report.seasonality.activeMonthsCount, 0);
+    assert.equal(report.seasonality.hasSeasonality, false);
+    assert.equal(report.seasonality.reading, null);
   });
 
   it("data primeira/última compra calcula corretamente", () => {
