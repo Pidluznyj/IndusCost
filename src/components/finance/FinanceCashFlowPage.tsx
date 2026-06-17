@@ -515,7 +515,7 @@ export function FinanceCashFlowPage() {
 
       {payload && activeTab === "calendar" ? (
         <FinanceCashFlowCalendar
-          days={payload.dailyCalendar}
+          calendar={payload.calendar}
           monthLabel={
             appliedFilters.month
               ? (FINANCE_CASH_FLOW_MONTH_OPTIONS.find((o) => o.value === appliedFilters.month)
@@ -524,6 +524,13 @@ export function FinanceCashFlowPage() {
                   month: "long",
                   year: "numeric",
                 })
+          }
+          viewModeLabel={
+            appliedFilters.viewMode === "realized"
+              ? "Realizado"
+              : appliedFilters.viewMode === "combined"
+                ? "Realizado + Previsto"
+                : "Previsto"
           }
         />
       ) : null}

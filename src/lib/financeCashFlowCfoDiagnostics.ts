@@ -1,6 +1,5 @@
 import { formatFinanceCurrency } from "./financeAccountsReceivableFormat.js";
 import {
-  isFinanceArOpen,
   roundMoney,
   startOfLocalDay,
 } from "./financeAccountsReceivableDashboard.js";
@@ -9,6 +8,9 @@ import type {
   FinanceCashFlowArRow,
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
+import {
+  buildCashFlowDailyCalendarFromMovements,
+} from "./financeCashFlowCalendar.js";
 import type {
   FinanceCashFlowCriticalMovement,
   FinanceCashFlowDashboardPayload,
@@ -19,7 +21,9 @@ import {
   resolveCashFlowArMovementDate,
   resolveCashFlowApMovementDate,
   resolveCashFlowApAmount,
+  resolveCashFlowArAmount,
   shouldIncludeCashFlowApMovement,
+  shouldIncludeCashFlowArMovement,
 } from "./financeCashFlowLedger.js";
 
 /** Limite de concentração (%) para alerta gerencial. */
@@ -261,22 +265,20 @@ function buildMovementBuckets(
 
   for (const slice of modes) {
     for (const row of arRows) {
-      if (slice === "projected") {
-        if (!isFinanceArOpen(row) || row.suspendCollection || row.balanceReceivable <= 0) continue;
-        const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
-        if (!date) continue;
-        add(dateKey(startOfLocalDay(date)), "inflow", row.balanceReceivable);
-      } else if (row.amountReceived > 0 && row.dueDate) {
-        const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
-        if (!date) continue;
-        add(dateKey(startOfLocalDay(date)), "inflow", row.amountReceived);
-      }
+      if (!shouldIncludeCashFlowArMovement(row, slice)) continue;
+      const amount = resolveCashFlowArAmount(row, slice);
+      if (amount <= 0) continue;
+      const date = resolveCashFlowArMovementDate(row, slice, filters.dateBase);
+      if (!date) continue;
+      add(dateKey(startOfLocalDay(date)), "inflow", amount);
     }
     for (const row of apRows) {
       if (!shouldIncludeCashFlowApMovement(row, slice)) continue;
+      const amount = resolveCashFlowApAmount(row, slice);
+      if (amount <= 0) continue;
       const date = resolveCashFlowApMovementDate(row, slice, filters.dateBase);
       if (!date) continue;
-      add(dateKey(startOfLocalDay(date)), "outflow", resolveCashFlowApAmount(row, slice));
+      add(dateKey(startOfLocalDay(date)), "outflow", amount);
     }
   }
 
@@ -318,47 +320,7 @@ export function buildCashFlowDailyCalendar(
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date
 ): FinanceCashFlowDailyPoint[] {
-  const buckets = buildMovementBuckets(arRows, apRows, filters, referenceDate);
-  const calendarYear = filters.year ?? referenceDate.getFullYear();
-  const calendarMonth = filters.month ?? referenceDate.getMonth() + 1;
-
-  const points: FinanceCashFlowDailyPoint[] = [];
-  let maxFlow = 0;
-
-  for (const [key, bucket] of buckets) {
-    const d = startOfLocalDay(new Date(`${key}T12:00:00`));
-    if (d.getFullYear() !== calendarYear || d.getMonth() + 1 !== calendarMonth) continue;
-    const inflow = roundMoney(bucket.inflow);
-    const outflow = roundMoney(bucket.outflow);
-    const net = roundMoney(inflow - outflow);
-    maxFlow = Math.max(maxFlow, inflow, outflow, Math.abs(net));
-    points.push({
-      date: key,
-      dayLabel: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }),
-      inflowAmount: inflow,
-      outflowAmount: outflow,
-      netAmount: net,
-      status: net > 0 ? "positive" : net < 0 ? "negative" : "neutral",
-      inflowCount: bucket.inflowCount,
-      outflowCount: bucket.outflowCount,
-      hasLargeInflow: false,
-      hasLargeOutflow: false,
-      summary: "",
-    });
-  }
-
-  const largeThreshold = maxFlow > 0 ? maxFlow * 0.35 : 0;
-  for (const p of points) {
-    p.hasLargeInflow = p.inflowAmount >= largeThreshold && largeThreshold > 0;
-    p.hasLargeOutflow = p.outflowAmount >= largeThreshold && largeThreshold > 0;
-    const parts: string[] = [];
-    if (p.inflowAmount > 0) parts.push(`+${formatFinanceCurrency(p.inflowAmount)}`);
-    if (p.outflowAmount > 0) parts.push(`−${formatFinanceCurrency(p.outflowAmount)}`);
-    parts.push(`Líquido ${formatFinanceCurrency(p.netAmount)}`);
-    p.summary = parts.join(" · ");
-  }
-
-  return points.sort((a, b) => a.date.localeCompare(b.date));
+  return buildCashFlowDailyCalendarFromMovements(arRows, apRows, filters, referenceDate);
 }
 
 function insight(
@@ -429,6 +391,7 @@ export type FinanceCashFlowInsightsInput = Omit<
   FinanceCashFlowDashboardPayload,
   | "executiveInsights"
   | "dailyCalendar"
+  | "calendar"
   | "cashHealthScore"
   | "executiveReading"
   | "executiveSummary"

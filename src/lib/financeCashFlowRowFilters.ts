@@ -23,7 +23,9 @@ import {
   resolveCashFlowApMovementDate,
   shouldIncludeCashFlowArMovement,
   shouldIncludeCashFlowApMovement,
+  type CashFlowMovementSlice,
 } from "./financeCashFlowLedger.js";
+import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
 import {
   isFinanceApExcludedFromReports,
@@ -48,6 +50,19 @@ function dateInBounds(
   return true;
 }
 
+/** Escopo de período é mais amplo que movimento previsto (carteira/YTD inclui parcialmente baixados). */
+function contributesToCashFlowArPeriodScope(
+  row: FinanceCashFlowArRow,
+  slice: CashFlowMovementSlice
+): boolean {
+  if (slice === "projected") {
+    if (row.suspendCollection) return false;
+    if (isFinanceCashFlowArOpenRow(row) && row.balanceReceivable > 0) return true;
+    return row.amountReceived > 0;
+  }
+  return shouldIncludeCashFlowArMovement(row, slice);
+}
+
 /** Linha entra no escopo do fluxo se contribui ao modo/ período selecionado. */
 export function matchesCashFlowArPeriodScope(
   row: FinanceCashFlowArRow,
@@ -64,7 +79,7 @@ export function matchesCashFlowArPeriodScope(
 
   const modes = cashFlowViewModeSlices(filters.viewMode);
   for (const slice of modes) {
-    if (!shouldIncludeCashFlowArMovement(row, slice)) continue;
+    if (!contributesToCashFlowArPeriodScope(row, slice)) continue;
     // Fluxo planejado: sempre aloca pelo vencimento (dueDate).
     if (dateInBounds(row.dueDate ?? null, from, toExclusive)) return true;
   }

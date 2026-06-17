@@ -71,7 +71,10 @@ import {
   buildStressScenario,
 } from "./financeCashFlowForecast.js";
 import {
-  buildCashFlowDailyCalendar,
+  buildFinanceCashFlowCalendar,
+  buildCashFlowDailyCalendarFromMovements,
+} from "./financeCashFlowCalendar.js";
+import {
   buildCashFlowExecutiveInsights,
   buildCashHealthScore,
   cashFlowCfoMetricsAreFinite,
@@ -923,7 +926,13 @@ export function buildFinanceCashFlowDashboardFromDataset(
     filteredAp,
     referenceDate
   );
-  const dailyCalendar = buildCashFlowDailyCalendar(
+  const calendar = buildFinanceCashFlowCalendar(
+    filteredAr,
+    filteredAp,
+    filters,
+    referenceDate
+  );
+  const dailyCalendar = buildCashFlowDailyCalendarFromMovements(
     filteredAr,
     filteredAp,
     filters,
@@ -985,6 +994,7 @@ export function buildFinanceCashFlowDashboardFromDataset(
     cashHealthScore,
     executiveInsights,
     dailyCalendar,
+    calendar,
     reconciliation,
     executiveReading: buildCashFlowExecutiveReading({
       cards: {
@@ -1072,6 +1082,26 @@ export function financeCashFlowMetricsAreFinite(payload: FinanceCashFlowDashboar
   }
   for (const d of payload.dailyCalendar) {
     for (const v of [d.inflowAmount, d.outflowAmount, d.netAmount]) {
+      if (!Number.isFinite(v)) return false;
+    }
+  }
+  for (const d of payload.calendar.days) {
+    for (const v of [d.inflow, d.outflow, d.net]) {
+      if (!Number.isFinite(v)) return false;
+    }
+    for (const m of d.movements) {
+      for (const v of [
+        m.amountOriginal,
+        m.amountRealized,
+        m.balanceOpen,
+        m.calendarAmount,
+      ]) {
+        if (!Number.isFinite(v)) return false;
+      }
+    }
+  }
+  for (const w of payload.calendar.weeks) {
+    for (const v of [w.inflow, w.outflow, w.net]) {
       if (!Number.isFinite(v)) return false;
     }
   }

@@ -1,5 +1,6 @@
 /** Tipos do payload GET /api/finance/cash-flow/dashboard */
 
+import type { FinanceCashFlowCalendarPayload } from "./financeCashFlowCalendar.js";
 import type {
   FinanceCashFlowCashForecast,
   FinanceCashFlowConservativeScenario,
@@ -176,6 +177,8 @@ export type FinanceCashFlowDashboardPayload = {
   executiveInsights: FinanceCashFlowExecutiveInsights;
   /** Calendário diário do mês filtrado (ou mês de referência). */
   dailyCalendar: FinanceCashFlowDailyPoint[];
+  /** Calendário com movimentos rastreáveis, resumo semanal e detalhamento por dia. */
+  calendar: FinanceCashFlowCalendarPayload;
   monthlySeries: FinanceCashFlowMonthlyPoint[];
   topCustomers: FinanceCashFlowPartySummary[];
   topSuppliers: FinanceCashFlowPartySummary[];

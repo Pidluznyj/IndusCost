@@ -339,7 +339,7 @@ describe("financeCashFlowDashboard", () => {
     assert.equal(payload.dataSanitization.ignoredInternalGroupPayables, 1);
   });
 
-  it("AP mensal usa dueDate mesmo com scheduleDate futuro", () => {
+  it("AP mensal usa data operacional quando scheduleDate é posterior ao vencimento", () => {
     const payload = buildFinanceCashFlowDashboard(
       [],
       [
@@ -354,7 +354,7 @@ describe("financeCashFlowDashboard", () => {
     );
     const may = payload.monthlySeries.find((p) => p.month === 5);
     const jul = payload.monthlySeries.find((p) => p.month === 7);
-    assert.equal(may!.outflowAmount, 750);
-    assert.equal(jul!.outflowAmount ?? 0, 0);
+    assert.equal(may!.outflowAmount ?? 0, 0);
+    assert.equal(jul!.outflowAmount, 750);
   });
 });

@@ -238,7 +238,7 @@ describe("financeCashFlowCfoDiagnostics", () => {
     assert.equal(jun15!.outflowAmount, 600);
     assert.equal(jun15!.netAmount, 400);
     assert.equal(jun15!.status, "positive");
-    assert.ok(jun15!.summary.includes("Líquido"));
+    assert.ok(jun15!.summary.includes("Saldo"));
   });
 
   it("calendário vazio sem movimentos no mês", () => {

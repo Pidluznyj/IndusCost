@@ -4,6 +4,7 @@
  */
 import { isFinanceArOpen, roundMoney } from "./financeAccountsReceivableDashboard.js";
 import { isFinanceApOpen } from "./financeAccountsPayableDashboard.js";
+import { getAccountsPayableOperationalDueDate } from "./financeAccountsPayableOperational.js";
 import {
   isFinanceApCancelledTitle,
   resolveFinanceApEffectivePaymentDate,
@@ -11,6 +12,7 @@ import {
   resolveFinanceApRealizedAmount,
   FINANCE_AP_CASH_FLOW_RULES_NOTE,
 } from "./financeAccountsPayableRules.js";
+import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import type {
   FinanceCashFlowApRow,
   FinanceCashFlowArRow,
@@ -46,10 +48,12 @@ export function resolveCashFlowArMovementDate(
 export function resolveCashFlowApMovementDate(
   row: FinanceCashFlowApRow,
   slice: CashFlowMovementSlice,
-  dateBase: FinanceCashFlowDateBase
+  _dateBase: FinanceCashFlowDateBase
 ): Date | null {
-  // Fluxo de Caixa planejado: sempre alocar pelo vencimento (dueDate).
-  return row.dueDate ?? null;
+  if (slice === "projected") {
+    return getAccountsPayableOperationalDueDate(row);
+  }
+  return resolveFinanceApEffectivePaymentDate(row) ?? row.dueDate ?? null;
 }
 
 export function resolveCashFlowArAmount(
@@ -57,7 +61,7 @@ export function resolveCashFlowArAmount(
   slice: CashFlowMovementSlice
 ): number {
   if (slice === "projected") {
-    if (!isFinanceArOpen(row) || row.suspendCollection) return 0;
+    if (!isFinanceCashFlowArOpenRow(row) || row.suspendCollection) return 0;
     return row.balanceReceivable;
   }
   return row.amountReceived > 0 ? row.amountReceived : 0;
@@ -79,7 +83,7 @@ export function shouldIncludeCashFlowArMovement(
   slice: CashFlowMovementSlice
 ): boolean {
   if (slice === "projected") {
-    return isFinanceArOpen(row) && !row.suspendCollection && row.balanceReceivable > 0;
+    return isFinanceCashFlowArOpenRow(row) && row.balanceReceivable > 0;
   }
   return row.amountReceived > 0 && row.dueDate != null;
 }
