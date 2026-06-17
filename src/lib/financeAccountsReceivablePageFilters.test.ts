@@ -100,4 +100,46 @@ describe("financeAccountsReceivablePageFilters", () => {
     assert.ok(page.includes("FinanceArTopDebtorsChart"));
     assert.ok(page.includes("Exportar CSV"));
   });
+
+  it("cabeçalho executivo compacto com fonte Nomus e sync fora do topo", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivablePage.tsx"),
+      "utf8"
+    );
+    const syncPanel = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivableSyncPanel.tsx"),
+      "utf8"
+    );
+
+    assert.ok(page.includes('title="Contas a Receber"'));
+    assert.ok(page.includes("Fonte: Nomus"));
+    assert.ok(page.includes("headerSourceLine"));
+    assert.ok(page.includes("compact"));
+    assert.ok(page.includes("Atualizar"));
+    assert.ok(page.includes("Exportar CSV"));
+    assert.ok(page.includes("FinanceAccountsReceivableSyncPanel"));
+    assert.ok(page.includes("defaultExpanded={false}"));
+
+    const syncIdx = page.indexOf("<FinanceAccountsReceivableSyncPanel");
+    const kpiIdx = page.indexOf("Resumo executivo");
+    assert.ok(kpiIdx > 0 && syncIdx > kpiIdx, "sync panel deve ficar após KPIs/indicadores");
+
+    assert.ok(syncPanel.includes("Dados da integração Nomus"));
+    assert.ok(syncPanel.includes("FinanceBiCollapsibleSection"));
+    assert.ok(syncPanel.includes("Atualizar status da sync"));
+    assert.ok(syncPanel.includes("arPrimaryButtonLabel"));
+    assert.ok(syncPanel.includes("defaultExpanded = false"));
+  });
+
+  it("filtros principais e avançados permanecem na página", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivablePage.tsx"),
+      "utf8"
+    );
+    assert.ok(page.includes("Ano vencimento"));
+    assert.ok(page.includes("Mês vencimento"));
+    assert.ok(page.includes("showAdvancedFilters"));
+    assert.ok(page.includes("FinanceBiFilterPanel"));
+    assert.ok(page.includes("onToggle"));
+  });
 });

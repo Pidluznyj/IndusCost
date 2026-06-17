@@ -92,7 +92,6 @@ import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import { buildFinanceArFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
-  FINANCE_AR_LAST_SYNC_FILTERED_SCOPE,
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
@@ -617,24 +616,23 @@ export function FinanceAccountsReceivablePage() {
           : "neutral"
       : "neutral";
 
+  const headerSourceLine = useMemo(() => {
+    const updatedAt = cards?.lastSyncAt ?? data?.generatedAt ?? null;
+    const parts = ["Fonte: Nomus"];
+    if (updatedAt) parts.push(`Atualizado em ${formatFinanceDateTime(updatedAt)}`);
+    if (cards?.totalRecords != null) {
+      parts.push(`${formatFinanceInteger(cards.totalRecords)} registros`);
+    }
+    return parts.join(" · ");
+  }, [cards?.lastSyncAt, cards?.totalRecords, data?.generatedAt]);
+
   return (
     <FinanceBiDashboardShell>
       <FinanceBiExecutiveHeader
-        eyebrow="Financeiro · Carteira de Recebíveis"
         title="Contas a Receber"
-        subtitle="Carteira de recebíveis e clientes — visão gerencial da posição a receber, recebido e vencido."
+        subtitle="Carteira de recebíveis, clientes, valores em aberto, recebidos e vencidos."
         filterStatus={filterStatus}
-        meta={[
-          {
-            label: "Última sync",
-            value: formatFinanceDateTime(cards?.lastSyncAt),
-            hint: FINANCE_AR_LAST_SYNC_FILTERED_SCOPE,
-          },
-          {
-            label: "Calculado em",
-            value: data ? formatFinanceDateTime(data.generatedAt) : loading ? "…" : "—",
-          },
-        ]}
+        compact
         actions={[
           {
             id: "refresh",
@@ -667,22 +665,8 @@ export function FinanceAccountsReceivablePage() {
             : []),
         ]}
       >
-        <div className="flex flex-wrap gap-2 pt-1">
-          <span className="inline-flex items-center rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#1D4ED8]">
-            Fonte Nomus
-          </span>
-          {cards?.totalRecords != null ? (
-            <span className="inline-flex items-center rounded-full border border-[#E5E7EB] bg-white px-2.5 py-0.5 text-[10px] font-semibold text-[#6B7280]">
-              {formatFinanceInteger(cards.totalRecords)} registros no filtro
-            </span>
-          ) : null}
-        </div>
+        <p className="text-xs text-[#6B7280] tabular-nums">{headerSourceLine}</p>
       </FinanceBiExecutiveHeader>
-
-      <FinanceAccountsReceivableSyncPanel
-        canRun={canRunSync}
-        onSyncFinished={() => void loadDashboard()}
-      />
 
       {dashboardError ? (
         <FinanceArErrorBanner message={dashboardError} onDismiss={() => setDashboardError(null)} />
@@ -696,6 +680,7 @@ export function FinanceAccountsReceivablePage() {
 
       <FinanceBiFilterPanel
         title="Filtros principais"
+        compact
         expanded={showAdvancedFilters}
         onToggle={() => setShowAdvancedFilters((v) => !v)}
         filterStatus={filterStatus}
@@ -704,14 +689,16 @@ export function FinanceAccountsReceivablePage() {
         onClear={handleClearFilters}
         applyDisabled={!hasPendingFilterChanges || loading}
         alwaysVisible={
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
             <FilterSelect
+              compact
               label="Ano vencimento"
               value={draftFilters.year}
               onChange={(v) => setDraftFilters((f) => ({ ...f, year: v }))}
               options={yearOptions}
             />
             <FilterSelect
+              compact
               label="Mês vencimento"
               value={draftFilters.month}
               onChange={(v) =>
@@ -724,17 +711,20 @@ export function FinanceAccountsReceivablePage() {
               options={FINANCE_AR_MONTH_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
             />
             <FilterSelect
+              compact
               label="Status"
               value={draftFilters.status}
               onChange={(v) => setDraftFilters((f) => ({ ...f, status: v }))}
               options={FINANCE_AR_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
             />
             <FilterInput
+              compact
               label="Cliente"
               value={draftFilters.personName}
               onChange={(v) => setDraftFilters((f) => ({ ...f, personName: v }))}
             />
             <FilterInput
+              compact
               label="CNPJ/CPF"
               value={draftFilters.personCnpj}
               onChange={(v) => setDraftFilters((f) => ({ ...f, personCnpj: v }))}
@@ -742,25 +732,29 @@ export function FinanceAccountsReceivablePage() {
           </div>
         }
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
           <FilterInput
+            compact
             label="Empresa"
             value={draftFilters.companyName}
             onChange={(v) => setDraftFilters((f) => ({ ...f, companyName: v }))}
           />
           <FilterInput
+            compact
             label="Vencimento de"
             type="date"
             value={draftFilters.dueDateFrom}
             onChange={(v) => setDraftFilters((f) => ({ ...f, dueDateFrom: v }))}
           />
           <FilterInput
+            compact
             label="Vencimento até"
             type="date"
             value={draftFilters.dueDateTo}
             onChange={(v) => setDraftFilters((f) => ({ ...f, dueDateTo: v }))}
           />
           <FilterSelect
+            compact
             label="Origem do recebível"
             value={draftFilters.invoiceIssued}
             onChange={(v) => setDraftFilters((f) => ({ ...f, invoiceIssued: v }))}
@@ -770,11 +764,13 @@ export function FinanceAccountsReceivablePage() {
             }))}
           />
           <FilterInput
+            compact
             label="Forma de pagamento"
             value={draftFilters.paymentMethodName}
             onChange={(v) => setDraftFilters((f) => ({ ...f, paymentMethodName: v }))}
           />
           <FilterInput
+            compact
             label="Conta bancária"
             value={draftFilters.bankAccountName}
             onChange={(v) => setDraftFilters((f) => ({ ...f, bankAccountName: v }))}
@@ -1030,6 +1026,12 @@ export function FinanceAccountsReceivablePage() {
           </div>
         </div>
       </div>
+
+      <FinanceAccountsReceivableSyncPanel
+        canRun={canRunSync}
+        onSyncFinished={() => void loadDashboard()}
+        defaultExpanded={false}
+      />
     </FinanceBiDashboardShell>
   );
 }
@@ -1040,11 +1042,13 @@ function FilterInput({
   value,
   onChange,
   type = "text",
+  compact = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
+  compact?: boolean;
 }) {
   return (
     <label className="space-y-1 block min-w-0">
@@ -1053,7 +1057,10 @@ function FilterInput({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-9 rounded-xl border border-border bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+        className={cn(
+          "w-full rounded-lg border border-border bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30",
+          compact ? "h-8" : "h-9 rounded-xl"
+        )}
       />
     </label>
   );
@@ -1064,11 +1071,13 @@ function FilterSelect({
   value,
   onChange,
   options,
+  compact = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  compact?: boolean;
 }) {
   return (
     <label className="space-y-1 block min-w-0">
@@ -1076,7 +1085,10 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-9 rounded-xl border border-border bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+        className={cn(
+          "w-full rounded-lg border border-border bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30",
+          compact ? "h-8" : "h-9 rounded-xl"
+        )}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

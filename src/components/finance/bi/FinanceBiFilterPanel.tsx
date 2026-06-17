@@ -23,6 +23,7 @@ export function FinanceBiFilterPanel({
   title = "Filtros",
   alwaysVisible,
   advancedLabel = "Filtros avançados",
+  compact = false,
 }: {
   expanded: boolean;
   onToggle: () => void;
@@ -36,16 +37,19 @@ export function FinanceBiFilterPanel({
   title?: string;
   alwaysVisible?: React.ReactNode;
   advancedLabel?: string;
+  compact?: boolean;
 }) {
   const hasAdvanced = children != null;
+  const sectionPad = compact ? "px-4 py-3" : "px-5 py-4";
+  const sectionPadTight = compact ? "px-4 py-2.5" : "px-5 py-3.5";
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <section className={financeBiSectionClass}>
         {alwaysVisible ? (
-          <div className="px-5 py-4 border-b border-[#E5E7EB] space-y-4">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <Filter className="h-4 w-4 text-[#6B7280] shrink-0" />
+          <div className={`${sectionPad} border-b border-[#E5E7EB] space-y-3`}>
+            <div className="flex items-center gap-2 min-w-0">
+              <Filter className="h-3.5 w-3.5 text-[#6B7280] shrink-0" />
               <span className="text-sm font-semibold text-[#111827]">{title}</span>
               <FinanceBiFilterStatusBadge status={filterStatus} />
             </div>
@@ -57,7 +61,7 @@ export function FinanceBiFilterPanel({
           <button
             type="button"
             onClick={onToggle}
-            className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-[#F9FAFB] transition-colors"
+            className={`w-full flex items-center justify-between ${sectionPadTight} hover:bg-[#F9FAFB] transition-colors`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               {!alwaysVisible ? (
@@ -79,7 +83,9 @@ export function FinanceBiFilterPanel({
         ) : null}
 
         {hasAdvanced && expanded ? (
-          <div className="border-t border-[#E5E7EB] p-5 space-y-4 bg-[#F9FAFB]/60">
+          <div
+            className={`border-t border-[#E5E7EB] ${compact ? "p-4 space-y-3" : "p-5 space-y-4"} bg-[#F9FAFB]/60`}
+          >
             {hint ? <div className="text-[11px] text-[#6B7280]">{hint}</div> : null}
             {children}
           </div>
@@ -88,8 +94,8 @@ export function FinanceBiFilterPanel({
         <div
           className={
             alwaysVisible || (hasAdvanced && expanded)
-              ? "border-t border-[#E5E7EB] px-5 py-4 flex items-center gap-3 bg-white"
-              : "px-5 py-4 flex items-center gap-3"
+              ? `border-t border-[#E5E7EB] ${sectionPad} flex items-center gap-2 bg-white`
+              : `${sectionPad} flex items-center gap-2`
           }
         >
           <button

@@ -37,24 +37,28 @@ export function FinanceBiExecutiveHeader({
   filterStatus,
   actions = [],
   children,
+  compact = false,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   subtitle?: React.ReactNode;
   meta?: FinanceBiHeaderMeta[];
   filterStatus?: FinanceBiFilterStatus;
   actions?: FinanceBiHeaderAction[];
   children?: React.ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <header className={financeBiHeaderClass}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className={financeBiEyebrowClass}>{eyebrow}</p>
-            {filterStatus ? <FinanceBiFilterStatusBadge status={filterStatus} /> : null}
-          </div>
-          <h1 className={financeBiTitleClass}>{title}</h1>
+    <header className={cn(financeBiHeaderClass, compact && "p-4")}>
+      <div className={cn("flex flex-col lg:flex-row lg:items-start lg:justify-between", compact ? "gap-3" : "gap-4")}>
+        <div className="min-w-0 space-y-1.5">
+          {eyebrow || filterStatus ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {eyebrow ? <p className={financeBiEyebrowClass}>{eyebrow}</p> : null}
+              {filterStatus ? <FinanceBiFilterStatusBadge status={filterStatus} /> : null}
+            </div>
+          ) : null}
+          <h1 className={cn(financeBiTitleClass, compact && "text-xl")}>{title}</h1>
           {subtitle ? <p className={financeBiSubtitleClass}>{subtitle}</p> : null}
           {children}
           {meta.length > 0 ? (

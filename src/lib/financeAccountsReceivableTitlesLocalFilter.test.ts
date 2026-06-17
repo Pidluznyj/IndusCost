@@ -130,7 +130,7 @@ describe("financeAccountsReceivableTitlesLocalFilter", () => {
     assert.match(page, /FinanceDetailTabs/);
     assert.match(page, /FinanceArAuditTab/);
     assert.match(page, /totalAmountReceivable/);
-    assert.match(page, /Fonte Nomus/);
+    assert.match(page, /Fonte: Nomus/);
     assert.match(page, /FinanceActionCenterShell/);
   });
 });

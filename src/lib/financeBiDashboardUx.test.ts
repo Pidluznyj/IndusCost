@@ -63,6 +63,7 @@ describe("financeBiDashboardUx", () => {
       "FinanceBiKpiCard.tsx",
       "FinanceBiEmptyState.tsx",
       "FinanceBiCalcTooltip.tsx",
+      "FinanceBiCollapsibleSection.tsx",
     ]) {
       readFileSync(join(biDir, file), "utf8");
     }

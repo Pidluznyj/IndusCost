@@ -14,6 +14,7 @@ import {
   interpretFinanceArSyncRunResponse,
 } from "@/src/lib/financeAccountsReceivableSyncRun";
 import { formatFinanceDateTime, formatFinanceInteger } from "@/src/lib/financeAccountsReceivableFormat";
+import { FinanceBiCollapsibleSection } from "@/src/components/finance/bi/FinanceBiCollapsibleSection";
 
 function formatIntOrDash(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -23,9 +24,11 @@ function formatIntOrDash(value: number | null | undefined): string {
 export function FinanceAccountsReceivableSyncPanel({
   canRun,
   onSyncFinished,
+  defaultExpanded = false,
 }: {
   canRun: boolean;
   onSyncFinished?: () => void;
+  defaultExpanded?: boolean;
 }) {
   const [status, setStatus] = useState<NomusAccountsReceivableSyncStatusPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -104,106 +107,130 @@ export function FinanceAccountsReceivableSyncPanel({
   const isActuallyRunning = status?.isActuallyRunning === true;
   const metrics = status?.metrics;
   const confirmOk = confirmText.trim() === NOMUS_AR_SYNC_CONFIRM_PHRASE;
+  const lastSyncAt = status?.finishedAt ?? status?.startedAt ?? status?.lastSuccess?.finishedAt ?? null;
+
+  const statusBadge = status ? (
+    <div
+      className={cn(
+        "inline-flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]",
+        arOverallStatusBadgeClass(overall)
+      )}
+    >
+      {isActuallyRunning ? (
+        <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+      ) : overall === "SUCCESS" ? (
+        <CircleCheck className="h-3 w-3 shrink-0" />
+      ) : overall === "FAILED" || overall === "STALE" ? (
+        <AlertTriangle className="h-3 w-3 shrink-0" />
+      ) : null}
+      <span className="font-bold">{arOverallStatusLabel(overall)}</span>
+    </div>
+  ) : loading ? (
+    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+  ) : null;
+
+  const collapsedAlert =
+    error || overall === "FAILED" || overall === "STALE" ? (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+        {error ?? status?.recommendedAction ?? "A última sincronização Nomus falhou ou está incompleta."}
+      </div>
+    ) : null;
 
   return (
     <>
-      <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1 min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Sync Nomus — Contas a Receber
-            </p>
-            {status ? (
-              <div
-                className={cn(
-                  "inline-flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs",
-                  arOverallStatusBadgeClass(overall)
-                )}
-              >
-                {isActuallyRunning ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
-                ) : overall === "SUCCESS" ? (
-                  <CircleCheck className="h-3.5 w-3.5 shrink-0" />
-                ) : overall === "FAILED" || overall === "STALE" ? (
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                ) : null}
-                <span className="font-bold">{arOverallStatusLabel(overall)}</span>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Status indisponível</p>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => void loadStatus()}
-              disabled={loading}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
-            >
-              {loading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
+      <FinanceBiCollapsibleSection
+        title="Dados da integração Nomus"
+        subtitle={
+          lastSyncAt
+            ? `Última sync ${formatFinanceDateTime(lastSyncAt)} · métricas, estratégia e sincronização manual`
+            : "Status da rotina, métricas e sincronização manual"
+        }
+        defaultExpanded={defaultExpanded}
+        trailing={statusBadge}
+        alert={collapsedAlert}
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Sync Nomus — Contas a Receber
+              </p>
+              {status ? statusBadge : (
+                <p className="text-sm text-muted-foreground">Status indisponível</p>
               )}
-              Atualizar status
-            </button>
-            {canRun ? (
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  setConfirmText("");
-                  setModalOpen(true);
-                }}
-                disabled={isActuallyRunning || starting}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                onClick={() => void loadStatus()}
+                disabled={loading}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
               >
-                {isActuallyRunning || starting ? (
+                {loading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Play className="h-3.5 w-3.5" />
+                  <RefreshCw className="h-3.5 w-3.5" />
                 )}
-                {arPrimaryButtonLabel(overall, isActuallyRunning)}
+                Atualizar status da sync
               </button>
-            ) : null}
+              {canRun ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmText("");
+                    setModalOpen(true);
+                  }}
+                  disabled={isActuallyRunning || starting}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                >
+                  {isActuallyRunning || starting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                  {arPrimaryButtonLabel(overall, isActuallyRunning)}
+                </button>
+              ) : null}
+            </div>
           </div>
+
+          {status ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-[11px]">
+              <Metric label="Última sync" value={formatFinanceDateTime(lastSyncAt)} />
+              <Metric label="Duração" value={formatFinanceArSyncDurationMs(status.durationMs)} />
+              <Metric label="Lidos" value={formatIntOrDash(metrics?.recordsRead)} />
+              <Metric label="Criados" value={formatIntOrDash(metrics?.created)} />
+              <Metric label="Atualizados" value={formatIntOrDash(metrics?.updated)} />
+              <Metric label="Inalterados" value={formatIntOrDash(metrics?.unchanged)} />
+              <Metric label="Erros" value={formatIntOrDash(metrics?.errors)} />
+              <Metric label="Estratégia" value={status.syncStrategy ?? "—"} mono />
+            </div>
+          ) : null}
+
+          {status?.recommendedAction ? (
+            <p className="text-xs text-muted-foreground">{status.recommendedAction}</p>
+          ) : null}
+
+          {runMessage ? (
+            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-900">
+              {runMessage}
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              {error}
+            </div>
+          ) : null}
+
+          {!canRun ? (
+            <p className="text-[11px] text-muted-foreground">
+              Para rodar sync manualmente é necessária a permissão{" "}
+              <span className="font-mono">settings.nomus.sync</span>.
+            </p>
+          ) : null}
         </div>
-
-        {status ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-[11px]">
-            <Metric label="Última sync" value={formatFinanceDateTime(status.finishedAt ?? status.startedAt)} />
-            <Metric label="Duração" value={formatFinanceArSyncDurationMs(status.durationMs)} />
-            <Metric label="Lidos" value={formatIntOrDash(metrics?.recordsRead)} />
-            <Metric label="Criados" value={formatIntOrDash(metrics?.created)} />
-            <Metric label="Atualizados" value={formatIntOrDash(metrics?.updated)} />
-            <Metric label="Inalterados" value={formatIntOrDash(metrics?.unchanged)} />
-            <Metric label="Erros" value={formatIntOrDash(metrics?.errors)} />
-            <Metric label="Estratégia" value={status.syncStrategy ?? "—"} mono />
-          </div>
-        ) : null}
-
-        {status?.recommendedAction ? (
-          <p className="text-xs text-muted-foreground">{status.recommendedAction}</p>
-        ) : null}
-
-        {runMessage ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-900">
-            {runMessage}
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-            {error}
-          </div>
-        ) : null}
-
-        {!canRun ? (
-          <p className="text-[11px] text-muted-foreground">
-            Para rodar sync manualmente é necessária a permissão{" "}
-            <span className="font-mono">settings.nomus.sync</span>.
-          </p>
-        ) : null}
-      </div>
+      </FinanceBiCollapsibleSection>
 
       {modalOpen ? (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50">
