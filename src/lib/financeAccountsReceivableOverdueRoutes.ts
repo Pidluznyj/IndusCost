@@ -1,11 +1,6 @@
 import type express from "express";
 import type { RequestHandler } from "express";
 import {
-  buildFinanceArPrismaWhere,
-  mapPrismaRowToFinanceArDashboardRow,
-  type FinanceArDashboardFilters,
-} from "./financeAccountsReceivableDashboard.js";
-import {
   buildFinanceArOverdueExportWorkbook,
   financeArOverdueExportFilename,
   financeArOverdueWorkbookToBytes,
@@ -15,9 +10,9 @@ import {
   FinanceArOverdueFilterParseError,
   parseFinanceArOverdueFilters,
 } from "./financeAccountsReceivableOverdue.js";
-import { FINANCE_AR_TITLE_SELECT } from "./financeAccountsReceivableTitles.js";
+import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.js";
+import type { FinanceArDashboardFilters } from "./financeAccountsReceivableDashboard.js";
 import { prisma } from "./prisma.js";
-import { resolveNomusArReportSyncCutoffFromPrisma } from "./financeNomusArReportFreshness.js";
 
 const FINANCE_AR_OVERDUE_VIEW_PERMISSIONS = [
   "finance.accountsReceivable.view",
@@ -38,17 +33,7 @@ type AuthGuards = {
 };
 
 async function loadFinanceArOverdueRows(filters: FinanceArDashboardFilters) {
-  const syncCutoff = await resolveNomusArReportSyncCutoffFromPrisma(prisma);
-  const where = buildFinanceArPrismaWhere({ ...filters, status: "all" }, new Date(), syncCutoff);
-  const rows = await prisma.nomusAccountsReceivable.findMany({
-    where,
-    select: FINANCE_AR_TITLE_SELECT,
-    orderBy: { dueDate: "asc" },
-  });
-  return {
-    rows: rows.map(mapPrismaRowToFinanceArDashboardRow),
-    syncCutoff,
-  };
+  return loadFinanceArManagementRowsFromPrisma(prisma, { ...filters, status: "all" });
 }
 
 function parseOverdueFiltersOrRespond(res: express.Response, query: Record<string, unknown>) {

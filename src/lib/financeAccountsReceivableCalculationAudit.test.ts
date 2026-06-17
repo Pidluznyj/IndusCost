@@ -19,6 +19,7 @@ import {
 } from "./financeAccountsReceivableDashboardTypes.js";
 import { buildFinanceArExportCsv } from "./financeAccountsReceivableExport.js";
 import { FINANCE_AR_RECEIVED_THIS_MONTH_SCOPE } from "./financeFilterScope.js";
+import { buildNomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 function row(
   partial: Partial<FinanceArDashboardRow> & Pick<FinanceArDashboardRow, "externalId">
@@ -159,6 +160,27 @@ describe("financeAccountsReceivableCalculationAudit", () => {
       join(process.cwd(), "src", "lib", "financeAccountsReceivableRoutes.ts"),
       "utf8"
     );
-    assert.ok(routes.includes("buildFinanceArPrismaWhere"));
+    assert.ok(routes.includes("loadFinanceArManagementRowsFromPrisma"));
+  });
+
+  it("auditFinanceArDashboardCalculations respeita syncCutoff e exclui stale", () => {
+    const LATEST = new Date("2026-06-17T10:00:00.000Z");
+    const STALE = new Date("2026-06-12T10:00:00.000Z");
+    const cutoff = buildNomusArReportSyncCutoff(LATEST)!;
+    const rows = [
+      row({ externalId: 1, balanceReceivable: 100, dueDate: new Date(2026, 5, 1), syncedAt: LATEST }),
+      row({
+        externalId: 2,
+        balanceReceivable: 98000,
+        dueDate: new Date(2026, 3, 1),
+        syncedAt: STALE,
+      }),
+    ];
+    const withoutCutoff = auditFinanceArDashboardCalculations(rows, { status: "all" }, REF);
+    const withCutoff = auditFinanceArDashboardCalculations(rows, { status: "all" }, REF, cutoff);
+    assert.equal(withoutCutoff.ok, true);
+    assert.equal(withCutoff.ok, true);
+    const dashStale = buildFinanceAccountsReceivableDashboard(rows, { status: "all" }, REF, cutoff);
+    assert.equal(dashStale.cards.overdueAmount, 100);
   });
 });

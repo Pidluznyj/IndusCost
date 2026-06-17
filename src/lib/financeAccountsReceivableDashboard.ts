@@ -616,6 +616,16 @@ export function filterFinanceArRows(
   return deduplicateFinanceArRows(matched).rows;
 }
 
+/** Fonte única de AR gerencial para dashboards (stale, grupo interno, fantasma, dedup). */
+export function filterFinanceArManagementReportRows(
+  rows: FinanceArDashboardRow[],
+  filters: FinanceArDashboardFilters,
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
+): FinanceArDashboardRow[] {
+  return filterFinanceArRows(rows, filters, referenceDate, syncCutoff);
+}
+
 export function buildFinanceAccountsReceivableDashboard(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters = { status: "all" },

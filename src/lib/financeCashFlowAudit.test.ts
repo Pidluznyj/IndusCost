@@ -248,6 +248,38 @@ describe("financeCashFlowAudit", () => {
     assert.equal(dataset.blocks.topPayableSuppliers.length, 0);
   });
 
+  it("AR stale não aparece em nenhum bloco do Fluxo de Caixa", () => {
+    const stale = arRow({
+      externalId: 18001,
+      personName: "ENERGY INDUSTRIAL LTDA",
+      balanceReceivable: 18000,
+      dueDate: new Date(2026, 2, 10),
+      syncedAt: STALE_SYNC,
+    });
+    const fresh = arRow({
+      externalId: 18002,
+      personName: "Cliente Fresh",
+      balanceReceivable: 500,
+      dueDate: new Date(2026, 5, 1),
+      syncedAt: LATEST_SYNC,
+    });
+    const payload = buildFinanceCashFlowDashboard(
+      [stale, fresh],
+      [],
+      BASE_FILTERS,
+      REF,
+      arCutoff(),
+      apCutoff()
+    );
+    assert.equal(payload.overdueReceivables.length, 1);
+    assert.equal(payload.overdueReceivables[0]!.externalId, 18002);
+    assert.ok(!payload.largestProjectedInflows.some((r) => r.externalId === 18001));
+    assert.ok(!payload.topCustomers.some((r) => (r.personName ?? "").toUpperCase().includes("ENERGY")));
+    const dataset = buildDataset({ ar: [stale, fresh] });
+    assert.equal(dataset.blocks.overdueReceivables.length, 1);
+    assert.equal(dataset.blocks.overdueReceivables[0]!.externalId, 18002);
+  });
+
   it("totais dos blocos batem com a soma das linhas exibidas", () => {
     const rows = [
       arRow({ externalId: 1, balanceReceivable: 1200, dueDate: new Date(2026, 5, 1) }),

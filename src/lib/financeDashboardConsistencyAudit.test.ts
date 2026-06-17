@@ -29,9 +29,25 @@ import {
   FINANCE_BILLING_YTD_SCOPE,
 } from "./financeFilterScope.js";
 import { buildFinanceArExportCsv } from "./financeAccountsReceivableExport.js";
+import {
+  auditFinanceArOverdueParityWithDashboard,
+  auditFinanceArStaleExclusionAcrossViews,
+} from "./financeDashboardConsistencyAudit.js";
+import { buildNomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+import {
+  buildFinanceAccountsReceivableOverdueRows,
+  buildFinanceArOverduePayload,
+} from "./financeAccountsReceivableOverdue.js";
+import type { FinanceCashFlowArRow } from "./financeCashFlowDashboard.js";
 import { buildFinanceApExportCsv } from "./financeAccountsPayableExport.js";
 
 const REF = new Date(2026, 5, 6, 12, 0, 0, 0);
+const LATEST_SYNC = new Date("2026-06-17T10:00:00.000Z");
+const STALE_SYNC = new Date("2026-06-12T10:00:00.000Z");
+
+function arCutoff() {
+  return buildNomusArReportSyncCutoff(LATEST_SYNC)!;
+}
 
 function arRow(
   partial: Partial<FinanceArDashboardRow> & Pick<FinanceArDashboardRow, "externalId">
@@ -170,6 +186,55 @@ describe("financeDashboardConsistencyAudit — Contas a Receber", () => {
       ...dash.agingBuckets.map((b) => b.percentOfOpenAmount),
       ...dash.topDebtors.map((d) => d.percentOfPortfolio),
     ]);
+  });
+
+  it("AR stale não entra em dashboard, Atrasados nem Fluxo de Caixa", () => {
+    const staleRow = arRow({
+      externalId: 98001,
+      personName: "MEXICHEM BRASIL LTDA",
+      balanceReceivable: 98000,
+      dueDate: new Date(2026, 2, 15),
+      syncedAt: STALE_SYNC,
+    });
+    const freshRow = arRow({
+      externalId: 1,
+      balanceReceivable: 100,
+      dueDate: new Date(2026, 5, 1),
+      syncedAt: LATEST_SYNC,
+    });
+    const allRows = [staleRow, freshRow];
+    const filters = { status: "all" as const, year: 2026, month: 6 };
+    const cutoff = arCutoff();
+    const cashFlowAr: FinanceCashFlowArRow[] = allRows.map((r) => ({ ...r, competenceDate: null }));
+
+    const staleAudit = auditFinanceArStaleExclusionAcrossViews(
+      allRows,
+      cashFlowAr,
+      filters,
+      { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
+      REF,
+      cutoff
+    );
+    assert.equal(staleAudit.ok, true, staleAudit.mismatches.join("; "));
+
+    const parity = auditFinanceArOverdueParityWithDashboard(allRows, filters, REF, cutoff);
+    assert.equal(parity.ok, true, parity.mismatches.join("; "));
+  });
+
+  it("export/PDF de Atrasados usa a mesma base da tela (buildFinanceAccountsReceivableOverdueRows)", () => {
+    const rows = [
+      arRow({ externalId: 1, balanceReceivable: 800, dueDate: new Date(2026, 5, 1), syncedAt: LATEST_SYNC }),
+      arRow({ externalId: 2, balanceReceivable: 98000, dueDate: new Date(2026, 2, 1), syncedAt: STALE_SYNC }),
+    ];
+    const filters = { status: "all" as const, year: 2026 };
+    const cutoff = arCutoff();
+    const baseRows = buildFinanceAccountsReceivableOverdueRows(rows, filters, REF, cutoff);
+    const payload = buildFinanceArOverduePayload(rows, filters, REF, cutoff, { paginate: false });
+    assert.deepEqual(
+      baseRows.map((r) => r.externalId),
+      payload.overdueTitles.map((r) => r.externalId)
+    );
+    assert.equal(payload.summary.totalOverdueAmount, 800);
   });
 });
 

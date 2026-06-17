@@ -1,7 +1,6 @@
 import {
   classifyFinanceArTitle,
   computeDaysOverdue,
-  filterFinanceArRows,
   hasFinanceArSourceInvoice,
   isFinanceArReceivedOrSettled,
   parseFinanceArDashboardFilters,
@@ -12,6 +11,7 @@ import {
   type FinanceArDashboardRow,
   FinanceArFilterParseError,
 } from "./financeAccountsReceivableDashboard.js";
+import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import {
   FINANCE_AR_OVERDUE_AGING_BUCKETS,
@@ -365,7 +365,7 @@ export function buildFinanceAccountsReceivableOverdueRows(
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArOverdueTitleRow[] {
   const baseFilters: FinanceArDashboardFilters = { ...filters, status: "all" };
-  const scoped = filterFinanceArRows(rows, baseFilters, referenceDate, syncCutoff);
+  const scoped = filterFinanceArManagementReportRows(rows, baseFilters, referenceDate, syncCutoff);
   const overdueRows: FinanceArOverdueTitleRow[] = [];
 
   for (const row of scoped) {
@@ -446,7 +446,7 @@ export function filterFinanceArOverdueBaseRows(
   referenceDate: Date,
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArDashboardRow[] {
-  const base = filterFinanceArRows(rows, { ...filters, status: "all" }, referenceDate, syncCutoff);
+  const base = filterFinanceArManagementReportRows(rows, { ...filters, status: "all" }, referenceDate, syncCutoff);
   return base.filter((row) => isFinanceArOverdueRow(row, referenceDate));
 }
 

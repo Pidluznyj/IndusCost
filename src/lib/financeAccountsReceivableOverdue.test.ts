@@ -267,6 +267,50 @@ describe("financeAccountsReceivableOverdue", () => {
     assert.equal(payload.overdueTitles[0]!.externalId, 1);
   });
 
+  it("AR stale com cliente/valor parecido (Energy ~18k) não entra em Atrasados", () => {
+    const rows = [
+      arRow({
+        externalId: 18001,
+        personName: "ENERGY INDUSTRIAL LTDA",
+        balanceReceivable: 18000,
+        dueDate: new Date(2026, 2, 10),
+        syncedAt: STALE_SYNC,
+      }),
+      arRow({
+        externalId: 18002,
+        personName: "ENERGY INDUSTRIAL LTDA",
+        balanceReceivable: 18000,
+        dueDate: new Date(2026, 2, 10),
+        syncedAt: LATEST_SYNC,
+      }),
+    ];
+    const payload = buildFinanceArOverduePayload(
+      rows,
+      { status: "all", year: 2026 },
+      REF,
+      cutoff(),
+      { paginate: false }
+    );
+    assert.equal(payload.summary.overdueTitlesCount, 1);
+    assert.equal(payload.overdueTitles[0]!.externalId, 18002);
+    assert.equal(payload.summary.totalOverdueAmount, 18000);
+  });
+
+  it("nenhuma regra de Atrasados usa hardcode por nome Mexican/Mexichem/Energy", () => {
+    const sources = [
+      "src/lib/financeAccountsReceivableOverdue.ts",
+      "src/lib/financeAccountsReceivableManagement.ts",
+      "src/lib/financeNomusArReportFreshness.ts",
+      "src/lib/financeAccountsReceivableDashboard.ts",
+    ].map((rel) => readFileSync(join(process.cwd(), rel), "utf8"));
+    for (const src of sources) {
+      assert.ok(!src.includes("MEXICHEM"));
+      assert.ok(!src.includes("MEXICHEN"));
+      assert.ok(!src.includes("ENERGY"));
+      assert.ok(!src.includes("33.081.704"));
+    }
+  });
+
   it("aging distribui faixas 1-7, 8-15, 16-30, 31-60, 61-90 e 90+", () => {
     const rows = [
       arRow({ externalId: 1, dueDate: new Date(2026, 5, 16), balanceReceivable: 100 }),

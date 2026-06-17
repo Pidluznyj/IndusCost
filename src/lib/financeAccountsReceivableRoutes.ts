@@ -3,9 +3,7 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   buildFinanceAccountsReceivableDashboard,
-  buildFinanceArPrismaWhere,
   FinanceArFilterParseError,
-  mapPrismaRowToFinanceArDashboardRow,
   parseFinanceArDashboardFilters,
   type FinanceArDashboardFilters,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
@@ -13,14 +11,12 @@ import {
   buildFinanceArExportCsv,
 } from "@/src/lib/financeAccountsReceivableExport.js";
 import { financeArExportFilename } from "@/src/lib/financeAccountsReceivableFormat.js";
+import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
 import {
   buildFinanceArTitlesPayload,
-  FINANCE_AR_TITLE_SELECT,
-  mapPrismaRowToFinanceArTitleRow,
   parseFinanceArTitlesQuery,
 } from "@/src/lib/financeAccountsReceivableTitles.js";
 import { prisma } from "@/src/lib/prisma.js";
-import { resolveNomusArReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusArReportFreshness.js";
 import { registerFinanceAccountsReceivableOverdueRoutes } from "@/src/lib/financeAccountsReceivableOverdueRoutes.js";
 
 type AuthGuards = {
@@ -44,22 +40,8 @@ export const FINANCE_AR_EXPORT_PERMISSIONS = [
   ...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS,
 ] as const;
 
-const FINANCE_AR_DASHBOARD_SELECT = {
-  ...FINANCE_AR_TITLE_SELECT,
-} as const;
-
 async function loadFinanceArRows(filters: FinanceArDashboardFilters) {
-  const syncCutoff = await resolveNomusArReportSyncCutoffFromPrisma(prisma);
-  const where = buildFinanceArPrismaWhere(filters, new Date(), syncCutoff);
-  const rows = await prisma.nomusAccountsReceivable.findMany({
-    where,
-    select: FINANCE_AR_DASHBOARD_SELECT,
-    orderBy: { dueDate: "asc" },
-  });
-  return {
-    rows: rows.map(mapPrismaRowToFinanceArDashboardRow),
-    syncCutoff,
-  };
+  return loadFinanceArManagementRowsFromPrisma(prisma, filters);
 }
 
 function parseFinanceArFiltersOrRespond(
@@ -124,14 +106,11 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
 
       const query = parseFinanceArTitlesOrRespond(res, req.query as Record<string, unknown>);
       if (!query) return;
-      const syncCutoff = await resolveNomusArReportSyncCutoffFromPrisma(prisma);
-      const rows = await prisma.nomusAccountsReceivable.findMany({
-        where: buildFinanceArPrismaWhere(query.filters, new Date(), syncCutoff),
-        select: FINANCE_AR_TITLE_SELECT,
-        orderBy: { dueDate: "asc" },
-      });
-      const mapped = rows.map(mapPrismaRowToFinanceArTitleRow);
-      const payload = buildFinanceArTitlesPayload(mapped, query, new Date(), syncCutoff);
+      const { rows, syncCutoff } = await loadFinanceArManagementRowsFromPrisma(
+        prisma,
+        query.filters
+      );
+      const payload = buildFinanceArTitlesPayload(rows, query, new Date(), syncCutoff);
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/titles", error);

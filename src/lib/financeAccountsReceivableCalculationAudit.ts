@@ -6,7 +6,6 @@ import {
   buildFinanceAccountsReceivableDashboard,
   classifyFinanceArTitle,
   computeDaysOverdue,
-  filterFinanceArRows,
   hasFinanceArSourceInvoice,
   isFinanceArReceivedOrSettled,
   resolveFinanceArCustomerKey,
@@ -16,6 +15,8 @@ import {
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
+import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
 export type FinanceArIndependentMetrics = {
   totalOpenAmount: number;
@@ -48,9 +49,10 @@ function monthBounds(referenceDate: Date): { start: Date; end: Date } {
 export function computeFinanceArIndependentMetrics(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArIndependentMetrics {
-  const filtered = filterFinanceArRows(rows, filters, referenceDate);
+  const filtered = filterFinanceArManagementReportRows(rows, filters, referenceDate, syncCutoff);
   const today = startOfLocalDay(referenceDate);
   const { start: monthStart, end: monthEnd } = monthBounds(referenceDate);
 
@@ -142,10 +144,11 @@ export type FinanceArDashboardAuditResult = {
 export function auditFinanceArDashboardCalculations(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArDashboardAuditResult {
-  const dash = buildFinanceAccountsReceivableDashboard(rows, filters, referenceDate);
-  const ind = computeFinanceArIndependentMetrics(rows, filters, referenceDate);
+  const dash = buildFinanceAccountsReceivableDashboard(rows, filters, referenceDate, syncCutoff);
+  const ind = computeFinanceArIndependentMetrics(rows, filters, referenceDate, syncCutoff);
   const mismatches: string[] = [];
 
   const pairs: Array<[string, number | null, number | null]> = [
