@@ -4,12 +4,7 @@
  */
 
 import { buildCrmCommercialIntelligenceResponse } from "@/src/lib/crmCommercialIntelligence.js";
-import {
-  classifyFinanceArTitle,
-  computeDaysOverdue,
-  isFinanceArReceivedOrSettled,
-  roundMoney as roundArMoney,
-} from "@/src/lib/financeAccountsReceivableDashboard.js";
+import { buildCustomerIntelligenceFinancial } from "@/src/lib/customerIntelligenceFinancial.js";
 import {
   daysBetweenDates,
   filterCustomerIntelligenceOrders,
@@ -114,81 +109,6 @@ function buildRepurchase(
     daysOverExpected,
     confidence,
     detail,
-  };
-}
-
-function buildFinancial(
-  arRows: CustomerIntelligenceBuildInput["arRows"],
-  arLinkedByCnpj: boolean,
-  now: Date
-): CustomerIntelligenceReport["financial"] {
-  if (!arLinkedByCnpj || arRows.length === 0) {
-    return {
-      receivableOpenAmount: arLinkedByCnpj ? 0 : null,
-      overdueAmount: arLinkedByCnpj ? 0 : null,
-      upcomingAmount: arLinkedByCnpj ? 0 : null,
-      overdueTitlesCount: arLinkedByCnpj ? 0 : null,
-      maxDaysOverdue: arLinkedByCnpj ? 0 : null,
-      averageDaysOverdue: arLinkedByCnpj ? 0 : null,
-      linkedByCnpj: arLinkedByCnpj,
-    };
-  }
-
-  let receivableOpenAmount = 0;
-  let overdueAmount = 0;
-  let upcomingAmount = 0;
-  let overdueTitlesCount = 0;
-  let maxDaysOverdue = 0;
-  const overdueDaysList: number[] = [];
-
-  for (const row of arRows) {
-    if (isFinanceArReceivedOrSettled(row)) continue;
-    const balance = roundArMoney(row.balanceReceivable);
-    if (balance <= 0) continue;
-
-    receivableOpenAmount += balance;
-    const titleStatus = classifyFinanceArTitle(
-      {
-        ...row,
-        externalId: 0,
-        companyName: null,
-        personName: null,
-        personCnpj: null,
-        description: null,
-        paymentMethodName: null,
-        bankAccountName: null,
-        sourceInvoiceId: null,
-        sourceInvoiceNumber: null,
-        nomusStatus: null,
-        syncedAt: now,
-      },
-      now
-    );
-
-    if (titleStatus === "overdue") {
-      overdueAmount += balance;
-      overdueTitlesCount += 1;
-      const days = computeDaysOverdue(row.dueDate, now);
-      if (days > maxDaysOverdue) maxDaysOverdue = days;
-      if (days > 0) overdueDaysList.push(days);
-    } else if (titleStatus === "upcoming" || titleStatus === "dueToday") {
-      upcomingAmount += balance;
-    }
-  }
-
-  const averageDaysOverdue =
-    overdueDaysList.length > 0
-      ? overdueDaysList.reduce((a, b) => a + b, 0) / overdueDaysList.length
-      : 0;
-
-  return {
-    receivableOpenAmount: roundMoney(receivableOpenAmount),
-    overdueAmount: roundMoney(overdueAmount),
-    upcomingAmount: roundMoney(upcomingAmount),
-    overdueTitlesCount,
-    maxDaysOverdue,
-    averageDaysOverdue: roundMoney(averageDaysOverdue),
-    linkedByCnpj: true,
   };
 }
 
@@ -418,13 +338,23 @@ export function buildCustomerIntelligenceReport(
   const history = buildCustomerIntelligenceHistory(metricsOrders, now);
   const seasonality = buildCustomerIntelligenceSeasonality(history);
   const repurchase = buildRepurchase(metricsOrders, now);
-  const financial = buildFinancial(input.arRows, input.arLinkedByCnpj, now);
-  const crm = buildCrm(input.activities, now);
+  const financial = buildCustomerIntelligenceFinancial({
+    customerTaxId: input.customer.taxId,
+    arRows: input.arRows,
+    arSyncCutoff: input.arSyncCutoff,
+    referenceDate: now,
+  });
 
-  if (!input.arLinkedByCnpj) {
+  if (!financial.linkedByCnpj) {
     warnings.push("Financeiro (AR) não vinculado — CNPJ do cliente ausente ou sem títulos.");
     missingFields.push("financial");
+  } else {
+    for (const w of financial.dataQuality.warnings) {
+      warnings.push(w);
+    }
   }
+
+  const crm = buildCrm(input.activities, now);
 
   const opportunities = buildOpportunities(input, commercialSummary, repurchase, financial);
 

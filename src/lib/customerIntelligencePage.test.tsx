@@ -11,6 +11,40 @@ import { CustomerIntelligenceTabs } from "../components/crm/customer-intelligenc
 import { CustomerIntelligenceHeader } from "../components/crm/customer-intelligence/CustomerIntelligenceHeader.js";
 import { CustomerIntelligencePurchasesTab } from "../components/crm/customer-intelligence/CustomerIntelligencePurchasesTab.js";
 import { CustomerIntelligenceProductsTab } from "../components/crm/customer-intelligence/CustomerIntelligenceProductsTab.js";
+import { CustomerIntelligenceFinancialTab } from "../components/crm/customer-intelligence/CustomerIntelligenceFinancialTab.js";
+import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "./financeAccountsReceivableDashboard.js";
+
+function mockFinancial(
+  overrides: Partial<CustomerIntelligenceReport["financial"]> = {}
+): CustomerIntelligenceReport["financial"] {
+  return {
+    receivableOpenAmount: null,
+    overdueAmount: null,
+    upcomingAmount: null,
+    openTitlesCount: null,
+    overdueTitlesCount: null,
+    maxDaysOverdue: null,
+    averageDaysOverdue: null,
+    nextDueDate: null,
+    agingBuckets: [],
+    openTitles: [],
+    overdueTitles: [],
+    paymentHistory: [],
+    dataQuality: {
+      linkedByCnpj: false,
+      linkMethod: "none",
+      warnings: ["Financeiro (AR) não vinculado — CNPJ do cliente ausente ou sem títulos."],
+      staleExcludedCount: 0,
+      overdueWithoutFiscalExcludedCount: 0,
+      syncCutoffAt: null,
+      fiscalBackingNote: FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE,
+    },
+    linkedByCnpj: false,
+    financialStatus: "unlinked",
+    riskAlert: null,
+    ...overrides,
+  };
+}
 
 function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): CustomerIntelligenceReport {
   return {
@@ -154,15 +188,7 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
       confidence: null,
       detail: "Histórico insuficiente",
     },
-    financial: {
-      receivableOpenAmount: null,
-      overdueAmount: null,
-      upcomingAmount: null,
-      overdueTitlesCount: null,
-      maxDaysOverdue: null,
-      averageDaysOverdue: null,
-      linkedByCnpj: false,
-    },
+    financial: mockFinancial(),
     crm: {
       lastContactAt: null,
       nextTaskAt: null,
@@ -228,7 +254,8 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
     assert.ok(html.includes("Receita (filtro)"));
     assert.ok(html.includes("Pedidos válidos"));
     assert.ok(html.includes("Ticket médio"));
-    assert.ok(html.includes("Valor vencido (AR)"));
+    assert.ok(html.includes("Carteira em aberto (AR)"));
+    assert.ok(html.includes("Status financeiro"));
   });
 
   it("mostra abas", () => {
@@ -382,5 +409,75 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
   it("aba Produtos mostra empty state", () => {
     const html = renderToStaticMarkup(<CustomerIntelligenceProductsTab report={mockReport()} />);
     assert.ok(html.includes("Sem produtos no filtro aplicado"));
+  });
+
+  it("aba Financeiro exibe cards e texto sobre vencidos sem NF", () => {
+    assert.ok(pageSrc.includes("CustomerIntelligenceFinancialTab"));
+    const withFinancial = mockReport({
+      financial: mockFinancial({
+        linkedByCnpj: true,
+        financialStatus: "overdue",
+        receivableOpenAmount: 5000,
+        overdueAmount: 2000,
+        upcomingAmount: 3000,
+        openTitlesCount: 3,
+        overdueTitlesCount: 1,
+        maxDaysOverdue: 15,
+        averageDaysOverdue: 15,
+        nextDueDate: "2026-07-01",
+        riskAlert: "Inadimplência",
+        agingBuckets: [
+          { key: "overdue1to7", label: "1 a 7 dias vencido", amount: 0, count: 0 },
+          { key: "overdue8to15", label: "8 a 15 dias vencido", amount: 2000, count: 1 },
+        ],
+        openTitles: [
+          {
+            externalId: 1,
+            description: "NF",
+            dueDate: "2026-06-01T00:00:00.000Z",
+            balanceReceivable: 2000,
+            amountReceivable: 2000,
+            amountReceived: 0,
+            sourceInvoiceNumber: "NF-1",
+            daysOverdue: 16,
+            status: "overdue",
+            isForecast: false,
+          },
+        ],
+        overdueTitles: [
+          {
+            externalId: 1,
+            description: "NF",
+            dueDate: "2026-06-01T00:00:00.000Z",
+            balanceReceivable: 2000,
+            amountReceivable: 2000,
+            amountReceived: 0,
+            sourceInvoiceNumber: "NF-1",
+            daysOverdue: 16,
+            status: "overdue",
+            isForecast: false,
+          },
+        ],
+        dataQuality: {
+          linkedByCnpj: true,
+          linkMethod: "cnpj",
+          warnings: [],
+          staleExcludedCount: 0,
+          overdueWithoutFiscalExcludedCount: 0,
+          syncCutoffAt: "2026-06-17T10:00:00.000Z",
+          fiscalBackingNote: FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE,
+        },
+      }),
+    });
+    const html = renderToStaticMarkup(<CustomerIntelligenceFinancialTab report={withFinancial} />);
+    assert.ok(html.includes("Total a receber"));
+    assert.ok(html.includes("Alerta de risco financeiro"));
+    assert.ok(html.includes("Títulos vencidos sem NF"));
+    assert.ok(html.includes("Aging de vencidos"));
+  });
+
+  it("aba Financeiro mostra empty state sem CNPJ", () => {
+    const html = renderToStaticMarkup(<CustomerIntelligenceFinancialTab report={mockReport()} />);
+    assert.ok(html.includes("Financeiro não vinculado"));
   });
 });

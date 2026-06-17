@@ -3,7 +3,6 @@ import type { RequestHandler } from "express";
 import { buildCustomerIntelligenceReport } from "@/src/lib/customerIntelligence.js";
 import {
   CustomerIntelligenceFilterParseError,
-  cnpjMatchesArRow,
   parseCustomerIntelligenceFilters,
 } from "@/src/lib/customerIntelligenceUtils.js";
 import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
@@ -126,24 +125,13 @@ export async function loadCustomerIntelligenceData(customerId: string) {
     }));
 
   const arLinkedByCnpj = customerDoc.length > 0;
-  const arRows = arLinkedByCnpj
-    ? arLoadResult.rows
-        .filter((row) => cnpjMatchesArRow(customer.taxId, row.personCnpj))
-        .map((row) => ({
-          balanceReceivable: row.balanceReceivable,
-          dueDate: row.dueDate,
-          settlementDate: row.settlementDate,
-          amountReceivable: row.amountReceivable,
-          amountReceived: row.amountReceived,
-          suspendCollection: row.suspendCollection,
-        }))
-    : [];
 
   return {
     customer,
     orders,
     activities,
-    arRows,
+    arRows: arLoadResult.rows,
+    arSyncCutoff: arLoadResult.syncCutoff,
     arLinkedByCnpj,
   };
 }
@@ -174,6 +162,7 @@ export function registerCustomerIntelligenceRoutes(app: express.Express, auth: A
         orders: loaded.orders,
         activities: loaded.activities,
         arRows: loaded.arRows,
+        arSyncCutoff: loaded.arSyncCutoff,
         arLinkedByCnpj: loaded.arLinkedByCnpj,
         filters,
       });

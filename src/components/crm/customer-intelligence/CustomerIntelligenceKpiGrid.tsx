@@ -1,5 +1,6 @@
 import React from "react";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
+import { FINANCIAL_STATUS_LABEL_PT } from "@/src/lib/customerIntelligenceNavigation";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
 
 type KpiItem = {
@@ -42,14 +43,25 @@ export function buildCustomerIntelligenceKpiItems(
       value: formatOptionalPercent(s.averageMarginPercent),
     },
     {
-      label: "Carteira em aberto",
-      value: formatCurrency(s.openPortfolioAmount),
-      hint: "Comercial (pedidos sem faturamento)",
+      label: "Carteira em aberto (AR)",
+      value: f.linkedByCnpj ? formatOptionalCurrency(f.receivableOpenAmount) : "Não informado",
+      hint: f.linkedByCnpj ? "Financeiro canônico" : undefined,
     },
     {
       label: "Valor vencido (AR)",
       value: f.linkedByCnpj ? formatOptionalCurrency(f.overdueAmount) : "Não informado",
       hint: f.linkedByCnpj ? "Financeiro canônico" : undefined,
+    },
+    {
+      label: "Status financeiro",
+      value: f.linkedByCnpj
+        ? FINANCIAL_STATUS_LABEL_PT[f.financialStatus] ?? f.financialStatus
+        : "Não informado",
+    },
+    {
+      label: "Carteira comercial em aberto",
+      value: formatCurrency(s.openPortfolioAmount),
+      hint: "Pedidos sem faturamento",
     },
     {
       label: "Dias desde último pedido",

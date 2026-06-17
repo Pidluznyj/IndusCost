@@ -2,6 +2,7 @@ import React from "react";
 import { AlertTriangle, Building2, Calendar, MapPin, User } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import {
+  FINANCIAL_STATUS_LABEL_PT,
   REPURCHASE_STATUS_LABEL_PT,
 } from "@/src/lib/customerIntelligenceNavigation";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
@@ -29,7 +30,7 @@ function commercialHealthBadge(report: CustomerIntelligenceReport): {
     return { label: "Sem pedidos válidos", className: "bg-muted text-muted-foreground border-border" };
   }
   const highRisk = report.opportunities.some((o) => o.type === "RISK" && o.severity === "HIGH");
-  if (highRisk) {
+  if (highRisk || report.financial.financialStatus === "overdue") {
     return { label: "Atenção comercial", className: "bg-red-100 text-red-900 border-red-200" };
   }
   return { label: "Relacionamento ativo", className: "bg-emerald-100 text-emerald-900 border-emerald-200" };
@@ -44,6 +45,9 @@ export function CustomerIntelligenceHeader({
 }) {
   const { customer } = report;
   const health = commercialHealthBadge(report);
+  const financialStatus = report.financial.linkedByCnpj
+    ? FINANCIAL_STATUS_LABEL_PT[report.financial.financialStatus]
+    : null;
   const location = [customer.city, customer.state].filter(Boolean).join(" / ") || "Não informado";
 
   return (
@@ -72,6 +76,11 @@ export function CustomerIntelligenceHeader({
               >
                 {health.label}
               </span>
+              {financialStatus ? (
+                <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-semibold">
+                  {financialStatus}
+                </span>
+              ) : null}
               {customer.region ? (
                 <span className="text-xs text-muted-foreground">Região: {customer.region}</span>
               ) : null}

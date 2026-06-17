@@ -55,3 +55,14 @@ export const REPURCHASE_STATUS_LABEL_PT: Record<string, string> = {
   PROXIMA: "Próxima recompra",
   ATRASADO: "Recompra em atraso",
 };
+
+export const FINANCIAL_STATUS_LABEL_PT: Record<
+  import("./customerIntelligenceTypes.js").CustomerIntelligenceFinancialStatus,
+  string
+> = {
+  unlinked: "Financeiro não vinculado",
+  healthy: "Financeiro regular",
+  open: "Carteira em aberto",
+  overdue: "Inadimplente",
+  no_titles: "Sem títulos AR",
+};

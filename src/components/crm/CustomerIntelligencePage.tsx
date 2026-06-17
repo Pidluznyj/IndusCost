@@ -31,6 +31,7 @@ import {
 import { CustomerIntelligenceOverviewTab } from "./customer-intelligence/CustomerIntelligenceOverviewTab";
 import { CustomerIntelligencePurchasesTab } from "./customer-intelligence/CustomerIntelligencePurchasesTab";
 import { CustomerIntelligenceProductsTab } from "./customer-intelligence/CustomerIntelligenceProductsTab";
+import { CustomerIntelligenceFinancialTab } from "./customer-intelligence/CustomerIntelligenceFinancialTab";
 import "./customer-intelligence/customer-intelligence.css";
 
 function isEmptyReport(report: CustomerIntelligenceReport): boolean {
@@ -223,14 +224,7 @@ export function CustomerIntelligencePage() {
               />
             ) : null}
             {activeTab === "financial" ? (
-              <CustomerIntelligenceTabPlaceholder
-                title="Financeiro"
-                description={
-                  report.financial.linkedByCnpj
-                    ? `Carteira AR: ${report.financial.receivableOpenAmount ?? 0} | Vencido: ${report.financial.overdueAmount ?? 0}`
-                    : "Financeiro não vinculado por CNPJ."
-                }
-              />
+              <CustomerIntelligenceFinancialTab report={report} />
             ) : null}
             {activeTab === "crm" ? (
               <CustomerIntelligenceTabPlaceholder

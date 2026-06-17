@@ -15,9 +15,35 @@ import type {
   CustomerIntelligenceOrderInput,
 } from "./customerIntelligenceTypes.js";
 import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "./customerIntelligenceRoutes.js";
+import { buildNomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+import type { FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
 
 const NOW = new Date("2026-06-17T12:00:00.000Z");
 const CUSTOMER_ID = "11111111-1111-4111-8111-111111111111";
+const AR_SYNC = new Date("2026-06-17T10:00:00.000Z");
+
+function arRow(overrides: Partial<FinanceArDashboardRow> = {}): FinanceArDashboardRow {
+  return {
+    externalId: overrides.externalId ?? 1,
+    companyName: "KOPPETEL",
+    personName: "Cliente Teste LTDA",
+    personCnpj: "12.345.678/0001-90",
+    description: null,
+    dueDate: overrides.dueDate ?? new Date("2026-05-01T12:00:00.000Z"),
+    settlementDate: null,
+    amountReceivable: overrides.amountReceivable ?? 1500,
+    amountReceived: 0,
+    balanceReceivable: overrides.balanceReceivable ?? 1500,
+    paymentMethodName: null,
+    bankAccountName: null,
+    sourceInvoiceId: 100,
+    sourceInvoiceNumber: "NF-100",
+    suspendCollection: false,
+    nomusStatus: true,
+    syncedAt: AR_SYNC,
+    ...overrides,
+  };
+}
 
 function baseCustomer(): CustomerIntelligenceBuildInput["customer"] {
   return {
@@ -65,6 +91,7 @@ function buildInput(
     orders: [],
     activities: [],
     arRows: [],
+    arSyncCutoff: null,
     arLinkedByCnpj: false,
     filters: createDefaultCustomerIntelligenceFilters(NOW),
     now: NOW,
@@ -386,12 +413,17 @@ describe("buildCustomerIntelligenceReport", () => {
 
   it("financeiro retorna null/zero seguro quando não há AR vinculado", () => {
     const report = buildCustomerIntelligenceReport(
-      buildInput({ arLinkedByCnpj: false, arRows: [] })
+      buildInput({
+        customer: { ...baseCustomer(), taxId: "" },
+        arLinkedByCnpj: false,
+        arRows: [],
+      })
     );
 
     assert.equal(report.financial.linkedByCnpj, false);
     assert.equal(report.financial.receivableOpenAmount, null);
     assert.equal(report.financial.overdueAmount, null);
+    assert.equal(report.financial.financialStatus, "unlinked");
     assert.ok(report.dataQuality.warnings.some((w) => w.includes("Financeiro")));
   });
 
@@ -399,23 +431,19 @@ describe("buildCustomerIntelligenceReport", () => {
     const report = buildCustomerIntelligenceReport(
       buildInput({
         arLinkedByCnpj: true,
+        arSyncCutoff: buildNomusArReportSyncCutoff(AR_SYNC),
         arRows: [
-          {
+          arRow({
+            externalId: 1,
             balanceReceivable: 1500,
             dueDate: new Date("2026-05-01T12:00:00.000Z"),
-            settlementDate: null,
-            amountReceivable: 1500,
-            amountReceived: 0,
-            suspendCollection: false,
-          },
-          {
+          }),
+          arRow({
+            externalId: 2,
             balanceReceivable: 500,
-            dueDate: new Date("2026-08-01T12:00:00.000Z"),
-            settlementDate: null,
             amountReceivable: 500,
-            amountReceived: 0,
-            suspendCollection: false,
-          },
+            dueDate: new Date("2026-08-01T12:00:00.000Z"),
+          }),
         ],
       })
     );
@@ -423,6 +451,7 @@ describe("buildCustomerIntelligenceReport", () => {
     assert.equal(report.financial.linkedByCnpj, true);
     assert.equal(report.financial.receivableOpenAmount, 2000);
     assert.ok((report.financial.overdueAmount ?? 0) > 0);
+    assert.ok(report.financial.agingBuckets.length > 0);
   });
 
   it("dataQuality mostra warnings de campos ausentes", () => {

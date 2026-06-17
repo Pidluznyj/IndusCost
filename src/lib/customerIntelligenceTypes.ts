@@ -2,6 +2,9 @@
  * Tipos do endpoint GET /api/crm/customers/:customerId/intelligence
  */
 
+import type { FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+
 export type CustomerIntelligenceTopN = 10 | 20 | 50 | "all";
 
 export type CustomerIntelligenceCustomerType = "external" | "all";
@@ -202,14 +205,78 @@ export type CustomerIntelligenceRepurchase = {
   detail: string | null;
 };
 
+export type CustomerIntelligenceFinancialTitleStatus =
+  | "open"
+  | "overdue"
+  | "dueToday"
+  | "upcoming"
+  | "settled"
+  | "suspended"
+  | "unknown";
+
+export type CustomerIntelligenceFinancialTitle = {
+  externalId: number;
+  description: string | null;
+  dueDate: string | null;
+  balanceReceivable: number;
+  amountReceivable: number;
+  amountReceived: number;
+  sourceInvoiceNumber: string | null;
+  daysOverdue: number;
+  status: CustomerIntelligenceFinancialTitleStatus;
+  /** Título futuro sem NF — entra como previsão na visão gerencial. */
+  isForecast: boolean;
+};
+
+export type CustomerIntelligenceFinancialAgingBucket = {
+  key: string;
+  label: string;
+  amount: number;
+  count: number;
+};
+
+export type CustomerIntelligenceFinancialPaymentHistoryRow = {
+  externalId: number;
+  description: string | null;
+  dueDate: string | null;
+  settlementDate: string | null;
+  amountReceived: number;
+};
+
+export type CustomerIntelligenceFinancialDataQuality = {
+  linkedByCnpj: boolean;
+  linkMethod: "cnpj" | "none";
+  warnings: string[];
+  staleExcludedCount: number;
+  overdueWithoutFiscalExcludedCount: number;
+  syncCutoffAt: string | null;
+  fiscalBackingNote: string;
+};
+
+export type CustomerIntelligenceFinancialStatus =
+  | "unlinked"
+  | "healthy"
+  | "open"
+  | "overdue"
+  | "no_titles";
+
 export type CustomerIntelligenceFinancial = {
   receivableOpenAmount: number | null;
   overdueAmount: number | null;
   upcomingAmount: number | null;
+  openTitlesCount: number | null;
   overdueTitlesCount: number | null;
   maxDaysOverdue: number | null;
   averageDaysOverdue: number | null;
+  nextDueDate: string | null;
+  agingBuckets: CustomerIntelligenceFinancialAgingBucket[];
+  openTitles: CustomerIntelligenceFinancialTitle[];
+  overdueTitles: CustomerIntelligenceFinancialTitle[];
+  paymentHistory: CustomerIntelligenceFinancialPaymentHistoryRow[];
+  dataQuality: CustomerIntelligenceFinancialDataQuality;
   linkedByCnpj: boolean;
+  financialStatus: CustomerIntelligenceFinancialStatus;
+  riskAlert: string | null;
 };
 
 export type CustomerIntelligenceCrm = {
@@ -290,20 +357,12 @@ export type CustomerIntelligenceActivityInput = {
   outcome: string | null;
 };
 
-export type CustomerIntelligenceArRowInput = {
-  balanceReceivable: number;
-  dueDate: Date | null;
-  settlementDate: Date | null;
-  amountReceivable: number;
-  amountReceived: number;
-  suspendCollection: boolean | null;
-};
-
 export type CustomerIntelligenceBuildInput = {
   customer: CustomerIntelligenceCustomerInput;
   orders: CustomerIntelligenceOrderInput[];
   activities: CustomerIntelligenceActivityInput[];
-  arRows: CustomerIntelligenceArRowInput[];
+  arRows: FinanceArDashboardRow[];
+  arSyncCutoff: NomusArReportSyncCutoff | null;
   arLinkedByCnpj: boolean;
   filters: CustomerIntelligenceFilters;
   now?: Date;
