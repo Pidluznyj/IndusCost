@@ -30,7 +30,6 @@ import {
   canViewFinanceCashFlow,
 } from "@/src/lib/financeCashFlowPermissions";
 import { FinanceCashFlowCalendar } from "@/src/components/finance/cash-flow/FinanceCashFlowCalendar";
-import { FinanceCashFlowCfoPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowCfoPanel";
 import { FinanceCashFlowRiskTab } from "@/src/components/finance/cash-flow/FinanceCashFlowRiskTab";
 import { FinanceCashFlowDetailTable } from "@/src/components/finance/cash-flow/FinanceCashFlowDetailTable";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
@@ -472,8 +471,6 @@ export function FinanceCashFlowPage() {
             filtersActive={filtersActive}
             appliedFiltersLabel={appliedFiltersLabel}
           />
-
-          <FinanceCashFlowCfoPanel insights={payload.executiveInsights} />
 
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CriticalList
