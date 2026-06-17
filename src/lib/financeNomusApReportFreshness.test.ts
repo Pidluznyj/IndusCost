@@ -249,6 +249,39 @@ describe("financeNomusApReportFreshness", () => {
     assert.equal(jun!.payableOpenDue, 3960);
   });
 
+  it("Pagamentos vencidos do fluxo não inclui AP stale", () => {
+    const rows = [
+      cashFlowApRow({
+        externalId: 16984,
+        balancePayable: 1320,
+        dueDate: new Date(2026, 5, 5),
+        syncedAt: LATEST_SYNC,
+      }),
+      cashFlowApRow({
+        externalId: 16218,
+        balancePayable: 1306.8,
+        dueDate: new Date(2026, 5, 3),
+        syncedAt: STALE_SYNC,
+      }),
+    ];
+    const payload = buildFinanceCashFlowDashboard(
+      [],
+      rows,
+      {
+        viewMode: "projected",
+        dateBase: "due",
+        status: "open",
+        year: 2026,
+        month: 6,
+      },
+      REF,
+      null,
+      cutoff()
+    );
+    assert.equal(payload.overduePayables.length, 1);
+    assert.equal(payload.overduePayables[0]!.externalId, 16984);
+  });
+
   it("timeline mensal com base saneada não inclui stale na agregação", () => {
     const allRows = [
       cashFlowApRow({

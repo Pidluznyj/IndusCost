@@ -25,6 +25,7 @@ import {
   buildFinanceAccountsPayableDashboard,
   classifyFinanceApTitle,
   countFinanceApSanitizationInScope,
+  filterFinanceApManagementReportRows,
   filterFinanceApRows,
   isFinanceApOpen,
   mapPrismaRowToFinanceApDashboardRow,
@@ -157,6 +158,8 @@ export const FINANCE_CASH_FLOW_AP_SELECT = {
   personCnpj: true,
   description: true,
   dueDate: true,
+  scheduleDate: true,
+  type: true,
   settlementDate: true,
   paymentDate: true,
   competenceDate: true,
@@ -272,6 +275,28 @@ export function parseFinanceCashFlowDashboardFilters(
     invoiceIssued: parseInvoiceIssued(query.invoiceIssued),
     cashFlowScope: parseFinanceManagementScope(query.cashFlowScope),
   };
+}
+
+function hasFinanceCashFlowPeriodFilter(filters: FinanceCashFlowDashboardFilters): boolean {
+  return filters.year != null || filters.month != null;
+}
+
+export function isFinanceCashFlowPeriodAllQuery(query: Record<string, unknown>): boolean {
+  const raw = query.period;
+  if (raw == null || raw === "") return false;
+  return String(raw).trim().toLowerCase() === "all";
+}
+
+/** Período padrão (ano corrente) quando a requisição não fixa escopo nem pede todos os anos. */
+export function resolveFinanceCashFlowFiltersForLoad(
+  query: Record<string, unknown>,
+  filters: FinanceCashFlowDashboardFilters,
+  referenceDate = new Date()
+): FinanceCashFlowDashboardFilters {
+  if (isFinanceCashFlowPeriodAllQuery(query) || hasFinanceCashFlowPeriodFilter(filters)) {
+    return filters;
+  }
+  return { ...filters, year: referenceDate.getFullYear() };
 }
 
 export function mapPrismaRowToFinanceCashFlowArRow(row: {
@@ -559,6 +584,8 @@ function toIsoDate(date: Date | null): string | null {
 function buildCriticalMovements(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
+  arRowsForOverdue: FinanceCashFlowArRow[],
+  apRowsForOverdue: FinanceCashFlowApRow[],
   referenceDate: Date
 ): {
   largestInflows: FinanceCashFlowCriticalMovement[];
@@ -591,6 +618,10 @@ function buildCriticalMovements(
         documentLabel: row.sourceInvoiceNumber,
       });
     }
+  }
+
+  for (const row of arRowsForOverdue) {
+    const status = classifyFinanceArTitle(row, referenceDate);
     if (status === "overdue" && isFinanceArOpen(row)) {
       overdueReceivables.push({
         side: "inflow",
@@ -628,6 +659,10 @@ function buildCriticalMovements(
         documentLabel: row.documentNumber,
       });
     }
+  }
+
+  for (const row of apRowsForOverdue) {
+    const status = classifyFinanceApTitle(row, referenceDate);
     if (status === "overdue" && isFinanceApOpen(row)) {
       const openAmount = resolveFinanceApOpenAmount(row);
       overduePayables.push({
@@ -755,7 +790,18 @@ export function buildFinanceCashFlowDashboard(
     }
   }
 
-  const critical = buildCriticalMovements(filteredAr, filteredAp, referenceDate);
+  const critical = buildCriticalMovements(
+    filteredAr,
+    filteredAp,
+    filterFinanceArRows(arRows, toArLoadFilters(filters), referenceDate, arSyncCutoff),
+    filterFinanceApManagementReportRows(
+      apRows,
+      toApLoadFilters(filters),
+      referenceDate,
+      apSyncCutoff
+    ),
+    referenceDate
+  );
 
   const totalReceivableRounded = roundMoney(totalReceivableOpen);
   const totalPayableRounded = roundMoney(totalPayableOpen);

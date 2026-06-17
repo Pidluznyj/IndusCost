@@ -26,10 +26,12 @@ import {
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
 import {
   isFinanceApExcludedFromReports,
+  resolveEffectiveNomusApReportSyncCutoff,
   type NomusApReportSyncCutoff,
 } from "./financeNomusApReportFreshness.js";
 import {
   isFinanceArExcludedFromReports,
+  resolveEffectiveNomusArReportSyncCutoff,
   type NomusArReportSyncCutoff,
 } from "./financeNomusArReportFreshness.js";
 
@@ -127,10 +129,11 @@ export function filterCashFlowArRowsScoped(
   referenceDate: Date,
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowArRow[] {
+  const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
   const portfolio = rows.filter(
     (row) =>
       matchesCashFlowArPortfolio(row, arFilters, referenceDate) &&
-      !isFinanceArExcludedFromReports(row, syncCutoff)
+      !isFinanceArExcludedFromReports(row, effectiveCutoff)
   );
   const deduped = deduplicateFinanceArRows(portfolio);
   return deduped.rows.filter((row) =>
@@ -145,10 +148,11 @@ export function filterCashFlowApRowsScoped(
   referenceDate: Date,
   syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceCashFlowApRow[] {
+  const effectiveCutoff = resolveEffectiveNomusApReportSyncCutoff(rows, syncCutoff);
   return rows.filter(
     (row) =>
       matchesCashFlowApPortfolio(row, apFilters, referenceDate) &&
-      !isFinanceApExcludedFromReports(row, syncCutoff) &&
+      !isFinanceApExcludedFromReports(row, effectiveCutoff) &&
       matchesCashFlowApPeriodScope(row, filters, referenceDate)
   );
 }

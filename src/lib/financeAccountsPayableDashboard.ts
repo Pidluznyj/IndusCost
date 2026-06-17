@@ -659,6 +659,16 @@ export function filterFinanceApRows(
   );
 }
 
+/** Fonte única de AP gerencial para dashboards (stale, intercompany, pedido de compra). */
+export function filterFinanceApManagementReportRows(
+  rows: FinanceApDashboardRow[],
+  filters: FinanceApDashboardFilters,
+  referenceDate: Date = new Date(),
+  syncCutoff?: NomusApReportSyncCutoff | null
+): FinanceApDashboardRow[] {
+  return filterFinanceApRows(rows, filters, referenceDate, syncCutoff);
+}
+
 export function buildFinanceAccountsPayableDashboard(
   rows: FinanceApDashboardRow[],
   filters: FinanceApDashboardFilters = { status: "all" },

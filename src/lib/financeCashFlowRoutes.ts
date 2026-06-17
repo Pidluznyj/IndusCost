@@ -13,6 +13,7 @@ import {
   mapPrismaRowToFinanceCashFlowApRow,
   mapPrismaRowToFinanceCashFlowArRow,
   parseFinanceCashFlowDashboardFilters,
+  resolveFinanceCashFlowFiltersForLoad,
   toApLoadFilters,
   toArLoadFilters,
 } from "@/src/lib/financeCashFlowDashboard.js";
@@ -47,7 +48,8 @@ export const FINANCE_CASH_FLOW_EXPORT_PERMISSIONS = [
 
 function parseFiltersOrRespond(res: express.Response, query: Record<string, unknown>) {
   try {
-    return parseFinanceCashFlowDashboardFilters(query);
+    const filters = parseFinanceCashFlowDashboardFilters(query);
+    return resolveFinanceCashFlowFiltersForLoad(query, filters);
   } catch (error) {
     if (error instanceof FinanceCashFlowFilterParseError) {
       res.status(400).json({ error: error.message });
