@@ -7,6 +7,7 @@ export function ExecutiveReportSection({
   title,
   subtitle,
   eyebrow,
+  intro,
   children,
   className,
   pageBreakBefore,
@@ -15,6 +16,7 @@ export function ExecutiveReportSection({
   title: string;
   subtitle?: string;
   eyebrow?: string;
+  intro?: string;
   children: React.ReactNode;
   className?: string;
   pageBreakBefore?: boolean;
@@ -30,6 +32,7 @@ export function ExecutiveReportSection({
       data-testid={id ? `executive-report-section-${id}` : undefined}
     >
       <ExecutiveSectionHeader title={title} subtitle={subtitle} eyebrow={eyebrow} />
+      {intro ? <p className="executive-section-intro">{intro}</p> : null}
       {children}
     </section>
   );

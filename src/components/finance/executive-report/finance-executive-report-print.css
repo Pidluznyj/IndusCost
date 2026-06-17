@@ -113,20 +113,47 @@
   }
 
   .executive-print-page-header-source {
-    font-size: 7pt;
+    font-size: 6pt;
     color: #64748b;
-    white-space: nowrap;
+    max-width: 38%;
+    line-height: 1.35;
+    text-align: right;
   }
 
   .executive-print-page-footer {
     display: flex !important;
+    flex-wrap: wrap;
     justify-content: space-between;
-    gap: 3mm;
+    gap: 2mm;
     border-top: 0.3mm solid #e2e8f0;
     padding-top: 2mm;
     margin-top: 2mm;
-    font-size: 7pt;
+    font-size: 6.5pt;
     color: #64748b;
+  }
+
+  .executive-print-page-footer-sources {
+    flex: 1 1 55%;
+    max-width: 55%;
+    line-height: 1.35;
+  }
+
+  .executive-print-page-footer-page {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .executive-print-page-footer-generated {
+    flex: 1 1 100%;
+    text-align: right;
+    font-weight: 600;
+  }
+
+  .executive-section-intro {
+    font-size: 8pt !important;
+    color: #475569 !important;
+    margin: 0 0 3mm !important;
+    line-height: 1.45 !important;
   }
 
   .executive-print-cover {

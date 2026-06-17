@@ -1,6 +1,10 @@
 import React from "react";
 import type { FinanceExecutiveReportDataQuality } from "@/src/lib/financeExecutiveReportTypes";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
+import {
+  buildExecutiveReportStaleSyncNotices,
+  EXECUTIVE_REPORT_NO_TARGET_MESSAGE,
+} from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutivePrintDataQualityNote({
   title,
@@ -12,6 +16,7 @@ export function ExecutivePrintDataQualityNote({
   domain: "ar" | "ap" | "general";
 }) {
   const { sync, freshness, warnings, targetsDerived } = dataQuality;
+  const staleNotices = buildExecutiveReportStaleSyncNotices(dataQuality);
   const syncAt =
     domain === "ar"
       ? sync.accountsReceivableLastSyncAt
@@ -45,7 +50,10 @@ export function ExecutivePrintDataQualityNote({
         {domain === "ap" && freshness.apStaleExcluded ? (
           <p>Títulos stale Nomus excluídos (freshness AP).</p>
         ) : null}
-        {targetsDerived ? <p>Metas derivadas (+30%) — sem cadastro editável.</p> : null}
+        {targetsDerived ? <p>{EXECUTIVE_REPORT_NO_TARGET_MESSAGE}</p> : null}
+        {staleNotices.map((notice) => (
+          <p key={notice}>{notice}</p>
+        ))}
       </div>
       {domainWarnings.length > 0 ? (
         <ul className="executive-print-data-quality-warnings">

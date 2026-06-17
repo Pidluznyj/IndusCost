@@ -3,6 +3,7 @@ import type { BrandingSettingsDTO } from "@/src/types/branding";
 import type { FinanceExecutiveReportCover } from "@/src/lib/financeExecutiveReportTypes";
 import { resolvePrintLogoSrc } from "@/src/lib/printBranding";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
+import { EXECUTIVE_REPORT_SOURCES_LABEL } from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutiveReportPrintCover({
   cover,
@@ -44,7 +45,7 @@ export function ExecutiveReportPrintCover({
           <p className="executive-print-cover-value">{formatFinanceDateTime(generatedAt)}</p>
         </div>
       </div>
-      <p className="executive-print-cover-source">Fonte: IndusCost + Nomus</p>
+      <p className="executive-print-cover-source">{EXECUTIVE_REPORT_SOURCES_LABEL}</p>
     </div>
   );
 }

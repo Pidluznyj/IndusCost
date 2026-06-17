@@ -19,8 +19,7 @@ import { formatFinanceKpiCurrency } from "./financeKpiFormat.js";
 export const EXECUTIVE_REPORT_EMPTY_MESSAGE =
   "Sem dados suficientes para este indicador.";
 
-export const EXECUTIVE_REPORT_NO_TARGET_MESSAGE =
-  "Meta não cadastrada para este período.";
+export { EXECUTIVE_REPORT_NO_TARGET_MESSAGE } from "./financeExecutiveReportUxCopy.js";
 
 export const EXECUTIVE_REPORT_MONTH_LABELS_PT = [
   "Jan",

@@ -1,6 +1,10 @@
 import React from "react";
 import type { FinanceExecutiveReportDataQuality } from "@/src/lib/financeExecutiveReportTypes";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
+import {
+  buildExecutiveReportStaleSyncNotices,
+  EXECUTIVE_REPORT_NO_TARGET_MESSAGE,
+} from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutiveDataQualityAlert({
   dataQuality,
@@ -8,12 +12,14 @@ export function ExecutiveDataQualityAlert({
   dataQuality: FinanceExecutiveReportDataQuality;
 }) {
   const { warnings, unavailableSections, targetsDerived, sync, freshness } = dataQuality;
+  const staleNotices = buildExecutiveReportStaleSyncNotices(dataQuality);
   const hasAlerts =
     warnings.length > 0 ||
     unavailableSections.length > 0 ||
     targetsDerived ||
     freshness.arStaleExcluded ||
-    freshness.apStaleExcluded;
+    freshness.apStaleExcluded ||
+    staleNotices.length > 0;
 
   if (!hasAlerts) return null;
 
@@ -31,14 +37,18 @@ export function ExecutiveDataQualityAlert({
         </p>
       ) : null}
 
-      {targetsDerived ? (
-        <p>Metas derivadas (+30% sobre período anterior) — não há cadastro editável de metas.</p>
-      ) : null}
+      {targetsDerived ? <p>{EXECUTIVE_REPORT_NO_TARGET_MESSAGE}</p> : null}
 
       {freshness.arStaleExcluded || freshness.apStaleExcluded ? (
-        <p>
-          Bases AR/AP excluem títulos stale Nomus conforme cutoff de sync.
-        </p>
+        <p>Bases AR/AP excluem títulos stale Nomus conforme cutoff de sync.</p>
+      ) : null}
+
+      {staleNotices.length > 0 ? (
+        <ul className="list-disc pl-5 space-y-1">
+          {staleNotices.map((notice) => (
+            <li key={notice}>{notice}</li>
+          ))}
+        </ul>
       ) : null}
 
       <ul className="list-disc pl-5 space-y-1">

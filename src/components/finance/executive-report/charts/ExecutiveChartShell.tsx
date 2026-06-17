@@ -1,6 +1,7 @@
 import React from "react";
 import { cn } from "@/src/lib/utils";
 import { EXECUTIVE_REPORT_EMPTY_MESSAGE } from "@/src/lib/financeExecutiveReportPresentation";
+import { EXECUTIVE_REPORT_NO_TARGET_MESSAGE } from "@/src/lib/financeExecutiveReportUxCopy";
 export const EXECUTIVE_CHART_HEIGHT = 380;
 
 export function ExecutiveChartShell({
@@ -49,8 +50,6 @@ function ExecutiveChartHeader({ title, subtitle }: { title: string; subtitle?: s
 export function ExecutiveTargetHint({ missing }: { missing: boolean }) {
   if (!missing) return null;
   return (
-    <p className="executive-target-hint">
-      Meta não cadastrada para este período.
-    </p>
+    <p className="executive-target-hint">{EXECUTIVE_REPORT_NO_TARGET_MESSAGE}</p>
   );
 }

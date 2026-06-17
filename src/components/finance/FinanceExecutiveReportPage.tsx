@@ -144,6 +144,17 @@ export function FinanceExecutiveReportPage() {
         </div>
       ) : null}
 
+      {loading && report ? (
+        <div
+          className="executive-report-loading-banner executive-report-screen-only finance-executive-report-print-no-print"
+          data-testid="executive-report-loading-banner"
+          role="status"
+        >
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Atualizando relatório…
+        </div>
+      ) : null}
+
       {report ? (
         <>
           <div className="executive-report-screen-only">

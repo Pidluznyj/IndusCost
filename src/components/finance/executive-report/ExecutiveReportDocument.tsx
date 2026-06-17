@@ -17,7 +17,6 @@ import {
   mapSalesOrdersMonthlyToChart,
   executiveReportTargetMissing,
 } from "@/src/lib/financeExecutiveReportPresentation";
-import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
 import { ExecutiveReportCover } from "@/src/components/finance/executive-report/ExecutiveReportCover";
 import { ExecutiveReportPrintCover } from "@/src/components/finance/executive-report/ExecutiveReportPrintCover";
 import { ExecutivePrintPageShell } from "@/src/components/finance/executive-report/ExecutivePrintPageShell";
@@ -31,6 +30,12 @@ import { ExecutiveRealizedProjectedChart } from "@/src/components/finance/execut
 import { ExecutiveScheduleChart } from "@/src/components/finance/executive-report/charts/ExecutiveScheduleChart";
 import { ExecutiveCashFlowChart } from "@/src/components/finance/executive-report/charts/ExecutiveCashFlowChart";
 import { ExecutiveSalesOrdersChart } from "@/src/components/finance/executive-report/charts/ExecutiveSalesOrdersChart";
+import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executive-report/ExecutiveReportDocumentFooter";
+import {
+  EXECUTIVE_REPORT_SECTION_INTROS,
+  formatExecutiveReportBillingYearsSubtitle,
+  formatExecutiveReportGeneratedFooter,
+} from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutiveReportDocument({
   report,
@@ -122,6 +127,7 @@ export function ExecutiveReportDocument({
           eyebrow="Visão geral"
           title="Resumo Executivo"
           subtitle="Faturamento comparativo do mês e leitura rápida"
+          intro={EXECUTIVE_REPORT_SECTION_INTROS.summary}
         >
           <ExecutiveKpiGrid columns={4}>
             {billingByYear.map((row) => (
@@ -179,6 +185,7 @@ export function ExecutiveReportDocument({
           eyebrow="Faturamento"
           title="Faturamento Comparativo"
           subtitle="Evolução mensal multi-ano — fonte NF-e oficial IndusCost"
+          intro={EXECUTIVE_REPORT_SECTION_INTROS["billing-comparison"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
@@ -205,7 +212,9 @@ export function ExecutiveReportDocument({
           <div className="mt-6">
             <ExecutiveBarComparisonChart
               title="Faturamento mês a mês"
-              subtitle="Comparativo 2024 · 2025 · 2026 — valores em R$ mil / R$ Mi"
+              subtitle={formatExecutiveReportBillingYearsSubtitle(
+                billingComparison.years.map((y) => y.year)
+              )}
               years={billingComparison.years}
               rows={billingComparison.rows}
               empty={!billingComparison.hasData}
@@ -225,6 +234,7 @@ export function ExecutiveReportDocument({
           eyebrow="Projeção"
           title="Realizado vs Projetado"
           subtitle="Média diária, faturado, projeção e meta anual"
+          intro={EXECUTIVE_REPORT_SECTION_INTROS["billing-projection"]}
         >
           <ExecutiveKpiGrid columns={5}>
             <ExecutiveKpiCard label="Média diária" value={projectionTab.projection.formatted.dailyAverage} />
@@ -273,6 +283,7 @@ export function ExecutiveReportDocument({
           eyebrow="Recebíveis"
           title="Contas a Receber"
           subtitle="Base saneada Nomus — valores consolidados"
+          intro={EXECUTIVE_REPORT_SECTION_INTROS["accounts-receivable"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
@@ -324,6 +335,7 @@ export function ExecutiveReportDocument({
           eyebrow="Pagamentos"
           title="Contas a Pagar"
           subtitle="Base saneada Nomus — valores consolidados"
+          intro={EXECUTIVE_REPORT_SECTION_INTROS["accounts-payable"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
@@ -377,6 +389,7 @@ export function ExecutiveReportDocument({
           eyebrow="Caixa"
           title="Fluxo de Caixa / Agenda"
           subtitle="Entradas, saídas, saldo líquido e acumulado"
+          intro={EXECUTIVE_REPORT_SECTION_INTROS["cash-flow"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
@@ -431,6 +444,7 @@ export function ExecutiveReportDocument({
           eyebrow="Comercial"
           title="Pedidos de Venda"
           subtitle="SalesOrder — carteira e projeção comercial"
+          intro={EXECUTIVE_REPORT_SECTION_INTROS["sales-orders"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
@@ -478,6 +492,7 @@ export function ExecutiveReportDocument({
           eyebrow="Encerramento"
           title="Conclusão Executiva"
           subtitle="Alertas, pontos de atenção e leitura automática"
+          intro={EXECUTIVE_REPORT_SECTION_INTROS.conclusion}
         >
           {report.executiveNarrative?.sections.length ? (
             <div className="space-y-4">
@@ -509,10 +524,12 @@ export function ExecutiveReportDocument({
           />
 
           <p className="executive-print-generated-at">
-            Relatório gerado em {formatFinanceDateTime(report.generatedAt)}
+            {formatExecutiveReportGeneratedFooter(report.generatedAt)}
           </p>
         </ExecutiveReportSection>
       </ExecutivePrintPageShell>
+
+      <ExecutiveReportDocumentFooter generatedAt={report.generatedAt} />
     </div>
   );
 }

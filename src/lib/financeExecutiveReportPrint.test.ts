@@ -81,7 +81,28 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(cover, /RELATÓRIO PRESIDENCIAL/);
-    assert.match(cover, /IndusCost \+ Nomus/);
+    assert.match(cover, /EXECUTIVE_REPORT_SOURCES_LABEL|Fontes: Nomus/);
+  });
+
+  it("rodapé de impressão documenta fontes e geração IndusCost", () => {
+    const footer = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "executive-report", "ExecutivePrintPageFooter.tsx"),
+      "utf8"
+    );
+    assert.match(footer, /formatExecutiveReportGeneratedFooter/);
+    assert.match(footer, /EXECUTIVE_REPORT_SOURCES_LABEL/);
+    assert.match(footer, /Documento gerado pelo IndusCost/);
+  });
+
+  it("documento inclui intros de seção e footer online", () => {
+    const document = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "executive-report", "ExecutiveReportDocument.tsx"),
+      "utf8"
+    );
+    assert.match(document, /EXECUTIVE_REPORT_SECTION_INTROS/);
+    assert.match(document, /ExecutiveReportDocumentFooter/);
+    assert.match(document, /formatExecutiveReportBillingYearsSubtitle/);
+    assert.doesNotMatch(document, /Comparativo 2024 · 2025 · 2026/);
   });
 
   it("seções principais existem no documento", () => {

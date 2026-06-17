@@ -1,5 +1,8 @@
 import React from "react";
-import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
+import {
+  EXECUTIVE_REPORT_SOURCES_LABEL,
+  formatExecutiveReportGeneratedFooter,
+} from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutivePrintPageFooter({
   pageNumber,
@@ -12,11 +15,13 @@ export function ExecutivePrintPageFooter({
 }) {
   return (
     <div className="executive-print-page-footer" aria-hidden="true">
-      <span>Fonte: IndusCost + Nomus — dados consolidados</span>
-      <span>
+      <span className="executive-print-page-footer-sources">{EXECUTIVE_REPORT_SOURCES_LABEL}</span>
+      <span className="executive-print-page-footer-page">
         Página {pageNumber} de {totalPages}
       </span>
-      <span>Gerado em {formatFinanceDateTime(generatedAt)}</span>
+      <span className="executive-print-page-footer-generated">
+        {formatExecutiveReportGeneratedFooter(generatedAt)}
+      </span>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React from "react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 import { resolvePrintLogoSrc } from "@/src/lib/printBranding";
+import { EXECUTIVE_REPORT_SOURCES_LABEL } from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutivePrintPageHeader({
   branding,
@@ -30,7 +31,7 @@ export function ExecutivePrintPageHeader({
           {companyLabel} · {periodLabel} · Base {reportDateLabel}
         </p>
       </div>
-      <div className="executive-print-page-header-source">IndusCost + Nomus</div>
+      <div className="executive-print-page-header-source">{EXECUTIVE_REPORT_SOURCES_LABEL}</div>
     </div>
   );
 }
