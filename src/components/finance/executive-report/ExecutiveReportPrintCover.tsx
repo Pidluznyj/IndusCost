@@ -1,9 +1,9 @@
 import React from "react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 import type { FinanceExecutiveReportCover } from "@/src/lib/financeExecutiveReportTypes";
-import { resolvePrintLogoSrc } from "@/src/lib/printBranding";
+import { isPrintCoverLogoLightOnDark, resolvePrintCoverLogoSrc } from "@/src/lib/printBranding";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
-import { EXECUTIVE_REPORT_SOURCES_LABEL } from "@/src/lib/financeExecutiveReportUxCopy";
+import { EXECUTIVE_REPORT_PRINT_DATA_NOTE } from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutiveReportPrintCover({
   cover,
@@ -14,13 +14,19 @@ export function ExecutiveReportPrintCover({
   generatedAt: string;
   branding: BrandingSettingsDTO;
 }) {
-  const logoSrc = resolvePrintLogoSrc(branding);
+  const logoSrc = resolvePrintCoverLogoSrc(branding);
+  const lightLogo = isPrintCoverLogoLightOnDark(branding, logoSrc);
 
   return (
     <div className="executive-print-cover" data-testid="executive-report-cover">
       <div className="executive-print-cover-brand">
         {logoSrc ? (
-          <img src={logoSrc} alt="Lazarios / Koppetel" className="executive-print-cover-logo" />
+          <img
+            src={logoSrc}
+            alt="Lazarios / Koppetel"
+            className="executive-print-cover-logo"
+            data-light={lightLogo ? "true" : undefined}
+          />
         ) : (
           <p className="executive-print-cover-brand-fallback">Lazarios · Koppetel</p>
         )}
@@ -45,7 +51,7 @@ export function ExecutiveReportPrintCover({
           <p className="executive-print-cover-value">{formatFinanceDateTime(generatedAt)}</p>
         </div>
       </div>
-      <p className="executive-print-cover-source">{EXECUTIVE_REPORT_SOURCES_LABEL}</p>
+      <p className="executive-print-cover-source">{EXECUTIVE_REPORT_PRINT_DATA_NOTE}</p>
     </div>
   );
 }

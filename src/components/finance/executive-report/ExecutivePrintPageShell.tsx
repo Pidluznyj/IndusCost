@@ -4,8 +4,6 @@ import type { BrandingSettingsDTO } from "@/src/types/branding";
 import { ExecutivePrintPageHeader } from "@/src/components/finance/executive-report/ExecutivePrintPageHeader";
 import { ExecutivePrintPageFooter } from "@/src/components/finance/executive-report/ExecutivePrintPageFooter";
 
-export const EXECUTIVE_REPORT_PRINT_TOTAL_PAGES = 9;
-
 export function ExecutivePrintPageShell({
   pageId,
   pageNumber,
@@ -48,11 +46,7 @@ export function ExecutivePrintPageShell({
       ) : null}
       <div className="executive-print-page-body">{children}</div>
       {!cover ? (
-        <ExecutivePrintPageFooter
-          pageNumber={pageNumber}
-          totalPages={EXECUTIVE_REPORT_PRINT_TOTAL_PAGES}
-          generatedAt={generatedAt}
-        />
+        <ExecutivePrintPageFooter pageNumber={pageNumber} generatedAt={generatedAt} />
       ) : null}
     </article>
   );

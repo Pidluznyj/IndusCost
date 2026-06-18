@@ -6,7 +6,6 @@ import {
   resolveExecutiveSummaryBillingByYear,
   formatExecutiveReportPresentationCurrency,
   formatExecutiveReportPresentationPercent,
-  EXECUTIVE_REPORT_NO_TARGET_MESSAGE,
 } from "@/src/lib/financeExecutiveReportViewModel";
 import {
   mapApScheduleToChart,
@@ -20,7 +19,6 @@ import {
 import { ExecutiveReportCover } from "@/src/components/finance/executive-report/ExecutiveReportCover";
 import { ExecutiveReportPrintCover } from "@/src/components/finance/executive-report/ExecutiveReportPrintCover";
 import { ExecutivePrintPageShell } from "@/src/components/finance/executive-report/ExecutivePrintPageShell";
-import { ExecutivePrintDataQualityNote } from "@/src/components/finance/executive-report/ExecutivePrintDataQualityNote";
 import { ExecutiveReportSection } from "@/src/components/finance/executive-report/ExecutiveReportSection";
 import { ExecutiveKpiCard } from "@/src/components/finance/executive-report/ExecutiveKpiCard";
 import { ExecutiveKpiGrid } from "@/src/components/finance/executive-report/ExecutiveKpiGrid";
@@ -35,11 +33,17 @@ import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executiv
 import {
   EXECUTIVE_REPORT_SECTION_INTROS,
   EXECUTIVE_REPORT_SECTION_SUBTITLES,
+  EXECUTIVE_REPORT_AUTO_TARGET_SHORT,
+  EXECUTIVE_REPORT_PRINT_DATA_NOTE,
   formatExecutiveReportBillingYearsSubtitle,
-  formatExecutiveReportGeneratedFooter,
   getExecutiveReportKpiHint,
   presentExecutiveReportNarrativeBullets,
 } from "@/src/lib/financeExecutiveReportUxCopy";
+
+function printTargetHint(missing: boolean, fallback?: string): string | undefined {
+  if (missing) return EXECUTIVE_REPORT_AUTO_TARGET_SHORT;
+  return fallback;
+}
 
 function kpiHint(label: string): string | undefined {
   return getExecutiveReportKpiHint(label);
@@ -116,7 +120,6 @@ export function ExecutiveReportDocument({
 
   const conclusionBullets = presentExecutiveReportNarrativeBullets({
     narrative: report.executiveNarrative,
-    warnings: report.dataQuality.warnings,
   });
 
   return (
@@ -167,7 +170,7 @@ export function ExecutiveReportDocument({
               value={billingTab.target.formatted.achievementPercent}
               sub={
                 billingTargetMissing
-                  ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE
+                  ? EXECUTIVE_REPORT_AUTO_TARGET_SHORT
                   : `Meta: ${billingTab.target.formatted.target}`
               }
               hint={kpiHint("Atingimento meta mês")}
@@ -214,7 +217,7 @@ export function ExecutiveReportDocument({
             <ExecutiveKpiCard
               label="Meta mês"
               value={billingTab.target.formatted.target}
-              hint={billingTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : kpiHint("Meta mês")}
+              hint={printTargetHint(billingTargetMissing, kpiHint("Meta mês"))}
               tooltip={kpiHint("Meta mês")}
             />
             <ExecutiveKpiCard
@@ -276,7 +279,7 @@ export function ExecutiveReportDocument({
             <ExecutiveKpiCard
               label="Meta do ano"
               value={billingTab.yearComparison.formatted.annualTarget}
-              hint={billingTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : kpiHint("Meta do ano")}
+              hint={printTargetHint(billingTargetMissing, kpiHint("Meta do ano"))}
               tooltip={kpiHint("Meta do ano")}
             />
             <ExecutiveKpiCard
@@ -352,12 +355,6 @@ export function ExecutiveReportDocument({
               variant="receivable"
             />
           </div>
-
-          <ExecutivePrintDataQualityNote
-            title="Observações — Contas a Receber"
-            dataQuality={report.dataQuality}
-            domain="ar"
-          />
         </ExecutiveReportSection>
       </ExecutivePrintPageShell>
 
@@ -414,12 +411,6 @@ export function ExecutiveReportDocument({
               variant="payable"
             />
           </div>
-
-          <ExecutivePrintDataQualityNote
-            title="Observações — Contas a Pagar"
-            dataQuality={report.dataQuality}
-            domain="ap"
-          />
         </ExecutiveReportSection>
       </ExecutivePrintPageShell>
 
@@ -515,7 +506,7 @@ export function ExecutiveReportDocument({
             <ExecutiveKpiCard
               label="Meta mês"
               value={salesTab.target?.formatted.target ?? "—"}
-              hint={salesTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : kpiHint("Meta mês")}
+              hint={printTargetHint(salesTargetMissing, kpiHint("Meta mês"))}
               tooltip={kpiHint("Meta mês")}
             />
             <ExecutiveKpiCard
@@ -523,14 +514,10 @@ export function ExecutiveReportDocument({
               value={
                 salesTargetMissing ? "—" : (salesTab.target?.formatted.achievementPercent ?? "—")
               }
-              hint={
-                salesTargetMissing
-                  ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE
-                  : kpiHint("Atingimento mês pedidos")
-              }
+              hint={printTargetHint(salesTargetMissing, kpiHint("Atingimento mês pedidos"))}
               tooltip={
                 salesTargetMissing
-                  ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE
+                  ? EXECUTIVE_REPORT_AUTO_TARGET_SHORT
                   : kpiHint("Atingimento mês pedidos")
               }
             />
@@ -582,29 +569,7 @@ export function ExecutiveReportDocument({
             emptyMessage="Sem leitura executiva para os filtros aplicados."
           />
 
-          {report.dataQuality.warnings.length > 0 ? (
-            <div className="mt-6 executive-alerts-panel">
-              <h3 className="executive-alerts-title">Principais alertas</h3>
-              <ul className="executive-alerts-list">
-                {presentExecutiveReportNarrativeBullets({
-                  warnings: report.dataQuality.warnings,
-                  max: 3,
-                }).map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <ExecutivePrintDataQualityNote
-            title="Observações sobre os dados"
-            dataQuality={report.dataQuality}
-            domain="general"
-          />
-
-          <p className="executive-print-generated-at">
-            {formatExecutiveReportGeneratedFooter(report.generatedAt)}
-          </p>
+          <p className="executive-print-conclusion-note">{EXECUTIVE_REPORT_PRINT_DATA_NOTE}</p>
         </ExecutiveReportSection>
       </ExecutivePrintPageShell>
 

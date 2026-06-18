@@ -14,9 +14,37 @@
     height: auto !important;
   }
 
-  body.finance-executive-report-route,
-  body.finance-executive-report-route * {
-    visibility: visible !important;
+  /* Isola o documento executivo — oculta shell do app (sidebar, header, tabs). */
+  body.finance-executive-report-route #root {
+    visibility: hidden;
+  }
+
+  body.finance-executive-report-route .executive-report-print-root {
+    visibility: visible;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  body.finance-executive-report-route .executive-report-print-root * {
+    visibility: visible;
+  }
+
+  body.finance-executive-report-route .flex.h-screen > aside,
+  body.finance-executive-report-route main > header,
+  body.finance-executive-report-route nav.finance-module-tabs {
+    display: none !important;
+  }
+
+  body.finance-executive-report-route .flex.h-screen,
+  body.finance-executive-report-route .flex.h-screen > main,
+  body.finance-executive-report-route main .flex-1.overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
   }
 
   .no-print,
@@ -24,10 +52,10 @@
   .executive-report-filters,
   .finance-executive-report-print-no-print,
   body.finance-executive-report-route button,
-  body.finance-executive-report-route #root > * > aside,
-  body.finance-executive-report-route #root > * > header,
-  body.finance-executive-report-route nav.finance-module-tabs,
-  body.finance-executive-report-route .executive-report-screen-only {
+  body.finance-executive-report-route .executive-report-screen-only,
+  body.finance-executive-report-route .executive-report-screen-cover,
+  body.finance-executive-report-route .executive-print-data-quality,
+  body.finance-executive-report-route .executive-alerts-panel {
     display: none !important;
   }
 
@@ -52,13 +80,16 @@
   .executive-print-page {
     break-after: page;
     page-break-after: always;
-    min-height: auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    min-height: 0;
     overflow: visible !important;
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 3mm;
+    gap: 2mm;
     padding: 0;
+    padding-bottom: 1mm;
     background: #fff !important;
   }
 
@@ -69,37 +100,40 @@
 
   .executive-print-page-body {
     flex: 1 1 auto;
+    min-height: 0;
     overflow: visible !important;
+    padding-bottom: 1mm;
   }
 
   .executive-print-page-header {
     display: flex !important;
     align-items: center;
     justify-content: space-between;
-    gap: 4mm;
+    gap: 3mm;
     border-bottom: 0.4mm solid #cbd5e1;
-    padding-bottom: 2mm;
-    margin-bottom: 2mm;
-    font-size: 8pt;
+    padding-bottom: 1.5mm;
+    margin-bottom: 1.5mm;
+    font-size: 7.5pt;
     color: #334155;
+    flex-shrink: 0;
   }
 
   .executive-print-page-logo {
-    max-height: 10mm;
-    max-width: 36mm;
+    max-height: 9mm;
+    max-width: 32mm;
     object-fit: contain;
   }
 
   .executive-print-page-brand-text,
   .executive-print-cover-brand-fallback {
     font-weight: 700;
-    font-size: 10pt;
+    font-size: 9pt;
     color: #1e3a5f;
   }
 
   .executive-print-page-header-doc {
     font-weight: 800;
-    font-size: 9pt;
+    font-size: 8.5pt;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: #0f172a;
@@ -108,56 +142,57 @@
 
   .executive-print-page-header-meta {
     margin: 0;
-    font-size: 7.5pt;
+    font-size: 7pt;
     color: #64748b;
   }
 
   .executive-print-page-header-source {
-    font-size: 6pt;
-    color: #64748b;
-    max-width: 38%;
-    line-height: 1.35;
-    text-align: right;
+    display: none;
   }
 
   .executive-print-page-footer {
     display: flex !important;
     flex-wrap: wrap;
+    align-items: flex-end;
     justify-content: space-between;
-    gap: 2mm;
+    gap: 1.5mm;
     border-top: 0.3mm solid #e2e8f0;
-    padding-top: 2mm;
-    margin-top: 2mm;
-    font-size: 6.5pt;
+    padding-top: 1.5mm;
+    margin-top: auto;
+    font-size: 6pt;
     color: #64748b;
+    flex-shrink: 0;
   }
 
   .executive-print-page-footer-sources {
-    flex: 1 1 55%;
-    max-width: 55%;
-    line-height: 1.35;
+    flex: 1 1 70%;
+    max-width: 70%;
+    line-height: 1.3;
   }
 
   .executive-print-page-footer-page {
     flex: 0 0 auto;
     white-space: nowrap;
+    font-weight: 600;
   }
 
   .executive-print-page-footer-generated {
     flex: 1 1 100%;
     text-align: right;
     font-weight: 600;
+    font-size: 5.5pt;
   }
 
   .executive-section-intro {
-    font-size: 8pt !important;
+    font-size: 7.5pt !important;
     color: #475569 !important;
-    margin: 0 0 3mm !important;
-    line-height: 1.45 !important;
+    margin: 0 0 2mm !important;
+    line-height: 1.4 !important;
   }
 
   .executive-print-cover {
-    min-height: 170mm;
+    min-height: 0;
+    height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -165,43 +200,48 @@
     text-align: center;
     background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #334155 100%) !important;
     color: #f8fafc !important;
-    padding: 16mm 12mm;
+    padding: 14mm 12mm;
     border-radius: 0 !important;
   }
 
   .executive-print-cover-logo {
-    max-height: 22mm;
-    max-width: 70mm;
+    max-height: 20mm;
+    max-width: 68mm;
     object-fit: contain;
-    margin-bottom: 6mm;
+    margin-bottom: 5mm;
+    filter: brightness(0) invert(1);
+  }
+
+  .executive-print-cover-logo[data-light="true"] {
+    filter: none;
   }
 
   .executive-print-cover-title {
-    font-size: 28pt;
+    font-size: 26pt;
     font-weight: 800;
     letter-spacing: 0.04em;
-    margin: 0 0 4mm;
+    margin: 0 0 3mm;
     color: #fff !important;
   }
 
   .executive-print-cover-subtitle {
-    font-size: 11pt;
+    font-size: 10pt;
     color: #cbd5e1 !important;
-    margin: 0 0 8mm;
+    margin: 0 0 6mm;
     max-width: 140mm;
   }
 
   .executive-print-cover-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4mm;
+    gap: 3mm;
     width: 100%;
     max-width: 240mm;
-    margin-top: 4mm;
+    margin-top: 3mm;
   }
 
   .executive-print-cover-label {
-    font-size: 7pt;
+    font-size: 6.5pt;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: #94a3b8 !important;
@@ -209,16 +249,18 @@
   }
 
   .executive-print-cover-value {
-    font-size: 11pt;
+    font-size: 10pt;
     font-weight: 700;
     margin: 0;
     color: #f8fafc !important;
   }
 
   .executive-print-cover-source {
-    margin-top: 10mm;
-    font-size: 8pt;
+    margin-top: 8mm;
+    font-size: 7pt;
     color: #94a3b8 !important;
+    max-width: 160mm;
+    line-height: 1.35;
   }
 
   .finance-executive-report-cover {
@@ -227,28 +269,28 @@
 
   .executive-print-page .finance-executive-report-section,
   .executive-section {
-    break-inside: avoid;
-    page-break-inside: avoid;
+    break-inside: auto;
+    page-break-inside: auto;
     box-shadow: none !important;
     border: 0.3mm solid #e2e8f0 !important;
     border-radius: 2mm !important;
-    padding: 4mm !important;
+    padding: 3mm !important;
     margin: 0 !important;
     background: #fff !important;
   }
 
   .finance-executive-report-section-title {
-    font-size: 14pt !important;
+    font-size: 13pt !important;
     margin-bottom: 1mm !important;
   }
 
   .finance-executive-report-section-subtitle {
-    font-size: 8.5pt !important;
-    margin-bottom: 3mm !important;
+    font-size: 8pt !important;
+    margin-bottom: 2mm !important;
   }
 
   .finance-executive-section-eyebrow {
-    font-size: 7pt !important;
+    font-size: 6.5pt !important;
   }
 
   .executive-kpi-grid,
@@ -256,7 +298,7 @@
     break-inside: avoid;
     page-break-inside: avoid;
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-    gap: 2.5mm !important;
+    gap: 2mm !important;
   }
 
   .finance-executive-kpi-grid[data-columns="5"] {
@@ -267,88 +309,97 @@
     break-inside: avoid;
     page-break-inside: avoid;
     min-height: auto !important;
-    padding: 2.5mm 3mm !important;
+    padding: 2mm 2.5mm !important;
     border-radius: 1.5mm !important;
   }
 
   .finance-executive-kpi-value {
-    font-size: 13pt !important;
+    font-size: 12pt !important;
+    white-space: nowrap;
   }
 
   .finance-executive-kpi-label {
-    font-size: 6.5pt !important;
+    font-size: 6pt !important;
+  }
+
+  .finance-executive-kpi-hint {
+    font-size: 6pt !important;
+    line-height: 1.3 !important;
   }
 
   .executive-chart,
   .executive-chart-shell {
     break-inside: avoid;
     page-break-inside: avoid;
-    overflow: visible !important;
+    overflow: hidden !important;
     box-shadow: none !important;
     border: 0.3mm solid #e2e8f0 !important;
-    padding: 2.5mm !important;
+    padding: 2mm !important;
+    margin-top: 2mm !important;
+    margin-bottom: 1mm !important;
     background: #fff !important;
   }
 
+  .executive-chart-header {
+    margin-bottom: 1mm !important;
+  }
+
+  .executive-chart-title {
+    font-size: 9pt !important;
+  }
+
+  .executive-chart-subtitle {
+    font-size: 6.5pt !important;
+  }
+
   .executive-chart-body {
-    height: 68mm !important;
-    min-height: 68mm !important;
-    overflow: visible !important;
+    height: 50mm !important;
+    min-height: 50mm !important;
+    max-height: 50mm !important;
+    overflow: hidden !important;
   }
 
   .executive-chart-body .recharts-responsive-container,
-  .executive-chart-body .recharts-wrapper,
+  .executive-chart-body .recharts-wrapper {
+    height: 50mm !important;
+    max-height: 50mm !important;
+  }
+
   .executive-chart-body svg {
-    overflow: visible !important;
+    overflow: hidden !important;
+  }
+
+  .executive-target-hint {
+    font-size: 6.5pt !important;
+    margin: 1mm 0 0 !important;
+    color: #64748b !important;
   }
 
   .finance-executive-narrative-box,
   .finance-executive-reading {
     break-inside: avoid;
     page-break-inside: avoid;
-    font-size: 9pt !important;
-    padding: 2.5mm 3mm !important;
+    font-size: 8pt !important;
+    padding: 2mm 2.5mm !important;
   }
 
   .finance-executive-narrative-bullets {
     margin: 0 !important;
     padding-left: 4mm !important;
-    font-size: 8.5pt !important;
-    line-height: 1.4 !important;
+    font-size: 8pt !important;
+    line-height: 1.35 !important;
   }
 
   .finance-executive-narrative-bullets li {
-    margin: 0 0 1.5mm !important;
+    margin: 0 0 1mm !important;
   }
 
-  .finance-executive-kpi-hint {
-    font-size: 7pt !important;
-    line-height: 1.35 !important;
-    color: #64748b !important;
-  }
-
-  .executive-print-data-quality {
-    break-inside: avoid;
-    page-break-inside: avoid;
-    margin-top: 3mm;
-    padding: 2.5mm 3mm;
-    border: 0.3mm solid #fcd34d;
-    background: #fffbeb !important;
-    border-radius: 1.5mm;
-    font-size: 7.5pt;
-    color: #78350f !important;
-  }
-
-  .executive-print-data-quality-title {
-    font-weight: 700;
-    margin: 0 0 1.5mm;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .executive-alerts-panel {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  .executive-print-conclusion-note {
+    margin-top: 4mm;
+    font-size: 7pt;
+    color: #64748b;
+    line-height: 1.35;
+    text-align: center;
   }
 
   .finance-executive-page-break,
@@ -361,15 +412,13 @@
     display: none !important;
   }
 
-  .executive-print-generated-at {
-    margin-top: 4mm;
-    font-size: 8pt;
-    color: #64748b;
-    text-align: right;
+  .mt-4,
+  .mt-5,
+  .mt-6 {
+    margin-top: 2mm !important;
   }
 
   * {
-    overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -387,6 +436,10 @@
 
   .executive-print-page + .executive-print-page {
     margin-top: 0;
+  }
+
+  .executive-print-conclusion-note {
+    display: none;
   }
 }
 

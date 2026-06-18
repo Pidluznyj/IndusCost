@@ -126,7 +126,7 @@ describe("financeExecutiveReportSalesOrdersKpi", () => {
       "utf8"
     );
     assert.match(document, /salesTargetMissing/);
-    assert.match(document, /EXECUTIVE_REPORT_NO_TARGET_MESSAGE/);
+    assert.match(document, /EXECUTIVE_REPORT_AUTO_TARGET_SHORT/);
     assert.match(document, /Atingimento mês pedidos/);
   });
 

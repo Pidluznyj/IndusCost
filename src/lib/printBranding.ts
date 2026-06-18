@@ -7,6 +7,11 @@ export const PRINT_COMPANY_DOC_FALLBACK = {
   email: "paulo@grupolazarios.com.br",
 } as const;
 
+function isDataImageUrl(src: string | null | undefined): src is string {
+  return typeof src === "string" && src.trim().toLowerCase().startsWith("data:image/");
+}
+
+/** Logo para páginas internas com fundo claro (versão escura/colorida). */
 export function resolvePrintLogoSrc(branding: BrandingSettingsDTO): string | null {
   const candidates = [
     branding.proposalLogoDataUrl,
@@ -14,11 +19,32 @@ export function resolvePrintLogoSrc(branding: BrandingSettingsDTO): string | nul
     branding.systemCompactLogoDataUrl,
   ];
   for (const src of candidates) {
-    if (typeof src === "string" && src.trim().toLowerCase().startsWith("data:image/")) {
-      return src.trim();
-    }
+    if (isDataImageUrl(src)) return src.trim();
   }
   return null;
+}
+
+/** Logo clara para capa e fundos escuros do PDF presidencial. */
+export function resolvePrintCoverLogoSrc(branding: BrandingSettingsDTO): string | null {
+  const candidates = [
+    branding.darkLogoDataUrl,
+    branding.watermarkDataUrl,
+    branding.systemCompactLogoDataUrl,
+    branding.systemExpandedLogoDataUrl,
+  ];
+  for (const src of candidates) {
+    if (isDataImageUrl(src)) return src.trim();
+  }
+  return resolvePrintLogoSrc(branding);
+}
+
+export function isPrintCoverLogoLightOnDark(
+  branding: BrandingSettingsDTO,
+  logoSrc: string | null
+): boolean {
+  if (!logoSrc) return false;
+  const lightCandidates = [branding.darkLogoDataUrl, branding.watermarkDataUrl];
+  return lightCandidates.some((src) => isDataImageUrl(src) && src.trim() === logoSrc);
 }
 
 export function formatPrintDate(value: string | Date | null | undefined): string {

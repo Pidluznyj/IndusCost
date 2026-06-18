@@ -81,7 +81,89 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(cover, /RELATÓRIO PRESIDENCIAL/);
-    assert.match(cover, /EXECUTIVE_REPORT_SOURCES_LABEL|notas fiscais/);
+    assert.match(cover, /resolvePrintCoverLogoSrc/);
+    assert.match(cover, /EXECUTIVE_REPORT_PRINT_DATA_NOTE/);
+  });
+
+  it("capa usa logo para fundo escuro", () => {
+    const cover = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "executive-report", "ExecutiveReportPrintCover.tsx"),
+      "utf8"
+    );
+    assert.match(cover, /isPrintCoverLogoLightOnDark/);
+    assert.match(cover, /data-light/);
+  });
+
+  it("páginas internas usam logo para fundo claro", () => {
+    const header = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "executive-report", "ExecutivePrintPageHeader.tsx"),
+      "utf8"
+    );
+    assert.match(header, /resolvePrintLogoSrc/);
+    assert.doesNotMatch(header, /resolvePrintCoverLogoSrc/);
+  });
+
+  it("PDF não inclui observações técnicas de AR/AP/dados", () => {
+    const document = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "executive-report", "ExecutiveReportDocument.tsx"),
+      "utf8"
+    );
+    assert.doesNotMatch(document, /ExecutivePrintDataQualityNote/);
+    assert.doesNotMatch(document, /Observações — Contas a Receber/);
+    assert.doesNotMatch(document, /Observações — Contas a Pagar/);
+    assert.doesNotMatch(document, /Observações sobre os dados/);
+    assert.doesNotMatch(document, /executive-alerts-panel/);
+  });
+
+  it("print CSS oculta shell do app e isola documento executivo", () => {
+    const css = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "executive-report",
+        "finance-executive-report-print.css"
+      ),
+      "utf8"
+    );
+    assert.match(css, /body\.finance-executive-report-route #root/);
+    assert.match(css, /executive-report-print-root/);
+    assert.match(css, /main > header/);
+    assert.match(css, /flex\.h-screen > aside/);
+  });
+
+  it("print CSS reserva área segura para gráficos e rodapé", () => {
+    const css = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "executive-report",
+        "finance-executive-report-print.css"
+      ),
+      "utf8"
+    );
+    assert.match(css, /executive-chart-body/);
+    assert.match(css, /50mm/);
+    assert.match(css, /executive-print-page-footer/);
+    assert.match(css, /margin-top:\s*auto/);
+  });
+
+  it("print CSS evita break-inside rígido na seção inteira", () => {
+    const css = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "executive-report",
+        "finance-executive-report-print.css"
+      ),
+      "utf8"
+    );
+    assert.match(css, /\.executive-print-page \.finance-executive-report-section[\s\S]*break-inside:\s*auto/);
   });
 
   it("rodapé de impressão documenta fontes e geração IndusCost", () => {
@@ -90,7 +172,9 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(footer, /formatExecutiveReportGeneratedFooter/);
-    assert.match(footer, /EXECUTIVE_REPORT_SOURCES_LABEL/);
+    assert.match(footer, /EXECUTIVE_REPORT_PRINT_DATA_NOTE/);
+    assert.match(footer, /Página \{pageNumber\}/);
+    assert.doesNotMatch(footer, /de \{totalPages\}/);
   });
 
   it("documento inclui intros de seção e footer online", () => {

@@ -17,6 +17,11 @@ export const EXECUTIVE_REPORT_SOURCES_LABEL =
 export const EXECUTIVE_REPORT_NO_TARGET_MESSAGE =
   "Não há meta cadastrada para este período; o sistema usou uma referência automática.";
 
+export const EXECUTIVE_REPORT_AUTO_TARGET_SHORT = "Meta automática";
+
+export const EXECUTIVE_REPORT_PRINT_DATA_NOTE =
+  "Relatório gerado com base nos dados disponíveis no IndusCost/Nomus na data-base selecionada.";
+
 export const EXECUTIVE_DATA_QUALITY_TITLE = "Avisos sobre os dados";
 
 export const EXECUTIVE_REPORT_SECTION_INTROS: Record<string, string> = {
