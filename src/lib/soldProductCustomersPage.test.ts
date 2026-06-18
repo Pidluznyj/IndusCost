@@ -165,4 +165,22 @@ describe("soldProductCustomersPage", () => {
       /^clientes-compradores-BH-001-2026-06-17\.csv$/
     );
   });
+
+  it("herda filtro de cliente da URL (ranking Produtos Vendidos)", () => {
+    const pageSrc = readFileSync(
+      join(process.cwd(), "src/components/commercial/SoldProductCustomersPage.tsx"),
+      "utf8"
+    );
+    assert.ok(pageSrc.includes("customerId"));
+    assert.ok(pageSrc.includes("appliedFilters"));
+  });
+
+  it("autocomplete de cliente fica na página Produtos Vendidos (audit)", () => {
+    const audit = readFileSync(
+      join(process.cwd(), "src/lib/filterAutocompleteAudit.ts"),
+      "utf8"
+    );
+    assert.ok(audit.includes("sold-product-customers-inherited"));
+    assert.ok(audit.includes("already_autocomplete"));
+  });
 });

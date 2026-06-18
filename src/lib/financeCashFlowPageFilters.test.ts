@@ -60,6 +60,9 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(page.includes("Fluxo de Caixa"));
     assert.ok(page.includes("draftFilters"));
     assert.ok(page.includes("appliedFilters"));
+    assert.ok(page.includes("CustomerAutocompleteFilter"));
+    assert.ok(page.includes("companyName"));
+    assert.ok(page.includes("supplierName"));
     assert.ok(page.includes('data-testid="cash-flow-page"'));
     assert.ok(page.includes('data-testid="cash-flow-filters"'));
     assert.ok(page.includes("FinanceCashFlowMonthlyPlannedChart"));

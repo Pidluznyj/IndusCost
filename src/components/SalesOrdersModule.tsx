@@ -4,10 +4,10 @@ import { ArrowLeft, ChevronRight, Loader2, Package, Printer, Receipt, ShoppingBa
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
-import { SearchableSelect, type SelectOption } from "@/src/components/shared/SearchableSelect";
+import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
+import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
-import type { Customer } from "@/src/types/commercial";
 
 type SalesOrderRow = {
   id: string;
@@ -102,19 +102,10 @@ function SalesOrderList() {
   const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
   const [status, setStatus] = useState("");
   const [customerId, setCustomerId] = useState("");
+  const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(null);
   const [responsible, setResponsible] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [customers, setCustomers] = useState<Customer[]>([]);
-
-  const loadCustomers = useCallback(async () => {
-    try {
-      const c = await fetchJsonOk<Customer[]>("/api/customers");
-      setCustomers(Array.isArray(c) ? c : []);
-    } catch {
-      setCustomers([]);
-    }
-  }, []);
 
   const listFiltersKey = useMemo(
     () => JSON.stringify({ status, customerId, responsible, startDate, endDate }),
@@ -185,10 +176,6 @@ function SalesOrderList() {
   );
 
   useEffect(() => {
-    void loadCustomers();
-  }, [loadCustomers]);
-
-  useEffect(() => {
     const ac = new AbortController();
     const prevKey = prevListFiltersKeyRef.current;
     const filtersChanged = prevKey !== null && prevKey !== listFiltersKey;
@@ -211,18 +198,6 @@ function SalesOrderList() {
     return { from, to };
   }, [total, currentPage, rows.length]);
 
-  const customerOptions = useMemo((): SelectOption[] => {
-    const sorted = customers.slice().sort((a, b) => (a.companyName || "").localeCompare(b.companyName || ""));
-    return [
-      { value: "", label: "Todos os clientes", searchTerms: "todos" },
-      ...sorted.map((c) => ({
-        value: c.id,
-        label: (c.companyName || c.tradeName || "Cliente").trim(),
-        searchTerms: [c.companyName, c.tradeName, c.taxId].filter(Boolean).join(" "),
-      })),
-    ];
-  }, [customers]);
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
@@ -243,18 +218,19 @@ function SalesOrderList() {
             </select>
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase text-muted-foreground">Cliente</label>
-            <div className="mt-1">
-              <SearchableSelect
-                options={customerOptions}
-                value={customerId}
-                onChange={setCustomerId}
-                placeholder="Todos os clientes"
-                searchInputPlaceholder="Buscar cliente..."
-                pinOptionValues={[""]}
-                listMaxHeight={280}
-              />
-            </div>
+            <CustomerAutocompleteFilter
+              label="Cliente"
+              value={customerSelection}
+              placeholder="Todos os clientes"
+              onChange={(sel) => {
+                setCustomerSelection(sel);
+                setCustomerId(sel?.id ?? "");
+              }}
+              onClear={() => {
+                setCustomerSelection(null);
+                setCustomerId("");
+              }}
+            />
           </div>
           <div>
             <label className="text-[10px] font-bold uppercase text-muted-foreground">Responsável</label>
@@ -292,6 +268,7 @@ function SalesOrderList() {
           onClick={() => {
             setStatus("");
             setCustomerId("");
+            setCustomerSelection(null);
             setResponsible("");
             setStartDate("");
             setEndDate("");

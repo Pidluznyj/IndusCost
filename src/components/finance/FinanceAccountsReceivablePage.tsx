@@ -83,6 +83,8 @@ import {
 } from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 import { cn } from "@/src/lib/utils";
 import { FinanceFilterScopeNote } from "@/src/components/finance/FinanceFilterScopeBanner";
+import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
+import { financePersonFieldsFromSelection } from "@/src/lib/customerSearch";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
@@ -752,11 +754,27 @@ export function FinanceAccountsReceivablePage() {
               onChange={(v) => setDraftFilters((f) => ({ ...f, status: v }))}
               options={FINANCE_AR_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
             />
-            <FilterInput
+            <CustomerAutocompleteFilter
               compact
               label="Cliente"
-              value={draftFilters.personName}
-              onChange={(v) => setDraftFilters((f) => ({ ...f, personName: v }))}
+              personName={draftFilters.personName}
+              personCnpj={draftFilters.personCnpj}
+              placeholder="Buscar cliente…"
+              onChange={(sel) => {
+                const fields = financePersonFieldsFromSelection(sel);
+                setDraftFilters((f) => ({
+                  ...f,
+                  personName: fields.personName,
+                  personCnpj: fields.personCnpj,
+                }));
+              }}
+              onClear={() =>
+                setDraftFilters((f) => ({
+                  ...f,
+                  personName: "",
+                  personCnpj: "",
+                }))
+              }
             />
             <FilterInput
               compact

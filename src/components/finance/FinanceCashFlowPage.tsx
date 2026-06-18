@@ -48,6 +48,8 @@ import {
   FINANCE_CF_HELP_TOP_SUPPLIERS,
 } from "@/src/lib/financeCashFlowBlockHelp";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
+import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
+import { financeCashFlowCustomerFieldsFromSelection } from "@/src/lib/customerSearch";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
 import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
@@ -401,14 +403,27 @@ export function FinanceCashFlowPage() {
         }
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 px-5 py-4">
-          <label className="space-y-1">
-            <span className={labelClass()}>Cliente</span>
-            <input
-              className={filterFieldClass()}
-              value={draftFilters.customerName}
-              onChange={(e) => setDraftFilters((f) => ({ ...f, customerName: e.target.value }))}
-            />
-          </label>
+          <CustomerAutocompleteFilter
+            label="Cliente"
+            personName={draftFilters.customerName}
+            personCnpj={draftFilters.personCnpj}
+            placeholder="Buscar cliente…"
+            onChange={(sel) => {
+              const fields = financeCashFlowCustomerFieldsFromSelection(sel);
+              setDraftFilters((f) => ({
+                ...f,
+                customerName: fields.customerName,
+                personCnpj: fields.personCnpj,
+              }));
+            }}
+            onClear={() =>
+              setDraftFilters((f) => ({
+                ...f,
+                customerName: "",
+                personCnpj: "",
+              }))
+            }
+          />
           <label className="space-y-1">
             <span className={labelClass()}>Fornecedor</span>
             <input

@@ -31,6 +31,7 @@ describe("financeAccountsReceivablePageFilters", () => {
     assert.ok(page.includes("FinanceDataAuditDrawer"));
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceBiFilterPanel"));
+    assert.ok(page.includes("CustomerAutocompleteFilter"));
     assert.ok(page.includes("alwaysVisible"));
     assert.ok(page.includes("FinanceDetailTabs"));
     assert.ok(page.includes("totalAmountReceivable"));

@@ -22,6 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
 import {
   CUSTOMER_MIX_SORT_ACCESSORS,
@@ -78,7 +79,6 @@ import {
 } from "@/src/lib/salesProductRankingFilters.js";
 import { SearchableSelect, type SelectOption } from "@/src/components/shared/SearchableSelect";
 import {
-  buildSoldProductsCustomerSelectOptions,
   buildSoldProductsProductSelectOptions,
   buildSoldProductsSellerSelectOptions,
   buildSoldProductsTaxIdSelectOptions,
@@ -87,7 +87,6 @@ import {
   soldProductsCustomerIdPatch,
   soldProductsProductIdPatch,
   syncCustomerIdFromTaxId,
-  syncCustomerTaxIdFromId,
 } from "@/src/lib/soldProductsFilterOptions.js";
 import type {
   SoldProductsDashboardPayload,
@@ -574,10 +573,6 @@ export function SoldProductsReportPage() {
     [appliedFilters]
   );
 
-  const customerSelectOptions = useMemo(
-    () => buildSoldProductsCustomerSelectOptions(filterOptions.customers),
-    [filterOptions.customers]
-  );
   const taxIdSelectOptions = useMemo(
     () => buildSoldProductsTaxIdSelectOptions(filterOptions.customers),
     [filterOptions.customers]
@@ -867,20 +862,36 @@ export function SoldProductsReportPage() {
               value={draftFilters.endDate}
               onChange={(v) => setDraftFilters((f) => ({ ...f, endDate: v }))}
             />
-            <FilterSearchableSelect
+            <CustomerAutocompleteFilter
               label="Cliente"
-              value={draftFilters.customerId}
-              onChange={(customerId) =>
+              value={
+                draftFilters.customerId
+                  ? {
+                      id: draftFilters.customerId,
+                      name:
+                        filterOptions.customers.find((c) => c.id === draftFilters.customerId)
+                          ?.name ?? draftFilters.customerName ?? draftFilters.customerId,
+                      taxId: draftFilters.customerTaxId || null,
+                      source: "induscost",
+                    }
+                  : null
+              }
+              placeholder="Todos os clientes"
+              onChange={(sel) =>
                 setDraftFilters((f) => ({
                   ...f,
-                  ...soldProductsCustomerIdPatch(customerId),
-                  customerTaxId: syncCustomerTaxIdFromId(customerId, filterOptions.customers),
+                  ...soldProductsCustomerIdPatch(sel?.id ?? ""),
+                  customerTaxId: sel?.taxId ?? "",
                 }))
               }
-              options={customerSelectOptions}
-              placeholder="Todos os clientes"
-              searchInputPlaceholder="Buscar cliente…"
-              disabled={filterOptionsLoading}
+              onClear={() =>
+                setDraftFilters((f) => ({
+                  ...f,
+                  customerId: "",
+                  customerName: "",
+                  customerTaxId: "",
+                }))
+              }
             />
             <FilterSearchableSelect
               label="CNPJ/CPF cliente"

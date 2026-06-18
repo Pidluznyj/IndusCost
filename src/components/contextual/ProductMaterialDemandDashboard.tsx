@@ -49,6 +49,7 @@ import {
 } from "@/src/components/contextual/MaterialDemandDashboardPanels";
 import { MaterialDemandPlannedRealizedPanel } from "@/src/components/contextual/MaterialDemandPlannedRealizedPanel";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
+import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 
 const PAGE_SIZE = 25;
 const ORIGINS_PAGE_SIZE = 50;
@@ -1306,23 +1307,33 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
             <p className="text-[10px] text-muted-foreground">Vazio = todos os status.</p>
           </div>
           <MaterialDemandFilterField label="Cliente" htmlFor="mdf-customer" className="lg:col-span-1">
-            <select
-              id="mdf-customer"
-              value={filters.customerId}
-              onChange={(e) => {
-                const customerId = e.target.value;
+            <CustomerAutocompleteFilter
+              label=""
+              htmlFor="mdf-customer"
+              className="[&>span:first-child]:sr-only"
+              compact
+              placeholder="Todos os clientes"
+              value={
+                filters.customerId
+                  ? {
+                      id: filters.customerId,
+                      name:
+                        summaryData?.facets.customers.find((c) => c.id === filters.customerId)
+                          ?.companyName ?? filters.customerId,
+                      source: "induscost",
+                    }
+                  : null
+              }
+              onChange={(sel) => {
+                const customerId = sel?.id ?? "";
                 setFilters((p) => ({ ...p, customerId }));
                 applySelectFilter({ customerId });
               }}
-              className={FILTER_CONTROL_CLASS}
-            >
-              <option value="">Todos os clientes</option>
-              {(summaryData?.facets.customers ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.companyName}
-                </option>
-              ))}
-            </select>
+              onClear={() => {
+                setFilters((p) => ({ ...p, customerId: "" }));
+                applySelectFilter({ customerId: "" });
+              }}
+            />
           </MaterialDemandFilterField>
           <MaterialDemandFilterField label="Produto" htmlFor="mdf-product" className="lg:col-span-1">
             <select

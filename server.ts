@@ -82,6 +82,13 @@ import {
 } from "./src/lib/materialDemandFilters.js";
 import { getCachedMaterialDemandDataset } from "./src/lib/materialDemandDatasetCache.js";
 import {
+  buildCustomerSearchWhereEnhanced,
+  normalizeCustomerSearchQuery,
+  parseCustomerSearchLimit,
+  rankCustomerSearchResults,
+  serializeCustomerSearchItem,
+} from "./src/lib/customerSearch.js";
+import {
   aggregateMaterialUsageContributions,
   buildMaterialPlannedRealizedDetails,
   buildMaterialUsagePlannedRealizedSummary,
@@ -10800,6 +10807,59 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     } catch (error) {
       console.error("Import confirm error:", error);
       res.status(500).json({ error: "Erro ao salvar dados no banco" });
+    }
+  });
+
+  app.get("/api/customers/search", requireAppAuth, requirePermission("customers.view"), async (req, res) => {
+    try {
+      const idRaw = typeof req.query.id === "string" ? req.query.id.trim() : "";
+      if (idRaw) {
+        const customer = await prisma.customer.findUnique({
+          where: { id: idRaw },
+          select: {
+            id: true,
+            companyName: true,
+            tradeName: true,
+            taxId: true,
+            city: true,
+            state: true,
+            email: true,
+            phone: true,
+          },
+        });
+        return res.json({
+          items: customer ? [serializeCustomerSearchItem(customer)] : [],
+        });
+      }
+
+      const q = normalizeCustomerSearchQuery(req.query.q ?? req.query.query);
+      const limit = parseCustomerSearchLimit(req.query.limit);
+      if (q.length < 2) {
+        return res.json({ items: [] });
+      }
+
+      const where = buildCustomerSearchWhereEnhanced(q);
+      const rows = await prisma.customer.findMany({
+        where,
+        orderBy: { companyName: "asc" },
+        take: limit,
+        select: {
+          id: true,
+          companyName: true,
+          tradeName: true,
+          taxId: true,
+          city: true,
+          state: true,
+          email: true,
+          phone: true,
+        },
+      });
+
+      const items = rankCustomerSearchResults(rows.map(serializeCustomerSearchItem), q);
+      res.json({ items });
+    } catch (error) {
+      console.error("GET /api/customers/search", error);
+      res.status(500).json({ error: "Erro ao buscar clientes." });
     }
   });
 
