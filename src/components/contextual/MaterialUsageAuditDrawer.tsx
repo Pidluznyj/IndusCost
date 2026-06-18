@@ -4,12 +4,15 @@ import { AlertTriangle, Info, Loader2, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   MATERIAL_USAGE_AUDIT_BUTTON_TOOLTIP,
+  MATERIAL_USAGE_AUDIT_DIFFERENCE_BRIDGE_TITLE,
   MATERIAL_USAGE_AUDIT_DRAWER_TITLE,
   MATERIAL_USAGE_AUDIT_FILTERS_NOTE,
   MATERIAL_USAGE_AUDIT_FISCAL_NOTE,
   MATERIAL_USAGE_AUDIT_LOADING,
+  MATERIAL_USAGE_AUDIT_PARTIAL_EMPTY,
   MATERIAL_USAGE_AUDIT_TABS,
   MATERIAL_USAGE_AUDIT_TOOLTIPS,
+  MATERIAL_USAGE_PRODUCT_STATUS_LABELS,
 } from "@/src/lib/materialDemandPlannedRealizedAuditCopy";
 import { materialDemandUiFiltersToQueryParams, type MaterialDemandUiFilters } from "@/src/lib/materialDemandFilters";
 import type {
@@ -41,10 +44,12 @@ function pct(v: number | null | undefined): string {
 function SummaryCard({
   label,
   value,
+  subValue,
   tooltip,
 }: {
   label: string;
   value: React.ReactNode;
+  subValue?: React.ReactNode;
   tooltip: string;
 }) {
   return (
@@ -57,6 +62,9 @@ function SummaryCard({
         <Info className="h-3 w-3 opacity-60" aria-hidden />
       </p>
       <p className="text-sm font-semibold tabular-nums text-foreground mt-0.5">{value}</p>
+      {subValue ? (
+        <p className="text-[11px] text-muted-foreground tabular-nums mt-0.5">{subValue}</p>
+      ) : null}
     </div>
   );
 }
@@ -73,7 +81,11 @@ function AuditTable({
   emptyMessage: string;
 }) {
   if (rows.length === 0) {
-    return <p className="text-sm text-muted-foreground py-4">{emptyMessage}</p>;
+    return (
+      <p className="text-sm text-muted-foreground py-4" data-testid={`${testId}-empty`}>
+        {emptyMessage}
+      </p>
+    );
   }
   return (
     <div className="overflow-x-auto rounded-lg border border-border" data-testid={testId}>
@@ -112,67 +124,138 @@ function AuditTable({
   );
 }
 
+function productStatusBadge(status: MaterialUsageAuditPayload["products"][number]["status"]) {
+  const label = MATERIAL_USAGE_PRODUCT_STATUS_LABELS[status];
+  const cls =
+    status === "ok"
+      ? "bg-emerald-100 text-emerald-800"
+      : status === "partial"
+        ? "bg-amber-100 text-amber-900"
+        : status === "warning"
+          ? "bg-orange-100 text-orange-900"
+          : "bg-muted text-muted-foreground";
+  return (
+    <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold", cls)}>
+      {label}
+    </span>
+  );
+}
+
+function DifferenceBridgeSection({
+  audit,
+}: {
+  audit: MaterialUsageAuditPayload;
+}) {
+  const unit = audit.material.unit;
+  const bridge = audit.differenceBridge;
+  const items = [
+    {
+      key: "notInvoiced",
+      label: "Pedidos ainda não faturados",
+      value: bridge.notInvoicedOrdersQuantity,
+      show: bridge.notInvoicedOrdersQuantity > 0,
+    },
+    {
+      key: "partial",
+      label: "Pedidos parcialmente faturados",
+      value: bridge.partiallyInvoicedOrdersQuantity,
+      show: bridge.partiallyInvoicedOrdersQuantity > 0,
+    },
+    {
+      key: "invoiceLink",
+      label: "Divergências de vínculo NF/pedido",
+      value: bridge.invoiceLinkWarningQuantity,
+      show: bridge.invoiceLinkWarningQuantity > 0,
+    },
+    {
+      key: "missingBom",
+      label: "Produto sem BOM",
+      value: bridge.missingBomQuantity,
+      show: bridge.missingBomQuantity > 0,
+    },
+    {
+      key: "missingCost",
+      label: "Matéria-prima sem custo",
+      value: bridge.missingCostQuantity,
+      show: bridge.missingCostQuantity > 0,
+    },
+  ].filter((i) => i.show);
+
+  return (
+    <section
+      className="rounded-xl border border-border bg-card p-4 space-y-3"
+      data-testid="material-usage-audit-difference-bridge"
+    >
+      <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+        {MATERIAL_USAGE_AUDIT_DIFFERENCE_BRIDGE_TITLE}
+      </h3>
+      <p className="text-sm font-semibold tabular-nums">
+        Saldo total: {qty(bridge.totalBalanceQuantity)} {unit}
+      </p>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhuma categoria de diferença identificada.</p>
+      ) : (
+        <ul className="space-y-1 text-sm tabular-nums">
+          {items.map((item) => (
+            <li key={item.key}>
+              • {item.label}: {qty(item.value)} {unit}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!bridge.reconciles ? (
+        <p className="text-xs text-amber-700 dark:text-amber-300">
+          Diferença não explicada automaticamente: {qty(bridge.unexplainedQuantity)} {unit}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function AuditDrawerBody({
   audit,
-  previewRow,
   activeTab,
 }: {
   audit: MaterialUsageAuditPayload;
-  previewRow: MaterialUsagePlannedRealizedRow | null;
   activeTab: AuditTabId;
 }) {
   const unit = audit.material.unit;
   const summary = audit.summary;
-  const rowFallback = previewRow;
-
-  const displaySummary = useMemo(
-    () => ({
-      plannedQuantity: summary.plannedQuantity ?? rowFallback?.plannedQuantity ?? 0,
-      realizedQuantity: summary.realizedQuantity ?? rowFallback?.realizedQuantity ?? 0,
-      balanceQuantity: summary.balanceQuantity ?? rowFallback?.remainingQuantity ?? 0,
-      accuracyPercent: summary.accuracyPercent ?? rowFallback?.accuracyPercent ?? null,
-      unitCost: summary.unitCost ?? rowFallback?.unitCost ?? null,
-      plannedCost: summary.plannedCost ?? rowFallback?.plannedCost ?? 0,
-      realizedCost: summary.realizedCost ?? rowFallback?.realizedCost ?? 0,
-      costDifference: summary.costDifference ?? rowFallback?.costVariance ?? 0,
-      plannedOrdersCount: summary.plannedOrdersCount ?? rowFallback?.plannedOrdersCount ?? 0,
-      realizedOrdersCount: summary.realizedOrdersCount ?? rowFallback?.realizedOrdersCount ?? 0,
-      pendingOrdersCount: summary.pendingOrdersCount,
-      costDifferenceExplanation: summary.costDifferenceExplanation,
-    }),
-    [summary, rowFallback]
-  );
 
   if (activeTab === "summary") {
     return (
       <div className="space-y-4" data-testid="material-usage-audit-tab-summary">
         <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-            {MATERIAL_USAGE_AUDIT_TABS.summary}
-          </h3>
-          <div className="space-y-1 text-sm font-medium tabular-nums" data-testid="material-usage-audit-summary-equation">
+          <div
+            className="space-y-1 text-sm font-medium tabular-nums"
+            data-testid="material-usage-audit-summary-equation"
+          >
             <p>
-              Previsto: {qty(displaySummary.plannedQuantity)} {unit}
+              Previsto: {qty(summary.plannedQuantity)} {unit}
             </p>
-            <p>− Realizado: {qty(displaySummary.realizedQuantity)} {unit}</p>
-            <p>= Saldo: {qty(displaySummary.balanceQuantity)} {unit}</p>
+            <p>− Faturado/Realizado: {qty(summary.realizedQuantity)} {unit}</p>
+            <p>= A faturar / Diferença: {qty(summary.pendingQuantity)} {unit}</p>
           </div>
           <div
             className="space-y-1 text-sm font-medium tabular-nums border-t border-border pt-3"
             data-testid="material-usage-audit-cost-equation"
           >
-            <p>Custo previsto: {money(displaySummary.plannedCost)}</p>
-            <p>− Custo realizado: {money(displaySummary.realizedCost)}</p>
-            <p>= Diferença: {money(displaySummary.costDifference)}</p>
+            <p>Custo previsto: {money(summary.plannedCost)}</p>
+            <p>− Custo faturado: {money(summary.realizedCost)}</p>
+            <p>= Diferença: {money(summary.costDifference)}</p>
           </div>
           <div className="text-sm text-muted-foreground border-t border-border pt-3 space-y-1">
-            <p>Pedidos previstos: {displaySummary.plannedOrdersCount}</p>
-            <p>Pedidos faturados: {displaySummary.realizedOrdersCount}</p>
-            <p>Pedidos ainda não faturados: {displaySummary.pendingOrdersCount}</p>
+            <p>Pedidos previstos: {summary.plannedOrdersCount}</p>
+            <p>Pedidos faturados: {summary.realizedOrdersCount}</p>
+            <p>Pedidos não faturados: {summary.notInvoicedOrdersCount}</p>
+            {summary.partiallyInvoicedOrdersCount > 0 ? (
+              <p>Pedidos parcialmente faturados: {summary.partiallyInvoicedOrdersCount}</p>
+            ) : null}
           </div>
-          <p className="text-sm text-foreground leading-snug">{displaySummary.costDifferenceExplanation}</p>
+          <p className="text-sm text-foreground leading-snug">{summary.costDifferenceExplanation}</p>
           <p className="text-xs text-muted-foreground leading-snug">{MATERIAL_USAGE_AUDIT_FISCAL_NOTE}</p>
         </section>
+        <DifferenceBridgeSection audit={audit} />
       </div>
     );
   }
@@ -184,70 +267,81 @@ function AuditDrawerBody({
         emptyMessage="Nenhum produto relacionado encontrado."
         columns={[
           { key: "code", label: "Código" },
-          { key: "desc", label: "Descrição" },
-          { key: "unit", label: "Un. vendida" },
+          { key: "desc", label: "Produto" },
           { key: "plannedProd", label: "Qtd prev.", align: "right" },
           { key: "realizedProd", label: "Qtd fat.", align: "right" },
-          { key: "factor", label: "Fator MP", align: "right" },
-          { key: "plannedMp", label: "Cons. prev.", align: "right" },
-          { key: "realizedMp", label: "Cons. real.", align: "right" },
-          { key: "balanceMp", label: "Dif. MP", align: "right" },
+          { key: "pendingProd", label: "Qtd a fat.", align: "right" },
+          { key: "plannedMp", label: "MP prev.", align: "right" },
+          { key: "realizedMp", label: "MP fat.", align: "right" },
+          { key: "pendingMp", label: "MP a fat.", align: "right" },
           { key: "plannedCost", label: "Custo prev.", align: "right" },
-          { key: "realizedCost", label: "Custo real.", align: "right" },
+          { key: "realizedCost", label: "Custo fat.", align: "right" },
           { key: "costDiff", label: "Dif. R$", align: "right" },
           { key: "plannedOrd", label: "Ped. prev.", align: "right" },
           { key: "realizedOrd", label: "Ped. fat.", align: "right" },
+          { key: "notInvOrd", label: "Ped. não fat.", align: "right" },
+          { key: "status", label: "Status" },
         ]}
         rows={audit.products.map((p) => ({
           code: p.productCode ?? "—",
           desc: p.productDescription,
-          unit: p.productSoldUnit ?? "—",
           plannedProd: qty(p.plannedProductQuantity),
           realizedProd: qty(p.realizedProductQuantity),
-          factor: qty(p.materialFactor),
+          pendingProd: qty(p.pendingProductQuantity),
           plannedMp: qty(p.plannedMaterialQuantity),
           realizedMp: qty(p.realizedMaterialQuantity),
-          balanceMp: qty(p.balanceMaterialQuantity),
+          pendingMp: qty(p.pendingMaterialQuantity),
           plannedCost: money(p.plannedCost),
           realizedCost: money(p.realizedCost),
           costDiff: money(p.costDifference),
           plannedOrd: p.plannedOrdersCount,
           realizedOrd: p.realizedOrdersCount,
+          notInvOrd: p.notInvoicedOrdersCount,
+          status: productStatusBadge(p.status),
         }))}
       />
     );
   }
 
-  if (activeTab === "plannedOrders") {
+  if (activeTab === "notInvoicedOrders") {
+    const pendingQty = audit.differenceBridge.notInvoicedOrdersQuantity;
     return (
-      <AuditTable
-        testId="material-usage-audit-planned-orders"
-        emptyMessage="Nenhum pedido previsto encontrado."
-        columns={[
-          { key: "order", label: "Pedido" },
-          { key: "customer", label: "Cliente" },
-          { key: "date", label: "Data" },
-          { key: "product", label: "Produto" },
-          { key: "qty", label: "Qtd prod.", align: "right" },
-          { key: "factor", label: "Fator MP", align: "right" },
-          { key: "plannedMp", label: "Qtd prev. MP", align: "right" },
-          { key: "cost", label: "Custo prev.", align: "right" },
-          { key: "status", label: "Status" },
-          { key: "nf", label: "NF" },
-        ]}
-        rows={audit.plannedOrders.map((o) => ({
-          order: o.salesOrderNumber,
-          customer: o.customerName,
-          date: formatDatePtBr(o.issueDate),
-          product: o.productCode ? `[${o.productCode}] ${o.productDescription}` : o.productDescription,
-          qty: qty(o.productQuantity),
-          factor: qty(o.materialFactor),
-          plannedMp: qty(o.plannedMaterialQuantity),
-          cost: money(o.plannedCost),
-          status: o.status,
-          nf: o.invoiceNumber ?? "—",
-        }))}
-      />
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground" data-testid="material-usage-audit-not-invoiced-summary">
+          {summary.notInvoicedOrdersCount} pedido(s) ainda não faturado(s) representam{" "}
+          {qty(pendingQty)} {unit} da diferença.
+        </p>
+        <AuditTable
+          testId="material-usage-audit-not-invoiced-orders"
+          emptyMessage="Nenhum pedido não faturado encontrado."
+          columns={[
+            { key: "order", label: "Pedido" },
+            { key: "customer", label: "Cliente" },
+            { key: "date", label: "Data" },
+            { key: "product", label: "Produto" },
+            { key: "qty", label: "Qtd prod.", align: "right" },
+            { key: "factor", label: "Fator MP", align: "right" },
+            { key: "plannedMp", label: "Qtd prev. MP", align: "right" },
+            { key: "cost", label: "Custo prev.", align: "right" },
+            { key: "status", label: "Status" },
+            { key: "days", label: "Dias", align: "right" },
+            { key: "delivery", label: "Entrega" },
+          ]}
+          rows={audit.notInvoicedOrders.map((o) => ({
+            order: o.salesOrderNumber,
+            customer: o.customerName,
+            date: formatDatePtBr(o.issueDate),
+            product: o.productCode ? `[${o.productCode}] ${o.productDescription}` : o.productDescription,
+            qty: qty(o.orderedQuantity),
+            factor: qty(o.materialFactor),
+            plannedMp: qty(o.plannedMaterialQuantity),
+            cost: money(o.plannedCost),
+            status: o.orderStatus,
+            days: o.daysOpen ?? "—",
+            delivery: o.expectedDeliveryDate ? formatDatePtBr(o.expectedDeliveryDate) : "—",
+          }))}
+        />
+      </div>
     );
   }
 
@@ -282,33 +376,36 @@ function AuditDrawerBody({
     );
   }
 
-  if (activeTab === "variance") {
+  if (activeTab === "partiallyInvoicedOrders") {
     return (
-      <div className="space-y-2" data-testid="material-usage-audit-variance">
-        {audit.productVarianceRanking.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma diferença por produto.</p>
-        ) : (
-          <ul className="space-y-2">
-            {audit.productVarianceRanking.map((p) => (
-              <li
-                key={p.productId}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm"
-              >
-                <span className="truncate">
-                  {p.productCode ? `[${p.productCode}] ` : ""}
-                  {p.productDescription}
-                </span>
-                <span className="shrink-0 tabular-nums font-semibold">
-                  {qty(p.balanceMaterialQuantity)} {unit}
-                  <span className="text-muted-foreground font-normal ml-2">
-                    ({money(p.costDifference)})
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <AuditTable
+        testId="material-usage-audit-partial-orders"
+        emptyMessage={MATERIAL_USAGE_AUDIT_PARTIAL_EMPTY}
+        columns={[
+          { key: "order", label: "Pedido" },
+          { key: "customer", label: "Cliente" },
+          { key: "product", label: "Produto" },
+          { key: "ordered", label: "Qtd pedida", align: "right" },
+          { key: "invoiced", label: "Qtd fat.", align: "right" },
+          { key: "pending", label: "Qtd pend.", align: "right" },
+          { key: "plannedMp", label: "MP prev.", align: "right" },
+          { key: "realizedMp", label: "MP real.", align: "right" },
+          { key: "pendingMp", label: "MP pend.", align: "right" },
+          { key: "nf", label: "NF" },
+        ]}
+        rows={audit.partiallyInvoicedOrders.map((o) => ({
+          order: o.salesOrderNumber,
+          customer: o.customerName,
+          product: o.productCode ? `[${o.productCode}] ${o.productDescription}` : o.productDescription,
+          ordered: qty(o.orderedQuantity),
+          invoiced: qty(o.invoicedQuantity),
+          pending: qty(o.pendingQuantity),
+          plannedMp: qty(o.plannedMaterialQuantity),
+          realizedMp: qty(o.realizedMaterialQuantity),
+          pendingMp: qty(o.pendingMaterialQuantity),
+          nf: o.invoices.length > 0 ? o.invoices.join(", ") : "—",
+        }))}
+      />
     );
   }
 
@@ -330,17 +427,6 @@ function AuditDrawerBody({
           ))}
         </ul>
       )}
-      <dl className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-        {audit.dataQuality.missingCosts > 0 ? (
-          <div>Matérias-primas sem custo: {audit.dataQuality.missingCosts}</div>
-        ) : null}
-        {audit.dataQuality.partialInvoiceFallbacks > 0 ? (
-          <div>Fallback faturamento parcial: {audit.dataQuality.partialInvoiceFallbacks}</div>
-        ) : null}
-        {audit.dataQuality.invoiceLinkWarnings > 0 ? (
-          <div>NF sem vínculo claro: {audit.dataQuality.invoiceLinkWarnings}</div>
-        ) : null}
-      </dl>
     </div>
   );
 }
@@ -409,6 +495,21 @@ export function MaterialUsageAuditDrawer({
     return () => ac.abort();
   }, [open, materialId, apiBase, filters]);
 
+  const kpiSummary = useMemo(() => {
+    const s = audit?.summary;
+    return {
+      plannedQuantity: s?.plannedQuantity ?? previewRow?.plannedQuantity ?? 0,
+      realizedQuantity: s?.realizedQuantity ?? previewRow?.realizedQuantity ?? 0,
+      pendingQuantity: s?.pendingQuantity ?? previewRow?.remainingQuantity ?? 0,
+      partialQuantity: s?.partialQuantity ?? 0,
+      accuracyPercent: s?.accuracyPercent ?? previewRow?.accuracyPercent ?? null,
+      plannedCost: s?.plannedCost ?? previewRow?.plannedCost ?? 0,
+      realizedCost: s?.realizedCost ?? previewRow?.realizedCost ?? 0,
+      pendingCost: s?.pendingCost ?? (previewRow ? previewRow.plannedCost - previewRow.realizedCost : 0),
+      costDifference: s?.costDifference ?? previewRow?.costVariance ?? 0,
+    };
+  }, [audit, previewRow]);
+
   if (!open || !materialId) return null;
 
   const subtitle = previewRow
@@ -417,20 +518,7 @@ export function MaterialUsageAuditDrawer({
       ? `${audit.material.code ?? materialId} · ${audit.material.description}`
       : materialId;
 
-  const summarySource = audit?.summary ?? null;
-  const kpiSummary = summarySource ?? {
-    plannedQuantity: previewRow?.plannedQuantity ?? 0,
-    realizedQuantity: previewRow?.realizedQuantity ?? 0,
-    balanceQuantity: previewRow?.remainingQuantity ?? 0,
-    accuracyPercent: previewRow?.accuracyPercent ?? null,
-    unitCost: previewRow?.unitCost ?? null,
-    plannedCost: previewRow?.plannedCost ?? 0,
-    realizedCost: previewRow?.realizedCost ?? 0,
-    costDifference: previewRow?.costVariance ?? 0,
-  };
-
   const unitLabel = audit?.material.unit ?? previewRow?.unitLabel ?? "";
-
   const tabIds = Object.keys(MATERIAL_USAGE_AUDIT_TABS) as AuditTabId[];
 
   return createPortal(
@@ -467,17 +555,25 @@ export function MaterialUsageAuditDrawer({
           <SummaryCard
             label="Previsto"
             value={`${qty(kpiSummary.plannedQuantity)} ${unitLabel}`.trim()}
+            subValue={money(kpiSummary.plannedCost)}
             tooltip={MATERIAL_USAGE_AUDIT_TOOLTIPS.planned}
           />
           <SummaryCard
-            label="Realizado"
+            label="Faturado"
             value={`${qty(kpiSummary.realizedQuantity)} ${unitLabel}`.trim()}
-            tooltip={MATERIAL_USAGE_AUDIT_TOOLTIPS.realized}
+            subValue={money(kpiSummary.realizedCost)}
+            tooltip={MATERIAL_USAGE_AUDIT_TOOLTIPS.invoiced}
           />
           <SummaryCard
-            label="Saldo"
-            value={`${qty(kpiSummary.balanceQuantity)} ${unitLabel}`.trim()}
-            tooltip={MATERIAL_USAGE_AUDIT_TOOLTIPS.balance}
+            label="A faturar"
+            value={`${qty(kpiSummary.pendingQuantity)} ${unitLabel}`.trim()}
+            subValue={money(kpiSummary.pendingCost)}
+            tooltip={MATERIAL_USAGE_AUDIT_TOOLTIPS.pending}
+          />
+          <SummaryCard
+            label="Parcial"
+            value={`${qty(kpiSummary.partialQuantity)} ${unitLabel}`.trim()}
+            tooltip={MATERIAL_USAGE_AUDIT_TOOLTIPS.partial}
           />
           <SummaryCard
             label="Assertividade"
@@ -488,11 +584,6 @@ export function MaterialUsageAuditDrawer({
             label="Diferença R$"
             value={money(kpiSummary.costDifference)}
             tooltip={MATERIAL_USAGE_AUDIT_TOOLTIPS.costDifference}
-          />
-          <SummaryCard
-            label="Custo unit."
-            value={money(kpiSummary.unitCost)}
-            tooltip={MATERIAL_USAGE_AUDIT_TOOLTIPS.unitCost}
           />
         </div>
 
@@ -536,7 +627,7 @@ export function MaterialUsageAuditDrawer({
             </p>
           ) : null}
           {!loading && !error && audit ? (
-            <AuditDrawerBody audit={audit} previewRow={previewRow} activeTab={activeTab} />
+            <AuditDrawerBody audit={audit} activeTab={activeTab} />
           ) : null}
           {!loading && !error && !audit ? (
             <p className="text-sm text-muted-foreground py-4">Nenhum dado de auditoria disponível.</p>

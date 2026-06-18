@@ -17,35 +17,51 @@ function readDrawer(): string {
   );
 }
 
-test("painel usa MaterialUsageAuditDrawer lateral", () => {
+test("painel usa drawer lateral — sanfona inline removida", () => {
   const panel = readPanel();
   assert.match(panel, /MaterialUsageAuditDrawer/);
   assert.doesNotMatch(panel, /MaterialPlannedRealizedDrillDown/);
   assert.doesNotMatch(panel, /expandedMaterialId/);
 });
 
-test("coluna Dif. R$ e botão Auditar abrem drawer", () => {
+test("tabela principal exibe Ped. não fat. e % faturado", () => {
   const panel = readPanel();
-  assert.match(panel, /data-testid="material-usage-audit-cost-diff-button"/);
-  assert.match(panel, /data-testid="material-usage-audit-button"/);
-  assert.match(panel, /openAudit\(row\)/);
-  assert.match(panel, /cursor-pointer/);
+  assert.match(panel, /Ped\. não fat\./);
+  assert.match(panel, /% faturado/);
+  assert.match(panel, /notInvoicedOrdersCount/);
+  assert.match(panel, /invoicedPercent/);
 });
 
-test("drawer mostra resumo, equações e abas", () => {
+test("clique em Dif. R$, Saldo e Auditar abrem drawer", () => {
+  const panel = readPanel();
+  assert.match(panel, /data-testid="material-usage-audit-cost-diff-button"/);
+  assert.match(panel, /data-testid="material-usage-audit-balance-button"/);
+  assert.match(panel, /data-testid="material-usage-audit-button"/);
+  assert.match(panel, /openAudit\(row\)/);
+});
+
+test("drawer mostra resumo comparativo e ponte da diferença", () => {
   const drawer = readDrawer();
   assert.match(drawer, /data-testid="material-usage-audit-drawer"/);
   assert.match(drawer, /data-testid="material-usage-audit-summary-equation"/);
   assert.match(drawer, /data-testid="material-usage-audit-cost-equation"/);
-  assert.match(drawer, /testId="material-usage-audit-products-table"/);
-  assert.match(drawer, /testId="material-usage-audit-planned-orders"/);
-  assert.match(drawer, /testId="material-usage-audit-realized-orders"/);
-  assert.match(drawer, /data-testid="material-usage-audit-loading"/);
-  assert.match(drawer, /data-testid="material-usage-audit-close"/);
-  assert.match(drawer, /MATERIAL_USAGE_AUDIT_FISCAL_NOTE/);
+  assert.match(drawer, /data-testid="material-usage-audit-difference-bridge"/);
+  assert.match(drawer, /MATERIAL_USAGE_AUDIT_DIFFERENCE_BRIDGE_TITLE/);
+  assert.match(drawer, /A faturar/);
+  assert.match(drawer, /Faturado/);
 });
 
-test("drawer carrega endpoint details com filtros", () => {
+test("drawer lista comparativo, não faturados, parciais e faturados", () => {
+  const drawer = readDrawer();
+  assert.match(drawer, /testId="material-usage-audit-products-table"/);
+  assert.match(drawer, /testId="material-usage-audit-not-invoiced-orders"/);
+  assert.match(drawer, /testId="material-usage-audit-partial-orders"/);
+  assert.match(drawer, /testId="material-usage-audit-realized-orders"/);
+  assert.match(drawer, /notInvoicedOrders/);
+  assert.match(drawer, /partiallyInvoicedOrders/);
+});
+
+test("drawer carrega endpoint sob demanda com filtros", () => {
   const drawer = readDrawer();
   assert.match(drawer, /planned-vs-realized\/materials/);
   assert.match(drawer, /materialDemandUiFiltersToQueryParams/);

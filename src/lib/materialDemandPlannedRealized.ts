@@ -186,6 +186,7 @@ type MaterialAgg = {
   unitCost: number | null;
   plannedOrderIds: Set<string>;
   realizedOrderIds: Set<string>;
+  orderStats: Map<string, { plannedProductQty: number; realizedProductQty: number }>;
   productIds: Set<string>;
   rowWarnings: Set<string>;
   hasIncompleteData: boolean;
@@ -217,6 +218,7 @@ export function aggregateMaterialUsageContributions(
         unitCost: c.unitCost,
         plannedOrderIds: new Set<string>(),
         realizedOrderIds: new Set<string>(),
+        orderStats: new Map<string, { plannedProductQty: number; realizedProductQty: number }>(),
         productIds: new Set<string>(),
         rowWarnings: new Set<string>(),
         hasIncompleteData: false,
@@ -235,6 +237,12 @@ export function aggregateMaterialUsageContributions(
     if (current.unitCost == null && c.unitCost != null) current.unitCost = c.unitCost;
     current.plannedOrderIds.add(c.orderId);
     if (c.realizedOrderQty > 0) current.realizedOrderIds.add(c.orderId);
+    const orderKey = `${c.orderId}:${c.productId}`;
+    const orderStat =
+      current.orderStats.get(orderKey) ?? { plannedProductQty: 0, realizedProductQty: 0 };
+    orderStat.plannedProductQty += c.plannedOrderQty;
+    orderStat.realizedProductQty += c.realizedOrderQty;
+    current.orderStats.set(orderKey, orderStat);
     current.productIds.add(c.productId);
     if (c.usedPartialInvoiceFallback) {
       current.rowWarnings.add(PLANNED_REALIZED_PARTIAL_INVOICE_FALLBACK_WARNING);
@@ -254,6 +262,25 @@ export function aggregateMaterialUsageContributions(
       const unitCost =
         m.unitCost ??
         (m.plannedQuantity > 0 ? m.plannedCost / m.plannedQuantity : null);
+      let partiallyInvoicedOrdersCount = 0;
+      const partialOrderIds = new Set<string>();
+      for (const [key, stat] of m.orderStats) {
+        if (
+          stat.realizedProductQty > 0 &&
+          stat.realizedProductQty + 1e-6 < stat.plannedProductQty
+        ) {
+          partialOrderIds.add(key.split(":")[0] ?? key);
+        }
+      }
+      partiallyInvoicedOrdersCount = partialOrderIds.size;
+      const notInvoicedOrdersCount = Math.max(
+        0,
+        m.plannedOrderIds.size - m.realizedOrderIds.size
+      );
+      const invoicedRatio = safeMaterialUsageRatio(
+        m.realizedOrderIds.size,
+        m.plannedOrderIds.size
+      );
       return {
         materialId: m.materialId,
         materialCode: m.materialCode,
@@ -273,6 +300,10 @@ export function aggregateMaterialUsageContributions(
         costVariance: round6(m.realizedCost - m.plannedCost),
         plannedOrdersCount: m.plannedOrderIds.size,
         realizedOrdersCount: m.realizedOrderIds.size,
+        notInvoicedOrdersCount,
+        partiallyInvoicedOrdersCount,
+        invoicedPercent:
+          invoicedRatio == null ? null : round6(invoicedRatio * 100),
         relatedProductsCount: m.productIds.size,
         status: metrics.status,
         dataQuality: [...m.rowWarnings],

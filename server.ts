@@ -9947,6 +9947,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             orderCode: order.orderCode,
             orderStatus: order.status,
             issueDate: order.issueDate.toISOString(),
+            expectedDeliveryDate: order.expectedDeliveryDate?.toISOString() ?? null,
             customerName: order.Customer?.companyName?.trim() || null,
             productId: item.productId,
             productSku: productSkuEarly,

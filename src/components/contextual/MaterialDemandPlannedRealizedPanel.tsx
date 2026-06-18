@@ -245,11 +245,11 @@ export function MaterialDemandPlannedRealizedPanel({
         <div className="border-b border-border px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">Assertividade por matéria-prima</h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Clique em uma linha ou em Dif. R$ para abrir a auditoria detalhada.
+            Clique em Saldo, Dif. R$ ou Auditar para abrir a auditoria comparativa previsto × faturado.
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] text-sm">
+          <table className="w-full min-w-[1100px] text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-2">Código</th>
@@ -265,6 +265,8 @@ export function MaterialDemandPlannedRealizedPanel({
                 <th className="px-3 py-2 text-right">Dif. R$</th>
                 <th className="px-3 py-2 text-right">Ped. prev.</th>
                 <th className="px-3 py-2 text-right">Ped. fat.</th>
+                <th className="px-3 py-2 text-right">Ped. não fat.</th>
+                <th className="px-3 py-2 text-right">% faturado</th>
                 <th className="px-3 py-2 text-right">Produtos</th>
                 <th className="px-3 py-2">Status</th>
               </tr>
@@ -272,7 +274,7 @@ export function MaterialDemandPlannedRealizedPanel({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="px-4 py-10 text-center text-muted-foreground">
+                  <td colSpan={17} className="px-4 py-10 text-center text-muted-foreground">
                     Nenhuma matéria-prima encontrada para os filtros aplicados.
                   </td>
                 </tr>
@@ -291,7 +293,20 @@ export function MaterialDemandPlannedRealizedPanel({
                     <td className="px-3 py-2">{row.unitLabel}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{qty(row.plannedQuantity)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{qty(row.realizedQuantity)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{qty(row.remainingQuantity)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <button
+                        type="button"
+                        className="hover:text-primary hover:underline font-medium"
+                        title={MATERIAL_USAGE_AUDIT_BUTTON_TOOLTIP}
+                        data-testid="material-usage-audit-balance-button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openAudit(row);
+                        }}
+                      >
+                        {qty(row.remainingQuantity)}
+                      </button>
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{pct(row.accuracyPercent)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{money(row.unitCost)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{money(row.plannedCost)}</td>
@@ -327,6 +342,18 @@ export function MaterialDemandPlannedRealizedPanel({
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.plannedOrdersCount}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.realizedOrdersCount}</td>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums"
+                      data-testid="material-planned-realized-not-invoiced-count"
+                    >
+                      {row.notInvoicedOrdersCount}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums"
+                      data-testid="material-planned-realized-invoiced-percent"
+                    >
+                      {pct(row.invoicedPercent)}
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.relatedProductsCount}</td>
                     <td className="px-3 py-2">
                       <span

@@ -36,6 +36,9 @@ export type MaterialUsagePlannedRealizedRow = {
   costVariance: number;
   plannedOrdersCount: number;
   realizedOrdersCount: number;
+  notInvoicedOrdersCount: number;
+  partiallyInvoicedOrdersCount: number;
+  invoicedPercent: number | null;
   relatedProductsCount: number;
   status: MaterialUsageVarianceStatus;
   dataQuality: string[];
@@ -84,6 +87,7 @@ export type MaterialUsageContribution = {
   orderCode: string;
   orderStatus: string;
   issueDate: string;
+  expectedDeliveryDate: string | null;
   customerName: string | null;
   productId: string;
   productSku: string | null;
@@ -138,17 +142,41 @@ export type MaterialPlannedRealizedDetailResponse = {
 export type MaterialUsageAuditSummary = {
   plannedQuantity: number;
   realizedQuantity: number;
+  pendingQuantity: number;
   balanceQuantity: number;
+  partialQuantity: number;
   accuracyPercent: number | null;
   unitCost: number | null;
   plannedCost: number;
   realizedCost: number;
+  pendingCost: number;
   costDifference: number;
   plannedOrdersCount: number;
   realizedOrdersCount: number;
+  notInvoicedOrdersCount: number;
+  partiallyInvoicedOrdersCount: number;
   pendingOrdersCount: number;
+  invoicedPercent: number | null;
   costDifferenceExplanation: string;
 };
+
+export type MaterialUsageAuditDifferenceBridge = {
+  totalBalanceQuantity: number;
+  notInvoicedOrdersQuantity: number;
+  partiallyInvoicedOrdersQuantity: number;
+  invoiceLinkWarningQuantity: number;
+  missingBomQuantity: number;
+  missingCostQuantity: number;
+  unexplainedQuantity: number;
+  reconciles: boolean;
+};
+
+export type MaterialUsageAuditProductStatus =
+  | "ok"
+  | "pending_invoice"
+  | "partial"
+  | "not_invoiced"
+  | "warning";
 
 export type MaterialUsageAuditProduct = {
   productId: string;
@@ -157,15 +185,52 @@ export type MaterialUsageAuditProduct = {
   productSoldUnit: string | null;
   plannedProductQuantity: number;
   realizedProductQuantity: number;
+  pendingProductQuantity: number;
   materialFactor: number;
   plannedMaterialQuantity: number;
   realizedMaterialQuantity: number;
+  pendingMaterialQuantity: number;
   balanceMaterialQuantity: number;
   plannedCost: number;
   realizedCost: number;
+  pendingCost: number;
   costDifference: number;
   plannedOrdersCount: number;
   realizedOrdersCount: number;
+  notInvoicedOrdersCount: number;
+  partiallyInvoicedOrdersCount: number;
+  status: MaterialUsageAuditProductStatus;
+};
+
+export type MaterialUsageAuditNotInvoicedOrder = {
+  salesOrderId: string;
+  salesOrderNumber: string;
+  customerName: string;
+  issueDate: string;
+  expectedDeliveryDate: string | null;
+  productCode: string | null;
+  productDescription: string;
+  orderedQuantity: number;
+  materialFactor: number;
+  plannedMaterialQuantity: number;
+  plannedCost: number;
+  orderStatus: string;
+  daysOpen: number | null;
+};
+
+export type MaterialUsageAuditPartiallyInvoicedOrder = {
+  salesOrderId: string;
+  salesOrderNumber: string;
+  customerName: string;
+  productCode: string | null;
+  productDescription: string;
+  orderedQuantity: number;
+  invoicedQuantity: number;
+  pendingQuantity: number;
+  plannedMaterialQuantity: number;
+  realizedMaterialQuantity: number;
+  pendingMaterialQuantity: number;
+  invoices: string[];
 };
 
 export type MaterialUsageAuditPlannedOrder = {
@@ -226,9 +291,13 @@ export type MaterialUsageAuditPayload = {
     unit: string;
   };
   summary: MaterialUsageAuditSummary;
+  differenceBridge: MaterialUsageAuditDifferenceBridge;
   products: MaterialUsageAuditProduct[];
-  plannedOrders: MaterialUsageAuditPlannedOrder[];
+  notInvoicedOrders: MaterialUsageAuditNotInvoicedOrder[];
+  partiallyInvoicedOrders: MaterialUsageAuditPartiallyInvoicedOrder[];
   realizedOrders: MaterialUsageAuditRealizedOrder[];
+  /** @deprecated Lista completa de linhas previstas — preferir notInvoicedOrders */
+  plannedOrders: MaterialUsageAuditPlannedOrder[];
   productVarianceRanking: MaterialUsageAuditProductVariance[];
   dataQuality: MaterialUsageAuditDataQuality;
 };

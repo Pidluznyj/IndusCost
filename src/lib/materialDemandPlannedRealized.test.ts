@@ -25,6 +25,7 @@ function contrib(partial: Partial<MaterialUsageContribution> & Pick<MaterialUsag
     orderCode: partial.orderCode ?? "PV-001",
     orderStatus: partial.orderStatus ?? "SENT_TO_NOMUS",
     issueDate: partial.issueDate ?? "2026-01-15T00:00:00.000Z",
+    expectedDeliveryDate: partial.expectedDeliveryDate ?? null,
     customerName: partial.customerName ?? "Cliente Teste",
     productId: partial.productId ?? "prod-1",
     productSku: partial.productSku ?? "SKU1",
