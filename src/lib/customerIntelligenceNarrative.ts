@@ -2,12 +2,19 @@
  * Narrativa executiva — Inteligência do Cliente.
  */
 
+import {
+  COMMERCIAL_CLASSIFICATION_LABEL_PT,
+  HEALTH_CLASSIFICATION_LABEL_PT,
+} from "@/src/lib/customerIntelligenceNavigation.js";
 import type {
   CustomerIntelligenceCommercialSummary,
+  CustomerIntelligenceCrm,
   CustomerIntelligenceFinancial,
   CustomerIntelligenceOpportunity,
+  CustomerIntelligenceProductMix,
   CustomerIntelligenceProfile,
   CustomerIntelligenceRepurchase,
+  CustomerIntelligenceScoring,
 } from "@/src/lib/customerIntelligenceTypes.js";
 
 export function buildCustomerIntelligenceExecutiveNarrative(input: {
@@ -15,6 +22,9 @@ export function buildCustomerIntelligenceExecutiveNarrative(input: {
   commercialSummary: CustomerIntelligenceCommercialSummary;
   repurchase: CustomerIntelligenceRepurchase;
   financial: CustomerIntelligenceFinancial;
+  crm: CustomerIntelligenceCrm;
+  products: CustomerIntelligenceProductMix;
+  scoring: CustomerIntelligenceScoring;
   opportunities: CustomerIntelligenceOpportunity[];
 }): string[] {
   const lines: string[] = [];
@@ -24,22 +34,39 @@ export function buildCustomerIntelligenceExecutiveNarrative(input: {
     lines.push(
       `${name} ainda não possui pedidos de venda válidos no período/filtros aplicados.`
     );
+    lines.push("Histórico insuficiente para previsão de recompra e score comercial pleno.");
     return lines;
   }
 
   lines.push(
-    `${name} registrou ${input.commercialSummary.validOrdersCount} pedido(s) válido(s) com receita líquida de R$ ${input.commercialSummary.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`
+    `Score de saúde comercial: ${input.scoring.score}/100 (${HEALTH_CLASSIFICATION_LABEL_PT[input.scoring.healthClassification]}).`
   );
 
-  if (input.commercialSummary.averageTicket != null) {
+  lines.push(
+    `Classificação: ${COMMERCIAL_CLASSIFICATION_LABEL_PT[input.scoring.commercialClassification]}.`
+  );
+
+  const days = input.commercialSummary.daysSinceLastOrder;
+  if (days != null && days > 365) {
+    lines.push(`Cliente sem compra há ${days} dias; recomendado plano de reativação.`);
+  } else if (days != null) {
     lines.push(
-      `Ticket médio: R$ ${input.commercialSummary.averageTicket.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`
+      `${name} registrou ${input.commercialSummary.validOrdersCount} pedido(s) válido(s) com receita líquida de R$ ${input.commercialSummary.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}; última compra há ${days} dia(s).`
+    );
+  } else {
+    lines.push(
+      `${name} registrou ${input.commercialSummary.validOrdersCount} pedido(s) válido(s) com receita líquida de R$ ${input.commercialSummary.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`
     );
   }
 
-  if (input.commercialSummary.openPortfolioAmount > 0) {
+  const top3Share = input.products.concentration.top3RevenueSharePercent;
+  if (
+    top3Share != null &&
+    top3Share >= 70 &&
+    input.products.concentration.distinctProductsCount >= 2
+  ) {
     lines.push(
-      `Carteira comercial em aberto: R$ ${input.commercialSummary.openPortfolioAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} aguardando faturamento/conclusão.`
+      `Receita concentrada em ${Math.min(3, input.products.concentration.distinctProductsCount)} produtos; oportunidade de ampliar mix.`
     );
   }
 
@@ -48,27 +75,54 @@ export function buildCustomerIntelligenceExecutiveNarrative(input: {
   } else if (input.repurchase.status === "PROXIMA") {
     lines.push("Cliente próximo da janela típica de novo pedido.");
   } else if (input.repurchase.status === "INSUFICIENTE") {
-    lines.push("Histórico insuficiente para estimar recompra com confiança.");
+    lines.push("Histórico insuficiente para previsão de recompra.");
   }
 
-  if (input.financial.linkedByCnpj) {
-    if ((input.financial.overdueAmount ?? 0) > 0) {
-      lines.push(
-        `Inadimplência financeira (AR): R$ ${(input.financial.overdueAmount ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em ${input.financial.overdueTitlesCount ?? 0} título(s).`
-      );
-    } else if ((input.financial.receivableOpenAmount ?? 0) > 0) {
-      lines.push(
-        `Carteira financeira em aberto (AR): R$ ${(input.financial.receivableOpenAmount ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`
-      );
-    }
+  if (input.financial.linkedByCnpj && (input.financial.overdueAmount ?? 0) > 0) {
+    lines.push(
+      `Cliente possui valor vencido; alinhar cobrança antes de nova negociação (R$ ${(input.financial.overdueAmount ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}).`
+    );
   }
 
-  const highRisk = input.opportunities.filter(
-    (o) => o.type === "RISK" && o.severity === "HIGH"
-  );
-  if (highRisk.length > 0) {
-    lines.push(`Alerta: ${highRisk[0]!.title}.`);
+  if (input.crm.overdueTasksCount > 0) {
+    lines.push(
+      `${input.crm.overdueTasksCount} tarefa(s) CRM vencida(s) — executar follow-up pendente.`
+    );
   }
 
-  return lines.slice(0, 8);
+  const topAction = input.opportunities[0];
+  if (topAction && topAction.type === "OPPORTUNITY") {
+    lines.push(`Próxima ação sugerida: ${topAction.suggestedAction}`);
+  } else if (topAction && topAction.type === "RISK") {
+    lines.push(`Alerta prioritário: ${topAction.title}.`);
+  }
+
+  if (lines.length < 3 && input.commercialSummary.averageTicket != null) {
+    lines.push(
+      `Ticket médio: R$ ${input.commercialSummary.averageTicket.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`
+    );
+  }
+
+  return dedupeLines(lines).slice(0, 10);
+}
+
+function dedupeLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const key = line.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+/** Garante ao menos uma linha útil quando há pedidos válidos. */
+export function ensureNarrativeNotEmpty(
+  narrative: string[],
+  fallback: string
+): string[] {
+  if (narrative.length > 0) return narrative;
+  return [fallback];
 }

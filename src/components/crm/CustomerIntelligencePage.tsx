@@ -33,6 +33,7 @@ import { CustomerIntelligencePurchasesTab } from "./customer-intelligence/Custom
 import { CustomerIntelligenceProductsTab } from "./customer-intelligence/CustomerIntelligenceProductsTab";
 import { CustomerIntelligenceFinancialTab } from "./customer-intelligence/CustomerIntelligenceFinancialTab";
 import { CustomerIntelligenceCrmTab } from "./customer-intelligence/CustomerIntelligenceCrmTab";
+import { CustomerIntelligenceOpportunitiesTab } from "./customer-intelligence/CustomerIntelligenceOpportunitiesTab";
 import "./customer-intelligence/customer-intelligence.css";
 
 function isEmptyReport(report: CustomerIntelligenceReport): boolean {
@@ -235,10 +236,7 @@ export function CustomerIntelligencePage() {
               />
             ) : null}
             {activeTab === "opportunities" ? (
-              <CustomerIntelligenceTabPlaceholder
-                title="Oportunidades"
-                description={`${report.opportunities.length} sinal(is) comercial(is) identificado(s).`}
-              />
+              <CustomerIntelligenceOpportunitiesTab report={report} />
             ) : null}
           </div>
         </>

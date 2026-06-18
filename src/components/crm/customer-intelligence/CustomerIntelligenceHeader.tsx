@@ -2,8 +2,9 @@ import React from "react";
 import { AlertTriangle, Building2, Calendar, MapPin, User } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import {
+  COMMERCIAL_CLASSIFICATION_LABEL_PT,
   FINANCIAL_STATUS_LABEL_PT,
-  REPURCHASE_STATUS_LABEL_PT,
+  HEALTH_CLASSIFICATION_LABEL_PT,
 } from "@/src/lib/customerIntelligenceNavigation";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
 
@@ -18,22 +19,21 @@ function commercialHealthBadge(report: CustomerIntelligenceReport): {
   label: string;
   className: string;
 } {
-  const status = report.repurchase.status;
-  const label = REPURCHASE_STATUS_LABEL_PT[status] ?? status;
-  if (status === "ATRASADO") {
+  const health = report.scoring.healthClassification;
+  const label = HEALTH_CLASSIFICATION_LABEL_PT[health] ?? health;
+  if (health === "risco" || health === "inativo") {
+    return { label, className: "bg-red-100 text-red-900 border-red-200" };
+  }
+  if (health === "atencao") {
     return { label, className: "bg-amber-100 text-amber-900 border-amber-200" };
   }
-  if (status === "INSUFICIENTE") {
+  if (health === "historico_insuficiente") {
     return { label, className: "bg-muted text-muted-foreground border-border" };
   }
-  if (report.commercialSummary.validOrdersCount === 0) {
-    return { label: "Sem pedidos válidos", className: "bg-muted text-muted-foreground border-border" };
+  if (health === "excelente") {
+    return { label, className: "bg-emerald-100 text-emerald-900 border-emerald-200" };
   }
-  const highRisk = report.opportunities.some((o) => o.type === "RISK" && o.severity === "HIGH");
-  if (highRisk || report.financial.financialStatus === "overdue") {
-    return { label: "Atenção comercial", className: "bg-red-100 text-red-900 border-red-200" };
-  }
-  return { label: "Relacionamento ativo", className: "bg-emerald-100 text-emerald-900 border-emerald-200" };
+  return { label, className: "bg-sky-100 text-sky-900 border-sky-200" };
 }
 
 export function CustomerIntelligenceHeader({
@@ -81,6 +81,12 @@ export function CustomerIntelligenceHeader({
                   {financialStatus}
                 </span>
               ) : null}
+              <span className="inline-flex items-center rounded-full border border-border bg-background px-2.5 py-0.5 text-xs font-semibold">
+                Score {report.scoring.score}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {COMMERCIAL_CLASSIFICATION_LABEL_PT[report.scoring.commercialClassification]}
+              </span>
               {customer.region ? (
                 <span className="text-xs text-muted-foreground">Região: {customer.region}</span>
               ) : null}
@@ -133,7 +139,7 @@ export function CustomerIntelligenceAlerts({
 }: {
   report: CustomerIntelligenceReport;
 }) {
-  const items = report.opportunities.slice(0, 6);
+  const items = report.opportunities.filter((o) => o.type === "RISK" || o.priorityScore >= 55).slice(0, 6);
   if (items.length === 0) return null;
 
   return (
@@ -157,6 +163,7 @@ export function CustomerIntelligenceAlerts({
           >
             <span className="font-semibold">{item.title}</span>
             <span className="text-muted-foreground"> — {item.description}</span>
+            <p className="text-xs mt-1 font-medium">Ação: {item.suggestedAction}</p>
           </li>
         ))}
       </ul>

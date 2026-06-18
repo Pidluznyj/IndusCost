@@ -353,11 +353,79 @@ export type CustomerIntelligenceCrm = {
   actions: CustomerIntelligenceCrmAction[];
 };
 
+export type CustomerIntelligenceOpportunityKind =
+  | "reativar_cliente"
+  | "ligar_antes_recompra"
+  | "ofertar_produto_abandonado"
+  | "ofertar_produto_lider"
+  | "ampliar_mix"
+  | "revisar_margem"
+  | "acionar_cobranca"
+  | "atualizar_cadastro"
+  | "agendar_follow_up"
+  | "recuperar_cliente_inativo";
+
+export type CustomerIntelligenceOpportunityRelatedProduct = {
+  productId: string;
+  sku: string;
+  name: string;
+};
+
 export type CustomerIntelligenceOpportunity = {
+  kind: CustomerIntelligenceOpportunityKind;
   type: "RISK" | "OPPORTUNITY" | "INFO";
   severity: "LOW" | "MEDIUM" | "HIGH";
   title: string;
   description: string;
+  suggestedAction: string;
+  evidence: string[];
+  relatedProduct: CustomerIntelligenceOpportunityRelatedProduct | null;
+  priorityScore: number;
+};
+
+export type CustomerIntelligenceHealthClassification =
+  | "excelente"
+  | "saudavel"
+  | "atencao"
+  | "risco"
+  | "inativo"
+  | "historico_insuficiente";
+
+export type CustomerIntelligenceCommercialClassification =
+  | "cliente_estrategico"
+  | "cliente_recorrente"
+  | "oportunidade"
+  | "reativacao"
+  | "risco_financeiro"
+  | "baixo_potencial"
+  | "historico_insuficiente";
+
+export type CustomerIntelligenceScoreCriterionId =
+  | "purchase_recency"
+  | "purchase_frequency"
+  | "revenue"
+  | "trend"
+  | "margin"
+  | "financial"
+  | "crm"
+  | "repurchase";
+
+export type CustomerIntelligenceScoreCriterion = {
+  id: CustomerIntelligenceScoreCriterionId;
+  label: string;
+  weight: number;
+  partialScore: number;
+  earnedPoints: number;
+  maxPoints: number;
+  evidence: string | null;
+};
+
+export type CustomerIntelligenceScoring = {
+  score: number;
+  healthClassification: CustomerIntelligenceHealthClassification;
+  commercialClassification: CustomerIntelligenceCommercialClassification;
+  criteria: CustomerIntelligenceScoreCriterion[];
+  summary: string;
 };
 
 export type CustomerIntelligenceReport = {
@@ -371,6 +439,7 @@ export type CustomerIntelligenceReport = {
   repurchase: CustomerIntelligenceRepurchase;
   financial: CustomerIntelligenceFinancial;
   crm: CustomerIntelligenceCrm;
+  scoring: CustomerIntelligenceScoring;
   opportunities: CustomerIntelligenceOpportunity[];
   executiveNarrative: string[];
 };

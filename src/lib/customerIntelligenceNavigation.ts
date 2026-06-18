@@ -66,3 +66,28 @@ export const FINANCIAL_STATUS_LABEL_PT: Record<
   overdue: "Inadimplente",
   no_titles: "Sem títulos AR",
 };
+
+export const HEALTH_CLASSIFICATION_LABEL_PT: Record<
+  import("./customerIntelligenceTypes.js").CustomerIntelligenceHealthClassification,
+  string
+> = {
+  excelente: "Excelente",
+  saudavel: "Saudável",
+  atencao: "Atenção",
+  risco: "Risco",
+  inativo: "Inativo",
+  historico_insuficiente: "Histórico insuficiente",
+};
+
+export const COMMERCIAL_CLASSIFICATION_LABEL_PT: Record<
+  import("./customerIntelligenceTypes.js").CustomerIntelligenceCommercialClassification,
+  string
+> = {
+  cliente_estrategico: "Cliente estratégico",
+  cliente_recorrente: "Cliente recorrente",
+  oportunidade: "Oportunidade",
+  reativacao: "Reativação",
+  risco_financeiro: "Risco financeiro",
+  baixo_potencial: "Baixo potencial",
+  historico_insuficiente: "Histórico insuficiente",
+};

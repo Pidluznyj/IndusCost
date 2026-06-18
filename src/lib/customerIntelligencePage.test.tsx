@@ -13,6 +13,8 @@ import { CustomerIntelligencePurchasesTab } from "../components/crm/customer-int
 import { CustomerIntelligenceProductsTab } from "../components/crm/customer-intelligence/CustomerIntelligenceProductsTab.js";
 import { CustomerIntelligenceFinancialTab } from "../components/crm/customer-intelligence/CustomerIntelligenceFinancialTab.js";
 import { CustomerIntelligenceCrmTab } from "../components/crm/customer-intelligence/CustomerIntelligenceCrmTab.js";
+import { CustomerIntelligenceSignals } from "../components/crm/customer-intelligence/CustomerIntelligenceSignals.js";
+import { CustomerIntelligenceOpportunitiesTab } from "../components/crm/customer-intelligence/CustomerIntelligenceOpportunitiesTab.js";
 import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "./financeAccountsReceivableDashboard.js";
 
 function mockFinancial(
@@ -112,6 +114,36 @@ function mockCrm(
         reason: "Use o CRM Comercial",
       },
     ],
+    ...overrides,
+  };
+}
+
+function mockScoring(
+  overrides: Partial<CustomerIntelligenceReport["scoring"]> = {}
+): CustomerIntelligenceReport["scoring"] {
+  return {
+    score: 72,
+    healthClassification: "saudavel",
+    commercialClassification: "cliente_recorrente",
+    criteria: [],
+    summary: "Score 72/100 — saúde saudavel; classificação cliente recorrente.",
+    ...overrides,
+  };
+}
+
+function mockOpportunity(
+  overrides: Partial<CustomerIntelligenceReport["opportunities"][number]> = {}
+): CustomerIntelligenceReport["opportunities"][number] {
+  return {
+    kind: "ampliar_mix",
+    type: "OPPORTUNITY",
+    severity: "MEDIUM",
+    title: "Ampliar mix de produtos",
+    description: "Receita concentrada em poucos produtos.",
+    suggestedAction: "Apresentar produtos complementares.",
+    evidence: ["Top 3 concentram 80% da receita."],
+    relatedProduct: null,
+    priorityScore: 65,
     ...overrides,
   };
 }
@@ -260,15 +292,9 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
     },
     financial: mockFinancial(),
     crm: mockCrm(),
-    opportunities: [
-      {
-        type: "INFO",
-        severity: "MEDIUM",
-        title: "Sem pedidos válidos",
-        description: "Teste",
-      },
-    ],
-    executiveNarrative: ["Cliente Teste registrou 2 pedido(s) válido(s)."],
+    scoring: mockScoring(),
+    opportunities: [mockOpportunity()],
+    executiveNarrative: ["Score de saúde comercial: 72/100 (Saudável)."],
     ...overrides,
   };
 }
@@ -337,7 +363,7 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
     assert.ok(html.includes("Cliente Teste"));
     assert.ok(html.includes("Curitiba"));
     assert.ok(html.includes("Maria"));
-    assert.ok(html.includes("Histórico insuficiente"));
+    assert.ok(html.includes("Score 72"));
   });
 
   it("frontend não importa Prisma/backend assembler", () => {
@@ -587,5 +613,21 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
     const html = renderToStaticMarkup(<CustomerIntelligenceCrmTab report={empty} />);
     assert.ok(html.includes("Sem histórico de CRM para este cliente"));
     assert.ok(html.includes("Abrir CRM Comercial"));
+  });
+
+  it("sinais comerciais exibem score e classificação", () => {
+    const html = renderToStaticMarkup(<CustomerIntelligenceSignals report={mockReport()} />);
+    assert.ok(html.includes("Saúde comercial"));
+    assert.ok(html.includes("72"));
+    assert.ok(html.includes("Saudável"));
+    assert.ok(html.includes("Cliente recorrente"));
+  });
+
+  it("aba Oportunidades integrada na página", () => {
+    assert.ok(pageSrc.includes("CustomerIntelligenceOpportunitiesTab"));
+    const html = renderToStaticMarkup(<CustomerIntelligenceOpportunitiesTab report={mockReport()} />);
+    assert.ok(html.includes("Oportunidades e ações sugeridas"));
+    assert.ok(html.includes("Ação sugerida"));
+    assert.ok(html.includes("Prioridade"));
   });
 });

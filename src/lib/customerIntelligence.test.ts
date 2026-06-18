@@ -119,6 +119,7 @@ describe("buildCustomerIntelligenceReport", () => {
     assert.ok(report.repurchase);
     assert.ok(report.financial);
     assert.ok(report.crm);
+    assert.ok(report.scoring);
     assert.ok(Array.isArray(report.opportunities));
     assert.ok(Array.isArray(report.executiveNarrative));
   });

@@ -3,8 +3,19 @@
  * Fonte comercial principal: SalesOrder + SalesOrderItem.
  */
 
-import { buildCrmCommercialIntelligenceResponse } from "@/src/lib/crmCommercialIntelligence.js";
 import { buildCustomerIntelligenceCrm } from "@/src/lib/customerIntelligenceCrm.js";
+import {
+  applyCommercialClassificationFromOpportunities,
+  buildCustomerIntelligenceScoring,
+} from "@/src/lib/customerIntelligenceScoring.js";
+import {
+  buildCustomerIntelligenceOpportunities,
+  hasActionableCommercialOpportunity,
+} from "@/src/lib/customerIntelligenceOpportunities.js";
+import {
+  buildCustomerIntelligenceExecutiveNarrative,
+  ensureNarrativeNotEmpty,
+} from "@/src/lib/customerIntelligenceNarrative.js";
 import { buildCustomerIntelligenceFinancial } from "@/src/lib/customerIntelligenceFinancial.js";
 import {
   daysBetweenDates,
@@ -24,10 +35,8 @@ import {
   buildCustomerIntelligenceSeasonality,
 } from "@/src/lib/customerIntelligenceHistory.js";
 import { buildCustomerIntelligenceProducts } from "@/src/lib/customerIntelligenceProducts.js";
-import { buildCustomerIntelligenceExecutiveNarrative } from "@/src/lib/customerIntelligenceNarrative.js";
 import type {
   CustomerIntelligenceBuildInput,
-  CustomerIntelligenceOpportunity,
   CustomerIntelligenceReport,
 } from "@/src/lib/customerIntelligenceTypes.js";
 import {
@@ -111,74 +120,6 @@ function buildRepurchase(
     confidence,
     detail,
   };
-}
-
-function buildOpportunities(
-  input: CustomerIntelligenceBuildInput,
-  commercialSummary: CustomerIntelligenceReport["commercialSummary"],
-  repurchase: CustomerIntelligenceReport["repurchase"],
-  financial: CustomerIntelligenceReport["financial"]
-): CustomerIntelligenceOpportunity[] {
-  const crmIntel = buildCrmCommercialIntelligenceResponse({
-    customer: {
-      id: input.customer.id,
-      companyName: input.customer.companyName,
-      tradeName: input.customer.tradeName,
-      taxId: input.customer.taxId,
-    },
-    activities: input.activities.map((a) => ({
-      contactDate: a.contactDate,
-      createdAt: a.createdAt,
-      salesOrderId: null,
-    })),
-    salesOrders: input.orders.map((o) => ({
-      id: o.id,
-      orderCode: o.orderCode,
-      issueDate: o.issueDate,
-      updatedAt: o.updatedAt,
-      status: o.status,
-      totalNetValue: o.totalNetValue,
-      responsible: o.responsible,
-      nomusRawResponse: o.hasInvoicing ? { nfes: [{ dataProcessamento: "1" }] } : { nfes: [] },
-    })),
-    now: input.now ?? new Date(),
-  });
-
-  const opportunities: CustomerIntelligenceOpportunity[] = crmIntel.signals.map((s) => ({
-    type: s.type,
-    severity: s.severity,
-    title: s.title,
-    description: s.description,
-  }));
-
-  if (repurchase.status === "ATRASADO") {
-    opportunities.push({
-      type: "OPPORTUNITY",
-      severity: "MEDIUM",
-      title: "Recompra em atraso",
-      description: repurchase.detail ?? "Priorizar contato para novo pedido.",
-    });
-  }
-
-  if ((financial.overdueAmount ?? 0) > 0) {
-    opportunities.push({
-      type: "RISK",
-      severity: "HIGH",
-      title: "Inadimplência financeira",
-      description: `Saldo vencido (AR): R$ ${(financial.overdueAmount ?? 0).toFixed(2)}.`,
-    });
-  }
-
-  if (commercialSummary.validOrdersCount === 0) {
-    opportunities.push({
-      type: "INFO",
-      severity: "MEDIUM",
-      title: "Sem pedidos válidos",
-      description: "Nenhum pedido de venda válido no escopo filtrado.",
-    });
-  }
-
-  return opportunities.slice(0, 12);
 }
 
 export function buildCustomerIntelligenceReport(
@@ -326,7 +267,13 @@ export function buildCustomerIntelligenceReport(
     referenceDate: now,
   });
 
-  const opportunities = buildOpportunities(input, commercialSummary, repurchase, financial);
+  let scoring = buildCustomerIntelligenceScoring({
+    commercialSummary,
+    history,
+    repurchase,
+    financial,
+    crm,
+  });
 
   const customer: CustomerIntelligenceReport["customer"] = {
     id: input.customer.id,
@@ -343,18 +290,48 @@ export function buildCustomerIntelligenceReport(
     commercialOwner: input.customer.accountOwner?.trim() || null,
   };
 
-  const executiveNarrative = buildCustomerIntelligenceExecutiveNarrative({
+  const dataQuality = { warnings, missingFields, sources };
+
+  const opportunities = buildCustomerIntelligenceOpportunities({
     customer,
     commercialSummary,
+    products,
     repurchase,
     financial,
-    opportunities,
+    crm,
+    dataQuality,
+    scoring,
   });
+
+  scoring = applyCommercialClassificationFromOpportunities(scoring, {
+    validOrdersCount: commercialSummary.validOrdersCount,
+    revenue: commercialSummary.revenue,
+    daysSinceLastOrder: commercialSummary.daysSinceLastOrder,
+    financialStatus: financial.financialStatus,
+    overdueAmount: financial.overdueAmount ?? 0,
+    crmRelationshipStatus: crm.relationshipStatus,
+    repurchaseStatus: repurchase.status,
+    hasActionableOpportunity: hasActionableCommercialOpportunity(opportunities),
+  });
+
+  const executiveNarrative = ensureNarrativeNotEmpty(
+    buildCustomerIntelligenceExecutiveNarrative({
+      customer,
+      commercialSummary,
+      repurchase,
+      financial,
+      crm,
+      products,
+      scoring,
+      opportunities,
+    }),
+    scoring.summary
+  );
 
   return {
     customer,
     filters: input.filters,
-    dataQuality: { warnings, missingFields, sources },
+    dataQuality,
     commercialSummary,
     history,
     seasonality,
@@ -362,6 +339,7 @@ export function buildCustomerIntelligenceReport(
     repurchase,
     financial,
     crm,
+    scoring,
     opportunities,
     executiveNarrative,
   };

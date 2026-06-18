@@ -3,6 +3,7 @@ import { formatCurrency } from "@/src/lib/utils";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
 import { CustomerIntelligenceAlerts } from "./CustomerIntelligenceHeader";
 import { CustomerIntelligenceKpiGrid } from "./CustomerIntelligenceKpiGrid";
+import { CustomerIntelligenceSignals } from "./CustomerIntelligenceSignals";
 
 export function CustomerIntelligenceOverviewTab({ report }: { report: CustomerIntelligenceReport }) {
   const narrative = report.executiveNarrative;
@@ -11,6 +12,7 @@ export function CustomerIntelligenceOverviewTab({ report }: { report: CustomerIn
   return (
     <div className="space-y-5">
       <CustomerIntelligenceKpiGrid report={report} />
+      <CustomerIntelligenceSignals report={report} />
       <CustomerIntelligenceAlerts report={report} />
 
       {narrative.length > 0 ? (
