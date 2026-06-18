@@ -18,6 +18,7 @@ import { CrmModule } from "./components/CrmModule";
 import { CustomerIntelligencePage } from "./components/crm/CustomerIntelligencePage";
 import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
+import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagementPage";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
@@ -48,7 +49,7 @@ import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView"
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
 import { fetchJsonOk } from "@/src/lib/http";
-import { AlertCircle, BarChart3, Factory, Layers, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
+import { AlertCircle, BarChart3, ClipboardList, Factory, Layers, Loader2, Package, ShieldCheck, ShieldOff } from "lucide-react";
 
 type BootstrapAdminStatus = {
   enabled: boolean;
@@ -600,6 +601,25 @@ export default function App() {
           }
         />
         <Route
+          path="sales-orders/management"
+          element={
+            <ModulePageShell
+              title="Gestão de Pedidos de Venda"
+              description="Central operacional com status gerencial, prazo, NF, OP, riscos e inteligência por pedido."
+              headerActions={
+                <Link
+                  to="/sales-orders"
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                >
+                  Lista de pedidos
+                </Link>
+              }
+            >
+              <SalesOrderManagementPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="sales-orders/:id"
           element={
             <ModulePageShell
@@ -618,6 +638,13 @@ export default function App() {
               description="Pedidos internos originados de propostas aprovadas. Integração Nomus (POST /rest/pedidos) ainda não ativa."
               headerActions={
                 <>
+                  <Link
+                    to="/sales-orders/management"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <ClipboardList className="h-4 w-4 text-primary" />
+                    Gestão de Pedidos
+                  </Link>
                   <Link
                     to="/sales-orders/sold-products"
                     className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
