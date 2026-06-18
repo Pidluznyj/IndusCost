@@ -396,8 +396,8 @@ export function buildSalesOrderLifecycleSummary(
     const due = parseNomusBrOrIsoDate(op.dueDate);
     if (!due) return false;
     const finished = parseNomusBrOrIsoDate(op.finishedAt);
-    if (finished) return diffCalendarDays(due, finished) < 0;
-    return diffCalendarDays(referenceDate, due) > 0;
+    if (finished) return diffCalendarDays(finished, due) < 0;
+    return diffCalendarDays(referenceDate, due) < 0;
   });
 
   const riskFlags = buildRiskFlags({

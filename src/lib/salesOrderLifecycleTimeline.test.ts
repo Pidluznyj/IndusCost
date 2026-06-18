@@ -5,115 +5,140 @@ import { buildSalesOrderTimeline } from "./salesOrderLifecycleTimeline.js";
 
 const REF = new Date(2026, 5, 15);
 
-describe("salesOrderLifecycleTimeline", () => {
-  it("monta timeline com eventos principais", () => {
-    const { lifecycle, items } = buildSalesOrderLifecycleSummary({
-      salesOrderId: "so-1",
-      salesOrderNumber: "PD 100",
-      originalStatus: "SENT_TO_NOMUS",
-      issueDate: new Date(2026, 4, 1),
-      expectedDeliveryDate: new Date(2026, 5, 20),
-      referenceDate: REF,
-      nomusRawResponse: {
-        itensPedido: [
-          {
-            idProduto: 1,
-            status: "Liberado",
-            quantidade: 5,
-          },
-        ],
-        nfes: [{ dataProcessamento: "10/06/2026", numero: "55" }],
+function baseInput(overrides: Record<string, unknown> = {}) {
+  return {
+    salesOrderId: "so-1",
+    salesOrderNumber: "PD 100",
+    originalStatus: "SENT_TO_NOMUS",
+    issueDate: new Date(2026, 4, 1),
+    expectedDeliveryDate: new Date(2026, 5, 20),
+    referenceDate: REF,
+    requiresProduction: false,
+    items: [
+      {
+        id: "i1",
+        externalProductId: 1,
+        skuSnapshot: "P1",
+        productNameSnapshot: "Produto",
+        quantity: 5,
       },
-      items: [
-        {
-          id: "i1",
-          externalProductId: 1,
-          skuSnapshot: "P1",
-          productNameSnapshot: "Produto",
-          quantity: 5,
-        },
-      ],
-    });
+    ],
+    ...overrides,
+  };
+}
 
-    const timeline = buildSalesOrderTimeline({
-      lifecycle,
-      items,
+function buildTimeline(overrides: Record<string, unknown> = {}) {
+  const input = { ...baseInput(), ...overrides };
+  const ref = (input.referenceDate as Date | undefined) ?? REF;
+  const { lifecycle, items } = buildSalesOrderLifecycleSummary({ ...input, referenceDate: ref });
+  return buildSalesOrderTimeline({
+    lifecycle,
+    items,
+    nomusRawResponse: overrides.nomusRawResponse,
+    referenceDate: ref,
+    requiresProduction: input.requiresProduction as boolean | undefined,
+  });
+}
+
+describe("salesOrderLifecycleTimeline", () => {
+  it("pedido emitido cria evento created", () => {
+    const timeline = buildTimeline();
+    const created = timeline.find((e) => e.key === "created");
+    assert.equal(created?.status, "done");
+    assert.ok(created?.date);
+  });
+
+  it("pedido com prazo cria evento due_date", () => {
+    const timeline = buildTimeline();
+    const due = timeline.find((e) => e.key === "due_date");
+    assert.ok(due);
+    assert.equal(due?.date, "2026-06-20");
+  });
+
+  it("prazo vencido sem NF marca late", () => {
+    const timeline = buildTimeline({
+      expectedDeliveryDate: new Date(2026, 5, 1),
+      nomusRawResponse: {
+        itensPedido: [{ idProduto: 1, status: "Liberado", quantidade: 5 }],
+      },
+    });
+    const due = timeline.find((e) => e.key === "due_date");
+    assert.equal(due?.status, "late");
+  });
+
+  it("NF antes do prazo marca done", () => {
+    const timeline = buildTimeline({
       nomusRawResponse: {
         itensPedido: [{ idProduto: 1, status: "Liberado", quantidade: 5 }],
         nfes: [{ dataProcessamento: "10/06/2026", numero: "55" }],
       },
-      referenceDate: REF,
     });
-
-    const keys = timeline.map((e) => e.key);
-    assert.ok(keys.includes("created"));
-    assert.ok(keys.includes("released"));
-    assert.ok(keys.includes("due_date"));
-    assert.ok(keys.includes("invoiced"));
-    assert.equal(timeline.find((e) => e.key === "created")?.status, "done");
+    const invoiced = timeline.find((e) => e.key === "invoiced");
+    assert.equal(invoiced?.status, "done");
   });
 
-  it("marca NF como late quando após prazo", () => {
-    const { lifecycle, items } = buildSalesOrderLifecycleSummary({
-      salesOrderId: "so-2",
-      salesOrderNumber: "PD 200",
-      originalStatus: "SENT_TO_NOMUS",
-      issueDate: new Date(2026, 4, 1),
+  it("NF depois do prazo marca late", () => {
+    const timeline = buildTimeline({
       expectedDeliveryDate: new Date(2026, 5, 1),
-      referenceDate: REF,
       nomusRawResponse: {
         itensPedido: [{ idProduto: 1, status: "Liberado", quantidade: 1 }],
         nfes: [{ dataProcessamento: "15/06/2026", numero: "10" }],
       },
-      items: [
-        {
-          id: "i1",
-          externalProductId: 1,
-          skuSnapshot: "P1",
-          productNameSnapshot: "Produto",
-          quantity: 1,
-        },
-      ],
     });
-
-    const timeline = buildSalesOrderTimeline({ lifecycle, items, referenceDate: REF });
     const invoiced = timeline.find((e) => e.key === "invoiced");
     assert.equal(invoiced?.status, "late");
   });
 
-  it("marca OP como warning quando ausente", () => {
-    const { lifecycle, items } = buildSalesOrderLifecycleSummary({
-      salesOrderId: "so-3",
-      salesOrderNumber: "PD 300",
-      originalStatus: "SENT_TO_NOMUS",
-      issueDate: new Date(2026, 4, 1),
-      expectedDeliveryDate: new Date(2026, 5, 20),
-      referenceDate: REF,
-      items: [
-        {
-          id: "i1",
-          externalProductId: 1,
-          skuSnapshot: "P1",
-          productNameSnapshot: "Produto",
-          quantity: 1,
-        },
-      ],
+  it("pedido entregue cria evento delivered", () => {
+    const timeline = buildTimeline({
+      nomusRawResponse: {
+        itensPedido: [{ idProduto: 1, status: "Entregue", quantidade: 5, quantidadeEntregue: 5 }],
+      },
     });
-    const timeline = buildSalesOrderTimeline({ lifecycle, items, referenceDate: REF });
-    const op = timeline.find((e) => e.key === "production_order");
-    assert.ok(op?.status === "warning" || op?.status === "pending");
+    const delivered = timeline.find((e) => e.key === "delivered");
+    assert.equal(delivered?.status, "done");
   });
 
-  it("inclui cancelado quando pedido cancelado", () => {
-    const { lifecycle, items } = buildSalesOrderLifecycleSummary({
-      salesOrderId: "so-4",
-      salesOrderNumber: "PD 400",
+  it("pedido cancelado cria evento cancelled", () => {
+    const timeline = buildTimeline({
       originalStatus: "CANCELLED",
-      issueDate: new Date(2026, 4, 1),
-      referenceDate: REF,
       items: [],
     });
-    const timeline = buildSalesOrderTimeline({ lifecycle, items, referenceDate: REF });
     assert.ok(timeline.some((e) => e.key === "cancelled"));
+  });
+
+  it("OP existente cria evento production_order", () => {
+    const timeline = buildTimeline({
+      nomusRawResponse: {
+        itensPedido: [{ idProduto: 1, status: "Liberado", quantidade: 5 }],
+        ordensProducao: [{ numero: "OP-10", dataAbertura: "05/06/2026" }],
+      },
+    });
+    const op = timeline.find((e) => e.key === "production_order");
+    assert.equal(op?.status, "done");
+  });
+
+  it("OP atrasada cria evento late", () => {
+    const timeline = buildTimeline({
+      referenceDate: new Date(2026, 5, 20),
+      nomusRawResponse: {
+        itensPedido: [{ idProduto: 1, status: "Liberado", quantidade: 5 }],
+        ordensProducao: [
+          {
+            numero: "OP-20",
+            dataPrazo: "01/06/2026",
+            status: "Em produção",
+          },
+        ],
+      },
+    });
+    const op = timeline.find((e) => e.key === "production_order");
+    assert.equal(op?.status, "late");
+  });
+
+  it("sem OP disponível gera warning quando exige produção", () => {
+    const timeline = buildTimeline({ requiresProduction: true });
+    const op = timeline.find((e) => e.key === "production_order");
+    assert.equal(op?.status, "warning");
   });
 });

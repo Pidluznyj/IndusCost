@@ -11,6 +11,7 @@ export type SalesOrderTimelineInput = {
   items: EnrichedLifecycleItem[];
   nomusRawResponse?: unknown;
   referenceDate?: Date;
+  requiresProduction?: boolean;
 };
 
 function eventStatus(
@@ -30,10 +31,13 @@ export function buildSalesOrderTimeline(input: SalesOrderTimelineInput): SalesOr
   const { lifecycle, items, nomusRawResponse } = input;
   const referenceDate = input.referenceDate ?? new Date();
   const productionOrders = extractNomusProductionOrders(nomusRawResponse);
+  const requiresProduction = input.requiresProduction ?? false;
   const hasCancelled = lifecycle.operationalStatus === "cancelled";
   const hasReturned =
     lifecycle.operationalStatus === "partially_returned" ||
     lifecycle.operationalStatus === "fully_returned";
+  const missingOpWarning =
+    requiresProduction && productionOrders.length === 0 && !hasCancelled;
   const hasShipped = items.some((i) => i.normalizedStatus === "shipped");
   const hasDelivered = items.some((i) => i.normalizedStatus === "delivered");
   const released =
@@ -78,7 +82,7 @@ export function buildSalesOrderTimeline(input: SalesOrderTimelineInput): SalesOr
         productionOrders.length > 0,
         lifecycle.productionOrderLate,
         productionOrders.length === 0 && !hasCancelled,
-        lifecycle.dataQuality.missingProductionOrderLink
+        missingOpWarning
       ),
       description:
         productionOrders.length > 0

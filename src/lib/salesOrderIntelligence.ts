@@ -5,10 +5,11 @@ import {
   type SalesOrderLifecycleInput,
 } from "./salesOrderLifecycleStatus.js";
 import { buildSalesOrderTimeline } from "./salesOrderLifecycleTimeline.js";
-import type { SalesOrderLifecycleSummary } from "./salesOrderLifecycleTypes.js";
-import type { SalesOrderRiskFlag } from "./salesOrderLifecycleTypes.js";
+import type {
+  SalesOrderItemNomusStatus,
+  SalesOrderLifecycleSummary,
+} from "./salesOrderLifecycleTypes.js";
 import type { SalesOrderTimelineEvent } from "./salesOrderLifecycleTypes.js";
-import type { SalesOrderItemNomusStatus } from "./salesOrderLifecycleTypes.js";
 import {
   extractNomusProductionOrders,
   extractNomusRawNfes,
@@ -16,9 +17,11 @@ import {
   safeRatio,
 } from "./salesOrderNomusRaw.js";
 
+export type ProductionOrderSource = "model" | "nomus_raw" | "not_available";
+
 export type SalesOrderIntelligenceRisk = {
   severity: "low" | "medium" | "high";
-  code: SalesOrderRiskFlag;
+  code: string;
   title: string;
   description: string;
   suggestedAction: string;
@@ -124,25 +127,25 @@ const RISK_CATALOG: Record<
     severity: "high",
     title: "Pedido atrasado sem NF",
     description: "O prazo de entrega venceu e ainda não há nota fiscal processada.",
-    suggestedAction: "Validar faturamento e cobrar produção/entrega.",
+    suggestedAction: "Verificar faturamento ou impedimento operacional.",
   },
   invoice_after_deadline: {
     severity: "high",
     title: "NF emitida após o prazo",
     description: "A nota fiscal foi processada depois da data prevista de entrega.",
-    suggestedAction: "Revisar impacto comercial e registrar follow-up com o cliente.",
+    suggestedAction: "Revisar causa do faturamento fora do prazo.",
   },
   partial_fulfillment: {
     severity: "medium",
-    title: "Atendimento parcial",
-    description: "Um ou mais itens foram atendidos parcialmente.",
-    suggestedAction: "Confirmar saldo pendente com produção e faturamento.",
+    title: "Pedido parcial",
+    description: "O pedido possui atendimento ou faturamento parcial.",
+    suggestedAction: "Acompanhar saldo pendente do pedido.",
   },
   cut_fulfillment: {
     severity: "high",
-    title: "Atendimento com corte",
+    title: "Pedido com corte",
     description: "Há itens atendidos com corte em relação ao pedido.",
-    suggestedAction: "Validar motivo do corte e alinhar com o cliente.",
+    suggestedAction: "Validar corte com comercial/cliente.",
   },
   mixed_item_status: {
     severity: "medium",
@@ -164,27 +167,33 @@ const RISK_CATALOG: Record<
   },
   missing_invoice_link: {
     severity: "high",
-    title: "Entrega sem NF vinculada",
+    title: "Dado divergente — entrega sem NF",
     description: "Há indício de entrega/envio sem nota fiscal processada.",
-    suggestedAction: "Validar faturamento antes de considerar o pedido concluído.",
+    suggestedAction: "Revisar dados do pedido no Nomus.",
   },
   unknown_item_status: {
     severity: "medium",
-    title: "Status de item não mapeado",
+    title: "Dado divergente — status desconhecido",
     description: "Um ou mais itens possuem status Nomus não reconhecido.",
-    suggestedAction: "Revisar dados do pedido e atualizar mapeamento se necessário.",
+    suggestedAction: "Revisar dados do pedido no Nomus.",
   },
   missing_production_order: {
     severity: "medium",
     title: "Sem OP vinculada",
     description: "Nenhuma ordem de produção foi encontrada para este pedido.",
-    suggestedAction: "Verificar abertura de OP na produção.",
+    suggestedAction: "Verificar abertura ou sincronização da OP.",
   },
   production_order_late: {
     severity: "high",
     title: "OP atrasada",
     description: "A ordem de produção vinculada está fora do prazo.",
-    suggestedAction: "Cobrar produção e revisar capacidade fabril.",
+    suggestedAction: "Cobrar produção.",
+  },
+  invoice_without_item_progress: {
+    severity: "medium",
+    title: "Dado divergente — NF sem avanço do item",
+    description: "Existe NF processada, mas itens ainda aparecem apenas liberados.",
+    suggestedAction: "Revisar dados do pedido no Nomus.",
   },
 };
 
@@ -199,18 +208,52 @@ function resolveInvoiceTiming(
   return "unknown";
 }
 
-function buildRisks(lifecycle: SalesOrderLifecycleSummary): SalesOrderIntelligenceRisk[] {
-  return lifecycle.riskFlags
-    .map((flag) => {
-      const meta = RISK_CATALOG[flag];
+function collectRiskCodes(
+  lifecycle: SalesOrderLifecycleSummary,
+  items: EnrichedLifecycleItem[]
+): string[] {
+  const codes = new Set<string>(lifecycle.riskFlags);
+
+  if (
+    lifecycle.billingStatus === "partially_invoiced" ||
+    lifecycle.completionStatus === "partial" ||
+    (lifecycle.invoicedPercent != null && lifecycle.invoicedPercent < 99.5)
+  ) {
+    codes.add("partial_fulfillment");
+  }
+
+  if (
+    lifecycle.hasInvoice &&
+    items.length > 0 &&
+    items.every((i) => i.normalizedStatus === "released")
+  ) {
+    codes.add("invoice_without_item_progress");
+  }
+
+  return [...codes];
+}
+
+function buildRisksFromCodes(codes: string[]): SalesOrderIntelligenceRisk[] {
+  return codes
+    .map((code) => {
+      const meta = RISK_CATALOG[code];
       if (!meta) return null;
-      return { code: flag, ...meta };
+      return { code, ...meta };
     })
     .filter((r): r is SalesOrderIntelligenceRisk => r != null)
     .sort((a, b) => {
       const order = { high: 0, medium: 1, low: 2 };
       return order[a.severity] - order[b.severity];
     });
+}
+
+export function buildSalesOrderRisksAndActions(input: {
+  lifecycle: SalesOrderLifecycleSummary;
+  items: EnrichedLifecycleItem[];
+}): { risks: SalesOrderIntelligenceRisk[]; suggestedActions: SalesOrderIntelligenceAction[] } {
+  const risks = buildRisksFromCodes(collectRiskCodes(input.lifecycle, input.items));
+  const suggestedActions = buildSuggestedActions(risks, input.lifecycle);
+  return { risks, suggestedActions };
 }
 
 function buildSuggestedActions(
@@ -220,7 +263,14 @@ function buildSuggestedActions(
   const actions: SalesOrderIntelligenceAction[] = [];
   let priority = 1;
   for (const risk of risks) {
-    if (risk.code.includes("production") || risk.code === "missing_production_order") {
+    if (risk.code === "partial_fulfillment") {
+      actions.push({
+        priority: priority++,
+        label: "Acompanhar saldo pendente",
+        description: risk.suggestedAction,
+        actionType: "check_delivery",
+      });
+    } else if (risk.code.includes("production") || risk.code === "missing_production_order") {
       actions.push({
         priority: priority++,
         label: "Cobrar produção",
@@ -238,7 +288,12 @@ function buildSuggestedActions(
         description: risk.suggestedAction,
         actionType: "check_invoicing",
       });
-    } else if (risk.code === "missing_due_date" || risk.code === "unknown_item_status") {
+    } else if (
+      risk.code === "missing_due_date" ||
+      risk.code === "unknown_item_status" ||
+      risk.code === "invoice_without_item_progress" ||
+      risk.code === "mixed_item_status"
+    ) {
       actions.push({
         priority: priority++,
         label: "Revisar dados do pedido",
@@ -280,7 +335,7 @@ function mapProductionOrders(
   const source = rawOrders.length > 0 ? "nomus_raw" as const : "not_available" as const;
   const warnings =
     source === "not_available"
-      ? ["OP não sincronizada pelo Nomus neste momento."]
+      ? ["OP não sincronizada/disponível para este pedido."]
       : [];
 
   const productionOrders = rawOrders.map((op) => {
@@ -342,6 +397,7 @@ export function buildSalesOrderIntelligencePayload(input: {
     }>;
   };
   referenceDate?: Date;
+  requiresProduction?: boolean;
 }): SalesOrderIntelligencePayload {
   const referenceDate = input.referenceDate ?? new Date();
   const lifecycleInput: SalesOrderLifecycleInput = {
@@ -353,6 +409,7 @@ export function buildSalesOrderIntelligencePayload(input: {
     nomusRawResponse: input.order.nomusRawResponse,
     items: input.order.items,
     referenceDate,
+    requiresProduction: input.requiresProduction,
   };
 
   const { lifecycle, items } = buildSalesOrderLifecycleSummary(lifecycleInput);
@@ -361,12 +418,12 @@ export function buildSalesOrderIntelligencePayload(input: {
     items,
     nomusRawResponse: input.order.nomusRawResponse,
     referenceDate,
+    requiresProduction: input.requiresProduction,
   });
   const production = mapProductionOrders(input.order.nomusRawResponse, referenceDate);
   const nfes = extractNomusRawNfes(input.order.nomusRawResponse);
   const invoicedAmount = nfes.reduce((sum, nfe) => sum + (nfe.valor ?? 0), 0);
-  const risks = buildRisks(lifecycle);
-  const suggestedActions = buildSuggestedActions(risks, lifecycle);
+  const { risks, suggestedActions } = buildSalesOrderRisksAndActions({ lifecycle, items });
 
   const missingLinks: string[] = [];
   if (!lifecycle.hasInvoice) missingLinks.push("nota_fiscal");
