@@ -47,6 +47,7 @@ import {
   MaterialDemandUsageEstimateHeader,
   type MaterialOriginRow,
 } from "@/src/components/contextual/MaterialDemandDashboardPanels";
+import { MaterialDemandPlannedRealizedPanel } from "@/src/components/contextual/MaterialDemandPlannedRealizedPanel";
 import { ContextualDashboardLayout } from "./ContextualDashboardLayout";
 
 const PAGE_SIZE = 25;
@@ -1533,6 +1534,15 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                     dateBasis={appliedFilters.dateBasis}
                   />
                 </div>
+              ) : null}
+
+              {activeTab === "planned-vs-realized" ? (
+                <MaterialDemandPlannedRealizedPanel
+                  apiBase={apiBase}
+                  appliedFilters={appliedFilters}
+                  filterKey={filterKey}
+                  retryNonce={retryNonce}
+                />
               ) : null}
 
               {activeTab === "summary" ? (

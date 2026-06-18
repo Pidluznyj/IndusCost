@@ -1,6 +1,8 @@
 export type MaterialDemandMode = "quantity" | "value" | "orders" | "products";
 export type MaterialDemandDateBasis = "issueDate" | "expectedDeliveryDate";
 
+export type MaterialDemandInvoicingScope = "all" | "invoiced" | "portfolio";
+
 export type MaterialDemandFilters = {
   startDate: string | null;
   endDate: string | null;
@@ -16,6 +18,8 @@ export type MaterialDemandFilters = {
   mode: MaterialDemandMode;
   search: string;
   includeOrdersWithoutDeliveryDate: boolean;
+  /** Escopo de faturamento para previsto x realizado (all | invoiced | portfolio). */
+  invoicingScope: MaterialDemandInvoicingScope;
 };
 
 export const MATERIAL_DEMAND_NO_DELIVERY_PERIOD = "__sem_entrega__";
@@ -107,6 +111,12 @@ export function parseMaterialDemandFilters(
   const includeRaw = typeof q.includeOrdersWithoutDeliveryDate === "string" ? q.includeOrdersWithoutDeliveryDate : "";
   const includeOrdersWithoutDeliveryDate = includeRaw !== "false" && includeRaw !== "0";
 
+  const invoicingScopeRaw = typeof q.invoicingScope === "string" ? q.invoicingScope : "";
+  const invoicingScope: MaterialDemandInvoicingScope =
+    invoicingScopeRaw === "invoiced" || invoicingScopeRaw === "portfolio"
+      ? invoicingScopeRaw
+      : "all";
+
   const base: MaterialDemandFilters = {
     startDate: typeof q.startDate === "string" && q.startDate ? q.startDate : null,
     endDate: typeof q.endDate === "string" && q.endDate ? q.endDate : null,
@@ -121,6 +131,7 @@ export function parseMaterialDemandFilters(
     mode,
     search: typeof q.search === "string" ? q.search.trim().toLowerCase() : "",
     includeOrdersWithoutDeliveryDate,
+    invoicingScope,
   };
   return { ...base, ...(overrides ?? {}) };
 }

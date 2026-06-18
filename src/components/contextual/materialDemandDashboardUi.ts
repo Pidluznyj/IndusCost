@@ -4,6 +4,7 @@ export type MaterialDemandDateBasis = "issueDate" | "expectedDeliveryDate";
 
 export type MaterialDemandDashboardTab =
   | "usage-estimate"
+  | "planned-vs-realized"
   | "summary"
   | "by-material"
   | "by-period";
@@ -15,6 +16,7 @@ export type MaterialDemandTabDef = {
 
 export const MATERIAL_DEMAND_TABS: MaterialDemandTabDef[] = [
   { id: "usage-estimate", label: "Estimativa de uso" },
+  { id: "planned-vs-realized", label: "Previsto x Realizado" },
   { id: "summary", label: "Resumo" },
   { id: "by-material", label: "Por matéria-prima" },
   { id: "by-period", label: "Por período" },
@@ -23,6 +25,8 @@ export const MATERIAL_DEMAND_TABS: MaterialDemandTabDef[] = [
 export const MATERIAL_DEMAND_TAB_HINTS: Record<MaterialDemandDashboardTab, string> = {
   "usage-estimate":
     "Quanto de cada matéria-prima será necessário para atender os pedidos filtrados no período selecionado.",
+  "planned-vs-realized":
+    "Compara a necessidade prevista de matéria-prima com o que foi efetivamente faturado.",
   summary: "Indicadores consolidados, distribuição por valor e evolução mensal estimada.",
   "by-material": "Lista analítica por matéria-prima com percentuais e detalhamento expandível.",
   "by-period": "Necessidade agrupada por mês e evolução temporal da estimativa.",
