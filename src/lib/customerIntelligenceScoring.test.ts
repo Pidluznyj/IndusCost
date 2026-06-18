@@ -39,21 +39,24 @@ function baseCommercialSummary(
 }
 
 function baseHistory(): CustomerIntelligencePurchaseHistory {
+  const analysis = {
+    bestYear: 2025,
+    bestYearRevenue: 50_000,
+    declinedYear: null,
+    declinedYearRevenue: null,
+    referenceYear: 2025,
+    referenceYearRevenue: 50_000,
+    growthPercentVsPreviousYear: 15,
+    growthStatus: "growth" as const,
+    trendReading: "Crescimento de 15% vs ano anterior.",
+  };
   return {
     byYear: [],
     byMonth: [],
     strongestMonths: [],
-    analysis: {
-      bestYear: 2025,
-      bestYearRevenue: 50_000,
-      declinedYear: null,
-      declinedYearRevenue: null,
-      referenceYear: 2025,
-      referenceYearRevenue: 50_000,
-      growthPercentVsPreviousYear: 15,
-      growthStatus: "growth",
-      trendReading: "Crescimento de 15% vs ano anterior.",
-    },
+    analysis,
+    lifetimeAnalysis: analysis,
+    scopeNotice: null,
   };
 }
 

@@ -177,11 +177,14 @@ export function buildCustomerIntelligenceHistory(
   referenceDate: Date = new Date()
 ): CustomerIntelligencePurchaseHistory {
   if (metricsOrders.length === 0) {
+    const analysis = buildPurchasesAnalysis([], referenceDate);
     return {
       byYear: [],
       byMonth: [],
       strongestMonths: [],
-      analysis: buildPurchasesAnalysis([], referenceDate),
+      analysis,
+      lifetimeAnalysis: analysis,
+      scopeNotice: null,
     };
   }
 
@@ -275,11 +278,15 @@ export function buildCustomerIntelligenceHistory(
     })
   );
 
+  const analysis = buildPurchasesAnalysis(byYear, referenceDate);
+
   return {
     byYear,
     byMonth,
     strongestMonths,
-    analysis: buildPurchasesAnalysis(byYear, referenceDate),
+    analysis,
+    lifetimeAnalysis: analysis,
+    scopeNotice: null,
   };
 }
 

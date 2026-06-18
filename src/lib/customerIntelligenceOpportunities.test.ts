@@ -14,8 +14,47 @@ import type {
   CustomerIntelligenceOpportunity,
   CustomerIntelligenceProductMix,
   CustomerIntelligenceProfile,
+  CustomerIntelligencePurchaseHistory,
+  CustomerIntelligencePurchasesAnalysis,
   CustomerIntelligenceRepurchase,
 } from "./customerIntelligenceTypes.js";
+
+function emptyHistoryAnalysis(): CustomerIntelligencePurchasesAnalysis {
+  return {
+    bestYear: null,
+    bestYearRevenue: null,
+    declinedYear: null,
+    declinedYearRevenue: null,
+    referenceYear: null,
+    referenceYearRevenue: null,
+    growthPercentVsPreviousYear: null,
+    growthStatus: "insufficient",
+    trendReading: null,
+  };
+}
+
+function emptyHistory(): CustomerIntelligencePurchaseHistory {
+  const analysis = emptyHistoryAnalysis();
+  return {
+    byYear: [],
+    byMonth: [],
+    strongestMonths: [],
+    analysis,
+    lifetimeAnalysis: analysis,
+    scopeNotice: null,
+  };
+}
+
+function historyWithAnalysis(analysis: CustomerIntelligencePurchasesAnalysis): CustomerIntelligencePurchaseHistory {
+  return {
+    byYear: [],
+    byMonth: [],
+    strongestMonths: [],
+    analysis,
+    lifetimeAnalysis: analysis,
+    scopeNotice: null,
+  };
+}
 
 function baseProfile(): CustomerIntelligenceProfile {
   return {
@@ -28,6 +67,10 @@ function baseProfile(): CustomerIntelligenceProfile {
     state: "PR",
     region: "Sul",
     registrationDate: "2024-01-01",
+    registrationDateSource: "nomus",
+    registrationSourceLabel: "Nomus",
+    registrationHeaderLabel: "Cadastro no Nomus",
+    isNomusSynced: true,
     firstOrderDate: "2024-06-01",
     lastOrderDate: "2024-01-01",
     commercialOwner: "Maria",
@@ -147,22 +190,7 @@ describe("buildCustomerIntelligenceOpportunities", () => {
   it("produto abandonado gera oportunidade", () => {
     const scoring = buildCustomerIntelligenceScoring({
       commercialSummary: baseCommercialSummary({ daysSinceLastOrder: 120, validOrdersCount: 3 }),
-      history: {
-        byYear: [],
-        byMonth: [],
-        strongestMonths: [],
-        analysis: {
-          bestYear: null,
-          bestYearRevenue: null,
-          declinedYear: null,
-          declinedYearRevenue: null,
-          referenceYear: null,
-          referenceYearRevenue: null,
-          growthPercentVsPreviousYear: null,
-          growthStatus: "insufficient",
-          trendReading: null,
-        },
-      },
+      history: emptyHistory(),
       repurchase: baseRepurchase(),
       financial: baseFinancial(),
       crm: baseCrm(),
@@ -205,22 +233,17 @@ describe("buildCustomerIntelligenceOpportunities", () => {
   it("mix concentrado gera oportunidade ampliar mix", () => {
     const scoring = buildCustomerIntelligenceScoring({
       commercialSummary: baseCommercialSummary({ daysSinceLastOrder: 60, validOrdersCount: 4 }),
-      history: {
-        byYear: [],
-        byMonth: [],
-        strongestMonths: [],
-        analysis: {
-          bestYear: 2025,
-          bestYearRevenue: 80_000,
-          declinedYear: null,
-          declinedYearRevenue: null,
-          referenceYear: 2025,
-          referenceYearRevenue: 80_000,
-          growthPercentVsPreviousYear: 10,
-          growthStatus: "growth",
-          trendReading: null,
-        },
-      },
+      history: historyWithAnalysis({
+        bestYear: 2025,
+        bestYearRevenue: 80_000,
+        declinedYear: null,
+        declinedYearRevenue: null,
+        referenceYear: 2025,
+        referenceYearRevenue: 80_000,
+        growthPercentVsPreviousYear: 10,
+        growthStatus: "growth",
+        trendReading: null,
+      }),
       repurchase: { ...baseRepurchase(), status: "DENTRO_JANELA" },
       financial: baseFinancial(),
       crm: baseCrm(),
@@ -250,22 +273,7 @@ describe("buildCustomerIntelligenceOpportunities", () => {
   it("histórico insuficiente não sugere recompra previsível", () => {
     const scoring = buildCustomerIntelligenceScoring({
       commercialSummary: baseCommercialSummary({ validOrdersCount: 1, daysSinceLastOrder: 30, revenue: 5000 }),
-      history: {
-        byYear: [],
-        byMonth: [],
-        strongestMonths: [],
-        analysis: {
-          bestYear: null,
-          bestYearRevenue: null,
-          declinedYear: null,
-          declinedYearRevenue: null,
-          referenceYear: null,
-          referenceYearRevenue: null,
-          growthPercentVsPreviousYear: null,
-          growthStatus: "insufficient",
-          trendReading: null,
-        },
-      },
+      history: emptyHistory(),
       repurchase: baseRepurchase(),
       financial: baseFinancial(),
       crm: baseCrm(),
@@ -288,22 +296,17 @@ describe("buildCustomerIntelligenceOpportunities", () => {
   it("inadimplência gera acionar cobrança", () => {
     const scoring = buildCustomerIntelligenceScoring({
       commercialSummary: baseCommercialSummary({ daysSinceLastOrder: 45 }),
-      history: {
-        byYear: [],
-        byMonth: [],
-        strongestMonths: [],
-        analysis: {
-          bestYear: 2025,
-          bestYearRevenue: 80_000,
-          declinedYear: null,
-          declinedYearRevenue: null,
-          referenceYear: 2025,
-          referenceYearRevenue: 80_000,
-          growthPercentVsPreviousYear: null,
-          growthStatus: "stable",
-          trendReading: null,
-        },
-      },
+      history: historyWithAnalysis({
+        bestYear: 2025,
+        bestYearRevenue: 80_000,
+        declinedYear: null,
+        declinedYearRevenue: null,
+        referenceYear: 2025,
+        referenceYearRevenue: 80_000,
+        growthPercentVsPreviousYear: null,
+        growthStatus: "stable",
+        trendReading: null,
+      }),
       repurchase: { ...baseRepurchase(), status: "DENTRO_JANELA" },
       financial: baseFinancial({ linkedByCnpj: true, overdueAmount: 2500, financialStatus: "overdue", overdueTitlesCount: 1 }),
       crm: baseCrm(),

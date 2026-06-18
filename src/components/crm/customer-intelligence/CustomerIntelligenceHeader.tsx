@@ -108,10 +108,17 @@ export function CustomerIntelligenceHeader({
           </dd>
         </div>
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Cadastro</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {customer.registrationHeaderLabel}
+          </dt>
           <dd className="font-medium mt-0.5 flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             {formatDatePt(customer.registrationDate)}
+            {customer.registrationDateSource === "nomus" ? (
+              <span className="text-[10px] text-muted-foreground ml-1">· Nomus</span>
+            ) : customer.registrationDateSource === "induscost" ? (
+              <span className="text-[10px] text-muted-foreground ml-1">· IndusCost</span>
+            ) : null}
           </dd>
         </div>
         <div>
@@ -122,12 +129,22 @@ export function CustomerIntelligenceHeader({
           </dd>
         </div>
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Primeira compra</dt>
-          <dd className="font-medium mt-0.5">{formatDatePt(customer.firstOrderDate)}</dd>
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Primeira compra
+          </dt>
+          <dd className="font-medium mt-0.5">
+            {formatDatePt(customer.firstOrderDate)}
+            <span className="block text-[10px] text-muted-foreground font-normal">Histórico total</span>
+          </dd>
         </div>
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Última compra</dt>
-          <dd className="font-medium mt-0.5">{formatDatePt(customer.lastOrderDate)}</dd>
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Última compra
+          </dt>
+          <dd className="font-medium mt-0.5">
+            {formatDatePt(customer.lastOrderDate)}
+            <span className="block text-[10px] text-muted-foreground font-normal">Histórico total</span>
+          </dd>
         </div>
       </dl>
     </header>

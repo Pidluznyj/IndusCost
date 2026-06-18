@@ -160,9 +160,23 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
       state: "PR",
       region: "Sul",
       registrationDate: "2024-01-01",
+      registrationDateSource: "nomus",
+      registrationSourceLabel: "Nomus",
+      registrationHeaderLabel: "Cadastro no Nomus",
+      isNomusSynced: true,
       firstOrderDate: "2024-06-01",
       lastOrderDate: "2025-12-01",
       commercialOwner: "Maria",
+    },
+    filtersApplied: {
+      year: 2026,
+      startDate: null,
+      endDate: null,
+      status: null,
+      responsible: null,
+      productId: null,
+      hasActiveFilter: true,
+      summary: "ano 2026",
     },
     filters: {
       startDate: null,
@@ -181,6 +195,36 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
       missingFields: [],
       sources: ["SalesOrder", "SalesOrderItem", "Customer"],
     },
+    filteredSummary: {
+      revenue: 15000,
+      ordersCount: 3,
+      validOrdersCount: 2,
+      billedOrdersCount: 1,
+      firstOrderDate: "2024-06-01",
+      lastOrderDate: "2025-12-01",
+      daysSinceLastOrder: 45,
+      purchaseYears: [2024, 2025],
+    },
+    lifetimeSummary: {
+      revenue: 25000,
+      ordersCount: 5,
+      validOrdersCount: 4,
+      billedOrdersCount: 3,
+      firstOrderDate: "2023-01-01",
+      lastOrderDate: "2025-12-01",
+      daysSinceLastOrder: 45,
+      purchaseYears: [2023, 2024, 2025],
+    },
+    profileFields: [
+      {
+        id: "registrationDate",
+        label: "Data de cadastro",
+        value: "2024-01-01",
+        displayValue: "01/01/2024",
+        source: "nomus",
+        sourceLabel: "Nomus",
+      },
+    ],
     commercialSummary: {
       revenue: 15000,
       ordersCount: 3,
@@ -246,6 +290,18 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
         growthStatus: "growth",
         trendReading: "Crescimento de 20.0% em 2025 vs ano anterior.",
       },
+      lifetimeAnalysis: {
+        bestYear: 2025,
+        bestYearRevenue: 12000,
+        declinedYear: 2025,
+        declinedYearRevenue: 12000,
+        referenceYear: 2025,
+        referenceYearRevenue: 12000,
+        growthPercentVsPreviousYear: 20,
+        growthStatus: "growth",
+        trendReading: "Crescimento de 20.0% em 2025 vs ano anterior.",
+      },
+      scopeNotice: "Cards acima respeitam o filtro. Histórico por ano mostra toda a base disponível.",
     },
     seasonality: {
       strongestMonth: {
@@ -378,15 +434,36 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
   it("aba Compras exibe tabela anual e leitura gerencial", () => {
     assert.ok(pageSrc.includes("CustomerIntelligencePurchasesTab"));
     const html = renderToStaticMarkup(<CustomerIntelligencePurchasesTab report={mockReport()} />);
-    assert.ok(html.includes("Pedidos por ano"));
+    assert.ok(html.includes("Histórico por ano"));
     assert.ok(html.includes("Receita por ano"));
     assert.ok(html.includes("Leitura gerencial"));
     assert.ok(html.includes("Maio"));
     assert.ok(html.includes("Melhor ano"));
+    assert.ok(html.includes("Total histórico comprado"));
   });
 
   it("aba Compras mostra empty state sem histórico", () => {
     const empty = mockReport({
+      lifetimeSummary: {
+        revenue: 0,
+        ordersCount: 0,
+        validOrdersCount: 0,
+        billedOrdersCount: 0,
+        firstOrderDate: null,
+        lastOrderDate: null,
+        daysSinceLastOrder: null,
+        purchaseYears: [],
+      },
+      filteredSummary: {
+        revenue: 0,
+        ordersCount: 0,
+        validOrdersCount: 0,
+        billedOrdersCount: 0,
+        firstOrderDate: null,
+        lastOrderDate: null,
+        daysSinceLastOrder: null,
+        purchaseYears: [],
+      },
       history: {
         byYear: [],
         byMonth: [],
@@ -402,6 +479,18 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
           growthStatus: "insufficient",
           trendReading: null,
         },
+        lifetimeAnalysis: {
+          bestYear: null,
+          bestYearRevenue: null,
+          declinedYear: null,
+          declinedYearRevenue: null,
+          referenceYear: null,
+          referenceYearRevenue: null,
+          growthPercentVsPreviousYear: null,
+          growthStatus: "insufficient",
+          trendReading: null,
+        },
+        scopeNotice: null,
       },
       seasonality: {
         strongestMonth: null,

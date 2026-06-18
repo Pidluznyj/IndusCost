@@ -481,6 +481,110 @@ describe("buildCustomerIntelligenceReport", () => {
     assert.ok(report.dataQuality.sources.includes("SalesOrderItem"));
   });
 
+  it("filtro de ano não altera lifetimeSummary nem histórico por ano", () => {
+    const orders = [
+      baseOrder({
+        id: "y2024",
+        issueDate: new Date("2024-05-10T12:00:00.000Z"),
+        totalNetValue: 4000,
+      }),
+      baseOrder({
+        id: "y2026",
+        issueDate: new Date("2026-05-10T12:00:00.000Z"),
+        totalNetValue: 6000,
+      }),
+    ];
+
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        filters: { ...createDefaultCustomerIntelligenceFilters(NOW), year: 2026 },
+        orders,
+      })
+    );
+
+    assert.equal(report.lifetimeSummary.revenue, 10000);
+    assert.equal(report.lifetimeSummary.firstOrderDate, "2024-05-10");
+    assert.equal(report.lifetimeSummary.lastOrderDate, "2026-05-10");
+    assert.equal(report.filteredSummary.revenue, 6000);
+    assert.equal(report.customer.firstOrderDate, "2024-05-10");
+    assert.equal(report.customer.lastOrderDate, "2026-05-10");
+    assert.ok(report.history.byYear.some((y) => y.year === 2024));
+    assert.ok(report.history.byYear.some((y) => y.year === 2026));
+    assert.ok(report.dataQuality.warnings.some((w) => w.includes("filtros aplicados")));
+  });
+
+  it("cadastro Nomus não usa primeira compra como data de cadastro", () => {
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        customer: {
+          ...baseCustomer(),
+          notes: "[NOMUS] externalPersonId=123",
+          nomusRegistrationDate: new Date("2017-01-01T12:00:00.000Z"),
+        },
+        filters: { ...createDefaultCustomerIntelligenceFilters(NOW), year: null },
+        orders: [
+          baseOrder({
+            id: "first-buy",
+            issueDate: new Date("2024-02-01T12:00:00.000Z"),
+          }),
+        ],
+      })
+    );
+
+    assert.equal(report.customer.registrationDate, "2017-01-01");
+    assert.equal(report.customer.firstOrderDate, "2024-02-01");
+    assert.notEqual(report.customer.registrationDate, report.customer.firstOrderDate);
+    assert.equal(report.customer.registrationDateSource, "nomus");
+  });
+
+  it("cliente Nomus sem data oficial não rotula createdAt como cadastro Nomus", () => {
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        customer: {
+          ...baseCustomer(),
+          notes: "[NOMUS] externalPersonId=456",
+          createdAt: new Date("2026-04-08T00:00:00.000Z"),
+        },
+      })
+    );
+
+    assert.equal(report.customer.registrationDate, null);
+    assert.equal(report.customer.registrationDateSource, "unavailable");
+    assert.ok(
+      report.dataQuality.warnings.some((w) =>
+        w.includes("Data de cadastro oficial não encontrada no Nomus")
+      )
+    );
+  });
+
+  it("cliente local rotula cadastro como Importado no IndusCost", () => {
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        customer: {
+          ...baseCustomer(),
+          notes: null,
+          createdAt: new Date("2024-01-10T00:00:00.000Z"),
+        },
+      })
+    );
+
+    assert.equal(report.customer.registrationDate, "2024-01-10");
+    assert.equal(report.customer.registrationHeaderLabel, "Importado no IndusCost");
+    assert.equal(report.customer.registrationDateSource, "induscost");
+  });
+
+  it("payload expõe profileFields e filtersApplied", () => {
+    const report = buildCustomerIntelligenceReport(
+      buildInput({ orders: [baseOrder({ id: "o1" })] })
+    );
+    assert.ok(Array.isArray(report.profileFields));
+    assert.ok(report.profileFields.length > 0);
+    assert.ok(report.filtersApplied);
+    assert.ok(report.lifetimeSummary);
+    assert.ok(report.filteredSummary);
+    assert.ok(report.history.lifetimeAnalysis);
+  });
+
   it("integração report expõe payload crm completo", () => {
     const report = buildCustomerIntelligenceReport(
       buildInput({

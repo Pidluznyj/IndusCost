@@ -29,10 +29,13 @@ export function buildCustomerIntelligenceKpiItems(
 ): KpiItem[] {
   const s = report.commercialSummary;
   const f = report.financial;
+  const lifetime = report.lifetimeSummary;
 
   return [
     { label: "Receita (filtro)", value: formatCurrency(s.revenue) },
+    { label: "Receita histórica", value: formatCurrency(lifetime.revenue) },
     { label: "Pedidos (filtro)", value: formatNumber(s.ordersCount) },
+    { label: "Pedidos históricos", value: formatNumber(lifetime.ordersCount) },
     { label: "Pedidos válidos", value: formatNumber(s.validOrdersCount) },
     {
       label: "Ticket médio",

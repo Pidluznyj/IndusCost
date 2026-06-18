@@ -35,13 +35,22 @@ import { CustomerIntelligenceFinancialTab } from "./customer-intelligence/Custom
 import { CustomerIntelligenceCrmTab } from "./customer-intelligence/CustomerIntelligenceCrmTab";
 import { CustomerIntelligenceRepurchaseTab } from "./customer-intelligence/CustomerIntelligenceRepurchaseTab";
 import { CustomerIntelligenceOpportunitiesTab } from "./customer-intelligence/CustomerIntelligenceOpportunitiesTab";
+import { CustomerIntelligenceProfileTab } from "./customer-intelligence/CustomerIntelligenceProfileTab";
 import "./customer-intelligence/customer-intelligence.css";
 
 function isEmptyReport(report: CustomerIntelligenceReport): boolean {
   return (
+    report.lifetimeSummary.validOrdersCount === 0 &&
+    report.lifetimeSummary.ordersCount === 0 &&
+    report.history.byYear.length === 0
+  );
+}
+
+function isFilteredEmpty(report: CustomerIntelligenceReport): boolean {
+  return (
     report.commercialSummary.validOrdersCount === 0 &&
     report.commercialSummary.ordersCount === 0 &&
-    report.history.byYear.length === 0
+    report.filtersApplied.hasActiveFilter
   );
 }
 
@@ -211,11 +220,21 @@ export function CustomerIntelligencePage() {
             <CustomerIntelligenceHeader report={report} />
           </div>
 
+          {isFilteredEmpty(report) && !isEmptyReport(report) ? (
+            <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/50 p-4 text-center text-sm">
+              <p className="font-semibold text-amber-950">Sem pedidos no filtro atual</p>
+              <p className="text-muted-foreground mt-1">
+                O cliente possui histórico de compras, mas não no período selecionado.
+                {report.filtersApplied.summary ? ` Filtro: ${report.filtersApplied.summary}.` : null}
+              </p>
+            </div>
+          ) : null}
+
           {isEmptyReport(report) ? (
             <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">
-              <p className="font-semibold">Sem dados comerciais no filtro aplicado</p>
+              <p className="font-semibold">Sem dados comerciais para este cliente</p>
               <p className="text-sm text-muted-foreground mt-2">
-                Ajuste os filtros ou aguarde novos pedidos de venda para este cliente.
+                Aguarde novos pedidos de venda sincronizados do Nomus.
               </p>
             </div>
           ) : null}
@@ -238,10 +257,7 @@ export function CustomerIntelligencePage() {
             ) : null}
             {activeTab === "crm" ? <CustomerIntelligenceCrmTab report={report} /> : null}
             {activeTab === "profile" ? (
-              <CustomerIntelligenceTabPlaceholder
-                title="Cadastro"
-                description="Dados cadastrais exibidos no cabeçalho; detalhes adicionais em etapa futura."
-              />
+              <CustomerIntelligenceProfileTab report={report} />
             ) : null}
             {activeTab === "opportunities" ? (
               <CustomerIntelligenceOpportunitiesTab report={report} />

@@ -88,9 +88,10 @@ function ExecutiveTable({
 }
 
 export function CustomerIntelligencePurchasesTab({ report }: { report: CustomerIntelligenceReport }) {
-  const { history, seasonality } = report;
+  const { history, seasonality, lifetimeSummary, filteredSummary, filtersApplied } = report;
   const analysis = history.analysis;
-  const hasHistory = history.byYear.length > 0;
+  const hasLifetimeHistory = history.byYear.length > 0;
+  const hasFilteredHistory = history.byMonth.length > 0 || filteredSummary.validOrdersCount > 0;
 
   const strongestMonthLabel =
     seasonality.strongestMonth?.monthName ??
@@ -110,10 +111,10 @@ export function CustomerIntelligencePurchasesTab({ report }: { report: CustomerI
     seasonality.reading,
   ].filter((line): line is string => Boolean(line?.trim()));
 
-  if (!hasHistory) {
+  if (!hasLifetimeHistory && !hasFilteredHistory) {
     return (
       <div className="customer-intelligence-tab-panel rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">
-        <p className="font-semibold">Sem histórico de compras no filtro aplicado</p>
+        <p className="font-semibold">Sem histórico de compras</p>
         <p className="text-sm text-muted-foreground mt-2">
           Não há pedidos válidos para montar evolução anual, sazonalidade ou ranking de meses.
         </p>
@@ -123,12 +124,37 @@ export function CustomerIntelligencePurchasesTab({ report }: { report: CustomerI
 
   return (
     <div className="customer-intelligence-tab-panel space-y-5">
+      {history.scopeNotice ? (
+        <p className="text-xs text-muted-foreground rounded-lg border border-dashed border-border bg-muted/15 px-3 py-2">
+          {history.scopeNotice}
+          {filtersApplied.summary ? ` Filtro: ${filtersApplied.summary}.` : null}
+        </p>
+      ) : null}
+
       <section
         className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))]"
-        aria-label="Indicadores de compras"
+        aria-label="Indicadores de compras no filtro"
       >
         <KpiCard
-          label="Melhor ano"
+          label="Total comprado (filtro)"
+          value={formatCurrency(filteredSummary.revenue)}
+          hint={`${formatNumber(filteredSummary.validOrdersCount)} pedido(s) válido(s)`}
+        />
+        <KpiCard
+          label="Total histórico comprado"
+          value={formatCurrency(lifetimeSummary.revenue)}
+          hint={`${formatNumber(lifetimeSummary.validOrdersCount)} pedido(s) no histórico`}
+        />
+        <KpiCard
+          label="Pedidos no filtro"
+          value={formatNumber(filteredSummary.ordersCount)}
+        />
+        <KpiCard
+          label="Pedidos históricos"
+          value={formatNumber(lifetimeSummary.ordersCount)}
+        />
+        <KpiCard
+          label="Melhor ano (filtro)"
           value={analysis.bestYear != null ? String(analysis.bestYear) : "—"}
           hint={
             analysis.bestYearRevenue != null
@@ -148,7 +174,7 @@ export function CustomerIntelligencePurchasesTab({ report }: { report: CustomerI
           value={formatOptionalPercent(analysis.growthPercentVsPreviousYear)}
           hint={growthStatusLabel(analysis.growthStatus)}
         />
-        <KpiCard label="Mês mais forte" value={strongestMonthLabel} />
+        <KpiCard label="Mês mais forte (histórico)" value={strongestMonthLabel} />
         <KpiCard
           label="Meses ativos"
           value={formatNumber(seasonality.activeMonthsCount)}
@@ -171,7 +197,7 @@ export function CustomerIntelligencePurchasesTab({ report }: { report: CustomerI
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ExecutiveTable
-          title="Pedidos por ano"
+          title="Histórico por ano (total disponível)"
           headers={["Ano", "Pedidos", "Receita", "Ticket médio", "Crescimento YoY"]}
           emptyMessage="Sem dados anuais."
           rows={history.byYear.map((y) => [
@@ -183,7 +209,7 @@ export function CustomerIntelligencePurchasesTab({ report }: { report: CustomerI
           ])}
         />
         <ExecutiveTable
-          title="Receita por ano"
+          title="Receita por ano (total disponível)"
           headers={["Ano", "Receita", "Margem", "Margem %", "Pedidos válidos"]}
           emptyMessage="Sem dados anuais."
           rows={history.byYear.map((y) => [

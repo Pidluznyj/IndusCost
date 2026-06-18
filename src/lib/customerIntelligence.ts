@@ -29,7 +29,17 @@ import {
   safeDivide,
   safeFiniteNumber,
   toIsoDateOnly,
+  computeOrderDateBounds,
+  collectPurchaseYears,
+  describeCustomerIntelligenceFiltersApplied,
+  hasActiveCustomerIntelligenceCommercialFilter,
 } from "@/src/lib/customerIntelligenceUtils.js";
+import {
+  buildCustomerProfileFields,
+  buildCustomerIntelligenceProfileDataQualityWarnings,
+  isNomusSyncedCustomer,
+  resolveCustomerRegistrationDate,
+} from "@/src/lib/customerIntelligenceProfileSources.js";
 import {
   buildCustomerIntelligenceHistory,
   buildCustomerIntelligenceSeasonality,
@@ -37,6 +47,8 @@ import {
 import { buildCustomerIntelligenceProducts } from "@/src/lib/customerIntelligenceProducts.js";
 import type {
   CustomerIntelligenceBuildInput,
+  CustomerIntelligenceOrderInput,
+  CustomerIntelligenceOrderScopeSummary,
   CustomerIntelligenceReport,
 } from "@/src/lib/customerIntelligenceTypes.js";
 import {
@@ -50,6 +62,31 @@ function median(values: number[]): number | null {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+function buildOrderScopeSummary(
+  allOrders: CustomerIntelligenceOrderInput[],
+  metricsOrders: CustomerIntelligenceOrderInput[],
+  now: Date
+): CustomerIntelligenceOrderScopeSummary {
+  const { firstOrderDate, lastOrderDate } = computeOrderDateBounds(metricsOrders);
+  const revenue = metricsOrders.reduce(
+    (acc, o) => acc + safeCommercialNumber(o.totalNetValue),
+    0
+  );
+  const billedOrdersCount = metricsOrders.filter((o) => o.hasInvoicing).length;
+
+  return {
+    revenue: roundMoney(revenue) ?? 0,
+    ordersCount: allOrders.length,
+    validOrdersCount: metricsOrders.length,
+    billedOrdersCount,
+    firstOrderDate: toIsoDateOnly(firstOrderDate),
+    lastOrderDate: toIsoDateOnly(lastOrderDate),
+    daysSinceLastOrder:
+      lastOrderDate != null ? daysBetweenDates(lastOrderDate, now) : null,
+    purchaseYears: collectPurchaseYears(metricsOrders),
+  };
 }
 
 function buildRepurchase(
@@ -131,10 +168,15 @@ export function buildCustomerIntelligenceReport(
   const sources = ["SalesOrder", "SalesOrderItem", "Customer"];
 
   const filteredOrders = filterCustomerIntelligenceOrders(input.orders, input.filters);
-  const metricsOrders = getCustomerIntelligenceMetricsOrders(filteredOrders);
+  const lifetimeMetricsOrders = getCustomerIntelligenceMetricsOrders(input.orders);
+  const filteredMetricsOrders = getCustomerIntelligenceMetricsOrders(filteredOrders);
+  const filtersApplied = describeCustomerIntelligenceFiltersApplied(input.filters);
+  const hasActiveCommercialFilter = hasActiveCustomerIntelligenceCommercialFilter(input.filters);
+  const isNomusSynced = isNomusSyncedCustomer(input.customer.notes);
 
   if (input.activities.length > 0) sources.push("CommercialActivity");
   if (input.arLinkedByCnpj) sources.push("NomusAccountsReceivable");
+  if (isNomusSynced) sources.push("NomusCustomer");
 
   if (isInternalGroupCustomer(input.customer) && input.filters.customerType === "external") {
     warnings.push(
@@ -155,19 +197,27 @@ export function buildCustomerIntelligenceReport(
     missingFields.push("region");
   }
 
-  const sortedMetrics = [...metricsOrders].sort(
+  const sortedFilteredMetrics = [...filteredMetricsOrders].sort(
     (a, b) => a.issueDate.getTime() - b.issueDate.getTime()
   );
-  const firstOrderDate = sortedMetrics[0]?.issueDate ?? null;
-  const lastOrderDate = sortedMetrics[sortedMetrics.length - 1]?.issueDate ?? null;
+  const filteredLastOrderDate =
+    sortedFilteredMetrics[sortedFilteredMetrics.length - 1]?.issueDate ?? null;
 
-  const revenue = metricsOrders.reduce(
-    (acc, o) => acc + safeCommercialNumber(o.totalNetValue),
-    0
+  const lifetimeSummary = buildOrderScopeSummary(
+    input.orders,
+    lifetimeMetricsOrders,
+    now
   );
-  const validOrdersCount = metricsOrders.length;
-  const billedOrdersCount = metricsOrders.filter((o) => o.hasInvoicing).length;
-  const openPortfolioAmount = metricsOrders
+  const filteredSummary = buildOrderScopeSummary(
+    filteredOrders,
+    filteredMetricsOrders,
+    now
+  );
+
+  const revenue = filteredSummary.revenue;
+  const validOrdersCount = filteredSummary.validOrdersCount;
+  const billedOrdersCount = filteredSummary.billedOrdersCount;
+  const openPortfolioAmount = filteredMetricsOrders
     .filter((o) =>
       isCommercialOpenSalesOrder({
         status: o.status as SalesOrderLinkStatus,
@@ -176,10 +226,10 @@ export function buildCustomerIntelligenceReport(
     )
     .reduce((acc, o) => acc + safeCommercialNumber(o.totalNetValue), 0);
 
-  const marginPercSamples = metricsOrders
+  const marginPercSamples = filteredMetricsOrders
     .map((o) => safeFiniteNumber(o.totalMarginPerc))
     .filter((v): v is number => v != null);
-  const marginValueSamples = metricsOrders
+  const marginValueSamples = filteredMetricsOrders
     .map((o) => safeFiniteNumber(o.totalMarginValue))
     .filter((v): v is number => v != null);
 
@@ -204,10 +254,10 @@ export function buildCustomerIntelligenceReport(
 
   const averageTicket = safeDivide(revenue, validOrdersCount);
   const daysSinceLastOrder =
-    lastOrderDate != null ? daysBetweenDates(lastOrderDate, now) : null;
+    filteredLastOrderDate != null ? daysBetweenDates(filteredLastOrderDate, now) : null;
 
   const productsResult = buildCustomerIntelligenceProducts(
-    metricsOrders,
+    filteredMetricsOrders,
     input.filters.topN,
     now
   );
@@ -234,14 +284,25 @@ export function buildCustomerIntelligenceReport(
     averageTicket: averageTicket != null ? roundMoney(averageTicket) : null,
     averageMarginPercent,
     totalMarginAmount,
-    lastOrderDate: toIsoDateOnly(lastOrderDate),
+    lastOrderDate: toIsoDateOnly(filteredLastOrderDate),
     daysSinceLastOrder,
     leadingProduct,
   };
 
-  const history = buildCustomerIntelligenceHistory(metricsOrders, now);
-  const seasonality = buildCustomerIntelligenceSeasonality(history);
-  const repurchase = buildRepurchase(metricsOrders, now);
+  const lifetimeHistory = buildCustomerIntelligenceHistory(lifetimeMetricsOrders, now);
+  const filteredHistory = buildCustomerIntelligenceHistory(filteredMetricsOrders, now);
+  const history: CustomerIntelligenceReport["history"] = {
+    byYear: lifetimeHistory.byYear,
+    byMonth: filteredHistory.byMonth,
+    strongestMonths: lifetimeHistory.strongestMonths,
+    analysis: filteredHistory.analysis,
+    lifetimeAnalysis: lifetimeHistory.analysis,
+    scopeNotice: hasActiveCommercialFilter
+      ? "Cards acima respeitam o filtro. Histórico por ano mostra toda a base disponível."
+      : null,
+  };
+  const seasonality = buildCustomerIntelligenceSeasonality(lifetimeHistory);
+  const repurchase = buildRepurchase(lifetimeMetricsOrders, now);
   const financial = buildCustomerIntelligenceFinancial({
     customerTaxId: input.customer.taxId,
     arRows: input.arRows,
@@ -275,6 +336,22 @@ export function buildCustomerIntelligenceReport(
     crm,
   });
 
+  const registration = resolveCustomerRegistrationDate({
+    nomusRegistrationDate: input.customer.nomusRegistrationDate ?? null,
+    createdAt: input.customer.createdAt,
+    isNomusSynced,
+  });
+
+  for (const warning of buildCustomerIntelligenceProfileDataQualityWarnings({
+    customer: input.customer,
+    registration,
+    isNomusSynced,
+    hasActiveCommercialFilter,
+    financialLinkedByCnpj: financial.linkedByCnpj,
+  })) {
+    if (!warnings.includes(warning)) warnings.push(warning);
+  }
+
   const customer: CustomerIntelligenceReport["customer"] = {
     id: input.customer.id,
     code: input.customer.taxId?.trim() || null,
@@ -284,11 +361,21 @@ export function buildCustomerIntelligenceReport(
     city: input.customer.city?.trim() || null,
     state: input.customer.state?.trim() || null,
     region,
-    registrationDate: toIsoDateOnly(input.customer.createdAt),
-    firstOrderDate: toIsoDateOnly(firstOrderDate),
-    lastOrderDate: toIsoDateOnly(lastOrderDate),
+    registrationDate: registration.date,
+    registrationDateSource: registration.source,
+    registrationSourceLabel: registration.sourceLabel,
+    registrationHeaderLabel: registration.headerLabel,
+    isNomusSynced,
+    firstOrderDate: lifetimeSummary.firstOrderDate,
+    lastOrderDate: lifetimeSummary.lastOrderDate,
     commercialOwner: input.customer.accountOwner?.trim() || null,
   };
+
+  const profileFields = buildCustomerProfileFields({
+    customer: input.customer,
+    registration,
+    region,
+  });
 
   const dataQuality = { warnings, missingFields, sources };
 
@@ -331,8 +418,12 @@ export function buildCustomerIntelligenceReport(
   return {
     customer,
     filters: input.filters,
+    filtersApplied,
     dataQuality,
+    filteredSummary,
+    lifetimeSummary,
     commercialSummary,
+    profileFields,
     history,
     seasonality,
     products,

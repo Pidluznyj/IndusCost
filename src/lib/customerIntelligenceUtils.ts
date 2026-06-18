@@ -285,6 +285,78 @@ export function toIsoDateOnly(date: Date | null | undefined): string | null {
   return date.toISOString().slice(0, 10);
 }
 
+export function computeOrderDateBounds(
+  orders: CustomerIntelligenceOrderInput[]
+): { firstOrderDate: Date | null; lastOrderDate: Date | null } {
+  if (orders.length === 0) {
+    return { firstOrderDate: null, lastOrderDate: null };
+  }
+  const sorted = [...orders].sort((a, b) => a.issueDate.getTime() - b.issueDate.getTime());
+  return {
+    firstOrderDate: sorted[0]!.issueDate,
+    lastOrderDate: sorted[sorted.length - 1]!.issueDate,
+  };
+}
+
+export function collectPurchaseYears(orders: CustomerIntelligenceOrderInput[]): number[] {
+  const years = new Set<number>();
+  for (const order of orders) {
+    years.add(order.issueDate.getFullYear());
+  }
+  return [...years].sort((a, b) => a - b);
+}
+
+export function hasActiveCustomerIntelligenceCommercialFilter(
+  filters: CustomerIntelligenceFilters
+): boolean {
+  return (
+    filters.year != null ||
+    filters.startDate != null ||
+    filters.endDate != null ||
+    filters.status != null ||
+    filters.responsible != null ||
+    filters.productId != null ||
+    filters.minNetValue != null ||
+    filters.maxNetValue != null
+  );
+}
+
+export function describeCustomerIntelligenceFiltersApplied(
+  filters: CustomerIntelligenceFilters
+): {
+  year: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  status: string | null;
+  responsible: string | null;
+  productId: string | null;
+  hasActiveFilter: boolean;
+  summary: string | null;
+} {
+  const hasActiveFilter = hasActiveCustomerIntelligenceCommercialFilter(filters);
+  const parts: string[] = [];
+
+  if (filters.year != null) parts.push(`ano ${filters.year}`);
+  if (filters.startDate) parts.push(`de ${filters.startDate}`);
+  if (filters.endDate) parts.push(`até ${filters.endDate}`);
+  if (filters.status) parts.push(`status ${filters.status}`);
+  if (filters.responsible) parts.push(`responsável ${filters.responsible}`);
+  if (filters.productId) parts.push(`produto ${filters.productId}`);
+  if (filters.minNetValue != null) parts.push(`valor mín. ${filters.minNetValue}`);
+  if (filters.maxNetValue != null) parts.push(`valor máx. ${filters.maxNetValue}`);
+
+  return {
+    year: filters.year,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    status: filters.status,
+    responsible: filters.responsible,
+    productId: filters.productId,
+    hasActiveFilter,
+    summary: hasActiveFilter ? parts.join(" · ") : null,
+  };
+}
+
 export function cnpjMatchesArRow(
   customerTaxId: string | null | undefined,
   arPersonCnpj: string | null | undefined

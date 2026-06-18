@@ -31,10 +31,40 @@ export type CustomerIntelligenceProfile = {
   city: string | null;
   state: string | null;
   region: string | null;
+  /** Data oficial de cadastro quando disponível no Nomus. */
   registrationDate: string | null;
+  registrationDateSource: import("./customerIntelligenceProfileSources.js").CustomerIntelligenceFieldSource;
+  registrationSourceLabel: string;
+  /** Rótulo do cabeçalho: Cadastro no Nomus | Importado no IndusCost */
+  registrationHeaderLabel: string;
+  isNomusSynced: boolean;
+  /** Primeira compra — histórico completo (SalesOrder válidos). */
   firstOrderDate: string | null;
+  /** Última compra — histórico completo (SalesOrder válidos). */
   lastOrderDate: string | null;
   commercialOwner: string | null;
+};
+
+export type CustomerIntelligenceOrderScopeSummary = {
+  revenue: number;
+  ordersCount: number;
+  validOrdersCount: number;
+  billedOrdersCount: number;
+  firstOrderDate: string | null;
+  lastOrderDate: string | null;
+  daysSinceLastOrder: number | null;
+  purchaseYears: number[];
+};
+
+export type CustomerIntelligenceFiltersApplied = {
+  year: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  status: string | null;
+  responsible: string | null;
+  productId: string | null;
+  hasActiveFilter: boolean;
+  summary: string | null;
 };
 
 export type CustomerIntelligenceDataQuality = {
@@ -116,10 +146,18 @@ export type CustomerIntelligencePurchasesAnalysis = {
 };
 
 export type CustomerIntelligencePurchaseHistory = {
+  /** Histórico anual completo — não limitado ao filtro de período. */
   byYear: CustomerIntelligenceYearBucket[];
+  /** Histórico mensal conforme filtros aplicados. */
   byMonth: CustomerIntelligenceMonthBucket[];
+  /** Meses mais fortes — histórico completo. */
   strongestMonths: CustomerIntelligenceStrongMonth[];
+  /** Análise conforme filtros (cards da aba Compras). */
   analysis: CustomerIntelligencePurchasesAnalysis;
+  /** Análise do histórico completo. */
+  lifetimeAnalysis: CustomerIntelligencePurchasesAnalysis;
+  /** Aviso quando cards e tabela usam escopos diferentes. */
+  scopeNotice: string | null;
 };
 
 export type CustomerIntelligenceSeasonality = {
@@ -431,8 +469,13 @@ export type CustomerIntelligenceScoring = {
 export type CustomerIntelligenceReport = {
   customer: CustomerIntelligenceProfile;
   filters: CustomerIntelligenceFilters;
+  filtersApplied: CustomerIntelligenceFiltersApplied;
   dataQuality: CustomerIntelligenceDataQuality;
+  /** Resumo comercial conforme filtros (alias semântico de commercialSummary). */
+  filteredSummary: CustomerIntelligenceOrderScopeSummary;
+  lifetimeSummary: CustomerIntelligenceOrderScopeSummary;
   commercialSummary: CustomerIntelligenceCommercialSummary;
+  profileFields: import("./customerIntelligenceProfileSources.js").CustomerIntelligenceProfileField[];
   history: CustomerIntelligencePurchaseHistory;
   seasonality: CustomerIntelligenceSeasonality;
   products: CustomerIntelligenceProductMix;
@@ -476,10 +519,20 @@ export type CustomerIntelligenceCustomerInput = {
   companyName: string;
   tradeName: string | null;
   taxId: string;
+  stateTaxId?: string | null;
+  address?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  contactName?: string | null;
+  segment?: string | null;
+  status?: string | null;
+  notes?: string | null;
   city: string | null;
   state: string | null;
   accountOwner: string | null;
   createdAt: Date;
+  /** Data de cadastro extraída do raw Nomus, quando disponível. */
+  nomusRegistrationDate?: Date | null;
 };
 
 export type CustomerIntelligenceActivityInput = {
