@@ -119,7 +119,25 @@ export function CustomerIntelligencePage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const clearPrintRoute = () => {
+      document.body.classList.remove("customer-intelligence-printing");
+    };
+    const onAfterPrint = () => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintRoute();
+    };
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+    window.setTimeout(() => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintRoute();
+    }, 60_000);
+
+    document.body.classList.add("customer-intelligence-printing");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
   };
 
   return (

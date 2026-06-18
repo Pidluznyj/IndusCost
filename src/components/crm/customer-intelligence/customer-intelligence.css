@@ -45,8 +45,24 @@
 }
 
 @media print {
+  body.customer-intelligence-printing #root > * > aside,
+  body.customer-intelligence-printing #root > * > header,
+  body.customer-intelligence-printing .flex.h-screen > aside,
+  body.customer-intelligence-printing main > header,
+  body.customer-intelligence-printing nav,
+  body.customer-intelligence-printing button,
   .customer-intelligence-no-print {
     display: none !important;
+  }
+
+  body.customer-intelligence-printing .flex.h-screen,
+  body.customer-intelligence-printing .flex.h-screen > main,
+  body.customer-intelligence-printing main .flex-1.overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
   }
 
   .customer-intelligence-sticky-header {
