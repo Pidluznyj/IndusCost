@@ -97,12 +97,13 @@ import {
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
 import {
-  buildFinanceArApAuditSections,
+  buildFinanceApAuditSections,
   buildFinanceAuditItemsFromChips,
   countFinanceDataAuditWarnings,
 } from "@/src/lib/financeDataAudit";
 import {
   FINANCE_AP_EXECUTIVE_SUBTITLE,
+  FINANCE_AUDIT_SECTION_TECHNICAL,
   FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE,
 } from "@/src/lib/financeDataAuditCopy";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
@@ -610,9 +611,7 @@ export function FinanceAccountsPayablePage() {
 
   const auditSections = useMemo(
     () =>
-      buildFinanceArApAuditSections({
-        moduleLabel: "Contas a Pagar",
-        nomusSource: "Nomus — Contas a Pagar",
+      buildFinanceApAuditSections({
         lastSyncAt: cards?.lastSyncAt,
         generatedAt: data?.generatedAt,
         lastSyncHint: FINANCE_AP_LAST_SYNC_FILTERED_SCOPE,
@@ -634,6 +633,7 @@ export function FinanceAccountsPayablePage() {
         title="Contas a Pagar"
         subtitle={FINANCE_AP_EXECUTIVE_SUBTITLE}
         updatedAt={headerUpdatedAt}
+        compact
         actions={[
           {
             id: "refresh",
@@ -678,12 +678,18 @@ export function FinanceAccountsPayablePage() {
         open={auditDrawerOpen}
         onClose={() => setAuditDrawerOpen(false)}
         sections={auditSections}
-      />
-
-      <FinanceAccountsPayableSyncPanel
-        canRun={canRunSync}
-        onSyncFinished={() => void loadDashboard()}
-      />
+      >
+        <div className="border-t border-[#E5E7EB] pt-4 space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">
+            {FINANCE_AUDIT_SECTION_TECHNICAL}
+          </h3>
+          <FinanceAccountsPayableSyncPanel
+            canRun={canRunSync}
+            onSyncFinished={() => void loadDashboard()}
+            embedded
+          />
+        </div>
+      </FinanceDataAuditDrawer>
 
       {dashboardError ? (
         <FinanceApErrorBanner

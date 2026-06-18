@@ -39,7 +39,7 @@ describe("financeBiDashboardUx", () => {
     assert.equal(chips.every((c) => typeof c.onRemove === "function"), true);
   });
 
-  it("telas financeiras usam shell e header BI", () => {
+  it("telas financeiras usam shell e header executivo", () => {
     for (const page of [
       "FinanceAccountsReceivablePage.tsx",
       "FinanceAccountsPayablePage.tsx",
@@ -47,7 +47,7 @@ describe("financeBiDashboardUx", () => {
     ]) {
       const src = readPage(page);
       assert.ok(src.includes("FinanceBiDashboardShell"), page);
-      assert.ok(src.includes("FinanceBiExecutiveHeader"), page);
+      assert.ok(src.includes("FinanceExecutivePageHeader"), page);
       assert.ok(src.includes("FinanceBiFilterPanel"), page);
       assert.ok(src.includes("resolveFinanceBiFilterStatus"), page);
     }

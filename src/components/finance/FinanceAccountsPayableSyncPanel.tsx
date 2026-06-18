@@ -23,9 +23,11 @@ function formatIntOrDash(value: number | null | undefined): string {
 export function FinanceAccountsPayableSyncPanel({
   canRun,
   onSyncFinished,
+  embedded = false,
 }: {
   canRun: boolean;
   onSyncFinished?: () => void;
+  embedded?: boolean;
 }) {
   const [status, setStatus] = useState<NomusAccountsPayableSyncStatusPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -107,7 +109,14 @@ export function FinanceAccountsPayableSyncPanel({
 
   return (
     <>
-      <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
+      <div
+        className={
+          embedded
+            ? "space-y-3"
+            : "rounded-xl border border-border bg-card/50 p-4 space-y-3"
+        }
+        data-testid={embedded ? "finance-ap-sync-panel-embedded" : "finance-ap-sync-panel"}
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1 min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">

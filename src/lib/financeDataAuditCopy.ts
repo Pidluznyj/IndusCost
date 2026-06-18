@@ -30,3 +30,26 @@ export const FINANCE_AR_EXECUTIVE_SUBTITLE =
 
 export const FINANCE_AP_EXECUTIVE_SUBTITLE =
   "Obrigações com fornecedores e saídas de caixa previstas." as const;
+
+export const FINANCE_BILLING_EXECUTIVE_SUBTITLE =
+  "Receita fiscal por NF-e autorizada." as const;
+
+export const FINANCE_AUDIT_SECTION_COMPARISON = "Comparativo" as const;
+export const FINANCE_AUDIT_SECTION_TECHNICAL = "Ações técnicas" as const;
+
+export const FINANCE_AP_AUDIT_RULES = [
+  "Pedidos de compra não entram na visão gerencial.",
+  "Movimentos entre empresas do grupo são desconsiderados.",
+  "Títulos antigos fora da última sincronização são ignorados.",
+  "Títulos pagos seguem a regra financeira oficial de alocação.",
+] as const;
+
+export const FINANCE_BILLING_AUDIT_RULES = [
+  "Somente NF-e autorizada entra no faturamento.",
+  "NF-e de entrada não entra como receita.",
+  "Notas canceladas ou inválidas ficam fora da visão gerencial.",
+  "O comparativo com pedidos serve apenas para conciliação.",
+] as const;
+
+export const FINANCE_BILLING_COMPARISON_NOTE =
+  "Pedidos de Venda são usados apenas para comparação com o faturamento fiscal. O faturamento oficial considera NF-e autorizada." as const;

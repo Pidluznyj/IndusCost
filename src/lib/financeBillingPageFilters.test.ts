@@ -93,7 +93,6 @@ describe("financeBillingPageFilters", () => {
     assert.ok(page.includes("comparisonError"));
     assert.ok(page.includes("loadingComparison"));
     assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE"));
-    assert.ok(page.includes("FINANCE_SYNC_GLOBAL_SCOPE"));
     assert.ok(views.includes("FINANCE_BILLING_YTD_SCOPE"));
     assert.ok(views.includes("FINANCE_BILLING_MULTI_YEAR_SCOPE"));
     assert.ok(views.includes("FINANCE_BILLING_PROJECTION_SCOPE"));

@@ -86,7 +86,7 @@ describe("financeFilterCompliance", () => {
     assert.ok(page.includes("buildFinanceBillingNfeQuery(appliedNfeFilters)"));
     assert.ok(page.includes("loadingComparison"));
     assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE"));
-    assert.ok(page.includes("FINANCE_SYNC_GLOBAL_SCOPE"));
+    assert.ok(page.includes("FinanceDataAuditDrawer"));
 
     const views = readFileSync(
       join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),

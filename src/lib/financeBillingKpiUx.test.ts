@@ -50,7 +50,7 @@ describe("financeBillingKpiUx", () => {
 
   it("fonte padrão NF-e continua preservada na página", () => {
     const page = readFileSync(pagePath, "utf8");
-    assert.match(page, /billingSource=nfe|NF-e fiscal|fonte NF-e/i);
+    assert.match(page, /FINANCE_BILLING_SOURCE_DEFAULT|billingSource=nfe/i);
     assert.ok(page.includes("buildFinanceBillingDashboardQuery"));
   });
 

@@ -104,6 +104,7 @@ describe("financeBillingNfeLocalFilter", () => {
     assert.match(page, /FinanceBillingActionCenter/);
     assert.match(page, /title="Faturamento"/);
     assert.match(page, /FINANCE_BILLING_SOURCE_DEFAULT/);
-    assert.match(page, /SalesOrder aparece apenas/);
+    assert.match(page, /FINANCE_BILLING_EXECUTIVE_SUBTITLE/);
+    assert.match(page, /FinanceDataAuditDrawer/);
   });
 });

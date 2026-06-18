@@ -345,6 +345,7 @@ describe("financeBillingAudit", () => {
     const page = readFileSync(join(process.cwd(), "src", "components", "finance", "FinanceBillingPage.tsx"), "utf8");
     assert.match(routes, /billing\/audit/);
     assert.match(page, /Auditar base do faturamento/);
+    assert.match(page, /FinanceDataAuditDrawer/);
     assert.match(page, /audit/);
     assert.equal(routes.includes("financeAccountsReceivable"), false);
     assert.equal(routes.includes("financeAccountsPayable"), false);

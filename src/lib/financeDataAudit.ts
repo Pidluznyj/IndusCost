@@ -11,12 +11,16 @@ import {
 import {
   FINANCE_AUDIT_RULES_EXECUTIVE,
   FINANCE_AUDIT_SANITIZATION_INTRO,
+  FINANCE_AUDIT_SECTION_COMPARISON,
   FINANCE_AUDIT_SECTION_FILTERS,
   FINANCE_AUDIT_SECTION_IGNORED,
   FINANCE_AUDIT_SECTION_RECONCILIATION,
   FINANCE_AUDIT_SECTION_RULES,
   FINANCE_AUDIT_SECTION_SOURCES,
   FINANCE_AUDIT_SECTION_SYNC,
+  FINANCE_AP_AUDIT_RULES,
+  FINANCE_BILLING_AUDIT_RULES,
+  FINANCE_BILLING_COMPARISON_NOTE,
 } from "./financeDataAuditCopy.js";
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import { totalFinanceDataSanitizationIgnored } from "./financeInternalGroupExclusions.js";
@@ -289,10 +293,12 @@ export function buildFinanceArApAuditSections(input: {
   lastSyncHint?: string;
   appliedFilterItems: FinanceDataAuditListItem[];
   dataSanitization?: FinanceDataSanitization | null;
+  rules?: readonly string[];
 }): FinanceDataAuditSection[] {
   const ignoredRows = input.dataSanitization
     ? buildFinanceSanitizationAuditRows(input.dataSanitization)
     : [];
+  const rules = input.rules ?? [...FINANCE_AUDIT_RULES_EXECUTIVE, FINANCE_AUDIT_SANITIZATION_INTRO];
 
   const sections: FinanceDataAuditSection[] = [
     {
@@ -327,7 +333,7 @@ export function buildFinanceArApAuditSections(input: {
       kind: "paragraphs",
       id: "rules",
       title: FINANCE_AUDIT_SECTION_RULES,
-      paragraphs: [...FINANCE_AUDIT_RULES_EXECUTIVE, FINANCE_AUDIT_SANITIZATION_INTRO],
+      paragraphs: [...rules],
     },
   ];
 
@@ -344,4 +350,84 @@ export function buildFinanceArApAuditSections(input: {
   }
 
   return sections;
+}
+
+export function buildFinanceApAuditSections(input: {
+  lastSyncAt: string | null | undefined;
+  generatedAt: string | null | undefined;
+  lastSyncHint?: string;
+  appliedFilterItems: FinanceDataAuditListItem[];
+  dataSanitization?: FinanceDataSanitization | null;
+}): FinanceDataAuditSection[] {
+  return buildFinanceArApAuditSections({
+    moduleLabel: "Contas a Pagar",
+    nomusSource: "NomusAccountsPayable — sincronizado do Nomus",
+    lastSyncAt: input.lastSyncAt,
+    generatedAt: input.generatedAt,
+    lastSyncHint: input.lastSyncHint,
+    appliedFilterItems: input.appliedFilterItems,
+    dataSanitization: input.dataSanitization,
+    rules: [...FINANCE_AP_AUDIT_RULES],
+  });
+}
+
+export function buildFinanceBillingAuditSections(input: {
+  generatedAt: string | null | undefined;
+  lastInvoicedAt: string | null | undefined;
+  periodLabel: string | null | undefined;
+  appliedFilterItems: FinanceDataAuditListItem[];
+}): FinanceDataAuditSection[] {
+  return [
+    {
+      kind: "list",
+      id: "sources",
+      title: FINANCE_AUDIT_SECTION_SOURCES,
+      items: [
+        { label: "Fonte oficial", value: "NF-e fiscal autorizada" },
+        { label: "Base", value: "NomusNfe" },
+        { label: "Valor considerado", value: "Valor líquido da NF-e" },
+        {
+          label: "Data considerada",
+          value: "Emissão da NF no XML, quando disponível",
+        },
+      ],
+    },
+    {
+      kind: "paragraphs",
+      id: "comparison",
+      title: FINANCE_AUDIT_SECTION_COMPARISON,
+      paragraphs: [FINANCE_BILLING_COMPARISON_NOTE],
+    },
+    {
+      kind: "list",
+      id: "sync",
+      title: FINANCE_AUDIT_SECTION_SYNC,
+      items: [
+        {
+          label: "Período gerencial",
+          value: input.periodLabel ?? "—",
+        },
+        {
+          label: "Último faturamento",
+          value: input.lastInvoicedAt ? formatFinanceDateTime(input.lastInvoicedAt) : "—",
+        },
+        {
+          label: "Calculado em",
+          value: input.generatedAt ? formatFinanceDateTime(input.generatedAt) : "—",
+        },
+      ],
+    },
+    {
+      kind: "list",
+      id: "filters",
+      title: FINANCE_AUDIT_SECTION_FILTERS,
+      items: input.appliedFilterItems,
+    },
+    {
+      kind: "paragraphs",
+      id: "rules",
+      title: FINANCE_AUDIT_SECTION_RULES,
+      paragraphs: [...FINANCE_BILLING_AUDIT_RULES],
+    },
+  ];
 }

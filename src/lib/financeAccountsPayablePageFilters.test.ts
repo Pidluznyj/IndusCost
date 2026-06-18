@@ -108,6 +108,21 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(qs.includes("status=overdue"));
   });
 
+  it("sync Nomus AP fica no drawer, não no corpo principal", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
+      "utf8"
+    );
+    const mainBody = page.slice(0, page.indexOf("<FinanceDataAuditDrawer"));
+    assert.equal(mainBody.includes("Sync Nomus — Contas a Pagar"), false);
+    assert.equal(mainBody.includes("FinanceAccountsPayableSyncPanel"), false);
+    assert.ok(page.includes("FinanceAccountsPayableSyncPanel"));
+    assert.ok(page.includes("embedded"));
+    assert.ok(page.includes("FinanceDataAuditButton"));
+    assert.ok(page.includes('title="Contas a Pagar"'));
+    assert.ok(page.includes("FINANCE_AP_EXECUTIVE_SUBTITLE"));
+  });
+
   it("FinanceModule mantém rotas absolutas após alinhamento de filtros", () => {
     const mod = readFileSync(join(process.cwd(), "src", "components", "FinanceModule.tsx"), "utf8");
     const nav = readFileSync(join(process.cwd(), "src", "lib", "financeNavigation.ts"), "utf8");

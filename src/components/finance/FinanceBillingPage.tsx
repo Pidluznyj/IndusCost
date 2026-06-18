@@ -42,13 +42,11 @@ import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import type { FinanceBillingComparisonPayload } from "@/src/lib/financeBillingNfeComparison";
 import type { FinanceBillingNfeListPayload } from "@/src/lib/financeBillingNfeList";
 import { canRunFinanceBillingNfeSync } from "@/src/lib/financeBillingPermissions";
-import { formatFinanceDateTime } from "@/src/lib/financeAccountsPayableFormat";
 import {
   FinanceApErrorBanner,
   FinanceApLoadingBlock,
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { FinanceBillingNfeSyncPanel } from "@/src/components/finance/FinanceBillingNfeSyncPanel";
-import { FinanceBillingSourceBadge } from "@/src/components/finance/billing/FinanceBillingSourceBadge";
 import {
   FinanceBillingAccumulatedView,
   FinanceBillingMonthlyView,
@@ -71,8 +69,15 @@ import { financeBillingAuditExportFilename } from "@/src/lib/financeBillingAudit
 import {
   FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE,
   FINANCE_BILLING_NFE_EXPORT_SCOPE,
-  FINANCE_SYNC_GLOBAL_SCOPE,
 } from "@/src/lib/financeFilterScope";
+import {
+  buildFinanceAuditItemsFromChips,
+  buildFinanceBillingAuditSections,
+} from "@/src/lib/financeDataAudit";
+import {
+  FINANCE_AUDIT_SECTION_TECHNICAL,
+  FINANCE_BILLING_EXECUTIVE_SUBTITLE,
+} from "@/src/lib/financeDataAuditCopy";
 import {
   FINANCE_KPI_BILLING_DELTA_VS_PREV_YEAR,
   FINANCE_KPI_BILLING_FORECAST,
@@ -88,7 +93,9 @@ import {
   FINANCE_KPI_BILLING_YTD_VARIATION,
 } from "@/src/lib/financeKpiTooltips";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
-import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
+import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
+import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
+import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import {
   FinanceKpiCard,
@@ -113,6 +120,7 @@ export function FinanceBillingPage() {
   const canRunSync = canRunFinanceBillingNfeSync(auth);
   const defaultYear = createDefaultFinanceBillingYear();
 
+  const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
   const [analysisTab, setAnalysisTab] = useState<FinanceBillingAnalysisTabId>("overview");
   const [executiveTab, setExecutiveTab] = useState<FinanceBillingExecutiveTabId>("documents");
   const [nfeLocalFilter, setNfeLocalFilter] = useState<FinanceBillingNfeLocalFilter>("all");
@@ -451,28 +459,27 @@ export function FinanceBillingPage() {
     [appliedYear, appliedNfeFilters, handleRemoveBillingChip]
   );
 
+  const headerUpdatedAt = data?.generatedAt ?? null;
+
+  const auditSections = useMemo(
+    () =>
+      buildFinanceBillingAuditSections({
+        generatedAt: data?.generatedAt,
+        lastInvoicedAt: data?.lastInvoicedAt,
+        periodLabel: data?.periodLabel ?? null,
+        appliedFilterItems: buildFinanceAuditItemsFromChips(appliedFilterChips),
+      }),
+    [appliedFilterChips, data?.generatedAt, data?.lastInvoicedAt, data?.periodLabel]
+  );
+
   return (
     <FinanceBiDashboardShell>
-      <FinanceBiExecutiveHeader
-        eyebrow="Financeiro · Faturamento"
+      <FinanceExecutivePageHeader
+        eyebrow="FINANCEIRO · FATURAMENTO"
         title="Faturamento"
-        subtitle="Receita fiscal e operacional por NF-e autorizada. SalesOrder aparece apenas em comparativos e auditoria."
-        filterStatus={filterStatus}
-        meta={[
-          { label: "Período", value: data?.periodLabel ?? (loading ? "…" : "—") },
-          {
-            label: "Último faturamento",
-            value: data?.lastInvoicedAt
-              ? formatFinanceDateTime(data.lastInvoicedAt)
-              : loading
-                ? "…"
-                : "—",
-          },
-          {
-            label: "Atualizado",
-            value: data ? formatFinanceDateTime(data.generatedAt) : loading ? "…" : "—",
-          },
-        ]}
+        subtitle={FINANCE_BILLING_EXECUTIVE_SUBTITLE}
+        updatedAt={headerUpdatedAt}
+        compact
         actions={[
           {
             id: "refresh",
@@ -484,21 +491,6 @@ export function FinanceBillingPage() {
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RefreshCw className="h-3.5 w-3.5" />
-            ),
-          },
-          {
-            id: "audit",
-            label: "Auditar base do faturamento",
-            onClick: () => {
-              setExecutiveTab("audit");
-              void loadAudit();
-            },
-            disabled: loadingAudit,
-            loading: loadingAudit,
-            icon: loadingAudit ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Target className="h-3.5 w-3.5" />
             ),
           },
           {
@@ -527,23 +519,61 @@ export function FinanceBillingPage() {
             ),
           },
         ]}
-      >
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <FinanceBillingSourceBadge source="nfe" />
-          <FinanceBillingSourceBadge variant="diagnostic" />
-        </div>
-      </FinanceBiExecutiveHeader>
-
-      <FinanceBillingNfeSyncPanel
-        canRun={canRunSync}
-        onSyncFinished={() => {
-          void loadDashboard();
-          void loadNfeList();
-          void loadComparison();
-        }}
+        extraActions={
+          <FinanceDataAuditButton
+            onClick={() => setAuditDrawerOpen(true)}
+            disabled={loading && !data}
+          />
+        }
       />
 
-      <p className="text-[11px] text-muted-foreground">{FINANCE_SYNC_GLOBAL_SCOPE}</p>
+      <FinanceDataAuditDrawer
+        open={auditDrawerOpen}
+        onClose={() => setAuditDrawerOpen(false)}
+        sections={auditSections}
+      >
+        <div className="border-t border-[#E5E7EB] pt-4 space-y-4">
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">
+              Auditoria do faturamento
+            </h3>
+            <button
+              type="button"
+              onClick={() => void loadAudit()}
+              disabled={loadingAudit}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-xs font-semibold hover:bg-[#F9FAFB] disabled:opacity-50"
+            >
+              {loadingAudit ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Target className="h-3.5 w-3.5" />
+              )}
+              Auditar base do faturamento
+            </button>
+            <FinanceBillingAuditPanel
+              audit={audit}
+              loading={loadingAudit}
+              error={auditError}
+              onRetry={() => void loadAudit()}
+            />
+          </div>
+          <div className="space-y-3 border-t border-[#E5E7EB] pt-4">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">
+              {FINANCE_AUDIT_SECTION_TECHNICAL}
+            </h3>
+            <FinanceBillingNfeSyncPanel
+              canRun={canRunSync}
+              embedded
+              onSyncFinished={() => {
+                void loadDashboard();
+                void loadNfeList();
+                void loadComparison();
+                void loadAudit();
+              }}
+            />
+          </div>
+        </div>
+      </FinanceDataAuditDrawer>
 
       {error ? (
         <FinanceApErrorBanner
@@ -570,12 +600,7 @@ export function FinanceBillingPage() {
         applyDisabled={!hasPendingFilterChanges || loading}
         hint={FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE}
         alwaysVisible={
-          <div className="space-y-4">
-            <p className="text-[11px] text-[#6B7280]">
-              Fonte padrão: <span className="font-semibold text-[#111827]">NF-e fiscal</span>.
-              Comparativo SalesOrder na aba Comparativos.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
             <FilterField label="Data base (NF-e)">
               <select
                 value={draftDateBase}
@@ -660,7 +685,6 @@ export function FinanceBillingPage() {
                 <option value="cancelled">Cancelada</option>
               </select>
             </FilterField>
-            </div>
           </div>
         }
       >

@@ -47,6 +47,35 @@ describe("financeExecutiveHeader", () => {
     assert.equal(ap.includes("FinanceFilterScopeBanner"), false);
   });
 
+  it("AP e Faturamento usam drawer de dados e auditoria", () => {
+    const ap = readFileSync(
+      join(process.cwd(), "src/components/finance/FinanceAccountsPayablePage.tsx"),
+      "utf8"
+    );
+    const billing = readFileSync(
+      join(process.cwd(), "src/components/finance/FinanceBillingPage.tsx"),
+      "utf8"
+    );
+    assert.ok(ap.includes("FinanceDataAuditDrawer"));
+    assert.ok(ap.includes("FinanceDataAuditButton"));
+    assert.ok(billing.includes("FinanceDataAuditDrawer"));
+    assert.ok(billing.includes("FinanceDataAuditButton"));
+  });
+
+  it("Faturamento usa header executivo limpo sem badge técnica no topo", () => {
+    const billing = readFileSync(
+      join(process.cwd(), "src/components/finance/FinanceBillingPage.tsx"),
+      "utf8"
+    );
+    assert.ok(billing.includes("FinanceExecutivePageHeader"));
+    assert.ok(billing.includes("FINANCE_BILLING_EXECUTIVE_SUBTITLE"));
+    assert.equal(billing.includes("FinanceBiExecutiveHeader"), false);
+    assert.equal(billing.includes("FinanceBillingSourceBadge"), false);
+    assert.equal(billing.includes("filterStatus={filterStatus}"), false);
+    assert.equal(billing.includes("FINANCE_SYNC_GLOBAL_SCOPE"), false);
+    assert.equal(billing.includes("Sincronização NF-e Nomus"), false);
+  });
+
   it("drawer de auditoria existe com testid e botão fechar", () => {
     const drawer = readFileSync(
       join(process.cwd(), "src/components/finance/shared/FinanceDataAuditDrawer.tsx"),

@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildFinanceApAuditSections,
+  buildFinanceBillingAuditSections,
   buildFinanceCashFlowAuditSections,
   buildFinanceSanitizationAuditRows,
   countFinanceDataAuditWarnings,
@@ -81,5 +83,28 @@ describe("financeDataAudit", () => {
     );
     assert.equal(page.includes("Movimentos intercompany"), false);
     assert.ok(page.includes("buildFinanceCashFlowAuditSections"));
+  });
+
+  it("AP usa regras gerenciais específicas no drawer", () => {
+    const sections = buildFinanceApAuditSections({
+      lastSyncAt: null,
+      generatedAt: null,
+      appliedFilterItems: [],
+    });
+    const rules = sections.find((s) => s.id === "rules");
+    assert.equal(rules?.kind, "paragraphs");
+    if (rules?.kind === "paragraphs") {
+      assert.ok(rules.paragraphs.some((p) => p.includes("Pedidos de compra")));
+    }
+  });
+
+  it("Faturamento inclui seção de comparativo SalesOrder x NF-e", () => {
+    const sections = buildFinanceBillingAuditSections({
+      generatedAt: null,
+      lastInvoicedAt: null,
+      periodLabel: null,
+      appliedFilterItems: [],
+    });
+    assert.ok(sections.some((s) => s.id === "comparison"));
   });
 });

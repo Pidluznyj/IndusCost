@@ -41,8 +41,8 @@ describe("financeBillingSourceTypes", () => {
       "utf8"
     );
     assert.match(page, /FINANCE_BILLING_SOURCE_DEFAULT/);
-    assert.match(page, /FinanceBillingSourceBadge/);
-    assert.match(page, /SalesOrder aparece apenas/);
+    assert.match(page, /buildFinanceBillingDashboardQuery/);
+    assert.match(page, /buildFinanceBillingAuditSections/);
     assert.match(page, /FinanceBillingComparisonPanel/);
     assert.doesNotMatch(page, /setDraftBillingSource/);
   });
