@@ -26,6 +26,12 @@ import {
   Cell,
 } from "recharts";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import {
+  formatKpiCompactCurrency,
+  formatKpiCompactNumber,
+  formatKpiDisplayValue,
+} from "@/src/lib/kpiDisplayFormat";
+import "@/src/styles/indus-kpi-grid.css";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -485,16 +491,33 @@ export const ReportsModule = () => {
                 (issueDate) e filtros globais. Pedidos de venda registrados no IndusCost não representam necessariamente
                 NF ou faturamento fiscal.
               </ReportsContextNote>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="indus-kpi-grid indus-kpi-grid--wide">
                 <KpiCard label="Pedidos (período)" value={String(data.commercial.orderCount)} />
-                <KpiCard label="Valor líq. total" value={formatCurrency(data.commercial.totalNet)} />
+                <KpiCard
+                  label="Valor líq. total"
+                  value="—"
+                  amount={data.commercial.totalNet}
+                  amountFormat="currency"
+                />
                 <KpiCard
                   label="Enviados ao Nomus (líq.)"
-                  value={formatCurrency(data.commercial.sentToNomusNet)}
+                  value="—"
+                  amount={data.commercial.sentToNomusNet}
+                  amountFormat="currency"
                   hint="Status Enviado ao Nomus"
                 />
-                <KpiCard label="Pedidos em aberto (líq.)" value={formatCurrency(data.commercial.openOrdersNet)} />
-                <KpiCard label="Ticket médio" value={formatCurrency(data.commercial.ticketAvg)} />
+                <KpiCard
+                  label="Pedidos em aberto (líq.)"
+                  value="—"
+                  amount={data.commercial.openOrdersNet}
+                  amountFormat="currency"
+                />
+                <KpiCard
+                  label="Ticket médio"
+                  value="—"
+                  amount={data.commercial.ticketAvg}
+                  amountFormat="currency"
+                />
                 <KpiCard
                   label="Pedidos enviados ao Nomus"
                   value={String(data.commercial.sentToNomusCount)}
@@ -773,11 +796,36 @@ function ReportsContextNote({ children }: { children: React.ReactNode }) {
   );
 }
 
-function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function KpiCard({
+  label,
+  value,
+  hint,
+  amount,
+  amountFormat,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  amount?: number | null;
+  amountFormat?: "currency" | "number";
+}) {
+  let display = value;
+  let valueTitle: string | undefined;
+  if (amount != null && amountFormat) {
+    const formatted =
+      amountFormat === "currency"
+        ? formatKpiCompactCurrency(amount)
+        : formatKpiCompactNumber(amount);
+    const displayValue = formatKpiDisplayValue(formatted, label);
+    display = displayValue.value;
+    valueTitle = displayValue.valueTitle;
+  }
   return (
-    <div className="rounded-xl border border-border bg-card p-4 reports-print-break">
+    <div className="indus-kpi-card rounded-xl border border-border bg-card p-4 reports-print-break">
       <p className="text-[10px] font-bold uppercase text-muted-foreground leading-tight">{label}</p>
-      <p className="text-lg font-black mt-1">{value}</p>
+      <p className="indus-kpi-value text-lg font-black mt-1" title={valueTitle ?? value}>
+        {display}
+      </p>
       {hint ? <p className="text-[10px] text-muted-foreground mt-1 leading-snug">{hint}</p> : null}
     </div>
   );

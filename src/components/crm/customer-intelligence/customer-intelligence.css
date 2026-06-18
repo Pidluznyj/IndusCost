@@ -1,3 +1,5 @@
+@import "../../../styles/indus-kpi-grid.css";
+
 .customer-intelligence-page {
   --ci-card-radius: 1rem;
 }
@@ -8,8 +10,8 @@
 
 .customer-intelligence-kpi-grid {
   display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .customer-intelligence-tab-panel {

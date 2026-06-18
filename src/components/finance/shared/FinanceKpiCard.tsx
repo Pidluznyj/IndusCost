@@ -16,6 +16,9 @@ const TONE_COLOR_CLASS: Record<FinanceKpiTone, string> = {
 export type FinanceKpiCardProps = {
   label: string;
   value: string;
+  valueTitle?: string | null;
+  amount?: number | null;
+  amountFormat?: "currency" | "number" | "percent";
   subtitle?: string;
   helperText?: string;
   icon?: LucideIcon;
@@ -30,6 +33,9 @@ export type FinanceKpiCardProps = {
 export function FinanceKpiCard({
   label,
   value,
+  valueTitle,
+  amount,
+  amountFormat,
   subtitle,
   helperText,
   icon,
@@ -44,6 +50,9 @@ export function FinanceKpiCard({
       icon={icon}
       label={label}
       value={value}
+      valueTitle={valueTitle}
+      amount={amount}
+      amountFormat={amountFormat}
       sub={subtitle}
       hint={helperText}
       colorClass={TONE_COLOR_CLASS[tone]}

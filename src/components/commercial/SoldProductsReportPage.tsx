@@ -953,29 +953,37 @@ export function SoldProductsReportPage() {
               loading={loading}
             />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="indus-kpi-grid indus-kpi-grid--wide">
               <FinanceBiKpiCard
                 icon={Package}
                 label="Quantidade total vendida"
-                value={fmtQty(summary?.totalQuantity)}
+                value="—"
+                amount={loading ? undefined : summary?.totalQuantity}
+                amountFormat="number"
                 loading={loading}
               />
               <FinanceBiKpiCard
                 icon={TrendingUp}
                 label="Valor total vendido"
-                value={fmtMoney(summary?.totalAmount)}
+                value="—"
+                amount={loading ? undefined : summary?.totalAmount}
+                amountFormat="currency"
                 loading={loading}
               />
               <FinanceBiKpiCard
                 icon={BarChart3}
                 label="Produtos no ranking"
-                value={String(summary?.productsCount ?? "—")}
+                value="—"
+                amount={loading ? undefined : summary?.productsCount}
+                amountFormat="number"
                 loading={loading}
               />
               <FinanceBiKpiCard
                 icon={Users}
                 label="Clientes compradores"
-                value={String(summary?.customersCount ?? "—")}
+                value="—"
+                amount={loading ? undefined : summary?.customersCount}
+                amountFormat="number"
                 loading={loading}
               />
             </div>

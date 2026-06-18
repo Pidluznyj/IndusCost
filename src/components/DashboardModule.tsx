@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import "@/src/styles/indus-kpi-grid.css";
 import {
   Users,
   Cpu,
@@ -270,7 +271,7 @@ function OperationDashboardBody({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-8">
-      <div data-tour="dashboard-kpi-cards" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div data-tour="dashboard-kpi-cards" className="indus-kpi-grid">
         <KPICard
           title="Custo médio folha / colaborador"
           value={formatCurrency(data.kpis.avgEmployeeCost)}

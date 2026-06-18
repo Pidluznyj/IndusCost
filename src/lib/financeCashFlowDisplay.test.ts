@@ -169,4 +169,14 @@ describe("financeCashFlowDisplay", () => {
     assert.ok(page.includes("executiveYtd"));
     assert.ok(page.includes("FinanceCashFlowYtdSummary"));
   });
+
+  it("YTD summary usa grid responsivo indus-kpi-grid", () => {
+    const ytd = readFileSync(
+      join(process.cwd(), "src/components/finance/cash-flow/FinanceCashFlowYtdSummary.tsx"),
+      "utf8"
+    );
+    assert.ok(ytd.includes("indus-kpi-grid"));
+    assert.ok(ytd.includes("indus-kpi-value"));
+    assert.equal(ytd.includes("xl:grid-cols-6"), false);
+  });
 });

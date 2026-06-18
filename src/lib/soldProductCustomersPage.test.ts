@@ -130,7 +130,7 @@ describe("soldProductCustomersPage", () => {
 
   it("CSS de KPI usa grid auto-fit com minmax e ellipsis", () => {
     const css = readFileSync(
-      join(process.cwd(), "src/components/commercial/commercial-kpi-grid.css"),
+      join(process.cwd(), "src/styles/indus-kpi-grid.css"),
       "utf8"
     );
     assert.match(css, /repeat\(auto-fit,\s*minmax\(220px,\s*1fr\)\)/);
@@ -155,8 +155,8 @@ describe("soldProductCustomersPage", () => {
       "utf8"
     );
     assert.ok(cardSrc.includes("valueTitle"));
-    assert.match(cardSrc, /title=\{valueTitle/);
-    assert.ok(cardSrc.includes("commercial-kpi-value"));
+    assert.match(cardSrc, /title=\{displayTitle/);
+    assert.ok(cardSrc.includes("indus-kpi-value"));
   });
 
   it("export filename usa código do produto", () => {

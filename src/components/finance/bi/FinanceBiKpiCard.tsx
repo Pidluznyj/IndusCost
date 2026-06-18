@@ -6,14 +6,22 @@ import {
   financeBiKpiValueClass,
 } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceBiCalcTooltip } from "@/src/components/finance/bi/FinanceBiCalcTooltip";
+import {
+  formatKpiCompactCurrency,
+  formatKpiCompactNumber,
+  formatKpiCompactPercent,
+  formatKpiDisplayValue,
+} from "@/src/lib/kpiDisplayFormat";
 import { cn } from "@/src/lib/utils";
-import "@/src/components/commercial/commercial-kpi-grid.css";
+import "@/src/styles/indus-kpi-grid.css";
 
 export function FinanceBiKpiCard({
   icon: Icon,
   label,
   value,
   valueTitle,
+  amount,
+  amountFormat,
   sub,
   hint,
   scopeNote,
@@ -29,6 +37,9 @@ export function FinanceBiKpiCard({
   value: string;
   /** Title/tooltip com valor completo quando o display está compacto. */
   valueTitle?: string | null;
+  /** Quando informado, formata valor + title automaticamente (sem alterar cálculo). */
+  amount?: number | null;
+  amountFormat?: "currency" | "number" | "percent";
   sub?: string;
   hint?: string;
   scopeNote?: string;
@@ -39,11 +50,26 @@ export function FinanceBiKpiCard({
   labelClassName?: string;
   loading?: boolean;
 }) {
+  let displayValue = value;
+  let displayTitle = valueTitle ?? undefined;
+
+  if (!loading && amount != null && amountFormat) {
+    const formatted =
+      amountFormat === "currency"
+        ? formatKpiCompactCurrency(amount)
+        : amountFormat === "percent"
+          ? formatKpiCompactPercent(amount)
+          : formatKpiCompactNumber(amount);
+    const display = formatKpiDisplayValue(formatted, label);
+    displayValue = display.value;
+    displayTitle = display.valueTitle ?? displayTitle;
+  }
+
   return (
     <div
       className={cn(
         financeBiCardClass,
-        "commercial-kpi-card p-5 space-y-3 min-h-[9.5rem]"
+        "indus-kpi-card commercial-kpi-card p-5 space-y-3 min-h-[9.5rem]"
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -72,13 +98,13 @@ export function FinanceBiKpiCard({
         <p
           className={cn(
             financeBiKpiValueClass,
-            "commercial-kpi-value tabular-nums",
+            "indus-kpi-value commercial-kpi-value tabular-nums",
             colorClass,
             valueClassName
           )}
-          title={valueTitle ?? undefined}
+          title={displayTitle}
         >
-          {value}
+          {displayValue}
         </p>
       )}
       <div className="flex items-center justify-between min-h-[1.25rem] gap-2">

@@ -20,6 +20,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
+import "@/src/styles/indus-kpi-grid.css";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import { fetchJsonOk } from "@/src/lib/http";
 import { SearchableSelect } from "@/src/components/shared/SearchableSelect";
@@ -737,7 +738,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              <div className="indus-kpi-grid indus-kpi-grid--wide">
                 <MiniCard label="Receita de pedidos (filtro)" value={formatCurrency(metrics.totalNet)} />
                 <MiniCard label="Pedidos (filtro)" value={String(metrics.count)} />
                 <MiniCard label="Pedidos válidos (filtro)" value={String(metrics.validCount)} />
@@ -938,9 +939,9 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
 
 function MiniCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <p className="text-[9px] font-bold text-muted-foreground uppercase leading-tight">{label}</p>
-      <p className="text-sm font-black mt-1 truncate" title={value}>
+    <div className="indus-kpi-card rounded-xl border border-border bg-card p-3 min-w-0">
+      <p className="text-[9px] font-bold text-muted-foreground uppercase leading-tight truncate">{label}</p>
+      <p className="indus-kpi-value text-sm font-black mt-1" title={value}>
         {value}
       </p>
       {hint && <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{hint}</p>}

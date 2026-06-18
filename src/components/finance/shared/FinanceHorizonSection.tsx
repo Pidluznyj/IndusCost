@@ -90,7 +90,7 @@ export function FinanceHorizonSection({
           <p className="text-[10px] text-[#9CA3AF] mt-1 leading-snug">{summary.scopeNote}</p>
         ) : null}
       </div>
-      <div className="p-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-6">
+      <div className="p-5 indus-kpi-grid indus-kpi-grid--wide">
         {loading && !summary
           ? HORIZON_SKELETON_CARDS.map(({ id, ...cardProps }) => (
               <React.Fragment key={id}>

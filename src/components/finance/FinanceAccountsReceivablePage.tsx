@@ -796,11 +796,13 @@ export function FinanceAccountsReceivablePage() {
             KPIs principais da carteira — números refletem filtros aplicados, salvo exceções rotuladas
           </p>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
+        <div className="p-5 indus-kpi-grid indus-kpi-grid--wide">
           <FinanceBiKpiCard
             icon={Wallet}
             label="Total a Receber"
-            value={loading ? "…" : formatFinanceKpiCurrency(cards?.totalAmountReceivable)}
+            value="—"
+            amount={loading ? undefined : cards?.totalAmountReceivable}
+            amountFormat="currency"
             sub={withAppliedFilterSub("Σ valor original no filtro", Boolean(filtersActive))}
             hint={FINANCE_KPI_AR_TOTAL_RECEIVABLE}
             colorClass="text-[#111827]"
@@ -809,7 +811,9 @@ export function FinanceAccountsReceivablePage() {
           <FinanceBiKpiCard
             icon={TrendingUp}
             label="Recebido"
-            value={loading ? "…" : formatFinanceKpiCurrency(cards?.totalReceivedAmount)}
+            value="—"
+            amount={loading ? undefined : cards?.totalReceivedAmount}
+            amountFormat="currency"
             sub={withAppliedFilterSub("Baixas acumuladas no filtro", Boolean(filtersActive))}
             hint={FINANCE_KPI_AR_RECEIVED}
             colorClass="text-[#059669]"
@@ -818,7 +822,9 @@ export function FinanceAccountsReceivablePage() {
           <FinanceBiKpiCard
             icon={Wallet}
             label="Em Aberto"
-            value={loading ? "…" : formatFinanceKpiCurrency(cards?.totalOpenAmount)}
+            value="—"
+            amount={loading ? undefined : cards?.totalOpenAmount}
+            amountFormat="currency"
             sub={withAppliedFilterSub(
               cards?.openTitlesCount != null
                 ? `${formatFinanceInteger(cards.openTitlesCount)} título${cards.openTitlesCount !== 1 ? "s" : ""}`
@@ -832,7 +838,9 @@ export function FinanceAccountsReceivablePage() {
           <FinanceBiKpiCard
             icon={AlertTriangle}
             label="Vencido"
-            value={loading ? "…" : formatFinanceKpiCurrency(cards?.overdueAmount)}
+            value="—"
+            amount={loading ? undefined : cards?.overdueAmount}
+            amountFormat="currency"
             sub={withAppliedFilterSub("Vencimento anterior a hoje", Boolean(filtersActive))}
             hint={FINANCE_KPI_AR_OVERDUE}
             colorClass={(cards?.overdueAmount ?? 0) > 0 ? "text-[#DC2626]" : "text-[#111827]"}
@@ -841,7 +849,9 @@ export function FinanceAccountsReceivablePage() {
           <FinanceBiKpiCard
             icon={Clock}
             label="Vence Hoje"
-            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueTodayAmount)}
+            value="—"
+            amount={loading ? undefined : cards?.dueTodayAmount}
+            amountFormat="currency"
             sub={withAppliedFilterSub("Vencimento = hoje", Boolean(filtersActive))}
             hint={FINANCE_KPI_AR_DUE_TODAY}
             colorClass="text-[#D97706]"
@@ -850,7 +860,9 @@ export function FinanceAccountsReceivablePage() {
           <FinanceBiKpiCard
             icon={Clock}
             label="Próximos 7 Dias"
-            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueNext7DaysAmount)}
+            value="—"
+            amount={loading ? undefined : cards?.dueNext7DaysAmount}
+            amountFormat="currency"
             sub={withAppliedFilterSub("Hoje até +7 dias", Boolean(filtersActive))}
             hint={FINANCE_KPI_AR_DUE_7_DAYS}
             colorClass="text-[#2563EB]"
@@ -859,7 +871,9 @@ export function FinanceAccountsReceivablePage() {
           <FinanceBiKpiCard
             icon={Clock}
             label="Próximos 30 Dias"
-            value={loading ? "…" : formatFinanceKpiCurrency(cards?.dueNext30DaysAmount)}
+            value="—"
+            amount={loading ? undefined : cards?.dueNext30DaysAmount}
+            amountFormat="currency"
             sub={withAppliedFilterSub("Hoje até +30 dias", Boolean(filtersActive))}
             hint={FINANCE_KPI_AR_DUE_30_DAYS}
             colorClass="text-[#2563EB]"
@@ -868,7 +882,9 @@ export function FinanceAccountsReceivablePage() {
           <FinanceBiKpiCard
             icon={TrendingDown}
             label="Inadimplência"
-            value={loading ? "…" : formatFinancePercent(cards?.delinquencyRate)}
+            value="—"
+            amount={loading ? undefined : cards?.delinquencyRate}
+            amountFormat="percent"
             sub={withAppliedFilterSub(
               cards?.overdueCustomersCount != null
                 ? `${formatFinanceInteger(cards.overdueCustomersCount)} cliente(s) em atraso`

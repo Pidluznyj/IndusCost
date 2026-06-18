@@ -1,0 +1,46 @@
+/**
+ * Padrão IndusCost — grids e cards de KPI responsivos.
+ * Evita 6–8 cards estreitos na mesma linha; valores com ellipsis + title quando compactos.
+ */
+
+.indus-kpi-grid,
+.commercial-kpi-grid,
+.metric-grid,
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.indus-kpi-grid--wide {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.indus-kpi-card,
+.commercial-kpi-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.indus-kpi-value,
+.commercial-kpi-value {
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.25rem, 1.6vw, 1.875rem);
+  line-height: 1.1;
+}
+
+.indus-table-nowrap {
+  white-space: nowrap;
+}
+
+.indus-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

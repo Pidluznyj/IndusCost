@@ -1,27 +1,39 @@
 import React from "react";
-import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { FINANCIAL_STATUS_LABEL_PT } from "@/src/lib/customerIntelligenceNavigation";
+import {
+  formatKpiCompactCurrency,
+  formatKpiCompactNumber,
+  formatKpiCompactPercent,
+  formatKpiDisplayValue,
+} from "@/src/lib/kpiDisplayFormat";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
 
 type KpiItem = {
   label: string;
   value: string;
+  valueTitle?: string;
   hint?: string;
 };
 
-function formatOptionalCurrency(value: number | null | undefined): string {
-  if (value == null) return "Não informado";
-  return formatCurrency(value);
+function formatOptionalCurrency(value: number | null | undefined): KpiItem {
+  if (value == null) return { label: "", value: "Não informado" };
+  const formatted = formatKpiCompactCurrency(value);
+  const display = formatKpiDisplayValue(formatted);
+  return { label: "", value: display.value, valueTitle: display.valueTitle };
 }
 
-function formatOptionalNumber(value: number | null | undefined): string {
-  if (value == null) return "Não informado";
-  return formatNumber(value);
+function formatOptionalNumber(value: number | null | undefined): KpiItem {
+  if (value == null) return { label: "", value: "Não informado" };
+  const formatted = formatKpiCompactNumber(value);
+  const display = formatKpiDisplayValue(formatted);
+  return { label: "", value: display.value, valueTitle: display.valueTitle };
 }
 
-function formatOptionalPercent(value: number | null | undefined): string {
-  if (value == null) return "Não informado";
-  return `${value.toFixed(1)}%`;
+function formatOptionalPercent(value: number | null | undefined): KpiItem {
+  if (value == null) return { label: "", value: "Não informado" };
+  const formatted = formatKpiCompactPercent(value);
+  const display = formatKpiDisplayValue(formatted);
+  return { label: "", value: display.value, valueTitle: display.valueTitle };
 }
 
 export function buildCustomerIntelligenceKpiItems(
@@ -31,28 +43,84 @@ export function buildCustomerIntelligenceKpiItems(
   const f = report.financial;
   const lifetime = report.lifetimeSummary;
 
+  const revenue = formatKpiDisplayValue(formatKpiCompactCurrency(s.revenue), "Receita (filtro)");
+  const lifetimeRevenue = formatKpiDisplayValue(
+    formatKpiCompactCurrency(lifetime.revenue),
+    "Receita histórica"
+  );
+  const orders = formatKpiDisplayValue(formatKpiCompactNumber(s.ordersCount), "Pedidos (filtro)");
+  const lifetimeOrders = formatKpiDisplayValue(
+    formatKpiCompactNumber(lifetime.ordersCount),
+    "Pedidos históricos"
+  );
+  const validOrders = formatKpiDisplayValue(
+    formatKpiCompactNumber(s.validOrdersCount),
+    "Pedidos válidos"
+  );
+  const ticket = formatOptionalCurrency(s.averageTicket);
+  const margin = formatOptionalPercent(s.averageMarginPercent);
+  const openPortfolio = formatKpiDisplayValue(
+    formatKpiCompactCurrency(s.openPortfolioAmount),
+    "Carteira comercial em aberto"
+  );
+  const daysSince = formatOptionalNumber(s.daysSinceLastOrder);
+
   return [
-    { label: "Receita (filtro)", value: formatCurrency(s.revenue) },
-    { label: "Receita histórica", value: formatCurrency(lifetime.revenue) },
-    { label: "Pedidos (filtro)", value: formatNumber(s.ordersCount) },
-    { label: "Pedidos históricos", value: formatNumber(lifetime.ordersCount) },
-    { label: "Pedidos válidos", value: formatNumber(s.validOrdersCount) },
+    {
+      label: "Receita (filtro)",
+      value: revenue.value,
+      valueTitle: revenue.valueTitle,
+    },
+    {
+      label: "Receita histórica",
+      value: lifetimeRevenue.value,
+      valueTitle: lifetimeRevenue.valueTitle,
+    },
+    {
+      label: "Pedidos (filtro)",
+      value: orders.value,
+      valueTitle: orders.valueTitle,
+    },
+    {
+      label: "Pedidos históricos",
+      value: lifetimeOrders.value,
+      valueTitle: lifetimeOrders.valueTitle,
+    },
+    {
+      label: "Pedidos válidos",
+      value: validOrders.value,
+      valueTitle: validOrders.valueTitle,
+    },
     {
       label: "Ticket médio",
-      value: formatOptionalCurrency(s.averageTicket),
+      value: ticket.value,
+      valueTitle: ticket.valueTitle,
     },
     {
       label: "Margem média",
-      value: formatOptionalPercent(s.averageMarginPercent),
+      value: margin.value,
+      valueTitle: margin.valueTitle,
     },
     {
       label: "Carteira em aberto (AR)",
-      value: f.linkedByCnpj ? formatOptionalCurrency(f.receivableOpenAmount) : "Não informado",
+      value: f.linkedByCnpj
+        ? formatOptionalCurrency(f.receivableOpenAmount).value
+        : "Não informado",
+      valueTitle: f.linkedByCnpj
+        ? formatKpiDisplayValue(
+            formatKpiCompactCurrency(f.receivableOpenAmount),
+            "Carteira em aberto (AR)"
+          ).valueTitle
+        : undefined,
       hint: f.linkedByCnpj ? "Financeiro canônico" : undefined,
     },
     {
       label: "Valor vencido (AR)",
-      value: f.linkedByCnpj ? formatOptionalCurrency(f.overdueAmount) : "Não informado",
+      value: f.linkedByCnpj ? formatOptionalCurrency(f.overdueAmount).value : "Não informado",
+      valueTitle: f.linkedByCnpj
+        ? formatKpiDisplayValue(formatKpiCompactCurrency(f.overdueAmount), "Valor vencido (AR)")
+            .valueTitle
+        : undefined,
       hint: f.linkedByCnpj ? "Financeiro canônico" : undefined,
     },
     {
@@ -63,12 +131,14 @@ export function buildCustomerIntelligenceKpiItems(
     },
     {
       label: "Carteira comercial em aberto",
-      value: formatCurrency(s.openPortfolioAmount),
+      value: openPortfolio.value,
+      valueTitle: openPortfolio.valueTitle,
       hint: "Pedidos sem faturamento",
     },
     {
       label: "Dias desde último pedido",
-      value: formatOptionalNumber(s.daysSinceLastOrder),
+      value: daysSince.value,
+      valueTitle: daysSince.valueTitle,
     },
   ];
 }
@@ -81,12 +151,12 @@ export function CustomerIntelligenceKpiGrid({ report }: { report: CustomerIntell
       {items.map((item) => (
         <div
           key={item.label}
-          className="rounded-xl border border-border bg-card px-3 py-3 shadow-sm min-w-0"
+          className="indus-kpi-card rounded-xl border border-border bg-card px-3 py-3 shadow-sm min-w-0"
         >
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground truncate">
             {item.label}
           </p>
-          <p className="text-lg font-bold mt-1 truncate" title={item.value}>
+          <p className="indus-kpi-value text-lg font-bold mt-1" title={item.valueTitle ?? item.value}>
             {item.value}
           </p>
           {item.hint ? <p className="text-[10px] text-muted-foreground mt-0.5">{item.hint}</p> : null}

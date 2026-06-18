@@ -948,7 +948,6 @@ export function FinanceBillingPage() {
 function FinanceBillingKpiGroup({
   title,
   subtitle,
-  columns = 4,
   children,
 }: {
   title: string;
@@ -956,10 +955,7 @@ function FinanceBillingKpiGroup({
   columns?: 3 | 4;
   children: React.ReactNode;
 }) {
-  const gridClass =
-    columns === 3
-      ? "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3"
-      : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4";
+  const gridClass = "indus-kpi-grid indus-kpi-grid--wide";
 
   return (
     <section className="space-y-4">

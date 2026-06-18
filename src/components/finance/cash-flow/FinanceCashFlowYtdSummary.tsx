@@ -16,6 +16,7 @@ import { FINANCE_CASH_FLOW_SANITIZED_SCOPE } from "@/src/lib/financeFilterScope"
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceCashFlowYtdTrendChart } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdTrendChart";
 import { FinanceCashFlowYtdTotalsPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdTotalsPanel";
+import "@/src/styles/indus-kpi-grid.css";
 import { cn } from "@/src/lib/utils";
 
 function CompactYtdCard({
@@ -44,7 +45,7 @@ function CompactYtdCard({
       data-testid={testId}
       title={titleExtra ? `${valueFull}\n${titleExtra}` : valueFull}
       className={cn(
-        "rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 min-h-[88px] flex flex-col justify-between",
+        "indus-kpi-card rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 min-h-[88px] flex flex-col justify-between min-w-0",
         featured && "ring-1 ring-[#2563EB]/20 border-[#BFDBFE]"
       )}
     >
@@ -56,7 +57,7 @@ function CompactYtdCard({
       </div>
       <p
         className={cn(
-          "text-lg sm:text-xl font-bold tabular-nums leading-tight break-words mt-1",
+          "indus-kpi-value text-lg sm:text-xl font-bold tabular-nums leading-tight mt-1",
           colorClass
         )}
       >
@@ -159,7 +160,7 @@ export function FinanceCashFlowYtdSummary({
       </div>
 
       <div className="p-4 space-y-3">
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
+        <div className="indus-kpi-grid indus-kpi-grid--wide">
           <CompactYtdCard
             testId="ytd-kpi-net-position"
             label="Posição líquida YTD"
@@ -250,7 +251,7 @@ export function FinanceCashFlowYtdSummary({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="indus-kpi-grid">
           <MiniStat label="Vencidos AR" value={formatCashFlowKpiDisplay(executiveYtd.overdueReceivableAmount)} tone="in" />
           <MiniStat label="Vencidos AP" value={formatCashFlowKpiDisplay(executiveYtd.overduePayableAmount)} tone="out" />
           <MiniStat

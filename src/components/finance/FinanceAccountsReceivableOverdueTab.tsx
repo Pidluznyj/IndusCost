@@ -302,15 +302,24 @@ export function FinanceAccountsReceivableOverdueTab({
           <FinanceArLoadingBlock label="atrasados" />
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-              <FinanceBiKpiCard label="Total vencido" value={formatFinanceCurrency(summary?.totalOverdueAmount)} />
+            <div className="indus-kpi-grid indus-kpi-grid--wide">
+              <FinanceBiKpiCard
+                label="Total vencido"
+                value="—"
+                amount={summary?.totalOverdueAmount}
+                amountFormat="currency"
+              />
               <FinanceBiKpiCard
                 label="Títulos vencidos"
-                value={formatFinanceInteger(summary?.overdueTitlesCount)}
+                value="—"
+                amount={summary?.overdueTitlesCount}
+                amountFormat="number"
               />
               <FinanceBiKpiCard
                 label="Clientes em atraso"
-                value={formatFinanceInteger(summary?.overdueCustomersCount)}
+                value="—"
+                amount={summary?.overdueCustomersCount}
+                amountFormat="number"
               />
               <FinanceBiKpiCard
                 label="Média dias em atraso"
@@ -329,9 +338,24 @@ export function FinanceAccountsReceivableOverdueTab({
                     : undefined
                 }
               />
-              <FinanceBiKpiCard label="Acima de 30 dias" value={formatFinanceCurrency(summary?.over30Amount)} />
-              <FinanceBiKpiCard label="Acima de 60 dias" value={formatFinanceCurrency(summary?.over60Amount)} />
-              <FinanceBiKpiCard label="Acima de 90 dias" value={formatFinanceCurrency(summary?.over90Amount)} />
+              <FinanceBiKpiCard
+                label="Acima de 30 dias"
+                value="—"
+                amount={summary?.over30Amount}
+                amountFormat="currency"
+              />
+              <FinanceBiKpiCard
+                label="Acima de 60 dias"
+                value="—"
+                amount={summary?.over60Amount}
+                amountFormat="currency"
+              />
+              <FinanceBiKpiCard
+                label="Acima de 90 dias"
+                value="—"
+                amount={summary?.over90Amount}
+                amountFormat="currency"
+              />
             </div>
 
             <section className="rounded-xl border border-[#E5E7EB] bg-white p-4">
