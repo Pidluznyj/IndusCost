@@ -575,6 +575,7 @@ export function FinanceBillingPage() {
         </div>
       </FinanceDataAuditDrawer>
 
+      <main data-testid="finance-main-content">
       {error ? (
         <FinanceApErrorBanner
           message={error}
@@ -965,6 +966,7 @@ export function FinanceBillingPage() {
           ) : null}
         </div>
       </section>
+      </main>
     </FinanceBiDashboardShell>
   );
 }

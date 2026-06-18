@@ -704,6 +704,7 @@ export function FinanceAccountsReceivablePage() {
         sections={auditSections}
       />
 
+      <main data-testid="finance-main-content">
       {dashboardError ? (
         <FinanceArErrorBanner message={dashboardError} onDismiss={() => setDashboardError(null)} />
       ) : null}
@@ -1098,6 +1099,7 @@ export function FinanceAccountsReceivablePage() {
           </div>
         </div>
       </div>
+      </main>
 
       <FinanceAccountsReceivableSyncPanel
         canRun={canRunSync}

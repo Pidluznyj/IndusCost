@@ -10,6 +10,10 @@ import {
   isDefaultFinanceApUiFilters,
   normalizeFinanceApUiFilters,
 } from "./financeAccountsPayableDashboardTypes.js";
+import {
+  extractFinanceAuditDrawerBlock,
+  extractFinanceMainContentExcludingAuditDrawer,
+} from "./financePageSourceAudit.js";
 
 const REF = new Date(2026, 5, 6, 12, 0, 0, 0);
 
@@ -113,14 +117,20 @@ describe("financeAccountsPayablePageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
       "utf8"
     );
-    const mainBody = page.slice(0, page.indexOf("<FinanceDataAuditDrawer"));
-    assert.equal(mainBody.includes("Sync Nomus — Contas a Pagar"), false);
-    assert.equal(mainBody.includes("FinanceAccountsPayableSyncPanel"), false);
-    assert.ok(page.includes("FinanceAccountsPayableSyncPanel"));
-    assert.ok(page.includes("embedded"));
+    const main = extractFinanceMainContentExcludingAuditDrawer(page);
+    const drawer = extractFinanceAuditDrawerBlock(page);
+
+    assert.equal(main.includes("Sync Nomus — Contas a Pagar"), false);
+    assert.equal(main.includes("<FinanceAccountsPayableSyncPanel"), false);
+    assert.equal(main.includes("Atualizar status"), false);
+    assert.equal(main.includes("Rodar Contas a Pagar"), false);
+
+    assert.ok(drawer.includes("<FinanceAccountsPayableSyncPanel"));
+    assert.ok(drawer.includes("embedded"));
     assert.ok(page.includes("FinanceDataAuditButton"));
     assert.ok(page.includes('title="Contas a Pagar"'));
     assert.ok(page.includes("FINANCE_AP_EXECUTIVE_SUBTITLE"));
+    assert.ok(page.includes('data-testid="finance-main-content"'));
   });
 
   it("FinanceModule mantém rotas absolutas após alinhamento de filtros", () => {

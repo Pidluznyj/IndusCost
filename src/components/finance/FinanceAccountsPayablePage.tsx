@@ -691,6 +691,7 @@ export function FinanceAccountsPayablePage() {
         </div>
       </FinanceDataAuditDrawer>
 
+      <main data-testid="finance-main-content">
       {dashboardError ? (
         <FinanceApErrorBanner
           message={dashboardError}
@@ -1046,6 +1047,7 @@ export function FinanceAccountsPayablePage() {
           ) : null}
         </div>
       </section>
+      </main>
     </FinanceBiDashboardShell>
   );
 }

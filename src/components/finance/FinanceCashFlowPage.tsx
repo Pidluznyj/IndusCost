@@ -288,6 +288,7 @@ export function FinanceCashFlowPage() {
         ) : null}
       </FinanceDataAuditDrawer>
 
+      <main data-testid="finance-main-content">
       <div data-testid="cash-flow-filters">
       <FinanceBiFilterPanel
         expanded={showAdvancedFilters}
@@ -474,7 +475,6 @@ export function FinanceCashFlowPage() {
           </label>
         </div>
       </FinanceBiFilterPanel>
-      </div>
 
       <nav className="flex flex-wrap gap-2 border-b border-[#E5E7EB] pb-2">
         {FINANCE_CASH_FLOW_TABS.map((tab) => {
@@ -625,6 +625,8 @@ export function FinanceCashFlowPage() {
       ) : null}
 
       {payload && activeTab === "risk" ? <FinanceCashFlowRiskTab payload={payload} /> : null}
+      </div>
+      </main>
       </div>
     </FinanceBiDashboardShell>
   );
