@@ -14,7 +14,7 @@ import type {
   CustomerIntelligenceBuildInput,
   CustomerIntelligenceOrderInput,
 } from "./customerIntelligenceTypes.js";
-import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "./customerIntelligenceRoutes.js";
+import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "./customerIntelligencePermissions.js";
 import { buildNomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import type { FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
 
@@ -533,8 +533,13 @@ describe("customerIntelligenceRoutes — registro e segurança", () => {
   it("endpoint exige autenticação e permissão", () => {
     assert.ok(routesSrc.includes("requireAppAuth"));
     assert.ok(routesSrc.includes("requireAnyPermission"));
+    assert.ok(routesSrc.includes("CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS"));
     for (const perm of CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS) {
-      assert.ok(routesSrc.includes(perm));
+      const permissionsSrc = readFileSync(
+        join(process.cwd(), "src/lib/customerIntelligencePermissions.ts"),
+        "utf8"
+      );
+      assert.ok(permissionsSrc.includes(perm));
     }
   });
 

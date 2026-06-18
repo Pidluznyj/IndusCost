@@ -76,4 +76,13 @@ describe("customerIntelligenceNavigation", () => {
     assert.ok(crmSrc.includes("buildCustomerIntelligencePath"));
     assert.ok(crmSrc.includes("Inteligência"));
   });
+
+  it("lista de pedidos possui link seguro para inteligência quando há customerId", () => {
+    const salesSrc = readFileSync(
+      join(process.cwd(), "src/components/SalesOrdersModule.tsx"),
+      "utf8"
+    );
+    assert.ok(salesSrc.includes("buildCustomerIntelligencePath"));
+    assert.ok(salesSrc.includes("customerId"));
+  });
 });

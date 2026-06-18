@@ -28,7 +28,7 @@ export function CustomerIntelligenceFilters({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 className="text-sm font-bold">Filtros</h2>
-          <p className="text-xs text-muted-foreground">Refinem a consulta ao endpoint consolidado.</p>
+          <p className="text-xs text-muted-foreground">Período e escopo da análise comercial.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button

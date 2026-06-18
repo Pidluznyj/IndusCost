@@ -12,17 +12,14 @@ import {
   salesOrderMatchesCustomer,
 } from "@/src/lib/customerCommercialSalesOrderView.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "@/src/lib/customerIntelligencePermissions.js";
+
+export { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS };
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireAnyPermission: (permissions: string[]) => RequestHandler;
 };
-
-export const CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS = [
-  "crm.customer_cockpit.view",
-  "customers.commercial360.view",
-  "customers.view",
-] as const;
 
 function isUuidParam(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(

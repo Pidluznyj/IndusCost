@@ -5,6 +5,10 @@
  */
 
 import { daysBetweenDates, toIsoDateOnly } from "@/src/lib/customerIntelligenceUtils.js";
+import {
+  CUSTOMER_INTELLIGENCE_CRM_ACTIVITY_CREATE_PERMISSION,
+  CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS,
+} from "@/src/lib/customerIntelligencePermissions.js";
 import type {
   CustomerIntelligenceActivityInput,
   CustomerIntelligenceCrm,
@@ -19,14 +23,7 @@ export const CUSTOMER_INTELLIGENCE_CRM_ACTIVITIES_LIMIT = 50;
 export const CUSTOMER_INTELLIGENCE_CRM_TASKS_LIMIT = 20;
 export const CUSTOMER_INTELLIGENCE_CRM_NOTES_LIMIT = 12;
 
-export const CUSTOMER_INTELLIGENCE_CRM_VIEW_PERMISSIONS = [
-  "crm.customer_cockpit.view",
-  "customers.commercial360.view",
-  "customers.view",
-  "crm.view",
-] as const;
-
-export const CUSTOMER_INTELLIGENCE_CRM_ACTIVITY_CREATE_PERMISSION = "crm.activities.create";
+export const CUSTOMER_INTELLIGENCE_CRM_VIEW_PERMISSIONS = CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS;
 
 function activityTimelineDate(activity: CustomerIntelligenceActivityInput): Date {
   return (

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2, Package, Printer, Receipt, ShoppingBag, Sparkles, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
+import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import { SearchableSelect, type SelectOption } from "@/src/components/shared/SearchableSelect";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
@@ -10,6 +11,7 @@ import type { Customer } from "@/src/types/commercial";
 
 type SalesOrderRow = {
   id: string;
+  customerId: string | null;
   orderCode: string;
   status: string;
   issueDate: string;
@@ -390,7 +392,20 @@ function SalesOrderList() {
                         <span className="block text-[10px] text-muted-foreground">Nomus: {r.Proposal.externalProposalCode}</span>
                       ) : null}
                     </td>
-                    <td className="p-3">{r.Customer?.companyName ?? "—"}</td>
+                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      {r.customerId ? (
+                        <Link
+                          to={buildCustomerIntelligencePath(r.customerId)}
+                          className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                          title="Inteligência do Cliente"
+                        >
+                          {r.Customer?.companyName ?? "—"}
+                          <Sparkles className="h-3 w-3 shrink-0 opacity-70" />
+                        </Link>
+                      ) : (
+                        r.Customer?.companyName ?? "—"
+                      )}
+                    </td>
                     <td className="p-3 text-muted-foreground">{r.responsible || "—"}</td>
                     <td className="p-3 text-xs">{new Date(r.issueDate).toLocaleDateString("pt-BR")}</td>
                     <td className="p-3">

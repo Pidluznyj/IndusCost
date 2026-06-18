@@ -6,11 +6,10 @@ import {
   buildCustomerIntelligenceCrm,
   buildCustomerIntelligenceCrmActions,
   CUSTOMER_INTELLIGENCE_CRM_NO_RECENT_CONTACT_DAYS,
-  CUSTOMER_INTELLIGENCE_CRM_VIEW_PERMISSIONS,
   resolveCustomerIntelligenceRelationshipStatus,
 } from "./customerIntelligenceCrm.js";
 import type { CustomerIntelligenceActivityInput } from "./customerIntelligenceTypes.js";
-import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "./customerIntelligenceRoutes.js";
+import { CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS } from "./customerIntelligencePermissions.js";
 
 const NOW = new Date("2026-06-17T12:00:00.000Z");
 const CUSTOMER_ID = "11111111-1111-4111-8111-111111111111";
@@ -224,12 +223,13 @@ describe("customerIntelligenceCrm — permissões", () => {
   );
 
   it("permissoes de visualização alinhadas ao endpoint de inteligência", () => {
+    assert.ok(routesSrc.includes("CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS"));
+    const permissionsSrc = readFileSync(
+      join(process.cwd(), "src/lib/customerIntelligencePermissions.ts"),
+      "utf8"
+    );
     for (const perm of CUSTOMER_INTELLIGENCE_VIEW_PERMISSIONS) {
-      assert.ok(routesSrc.includes(perm));
-    }
-    for (const perm of CUSTOMER_INTELLIGENCE_CRM_VIEW_PERMISSIONS) {
-      if (perm === "crm.view") continue;
-      assert.ok(routesSrc.includes(perm));
+      assert.ok(permissionsSrc.includes(perm));
     }
   });
 });

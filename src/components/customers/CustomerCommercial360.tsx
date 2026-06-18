@@ -460,6 +460,23 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
           </div>
         </div>
 
+        {customerId ? (
+          <div className="mx-4 mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-2 shrink-0">
+            <span>
+              Resumo rápido local. Para score, financeiro (AR), CRM e oportunidades prioritárias, abra a
+              Inteligência Completa.
+            </span>
+            <Link
+              to={buildCustomerIntelligencePath(customerId)}
+              onClick={onClose}
+              className="inline-flex items-center gap-1 font-semibold text-primary hover:underline whitespace-nowrap"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Inteligência Completa
+            </Link>
+          </div>
+        ) : null}
+
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {loading && (
             <div className="flex flex-col items-center justify-center py-16 gap-2">

@@ -20,12 +20,57 @@
   font-size: 0.75rem;
 }
 
+.customer-intelligence-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: hsl(var(--background) / 0.92);
+  backdrop-filter: blur(8px);
+  padding-bottom: 0.25rem;
+}
+
+.customer-intelligence-page section,
+.customer-intelligence-page table {
+  max-width: 100%;
+}
+
+.customer-intelligence-tab-panel {
+  overflow-x: auto;
+}
+
+.customer-intelligence-print-only {
+  display: none;
+}
+
 @media print {
   .customer-intelligence-no-print {
     display: none !important;
   }
 
+  .customer-intelligence-sticky-header {
+    position: static;
+    backdrop-filter: none;
+  }
+
   .customer-intelligence-page {
     padding: 0;
+    max-width: none;
+    overflow: visible;
+  }
+
+  .customer-intelligence-print-only {
+    display: block !important;
+    margin-bottom: 1rem;
+    font-size: 0.75rem;
+    color: #444;
+  }
+
+  .customer-intelligence-tab-panel {
+    overflow: visible;
+    break-inside: avoid;
+  }
+
+  .customer-intelligence-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

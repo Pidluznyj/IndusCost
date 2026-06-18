@@ -33,6 +33,7 @@ import { CustomerIntelligencePurchasesTab } from "./customer-intelligence/Custom
 import { CustomerIntelligenceProductsTab } from "./customer-intelligence/CustomerIntelligenceProductsTab";
 import { CustomerIntelligenceFinancialTab } from "./customer-intelligence/CustomerIntelligenceFinancialTab";
 import { CustomerIntelligenceCrmTab } from "./customer-intelligence/CustomerIntelligenceCrmTab";
+import { CustomerIntelligenceRepurchaseTab } from "./customer-intelligence/CustomerIntelligenceRepurchaseTab";
 import { CustomerIntelligenceOpportunitiesTab } from "./customer-intelligence/CustomerIntelligenceOpportunitiesTab";
 import "./customer-intelligence/customer-intelligence.css";
 
@@ -113,7 +114,7 @@ export function CustomerIntelligencePage() {
   };
 
   return (
-    <div className="customer-intelligence-page space-y-5 pb-8">
+    <div className="customer-intelligence-page space-y-5 pb-8 max-w-[1500px] mx-auto overflow-x-hidden">
       <div className="customer-intelligence-no-print flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -197,8 +198,18 @@ export function CustomerIntelligencePage() {
 
       {!loading && !error && report ? (
         <>
+          <div className="customer-intelligence-print-only">
+            <p className="font-semibold">
+              Ficha do cliente — {report.customer.name}
+            </p>
+            <p>
+              Impresso em {new Date().toLocaleDateString("pt-BR")} · Score {report.scoring.score}/100
+            </p>
+          </div>
           <CustomerIntelligenceDataQuality dataQuality={report.dataQuality} />
-          <CustomerIntelligenceHeader report={report} />
+          <div className="customer-intelligence-sticky-header space-y-4">
+            <CustomerIntelligenceHeader report={report} />
+          </div>
 
           {isEmptyReport(report) ? (
             <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">
@@ -220,10 +231,7 @@ export function CustomerIntelligencePage() {
               <CustomerIntelligenceProductsTab report={report} />
             ) : null}
             {activeTab === "repurchase" ? (
-              <CustomerIntelligenceTabPlaceholder
-                title="Recompra"
-                description={report.repurchase.detail ?? "Análise de recompra baseada no endpoint consolidado."}
-              />
+              <CustomerIntelligenceRepurchaseTab report={report} />
             ) : null}
             {activeTab === "financial" ? (
               <CustomerIntelligenceFinancialTab report={report} />

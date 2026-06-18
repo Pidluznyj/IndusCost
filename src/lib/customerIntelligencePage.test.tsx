@@ -630,4 +630,18 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
     assert.ok(html.includes("Ação sugerida"));
     assert.ok(html.includes("Prioridade"));
   });
+
+  it("aba Recompra integrada na página", () => {
+    assert.ok(pageSrc.includes("CustomerIntelligenceRepurchaseTab"));
+  });
+
+  it("página possui bloco de impressão e CSS print", () => {
+    assert.ok(pageSrc.includes("customer-intelligence-print-only"));
+    assert.ok(pageSrc.includes("Imprimir ficha"));
+    const cssSrc = readFileSync(
+      join(process.cwd(), "src/components/crm/customer-intelligence/customer-intelligence.css"),
+      "utf8"
+    );
+    assert.ok(cssSrc.includes("@media print"));
+  });
 });
