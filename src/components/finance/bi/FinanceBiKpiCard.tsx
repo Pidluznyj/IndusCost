@@ -7,11 +7,13 @@ import {
 } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceBiCalcTooltip } from "@/src/components/finance/bi/FinanceBiCalcTooltip";
 import { cn } from "@/src/lib/utils";
+import "@/src/components/commercial/commercial-kpi-grid.css";
 
 export function FinanceBiKpiCard({
   icon: Icon,
   label,
   value,
+  valueTitle,
   sub,
   hint,
   scopeNote,
@@ -25,6 +27,8 @@ export function FinanceBiKpiCard({
   icon?: React.ElementType;
   label: string;
   value: string;
+  /** Title/tooltip com valor completo quando o display está compacto. */
+  valueTitle?: string | null;
   sub?: string;
   hint?: string;
   scopeNote?: string;
@@ -36,7 +40,12 @@ export function FinanceBiKpiCard({
   loading?: boolean;
 }) {
   return (
-    <div className={cn(financeBiCardClass, "p-5 space-y-3 min-h-[9.5rem]")}>
+    <div
+      className={cn(
+        financeBiCardClass,
+        "commercial-kpi-card p-5 space-y-3 min-h-[9.5rem]"
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <span
           className={cn(
@@ -63,10 +72,11 @@ export function FinanceBiKpiCard({
         <p
           className={cn(
             financeBiKpiValueClass,
-            "whitespace-nowrap tabular-nums",
+            "commercial-kpi-value tabular-nums",
             colorClass,
             valueClassName
           )}
+          title={valueTitle ?? undefined}
         >
           {value}
         </p>

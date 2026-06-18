@@ -52,7 +52,8 @@ describe("financeKpiCard", () => {
   it("FinanceKpiCard e FinanceBiKpiCard evitam quebra de valor monetário", () => {
     const bi = readFileSync(biKpiCardPath, "utf8");
     const kpi = readFileSync(kpiCardPath, "utf8");
-    assert.match(bi, /whitespace-nowrap/);
+    assert.match(bi, /commercial-kpi-value/);
+    assert.match(bi, /title=\{valueTitle/);
     assert.match(bi, /tabular-nums/);
     assert.match(kpi, /text-xl font-semibold sm:text-2xl/);
   });

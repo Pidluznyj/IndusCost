@@ -68,7 +68,8 @@ describe("financeAccountsPayableKpiUx", () => {
       "utf8"
     );
     const kpi = readFileSync(kpiCardPath, "utf8");
-    assert.match(biKpi, /whitespace-nowrap/);
+    assert.match(biKpi, /commercial-kpi-value/);
+    assert.match(biKpi, /text-overflow:\s*ellipsis|commercial-kpi-value/);
     assert.match(kpi, /text-xl font-semibold sm:text-2xl/);
   });
 

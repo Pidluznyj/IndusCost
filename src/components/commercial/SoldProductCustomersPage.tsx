@@ -12,7 +12,13 @@ import {
   Users,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
-import { cn, formatCurrencyAdaptive, formatNumberAdaptive } from "@/src/lib/utils";
+import { cn } from "@/src/lib/utils";
+import {
+  formatCommercialCompactCurrency,
+  formatCommercialCompactNumber,
+  formatCommercialKpiValueWithTitle,
+  formatCommercialShortDate,
+} from "@/src/lib/commercialKpiFormat";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
@@ -26,7 +32,6 @@ import {
 import {
   buildSoldProductsDashboardQuery,
   createDefaultSoldProductsUiFilters,
-  formatSoldProductsIsoDateDisplay,
   isDefaultSoldProductsUiFilters,
   normalizeSoldProductsUiFilters,
   SOLD_PRODUCTS_COMPANY_OPTIONS,
@@ -47,9 +52,68 @@ import type { SoldProductCustomersPayload } from "@/src/lib/soldProductCustomers
 import type { SoldProductsUiFilters } from "@/src/lib/salesProductRankingTypes.js";
 import "@/src/components/commercial/sold-product-customers.css";
 
-const fmtMoney = (v: number | null | undefined) =>
-  v == null ? "—" : formatCurrencyAdaptive(v);
-const fmtQty = (v: number) => formatNumberAdaptive(v);
+function kpiCurrency(value: number | null | undefined, label: string) {
+  return formatCommercialKpiValueWithTitle(formatCommercialCompactCurrency(value), label);
+}
+
+function kpiNumber(value: number | null | undefined, label: string) {
+  return formatCommercialKpiValueWithTitle(formatCommercialCompactNumber(value), label);
+}
+
+function kpiDate(iso: string | null | undefined, label: string) {
+  const formatted = formatCommercialShortDate(iso);
+  return formatCommercialKpiValueWithTitle(formatted, label);
+}
+
+function CommercialKpiMoney({
+  label,
+  value,
+  icon,
+  hint,
+}: {
+  label: string;
+  value: number | null | undefined;
+  icon?: React.ElementType;
+  hint?: string;
+}) {
+  const formatted = kpiCurrency(value, label);
+  return (
+    <FinanceBiKpiCard
+      label={label}
+      value={formatted.value}
+      valueTitle={formatted.valueTitle}
+      icon={icon}
+      hint={hint}
+    />
+  );
+}
+
+function CommercialKpiQty({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon?: React.ElementType;
+}) {
+  const formatted = kpiNumber(value, label);
+  return (
+    <FinanceBiKpiCard
+      label={label}
+      value={formatted.value}
+      valueTitle={formatted.valueTitle}
+      icon={icon}
+    />
+  );
+}
+
+function CommercialKpiDate({ label, iso }: { label: string; iso: string | null | undefined }) {
+  const formatted = kpiDate(iso, label);
+  return (
+    <FinanceBiKpiCard label={label} value={formatted.value} valueTitle={formatted.valueTitle} />
+  );
+}
 
 function downloadTextFile(filename: string, content: string) {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
@@ -461,21 +525,14 @@ export function SoldProductCustomersPage() {
       ) : null}
 
       {data ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-4">
+        <div className="commercial-kpi-grid mb-4">
           <FinanceBiKpiCard label="Clientes" value={String(data.summary.customersCount)} icon={Users} />
-          <FinanceBiKpiCard label="Quantidade" value={fmtQty(data.summary.totalQuantity)} icon={Package} />
-          <FinanceBiKpiCard label="Receita" value={fmtMoney(data.summary.totalRevenue)} />
-          <FinanceBiKpiCard label="Preço médio" value={fmtMoney(data.summary.averageUnitPrice)} />
-          <FinanceBiKpiCard label="Menor preço" value={fmtMoney(data.summary.minUnitPrice)} />
-          <FinanceBiKpiCard label="Maior preço" value={fmtMoney(data.summary.maxUnitPrice)} />
-          <FinanceBiKpiCard
-            label="Última venda"
-            value={
-              data.summary.lastSaleDate
-                ? formatSoldProductsIsoDateDisplay(data.summary.lastSaleDate)
-                : "—"
-            }
-          />
+          <CommercialKpiQty label="Quantidade" value={data.summary.totalQuantity} icon={Package} />
+          <CommercialKpiMoney label="Receita" value={data.summary.totalRevenue} />
+          <CommercialKpiMoney label="Preço médio" value={data.summary.averageUnitPrice} />
+          <CommercialKpiMoney label="Menor preço" value={data.summary.minUnitPrice} />
+          <CommercialKpiMoney label="Maior preço" value={data.summary.maxUnitPrice} />
+          <CommercialKpiDate label="Última venda" iso={data.summary.lastSaleDate} />
           <FinanceBiKpiCard
             label="Inativos"
             value={String(data.summary.inactiveCustomersCount)}
@@ -500,54 +557,96 @@ export function SoldProductCustomersPage() {
             <table className="min-w-full text-sm sold-product-customers-table">
               <thead className="sticky top-0 z-10 bg-[#F9FAFB] shadow-[0_1px_0_#E5E7EB]">
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                  <th className="px-3 py-3 min-w-[200px]">Cliente</th>
-                  <th className="px-3 py-3">CNPJ</th>
-                  <th className="px-3 py-3">Cidade/UF</th>
+                  <th className="px-3 py-3 col-customer">Cliente</th>
+                  <th className="px-3 py-3 col-cnpj">CNPJ</th>
+                  <th className="px-3 py-3 col-city">Cidade/UF</th>
                   <th className="px-3 py-3">Responsável</th>
                   <th className="px-3 py-3 text-right">Pedidos</th>
-                  <th className="px-3 py-3 text-right">Qtd</th>
-                  <th className="px-3 py-3 text-right">Receita</th>
-                  <th className="px-3 py-3 text-right">Preço médio</th>
-                  <th className="px-3 py-3 text-right">Último preço</th>
-                  <th className="px-3 py-3">Última compra</th>
+                  <th className="px-3 py-3 text-right col-price">Qtd</th>
+                  <th className="px-3 py-3 col-money">Receita</th>
+                  <th className="px-3 py-3 col-price">Preço médio</th>
+                  <th className="px-3 py-3 col-price">Último preço</th>
+                  <th className="px-3 py-3 col-date">Última compra</th>
                   <th className="px-3 py-3 text-right">Dias s/ compra</th>
-                  <th className="px-3 py-3 text-right">Carteira</th>
-                  <th className="px-3 py-3 text-right">Vencido</th>
-                  <th className="px-3 py-3 min-w-[180px]">Ação sugerida</th>
-                  <th className="px-3 py-3 sticky right-0 bg-[#F9FAFB]">Ações</th>
+                  <th className="px-3 py-3 col-money">Carteira</th>
+                  <th className="px-3 py-3 col-money">Vencido</th>
+                  <th className="px-3 py-3 col-suggested">Ação sugerida</th>
+                  <th className="px-3 py-3 col-actions col-actions-sticky">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {data.customers.map((row) => (
+                {data.customers.map((row) => {
+                  const qty = formatCommercialCompactNumber(row.quantity);
+                  const revenue = formatCommercialCompactCurrency(row.totalRevenue);
+                  const avgPrice = formatCommercialCompactCurrency(row.averageUnitPrice);
+                  const lastPrice = formatCommercialCompactCurrency(row.lastUnitPrice);
+                  const portfolio = formatCommercialCompactCurrency(row.openPortfolioAmount);
+                  const overdue = formatCommercialCompactCurrency(row.overdueAmount);
+                  const lastPurchase = formatCommercialShortDate(row.lastPurchaseDate);
+                  const location = [row.city, row.state].filter(Boolean).join(" / ") || "—";
+
+                  return (
                   <tr key={row.customerId} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
-                    <td className="px-3 py-2.5 font-medium text-[#111827]">{row.customerName}</td>
-                    <td className="px-3 py-2.5 font-mono text-xs">{row.customerCnpj ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-[#6B7280]">
-                      {[row.city, row.state].filter(Boolean).join(" / ") || "—"}
+                    <td
+                      className="px-3 py-2.5 font-medium text-[#111827] col-customer cell-ellipsis"
+                      title={row.customerName}
+                    >
+                      {row.customerName}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-xs col-cnpj">{row.customerCnpj ?? "—"}</td>
+                    <td className="px-3 py-2.5 text-[#6B7280] col-city" title={location}>
+                      {location}
                     </td>
                     <td className="px-3 py-2.5 text-[#6B7280]">{row.commercialOwner ?? "—"}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{row.ordersCount}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{fmtQty(row.quantity)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{fmtMoney(row.totalRevenue)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{fmtMoney(row.averageUnitPrice)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{fmtMoney(row.lastUnitPrice)}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      {row.lastPurchaseDate
-                        ? formatSoldProductsIsoDateDisplay(row.lastPurchaseDate)
-                        : "—"}
+                    <td
+                      className="px-3 py-2.5 text-right cell-money col-price"
+                      title={qty.title ?? undefined}
+                    >
+                      {qty.display}
+                    </td>
+                    <td
+                      className="px-3 py-2.5 cell-money col-money"
+                      title={revenue.title ?? undefined}
+                    >
+                      {revenue.display}
+                    </td>
+                    <td
+                      className="px-3 py-2.5 cell-money col-price"
+                      title={avgPrice.title ?? undefined}
+                    >
+                      {avgPrice.display}
+                    </td>
+                    <td
+                      className="px-3 py-2.5 cell-money col-price"
+                      title={lastPrice.title ?? undefined}
+                    >
+                      {lastPrice.display}
+                    </td>
+                    <td
+                      className="px-3 py-2.5 col-date"
+                      title={lastPurchase.title ?? undefined}
+                    >
+                      {lastPurchase.display}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{row.daysSinceLastPurchase ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{fmtMoney(row.openPortfolioAmount)}</td>
+                    <td
+                      className="px-3 py-2.5 cell-money col-money"
+                      title={portfolio.title ?? undefined}
+                    >
+                      {portfolio.display}
+                    </td>
                     <td
                       className={cn(
-                        "px-3 py-2.5 text-right tabular-nums",
+                        "px-3 py-2.5 cell-money col-money",
                         (row.overdueAmount ?? 0) > 0 && "text-[#DC2626] font-semibold"
                       )}
+                      title={overdue.title ?? undefined}
                     >
-                      {fmtMoney(row.overdueAmount)}
+                      {overdue.display}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-[#374151]">{row.suggestedAction}</td>
-                    <td className="px-3 py-2.5 sticky right-0 bg-white">
+                    <td className="px-3 py-2.5 text-xs text-[#374151] col-suggested">{row.suggestedAction}</td>
+                    <td className="px-3 py-2.5 col-actions col-actions-sticky">
                       <div className="flex items-center gap-1">
                         <Link
                           to={buildCustomerRegistrationPath(row.customerId)}
@@ -568,7 +667,8 @@ export function SoldProductCustomersPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

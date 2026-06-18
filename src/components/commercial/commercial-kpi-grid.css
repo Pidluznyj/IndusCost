@@ -1,0 +1,21 @@
+/* Grade responsiva de KPIs comerciais — evita cards estreitos demais na mesma linha. */
+.commercial-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.commercial-kpi-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.commercial-kpi-value {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.25rem, 1.6vw, 1.875rem);
+  line-height: 1.1;
+}

@@ -122,7 +122,41 @@ describe("soldProductCustomersPage", () => {
       "utf8"
     );
     assert.ok(kpiSrc.includes("FinanceBiKpiCard"));
+    assert.ok(kpiSrc.includes("commercial-kpi-grid"));
+    assert.ok(kpiSrc.includes("formatCommercialCompactCurrency"));
+    assert.equal(kpiSrc.includes("xl:grid-cols-8"), false);
     assert.ok(kpiSrc.includes("Clientes compradores do produto"));
+  });
+
+  it("CSS de KPI usa grid auto-fit com minmax e ellipsis", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/components/commercial/commercial-kpi-grid.css"),
+      "utf8"
+    );
+    assert.match(css, /repeat\(auto-fit,\s*minmax\(220px,\s*1fr\)\)/);
+    assert.match(css, /text-overflow:\s*ellipsis/);
+    assert.match(css, /min-width:\s*0/);
+  });
+
+  it("tabela possui larguras mínimas nas colunas principais", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/components/commercial/sold-product-customers.css"),
+      "utf8"
+    );
+    assert.match(css, /\.col-customer[\s\S]*min-width:\s*220px/);
+    assert.match(css, /\.col-cnpj[\s\S]*min-width:\s*130px/);
+    assert.match(css, /\.col-money[\s\S]*min-width:\s*120px/);
+    assert.match(css, /\.col-actions[\s\S]*min-width:\s*160px/);
+  });
+
+  it("FinanceBiKpiCard suporta valueTitle para tooltip", () => {
+    const cardSrc = readFileSync(
+      join(process.cwd(), "src/components/finance/bi/FinanceBiKpiCard.tsx"),
+      "utf8"
+    );
+    assert.ok(cardSrc.includes("valueTitle"));
+    assert.match(cardSrc, /title=\{valueTitle/);
+    assert.ok(cardSrc.includes("commercial-kpi-value"));
   });
 
   it("export filename usa código do produto", () => {
