@@ -15,6 +15,8 @@ import {
   formatExecutiveReportPresentationPercent,
   mapBillingMultiYearToBarComparison,
   mapCashFlowTimelineToChart,
+  buildExecutiveCashFlowAnnualChart,
+  EXECUTIVE_REPORT_MONTH_LABELS_PT,
   mapRealizedProjectedChart,
   mapSalesOrdersMonthlyToChart,
 } from "./financeExecutiveReportPresentation.js";
@@ -265,8 +267,9 @@ describe("financeExecutiveReportPresentation", () => {
 
   it("dados negativos do fluxo são tratados corretamente", () => {
     const report = minimalReport();
-    const cash = mapCashFlowTimelineToChart(
+    const cash = buildExecutiveCashFlowAnnualChart(
       report.calendarAgenda.executiveSummary!.monthlyTimeline,
+      report.year,
       5
     );
     const negative = cash.rows.find((r) => r.netFlow < 0);
@@ -274,6 +277,32 @@ describe("financeExecutiveReportPresentation", () => {
     assert.equal(negative?.isNegative, true);
     assert.equal(positive?.isNegative, false);
     assert.equal(cash.hasData, true);
+    assert.equal(cash.rows.length, 12);
+  });
+
+  it("gráfico de fluxo ignora filtro de mês e mantém 12 meses do ano", () => {
+    const sparseTimeline = [
+      {
+        year: 2026,
+        month: 6,
+        monthLabel: "Jun",
+        received: 0,
+        receivableOpenDue: 1000,
+        estimatedInflow: 1000,
+        paid: 0,
+        payableOpenDue: 0,
+        estimatedOutflow: 0,
+        netFlow: 1000,
+        accumulatedNet: 1000,
+      },
+    ];
+    const chart = buildExecutiveCashFlowAnnualChart(sparseTimeline, 2026, 6);
+    assert.equal(chart.rows.length, 12);
+    assert.deepEqual(
+      chart.rows.map((r) => r.monthLabel),
+      [...EXECUTIVE_REPORT_MONTH_LABELS_PT]
+    );
+    assert.equal(mapCashFlowTimelineToChart(sparseTimeline, 6).rows.length, 12);
   });
 
   it("mapRealizedProjectedChart sinaliza meta ausente", () => {

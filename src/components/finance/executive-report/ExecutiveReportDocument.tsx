@@ -12,6 +12,8 @@ import {
   mapArScheduleToChart,
   mapBillingMultiYearToBarComparison,
   mapCashFlowTimelineToChart,
+  buildExecutiveCashFlowAnnualChart,
+  EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE,
   mapRealizedProjectedChart,
   mapSalesOrdersMonthlyToChart,
   executiveReportTargetMissing,
@@ -99,8 +101,9 @@ export function ExecutiveReportDocument({
     month
   );
 
-  const cashFlowChart = mapCashFlowTimelineToChart(
+  const cashFlowChart = buildExecutiveCashFlowAnnualChart(
     report.calendarAgenda.executiveSummary?.monthlyTimeline ?? [],
+    report.year,
     month
   );
 
@@ -470,6 +473,7 @@ export function ExecutiveReportDocument({
           <div className="mt-6">
             <ExecutiveCashFlowChart
               title="Fluxo de caixa planejado"
+              subtitle={EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE}
               rows={cashFlowChart.rows}
               empty={!cashFlowChart.hasData}
             />

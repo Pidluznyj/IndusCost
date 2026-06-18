@@ -211,27 +211,73 @@ export type ExecutiveCashFlowChartRow = {
   isNegative: boolean;
 };
 
-export function mapCashFlowTimelineToChart(
+export const EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE =
+  "Visão anual do caixa: entradas, saídas e saldo acumulado mês a mês.";
+
+function roundExecutiveCashFlowMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Gráfico anual de fluxo de caixa no Relatório Presidencial.
+ * Cards da seção respeitam o mês filtrado; este gráfico ignora o filtro de mês
+ * e sempre monta Jan–Dez do ano selecionado (exceção intencional, como YTD).
+ */
+export function buildExecutiveCashFlowAnnualChart(
   timeline: FinanceCashFlowExecutiveMonthlyRow[],
-  currentMonth: number
+  year: number,
+  highlightMonth: number
 ): { rows: ExecutiveCashFlowChartRow[]; hasData: boolean } {
-  const rows = [...timeline]
-    .sort((a, b) => a.month - b.month)
-    .map((r) => ({
-      month: r.month,
-      monthLabel: r.monthLabel,
-      isCurrentMonth: r.month === currentMonth,
-      inflow: r.estimatedInflow,
-      outflow: r.estimatedOutflow,
-      netFlow: r.netFlow,
-      accumulated: r.accumulatedNet,
-      isNegative: r.netFlow < 0,
-    }));
+  const byMonth = new Map<number, FinanceCashFlowExecutiveMonthlyRow>();
+  for (const row of timeline) {
+    if (row.year !== year) continue;
+    byMonth.set(row.month, row);
+  }
+
+  let runningAccumulated = 0;
+  const rows: ExecutiveCashFlowChartRow[] = [];
+
+  for (let month = 1; month <= 12; month += 1) {
+    const source = byMonth.get(month);
+    const inflow = roundExecutiveCashFlowMoney(source?.estimatedInflow ?? 0);
+    const outflow = roundExecutiveCashFlowMoney(source?.estimatedOutflow ?? 0);
+    const netFlow = roundExecutiveCashFlowMoney(
+      source?.netFlow ?? roundExecutiveCashFlowMoney(inflow - outflow)
+    );
+
+    if (source?.accumulatedNet != null && Number.isFinite(source.accumulatedNet)) {
+      runningAccumulated = roundExecutiveCashFlowMoney(source.accumulatedNet);
+    } else {
+      runningAccumulated = roundExecutiveCashFlowMoney(runningAccumulated + netFlow);
+    }
+
+    rows.push({
+      month,
+      monthLabel: executiveReportMonthLabelPt(month),
+      isCurrentMonth: month === highlightMonth,
+      inflow,
+      outflow,
+      netFlow,
+      accumulated: runningAccumulated,
+      isNegative: netFlow < 0,
+    });
+  }
 
   const hasData = rows.some(
     (r) => r.inflow !== 0 || r.outflow !== 0 || r.netFlow !== 0 || r.accumulated !== 0
   );
+
   return { rows, hasData };
+}
+
+/** @deprecated Prefer buildExecutiveCashFlowAnnualChart com ano explícito. */
+export function mapCashFlowTimelineToChart(
+  timeline: FinanceCashFlowExecutiveMonthlyRow[],
+  currentMonth: number
+): { rows: ExecutiveCashFlowChartRow[]; hasData: boolean } {
+  const year = timeline.find((row) => row.year != null)?.year ?? new Date().getFullYear();
+  return buildExecutiveCashFlowAnnualChart(timeline, year, currentMonth);
 }
 
 export type ExecutiveSalesOrdersChartRow = {
