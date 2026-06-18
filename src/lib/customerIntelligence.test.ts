@@ -90,6 +90,7 @@ function buildInput(
     customer: baseCustomer(),
     orders: [],
     activities: [],
+    crmProfile: null,
     arRows: [],
     arSyncCutoff: null,
     arLinkedByCnpj: false,
@@ -477,6 +478,39 @@ describe("buildCustomerIntelligenceReport", () => {
     );
     assert.ok(report.dataQuality.sources.includes("SalesOrder"));
     assert.ok(report.dataQuality.sources.includes("SalesOrderItem"));
+  });
+
+  it("integração report expõe payload crm completo", () => {
+    const report = buildCustomerIntelligenceReport(
+      buildInput({
+        activities: [
+          {
+            id: "act-1",
+            activityType: "CALL",
+            subject: "Contato",
+            description: null,
+            scheduledAt: null,
+            completedAt: null,
+            status: "OPEN",
+            assignedTo: "Maria",
+            contactDate: new Date("2026-05-01T10:00:00.000Z"),
+            channel: "phone",
+            outcome: null,
+            nextActionAt: new Date("2026-06-20T10:00:00.000Z"),
+            nextActionDescription: "Follow-up",
+            createdAt: new Date("2026-05-01T10:00:00.000Z"),
+            updatedAt: new Date("2026-05-01T10:00:00.000Z"),
+          },
+        ],
+        orders: [baseOrder({ id: "o1" })],
+      })
+    );
+
+    assert.equal(report.crm.commercialOwner, "Maria");
+    assert.equal(report.crm.lastContactAt, "2026-05-01T10:00:00.000Z");
+    assert.equal(report.crm.relationshipStatus, "ativo");
+    assert.ok(Array.isArray(report.crm.activities));
+    assert.ok(Array.isArray(report.crm.actions));
   });
 
   it("isCommercialMetricsSalesOrder exclui cancelados", () => {

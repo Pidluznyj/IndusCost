@@ -61,7 +61,7 @@ export async function loadCustomerIntelligenceData(customerId: string) {
 
   const customerDoc = normalizeCustomerDocument(customer.taxId);
 
-  const [salesOrdersRaw, activities, arLoadResult] = await Promise.all([
+  const [salesOrdersRaw, activities, crmProfile, arLoadResult] = await Promise.all([
     prisma.salesOrder.findMany({
       where: customer.taxId
         ? {
@@ -83,16 +83,32 @@ export async function loadCustomerIntelligenceData(customerId: string) {
     prisma.commercialActivity.findMany({
       where: { customerId },
       select: {
-        contactDate: true,
-        createdAt: true,
-        status: true,
-        nextActionAt: true,
-        description: true,
+        id: true,
+        activityType: true,
         subject: true,
+        description: true,
+        scheduledAt: true,
+        completedAt: true,
+        status: true,
+        assignedTo: true,
+        contactDate: true,
+        channel: true,
         outcome: true,
+        nextActionAt: true,
+        nextActionDescription: true,
+        createdAt: true,
+        updatedAt: true,
       },
       orderBy: [{ contactDate: "desc" }, { createdAt: "desc" }],
       take: 200,
+    }),
+    prisma.crmCustomerProfile.findUnique({
+      where: { customerId },
+      select: {
+        relationshipNotes: true,
+        relationshipLevel: true,
+        commercialTemperature: true,
+      },
     }),
     customerDoc
       ? loadFinanceArManagementRowsFromPrisma(prisma, { status: "all" })
@@ -130,6 +146,7 @@ export async function loadCustomerIntelligenceData(customerId: string) {
     customer,
     orders,
     activities,
+    crmProfile,
     arRows: arLoadResult.rows,
     arSyncCutoff: arLoadResult.syncCutoff,
     arLinkedByCnpj,
@@ -161,6 +178,7 @@ export function registerCustomerIntelligenceRoutes(app: express.Express, auth: A
         customer: loaded.customer,
         orders: loaded.orders,
         activities: loaded.activities,
+        crmProfile: loaded.crmProfile,
         arRows: loaded.arRows,
         arSyncCutoff: loaded.arSyncCutoff,
         arLinkedByCnpj: loaded.arLinkedByCnpj,

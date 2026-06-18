@@ -32,6 +32,7 @@ import { CustomerIntelligenceOverviewTab } from "./customer-intelligence/Custome
 import { CustomerIntelligencePurchasesTab } from "./customer-intelligence/CustomerIntelligencePurchasesTab";
 import { CustomerIntelligenceProductsTab } from "./customer-intelligence/CustomerIntelligenceProductsTab";
 import { CustomerIntelligenceFinancialTab } from "./customer-intelligence/CustomerIntelligenceFinancialTab";
+import { CustomerIntelligenceCrmTab } from "./customer-intelligence/CustomerIntelligenceCrmTab";
 import "./customer-intelligence/customer-intelligence.css";
 
 function isEmptyReport(report: CustomerIntelligenceReport): boolean {
@@ -226,12 +227,7 @@ export function CustomerIntelligencePage() {
             {activeTab === "financial" ? (
               <CustomerIntelligenceFinancialTab report={report} />
             ) : null}
-            {activeTab === "crm" ? (
-              <CustomerIntelligenceTabPlaceholder
-                title="CRM"
-                description={`${report.crm.openTasksCount} tarefa(s) aberta(s) — histórico na API.`}
-              />
-            ) : null}
+            {activeTab === "crm" ? <CustomerIntelligenceCrmTab report={report} /> : null}
             {activeTab === "profile" ? (
               <CustomerIntelligenceTabPlaceholder
                 title="Cadastro"

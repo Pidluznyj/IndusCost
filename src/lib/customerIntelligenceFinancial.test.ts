@@ -233,6 +233,7 @@ describe("buildCustomerIntelligenceReport — financeiro integrado", () => {
       },
       orders: [],
       activities: [],
+      crmProfile: null,
       arRows: [],
       arSyncCutoff: null,
       arLinkedByCnpj: true,

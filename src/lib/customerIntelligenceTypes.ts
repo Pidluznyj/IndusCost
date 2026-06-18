@@ -279,12 +279,78 @@ export type CustomerIntelligenceFinancial = {
   riskAlert: string | null;
 };
 
+export type CustomerIntelligenceRelationshipStatus =
+  | "ativo"
+  | "sem_contato_recente"
+  | "tarefa_vencida"
+  | "reativacao"
+  | "sem_historico";
+
+export type CustomerIntelligenceCrmActivity = {
+  id: string;
+  activityType: string;
+  subject: string | null;
+  description: string | null;
+  status: string;
+  contactDate: string | null;
+  scheduledAt: string | null;
+  completedAt: string | null;
+  nextActionAt: string | null;
+  nextActionDescription: string | null;
+  channel: string | null;
+  outcome: string | null;
+  assignedTo: string | null;
+  createdAt: string;
+  isOverdue: boolean;
+};
+
+export type CustomerIntelligenceCrmTask = {
+  id: string;
+  subject: string | null;
+  nextActionAt: string;
+  nextActionDescription: string | null;
+  assignedTo: string | null;
+  status: string;
+  isOverdue: boolean;
+};
+
+export type CustomerIntelligenceCrmNote = {
+  text: string;
+  source: "activity" | "profile";
+  recordedAt: string | null;
+};
+
+export type CustomerIntelligenceCrmActionKind = "link" | "disabled";
+
+export type CustomerIntelligenceCrmAction = {
+  id: string;
+  label: string;
+  kind: CustomerIntelligenceCrmActionKind;
+  href: string | null;
+  reason: string | null;
+};
+
+export type CustomerIntelligenceCrmDataQuality = {
+  sources: string[];
+  warnings: string[];
+  activitiesLoaded: number;
+  profileLoaded: boolean;
+};
+
 export type CustomerIntelligenceCrm = {
+  commercialOwner: string | null;
   lastContactAt: string | null;
+  lastActivityAt: string | null;
   nextTaskAt: string | null;
   openTasksCount: number;
   overdueTasksCount: number;
-  lastNotes: string[];
+  daysSinceLastContact: number | null;
+  activities: CustomerIntelligenceCrmActivity[];
+  tasks: CustomerIntelligenceCrmTask[];
+  notes: CustomerIntelligenceCrmNote[];
+  relationshipStatus: CustomerIntelligenceRelationshipStatus;
+  dataQuality: CustomerIntelligenceCrmDataQuality;
+  actions: CustomerIntelligenceCrmAction[];
 };
 
 export type CustomerIntelligenceOpportunity = {
@@ -348,19 +414,34 @@ export type CustomerIntelligenceCustomerInput = {
 };
 
 export type CustomerIntelligenceActivityInput = {
-  contactDate: Date | null;
-  createdAt: Date;
-  status: string;
-  nextActionAt: Date | null;
-  description: string | null;
+  id: string;
+  activityType: string;
   subject: string | null;
+  description: string | null;
+  scheduledAt: Date | null;
+  completedAt: Date | null;
+  status: string;
+  assignedTo: string | null;
+  contactDate: Date | null;
+  channel: string | null;
   outcome: string | null;
+  nextActionAt: Date | null;
+  nextActionDescription: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
+
+export type CustomerIntelligenceCrmProfileInput = {
+  relationshipNotes: string | null;
+  relationshipLevel: string | null;
+  commercialTemperature: string | null;
+} | null;
 
 export type CustomerIntelligenceBuildInput = {
   customer: CustomerIntelligenceCustomerInput;
   orders: CustomerIntelligenceOrderInput[];
   activities: CustomerIntelligenceActivityInput[];
+  crmProfile: CustomerIntelligenceCrmProfileInput;
   arRows: FinanceArDashboardRow[];
   arSyncCutoff: NomusArReportSyncCutoff | null;
   arLinkedByCnpj: boolean;

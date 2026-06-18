@@ -12,6 +12,7 @@ import { CustomerIntelligenceHeader } from "../components/crm/customer-intellige
 import { CustomerIntelligencePurchasesTab } from "../components/crm/customer-intelligence/CustomerIntelligencePurchasesTab.js";
 import { CustomerIntelligenceProductsTab } from "../components/crm/customer-intelligence/CustomerIntelligenceProductsTab.js";
 import { CustomerIntelligenceFinancialTab } from "../components/crm/customer-intelligence/CustomerIntelligenceFinancialTab.js";
+import { CustomerIntelligenceCrmTab } from "../components/crm/customer-intelligence/CustomerIntelligenceCrmTab.js";
 import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "./financeAccountsReceivableDashboard.js";
 
 function mockFinancial(
@@ -42,6 +43,75 @@ function mockFinancial(
     linkedByCnpj: false,
     financialStatus: "unlinked",
     riskAlert: null,
+    ...overrides,
+  };
+}
+
+function mockCrm(
+  overrides: Partial<CustomerIntelligenceReport["crm"]> = {}
+): CustomerIntelligenceReport["crm"] {
+  return {
+    commercialOwner: "Maria",
+    lastContactAt: "2026-05-01T10:00:00.000Z",
+    lastActivityAt: "2026-05-01T10:00:00.000Z",
+    nextTaskAt: "2026-06-20T10:00:00.000Z",
+    openTasksCount: 1,
+    overdueTasksCount: 0,
+    daysSinceLastContact: 47,
+    activities: [
+      {
+        id: "act-1",
+        activityType: "CALL",
+        subject: "Ligação comercial",
+        description: "Retorno sobre proposta",
+        status: "OPEN",
+        contactDate: "2026-05-01T10:00:00.000Z",
+        scheduledAt: null,
+        completedAt: null,
+        nextActionAt: "2026-06-20T10:00:00.000Z",
+        nextActionDescription: "Enviar proposta revisada",
+        channel: "phone",
+        outcome: "Cliente interessado",
+        assignedTo: "Maria",
+        createdAt: "2026-05-01T10:00:00.000Z",
+        isOverdue: false,
+      },
+    ],
+    tasks: [
+      {
+        id: "act-1",
+        subject: "Ligação comercial",
+        nextActionAt: "2026-06-20T10:00:00.000Z",
+        nextActionDescription: "Enviar proposta revisada",
+        assignedTo: "Maria",
+        status: "OPEN",
+        isOverdue: false,
+      },
+    ],
+    notes: [{ text: "Cliente interessado", source: "activity", recordedAt: "2026-05-01" }],
+    relationshipStatus: "ativo",
+    dataQuality: {
+      sources: ["CommercialActivity"],
+      warnings: [],
+      activitiesLoaded: 1,
+      profileLoaded: false,
+    },
+    actions: [
+      {
+        id: "open-crm",
+        label: "Abrir CRM Comercial",
+        kind: "link",
+        href: "/crm-commercial?customerId=11111111-1111-4111-8111-111111111111",
+        reason: null,
+      },
+      {
+        id: "register-contact",
+        label: "Registrar contato",
+        kind: "disabled",
+        href: null,
+        reason: "Use o CRM Comercial",
+      },
+    ],
     ...overrides,
   };
 }
@@ -189,13 +259,7 @@ function mockReport(overrides: Partial<CustomerIntelligenceReport> = {}): Custom
       detail: "Histórico insuficiente",
     },
     financial: mockFinancial(),
-    crm: {
-      lastContactAt: null,
-      nextTaskAt: null,
-      openTasksCount: 0,
-      overdueTasksCount: 0,
-      lastNotes: [],
-    },
+    crm: mockCrm(),
     opportunities: [
       {
         type: "INFO",
@@ -479,5 +543,49 @@ describe("customerIntelligencePage — apresentação (sem recálculo)", () => {
   it("aba Financeiro mostra empty state sem CNPJ", () => {
     const html = renderToStaticMarkup(<CustomerIntelligenceFinancialTab report={mockReport()} />);
     assert.ok(html.includes("Financeiro não vinculado"));
+  });
+
+  it("aba CRM integrada na página", () => {
+    assert.ok(pageSrc.includes("CustomerIntelligenceCrmTab"));
+    const html = renderToStaticMarkup(<CustomerIntelligenceTabs activeTab="crm" onChange={() => {}} />);
+    assert.ok(html.includes("CRM"));
+  });
+
+  it("aba CRM exibe cards, timeline e ações", () => {
+    const html = renderToStaticMarkup(<CustomerIntelligenceCrmTab report={mockReport()} />);
+    assert.ok(html.includes("CRM / Relacionamento"));
+    assert.ok(html.includes("Responsável"));
+    assert.ok(html.includes("Último contato"));
+    assert.ok(html.includes("Próxima tarefa"));
+    assert.ok(html.includes("Timeline de atividades"));
+    assert.ok(html.includes("Abrir CRM Comercial"));
+    assert.ok(html.includes("Registrar contato"));
+    assert.ok(html.includes("Origem dos dados"));
+  });
+
+  it("aba CRM mostra empty state sem histórico", () => {
+    const empty = mockReport({
+      crm: mockCrm({
+        relationshipStatus: "sem_historico",
+        activities: [],
+        tasks: [],
+        notes: [],
+        lastContactAt: null,
+        lastActivityAt: null,
+        nextTaskAt: null,
+        openTasksCount: 0,
+        overdueTasksCount: 0,
+        daysSinceLastContact: null,
+        dataQuality: {
+          sources: ["CommercialActivity"],
+          warnings: ["Nenhuma CommercialActivity registrada para este cliente."],
+          activitiesLoaded: 0,
+          profileLoaded: false,
+        },
+      }),
+    });
+    const html = renderToStaticMarkup(<CustomerIntelligenceCrmTab report={empty} />);
+    assert.ok(html.includes("Sem histórico de CRM para este cliente"));
+    assert.ok(html.includes("Abrir CRM Comercial"));
   });
 });

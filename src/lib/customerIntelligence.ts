@@ -4,6 +4,7 @@
  */
 
 import { buildCrmCommercialIntelligenceResponse } from "@/src/lib/crmCommercialIntelligence.js";
+import { buildCustomerIntelligenceCrm } from "@/src/lib/customerIntelligenceCrm.js";
 import { buildCustomerIntelligenceFinancial } from "@/src/lib/customerIntelligenceFinancial.js";
 import {
   daysBetweenDates,
@@ -109,44 +110,6 @@ function buildRepurchase(
     daysOverExpected,
     confidence,
     detail,
-  };
-}
-
-function buildCrm(
-  activities: CustomerIntelligenceBuildInput["activities"],
-  now: Date
-): CustomerIntelligenceReport["crm"] {
-  const openActivities = activities.filter((a) => a.status === "OPEN");
-  const overdueTasks = openActivities.filter(
-    (a) => a.nextActionAt != null && a.nextActionAt < now
-  );
-
-  const contactDates = activities
-    .map((a) => a.contactDate ?? a.createdAt)
-    .filter((d) => d != null)
-    .sort((a, b) => b.getTime() - a.getTime());
-
-  const nextTasks = openActivities
-    .filter((a) => a.nextActionAt != null)
-    .map((a) => a.nextActionAt!)
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const lastNotes = activities
-    .slice()
-    .sort((a, b) => (b.contactDate ?? b.createdAt).getTime() - (a.contactDate ?? a.createdAt).getTime())
-    .slice(0, 5)
-    .map((a) => {
-      const parts = [a.subject, a.description, a.outcome].filter(Boolean);
-      return parts.join(" — ").trim();
-    })
-    .filter((s) => s.length > 0);
-
-  return {
-    lastContactAt: contactDates[0]?.toISOString() ?? null,
-    nextTaskAt: nextTasks[0]?.toISOString() ?? null,
-    openTasksCount: openActivities.length,
-    overdueTasksCount: overdueTasks.length,
-    lastNotes,
   };
 }
 
@@ -354,7 +317,14 @@ export function buildCustomerIntelligenceReport(
     }
   }
 
-  const crm = buildCrm(input.activities, now);
+  const crm = buildCustomerIntelligenceCrm({
+    customerId: input.customer.id,
+    commercialOwner: input.customer.accountOwner?.trim() || null,
+    activities: input.activities,
+    crmProfile: input.crmProfile,
+    hasPurchaseHistory: validOrdersCount > 0,
+    referenceDate: now,
+  });
 
   const opportunities = buildOpportunities(input, commercialSummary, repurchase, financial);
 
