@@ -11,11 +11,9 @@ import {
   mapApScheduleToChart,
   mapArScheduleToChart,
   mapBillingMultiYearToBarComparison,
-  mapCashFlowTimelineToChart,
-  buildExecutiveCashFlowAnnualChart,
-  EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE,
   mapRealizedProjectedChart,
   mapSalesOrdersMonthlyToChart,
+  EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE,
   executiveReportTargetMissing,
 } from "@/src/lib/financeExecutiveReportPresentation";
 import { ExecutiveReportCover } from "@/src/components/finance/executive-report/ExecutiveReportCover";
@@ -101,11 +99,10 @@ export function ExecutiveReportDocument({
     month
   );
 
-  const cashFlowChart = buildExecutiveCashFlowAnnualChart(
-    report.calendarAgenda.executiveSummary?.monthlyTimeline ?? [],
-    report.year,
-    month
-  );
+  const cashFlowChart = {
+    rows: report.calendarAgenda.annualChart.points,
+    hasData: report.calendarAgenda.annualChart.hasData,
+  };
 
   const salesChart = mapSalesOrdersMonthlyToChart(salesTab.monthlySeries ?? [], month);
 

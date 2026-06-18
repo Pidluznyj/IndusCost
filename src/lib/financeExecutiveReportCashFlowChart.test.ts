@@ -5,6 +5,12 @@ import { describe, it } from "node:test";
 import { buildFinanceCashFlowDashboard } from "./financeCashFlowDashboard.js";
 import type { FinanceCashFlowApRow, FinanceCashFlowArRow } from "./financeCashFlowDashboard.js";
 import {
+  buildExecutiveReportCashFlowAnnualChart,
+  buildExecutiveReportCashFlowAnnualFilters,
+  buildExecutiveReportCashFlowFilters,
+} from "./financeExecutiveReport.js";
+import { parseFinanceExecutiveReportQuery } from "./financeExecutiveReport.js";
+import {
   buildExecutiveCashFlowAnnualChart,
   EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE,
   EXECUTIVE_REPORT_MONTH_LABELS_PT,
@@ -167,7 +173,79 @@ describe("financeExecutiveReportCashFlowChart", () => {
     }
   });
 
-  it("documento do relatório presidencial usa gráfico anual explícito", () => {
+  it("filtros anuais removem mês mas mantêm ano", () => {
+    const filters = parseFinanceExecutiveReportQuery(
+      { year: "2026", month: "6", asOfDate: "2026-06-09" },
+      new Date(2026, 5, 9)
+    );
+    const periodFilters = buildExecutiveReportCashFlowFilters(filters);
+    const annualFilters = buildExecutiveReportCashFlowAnnualFilters(filters);
+    assert.equal(periodFilters.month, 6);
+    assert.equal(periodFilters.year, 2026);
+    assert.equal(annualFilters.month, undefined);
+    assert.equal(annualFilters.year, 2026);
+  });
+
+  it("caminho real: payload mensal filtrado vs anual produz gráfico Jan–Dez", () => {
+    const julAr = arRow({
+      externalId: 10,
+      dueDate: new Date(2026, 6, 15),
+      amountReceivable: 5000,
+      balanceReceivable: 5000,
+    });
+    const junAr = arRow({
+      externalId: 3,
+      dueDate: new Date(2026, 5, 10),
+      amountReceivable: 2000,
+      balanceReceivable: 2000,
+    });
+    const junAp = apRow({ dueDate: new Date(2026, 5, 20), balancePayable: 800 });
+
+    const periodPayload = buildFinanceCashFlowDashboard(
+      [junAr],
+      [junAp],
+      { year: 2026, month: 6, ...baseFilters },
+      REF
+    );
+    const annualPayload = buildFinanceCashFlowDashboard(
+      [julAr, junAr],
+      [junAp],
+      { year: 2026, ...baseFilters },
+      REF
+    );
+
+    assert.equal(periodPayload.executiveSummary.period.monthFiltered, true);
+    const julInPeriod = periodPayload.executiveSummary.monthlyTimeline.find((r) => r.month === 7);
+    assert.equal(julInPeriod?.estimatedInflow ?? 0, 0, "jul deve estar zerado no load mensal");
+
+    const annualChart = buildExecutiveReportCashFlowAnnualChart(annualPayload, 2026, 6);
+    assert.equal(annualChart.points.length, 12);
+    assert.deepEqual(
+      annualChart.points.map((r) => r.monthLabel),
+      [...EXECUTIVE_REPORT_MONTH_LABELS_PT]
+    );
+    const julInChart = annualChart.points.find((r) => r.month === 7);
+    assert.ok((julInChart?.inflow ?? 0) > 0, "jul deve aparecer no gráfico anual");
+  });
+
+  it("buildExecutiveReportCashFlowAnnualChart retorna months 1–12 sem NaN", () => {
+    const payload = buildFinanceCashFlowDashboard([], [], { year: 2026, ...baseFilters }, REF);
+    const chart = buildExecutiveReportCashFlowAnnualChart(payload, 2026, 6);
+    assert.equal(chart.year, 2026);
+    assert.equal(chart.highlightMonth, 6);
+    assert.equal(chart.points.length, 12);
+    assert.deepEqual(
+      chart.points.map((r) => r.month),
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    );
+    for (const row of chart.points) {
+      for (const value of [row.inflow, row.outflow, row.netFlow, row.accumulated]) {
+        assert.ok(Number.isFinite(value));
+      }
+    }
+  });
+
+  it("documento do relatório presidencial usa annualChart.points do payload", () => {
     const document = readFileSync(
       join(
         process.cwd(),
@@ -175,8 +253,17 @@ describe("financeExecutiveReportCashFlowChart", () => {
       ),
       "utf8"
     );
-    assert.match(document, /buildExecutiveCashFlowAnnualChart/);
+    assert.match(document, /calendarAgenda\.annualChart\.points/);
+    assert.match(document, /calendarAgenda\.annualChart\.hasData/);
+    assert.doesNotMatch(document, /buildExecutiveCashFlowAnnualChart/);
     assert.match(document, /EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE/);
+  });
+
+  it("serviço executive-report carrega fluxo duas vezes (período + anual)", () => {
+    const src = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
+    assert.match(src, /cashFlowAnnualLoad/);
+    assert.match(src, /buildExecutiveReportCashFlowAnnualFilters/);
+    assert.match(src, /annualChart:\s*cashFlowAnnualChart/);
   });
 
   it("subtítulo executivo documenta visão anual", () => {

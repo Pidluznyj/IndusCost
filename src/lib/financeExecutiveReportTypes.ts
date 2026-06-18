@@ -295,6 +295,23 @@ export type FinanceExecutiveReportCashFlow = {
 };
 
 /** Seção 9: Agenda financeira mensal. */
+export type FinanceExecutiveReportCashFlowAnnualChart = {
+  year: number;
+  highlightMonth: number;
+  points: Array<{
+    month: number;
+    monthLabel: string;
+    isCurrentMonth: boolean;
+    inflow: number;
+    outflow: number;
+    netFlow: number;
+    accumulated: number;
+    isNegative: boolean;
+  }>;
+  hasData: boolean;
+};
+
+/** Seção 9: Agenda financeira mensal. */
 export type FinanceExecutiveReportCalendarAgenda = {
   source: typeof FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.cashFlowCalendar;
   calendar: FinanceCashFlowCalendarPayload;
@@ -302,6 +319,8 @@ export type FinanceExecutiveReportCalendarAgenda = {
     FinanceCashFlowExecutiveSummary,
     "monthlyTimeline" | "period" | "net"
   >;
+  /** Gráfico Jan–Dez do ano — ignora filtro de mês (cards usam period). */
+  annualChart: FinanceExecutiveReportCashFlowAnnualChart;
 };
 
 /** Seção 10: Pedidos de venda — SalesOrder, não Propostas. */

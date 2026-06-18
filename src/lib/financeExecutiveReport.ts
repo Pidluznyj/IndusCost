@@ -36,6 +36,7 @@ import {
   formatExecutiveReportCoverDate,
 } from "./financeExecutiveReportUtils.js";
 import { buildFinanceExecutiveReportNarrative } from "./financeExecutiveReportNarrative.js";
+import { buildExecutiveCashFlowAnnualChart } from "./financeExecutiveReportPresentation.js";
 import {
   FINANCE_EXECUTIVE_REPORT_KNOWN_GAPS,
   FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES,
@@ -233,6 +234,31 @@ export function buildExecutiveReportCashFlowFilters(
     invoiceIssued: mapExecutiveReportNfeFilterToInvoiceIssued(
       filters.invoiceIssuedFilter ?? "all"
     ),
+  };
+}
+
+/** Filtros anuais para o gráfico Jan–Dez — ignora mês, mantém ano/empresa/escopo. */
+export function buildExecutiveReportCashFlowAnnualFilters(
+  filters: FinanceExecutiveReportFilters
+): FinanceCashFlowDashboardFilters {
+  return buildExecutiveReportCashFlowFilters({ ...filters, month: undefined });
+}
+
+export function buildExecutiveReportCashFlowAnnualChart(
+  cashFlowAnnualPayload: ReturnType<typeof buildFinanceCashFlowDashboard>,
+  year: number,
+  highlightMonth: number
+) {
+  const built = buildExecutiveCashFlowAnnualChart(
+    cashFlowAnnualPayload.executiveSummary.monthlyTimeline,
+    year,
+    highlightMonth
+  );
+  return {
+    year,
+    highlightMonth,
+    points: built.rows,
+    hasData: built.hasData,
   };
 }
 
@@ -471,6 +497,7 @@ export async function buildFinanceExecutiveReport(
   const arFilters = buildExecutiveReportArFilters(filters);
   const apFilters = buildExecutiveReportApFilters(filters);
   const cashFlowFilters = buildExecutiveReportCashFlowFilters(filters);
+  const cashFlowAnnualFilters = buildExecutiveReportCashFlowAnnualFilters(filters);
   const topN = filters.topN;
   const unavailableSections: string[] = [];
   const warnings: string[] = [];
@@ -479,6 +506,7 @@ export async function buildFinanceExecutiveReport(
     arLoad,
     apLoad,
     cashFlowLoad,
+    cashFlowAnnualLoad,
     billingPayload,
     salesOrdersTab,
     arSyncStatus,
@@ -488,6 +516,7 @@ export async function buildFinanceExecutiveReport(
     loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate),
     loadApRows(db, apFilters),
     loadCashFlowRows(db, cashFlowFilters, referenceDate),
+    loadCashFlowRows(db, cashFlowAnnualFilters, referenceDate),
     buildFinanceBillingDashboard(
       { year: String(filters.year), billingSource: "nfe", dateBase: "processamento" },
       referenceDate
@@ -525,6 +554,20 @@ export async function buildFinanceExecutiveReport(
     referenceDate,
     cashFlowLoad.arSyncCutoff,
     cashFlowLoad.apSyncCutoff
+  );
+  const cashFlowAnnualPayload = buildFinanceCashFlowDashboard(
+    cashFlowAnnualLoad.arRows,
+    cashFlowAnnualLoad.apRows,
+    cashFlowAnnualFilters,
+    referenceDate,
+    cashFlowAnnualLoad.arSyncCutoff,
+    cashFlowAnnualLoad.apSyncCutoff
+  );
+  const highlightMonth = filters.month ?? referenceDate.getMonth() + 1;
+  const cashFlowAnnualChart = buildExecutiveReportCashFlowAnnualChart(
+    cashFlowAnnualPayload,
+    filters.year,
+    highlightMonth
   );
 
   const billingTab = billingPayload?.tab ?? null;
@@ -790,6 +833,7 @@ export async function buildFinanceExecutiveReport(
         period: cashFlowPayload.executiveSummary.period,
         net: cashFlowPayload.executiveSummary.net,
       },
+      annualChart: cashFlowAnnualChart,
     },
     salesOrders: {
       source: FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES.salesOrders,

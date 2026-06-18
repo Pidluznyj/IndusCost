@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildExecutiveReportCashFlowAnnualFilters,
+  buildExecutiveReportCashFlowFilters,
   buildFinanceExecutiveReportDataQuality,
   mapExecutiveReportCompanyToFilter,
   parseFinanceExecutiveReportQuery,
@@ -151,6 +153,19 @@ describe("financeExecutiveReport", () => {
     assert.ok(server.includes("registerFinanceExecutiveReportRoutes"));
   });
 
+  it("filtros anuais de fluxo ignoram mês e preservam ano/empresa", () => {
+    const filters = parseFinanceExecutiveReportQuery(
+      { year: "2026", month: "6", asOfDate: "2026-06-09", company: "lazarios" },
+      new Date(2026, 5, 9)
+    );
+    const period = buildExecutiveReportCashFlowFilters(filters);
+    const annual = buildExecutiveReportCashFlowAnnualFilters(filters);
+    assert.equal(period.month, 6);
+    assert.equal(annual.month, undefined);
+    assert.equal(annual.year, 2026);
+    assert.equal(annual.companyName, period.companyName);
+  });
+
   it("endpoint retorna estrutura FinanceExecutiveReport documentada", () => {
     const types = readFileSync(
       join(process.cwd(), "src/lib/financeExecutiveReportTypes.ts"),
@@ -174,5 +189,7 @@ describe("financeExecutiveReport", () => {
       assert.ok(types.includes(key), key);
       assert.ok(report.includes(key), key);
     }
+    assert.ok(types.includes("annualChart"), "annualChart");
+    assert.ok(report.includes("cashFlowAnnualChart"), "cashFlowAnnualChart");
   });
 });
