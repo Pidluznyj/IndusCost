@@ -8,13 +8,15 @@ import {
   formatExecutiveReportBillingYearsSubtitle,
   formatExecutiveReportGeneratedFooter,
   formatExecutiveReportStaleSyncWarning,
+  translateExecutiveReportWarning,
 } from "./financeExecutiveReportUxCopy.js";
 
 describe("financeExecutiveReportUxCopy", () => {
-  it("fontes oficiais documentadas", () => {
-    assert.match(EXECUTIVE_REPORT_SOURCES_LABEL, /Nomus/);
-    assert.match(EXECUTIVE_REPORT_SOURCES_LABEL, /Contas a Receber/);
-    assert.match(EXECUTIVE_REPORT_SOURCES_LABEL, /Pedidos de Venda/);
+  it("fontes oficiais em linguagem simples", () => {
+    assert.match(EXECUTIVE_REPORT_SOURCES_LABEL, /notas fiscais/);
+    assert.match(EXECUTIVE_REPORT_SOURCES_LABEL, /contas a receber/);
+    assert.match(EXECUTIVE_REPORT_SOURCES_LABEL, /pedidos/);
+    assert.ok(!EXECUTIVE_REPORT_SOURCES_LABEL.includes("Nomus"));
   });
 
   it("rodapé de geração usa IndusCost e data formatada", () => {
@@ -22,8 +24,9 @@ describe("financeExecutiveReportUxCopy", () => {
     assert.match(footer, /Documento gerado pelo IndusCost em/);
   });
 
-  it("aviso de meta não cadastrada completo", () => {
-    assert.match(EXECUTIVE_REPORT_NO_TARGET_MESSAGE, /indicadores de atingimento/);
+  it("aviso de meta não cadastrada em linguagem simples", () => {
+    assert.match(EXECUTIVE_REPORT_NO_TARGET_MESSAGE, /meta cadastrada/i);
+    assert.match(EXECUTIVE_REPORT_NO_TARGET_MESSAGE, /referência automática/i);
   });
 
   it("aviso de sync stale inclui fonte e data", () => {
@@ -32,6 +35,7 @@ describe("financeExecutiveReportUxCopy", () => {
       "2026-06-12T10:00:00.000Z"
     );
     assert.match(msg, /Atenção/);
+    assert.match(msg, /desatualizados/i);
     assert.match(msg, /Contas a Receber/);
   });
 
@@ -69,5 +73,13 @@ describe("financeExecutiveReportUxCopy", () => {
       freshness: { arStaleExcluded: true, apStaleExcluded: true },
     });
     assert.equal(notices.length, 3);
+  });
+
+  it("translateExecutiveReportWarning simplifica metas derivadas", () => {
+    const msg = translateExecutiveReportWarning(
+      "Metas de faturamento derivadas (+30% sobre período anterior); não há cadastro editável de metas."
+    );
+    assert.match(msg, /Meta estimada/i);
+    assert.ok(!msg.includes("derivadas (+30%"));
   });
 });

@@ -25,6 +25,7 @@ import { ExecutiveReportSection } from "@/src/components/finance/executive-repor
 import { ExecutiveKpiCard } from "@/src/components/finance/executive-report/ExecutiveKpiCard";
 import { ExecutiveKpiGrid } from "@/src/components/finance/executive-report/ExecutiveKpiGrid";
 import { ExecutiveNarrativeBox } from "@/src/components/finance/executive-report/ExecutiveNarrativeBox";
+import { ExecutiveNarrativeBullets } from "@/src/components/finance/executive-report/ExecutiveNarrativeBullets";
 import { ExecutiveBarComparisonChart } from "@/src/components/finance/executive-report/charts/ExecutiveBarComparisonChart";
 import { ExecutiveRealizedProjectedChart } from "@/src/components/finance/executive-report/charts/ExecutiveRealizedProjectedChart";
 import { ExecutiveScheduleChart } from "@/src/components/finance/executive-report/charts/ExecutiveScheduleChart";
@@ -33,9 +34,16 @@ import { ExecutiveSalesOrdersChart } from "@/src/components/finance/executive-re
 import { ExecutiveReportDocumentFooter } from "@/src/components/finance/executive-report/ExecutiveReportDocumentFooter";
 import {
   EXECUTIVE_REPORT_SECTION_INTROS,
+  EXECUTIVE_REPORT_SECTION_SUBTITLES,
   formatExecutiveReportBillingYearsSubtitle,
   formatExecutiveReportGeneratedFooter,
+  getExecutiveReportKpiHint,
+  presentExecutiveReportNarrativeBullets,
 } from "@/src/lib/financeExecutiveReportUxCopy";
+
+function kpiHint(label: string): string | undefined {
+  return getExecutiveReportKpiHint(label);
+}
 
 export function ExecutiveReportDocument({
   report,
@@ -100,6 +108,17 @@ export function ExecutiveReportDocument({
   const salesTargetMissing =
     executiveReportTargetMissing(salesTab.target?.target) || targetsDerived;
 
+  const summaryBullets = presentExecutiveReportNarrativeBullets({
+    highlights: report.executiveSummary.highlights,
+    narrative: report.executiveNarrative,
+    warnings: report.dataQuality.warnings,
+  });
+
+  const conclusionBullets = presentExecutiveReportNarrativeBullets({
+    narrative: report.executiveNarrative,
+    warnings: report.dataQuality.warnings,
+  });
+
   return (
     <div
       className="executive-report-print-root finance-executive-report-document"
@@ -126,7 +145,7 @@ export function ExecutiveReportDocument({
           id="summary"
           eyebrow="Visão geral"
           title="Resumo Executivo"
-          subtitle="Faturamento comparativo do mês e leitura rápida"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES.summary}
           intro={EXECUTIVE_REPORT_SECTION_INTROS.summary}
         >
           <ExecutiveKpiGrid columns={4}>
@@ -136,6 +155,8 @@ export function ExecutiveReportDocument({
                   label={`Faturamento mês — ${row.year}`}
                   value={row.formatted}
                   sub={`Ano ${row.year}`}
+                  hint={kpiHint(`Faturamento mês — ${row.year}`)}
+                  tooltip={kpiHint(`Faturamento mês — ${row.year}`)}
                   accent={row.year === report.year}
                   highlight={row.year === report.year}
                 />
@@ -149,26 +170,15 @@ export function ExecutiveReportDocument({
                   ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE
                   : `Meta: ${billingTab.target.formatted.target}`
               }
+              hint={kpiHint("Atingimento meta mês")}
+              tooltip={kpiHint("Atingimento meta mês")}
               accent
             />
           </ExecutiveKpiGrid>
 
-          {report.executiveSummary.highlights.length > 0 ? (
-            <div className="mt-5 space-y-3">
-              {report.executiveSummary.highlights.map((line) => (
-                <div key={line}>
-                  <ExecutiveNarrativeBox body={line} />
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {report.executiveNarrative?.sections[0] ? (
-            <div className="mt-4">
-              <ExecutiveNarrativeBox
-                title={report.executiveNarrative.sections[0].title}
-                body={report.executiveNarrative.sections[0].body}
-              />
+          {summaryBullets.length > 0 ? (
+            <div className="mt-5">
+              <ExecutiveNarrativeBullets title="Leitura rápida" bullets={summaryBullets} />
             </div>
           ) : null}
         </ExecutiveReportSection>
@@ -184,28 +194,35 @@ export function ExecutiveReportDocument({
           id="billing-comparison"
           eyebrow="Faturamento"
           title="Faturamento Comparativo"
-          subtitle="Evolução mensal multi-ano — fonte NF-e oficial IndusCost"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["billing-comparison"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["billing-comparison"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
               label="Realizado mês"
               value={formatExecutiveReportPresentationCurrency(billingTab.target.actual)}
+              hint={kpiHint("Realizado mês")}
+              tooltip={kpiHint("Realizado mês")}
               highlight
             />
             <ExecutiveKpiCard
               label="Projetado mês"
               value={formatExecutiveReportPresentationCurrency(projectionTab.projection.projectedMonth)}
+              hint={kpiHint("Projetado mês")}
+              tooltip={kpiHint("Projetado mês")}
             />
             <ExecutiveKpiCard
               label="Meta mês"
               value={billingTab.target.formatted.target}
-              hint={billingTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : undefined}
+              hint={billingTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : kpiHint("Meta mês")}
+              tooltip={kpiHint("Meta mês")}
             />
             <ExecutiveKpiCard
               label="YTD"
               value={formatExecutiveReportPresentationCurrency(billingTab.yearComparison.yearToDateCurrent)}
               sub={`Ano ${billingPayload.selectedYear}`}
+              hint={kpiHint("YTD")}
+              tooltip={kpiHint("YTD")}
             />
           </ExecutiveKpiGrid>
 
@@ -233,24 +250,34 @@ export function ExecutiveReportDocument({
           id="billing-projection"
           eyebrow="Projeção"
           title="Realizado vs Projetado"
-          subtitle="Média diária, faturado, projeção e meta anual"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["billing-projection"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["billing-projection"]}
         >
           <ExecutiveKpiGrid columns={5}>
-            <ExecutiveKpiCard label="Média diária" value={projectionTab.projection.formatted.dailyAverage} />
+            <ExecutiveKpiCard
+              label="Média diária"
+              value={projectionTab.projection.formatted.dailyAverage}
+              hint={kpiHint("Média diária")}
+              tooltip={kpiHint("Média diária")}
+            />
             <ExecutiveKpiCard
               label="Faturado"
               value={projectionTab.realizedVsProjected.formatted.realized}
+              hint={kpiHint("Faturado")}
+              tooltip={kpiHint("Faturado")}
               highlight
             />
             <ExecutiveKpiCard
               label="Projetado"
               value={projectionTab.realizedVsProjected.formatted.projected}
+              hint={kpiHint("Projetado")}
+              tooltip={kpiHint("Projetado")}
             />
             <ExecutiveKpiCard
               label="Meta do ano"
               value={billingTab.yearComparison.formatted.annualTarget}
-              hint={billingTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : undefined}
+              hint={billingTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : kpiHint("Meta do ano")}
+              tooltip={kpiHint("Meta do ano")}
             />
             <ExecutiveKpiCard
               label="Atingimento"
@@ -259,6 +286,8 @@ export function ExecutiveReportDocument({
                   ? formatExecutiveReportPresentationPercent(billingTab.target.achievementPercent, 2)
                   : "—"
               }
+              hint={kpiHint("Atingimento")}
+              tooltip={kpiHint("Atingimento")}
             />
           </ExecutiveKpiGrid>
 
@@ -282,26 +311,34 @@ export function ExecutiveReportDocument({
           id="accounts-receivable"
           eyebrow="Recebíveis"
           title="Contas a Receber"
-          subtitle="Base saneada Nomus — valores consolidados"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["accounts-receivable"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["accounts-receivable"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
               label="A receber"
               value={formatExecutiveReportPresentationCurrency(arCards.totalAmountReceivable)}
+              hint={kpiHint("A receber")}
+              tooltip={kpiHint("A receber")}
             />
             <ExecutiveKpiCard
               label="Recebido"
               value={formatExecutiveReportPresentationCurrency(arCards.totalReceivedAmount)}
+              hint={kpiHint("Recebido")}
+              tooltip={kpiHint("Recebido")}
               tone="positive"
             />
             <ExecutiveKpiCard
               label="Em aberto"
               value={formatExecutiveReportPresentationCurrency(arCards.totalOpenAmount)}
+              hint={kpiHint("Em aberto")}
+              tooltip={kpiHint("Em aberto")}
             />
             <ExecutiveKpiCard
               label="Atrasados"
               value={formatExecutiveReportPresentationCurrency(arCards.overdueAmount)}
+              hint={kpiHint("Atrasados")}
+              tooltip={kpiHint("Atrasados")}
               tone="negative"
             />
           </ExecutiveKpiGrid>
@@ -317,7 +354,7 @@ export function ExecutiveReportDocument({
           </div>
 
           <ExecutivePrintDataQualityNote
-            title="Qualidade da fonte — Contas a Receber"
+            title="Observações — Contas a Receber"
             dataQuality={report.dataQuality}
             domain="ar"
           />
@@ -334,28 +371,36 @@ export function ExecutiveReportDocument({
           id="accounts-payable"
           eyebrow="Pagamentos"
           title="Contas a Pagar"
-          subtitle="Base saneada Nomus — valores consolidados"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["accounts-payable"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["accounts-payable"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
               label="A pagar total"
               value={formatExecutiveReportPresentationCurrency(apCards.totalPayableAmount)}
+              hint={kpiHint("A pagar total")}
+              tooltip={kpiHint("A pagar total")}
             />
             <ExecutiveKpiCard
               label="Pago"
               value={formatExecutiveReportPresentationCurrency(
                 apCards.totalPayableAmount - apCards.totalOpenAmount
               )}
+              hint={kpiHint("Pago")}
+              tooltip={kpiHint("Pago")}
               tone="positive"
             />
             <ExecutiveKpiCard
               label="Em aberto"
               value={formatExecutiveReportPresentationCurrency(apCards.totalOpenAmount)}
+              hint={kpiHint("Em aberto")}
+              tooltip={kpiHint("Em aberto")}
             />
             <ExecutiveKpiCard
               label="Vencidos"
               value={formatExecutiveReportPresentationCurrency(apCards.overdueAmount)}
+              hint={kpiHint("Vencidos")}
+              tooltip={kpiHint("Vencidos")}
               tone="negative"
             />
           </ExecutiveKpiGrid>
@@ -371,7 +416,7 @@ export function ExecutiveReportDocument({
           </div>
 
           <ExecutivePrintDataQualityNote
-            title="Qualidade da fonte — Contas a Pagar"
+            title="Observações — Contas a Pagar"
             dataQuality={report.dataQuality}
             domain="ap"
           />
@@ -388,28 +433,36 @@ export function ExecutiveReportDocument({
           id="cash-flow"
           eyebrow="Caixa"
           title="Fluxo de Caixa / Agenda"
-          subtitle="Entradas, saídas, saldo líquido e acumulado"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["cash-flow"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["cash-flow"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
               label="Entradas previstas"
               value={formatExecutiveReportPresentationCurrency(cashCards.inflowAmount)}
+              hint={kpiHint("Entradas previstas")}
+              tooltip={kpiHint("Entradas previstas")}
               tone="positive"
             />
             <ExecutiveKpiCard
               label="Saídas previstas"
               value={formatExecutiveReportPresentationCurrency(cashCards.outflowAmount)}
+              hint={kpiHint("Saídas previstas")}
+              tooltip={kpiHint("Saídas previstas")}
               tone="negative"
             />
             <ExecutiveKpiCard
               label="Saldo líquido"
               value={formatExecutiveReportPresentationCurrency(cashCards.netFlowAmount)}
+              hint={kpiHint("Saldo líquido")}
+              tooltip={kpiHint("Saldo líquido")}
               tone={cashCards.netFlowAmount < 0 ? "negative" : "positive"}
             />
             <ExecutiveKpiCard
               label="Saldo acumulado"
               value={formatExecutiveReportPresentationCurrency(cashCards.accumulatedBalance)}
+              hint={kpiHint("Saldo acumulado")}
+              tooltip={kpiHint("Saldo acumulado")}
               accent
             />
           </ExecutiveKpiGrid>
@@ -418,7 +471,7 @@ export function ExecutiveReportDocument({
             <div className="mt-4">
               <ExecutiveNarrativeBox
                 title="Meses críticos"
-                body={`Saldo negativo projetado em: ${criticalMonths.join(", ")}.`}
+                body="Fluxo previsto exige atenção nos próximos meses."
               />
             </div>
           ) : null}
@@ -443,26 +496,33 @@ export function ExecutiveReportDocument({
           id="sales-orders"
           eyebrow="Comercial"
           title="Pedidos de Venda"
-          subtitle="SalesOrder — carteira e projeção comercial"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["sales-orders"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["sales-orders"]}
         >
           <ExecutiveKpiGrid columns={4}>
             <ExecutiveKpiCard
               label="Realizado YTD"
               value={salesTab.summaryCards.find((c) => c.id === "realized-ytd")?.formatted ?? "—"}
+              hint={kpiHint("Realizado YTD")}
+              tooltip={kpiHint("Realizado YTD")}
             />
             <ExecutiveKpiCard
               label="Meta mês"
               value={salesTab.target?.formatted.target ?? "—"}
-              hint={salesTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : undefined}
+              hint={salesTargetMissing ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE : kpiHint("Meta mês")}
+              tooltip={kpiHint("Meta mês")}
             />
             <ExecutiveKpiCard
               label="Projeção mês"
               value={salesTab.projection?.formatted.monthlyProjection ?? "—"}
+              hint={kpiHint("Projeção mês")}
+              tooltip={kpiHint("Projeção mês")}
             />
             <ExecutiveKpiCard
               label="Atingimento"
               value={salesTab.target?.formatted.achievementPercent ?? "—"}
+              hint={kpiHint("Atingimento")}
+              tooltip={kpiHint("Atingimento")}
               highlight
             />
           </ExecutiveKpiGrid>
@@ -491,26 +551,23 @@ export function ExecutiveReportDocument({
           id="conclusion"
           eyebrow="Encerramento"
           title="Conclusão Executiva"
-          subtitle="Alertas, pontos de atenção e leitura automática"
+          subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES.conclusion}
           intro={EXECUTIVE_REPORT_SECTION_INTROS.conclusion}
         >
-          {report.executiveNarrative?.sections.length ? (
-            <div className="space-y-4">
-              {report.executiveNarrative.sections.map((section) => (
-                <div key={section.id}>
-                  <ExecutiveNarrativeBox title={section.title} body={section.body} />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <ExecutiveNarrativeBox body="Narrativa executiva indisponível para os filtros aplicados." />
-          )}
+          <ExecutiveNarrativeBullets
+            title="Principais pontos"
+            bullets={conclusionBullets}
+            emptyMessage="Sem leitura executiva para os filtros aplicados."
+          />
 
           {report.dataQuality.warnings.length > 0 ? (
             <div className="mt-6 executive-alerts-panel">
               <h3 className="executive-alerts-title">Principais alertas</h3>
               <ul className="executive-alerts-list">
-                {report.dataQuality.warnings.map((w) => (
+                {presentExecutiveReportNarrativeBullets({
+                  warnings: report.dataQuality.warnings,
+                  max: 3,
+                }).map((w) => (
                   <li key={w}>{w}</li>
                 ))}
               </ul>
@@ -518,7 +575,7 @@ export function ExecutiveReportDocument({
           ) : null}
 
           <ExecutivePrintDataQualityNote
-            title="Qualidade consolidada dos dados"
+            title="Observações sobre os dados"
             dataQuality={report.dataQuality}
             domain="general"
           />

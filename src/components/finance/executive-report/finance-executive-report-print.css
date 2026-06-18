@@ -310,6 +310,23 @@
     padding: 2.5mm 3mm !important;
   }
 
+  .finance-executive-narrative-bullets {
+    margin: 0 !important;
+    padding-left: 4mm !important;
+    font-size: 8.5pt !important;
+    line-height: 1.4 !important;
+  }
+
+  .finance-executive-narrative-bullets li {
+    margin: 0 0 1.5mm !important;
+  }
+
+  .finance-executive-kpi-hint {
+    font-size: 7pt !important;
+    line-height: 1.35 !important;
+    color: #64748b !important;
+  }
+
   .executive-print-data-quality {
     break-inside: avoid;
     page-break-inside: avoid;

@@ -81,7 +81,7 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(cover, /RELATÓRIO PRESIDENCIAL/);
-    assert.match(cover, /EXECUTIVE_REPORT_SOURCES_LABEL|Fontes: Nomus/);
+    assert.match(cover, /EXECUTIVE_REPORT_SOURCES_LABEL|notas fiscais/);
   });
 
   it("rodapé de impressão documenta fontes e geração IndusCost", () => {
@@ -91,7 +91,6 @@ describe("financeExecutiveReportPrint", () => {
     );
     assert.match(footer, /formatExecutiveReportGeneratedFooter/);
     assert.match(footer, /EXECUTIVE_REPORT_SOURCES_LABEL/);
-    assert.match(footer, /Documento gerado pelo IndusCost/);
   });
 
   it("documento inclui intros de seção e footer online", () => {
@@ -101,6 +100,8 @@ describe("financeExecutiveReportPrint", () => {
     );
     assert.match(document, /EXECUTIVE_REPORT_SECTION_INTROS/);
     assert.match(document, /ExecutiveReportDocumentFooter/);
+    assert.match(document, /ExecutiveNarrativeBullets/);
+    assert.match(document, /getExecutiveReportKpiHint/);
     assert.match(document, /formatExecutiveReportBillingYearsSubtitle/);
     assert.doesNotMatch(document, /Comparativo 2024 · 2025 · 2026/);
   });

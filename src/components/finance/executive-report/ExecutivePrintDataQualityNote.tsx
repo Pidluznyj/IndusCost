@@ -4,6 +4,7 @@ import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat
 import {
   buildExecutiveReportStaleSyncNotices,
   EXECUTIVE_REPORT_NO_TARGET_MESSAGE,
+  translateExecutiveReportWarning,
 } from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutivePrintDataQualityNote({
@@ -24,12 +25,14 @@ export function ExecutivePrintDataQualityNote({
         ? sync.accountsPayableLastSyncAt
         : null;
 
-  const domainWarnings = warnings.filter((w) => {
-    const lower = w.toLowerCase();
-    if (domain === "ar") return lower.includes("receber") || lower.includes(" ar");
-    if (domain === "ap") return lower.includes("pagar") || lower.includes(" ap");
-    return true;
-  });
+  const domainWarnings = warnings
+    .filter((w) => {
+      const lower = w.toLowerCase();
+      if (domain === "ar") return lower.includes("receber") || lower.includes(" ar");
+      if (domain === "ap") return lower.includes("pagar") || lower.includes(" ap");
+      return true;
+    })
+    .map(translateExecutiveReportWarning);
 
   return (
     <div className="executive-print-data-quality executive-section">
@@ -37,18 +40,18 @@ export function ExecutivePrintDataQualityNote({
       <div className="executive-print-data-quality-grid">
         {syncAt != null ? (
           <p>
-            <span>Última sync:</span> {formatFinanceDateTime(syncAt)}
+            <span>Última atualização:</span> {formatFinanceDateTime(syncAt)}
           </p>
-        ) : (
+        ) : domain !== "general" ? (
           <p>
-            <span>Última sync:</span> indisponível
+            <span>Última atualização:</span> indisponível
           </p>
-        )}
+        ) : null}
         {domain === "ar" && freshness.arStaleExcluded ? (
-          <p>Títulos stale Nomus excluídos (freshness AR).</p>
+          <p>Dados de contas a receber podem estar desatualizados.</p>
         ) : null}
         {domain === "ap" && freshness.apStaleExcluded ? (
-          <p>Títulos stale Nomus excluídos (freshness AP).</p>
+          <p>Dados de contas a pagar podem estar desatualizados.</p>
         ) : null}
         {targetsDerived ? <p>{EXECUTIVE_REPORT_NO_TARGET_MESSAGE}</p> : null}
         {staleNotices.map((notice) => (

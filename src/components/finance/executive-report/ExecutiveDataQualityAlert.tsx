@@ -3,7 +3,10 @@ import type { FinanceExecutiveReportDataQuality } from "@/src/lib/financeExecuti
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   buildExecutiveReportStaleSyncNotices,
+  EXECUTIVE_DATA_QUALITY_TITLE,
   EXECUTIVE_REPORT_NO_TARGET_MESSAGE,
+  translateExecutiveReportUnavailableSection,
+  translateExecutiveReportWarning,
 } from "@/src/lib/financeExecutiveReportUxCopy";
 
 export function ExecutiveDataQualityAlert({
@@ -28,19 +31,21 @@ export function ExecutiveDataQualityAlert({
       className="rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 space-y-3"
       data-testid="executive-report-data-quality"
     >
-      <p className="font-semibold">Qualidade e freshness dos dados</p>
+      <p className="font-semibold">{EXECUTIVE_DATA_QUALITY_TITLE}</p>
 
       {unavailableSections.length > 0 ? (
         <p>
-          Seções indisponíveis:{" "}
-          <span className="font-medium">{unavailableSections.join(", ")}</span>
+          Partes do relatório indisponíveis:{" "}
+          <span className="font-medium">
+            {unavailableSections.map(translateExecutiveReportUnavailableSection).join(", ")}
+          </span>
         </p>
       ) : null}
 
       {targetsDerived ? <p>{EXECUTIVE_REPORT_NO_TARGET_MESSAGE}</p> : null}
 
       {freshness.arStaleExcluded || freshness.apStaleExcluded ? (
-        <p>Bases AR/AP excluem títulos stale Nomus conforme cutoff de sync.</p>
+        <p>Dados do Nomus podem estar desatualizados; registros antigos foram ignorados.</p>
       ) : null}
 
       {staleNotices.length > 0 ? (
@@ -53,15 +58,15 @@ export function ExecutiveDataQualityAlert({
 
       <ul className="list-disc pl-5 space-y-1">
         {warnings.map((warning) => (
-          <li key={warning}>{warning}</li>
+          <li key={warning}>{translateExecutiveReportWarning(warning)}</li>
         ))}
       </ul>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1 text-xs text-amber-900/80">
-        <SyncLine label="Sync AR" value={sync.accountsReceivableLastSyncAt} />
-        <SyncLine label="Sync AP" value={sync.accountsPayableLastSyncAt} />
-        <SyncLine label="Sync NF-e" value={sync.nfeLastSyncAt} />
-        <SyncLine label="Sync Pedidos" value={sync.salesOrdersLastSyncAt} />
+        <SyncLine label="Contas a receber" value={sync.accountsReceivableLastSyncAt} />
+        <SyncLine label="Contas a pagar" value={sync.accountsPayableLastSyncAt} />
+        <SyncLine label="Notas fiscais" value={sync.nfeLastSyncAt} />
+        <SyncLine label="Pedidos de venda" value={sync.salesOrdersLastSyncAt} />
       </div>
     </div>
   );
@@ -70,7 +75,7 @@ export function ExecutiveDataQualityAlert({
 function SyncLine({ label, value }: { label: string; value: string | null }) {
   return (
     <p>
-      <span className="font-semibold">{label}:</span>{" "}
+      <span className="font-semibold">Última atualização — {label}:</span>{" "}
       {value ? formatFinanceDateTime(value) : "indisponível"}
     </p>
   );
