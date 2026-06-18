@@ -23,6 +23,7 @@ export function FinanceBiFilterPanel({
   title = "Filtros",
   alwaysVisible,
   advancedLabel = "Filtros avançados",
+  filterScopeNote,
   compact = false,
 }: {
   expanded: boolean;
@@ -37,6 +38,7 @@ export function FinanceBiFilterPanel({
   title?: string;
   alwaysVisible?: React.ReactNode;
   advancedLabel?: string;
+  filterScopeNote?: string | null;
   compact?: boolean;
 }) {
   const hasAdvanced = children != null;
@@ -113,6 +115,14 @@ export function FinanceBiFilterPanel({
           </button>
         </div>
       </section>
+      {filterScopeNote ? (
+        <p
+          className="text-[11px] text-[#6B7280] px-1"
+          data-testid="finance-filter-scope-note"
+        >
+          {filterScopeNote}
+        </p>
+      ) : null}
       <FinanceBiFilterChips chips={chips} />
     </div>
   );

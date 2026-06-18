@@ -82,20 +82,28 @@ import {
   FinanceArSuccessBanner,
 } from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 import { cn } from "@/src/lib/utils";
-import {
-  FinanceFilterScopeBanner,
-  FinanceFilterScopeNote,
-  FinanceManagementSanitizationNote,
-} from "@/src/components/finance/FinanceFilterScopeBanner";
+import { FinanceFilterScopeNote } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
-import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
+import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
+import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
+import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import { buildFinanceArFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
+  FINANCE_AR_LAST_SYNC_FILTERED_SCOPE,
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
+import {
+  buildFinanceArApAuditSections,
+  buildFinanceAuditItemsFromChips,
+  countFinanceDataAuditWarnings,
+} from "@/src/lib/financeDataAudit";
+import {
+  FINANCE_AR_EXECUTIVE_SUBTITLE,
+  FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE,
+} from "@/src/lib/financeDataAuditCopy";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import {
   FINANCE_KPI_AR_DELINQUENCY,
@@ -510,6 +518,7 @@ export function FinanceAccountsReceivablePage() {
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -618,22 +627,34 @@ export function FinanceAccountsReceivablePage() {
           : "neutral"
       : "neutral";
 
-  const headerSourceLine = useMemo(() => {
-    const updatedAt = cards?.lastSyncAt ?? data?.generatedAt ?? null;
-    const parts = ["Fonte: Nomus"];
-    if (updatedAt) parts.push(`Atualizado em ${formatFinanceDateTime(updatedAt)}`);
-    if (cards?.totalRecords != null) {
-      parts.push(`${formatFinanceInteger(cards.totalRecords)} registros`);
-    }
-    return parts.join(" · ");
-  }, [cards?.lastSyncAt, cards?.totalRecords, data?.generatedAt]);
+  const headerUpdatedAt = cards?.lastSyncAt ?? data?.generatedAt ?? null;
+
+  const auditSections = useMemo(
+    () =>
+      buildFinanceArApAuditSections({
+        moduleLabel: "Contas a Receber",
+        nomusSource: "Nomus — Contas a Receber",
+        lastSyncAt: cards?.lastSyncAt,
+        generatedAt: data?.generatedAt,
+        lastSyncHint: FINANCE_AR_LAST_SYNC_FILTERED_SCOPE,
+        appliedFilterItems: buildFinanceAuditItemsFromChips(appliedFilterChips),
+        dataSanitization: data?.dataSanitization,
+      }),
+    [appliedFilterChips, cards?.lastSyncAt, data?.dataSanitization, data?.generatedAt]
+  );
+
+  const auditWarningCount = useMemo(
+    () => countFinanceDataAuditWarnings({ dataSanitization: data?.dataSanitization }),
+    [data?.dataSanitization]
+  );
 
   return (
     <FinanceBiDashboardShell>
-      <FinanceBiExecutiveHeader
+      <FinanceExecutivePageHeader
+        eyebrow="FINANCEIRO · CONTAS A RECEBER"
         title="Contas a Receber"
-        subtitle="Carteira de recebíveis, clientes, valores em aberto, recebidos e vencidos."
-        filterStatus={filterStatus}
+        subtitle={FINANCE_AR_EXECUTIVE_SUBTITLE}
+        updatedAt={headerUpdatedAt}
         compact
         actions={[
           {
@@ -666,9 +687,20 @@ export function FinanceAccountsReceivablePage() {
               ]
             : []),
         ]}
-      >
-        <p className="text-xs text-[#6B7280] tabular-nums">{headerSourceLine}</p>
-      </FinanceBiExecutiveHeader>
+        extraActions={
+          <FinanceDataAuditButton
+            onClick={() => setAuditDrawerOpen(true)}
+            warningCount={auditWarningCount}
+            disabled={loading && !data}
+          />
+        }
+      />
+
+      <FinanceDataAuditDrawer
+        open={auditDrawerOpen}
+        onClose={() => setAuditDrawerOpen(false)}
+        sections={auditSections}
+      />
 
       {dashboardError ? (
         <FinanceArErrorBanner message={dashboardError} onDismiss={() => setDashboardError(null)} />
@@ -690,6 +722,7 @@ export function FinanceAccountsReceivablePage() {
         onApply={handleApplyFilters}
         onClear={handleClearFilters}
         applyDisabled={!hasPendingFilterChanges || loading}
+        filterScopeNote={filtersActive ? FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE : null}
         alwaysVisible={
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
             <FilterSelect
@@ -780,8 +813,6 @@ export function FinanceAccountsReceivablePage() {
         </div>
       </FinanceBiFilterPanel>
 
-      <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
-      <FinanceManagementSanitizationNote dataSanitization={data?.dataSanitization} />
       <FinanceFilterScopeNote className="px-1">
         <span title={FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE}>
           {FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE}

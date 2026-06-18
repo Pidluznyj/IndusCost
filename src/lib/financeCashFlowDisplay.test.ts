@@ -170,6 +170,16 @@ describe("financeCashFlowDisplay", () => {
     assert.ok(page.includes("FinanceCashFlowYtdSummary"));
   });
 
+  it("header executivo não exibe texto técnico de saneamento", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/components/finance/FinanceCashFlowPage.tsx"),
+      "utf8"
+    );
+    assert.equal(page.includes("Movimentos intercompany"), false);
+    assert.ok(page.includes("FINANCE_CASH_FLOW_EXECUTIVE_SUBTITLE"));
+    assert.ok(page.includes("FinanceDataAuditButton"));
+  });
+
   it("YTD summary usa grid responsivo indus-kpi-grid", () => {
     const ytd = readFileSync(
       join(process.cwd(), "src/components/finance/cash-flow/FinanceCashFlowYtdSummary.tsx"),

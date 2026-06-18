@@ -27,7 +27,8 @@ describe("financeAccountsReceivablePageFilters", () => {
     assert.ok(filterPanel.includes("Limpar"));
     assert.ok(page.includes("draftFilters"));
     assert.ok(page.includes("appliedFilters"));
-    assert.ok(page.includes("FinanceFilterScopeBanner"));
+    assert.ok(page.includes("filterScopeNote"));
+    assert.ok(page.includes("FinanceDataAuditDrawer"));
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("alwaysVisible"));
@@ -101,7 +102,7 @@ describe("financeAccountsReceivablePageFilters", () => {
     assert.ok(page.includes("Exportar CSV"));
   });
 
-  it("cabeçalho executivo compacto com fonte Nomus e sync fora do topo", () => {
+  it("cabeçalho executivo compacto com auditoria em drawer", () => {
     const page = readFileSync(
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsReceivablePage.tsx"),
       "utf8"
@@ -112,8 +113,9 @@ describe("financeAccountsReceivablePageFilters", () => {
     );
 
     assert.ok(page.includes('title="Contas a Receber"'));
-    assert.ok(page.includes("Fonte: Nomus"));
-    assert.ok(page.includes("headerSourceLine"));
+    assert.ok(page.includes("FinanceExecutivePageHeader"));
+    assert.ok(page.includes("FinanceDataAuditDrawer"));
+    assert.ok(page.includes("FinanceDataAuditButton"));
     assert.ok(page.includes("compact"));
     assert.ok(page.includes("Atualizar"));
     assert.ok(page.includes("Exportar CSV"));

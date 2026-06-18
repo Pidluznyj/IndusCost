@@ -175,8 +175,8 @@ describe("financeAccountsPayableTitlesLocalFilter", () => {
     assert.match(page, /FinanceDetailTabs/);
     assert.match(page, /FinanceApAuditTab/);
     assert.match(page, /totalPayableAmount/);
-    assert.match(page, /Fonte: Nomus/);
-    assert.match(page, /Visão gerencial saneada/);
+    assert.match(page, /FinanceExecutivePageHeader/);
+    assert.match(page, /FinanceDataAuditDrawer/);
     assert.match(page, /FinanceActionCenterShell/);
     assert.match(page, /FINANCE_AP_EXECUTIVE_TABS/);
   });

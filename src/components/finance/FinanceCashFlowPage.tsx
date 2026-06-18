@@ -22,7 +22,6 @@ import {
 import {
   displayFinanceText,
   formatFinanceCurrency,
-  formatFinanceDateTime,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeCashFlowExportFilename } from "@/src/lib/financeCashFlowExport";
 import {
@@ -48,19 +47,22 @@ import {
   FINANCE_CF_HELP_TOP_CUSTOMERS,
   FINANCE_CF_HELP_TOP_SUPPLIERS,
 } from "@/src/lib/financeCashFlowBlockHelp";
-import {
-  FinanceFilterScopeBanner,
-  FinanceManagementSanitizationNote,
-} from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
-import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
+import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
+import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
+import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
+import { FinanceCashFlowNumbersAuditPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowNumbersAuditPanel";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import { buildFinanceCashFlowFilterChips } from "@/src/lib/financeBiFilterChips";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import {
   FINANCE_CASH_FLOW_NOT_BILLING_SCOPE,
-  FINANCE_CASH_FLOW_SYNC_SCOPE,
 } from "@/src/lib/financeFilterScope";
+import {
+  buildFinanceCashFlowAuditSections,
+  countFinanceDataAuditWarnings,
+} from "@/src/lib/financeDataAudit";
+import { FINANCE_CASH_FLOW_EXECUTIVE_SUBTITLE, FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE } from "@/src/lib/financeDataAuditCopy";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 
@@ -90,6 +92,7 @@ export function FinanceCashFlowPage() {
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [calendarDisplayMonth, setCalendarDisplayMonth] = useState(() => new Date().getMonth() + 1);
+  const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
 
   const appliedQuery = useMemo(
     () =>
@@ -208,30 +211,30 @@ export function FinanceCashFlowPage() {
     [chips]
   );
 
+  const auditSections = useMemo(
+    () => buildFinanceCashFlowAuditSections(payload, appliedFilters),
+    [payload, appliedFilters]
+  );
+
+  const auditWarningCount = useMemo(
+    () =>
+      countFinanceDataAuditWarnings({
+        dataSanitization: payload?.dataSanitization,
+        reconciliation: payload?.reconciliation,
+      }),
+    [payload?.dataSanitization, payload?.reconciliation]
+  );
+
+  const headerUpdatedAt = cards?.lastSyncAt ?? payload?.generatedAt ?? null;
+
   return (
     <FinanceBiDashboardShell>
       <div data-testid="cash-flow-page" className="contents">
-      <FinanceBiExecutiveHeader
-        eyebrow="Financeiro · Fluxo de Caixa"
+      <FinanceExecutivePageHeader
+        eyebrow="FINANCEIRO · FLUXO DE CAIXA"
         title="Fluxo de Caixa"
-        subtitle={
-          <>
-            Entradas de <strong>Contas a Receber</strong> e saídas de{" "}
-            <strong>Contas a Pagar</strong> — visão gerencial de caixa projetado.
-          </>
-        }
-        filterStatus={filterStatus}
-        meta={[
-          {
-            label: "Fonte",
-            value: "Contas a Receber + Contas a Pagar",
-          },
-          {
-            label: "Última sync",
-            value: cards?.lastSyncAt ? formatFinanceDateTime(cards.lastSyncAt) : "—",
-            hint: FINANCE_CASH_FLOW_SYNC_SCOPE,
-          },
-        ]}
+        subtitle={FINANCE_CASH_FLOW_EXECUTIVE_SUBTITLE}
+        updatedAt={headerUpdatedAt}
         actions={[
           {
             id: "refresh",
@@ -256,13 +259,32 @@ export function FinanceCashFlowPage() {
               ]
             : []),
         ]}
+        extraActions={
+          <FinanceDataAuditButton
+            onClick={() => setAuditDrawerOpen(true)}
+            warningCount={auditWarningCount}
+            disabled={loading && !payload}
+          />
+        }
       />
 
-      <FinanceFilterScopeBanner active={filtersActive} />
-      <FinanceManagementSanitizationNote
-        dataSanitization={payload?.dataSanitization}
-        managementScope={payload?.filtersApplied?.cashFlowScope ?? "company"}
-      />
+      <FinanceDataAuditDrawer
+        open={auditDrawerOpen}
+        onClose={() => setAuditDrawerOpen(false)}
+        sections={auditSections}
+      >
+        {payload?.reconciliation ? (
+          <div className="border-t border-[#E5E7EB] pt-4">
+            <FinanceCashFlowNumbersAuditPanel
+              appliedQuery={appliedQuery}
+              active={auditDrawerOpen}
+              dataSanitization={payload.dataSanitization}
+              reconciliation={payload.reconciliation}
+              lastSyncAt={payload.cards.lastSyncAt}
+            />
+          </div>
+        ) : null}
+      </FinanceDataAuditDrawer>
 
       <div data-testid="cash-flow-filters">
       <FinanceBiFilterPanel
@@ -273,6 +295,7 @@ export function FinanceCashFlowPage() {
         onApply={handleApplyFilters}
         onClear={handleClearFilters}
         applyDisabled={!hasPendingFilterChanges}
+        filterScopeNote={filtersActive ? FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE : null}
         hint={hasPendingFilterChanges ? "Alterações pendentes — clique em Aplicar." : undefined}
         alwaysVisible={
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">

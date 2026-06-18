@@ -44,7 +44,7 @@ describe("financeAccountsPayableKpiUx", () => {
     assert.equal(page.includes("AGENDADOS / REMARCADOS"), false);
     assert.equal(page.includes("Próximos 30 dias"), false);
     assert.equal(page.includes("xl:grid-cols-8"), false);
-    assert.match(page, /lg:grid-cols-4 xl:grid-cols-4/);
+    assert.match(page, /indus-kpi-grid/);
     assert.match(page, /FinanceKpiCard/);
   });
 

@@ -83,11 +83,11 @@ import {
 import { cn } from "@/src/lib/utils";
 import {
   FinanceApPurchaseOrderScheduleAuditNote,
-  FinanceFilterScopeBanner,
-  FinanceManagementSanitizationNote,
 } from "@/src/components/finance/FinanceFilterScopeBanner";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
-import { FinanceBiExecutiveHeader } from "@/src/components/finance/bi/FinanceBiExecutiveHeader";
+import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
+import { FinanceDataAuditButton } from "@/src/components/finance/shared/FinanceDataAuditButton";
+import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { buildFinanceApFilterChips } from "@/src/lib/financeBiFilterChips";
@@ -96,6 +96,15 @@ import {
   FINANCE_AP_LAST_SYNC_FILTERED_SCOPE,
   withAppliedFilterSub,
 } from "@/src/lib/financeFilterScope";
+import {
+  buildFinanceArApAuditSections,
+  buildFinanceAuditItemsFromChips,
+  countFinanceDataAuditWarnings,
+} from "@/src/lib/financeDataAudit";
+import {
+  FINANCE_AP_EXECUTIVE_SUBTITLE,
+  FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE,
+} from "@/src/lib/financeDataAuditCopy";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import {
   FINANCE_KPI_AP_DUE_30_DAYS,
@@ -495,6 +504,7 @@ export function FinanceAccountsPayablePage() {
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     dashboardAbortRef.current?.abort();
@@ -596,24 +606,34 @@ export function FinanceAccountsPayablePage() {
     [appliedFilters, handleRemoveFilterChip]
   );
 
+  const headerUpdatedAt = cards?.lastSyncAt ?? data?.generatedAt ?? null;
+
+  const auditSections = useMemo(
+    () =>
+      buildFinanceArApAuditSections({
+        moduleLabel: "Contas a Pagar",
+        nomusSource: "Nomus — Contas a Pagar",
+        lastSyncAt: cards?.lastSyncAt,
+        generatedAt: data?.generatedAt,
+        lastSyncHint: FINANCE_AP_LAST_SYNC_FILTERED_SCOPE,
+        appliedFilterItems: buildFinanceAuditItemsFromChips(appliedFilterChips),
+        dataSanitization: data?.dataSanitization,
+      }),
+    [appliedFilterChips, cards?.lastSyncAt, data?.dataSanitization, data?.generatedAt]
+  );
+
+  const auditWarningCount = useMemo(
+    () => countFinanceDataAuditWarnings({ dataSanitization: data?.dataSanitization }),
+    [data?.dataSanitization]
+  );
+
   return (
     <FinanceBiDashboardShell>
-      <FinanceBiExecutiveHeader
-        eyebrow="Financeiro · Contas a Pagar"
+      <FinanceExecutivePageHeader
+        eyebrow="FINANCEIRO · CONTAS A PAGAR"
         title="Contas a Pagar"
-        subtitle="Obrigações financeiras, fornecedores e saídas de caixa — visão gerencial saneada com data operacional."
-        filterStatus={filterStatus}
-        meta={[
-          {
-            label: "Última sync",
-            value: formatFinanceDateTime(cards?.lastSyncAt),
-            hint: FINANCE_AP_LAST_SYNC_FILTERED_SCOPE,
-          },
-          {
-            label: "Calculado em",
-            value: data ? formatFinanceDateTime(data.generatedAt) : loading ? "…" : "—",
-          },
-        ]}
+        subtitle={FINANCE_AP_EXECUTIVE_SUBTITLE}
+        updatedAt={headerUpdatedAt}
         actions={[
           {
             id: "refresh",
@@ -645,16 +665,20 @@ export function FinanceAccountsPayablePage() {
               ]
             : []),
         ]}
-      >
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-bold text-emerald-900">
-            Fonte: Nomus
-          </span>
-          <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-bold text-blue-900">
-            Visão gerencial saneada
-          </span>
-        </div>
-      </FinanceBiExecutiveHeader>
+        extraActions={
+          <FinanceDataAuditButton
+            onClick={() => setAuditDrawerOpen(true)}
+            warningCount={auditWarningCount}
+            disabled={loading && !data}
+          />
+        }
+      />
+
+      <FinanceDataAuditDrawer
+        open={auditDrawerOpen}
+        onClose={() => setAuditDrawerOpen(false)}
+        sections={auditSections}
+      />
 
       <FinanceAccountsPayableSyncPanel
         canRun={canRunSync}
@@ -684,6 +708,7 @@ export function FinanceAccountsPayablePage() {
         onApply={handleApplyFilters}
         onClear={handleClearFilters}
         applyDisabled={!hasPendingFilterChanges || loading}
+        filterScopeNote={filtersActive ? FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE : null}
         alwaysVisible={
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <FilterSelect
@@ -768,11 +793,6 @@ export function FinanceAccountsPayablePage() {
         </div>
       </FinanceBiFilterPanel>
 
-      <FinanceFilterScopeBanner active={Boolean(filtersActive)} />
-      <FinanceManagementSanitizationNote
-        dataSanitization={data?.dataSanitization}
-        managementScope={data?.filtersApplied?.managementScope ?? "company"}
-      />
       <FinanceApPurchaseOrderScheduleAuditNote audit={data?.purchaseOrderScheduleAudit} />
 
       <section className={financeBiSectionClass}>

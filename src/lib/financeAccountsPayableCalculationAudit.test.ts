@@ -75,6 +75,7 @@ describe("financeAccountsPayableCalculationAudit", () => {
     assert.ok(page.includes("Resumo executivo"));
     assert.ok(page.includes("alwaysVisible"));
     assert.ok(page.includes("Vence hoje"));
-    assert.ok(page.includes("Visão gerencial saneada"));
+    assert.ok(page.includes("FinanceExecutivePageHeader"));
+    assert.ok(page.includes("FinanceDataAuditDrawer"));
   });
 });

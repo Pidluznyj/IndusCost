@@ -60,7 +60,8 @@ describe("financeFilterCompliance", () => {
     assert.ok(page.includes("buildFinanceArExportQuery(appliedFilters)"));
     assert.ok(page.includes("createDefaultFinanceArUiFilters"));
     assert.ok(page.includes("isDefaultFinanceArUiFilters"));
-    assert.ok(page.includes("FinanceFilterScopeBanner"));
+    assert.ok(page.includes("filterScopeNote"));
+    assert.ok(page.includes("FinanceDataAuditDrawer"));
     assert.ok(page.includes("withAppliedFilterSub"));
     assert.ok(page.includes("setAppliedFilters(normalizeFinanceArUiFilters(nextDraft))"));
     assert.ok(page.includes("draftFilters"));
@@ -71,7 +72,8 @@ describe("financeFilterCompliance", () => {
     const page = readPage("FinanceAccountsPayablePage.tsx");
     assert.ok(page.includes("buildFinanceApDashboardQuery(appliedFilters)"));
     assert.ok(page.includes("buildFinanceApExportQuery(appliedFilters)"));
-    assert.ok(page.includes("FinanceFilterScopeBanner"));
+    assert.ok(page.includes("filterScopeNote"));
+    assert.ok(page.includes("FinanceDataAuditDrawer"));
     assert.ok(page.includes("withAppliedFilterSub"));
     assert.ok(page.includes("draftFilters"));
     assert.ok(page.includes("appliedFilters"));

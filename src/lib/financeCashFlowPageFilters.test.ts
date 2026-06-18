@@ -52,7 +52,7 @@ describe("financeCashFlowPageFilters", () => {
       "utf8"
     );
     assert.ok(page.includes("FinanceBiDashboardShell"));
-    assert.ok(page.includes("FinanceBiExecutiveHeader"));
+    assert.ok(page.includes("FinanceExecutivePageHeader"));
     assert.ok(page.includes("FinanceCashFlowYtdSummary"));
     assert.ok(page.includes("executiveYtd"));
     assert.ok(ytdSummary.includes("Resumo executivo YTD"));
@@ -72,6 +72,9 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(!page.includes("cash-flow-watchlist"));
     assert.ok(!page.includes("financeControlRoomTheme"));
     assert.ok(page.includes("FinanceCashFlowNumbersAuditSection"));
+    assert.ok(page.includes("FinanceDataAuditDrawer"));
+    assert.equal(page.includes("FinanceFilterScopeBanner"), false);
+    assert.equal(page.includes("FinanceManagementSanitizationNote"), false);
     assert.ok(page.includes("cash-flow-overdue-receivables"));
     assert.ok(page.includes("cash-flow-overdue-payables"));
     assert.ok(page.includes("FinanceCashFlowBlockTitle"));

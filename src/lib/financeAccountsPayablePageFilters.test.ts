@@ -76,7 +76,8 @@ describe("financeAccountsPayablePageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceAccountsPayablePage.tsx"),
       "utf8"
     );
-    assert.ok(page.includes("FinanceFilterScopeBanner"));
+    assert.ok(page.includes("filterScopeNote"));
+    assert.ok(page.includes("FinanceDataAuditDrawer"));
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("alwaysVisible"));

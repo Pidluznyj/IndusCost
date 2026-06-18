@@ -36,6 +36,7 @@ export function FinanceBiExecutiveHeader({
   meta = [],
   filterStatus,
   actions = [],
+  extraActions,
   children,
   compact = false,
 }: {
@@ -45,6 +46,7 @@ export function FinanceBiExecutiveHeader({
   meta?: FinanceBiHeaderMeta[];
   filterStatus?: FinanceBiFilterStatus;
   actions?: FinanceBiHeaderAction[];
+  extraActions?: React.ReactNode;
   children?: React.ReactNode;
   compact?: boolean;
 }) {
@@ -75,7 +77,7 @@ export function FinanceBiExecutiveHeader({
             </dl>
           ) : null}
         </div>
-        {actions.length > 0 ? (
+        {actions.length > 0 || extraActions ? (
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             {actions.map((action) => (
               <button
@@ -92,6 +94,7 @@ export function FinanceBiExecutiveHeader({
                 {action.label}
               </button>
             ))}
+            {extraActions}
           </div>
         ) : null}
       </div>
