@@ -483,6 +483,35 @@ export function buildSalesOrderIntelligencePayload(input: {
   };
 }
 
+function resolveProductionOrderRowFields(
+  nomusRawResponse: unknown | undefined,
+  lifecycle: SalesOrderLifecycleSummary,
+  referenceDate: Date
+): { productionOrderStatus: string | null; productionOrderLabel: string | null } {
+  if (!lifecycle.hasLinkedProductionOrder) {
+    return { productionOrderStatus: null, productionOrderLabel: null };
+  }
+  const rawOrders = extractNomusProductionOrders(nomusRawResponse);
+  const first = rawOrders[0];
+  const status = first?.status?.trim() || null;
+  if (lifecycle.productionOrderLate) {
+    return { productionOrderStatus: status ?? "late", productionOrderLabel: "OP atrasada" };
+  }
+  const finished = parseNomusBrOrIsoDate(first?.finishedAt ?? null);
+  if (finished) {
+    return { productionOrderStatus: status ?? "finished", productionOrderLabel: "OP finalizada" };
+  }
+  const statusLower = (status ?? "").toLowerCase();
+  if (statusLower.includes("produ") || statusLower.includes("andamento")) {
+    return { productionOrderStatus: status, productionOrderLabel: "OP em produção" };
+  }
+  const due = parseNomusBrOrIsoDate(first?.dueDate ?? null);
+  if (due && referenceDate.getTime() > due.getTime()) {
+    return { productionOrderStatus: status, productionOrderLabel: "OP atrasada" };
+  }
+  return { productionOrderStatus: status, productionOrderLabel: "Com OP" };
+}
+
 export function mapLifecycleToManagementRow(
   order: {
     id: string;
@@ -491,32 +520,63 @@ export function mapLifecycleToManagementRow(
     expectedDeliveryDate: string | null;
     totalNetValue: unknown;
     responsible: string | null;
-    Customer?: { companyName?: string | null; tradeName?: string | null };
+    companyIssuer?: string | null;
+    nomusRawResponse?: unknown;
+    itemsCount?: number;
+    Customer?: {
+      companyName?: string | null;
+      tradeName?: string | null;
+      taxId?: string | null;
+    };
   },
-  lifecycle: SalesOrderLifecycleSummary
+  lifecycle: SalesOrderLifecycleSummary,
+  context?: {
+    items?: EnrichedLifecycleItem[];
+    referenceDate?: Date;
+  }
 ) {
+  const referenceDate = context?.referenceDate ?? new Date();
+  const items = context?.items ?? [];
+  const { risks, suggestedActions } = buildSalesOrderRisksAndActions({ lifecycle, items });
+  const highRiskCount = risks.filter((r) => r.severity === "high").length;
+  const productionFields = resolveProductionOrderRowFields(
+    order.nomusRawResponse,
+    lifecycle,
+    referenceDate
+  );
+
   return {
     id: order.id,
+    number: order.orderCode,
     orderCode: order.orderCode,
     customerName:
       order.Customer?.tradeName?.trim() || order.Customer?.companyName?.trim() || "—",
+    customerTaxId: order.Customer?.taxId ?? null,
     issueDate: order.issueDate,
     expectedDeliveryDate: order.expectedDeliveryDate,
     totalNetValue: decimalToNumber(order.totalNetValue) ?? 0,
+    sellerName: order.responsible,
+    companyName: order.companyIssuer ?? null,
     responsible: order.responsible,
     executiveStatusLabel: lifecycle.executiveStatusLabel,
+    operationalStatus: lifecycle.operationalStatus,
+    billingStatus: lifecycle.billingStatus,
     deadlineStatus: lifecycle.deadlineStatus,
     daysOverdue: lifecycle.daysOverdue,
     hasInvoice: lifecycle.hasInvoice,
     invoiceNumbers: lifecycle.invoiceNumbers,
     hasLinkedProductionOrder: lifecycle.hasLinkedProductionOrder,
     productionOrderLate: lifecycle.productionOrderLate,
+    productionOrderStatus: productionFields.productionOrderStatus,
+    productionOrderLabel: productionFields.productionOrderLabel,
     completionStatus: lifecycle.completionStatus,
     fulfilledPercent: lifecycle.fulfilledPercent,
     invoicedPercent: lifecycle.invoicedPercent,
-    riskCount: lifecycle.riskFlags.length,
-    topSuggestedAction: lifecycle.riskFlags[0] ?? null,
-    operationalStatus: lifecycle.operationalStatus,
+    itemsCount: order.itemsCount ?? items.length,
+    riskCount: risks.length,
+    highRiskCount,
+    riskFlags: lifecycle.riskFlags,
+    suggestedActionLabel: suggestedActions[0]?.label ?? risks[0]?.title ?? null,
   };
 }
 

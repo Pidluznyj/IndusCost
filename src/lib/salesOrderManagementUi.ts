@@ -7,6 +7,27 @@ import type {
 
 export const SALES_ORDER_MANAGEMENT_PAGE_TITLE = "Gestão de Pedidos de Venda";
 
+export const BILLING_STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Todos" },
+  { value: "not_invoiced", label: "Sem NF" },
+  { value: "partially_invoiced", label: "NF parcial" },
+  { value: "fully_invoiced", label: "NF total" },
+  { value: "invoiced_with_cut", label: "NF com corte" },
+];
+
+export const INVOICE_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Todos" },
+  { value: "true", label: "Com NF" },
+  { value: "false", label: "Sem NF" },
+];
+
+export const PRODUCTION_ORDER_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Todos" },
+  { value: "true", label: "Com OP" },
+  { value: "false", label: "Sem OP" },
+  { value: "late", label: "OP atrasada" },
+];
+
 export const OPERATIONAL_STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "", label: "Todos" },
   { value: "awaiting_release", label: "Aguardando liberação" },
@@ -114,12 +135,40 @@ export function formatInvoiceBadge(hasInvoice: boolean, invoicedPercent: number 
 export function formatProductionBadge(
   hasOp: boolean,
   isLate: boolean,
-  finished?: boolean
+  options?: { finished?: boolean; label?: string | null; status?: string | null }
 ): string {
   if (!hasOp) return "Sem OP";
+  if (options?.label) return options.label;
   if (isLate) return "OP atrasada";
-  if (finished) return "OP finalizada";
+  if (options?.finished) return "OP finalizada";
+  const statusLower = (options?.status ?? "").toLowerCase();
+  if (statusLower.includes("produ") || statusLower.includes("andamento")) return "OP em produção";
+  if (options?.status === "not_available") return "OP não disponível";
   return "Com OP";
+}
+
+export function formatBillingBadge(billingStatus: string): string {
+  if (billingStatus === "not_invoiced") return "Sem NF";
+  if (billingStatus === "partially_invoiced") return "NF parcial";
+  if (billingStatus === "fully_invoiced") return "NF total";
+  if (billingStatus === "invoiced_with_cut") return "NF com corte";
+  return "—";
+}
+
+export function formatItemSituation(item: {
+  normalizedStatus: SalesOrderItemNomusStatus;
+  hasCut: boolean;
+  isCancelled: boolean;
+  isReturned: boolean;
+}): string {
+  if (item.isCancelled) return "Cancelado";
+  if (item.isReturned) return "Devolvido";
+  if (item.hasCut) return "Com corte";
+  if (item.normalizedStatus === "partially_fulfilled") return "Parcial";
+  if (item.normalizedStatus === "fully_fulfilled" || item.normalizedStatus === "delivered") {
+    return "Completo";
+  }
+  return ITEM_NOMUS_STATUS_LABELS[item.normalizedStatus] ?? "—";
 }
 
 export const MANAGEMENT_KPI_CARDS = [
@@ -133,6 +182,19 @@ export const MANAGEMENT_KPI_CARDS = [
   { id: "delivered", label: "Entregues" },
   { id: "cancelledOrReturned", label: "Cancelados/devolvidos" },
 ] as const;
+
+export const MANAGEMENT_KPI_CARD_HINTS: Record<(typeof MANAGEMENT_KPI_CARDS)[number]["id"], string> = {
+  openOrders: "Pedidos ainda em fluxo operacional ou comercial, excluindo cancelados e devolvidos.",
+  overdueWithoutInvoice:
+    "Pedidos vencidos que ainda não têm nota fiscal emitida.",
+  invoicedOnTime: "Pedidos com NF processada dentro do prazo previsto de entrega.",
+  invoicedLate: "Pedidos com NF processada após a data prevista de entrega.",
+  partialOrCut: "Pedidos com atendimento parcial ou com corte em relação ao pedido original.",
+  withoutProductionOrder: "Pedidos sem ordem de produção vinculada no Nomus/IndusCost.",
+  productionLate: "Pedidos cuja OP vinculada está fora do prazo.",
+  delivered: "Pedidos com status operacional de entrega concluída.",
+  cancelledOrReturned: "Pedidos cancelados ou com devolução parcial/total.",
+};
 
 export const INTELLIGENCE_DRAWER_TABS = [
   { id: "summary", label: "Resumo" },

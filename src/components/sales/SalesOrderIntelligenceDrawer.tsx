@@ -12,6 +12,7 @@ import {
   COMPLETION_STATUS_LABELS,
   formatDeadlineBadge,
   formatInvoiceBadge,
+  formatItemSituation,
   formatProductionBadge,
   formatSalesOrderDate,
   formatSalesOrderPercent,
@@ -88,37 +89,69 @@ function TabPanel({
     payload;
 
   if (tab === "summary") {
+    const topRisks = risks.slice(0, 3);
+    const mainAction = suggestedActions[0];
     return (
-      <div className="grid grid-cols-2 gap-3" data-testid="sales-order-intelligence-summary">
-        <SummaryCard label="Status gerencial" value={lifecycle.executiveStatusLabel} />
-        <SummaryCard
-          label="Prazo"
-          value={formatDeadlineBadge(lifecycle.deadlineStatus, lifecycle.daysOverdue)}
-        />
-        <SummaryCard
-          label="NF"
-          value={formatInvoiceBadge(lifecycle.hasInvoice, lifecycle.invoicedPercent)}
-        />
-        <SummaryCard
-          label="OP"
-          value={formatProductionBadge(
-            production.hasLinkedProductionOrder,
-            lifecycle.productionOrderLate
-          )}
-        />
-        <SummaryCard
-          label="Completeza"
-          value={COMPLETION_STATUS_LABELS[lifecycle.completionStatus]}
-        />
-        <SummaryCard label="Valor" value={formatCurrency(order.totalNetValue)} />
-        <SummaryCard
-          label="% faturado"
-          value={formatSalesOrderPercent(lifecycle.invoicedPercent)}
-        />
-        <SummaryCard
-          label="% atendido"
-          value={formatSalesOrderPercent(lifecycle.fulfilledPercent)}
-        />
+      <div className="space-y-4" data-testid="sales-order-intelligence-summary">
+        <div className="grid grid-cols-2 gap-3">
+          <SummaryCard label="Status gerencial" value={lifecycle.executiveStatusLabel} />
+          <SummaryCard
+            label="Prazo"
+            value={formatDeadlineBadge(lifecycle.deadlineStatus, lifecycle.daysOverdue)}
+          />
+          <SummaryCard
+            label="NF"
+            value={formatInvoiceBadge(lifecycle.hasInvoice, lifecycle.invoicedPercent)}
+          />
+          <SummaryCard
+            label="OP"
+            value={formatProductionBadge(
+              production.hasLinkedProductionOrder,
+              lifecycle.productionOrderLate,
+              {
+                status: production.productionOrders[0]?.status ?? production.dataQuality.source,
+              }
+            )}
+          />
+          <SummaryCard
+            label="Completeza"
+            value={COMPLETION_STATUS_LABELS[lifecycle.completionStatus]}
+          />
+          <SummaryCard label="Valor" value={formatCurrency(order.totalNetValue)} />
+          <SummaryCard
+            label="% faturado"
+            value={formatSalesOrderPercent(lifecycle.invoicedPercent)}
+          />
+          <SummaryCard
+            label="% atendido"
+            value={formatSalesOrderPercent(lifecycle.fulfilledPercent)}
+          />
+        </div>
+        {mainAction ? (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-3">
+            <p className="text-[10px] font-bold uppercase text-muted-foreground">Ação sugerida</p>
+            <p className="text-sm font-semibold mt-1">{mainAction.label}</p>
+            <p className="text-xs text-muted-foreground mt-1">{mainAction.description}</p>
+          </div>
+        ) : null}
+        {topRisks.length > 0 ? (
+          <div>
+            <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2">
+              Riscos principais
+            </h3>
+            <ul className="space-y-2">
+              {topRisks.map((risk) => (
+                <li key={risk.code} className="text-sm flex items-start gap-2">
+                  <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                  <span>
+                    <span className="font-semibold">{risk.title}</span>
+                    <span className="text-muted-foreground"> — {risk.description}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -141,6 +174,8 @@ function TabPanel({
               <th className="p-2 font-semibold text-right">Faturada</th>
               <th className="p-2 font-semibold text-right">Pendente</th>
               <th className="p-2 font-semibold">OP</th>
+              <th className="p-2 font-semibold">NF</th>
+              <th className="p-2 font-semibold">Situação</th>
             </tr>
           </thead>
           <tbody>
@@ -161,6 +196,12 @@ function TabPanel({
                     ? item.linkedProductionOrderNumbers.join(", ")
                     : "—"}
                 </td>
+                <td className="p-2">
+                  {(item.invoicedQuantity ?? 0) > 0 && invoicing.invoiceNumbers.length > 0
+                    ? invoicing.invoiceNumbers.join(", ")
+                    : "—"}
+                </td>
+                <td className="p-2">{formatItemSituation(item)}</td>
               </tr>
             ))}
           </tbody>
@@ -170,14 +211,21 @@ function TabPanel({
   }
 
   if (tab === "production") {
+    const opNotSynced = production.dataQuality.source === "not_available";
     return (
       <div className="space-y-4" data-testid="sales-order-intelligence-production">
         {production.productionOrders.length === 0 ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-            <p className="font-semibold">Nenhuma OP vinculada encontrada</p>
-            <p className="mt-1 text-xs">
-              Se o pedido exige produção, verifique abertura de OP no Nomus.
-            </p>
+            <p className="font-semibold">Nenhuma OP vinculada encontrada.</p>
+            {opNotSynced ? (
+              <p className="mt-1 text-xs">
+                OP não sincronizada/disponível no IndusCost para este pedido.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs">
+                Se o pedido exige produção, verifique abertura ou sincronização da OP.
+              </p>
+            )}
             {production.dataQuality.warnings.map((w) => (
               <p key={w} className="mt-2 text-xs">
                 {w}
@@ -210,6 +258,18 @@ function TabPanel({
                   <dd>{op.pendingQuantity ?? "—"}</dd>
                 </div>
                 <div>
+                  <dt className="text-muted-foreground">Abertura</dt>
+                  <dd>{formatSalesOrderDate(op.openedAt ?? null)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Início</dt>
+                  <dd>{formatSalesOrderDate(op.startedAt ?? null)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Fim</dt>
+                  <dd>{formatSalesOrderDate(op.finishedAt ?? null)}</dd>
+                </div>
+                <div>
                   <dt className="text-muted-foreground">Prazo</dt>
                   <dd>{formatSalesOrderDate(op.dueDate ?? null)}</dd>
                 </div>
@@ -225,6 +285,20 @@ function TabPanel({
   }
 
   if (tab === "invoicing") {
+    const timingLabel =
+      invoicing.invoiceTiming === "after_due_date"
+        ? "NF após prazo"
+        : invoicing.invoiceTiming === "on_due_date"
+          ? "NF no prazo"
+          : invoicing.invoiceTiming === "before_due_date"
+            ? "NF antecipada"
+            : invoicing.invoiceTiming.replace(/_/g, " ");
+    const partialOrTotal =
+      invoicing.invoicedPercent != null && invoicing.invoicedPercent >= 99.5
+        ? "Total"
+        : invoicing.hasInvoice
+          ? "Parcial"
+          : "—";
     return (
       <div className="space-y-3" data-testid="sales-order-intelligence-invoicing">
         <SummaryCard
@@ -243,10 +317,9 @@ function TabPanel({
           label="Última emissão"
           value={formatSalesOrderDate(invoicing.lastInvoiceDate ?? null)}
         />
-        <SummaryCard
-          label="Timing"
-          value={invoicing.invoiceTiming.replace(/_/g, " ")}
-        />
+        <SummaryCard label="Valor faturado" value={formatCurrency(invoicing.invoicedAmount ?? 0)} />
+        <SummaryCard label="Timing" value={timingLabel} />
+        <SummaryCard label="Parcial/total" value={partialOrTotal} />
         <SummaryCard
           label="% faturado"
           value={formatSalesOrderPercent(invoicing.invoicedPercent)}
@@ -305,9 +378,37 @@ function TabPanel({
   return (
     <div className="space-y-3" data-testid="sales-order-intelligence-audit">
       <div>
+        <h3 className="text-xs font-bold uppercase text-muted-foreground">Fontes de dados</h3>
+        <ul className="mt-2 list-disc pl-4 text-sm space-y-1">
+          <li>SalesOrder — cabeçalho, status e valores do pedido</li>
+          <li>SalesOrderItem — itens persistidos no IndusCost</li>
+          <li>nomusRawResponse.nfes — NF-e processadas no Nomus</li>
+          <li>
+            OP —{" "}
+            {production.dataQuality.source === "nomus_raw"
+              ? "nomusRawResponse (sem modelo Prisma dedicado)"
+              : "não sincronizada/disponível"}
+          </li>
+          <li>nomusRawResponse.itensPedido — quantidades e status por item</li>
+        </ul>
+      </div>
+      <div>
         <h3 className="text-xs font-bold uppercase text-muted-foreground">Status original Nomus</h3>
         <p className="text-sm mt-1">{lifecycle.originalStatus ?? "—"}</p>
       </div>
+      {dataQuality.missingLinks.length > 0 ? (
+        <div>
+          <h3 className="text-xs font-bold uppercase text-muted-foreground">Vínculos ausentes</h3>
+          <ul className="mt-2 space-y-1 text-sm">
+            {dataQuality.missingLinks.map((link) => (
+              <li key={link} className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                {link === "nota_fiscal" ? "Sem vínculo NF" : "Sem vínculo OP"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {dataQuality.warnings.length > 0 ? (
         <div>
           <h3 className="text-xs font-bold uppercase text-muted-foreground">Avisos de qualidade</h3>

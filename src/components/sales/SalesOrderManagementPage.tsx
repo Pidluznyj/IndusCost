@@ -23,6 +23,7 @@ import {
 } from "@/src/lib/salesOrderManagementTypes";
 import type { SalesOrderIntelligencePayload } from "@/src/lib/salesOrderIntelligence";
 import {
+  BILLING_STATUS_FILTER_OPTIONS,
   COMPLETION_STATUS_FILTER_OPTIONS,
   COMPLETION_STATUS_LABELS,
   DEADLINE_STATUS_FILTER_OPTIONS,
@@ -31,8 +32,11 @@ import {
   formatProductionBadge,
   formatSalesOrderDate,
   formatSalesOrderPercent,
+  INVOICE_FILTER_OPTIONS,
+  MANAGEMENT_KPI_CARD_HINTS,
   MANAGEMENT_KPI_CARDS,
   OPERATIONAL_STATUS_FILTER_OPTIONS,
+  PRODUCTION_ORDER_FILTER_OPTIONS,
 } from "@/src/lib/salesOrderManagementUi";
 import { SalesOrderIntelligenceDrawer } from "@/src/components/sales/SalesOrderIntelligenceDrawer";
 
@@ -88,6 +92,9 @@ export function SalesOrderManagementPage() {
   const [operationalStatus, setOperationalStatus] = useState("");
   const [deadlineStatus, setDeadlineStatus] = useState("");
   const [completionStatus, setCompletionStatus] = useState("");
+  const [billingStatus, setBillingStatus] = useState("");
+  const [invoiceFilter, setInvoiceFilter] = useState("");
+  const [productionFilter, setProductionFilter] = useState("");
   const [withRisk, setWithRisk] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [invoiceAfterDeadline, setInvoiceAfterDeadline] = useState(false);
@@ -112,6 +119,12 @@ export function SalesOrderManagementPage() {
     if (operationalStatus) params.set("operationalStatus", operationalStatus);
     if (deadlineStatus) params.set("deadlineStatus", deadlineStatus);
     if (completionStatus) params.set("completionStatus", completionStatus);
+    if (billingStatus) params.set("billingStatus", billingStatus);
+    if (invoiceFilter === "true") params.set("hasInvoice", "true");
+    if (invoiceFilter === "false") params.set("hasInvoice", "false");
+    if (productionFilter === "true") params.set("hasProductionOrder", "true");
+    if (productionFilter === "false") params.set("hasProductionOrder", "false");
+    if (productionFilter === "late") params.set("productionLate", "true");
     if (withRisk) params.set("withRisk", "true");
     if (overdueOnly) params.set("overdueOnly", "true");
     if (invoiceAfterDeadline) params.set("invoiceAfterDeadline", "true");
@@ -128,6 +141,9 @@ export function SalesOrderManagementPage() {
     operationalStatus,
     deadlineStatus,
     completionStatus,
+    billingStatus,
+    invoiceFilter,
+    productionFilter,
     withRisk,
     overdueOnly,
     invoiceAfterDeadline,
@@ -338,6 +354,59 @@ export function SalesOrderManagementPage() {
               ))}
             </select>
           </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">NF</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={billingStatus}
+              onChange={(e) => {
+                setBillingStatus(e.target.value);
+                setPage(1);
+              }}
+            >
+              {BILLING_STATUS_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">
+              Vínculo NF
+            </label>
+            <select
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={invoiceFilter}
+              onChange={(e) => {
+                setInvoiceFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              {INVOICE_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">OP</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
+              value={productionFilter}
+              onChange={(e) => {
+                setProductionFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              {PRODUCTION_ORDER_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <button
           type="button"
@@ -351,6 +420,9 @@ export function SalesOrderManagementPage() {
             setOperationalStatus("");
             setDeadlineStatus("");
             setCompletionStatus("");
+            setBillingStatus("");
+            setInvoiceFilter("");
+            setProductionFilter("");
             setWithRisk(false);
             setOverdueOnly(false);
             setInvoiceAfterDeadline(false);
@@ -435,6 +507,7 @@ export function SalesOrderManagementPage() {
                 amount={loading ? undefined : amount}
                 amountFormat="number"
                 loading={loading}
+                hint={MANAGEMENT_KPI_CARD_HINTS[card.id]}
               />
             </React.Fragment>
           );
@@ -477,19 +550,20 @@ export function SalesOrderManagementPage() {
                 <th className="p-3 font-semibold text-right">% atend.</th>
                 <th className="p-3 font-semibold">Alertas</th>
                 <th className="p-3 font-semibold">Ação sugerida</th>
+                <th className="p-3 font-semibold w-28"> </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={14} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={15} className="p-8 text-center text-muted-foreground">
                     <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
                     Carregando…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={15} className="p-8 text-center text-muted-foreground">
                     Nenhum pedido encontrado.
                   </td>
                 </tr>
@@ -501,33 +575,68 @@ export function SalesOrderManagementPage() {
                     onClick={() => void openDrawer(row)}
                     data-testid="sales-order-management-row"
                   >
-                    <td className="p-3 font-semibold text-primary">{row.orderCode}</td>
+                    <td className="p-3 font-semibold text-primary">{row.number}</td>
                     <td className="p-3">{row.customerName}</td>
                     <td className="p-3">{formatSalesOrderDate(row.issueDate)}</td>
                     <td className="p-3">{formatSalesOrderDate(row.expectedDeliveryDate)}</td>
                     <td className="p-3 text-right tabular-nums">{formatCurrency(row.totalNetValue)}</td>
                     <td className="p-3">
-                      <span className={badgeClass("status")}>{row.executiveStatusLabel}</span>
+                      <span
+                        className={badgeClass("status")}
+                        title={row.executiveStatusLabel}
+                      >
+                        {row.executiveStatusLabel}
+                      </span>
                     </td>
                     <td className="p-3">
-                      <span className={badgeClass("deadline")}>
+                      <span
+                        className={badgeClass("deadline")}
+                        title={formatDeadlineBadge(row.deadlineStatus, row.daysOverdue)}
+                      >
                         {formatDeadlineBadge(row.deadlineStatus, row.daysOverdue)}
                       </span>
                     </td>
                     <td className="p-3">
-                      <span className={badgeClass("invoice")}>
-                        {formatInvoiceBadge(row.hasInvoice, row.invoicedPercent)}
+                      <span
+                        className={badgeClass("invoice")}
+                        title={
+                          row.deadlineStatus === "invoiced_late"
+                            ? "NF após prazo"
+                            : formatInvoiceBadge(row.hasInvoice, row.invoicedPercent)
+                        }
+                      >
+                        {row.deadlineStatus === "invoiced_late"
+                          ? "NF após prazo"
+                          : formatInvoiceBadge(row.hasInvoice, row.invoicedPercent)}
                       </span>
                     </td>
                     <td className="p-3">
-                      <span className={badgeClass("op")}>
+                      <span
+                        className={badgeClass("op")}
+                        title={formatProductionBadge(
+                          row.hasLinkedProductionOrder,
+                          row.productionOrderLate,
+                          {
+                            label: row.productionOrderLabel,
+                            status: row.productionOrderStatus,
+                          }
+                        )}
+                      >
                         {formatProductionBadge(
                           row.hasLinkedProductionOrder,
-                          row.productionOrderLate
+                          row.productionOrderLate,
+                          {
+                            label: row.productionOrderLabel,
+                            status: row.productionOrderStatus,
+                          }
                         )}
                       </span>
                     </td>
-                    <td className="p-3">{COMPLETION_STATUS_LABELS[row.completionStatus]}</td>
+                    <td className="p-3">
+                      <span title={COMPLETION_STATUS_LABELS[row.completionStatus]}>
+                        {COMPLETION_STATUS_LABELS[row.completionStatus]}
+                      </span>
+                    </td>
                     <td className="p-3 text-right tabular-nums">
                       {formatSalesOrderPercent(row.invoicedPercent)}
                     </td>
@@ -536,13 +645,33 @@ export function SalesOrderManagementPage() {
                     </td>
                     <td className="p-3">
                       {row.riskCount > 0 ? (
-                        <span className={badgeClass("risk")}>{row.riskCount} alerta(s)</span>
+                        <span
+                          className={badgeClass("risk")}
+                          title={row.riskFlags.join(", ")}
+                        >
+                          {row.highRiskCount > 0
+                            ? `${row.highRiskCount} alto · ${row.riskCount}`
+                            : `${row.riskCount} alerta(s)`}
+                        </span>
                       ) : (
                         "—"
                       )}
                     </td>
-                    <td className="p-3 text-xs text-muted-foreground max-w-[140px] truncate">
-                      {row.topSuggestedAction ?? "—"}
+                    <td className="p-3 text-xs text-muted-foreground max-w-[140px] truncate" title={row.suggestedActionLabel ?? undefined}>
+                      {row.suggestedActionLabel ?? "—"}
+                    </td>
+                    <td className="p-3">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold hover:bg-accent"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void openDrawer(row);
+                        }}
+                        data-testid="sales-order-view-intelligence"
+                      >
+                        Ver inteligência
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -584,7 +713,7 @@ export function SalesOrderManagementPage() {
         payload={intelPayload}
         orderLabel={
           selectedRow
-            ? `${selectedRow.orderCode} · ${selectedRow.customerName}`
+            ? `${selectedRow.number} · ${selectedRow.customerName}`
             : "Pedido de venda"
         }
       />

@@ -75,7 +75,7 @@ export async function loadSalesOrderManagementPage(
     where,
     orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
     include: {
-      Customer: { select: { companyName: true, tradeName: true } },
+      Customer: { select: { companyName: true, tradeName: true, taxId: true } },
       items: {
         select: {
           id: true,

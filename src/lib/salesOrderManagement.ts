@@ -13,6 +13,7 @@ import type {
   SalesOrderManagementCards,
   SalesOrderManagementRow,
 } from "./salesOrderManagementTypes.js";
+import { cardsToManagementSummary, type SalesOrderManagementSummary } from "./salesOrderManagementTypes.js";
 
 export type {
   SalesOrderManagementCards,
@@ -21,7 +22,9 @@ export type {
 export {
   getSalesOrderIntelligenceApiPath,
   getSalesOrderManagementApiPath,
+  cardsToManagementSummary,
 } from "./salesOrderManagementTypes.js";
+export type { SalesOrderManagementSummary } from "./salesOrderManagementTypes.js";
 
 export type SalesOrderManagementFilters = {
   year?: number;
@@ -163,6 +166,17 @@ function matchesManagementFilters(
   return true;
 }
 
+export function sortManagementRowsByRisk(rows: SalesOrderManagementRow[]): SalesOrderManagementRow[] {
+  return [...rows].sort((a, b) => {
+    if (b.highRiskCount !== a.highRiskCount) return b.highRiskCount - a.highRiskCount;
+    if (b.riskCount !== a.riskCount) return b.riskCount - a.riskCount;
+    const overdueA = a.daysOverdue ?? 0;
+    const overdueB = b.daysOverdue ?? 0;
+    if (overdueB !== overdueA) return overdueB - overdueA;
+    return (b.totalNetValue ?? 0) - (a.totalNetValue ?? 0);
+  });
+}
+
 export function buildSalesOrderManagementCards(
   rows: Array<{ lifecycle: ReturnType<typeof buildSalesOrderLifecycleSummary>["lifecycle"] }>
 ): SalesOrderManagementCards {
@@ -229,14 +243,14 @@ export function buildManagementRowsFromOrders(
     responsible: string | null;
     nomusRawResponse: unknown;
     companyIssuer?: string | null;
-    Customer?: { companyName?: string | null; tradeName?: string | null };
+    Customer?: { companyName?: string | null; tradeName?: string | null; taxId?: string | null };
     items: SalesOrderLifecycleInput["items"];
   }>,
   filters: SalesOrderManagementFilters,
   referenceDate = new Date()
-): { rows: SalesOrderManagementRow[]; cards: SalesOrderManagementCards } {
+): { rows: SalesOrderManagementRow[]; cards: SalesOrderManagementCards; summary: SalesOrderManagementSummary } {
   const computed = orders.map((order) => {
-    const { lifecycle } = buildSalesOrderLifecycleSummary({
+    const { lifecycle, items } = buildSalesOrderLifecycleSummary({
       salesOrderId: order.id,
       salesOrderNumber: order.orderCode,
       originalStatus: order.status,
@@ -254,9 +268,13 @@ export function buildManagementRowsFromOrders(
         expectedDeliveryDate: order.expectedDeliveryDate?.toISOString() ?? null,
         totalNetValue: order.totalNetValue,
         responsible: order.responsible,
+        companyIssuer: order.companyIssuer,
+        nomusRawResponse: order.nomusRawResponse,
+        itemsCount: order.items.length,
         Customer: order.Customer,
       },
-      lifecycle
+      lifecycle,
+      { items, referenceDate }
     );
     return { row, lifecycle };
   });
@@ -266,8 +284,9 @@ export function buildManagementRowsFromOrders(
   );
 
   return {
-    rows: filtered.map((f) => f.row),
+    rows: sortManagementRowsByRisk(filtered.map((f) => f.row)),
     cards: buildSalesOrderManagementCards(filtered),
+    summary: cardsToManagementSummary(buildSalesOrderManagementCards(filtered)),
   };
 }
 
