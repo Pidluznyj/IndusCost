@@ -67,6 +67,9 @@ export const EXECUTIVE_REPORT_KPI_HINTS: Record<string, string> = {
   "Saldo acumulado": "Saldo previsto acumulado no período.",
   "Realizado YTD": "Total de pedidos acumulado no ano.",
   "Projeção mês": "Estimativa de pedidos até o fim do mês.",
+  "Vendido no mês":
+    "Soma dos pedidos de venda válidos emitidos no mês selecionado. Não considera propostas.",
+  "Atingimento mês pedidos": "Percentual do vendido no mês sobre a meta do mês.",
 };
 
 const UNAVAILABLE_SECTION_LABELS: Record<string, string> = {

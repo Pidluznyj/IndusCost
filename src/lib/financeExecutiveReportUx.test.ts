@@ -39,6 +39,7 @@ describe("financeExecutiveReportUxCopy", () => {
       "Saldo líquido",
       "Meta mês",
       "Atingimento",
+      "Vendido no mês",
     ]) {
       assert.ok(EXECUTIVE_REPORT_KPI_HINTS[label], label);
     }
@@ -106,6 +107,7 @@ describe("financeExecutiveReportUx — componentes", () => {
       "utf8"
     );
     assert.ok(card.includes("tooltip"));
+    assert.ok(card.includes("title={value}"));
     assert.ok(card.includes("finance-executive-kpi-hint"));
   });
 

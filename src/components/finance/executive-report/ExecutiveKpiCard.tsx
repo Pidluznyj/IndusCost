@@ -39,7 +39,9 @@ export function ExecutiveKpiCard({
       <span className="finance-executive-kpi-label" title={title}>
         {label}
       </span>
-      <span className="finance-executive-kpi-value">{value}</span>
+      <span className="finance-executive-kpi-value" title={value}>
+        {value}
+      </span>
       {sub ? <span className="finance-executive-kpi-sub">{sub}</span> : null}
       {hint ? (
         <span className="finance-executive-kpi-hint" title={tooltip}>

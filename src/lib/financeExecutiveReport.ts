@@ -454,6 +454,7 @@ export function buildExecutiveReportModuleSections(input: ExecutiveReportOfficia
             accumulatedEvolution: salesOrdersTab.accumulatedEvolution,
             statusBreakdown: salesOrdersTab.statusBreakdown,
             overdueOrders: salesOrdersTab.overdueOrders,
+            periodLabel: salesOrdersTab.periodLabel,
           },
         }
       : null,
@@ -803,6 +804,7 @@ export async function buildFinanceExecutiveReport(
             accumulatedEvolution: salesOrdersTab.accumulatedEvolution,
             statusBreakdown: salesOrdersTab.statusBreakdown,
             overdueOrders: salesOrdersTab.overdueOrders,
+            periodLabel: salesOrdersTab.periodLabel,
           }
         : {
             summaryCards: [],
@@ -821,6 +823,7 @@ export async function buildFinanceExecutiveReport(
               selectedYear: filters.year,
               items: [],
             },
+            periodLabel: periodLabel,
           },
     },
     executiveNarrative: narrative,

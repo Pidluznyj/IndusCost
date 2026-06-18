@@ -499,12 +499,18 @@ export function ExecutiveReportDocument({
           subtitle={EXECUTIVE_REPORT_SECTION_SUBTITLES["sales-orders"]}
           intro={EXECUTIVE_REPORT_SECTION_INTROS["sales-orders"]}
         >
-          <ExecutiveKpiGrid columns={4}>
+          <ExecutiveKpiGrid columns={5}>
             <ExecutiveKpiCard
-              label="Realizado YTD"
-              value={salesTab.summaryCards.find((c) => c.id === "realized-ytd")?.formatted ?? "—"}
-              hint={kpiHint("Realizado YTD")}
-              tooltip={kpiHint("Realizado YTD")}
+              label="Vendido no mês"
+              value={salesTab.target?.formatted.actual ?? "—"}
+              sub={
+                salesTab.periodLabel
+                  ? `Pedidos registrados em ${salesTab.periodLabel}.`
+                  : "Total de pedidos registrados no mês."
+              }
+              hint={kpiHint("Vendido no mês")}
+              tooltip={kpiHint("Vendido no mês")}
+              highlight
             />
             <ExecutiveKpiCard
               label="Meta mês"
@@ -513,17 +519,33 @@ export function ExecutiveReportDocument({
               tooltip={kpiHint("Meta mês")}
             />
             <ExecutiveKpiCard
+              label="Atingimento"
+              value={
+                salesTargetMissing ? "—" : (salesTab.target?.formatted.achievementPercent ?? "—")
+              }
+              hint={
+                salesTargetMissing
+                  ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE
+                  : kpiHint("Atingimento mês pedidos")
+              }
+              tooltip={
+                salesTargetMissing
+                  ? EXECUTIVE_REPORT_NO_TARGET_MESSAGE
+                  : kpiHint("Atingimento mês pedidos")
+              }
+            />
+            <ExecutiveKpiCard
               label="Projeção mês"
               value={salesTab.projection?.formatted.monthlyProjection ?? "—"}
               hint={kpiHint("Projeção mês")}
               tooltip={kpiHint("Projeção mês")}
             />
             <ExecutiveKpiCard
-              label="Atingimento"
-              value={salesTab.target?.formatted.achievementPercent ?? "—"}
-              hint={kpiHint("Atingimento")}
-              tooltip={kpiHint("Atingimento")}
-              highlight
+              label="Realizado YTD"
+              value={salesTab.summaryCards.find((c) => c.id === "realized-ytd")?.formatted ?? "—"}
+              sub="Total de pedidos acumulado no ano."
+              hint={kpiHint("Realizado YTD")}
+              tooltip={kpiHint("Realizado YTD")}
             />
           </ExecutiveKpiGrid>
 

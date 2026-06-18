@@ -118,6 +118,8 @@ describe("financeExecutiveReportPrint", () => {
     assert.match(document, /Contas a Pagar/);
     assert.match(document, /Fluxo de Caixa/);
     assert.match(document, /Pedidos de Venda/);
+    assert.match(document, /Vendido no mês/);
+    assert.match(document, /Realizado YTD/);
     assert.match(document, /Conclusão Executiva/);
   });
 

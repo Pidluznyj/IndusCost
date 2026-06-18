@@ -318,6 +318,7 @@ export type FinanceExecutiveReportSalesOrders = {
     | "accumulatedEvolution"
     | "statusBreakdown"
     | "overdueOrders"
+    | "periodLabel"
   >;
 };
 
