@@ -11,6 +11,15 @@ import {
   soldProductsRankingExportFilename,
   soldProductsRankingWorkbookToBytes,
 } from "@/src/lib/salesProductRankingExport.js";
+import { buildSoldProductCustomers } from "@/src/lib/soldProductCustomers.js";
+import {
+  SoldProductCustomersFilterParseError,
+  parseSoldProductCustomersQueryFilters,
+} from "@/src/lib/soldProductCustomersFilters.js";
+import {
+  buildSoldProductCustomersCsv,
+  soldProductCustomersExportFilename,
+} from "@/src/lib/soldProductCustomersExport.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -59,6 +68,12 @@ function parseFiltersOrRespond(res: express.Response, query: Record<string, unkn
     }
     throw error;
   }
+}
+
+function isUuidParam(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
 }
 
 export function registerSalesProductRankingRoutes(app: express.Express, auth: AuthGuards) {
@@ -120,6 +135,69 @@ export function registerSalesProductRankingRoutes(app: express.Express, auth: Au
     } catch (error) {
       console.error("GET /api/commercial/sold-products/export.xlsx", error);
       return res.status(500).json({ error: "Não foi possível exportar o relatório." });
+    }
+  });
+
+  app.get("/api/commercial/sold-products/:productId/customers", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const { productId } = req.params;
+      if (!isUuidParam(productId)) {
+        return res.status(400).json({ error: "productId inválido." });
+      }
+
+      try {
+        parseSoldProductCustomersQueryFilters(req.query as Record<string, unknown>);
+      } catch (error) {
+        if (error instanceof SoldProductCustomersFilterParseError) {
+          return res.status(400).json({ error: error.message });
+        }
+        throw error;
+      }
+
+      const parsed = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
+      if (!parsed) return;
+
+      const payload = await buildSoldProductCustomers(productId, req.query as Record<string, unknown>, {
+        sellerScope: resolveSellerScope(user),
+      });
+      if (!payload) {
+        return res.status(404).json({ error: "Produto não encontrado." });
+      }
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/commercial/sold-products/:productId/customers", error);
+      return res.status(500).json({ error: "Não foi possível carregar clientes compradores do produto." });
+    }
+  });
+
+  app.get("/api/commercial/sold-products/:productId/customers/export.csv", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const { productId } = req.params;
+      if (!isUuidParam(productId)) {
+        return res.status(400).json({ error: "productId inválido." });
+      }
+
+      const payload = await buildSoldProductCustomers(productId, req.query as Record<string, unknown>, {
+        sellerScope: resolveSellerScope(user),
+      });
+      if (!payload) {
+        return res.status(404).json({ error: "Produto não encontrado." });
+      }
+
+      const csv = buildSoldProductCustomersCsv(payload);
+      const filename = soldProductCustomersExportFilename(payload.product.code);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(csv);
+    } catch (error) {
+      console.error("GET /api/commercial/sold-products/:productId/customers/export.csv", error);
+      return res.status(500).json({ error: "Não foi possível exportar a lista de clientes." });
     }
   });
 }

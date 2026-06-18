@@ -296,5 +296,8 @@ describe("salesProductRanking", () => {
     );
     assert.ok(routes.includes("/api/commercial/sold-products/filter-options"));
     assert.ok(routes.includes("buildSoldProductsFilterOptions"));
+    assert.ok(routes.includes("/api/commercial/sold-products/:productId/customers"));
+    assert.ok(page.includes("Ver clientes"));
+    assert.ok(page.includes("buildSoldProductCustomersPath"));
   });
 });

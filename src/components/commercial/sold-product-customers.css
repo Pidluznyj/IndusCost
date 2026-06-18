@@ -1,0 +1,15 @@
+.sold-product-customers-page .sold-product-customers-table td,
+.sold-product-customers-page .sold-product-customers-table th {
+  white-space: nowrap;
+}
+
+.sold-product-customers-page .sold-product-customers-table td:nth-child(1),
+.sold-product-customers-page .sold-product-customers-table th:nth-child(1) {
+  white-space: normal;
+}
+
+.sold-product-customers-page .sold-product-customers-table td:nth-child(14),
+.sold-product-customers-page .sold-product-customers-table th:nth-child(14) {
+  white-space: normal;
+  max-width: 220px;
+}

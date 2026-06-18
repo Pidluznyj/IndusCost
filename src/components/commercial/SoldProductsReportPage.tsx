@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -95,6 +96,7 @@ import type {
   SoldProductsUiFilters,
 } from "@/src/lib/salesProductRankingTypes.js";
 import { SoldProductsPrintDocument } from "@/src/components/commercial/SoldProductsPrintDocument";
+import { buildSoldProductCustomersPath } from "@/src/lib/soldProductCustomersNavigation";
 import "@/src/components/commercial/sold-products-print.css";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
@@ -1047,6 +1049,7 @@ export function SoldProductsReportPage() {
                 loading={loading}
                 sortState={rankingSort}
                 onSort={handleRankingSort}
+                appliedFilters={appliedFilters}
               />
             </ReportSection>
           </div>
@@ -1220,11 +1223,13 @@ function RankingTable({
   loading,
   sortState,
   onSort,
+  appliedFilters,
 }: {
   rows: SoldProductsRankingRow[];
   loading: boolean;
   sortState: SortState<RankingSortKey>;
   onSort: (key: RankingSortKey) => void;
+  appliedFilters: SoldProductsUiFilters;
 }) {
   if (!loading && rows.length === 0) {
     return <FinanceBiEmptyState title="Sem ranking" description="Nenhum produto vendido no período." />;
@@ -1246,13 +1251,16 @@ function RankingTable({
             <SortableTh label="Última venda" sortKey="lastSaleDate" sortState={sortState} onSort={onSort} />
             <SortableTh label="% qtd" sortKey="quantitySharePercent" sortState={sortState} onSort={onSort} align="right" />
             <SortableTh label="% valor" sortKey="amountSharePercent" sortState={sortState} onSort={onSort} align="right" />
+            <th className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280] w-28">
+              Ação
+            </th>
           </tr>
         </thead>
         <tbody>
           {loading
             ? Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="border-b border-[#F3F4F6] animate-pulse">
-                  <td colSpan={11} className="px-3 py-4">
+                  <td colSpan={12} className="px-3 py-4">
                     <div className="h-4 bg-[#F3F4F6] rounded w-full" />
                   </td>
                 </tr>
@@ -1268,7 +1276,13 @@ function RankingTable({
                   </td>
                   <td className="px-3 py-2.5 font-mono text-xs text-[#374151]">{r.productCode ?? "—"}</td>
                   <td className="px-3 py-2.5">
-                    <p className="font-medium text-[#111827] leading-snug">{r.productName}</p>
+                    <Link
+                      to={buildSoldProductCustomersPath(r.productId, appliedFilters)}
+                      className="font-medium text-[#111827] leading-snug hover:text-[#2563EB] hover:underline"
+                      title="Ver clientes compradores"
+                    >
+                      {r.productName}
+                    </Link>
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-[#111827]">
                     {fmtQty(r.quantitySold)}
@@ -1285,6 +1299,14 @@ function RankingTable({
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-[#6B7280]">
                     {r.amountSharePercent.toFixed(1)}%
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <Link
+                      to={buildSoldProductCustomersPath(r.productId, appliedFilters)}
+                      className="inline-flex items-center rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-xs font-semibold text-[#2563EB] hover:bg-[#DBEAFE] transition-colors"
+                    >
+                      Ver clientes
+                    </Link>
                   </td>
                 </tr>
               ))}

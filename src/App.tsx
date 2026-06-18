@@ -42,6 +42,7 @@ import { ProductBomWhereUsedDashboard } from "@/src/components/contextual/Produc
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
 import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/SalesOrdersIndicatorsDashboard";
 import { SoldProductsReportPage } from "@/src/components/commercial/SoldProductsReportPage";
+import { SoldProductCustomersPage } from "@/src/components/commercial/SoldProductCustomersPage";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
@@ -573,6 +574,17 @@ export default function App() {
               description="Dashboard executivo com visão consolidada de volume, valor líquido e distribuição por status."
             >
               <SalesOrdersIndicatorsDashboard />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="sales-orders/sold-products/:productId/customers"
+          element={
+            <ModulePageShell
+              title="Clientes compradores"
+              description="Clientes que compraram o produto selecionado, com métricas comerciais e ações sugeridas."
+            >
+              <SoldProductCustomersPage />
             </ModulePageShell>
           }
         />

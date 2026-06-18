@@ -506,7 +506,7 @@ async function loadInvoiceFilteredOrderIds(
   return rows.map((r) => r.id);
 }
 
-async function loadLineContexts(
+export async function loadSoldProductsLineContexts(
   filters: SoldProductsDashboardFilters,
   sellerScope?: { externalSellerId: number | null; responsible: string | null }
 ): Promise<SoldProductsLineContext[]> {
@@ -657,7 +657,7 @@ export async function buildSalesProductRanking(
     ...(options?.uiOverrides ?? {}),
   });
 
-  const lines = await loadLineContexts(filters, options?.sellerScope);
+  const lines = await loadSoldProductsLineContexts(filters, options?.sellerScope);
   const ranking = aggregateSoldProductsRanking(lines, filters.sortBy, filters.topN);
   const summary = buildSoldProductsSummary(lines, ranking);
   const customerMix = buildSoldProductsCustomerMix(lines, ranking);

@@ -1,6 +1,6 @@
 // src/components/CustomerModule.tsx
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { 
   Plus, 
   Search, 
@@ -47,6 +47,7 @@ const STICKY_ACTIONS =
 const STICKY_ACTIONS_HEAD = "sticky right-0 z-20 bg-accent/80 backdrop-blur-sm shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)]";
 
 export const CustomerModule = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -155,6 +156,32 @@ export const CustomerModule = () => {
     }
     setIsModalOpen(true);
   };
+
+  useEffect(() => {
+    const editId = searchParams.get("edit")?.trim();
+    if (!editId || loading) return;
+    const found = customers.find((c) => c.id === editId);
+    const clearEditParam = () => {
+      const next = new URLSearchParams(searchParams);
+      next.delete("edit");
+      setSearchParams(next, { replace: true });
+    };
+    if (found) {
+      handleOpenModal(found);
+      clearEditParam();
+      return;
+    }
+    void fetchJsonOk<{ customer: Customer }>(
+      `/api/customers/${encodeURIComponent(editId)}/commercial-360`
+    )
+      .then(({ customer }) => {
+        handleOpenModal(customer);
+        clearEditParam();
+      })
+      .catch(() => {
+        /* cliente não encontrado — ignora */
+      });
+  }, [searchParams, customers, loading, setSearchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
