@@ -50,6 +50,71 @@ const PRODUCTION_ORDER_KEYS = [
   "op",
 ] as const;
 
+const SALES_ORDER_RAW_FIELD_ALIASES: Record<string, readonly string[]> = {
+  status: ["status", "situacao", "situacaoPedido"],
+  issueDate: ["dataEmissao", "issueDate", "dtEmissao"],
+  expectedDeliveryDate: [
+    "dataPrevisaoEntrega",
+    "dataEntregaPrevista",
+    "previsaoEntrega",
+    "expectedDeliveryDate",
+  ],
+  deliveryDate: ["dataEntrega", "deliveryDate", "dtEntrega"],
+  releaseDate: ["dataLiberacao", "dtLiberacao"],
+  invoiceDate: ["dataFaturamento", "dataProcessamento", "dataEmissaoNf"],
+  fulfillmentDate: ["dataAtendimento", "dataAtendimentoPedido"],
+};
+
+const SALES_ORDER_ITEM_RAW_FIELD_ALIASES: Record<string, readonly string[]> = {
+  status: ["status", "situacao", "situacaoItem", "statusItem"],
+  quantity: ["quantidade", "qtdPedida", "quantidadePedida"],
+  quantityFulfilled: ["quantidadeAtendida", "qtdAtendida", "quantidadeAtendimento"],
+  quantityInvoiced: ["quantidadeFaturada", "qtdFaturada", "quantidadeNF"],
+  quantityCanceled: ["quantidadeCancelada", "qtdCancelada"],
+  quantityReturned: ["quantidadeDevolvida", "qtdDevolvida"],
+  quantityShipped: ["quantidadeEnviada", "qtdEnviada"],
+  quantityDelivered: ["quantidadeEntregue", "qtdEntregue"],
+  expectedDeliveryDate: ["dataEntrega", "dataEntregaItem", "dataPrevisaoEntrega"],
+  productCode: ["codigoProduto", "codigo", "sku"],
+  productName: ["nomeProduto", "descricaoProduto", "produto"],
+};
+
+function readFirstRawValue(
+  obj: Record<string, unknown>,
+  aliases: readonly string[]
+): unknown {
+  for (const key of aliases) {
+    if (key in obj) return obj[key];
+  }
+  return undefined;
+}
+
+/** Extrai campo do pedido no nomusRawResponse com aliases seguros. */
+export function extractSalesOrderRawField(
+  nomusRawResponse: unknown,
+  field: keyof typeof SALES_ORDER_RAW_FIELD_ALIASES | string
+): unknown {
+  const root = asObject(nomusRawResponse);
+  if (!root) return undefined;
+  const aliases =
+    SALES_ORDER_RAW_FIELD_ALIASES[field] ??
+    (typeof field === "string" ? [field] : []);
+  return readFirstRawValue(root, aliases);
+}
+
+/** Extrai campo de um item em itensPedido[] com aliases seguros. */
+export function extractSalesOrderItemRawField(
+  rawItem: unknown,
+  field: keyof typeof SALES_ORDER_ITEM_RAW_FIELD_ALIASES | string
+): unknown {
+  const obj = asObject(rawItem);
+  if (!obj) return undefined;
+  const aliases =
+    SALES_ORDER_ITEM_RAW_FIELD_ALIASES[field] ??
+    (typeof field === "string" ? [field] : []);
+  return readFirstRawValue(obj, aliases);
+}
+
 function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -283,6 +348,8 @@ export function normalizeSalesOrderItemNomusStatus(
   return "unknown";
 }
 
+/** Alias público solicitado pelo contrato de lifecycle. */
+export const normalizeSalesOrderItemStatus = normalizeSalesOrderItemNomusStatus;
 export function matchRawItemToDbItem(
   rawItems: NomusRawItem[],
   dbItem: {

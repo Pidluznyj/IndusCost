@@ -25,8 +25,10 @@ import {
   startOfLocalDay,
 } from "./salesOrderNomusRaw.js";
 
-export { normalizeSalesOrderItemNomusStatus };
-
+export {
+  normalizeSalesOrderItemNomusStatus,
+  normalizeSalesOrderItemStatus,
+} from "./salesOrderNomusRaw.js";
 export type SalesOrderLifecycleItemInput = {
   id: string;
   externalProductId?: number | null;
@@ -65,16 +67,16 @@ export type EnrichedLifecycleItem = {
 
 const EXECUTIVE_LABELS: Record<SalesOrderOperationalStatus, { label: string; priority: number }> = {
   cancelled: { label: "Cancelado", priority: 100 },
-  divergent: { label: "Divergente", priority: 95 },
-  fully_returned: { label: "Devolvido", priority: 90 },
-  partially_returned: { label: "Devolvido parcial", priority: 85 },
+  divergent: { label: "Divergente — revisar", priority: 95 },
+  fully_returned: { label: "Devolvido totalmente", priority: 90 },
+  partially_returned: { label: "Devolvido parcialmente", priority: 85 },
   fulfilled_with_cut: { label: "Atendido com corte", priority: 80 },
-  partially_fulfilled: { label: "Atendido parcial", priority: 75 },
+  partially_fulfilled: { label: "Atendido parcialmente", priority: 75 },
   delivered: { label: "Entregue", priority: 70 },
   shipped: { label: "Enviado", priority: 65 },
   fully_invoiced: { label: "Faturado total", priority: 60 },
-  partially_invoiced: { label: "Faturado parcial", priority: 55 },
-  fully_fulfilled: { label: "Atendido total", priority: 50 },
+  partially_invoiced: { label: "Faturado parcialmente", priority: 55 },
+  fully_fulfilled: { label: "Atendido totalmente", priority: 50 },
   in_progress: { label: "Em andamento", priority: 45 },
   released: { label: "Liberado", priority: 40 },
   awaiting_release: { label: "Aguardando liberação", priority: 35 },
@@ -197,7 +199,8 @@ function deriveDeadlineStatus(input: {
 function deriveCompletionStatus(items: EnrichedLifecycleItem[]): SalesOrderCompletionStatus {
   if (items.length === 0) return "unknown";
   if (items.every((i) => i.isCancelled)) return "cancelled";
-  if (items.every((i) => i.isReturned)) return "returned";
+  if (items.every((i) => i.normalizedStatus === "fully_returned")) return "returned";
+  if (items.some((i) => i.isReturned)) return "mixed";
   if (items.some((i) => i.hasCut)) return "with_cut";
   const active = items.filter((i) => !i.isCancelled && !i.isReturned);
   if (active.length === 0) return "mixed";
@@ -228,20 +231,25 @@ function deriveOperationalStatus(input: {
   completionStatus: SalesOrderCompletionStatus;
   deadlineStatus: SalesOrderDeadlineStatus;
 }): SalesOrderOperationalStatus {
-  if (isCancelledSalesOrderStatus(input.originalStatus)) return "cancelled";
-  if (input.completionStatus === "returned") {
-    return input.items.every((i) => i.normalizedStatus === "fully_returned")
-      ? "fully_returned"
-      : "partially_returned";
+  if (
+    isCancelledSalesOrderStatus(input.originalStatus) ||
+    input.items.every((i) => i.isCancelled)
+  ) {
+    return "cancelled";
+  }
+  if (input.completionStatus === "cancelled") return "cancelled";
+  if (input.completionStatus === "returned") return "fully_returned";
+  if (input.items.some((i) => i.normalizedStatus === "partially_returned")) {
+    return "partially_returned";
   }
   if (input.completionStatus === "with_cut") return "fulfilled_with_cut";
-  if (input.completionStatus === "partial") return "partially_fulfilled";
   if (input.items.some((i) => i.normalizedStatus === "delivered")) return "delivered";
   if (input.items.some((i) => i.normalizedStatus === "shipped")) return "shipped";
   if (input.billingStatus === "fully_invoiced" || input.billingStatus === "invoiced_with_cut") {
     return "fully_invoiced";
   }
   if (input.billingStatus === "partially_invoiced") return "partially_invoiced";
+  if (input.completionStatus === "partial") return "partially_fulfilled";
   if (input.completionStatus === "complete") return "fully_fulfilled";
   if (input.items.every((i) => i.normalizedStatus === "awaiting_release")) {
     return "awaiting_release";
@@ -333,7 +341,7 @@ export function buildSalesOrderLifecycleSummary(
   if (rawItems.length === 0 && input.items.length > 0) {
     warnings.push("Status de itens indisponível — nomusRawResponse sem itensPedido.");
   }
-  if (productionOrders.length === 0) {
+  if (input.requiresProduction && productionOrders.length === 0) {
     warnings.push("OP não sincronizada para este pedido.");
   }
 
@@ -379,7 +387,7 @@ export function buildSalesOrderLifecycleSummary(
   if (deadlineStatus === "overdue" && !hasInvoice && !isCancelled) {
     executive = { label: "Atrasado sem NF", priority: 88 };
   } else if (deadlineStatus === "invoiced_late") {
-    executive = { label: "Faturado com atraso", priority: 82 };
+    executive = { label: "Faturado total com atraso", priority: 82 };
   } else if (deadlineStatus === "invoiced_on_time" && billingStatus === "fully_invoiced") {
     executive = { label: "Faturado total no prazo", priority: 62 };
   }
@@ -401,7 +409,7 @@ export function buildSalesOrderLifecycleSummary(
     originalStatus: input.originalStatus,
     hasLinkedProductionOrder: productionOrders.length > 0,
     productionOrderLate,
-    requiresProduction: input.requiresProduction ?? true,
+    requiresProduction: input.requiresProduction ?? false,
   });
 
   const daysUntilDue =
