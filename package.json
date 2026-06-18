@@ -78,7 +78,7 @@
     "test:products:cost-summary-view": "tsx --test src/lib/productCostSummaryView.test.ts",
     "test:products:official-final-cost": "tsx --test src/lib/productOfficialFinalCost.test.ts src/lib/productCostSnapshot.test.ts src/lib/productCostSummaryView.test.ts",
     "test:products:item-reclassification": "tsx --test src/lib/itemReclassification.test.ts",
-    "test:material-demand": "tsx --test src/lib/materialDemandFilters.test.ts src/lib/materialDemandPlannedRealized.test.ts",
+    "test:material-demand": "tsx --test src/lib/materialDemandFilters.test.ts src/lib/materialDemandPlannedRealized.test.ts src/lib/materialDemandPlannedRealizedAudit.test.ts src/lib/materialDemandPlannedRealizedAuditRoutes.test.ts src/lib/materialDemandPlannedRealizedPage.test.ts",
     "test:filter-autocomplete": "tsx --test src/lib/filterAutocompleteAudit.test.ts src/lib/customerSearchApi.test.ts src/lib/entityAutocompleteFilter.test.ts src/lib/financeAccountsReceivablePageFilters.test.ts src/lib/financeCashFlowPageFilters.test.ts src/lib/salesOrdersListFilters.test.ts src/lib/soldProductCustomersPage.test.ts",
     "test:nomus:daily-sync": "tsx --test src/lib/nomusDailySyncRunner.test.ts src/lib/nomusDailySyncLogParse.test.ts",
     "test:auth:access-profiles": "tsx --test src/lib/accessProfiles.test.ts src/lib/modulePermissions.test.ts src/lib/adminUsersPagination.test.ts",

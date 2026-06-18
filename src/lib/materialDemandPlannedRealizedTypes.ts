@@ -84,9 +84,11 @@ export type MaterialUsageContribution = {
   orderCode: string;
   orderStatus: string;
   issueDate: string;
+  customerName: string | null;
   productId: string;
   productSku: string | null;
   productName: string | null;
+  productSoldUnit: string | null;
   materialQtyPerUnit: number;
   valuePerUnit: number | null;
   unitCost: number | null;
@@ -131,4 +133,107 @@ export type MaterialPlannedRealizedDetailResponse = {
   products: MaterialPlannedRealizedDetailProduct[];
   plannedOrders: MaterialPlannedRealizedDetailOrder[];
   realizedOrders: MaterialPlannedRealizedDetailOrder[];
+};
+
+export type MaterialUsageAuditSummary = {
+  plannedQuantity: number;
+  realizedQuantity: number;
+  balanceQuantity: number;
+  accuracyPercent: number | null;
+  unitCost: number | null;
+  plannedCost: number;
+  realizedCost: number;
+  costDifference: number;
+  plannedOrdersCount: number;
+  realizedOrdersCount: number;
+  pendingOrdersCount: number;
+  costDifferenceExplanation: string;
+};
+
+export type MaterialUsageAuditProduct = {
+  productId: string;
+  productCode: string | null;
+  productDescription: string;
+  productSoldUnit: string | null;
+  plannedProductQuantity: number;
+  realizedProductQuantity: number;
+  materialFactor: number;
+  plannedMaterialQuantity: number;
+  realizedMaterialQuantity: number;
+  balanceMaterialQuantity: number;
+  plannedCost: number;
+  realizedCost: number;
+  costDifference: number;
+  plannedOrdersCount: number;
+  realizedOrdersCount: number;
+};
+
+export type MaterialUsageAuditPlannedOrder = {
+  salesOrderId: string;
+  salesOrderNumber: string;
+  customerName: string;
+  issueDate: string;
+  productCode: string | null;
+  productDescription: string;
+  productSoldUnit: string | null;
+  productQuantity: number;
+  materialFactor: number;
+  plannedMaterialQuantity: number;
+  plannedCost: number;
+  status: string;
+  invoiceNumber: string | null;
+  hasInvoicing: boolean;
+};
+
+export type MaterialUsageAuditRealizedOrder = {
+  salesOrderId: string;
+  salesOrderNumber: string;
+  invoiceNumber: string | null;
+  customerName: string;
+  invoiceDate: string | null;
+  productCode: string | null;
+  productDescription: string;
+  productSoldUnit: string | null;
+  invoicedProductQuantity: number;
+  materialFactor: number;
+  realizedMaterialQuantity: number;
+  realizedCost: number;
+  usedPartialInvoiceFallback: boolean;
+};
+
+export type MaterialUsageAuditProductVariance = {
+  productId: string;
+  productCode: string | null;
+  productDescription: string;
+  balanceMaterialQuantity: number;
+  costDifference: number;
+};
+
+export type MaterialUsageAuditDataQuality = {
+  warnings: string[];
+  missingBomItems: number;
+  missingCosts: number;
+  unitConversionWarnings: number;
+  partialInvoiceFallbacks: number;
+  invoiceLinkWarnings: number;
+};
+
+export type MaterialUsageAuditPayload = {
+  material: {
+    id: string;
+    code: string | null;
+    description: string;
+    unit: string;
+  };
+  summary: MaterialUsageAuditSummary;
+  products: MaterialUsageAuditProduct[];
+  plannedOrders: MaterialUsageAuditPlannedOrder[];
+  realizedOrders: MaterialUsageAuditRealizedOrder[];
+  productVarianceRanking: MaterialUsageAuditProductVariance[];
+  dataQuality: MaterialUsageAuditDataQuality;
+};
+
+export type MaterialUsageAuditResponse = {
+  filtersApplied: Record<string, unknown>;
+  audit: MaterialUsageAuditPayload;
 };

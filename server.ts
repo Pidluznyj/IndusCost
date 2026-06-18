@@ -90,7 +90,6 @@ import {
 } from "./src/lib/customerSearch.js";
 import {
   aggregateMaterialUsageContributions,
-  buildMaterialPlannedRealizedDetails,
   buildMaterialUsagePlannedRealizedSummary,
   createMaterialUsagePlannedRealizedDataQuality,
   extractProcessedNfeSummaries,
@@ -102,6 +101,7 @@ import {
   salesOrderMatchesInvoicingScope,
   type MaterialUsageContribution,
 } from "./src/lib/materialDemandPlannedRealized.js";
+import { buildMaterialUsageAuditPayload } from "./src/lib/materialDemandPlannedRealizedAudit.js";
 import { registerFleetRoutes } from "./src/lib/fleetRoutes.js";
 import {
   registerFleetPublicReservationRoutes,
@@ -9832,6 +9832,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const salesOrders = await prisma.salesOrder.findMany({
       where,
       include: {
+        Customer: { select: { id: true, companyName: true } },
         items: {
           include: {
             Product: { select: { id: true, sku: true, name: true } },
@@ -9946,9 +9947,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
             orderCode: order.orderCode,
             orderStatus: order.status,
             issueDate: order.issueDate.toISOString(),
+            customerName: order.Customer?.companyName?.trim() || null,
             productId: item.productId,
             productSku: productSkuEarly,
             productName: productNameEarly,
+            productSoldUnit: item.unit?.trim() || null,
             materialQtyPerUnit: qtyPerUnit,
             valuePerUnit,
             unitCost,
@@ -10208,17 +10211,19 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         materialId: materialIdParam,
       });
       const data = await buildMaterialDemandPlannedVsRealizedDataset(filters);
-      const detail = buildMaterialPlannedRealizedDetails(
+      const summaryRow = data.rows.find((row) => row.materialId === materialIdParam) ?? null;
+      const audit = buildMaterialUsageAuditPayload(
         materialIdParam,
         data.contributions,
-        data.nfeByOrderId
+        data.nfeByOrderId,
+        summaryRow
       );
-      if (!detail) {
+      if (!audit) {
         return res.status(404).json({ error: "Matéria-prima não encontrada para os filtros informados." });
       }
       res.json({
         filtersApplied: data.filtersApplied,
-        detail,
+        audit,
       });
     } catch (error) {
       console.error("Material demand planned-vs-realized details endpoint error:", error);

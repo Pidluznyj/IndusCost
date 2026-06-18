@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Info, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, Loader2, Search } from "lucide-react";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import {
+  MaterialUsageAuditDrawer,
+  MATERIAL_USAGE_AUDIT_BUTTON_TOOLTIP,
+} from "@/src/components/contextual/MaterialUsageAuditDrawer";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   MATERIAL_USAGE_VARIANCE_STATUS_LABELS,
@@ -8,13 +12,12 @@ import {
   PLANNED_REALIZED_FISCAL_VS_PRODUCTION_NOTE,
   type MaterialUsagePlannedRealizedRow,
 } from "@/src/lib/materialDemandPlannedRealized";
+import { MATERIAL_USAGE_AUDIT_BUTTON_LABEL } from "@/src/lib/materialDemandPlannedRealizedAuditCopy";
 import type {
-  MaterialPlannedRealizedDetailResponse,
   MaterialUsagePlannedRealizedDataQuality,
   MaterialUsagePlannedRealizedSummary,
 } from "@/src/lib/materialDemandPlannedRealizedTypes";
 import { materialDemandUiFiltersToQueryParams, type MaterialDemandUiFilters } from "@/src/lib/materialDemandFilters";
-import { formatDatePtBr } from "@/src/components/contextual/materialDemandDashboardUi";
 import { cn, formatNumberAdaptive } from "@/src/lib/utils";
 import "@/src/styles/indus-kpi-grid.css";
 
@@ -100,127 +103,6 @@ function DataQualityPanel({ dataQuality }: { dataQuality: MaterialUsagePlannedRe
   );
 }
 
-function MaterialPlannedRealizedDrillDown({
-  apiBase,
-  materialId,
-  filters,
-  onClose,
-}: {
-  apiBase: string;
-  materialId: string;
-  filters: MaterialDemandUiFilters;
-  onClose: () => void;
-}) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<MaterialPlannedRealizedDetailResponse | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    setLoading(true);
-    setError(null);
-    const qs = materialDemandUiFiltersToQueryParams(filters).toString();
-    fetchJsonOk<{ detail: MaterialPlannedRealizedDetailResponse }>(
-      `${apiBase}/planned-vs-realized/materials/${encodeURIComponent(materialId)}/details?${qs}`,
-      { signal: ac.signal }
-    )
-      .then((res) => setDetail(res.detail))
-      .catch((e: unknown) => {
-        if (e instanceof DOMException && e.name === "AbortError") return;
-        setError("Não foi possível carregar os detalhes.");
-      })
-      .finally(() => setLoading(false));
-    return () => ac.abort();
-  }, [apiBase, materialId, filters]);
-
-  return (
-    <div className="rounded-xl border border-primary/30 bg-card p-4 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-foreground">Detalhe da matéria-prima</p>
-          {detail ? (
-            <p className="text-xs text-muted-foreground mt-1">
-              {detail.materialCode ? `[${detail.materialCode}] ` : ""}
-              {detail.materialName} · {detail.unitLabel}
-            </p>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs font-medium text-primary hover:underline shrink-0"
-        >
-          Fechar
-        </button>
-      </div>
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          Carregando detalhes…
-        </div>
-      ) : null}
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {detail ? (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <section className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Produtos</h4>
-            <ul className="space-y-2 text-sm">
-              {detail.products.map((p) => (
-                <li key={p.productId} className="rounded-lg border border-border px-3 py-2">
-                  <p className="font-medium">
-                    {p.productSku ? `[${p.productSku}] ` : ""}
-                    {p.productName ?? "Produto"}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Previsto: {qty(p.plannedQuantity)} · Realizado: {qty(p.realizedQuantity)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Pedidos (previsão)
-            </h4>
-            <ul className="space-y-2 text-sm max-h-64 overflow-y-auto">
-              {detail.plannedOrders.map((o) => (
-                <li key={o.salesOrderId} className="rounded-lg border border-border px-3 py-2">
-                  <p className="font-medium">{o.orderCode}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDatePtBr(o.issueDate)} · Previsto: {qty(o.plannedQuantity)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Pedidos faturados
-            </h4>
-            <ul className="space-y-2 text-sm max-h-64 overflow-y-auto">
-              {detail.realizedOrders.length === 0 ? (
-                <li className="text-xs text-muted-foreground">Nenhum pedido faturado no filtro.</li>
-              ) : (
-                detail.realizedOrders.map((o) => (
-                  <li key={o.salesOrderId} className="rounded-lg border border-border px-3 py-2">
-                    <p className="font-medium">{o.orderCode}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Realizado: {qty(o.realizedQuantity)}
-                      {o.nfes.length > 0
-                        ? ` · NF: ${o.nfes.map((n) => n.numero ?? n.dataProcessamento).join(", ")}`
-                        : ""}
-                    </p>
-                  </li>
-                ))
-              )}
-            </ul>
-          </section>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function MaterialDemandPlannedRealizedPanel({
   apiBase,
   appliedFilters,
@@ -235,7 +117,18 @@ export function MaterialDemandPlannedRealizedPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<PlannedRealizedResponse | null>(null);
-  const [expandedMaterialId, setExpandedMaterialId] = useState<string | null>(null);
+  const [auditMaterialId, setAuditMaterialId] = useState<string | null>(null);
+  const [auditPreviewRow, setAuditPreviewRow] = useState<MaterialUsagePlannedRealizedRow | null>(null);
+
+  const openAudit = useCallback((row: MaterialUsagePlannedRealizedRow) => {
+    setAuditPreviewRow(row);
+    setAuditMaterialId(row.materialId);
+  }, []);
+
+  const closeAudit = useCallback(() => {
+    setAuditMaterialId(null);
+    setAuditPreviewRow(null);
+  }, []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -352,7 +245,7 @@ export function MaterialDemandPlannedRealizedPanel({
         <div className="border-b border-border px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">Assertividade por matéria-prima</h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Clique em uma linha para ver produtos, pedidos previstos e pedidos faturados.
+            Clique em uma linha ou em Dif. R$ para abrir a auditoria detalhada.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -384,66 +277,83 @@ export function MaterialDemandPlannedRealizedPanel({
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => {
-                  const expanded = expandedMaterialId === row.materialId;
-                  return (
-                    <React.Fragment key={row.materialId}>
-                      <tr
+                rows.map((row) => (
+                  <tr
+                    key={row.materialId}
+                    data-testid={`material-planned-realized-row-${row.materialId}`}
+                    className="border-b border-border/70 cursor-pointer hover:bg-accent/40 transition-colors"
+                    onClick={() => openAudit(row)}
+                  >
+                    <td className="px-3 py-2 font-mono text-xs">{row.materialCode ?? "—"}</td>
+                    <td className="px-3 py-2 max-w-[200px] truncate" title={row.materialName}>
+                      {row.materialName}
+                    </td>
+                    <td className="px-3 py-2">{row.unitLabel}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{qty(row.plannedQuantity)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{qty(row.realizedQuantity)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{qty(row.remainingQuantity)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{pct(row.accuracyPercent)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{money(row.unitCost)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{money(row.plannedCost)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{money(row.realizedCost)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <div className="inline-flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          className="text-foreground hover:text-primary hover:underline font-medium"
+                          title={MATERIAL_USAGE_AUDIT_BUTTON_TOOLTIP}
+                          data-testid="material-usage-audit-cost-diff-button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openAudit(row);
+                          }}
+                        >
+                          {money(row.costVariance)}
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-accent"
+                          title={MATERIAL_USAGE_AUDIT_BUTTON_TOOLTIP}
+                          data-testid="material-usage-audit-button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openAudit(row);
+                          }}
+                        >
+                          <Search className="h-3 w-3" aria-hidden />
+                          {MATERIAL_USAGE_AUDIT_BUTTON_LABEL}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.plannedOrdersCount}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.realizedOrdersCount}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.relatedProductsCount}</td>
+                    <td className="px-3 py-2">
+                      <span
                         className={cn(
-                          "border-b border-border/70 cursor-pointer hover:bg-accent/40 transition-colors",
-                          expanded && "bg-accent/20"
+                          "inline-flex rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+                          statusBadgeClass(row.status)
                         )}
-                        onClick={() =>
-                          setExpandedMaterialId((cur) => (cur === row.materialId ? null : row.materialId))
-                        }
                       >
-                        <td className="px-3 py-2 font-mono text-xs">{row.materialCode ?? "—"}</td>
-                        <td className="px-3 py-2 max-w-[200px] truncate" title={row.materialName}>
-                          {row.materialName}
-                        </td>
-                        <td className="px-3 py-2">{row.unitLabel}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{qty(row.plannedQuantity)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{qty(row.realizedQuantity)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{qty(row.remainingQuantity)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{pct(row.accuracyPercent)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{money(row.unitCost)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{money(row.plannedCost)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{money(row.realizedCost)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{money(row.costVariance)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{row.plannedOrdersCount}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{row.realizedOrdersCount}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{row.relatedProductsCount}</td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={cn(
-                              "inline-flex rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap",
-                              statusBadgeClass(row.status)
-                            )}
-                          >
-                            {MATERIAL_USAGE_VARIANCE_STATUS_LABELS[row.status]}
-                          </span>
-                        </td>
-                      </tr>
-                      {expanded ? (
-                        <tr>
-                          <td colSpan={15} className="px-3 py-3 bg-muted/20">
-                            <MaterialPlannedRealizedDrillDown
-                              apiBase={apiBase}
-                              materialId={row.materialId}
-                              filters={appliedFilters}
-                              onClose={() => setExpandedMaterialId(null)}
-                            />
-                          </td>
-                        </tr>
-                      ) : null}
-                    </React.Fragment>
-                  );
-                })
+                        {MATERIAL_USAGE_VARIANCE_STATUS_LABELS[row.status]}
+                      </span>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      <MaterialUsageAuditDrawer
+        open={auditMaterialId != null}
+        onClose={closeAudit}
+        apiBase={apiBase}
+        materialId={auditMaterialId}
+        previewRow={auditPreviewRow}
+        filters={appliedFilters}
+      />
     </div>
   );
 }

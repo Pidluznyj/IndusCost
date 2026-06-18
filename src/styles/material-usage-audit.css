@@ -1,0 +1,13 @@
+@media (max-width: 640px) {
+  .material-usage-audit-panel {
+    max-width: 100%;
+  }
+
+  .material-usage-audit-kpi {
+    min-height: 3.5rem;
+  }
+}
+
+.material-usage-audit-overlay {
+  backdrop-filter: blur(1px);
+}
