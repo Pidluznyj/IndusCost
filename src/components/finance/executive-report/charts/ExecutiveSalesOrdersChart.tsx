@@ -4,6 +4,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  LabelList,
   Legend,
   Line,
   ResponsiveContainer,
@@ -21,6 +22,7 @@ import {
   ExecutiveChartShell,
   ExecutiveTargetHint,
 } from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
+import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 
 function SalesTooltip({
   active,
@@ -63,6 +65,7 @@ export function ExecutiveSalesOrdersChart({
   config,
   empty,
   targetMissing,
+  scenarioText,
 }: {
   title: string;
   subtitle?: string;
@@ -70,6 +73,7 @@ export function ExecutiveSalesOrdersChart({
   config: DashboardChartSeriesConfig;
   empty?: boolean;
   targetMissing?: boolean;
+  scenarioText?: string;
 }) {
   const data = rows.map((row) => ({
     name: row.monthLabel,
@@ -89,9 +93,10 @@ export function ExecutiveSalesOrdersChart({
         subtitle={subtitle ?? "Comparativo ano anterior × ano atual, meta e projeção"}
         empty={empty ?? rows.length === 0}
         testId="executive-sales-orders-chart"
+        scenarioText={scenarioText}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
+          <ComposedChart data={data} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis
               dataKey="name"
@@ -114,7 +119,9 @@ export function ExecutiveSalesOrdersChart({
               fill={config.colors.previousYearBar}
               radius={[4, 4, 0, 0]}
               maxBarSize={24}
-            />
+            >
+              <LabelList dataKey="previousYear" content={<ChartBarValueLabel />} />
+            </Bar>
             <Bar
               dataKey="currentYear"
               name={config.labels.currentYearBar}
@@ -131,6 +138,7 @@ export function ExecutiveSalesOrdersChart({
                   strokeWidth={entry.isCurrentMonth ? 2 : 0}
                 />
               ))}
+              <LabelList dataKey="currentYear" content={<ChartBarValueLabel />} />
             </Bar>
             <Line
               type="monotone"

@@ -212,7 +212,7 @@ export type ExecutiveCashFlowChartRow = {
 };
 
 export const EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE =
-  "Visão anual do caixa: entradas, saídas e saldo acumulado mês a mês.";
+  "Saldo líquido mensal e acumulado calculados por vencimento de contas a receber e contas a pagar.";
 
 function roundExecutiveCashFlowMoney(value: number): number {
   if (!Number.isFinite(value)) return 0;

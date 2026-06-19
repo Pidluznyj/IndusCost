@@ -213,7 +213,7 @@ describe("FinanceCashFlowMonthlyPlannedChart UI", () => {
     assert.match(page, /executiveSummary\.monthlyTimeline/);
   });
 
-  it("componente usa ComposedChart com barra de saldo líquido e linha acumulada", () => {
+  it("componente delega ao gráfico compartilhado com saldo líquido e acumulado", () => {
     const chart = readFileSync(
       join(
         process.cwd(),
@@ -225,20 +225,25 @@ describe("FinanceCashFlowMonthlyPlannedChart UI", () => {
       ),
       "utf8"
     );
-    assert.match(chart, /ComposedChart/);
-    assert.match(chart, /dataKey="netBalance"/);
-    assert.match(chart, /dataKey="accumulatedBalance"/);
+    const planned = readFileSync(
+      join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPlannedChart.tsx"),
+      "utf8"
+    );
+    assert.match(chart, /FinanceCashFlowPlannedChart/);
     assert.match(chart, /buildExecutiveMonthlyPlannedChartRows/);
-    assert.match(chart, /Recebido:/);
-    assert.match(chart, /A receber:/);
-    assert.match(chart, /Entradas est\./);
-    assert.match(chart, /Pago:/);
-    assert.match(chart, /A pagar:/);
-    assert.match(chart, /Saídas est\./);
-    assert.match(chart, /Saldo líquido:/);
-    assert.match(chart, /Saldo acumulado:/);
-    assert.match(chart, /FINANCE_BI_COLORS\.success/);
-    assert.match(chart, /FINANCE_BI_COLORS\.risk/);
+    assert.match(planned, /ComposedChart/);
+    assert.match(planned, /dataKey="netBalance"/);
+    assert.match(planned, /dataKey="accumulatedBalance"/);
+    assert.match(planned, /Recebido:/);
+    assert.match(planned, /A receber:/);
+    assert.match(planned, /Entradas est\./);
+    assert.match(planned, /Pago:/);
+    assert.match(planned, /A pagar:/);
+    assert.match(planned, /Saídas est\./);
+    assert.match(planned, /Saldo líquido:/);
+    assert.match(planned, /Saldo acumulado:/);
+    assert.match(planned, /FINANCE_BI_COLORS\.success/);
+    assert.match(planned, /FINANCE_BI_COLORS\.risk/);
     assert.match(chart, /Sem dados para montar o fluxo planejado do período filtrado/);
   });
 });

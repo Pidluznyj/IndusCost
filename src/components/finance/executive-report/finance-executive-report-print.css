@@ -353,16 +353,24 @@
   }
 
   .executive-chart-body {
-    height: 50mm !important;
-    min-height: 50mm !important;
-    max-height: 50mm !important;
+    height: 58mm !important;
+    min-height: 58mm !important;
+    max-height: 58mm !important;
     overflow: hidden !important;
   }
 
   .executive-chart-body .recharts-responsive-container,
   .executive-chart-body .recharts-wrapper {
-    height: 50mm !important;
-    max-height: 50mm !important;
+    height: 58mm !important;
+    max-height: 58mm !important;
+  }
+
+  .executive-chart-scenario {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    font-size: 7pt !important;
+    padding: 1.5mm 2mm !important;
+    margin: 1mm 0 1.5mm !important;
   }
 
   .executive-chart-body svg {

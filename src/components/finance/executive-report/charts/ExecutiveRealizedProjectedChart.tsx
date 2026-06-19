@@ -4,6 +4,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -20,6 +21,7 @@ import {
   ExecutiveChartShell,
   ExecutiveTargetHint,
 } from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
+import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 
 function RealizedTooltip({
   active,
@@ -43,11 +45,13 @@ export function ExecutiveRealizedProjectedChart({
   subtitle,
   model,
   selectedYear,
+  scenarioText,
 }: {
   title: string;
   subtitle?: string;
   model: ExecutiveRealizedProjectedChartModel;
   selectedYear: number;
+  scenarioText?: string;
 }) {
   const chartData = [
     {
@@ -81,9 +85,10 @@ export function ExecutiveRealizedProjectedChart({
         }
         empty={!model.hasData}
         testId="executive-realized-projected-chart"
+        scenarioText={scenarioText}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
+          <BarChart data={chartData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis
               dataKey="name"
@@ -109,6 +114,7 @@ export function ExecutiveRealizedProjectedChart({
                   strokeWidth={entry.highlight ? 2 : 0}
                 />
               ))}
+              <LabelList dataKey="value" content={<ChartBarValueLabel />} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

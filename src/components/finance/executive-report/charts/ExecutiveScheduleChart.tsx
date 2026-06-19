@@ -4,6 +4,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -16,6 +17,7 @@ import {
   formatExecutiveReportPresentationCurrency,
 } from "@/src/lib/financeExecutiveReportPresentation";
 import { ExecutiveChartShell } from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
+import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 
 const OPEN_COLOR = "#2563EB";
 const OVERDUE_COLOR = "#DC2626";
@@ -54,12 +56,14 @@ export function ExecutiveScheduleChart({
   rows,
   empty,
   variant,
+  scenarioText,
 }: {
   title: string;
   subtitle?: string;
   rows: ExecutiveScheduleChartRow[];
   empty?: boolean;
   variant: "receivable" | "payable";
+  scenarioText?: string;
 }) {
   const data = rows.map((row) => ({
     name: row.monthLabel,
@@ -79,9 +83,10 @@ export function ExecutiveScheduleChart({
       subtitle={subtitle}
       empty={empty ?? rows.length === 0}
       testId={`executive-${variant}-schedule-chart`}
+      scenarioText={scenarioText}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
+        <BarChart data={data} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
           <XAxis
             dataKey="name"
@@ -108,6 +113,7 @@ export function ExecutiveScheduleChart({
                 strokeWidth={entry.isCurrentMonth ? 1 : 0}
               />
             ))}
+            <LabelList dataKey="openAmount" content={<ChartBarValueLabel />} />
           </Bar>
           <Bar dataKey="overdueAmount" name={overdueLabel} fill={OVERDUE_COLOR} radius={[4, 4, 0, 0]} maxBarSize={24}>
             {data.map((entry) => (
@@ -117,8 +123,11 @@ export function ExecutiveScheduleChart({
                 opacity={entry.isCurrentMonth ? 1 : 0.85}
               />
             ))}
+            <LabelList dataKey="overdueAmount" content={<ChartBarValueLabel />} />
           </Bar>
-          <Bar dataKey="upcomingAmount" name="A vencer" fill={UPCOMING_COLOR} radius={[4, 4, 0, 0]} maxBarSize={24} />
+          <Bar dataKey="upcomingAmount" name="A vencer" fill={UPCOMING_COLOR} radius={[4, 4, 0, 0]} maxBarSize={24}>
+            <LabelList dataKey="upcomingAmount" content={<ChartBarValueLabel />} />
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </ExecutiveChartShell>

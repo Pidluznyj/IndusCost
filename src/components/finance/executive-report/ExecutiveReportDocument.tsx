@@ -13,9 +13,9 @@ import {
   mapBillingMultiYearToBarComparison,
   mapRealizedProjectedChart,
   mapSalesOrdersMonthlyToChart,
-  EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE,
   executiveReportTargetMissing,
 } from "@/src/lib/financeExecutiveReportPresentation";
+import { buildExecutiveChartNarrative } from "@/src/lib/financeExecutiveChartNarratives";
 import { ExecutiveReportCover } from "@/src/components/finance/executive-report/ExecutiveReportCover";
 import { ExecutiveReportPrintCover } from "@/src/components/finance/executive-report/ExecutiveReportPrintCover";
 import { ExecutivePrintPageShell } from "@/src/components/finance/executive-report/ExecutivePrintPageShell";
@@ -120,6 +120,41 @@ export function ExecutiveReportDocument({
 
   const conclusionBullets = presentExecutiveReportNarrativeBullets({
     narrative: report.executiveNarrative,
+  });
+
+  const billingChartNarrative = buildExecutiveChartNarrative("billing-comparison", {
+    billingComparison: {
+      rows: billingComparison.rows,
+      selectedYear: billingPayload.selectedYear,
+      currentMonth: month,
+      target: billingTab.target.target,
+      actual: billingTab.target.actual,
+    },
+  });
+
+  const projectionChartNarrative = buildExecutiveChartNarrative("billing-projection", {
+    realizedProjected,
+  });
+
+  const arChartNarrative = buildExecutiveChartNarrative("accounts-receivable", {
+    arSchedule: arSchedule.rows,
+  });
+
+  const apChartNarrative = buildExecutiveChartNarrative("accounts-payable", {
+    apSchedule: apSchedule.rows,
+  });
+
+  const cashFlowChartNarrative = buildExecutiveChartNarrative("cash-flow", {
+    cashFlow: cashFlowChart.rows,
+  });
+
+  const salesChartNarrative = buildExecutiveChartNarrative("sales-orders", {
+    salesOrders: {
+      rows: salesChart.rows,
+      target: salesTab.target?.target ?? null,
+      actual: salesTab.target?.actual ?? null,
+      currentMonth: month,
+    },
   });
 
   return (
@@ -238,6 +273,7 @@ export function ExecutiveReportDocument({
               years={billingComparison.years}
               rows={billingComparison.rows}
               empty={!billingComparison.hasData}
+              scenarioText={billingChartNarrative}
             />
           </div>
         </ExecutiveReportSection>
@@ -299,6 +335,7 @@ export function ExecutiveReportDocument({
               title="Realizado × Projeção × Meta"
               model={realizedProjected}
               selectedYear={billingPayload.selectedYear}
+              scenarioText={projectionChartNarrative}
             />
           </div>
         </ExecutiveReportSection>
@@ -353,6 +390,7 @@ export function ExecutiveReportDocument({
               rows={arSchedule.rows}
               empty={!arSchedule.hasData}
               variant="receivable"
+              scenarioText={arChartNarrative}
             />
           </div>
         </ExecutiveReportSection>
@@ -409,6 +447,7 @@ export function ExecutiveReportDocument({
               rows={apSchedule.rows}
               empty={!apSchedule.hasData}
               variant="payable"
+              scenarioText={apChartNarrative}
             />
           </div>
         </ExecutiveReportSection>
@@ -469,10 +508,10 @@ export function ExecutiveReportDocument({
 
           <div className="mt-6">
             <ExecutiveCashFlowChart
-              title="Fluxo de caixa planejado"
-              subtitle={EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE}
+              year={report.year}
               rows={cashFlowChart.rows}
               empty={!cashFlowChart.hasData}
+              scenarioText={cashFlowChartNarrative}
             />
           </div>
         </ExecutiveReportSection>
@@ -545,6 +584,7 @@ export function ExecutiveReportDocument({
                 config={salesTab.chartSeries}
                 empty={!salesChart.hasData}
                 targetMissing={salesTargetMissing}
+                scenarioText={salesChartNarrative}
               />
             ) : null}
           </div>

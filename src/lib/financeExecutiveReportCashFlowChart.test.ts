@@ -245,7 +245,7 @@ describe("financeExecutiveReportCashFlowChart", () => {
     }
   });
 
-  it("documento do relatório presidencial usa annualChart.points do payload", () => {
+  it("documento do relatório presidencial usa annualChart.points e gráfico compartilhado", () => {
     const document = readFileSync(
       join(
         process.cwd(),
@@ -253,10 +253,20 @@ describe("financeExecutiveReportCashFlowChart", () => {
       ),
       "utf8"
     );
+    const cashFlowChart = readFileSync(
+      join(
+        process.cwd(),
+        "src/components/finance/executive-report/charts/ExecutiveCashFlowChart.tsx"
+      ),
+      "utf8"
+    );
     assert.match(document, /calendarAgenda\.annualChart\.points/);
     assert.match(document, /calendarAgenda\.annualChart\.hasData/);
     assert.doesNotMatch(document, /buildExecutiveCashFlowAnnualChart/);
-    assert.match(document, /EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE/);
+    assert.match(document, /ExecutiveCashFlowChart/);
+    assert.match(cashFlowChart, /FinanceCashFlowPlannedChart/);
+    assert.match(cashFlowChart, /showValueLabels/);
+    assert.match(cashFlowChart, /mapExecutiveCashFlowRowsToPlannedChart/);
   });
 
   it("serviço executive-report carrega fluxo duas vezes (período + anual)", () => {
@@ -266,8 +276,31 @@ describe("financeExecutiveReportCashFlowChart", () => {
     assert.match(src, /annualChart:\s*cashFlowAnnualChart/);
   });
 
-  it("subtítulo executivo documenta visão anual", () => {
-    assert.match(EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE, /Visão anual do caixa/i);
-    assert.match(EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE, /saldo acumulado/i);
+  it("componente compartilhado alinha com Fluxo de Caixa (barras, linha, tooltip)", () => {
+    const planned = readFileSync(
+      join(process.cwd(), "src/components/finance/FinanceCashFlowPlannedChart.tsx"),
+      "utf8"
+    );
+    const monthly = readFileSync(
+      join(
+        process.cwd(),
+        "src/components/finance/cash-flow/FinanceCashFlowMonthlyPlannedChart.tsx"
+      ),
+      "utf8"
+    );
+    assert.match(planned, /ComposedChart/);
+    assert.match(planned, /netBalance/);
+    assert.match(planned, /accumulatedBalance/);
+    assert.match(planned, /Saldo acumulado/);
+    assert.match(planned, /Saldo líquido mensal/);
+    assert.match(monthly, /FinanceCashFlowPlannedChart/);
+  });
+
+  it("subtítulo executivo alinha com Fluxo de Caixa", () => {
+    assert.match(
+      EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE,
+      /Saldo líquido mensal e acumulado calculados por vencimento/i
+    );
+    assert.match(EXECUTIVE_REPORT_CASH_FLOW_CHART_SUBTITLE, /acumulado/i);
   });
 });

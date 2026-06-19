@@ -4,6 +4,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -19,6 +20,7 @@ import {
   formatExecutiveReportPresentationCurrency,
 } from "@/src/lib/financeExecutiveReportPresentation";
 import { ExecutiveChartShell } from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
+import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 
 function ComparisonTooltip({
   active,
@@ -55,12 +57,14 @@ export function ExecutiveBarComparisonChart({
   years,
   rows,
   empty,
+  scenarioText,
 }: {
   title: string;
   subtitle?: string;
   years: ExecutiveBarComparisonSeries[];
   rows: ExecutiveBarComparisonRow[];
   empty?: boolean;
+  scenarioText?: string;
 }) {
   const data = useMemo(
     () =>
@@ -84,9 +88,10 @@ export function ExecutiveBarComparisonChart({
       subtitle={subtitle}
       empty={empty ?? rows.length === 0}
       testId="executive-bar-comparison-chart"
+      scenarioText={scenarioText}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
+        <BarChart data={data} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
           <XAxis
             dataKey="name"
@@ -121,6 +126,7 @@ export function ExecutiveBarComparisonChart({
                   strokeWidth={entry.isCurrentMonth ? 1 : 0}
                 />
               ))}
+              <LabelList dataKey={`y${series.year}`} content={<ChartBarValueLabel />} />
             </Bar>
           ))}
         </BarChart>

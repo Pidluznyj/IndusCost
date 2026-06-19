@@ -146,7 +146,8 @@ describe("financeExecutiveReportPrint", () => {
       "utf8"
     );
     assert.match(css, /executive-chart-body/);
-    assert.match(css, /50mm/);
+    assert.match(css, /58mm/);
+    assert.match(css, /executive-chart-scenario/);
     assert.match(css, /executive-print-page-footer/);
     assert.match(css, /margin-top:\s*auto/);
   });

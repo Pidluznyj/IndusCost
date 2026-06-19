@@ -2,7 +2,9 @@ import React from "react";
 import { cn } from "@/src/lib/utils";
 import { EXECUTIVE_REPORT_EMPTY_MESSAGE } from "@/src/lib/financeExecutiveReportPresentation";
 import { EXECUTIVE_REPORT_AUTO_TARGET_SHORT } from "@/src/lib/financeExecutiveReportUxCopy";
-export const EXECUTIVE_CHART_HEIGHT = 380;
+import { ExecutiveChartScenario } from "@/src/components/finance/executive-report/charts/ExecutiveChartScenario";
+
+export const EXECUTIVE_CHART_HEIGHT = 400;
 
 export function ExecutiveChartShell({
   title,
@@ -11,6 +13,7 @@ export function ExecutiveChartShell({
   children,
   height = EXECUTIVE_CHART_HEIGHT,
   testId,
+  scenarioText,
 }: {
   title: string;
   subtitle?: string;
@@ -18,6 +21,7 @@ export function ExecutiveChartShell({
   children: React.ReactNode;
   height?: number;
   testId?: string;
+  scenarioText?: string;
 }) {
   if (empty) {
     return (
@@ -31,6 +35,7 @@ export function ExecutiveChartShell({
   return (
     <div className={cn("executive-chart-shell executive-chart", empty && "executive-chart-shell--empty")} data-testid={testId}>
       <ExecutiveChartHeader title={title} subtitle={subtitle} />
+      {scenarioText ? <ExecutiveChartScenario text={scenarioText} /> : null}
       <div className="executive-chart-body" style={{ height }}>
         {children}
       </div>

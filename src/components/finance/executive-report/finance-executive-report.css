@@ -118,6 +118,23 @@
   overflow: hidden;
 }
 
+.executive-chart-scenario {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.65rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.executive-chart-scenario strong {
+  color: #1e3a5f;
+  font-weight: 700;
+  margin-right: 0.25rem;
+}
+
 .finance-executive-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

@@ -28,6 +28,29 @@ export function executiveMonthlyTimelineHasChartData(
   );
 }
 
+/** Mapeia linhas do Relatório Presidencial para o gráfico planejado compartilhado. */
+export function mapExecutiveCashFlowRowsToPlannedChart(
+  rows: Array<{
+    monthLabel: string;
+    inflow: number;
+    outflow: number;
+    netFlow: number;
+    accumulated: number;
+  }>
+): ExecutiveMonthlyPlannedChartRow[] {
+  return rows.map((row) => ({
+    name: row.monthLabel,
+    received: 0,
+    receivableOpen: 0,
+    estimatedInflow: row.inflow,
+    paid: 0,
+    payableOpen: 0,
+    estimatedOutflow: row.outflow,
+    netBalance: row.netFlow,
+    accumulatedBalance: row.accumulated,
+  }));
+}
+
 /** Mapeia a timeline executiva mensal para o gráfico — sem recálculo financeiro. */
 export function buildExecutiveMonthlyPlannedChartRows(
   rows: FinanceCashFlowExecutiveMonthlyRow[]
