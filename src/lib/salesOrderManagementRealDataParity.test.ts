@@ -8,7 +8,6 @@ import {
   parseSalesOrderManagementFilters,
 } from "./salesOrderManagement.js";
 import { buildSalesOrderListWhere } from "./salesOrdersListSummary.js";
-import { cardsToManagementSummary } from "./salesOrderManagementTypes.js";
 
 const REF = new Date(2026, 5, 15);
 
@@ -149,10 +148,10 @@ describe("salesOrderManagementRealDataParity", () => {
       orderFixture("b"),
       orderFixture("c"),
     ];
-    const { rows, cards } = buildManagementRowsFromOrders(orders, {}, REF);
-    const summary = cardsToManagementSummary(cards, rows.length);
+    const { rows, summary } = buildManagementRowsFromOrders(orders, {}, REF);
     assert.equal(summary.totalOrdersCount, rows.length);
     assert.equal(summary.totalOrdersCount, 3);
+    assert.equal(summary.reconciliation.countMatches, true);
   });
 
   it("não retorna NaN/Infinity nos cards", () => {

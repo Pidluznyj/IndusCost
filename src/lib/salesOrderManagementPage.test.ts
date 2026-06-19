@@ -17,11 +17,11 @@ describe("salesOrderManagementPage", () => {
 
   it("cards de status gerencial no topo com clique para filtrar", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /MANAGEMENT_STATUS_CARDS/);
+    const status = read("src/lib/salesOrderManagementStatus.ts");
+    assert.match(page, /displayDashboardCards/);
     assert.match(page, /toggleManagementStatusCard/);
     assert.match(page, /management-status-card-/);
-    assert.match(page, /selectedManagementStatus/);
-    assert.match(page, /managementStatus/);
+    assert.match(status, /Total no filtro/);
     assert.doesNotMatch(page, /Pedidos em aberto/);
     assert.doesNotMatch(page, /Sem OP vinculada/);
   });
@@ -104,6 +104,23 @@ describe("salesOrderManagementPage", () => {
     assert.match(ui, /rule-audit/);
     assert.match(drawer, /sales-order-intelligence-nomus-data/);
     assert.match(drawer, /sales-order-intelligence-rule-audit/);
+    assert.match(drawer, /Status logístico/);
+  });
+
+  it("primeiro card é Total no filtro com quantidade e valor", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    const status = read("src/lib/salesOrderManagementStatus.ts");
+    assert.match(status, /Total no filtro/);
+    assert.match(page, /management-status-card-total/);
+    assert.match(page, /formatCurrency\(card\.totalNetValue\)/);
+    assert.match(page, /pedido/);
+    assert.doesNotMatch(page, /Pedidos em aberto/);
+  });
+
+  it("clique no card total limpa filtro de status", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /clearManagementStatusCardFilter/);
+    assert.match(page, /isTotal/);
   });
 
   it("não há import de Prisma no frontend", () => {

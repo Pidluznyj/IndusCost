@@ -30,8 +30,13 @@ import {
   parseNomusBrOrIsoDate,
   safeRatio,
 } from "./salesOrderNomusRaw.js";
+import {
+  buildSalesOrderLogisticStatus,
+  compareLogisticToExecutiveStatus,
+  type SalesOrderLogisticStatusResult,
+} from "./salesOrderLogisticStatus.js";
 
-export type ProductionOrderSource = "model" | "nomus_raw" | "not_available";
+export type { SalesOrderLogisticStatusResult } from "./salesOrderLogisticStatus.js";
 
 export type SalesOrderIntelligenceRisk = {
   severity: "low" | "medium" | "high";
@@ -167,6 +172,11 @@ export type SalesOrderIntelligencePayload = {
   suggestedActions: SalesOrderIntelligenceAction[];
   rawData: SalesOrderIntelligenceRawData;
   audit: SalesOrderIntelligenceAuditMeta;
+  logisticStatus: SalesOrderLogisticStatusResult;
+  logisticVsExecutive: {
+    diverges: boolean;
+    message: string | null;
+  };
   dataQuality: {
     warnings: string[];
     missingLinks: string[];
@@ -575,6 +585,16 @@ export function buildSalesOrderIntelligencePayload(input: {
     suggestedActionLabel: suggestedActions[0]?.label ?? "Nenhuma ação sugerida",
   };
 
+  const logisticStatus = buildSalesOrderLogisticStatus({
+    expectedDeliveryDate: input.order.expectedDeliveryDate,
+    nomusRawResponse: input.order.nomusRawResponse,
+    referenceDate,
+  });
+  const logisticVsExecutive = compareLogisticToExecutiveStatus(
+    logisticStatus,
+    lifecycle.executiveStatusLabel
+  );
+
   return {
     order: {
       id: input.order.id,
@@ -614,6 +634,8 @@ export function buildSalesOrderIntelligencePayload(input: {
     suggestedActions,
     rawData,
     audit,
+    logisticStatus,
+    logisticVsExecutive,
     dataQuality: {
       warnings: [...new Set(warnings)],
       missingLinks,

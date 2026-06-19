@@ -7,7 +7,10 @@ import {
 } from "./salesOrderManagement.js";
 import {
   MANAGEMENT_STATUS_CARDS,
+  assertManagementCardsReconciliation,
+  buildManagementDashboardCards,
   resolveManagementStatusCardId,
+  sumManagementStatusCardAmounts,
   sumManagementStatusCardCounts,
 } from "./salesOrderManagementStatus.js";
 
@@ -165,6 +168,8 @@ describe("salesOrderManagementDashboard cards", () => {
     });
     const base = buildManagementRowsFromOrders([overdue, onTime], {}, REF);
     assert.equal(base.cards.overdueWithoutInvoice, 1);
+    assert.equal(base.dashboardCards[0]?.label, "Total no filtro");
+    assert.equal(base.dashboardCards[0]?.count, 2);
 
     const filtered = buildManagementRowsFromOrders(
       [overdue, onTime],
@@ -173,13 +178,29 @@ describe("salesOrderManagementDashboard cards", () => {
     );
     assert.equal(filtered.rows.length, 1);
     assert.equal(filtered.cards.overdueWithoutInvoice, 1);
-    assert.equal(filtered.summary.totalOrdersCount, 1);
+    assert.equal(filtered.summary.gridFilteredCount, 1);
+    assert.equal(filtered.summary.totalOrdersCount, 2);
   });
 
-  it("soma dos cards bate com total de pedidos no filtro base", () => {
-    const orders = [orderBase(), orderBase({ id: "so-2", orderCode: "PD 2" })];
-    const { rows, cards } = buildManagementRowsFromOrders(orders, {}, REF);
+  it("soma dos cards bate com total do filtro (quantidade e valor)", () => {
+    const orders = [
+      orderBase({ totalNetValue: 10000 }),
+      orderBase({ id: "so-2", orderCode: "PD 2", totalNetValue: 5000 }),
+    ];
+    const { rows, cards, cardAmounts, summary, dashboardCards } = buildManagementRowsFromOrders(
+      orders,
+      {},
+      REF
+    );
     assert.equal(sumManagementStatusCardCounts(cards), rows.length);
+    assert.equal(summary.reconciliation.countMatches, true);
+    assert.equal(summary.reconciliation.valueMatches, true);
+    assert.equal(summary.totalOrdersCount, 2);
+    assert.equal(summary.totalNetValue, 15000);
+    assert.equal(sumManagementStatusCardAmounts(cardAmounts), 15000);
+    assert.equal(dashboardCards[0]?.isTotal, true);
+    assert.equal(dashboardCards[0]?.totalNetValue, 15000);
+    assertManagementCardsReconciliation(summary.reconciliation);
   });
 
   it("buildSalesOrderManagementCards não retorna NaN/Infinity", () => {

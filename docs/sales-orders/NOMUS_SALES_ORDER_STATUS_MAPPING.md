@@ -136,6 +136,19 @@ Sem OP no raw: **"Nenhuma OP vinculada localizada na integração."**
 
 → Item normalizado `cancelled`; regra "Todos os itens cancelados? Sim".
 
-### Pedido sem raw
+## 11. Status Logístico (regra Power BI adaptada)
 
-→ `nomusRawResponse` ausente; aba Dados Nomus indica indisponibilidade; status Nomus **Não localizado na integração**.
+Módulo: `src/lib/salesOrderLogisticStatus.ts`
+
+| Status logístico | Base |
+|------------------|------|
+| Faturado no prazo | NF `dataProcessamento` ≤ `expectedDeliveryDate` |
+| Faturado com atraso | NF após previsão |
+| Atrasado pendente | Sem NF + item status ∈ {1,2,3} ou liberado + prazo vencido |
+| No prazo pendente | Sem NF + pendente + prazo futuro |
+| Cancelado / Devolvido / Parcial/com corte | Refinamento IndusCost |
+| Revisar/desconhecidos | Status não mapeado |
+
+Códigos pendentes BI: `NOMUS_PENDING_ITEM_STATUS_CODES = {1,2,3}` (sujeito a validação pelo audit script).
+
+Os **cards** continuam usando status gerencial; o status logístico aparece no drawer (aba Auditoria) para comparação.

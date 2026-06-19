@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Clock,
   FileText,
+  LayoutGrid,
   Loader2,
   Package,
   Receipt,
@@ -14,19 +15,23 @@ import { formatCurrency } from "@/src/lib/utils";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
+import type {
+  SalesOrderManagementCardAmounts,
+  SalesOrderManagementCards,
+  SalesOrderManagementRow,
+  SalesOrderManagementSummary,
+} from "@/src/lib/salesOrderManagementTypes";
 import {
   getSalesOrderIntelligenceApiPath,
   getSalesOrderManagementApiPath,
-  type SalesOrderManagementCardAmounts,
-  type SalesOrderManagementCards,
-  type SalesOrderManagementRow,
 } from "@/src/lib/salesOrderManagementTypes";
 import type { SalesOrderIntelligencePayload } from "@/src/lib/salesOrderIntelligence";
 import {
-  MANAGEMENT_STATUS_CARDS,
+  buildManagementDashboardCardsFromAggregates,
   emptyManagementStatusCardAmounts,
   emptyManagementStatusCardCounts,
   getManagementStatusFilterLabel,
+  type ManagementDashboardCard,
   type ManagementStatusCardId,
 } from "@/src/lib/salesOrderManagementStatus";
 import {
@@ -53,6 +58,8 @@ type ManagementResponse = {
   totalPages: number;
   cards: SalesOrderManagementCards;
   cardAmounts?: SalesOrderManagementCardAmounts;
+  dashboardCards?: ManagementDashboardCard[];
+  summary?: SalesOrderManagementSummary;
   rows: SalesOrderManagementRow[];
 };
 
@@ -75,6 +82,10 @@ export function SalesOrderManagementPage() {
   const [rows, setRows] = useState<SalesOrderManagementRow[]>([]);
   const [cards, setCards] = useState<SalesOrderManagementCards>(EMPTY_CARDS);
   const [cardAmounts, setCardAmounts] = useState<SalesOrderManagementCardAmounts>(EMPTY_CARD_AMOUNTS);
+  const [dashboardCards, setDashboardCards] = useState<ManagementDashboardCard[]>([]);
+  const [managementSummary, setManagementSummary] = useState<SalesOrderManagementSummary | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -169,6 +180,8 @@ export function SalesOrderManagementPage() {
       setRows(data.rows ?? []);
       setCards(data.cards ?? EMPTY_CARDS);
       setCardAmounts(data.cardAmounts ?? EMPTY_CARD_AMOUNTS);
+      setDashboardCards(data.dashboardCards ?? []);
+      setManagementSummary(data.summary ?? null);
       setTotal(data.total ?? 0);
       setTotalPages(Math.max(1, data.totalPages ?? 1));
     } catch (e) {
@@ -178,6 +191,8 @@ export function SalesOrderManagementPage() {
       setRows([]);
       setCards(EMPTY_CARDS);
       setCardAmounts(EMPTY_CARD_AMOUNTS);
+      setDashboardCards([]);
+      setManagementSummary(null);
       setTotal(0);
       setTotalPages(1);
     } finally {
@@ -215,7 +230,8 @@ export function SalesOrderManagementPage() {
     return years;
   }, [currentYear]);
 
-  const kpiIcons: Record<ManagementStatusCardId, React.ComponentType<{ className?: string }>> = {
+  const kpiIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+    total: LayoutGrid,
     overdueWithoutInvoice: AlertTriangle,
     invoicedOnTime: Receipt,
     invoicedLate: Clock,
@@ -231,19 +247,19 @@ export function SalesOrderManagementPage() {
     setPage(1);
   }, []);
 
-  const validPortfolioCount = useMemo(() => {
-    if (loading || loadError) return null;
-    const totalInCards =
-      cards.overdueWithoutInvoice +
-      cards.invoicedOnTime +
-      cards.invoicedLate +
-      cards.partialOrCut +
-      cards.delivered +
-      cards.cancelledOrReturned +
-      cards.awaitingInProgress +
-      cards.reviewUnknown;
-    return totalInCards - cards.cancelledOrReturned;
-  }, [cards, loadError, loading]);
+  const clearManagementStatusCardFilter = useCallback(() => {
+    setSelectedManagementStatus("");
+    setPage(1);
+  }, []);
+
+  const displayDashboardCards = useMemo((): ManagementDashboardCard[] => {
+    if (dashboardCards.length > 0) return dashboardCards;
+    if (loading || loadError) return [];
+    return buildManagementDashboardCardsFromAggregates(cards, cardAmounts);
+  }, [cardAmounts, cards, dashboardCards, loadError, loading]);
+
+  const validPortfolioCount = managementSummary?.validPortfolioCount ?? null;
+  const validPortfolioValue = managementSummary?.validPortfolioValue ?? null;
 
   return (
     <div className="space-y-6" data-testid="sales-order-management-page">
@@ -472,18 +488,27 @@ export function SalesOrderManagementPage() {
           Status gerencial
         </p>
         <div className="indus-kpi-grid mt-2">
-          {MANAGEMENT_STATUS_CARDS.map((card) => {
-            const Icon = kpiIcons[card.id] ?? FileText;
-            const amount = cards[card.id];
-            const valueAmount = cardAmounts[card.id];
-            const isActive = selectedManagementStatus === card.id;
+          {displayDashboardCards.map((card) => {
+            const Icon = kpiIcons[card.key] ?? FileText;
+            const isTotal = card.isTotal === true;
+            const isActive = isTotal
+              ? selectedManagementStatus === ""
+              : selectedManagementStatus === card.managementStatus;
+            const countLabel = `${card.count} pedido${card.count === 1 ? "" : "s"}`;
             return (
               <button
-                key={card.id}
+                key={card.key}
                 type="button"
-                data-testid={`management-status-card-${card.id}`}
+                data-testid={
+                  isTotal
+                    ? "management-status-card-total"
+                    : `management-status-card-${card.key}`
+                }
                 data-active={isActive ? "true" : "false"}
-                onClick={() => toggleManagementStatusCard(card.id)}
+                onClick={() => {
+                  if (isTotal) clearManagementStatusCardFilter();
+                  else if (card.managementStatus) toggleManagementStatusCard(card.managementStatus);
+                }}
                 className={cn(
                   "text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                   isActive && "ring-2 ring-primary shadow-md"
@@ -492,16 +517,10 @@ export function SalesOrderManagementPage() {
                 <FinanceBiKpiCard
                   icon={Icon}
                   label={card.label}
-                  value="—"
-                  amount={loading || loadError ? undefined : amount}
-                  amountFormat="number"
-                  sub={
-                    !loading && !loadError && valueAmount > 0
-                      ? formatCurrency(valueAmount)
-                      : undefined
-                  }
+                  value={loading || loadError ? "—" : countLabel}
+                  sub={loading || loadError ? undefined : formatCurrency(card.totalNetValue)}
                   loading={loading}
-                  hint={card.hint}
+                  hint={card.tooltip}
                 />
               </button>
             );
@@ -511,6 +530,15 @@ export function SalesOrderManagementPage() {
           <p className="mt-2 text-xs text-muted-foreground">
             Carteira válida no filtro:{" "}
             <span className="font-semibold text-foreground">{validPortfolioCount}</span> pedido(s)
+            {validPortfolioValue != null ? (
+              <>
+                {" "}
+                ·{" "}
+                <span className="font-semibold text-foreground">
+                  {formatCurrency(validPortfolioValue)}
+                </span>
+              </>
+            ) : null}{" "}
             não cancelados/devolvidos
           </p>
         ) : null}

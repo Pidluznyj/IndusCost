@@ -22,6 +22,7 @@ import {
   formatItemStatusSourceLabel,
   formatRawMatchedByLabel,
 } from "@/src/lib/salesOrderStatusAudit";
+import { formatLogisticEvidenceLine } from "@/src/lib/salesOrderLogisticStatus";
 import { cn, formatCurrency } from "@/src/lib/utils";
 import "./sales-order-intelligence.css";
 
@@ -480,8 +481,41 @@ function TabPanel({
   }
 
   if (tab === "rule-audit") {
+    const { logisticStatus, logisticVsExecutive } = payload;
     return (
       <div className="space-y-4" data-testid="sales-order-intelligence-rule-audit">
+        <div className="rounded-lg border border-border bg-card px-3 py-3">
+          <h3 className="text-xs font-bold uppercase text-muted-foreground">
+            Status logístico (regra BI adaptada)
+          </h3>
+          <p className="text-sm font-semibold mt-1">{logisticStatus.label}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {formatLogisticEvidenceLine(logisticStatus)}
+          </p>
+          <p className="text-xs mt-2">
+            Códigos de item no raw:{" "}
+            {logisticStatus.evidence.itemStatusCodes.length > 0
+              ? logisticStatus.evidence.itemStatusCodes.join(", ")
+              : "Não informado"}
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-3 py-3">
+          <h3 className="text-xs font-bold uppercase text-muted-foreground">
+            Status gerencial IndusCost
+          </h3>
+          <p className="text-sm font-semibold mt-1">{lifecycle.executiveStatusLabel}</p>
+        </div>
+        {logisticVsExecutive.diverges ? (
+          <div
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950"
+            data-testid="sales-order-logistic-executive-divergence"
+          >
+            <p className="font-semibold flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              {logisticVsExecutive.message}
+            </p>
+          </div>
+        ) : null}
         <div>
           <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2">
             Passo a passo das regras

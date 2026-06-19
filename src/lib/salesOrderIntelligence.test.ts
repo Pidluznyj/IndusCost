@@ -260,6 +260,13 @@ describe("salesOrderIntelligence", () => {
     assert.ok(risks.some((r) => r.code === "invoice_without_item_progress"));
   });
 
+  it("payload inclui status logístico e comparação com gerencial", () => {
+    const payload = buildSalesOrderIntelligencePayload(orderFixture());
+    assert.ok(payload.logisticStatus.label);
+    assert.ok(payload.logisticStatus.evidence);
+    assert.equal(typeof payload.logisticVsExecutive.diverges, "boolean");
+  });
+
   it("pedido com status item 6 mostra cancelado", () => {
     const payload = buildSalesOrderIntelligencePayload(
       orderFixture({
@@ -272,6 +279,7 @@ describe("salesOrderIntelligence", () => {
     );
     assert.equal(payload.items[0].statusNormalized, "cancelled");
     assert.ok(payload.items[0].statusLabel?.includes("Cancelado"));
+    assert.equal(payload.logisticStatus.label, "Cancelado");
   });
 
   it("pedido cancelado não sugere validar faturamento", () => {

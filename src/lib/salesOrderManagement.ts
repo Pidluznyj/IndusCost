@@ -10,10 +10,12 @@ import {
 } from "./salesOrderIntelligence.js";
 import type { SalesOrderOperationalStatus } from "./salesOrderLifecycleTypes.js";
 import {
+  buildManagementDashboardCards,
   buildManagementStatusCardMetrics,
   isManagementStatusCardId,
   resolveManagementStatusCardId,
   type ManagementStatusCardId,
+  type ManagementDashboardCard,
 } from "./salesOrderManagementStatus.js";
 import type {
   SalesOrderManagementCardAmounts,
@@ -233,6 +235,7 @@ export function buildManagementRowsFromOrders(
   rows: SalesOrderManagementRow[];
   cards: SalesOrderManagementCards;
   cardAmounts: SalesOrderManagementCardAmounts;
+  dashboardCards: ManagementDashboardCard[];
   summary: SalesOrderManagementSummary;
 } {
   const computed = orders.map((order) => {
@@ -276,12 +279,22 @@ export function buildManagementRowsFromOrders(
   const cardRows = baseFiltered.map((f) => f.row);
   const cards = buildSalesOrderManagementCards(cardRows);
   const cardAmounts = buildSalesOrderManagementCardAmounts(cardRows);
+  const dashboard = buildManagementDashboardCards(cardRows);
+  const filteredRows = sortManagementRowsByRisk(filtered.map((f) => f.row));
 
   return {
-    rows: sortManagementRowsByRisk(filtered.map((f) => f.row)),
+    rows: filteredRows,
     cards,
     cardAmounts,
-    summary: cardsToManagementSummary(cards, filtered.length),
+    dashboardCards: dashboard.cards,
+    summary: cardsToManagementSummary(cards, {
+      totalOrdersCount: dashboard.totalOrders,
+      totalNetValue: dashboard.totalNetValue,
+      validPortfolioCount: dashboard.validPortfolioCount,
+      validPortfolioValue: dashboard.validPortfolioValue,
+      reconciliation: dashboard.reconciliation,
+      gridFilteredCount: filteredRows.length,
+    }),
   };
 }
 
@@ -292,6 +305,7 @@ export type SalesOrderManagementResponse = {
   totalPages: number;
   cards: SalesOrderManagementCards;
   cardAmounts?: SalesOrderManagementCardAmounts;
+  dashboardCards?: ManagementDashboardCard[];
   summary?: SalesOrderManagementSummary;
   rows: SalesOrderManagementRow[];
 };

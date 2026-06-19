@@ -151,3 +151,169 @@ export function sumManagementStatusCardCounts(
 ): number {
   return MANAGEMENT_STATUS_CARD_IDS.reduce((sum, id) => sum + counts[id], 0);
 }
+
+export function sumManagementStatusCardAmounts(
+  amounts: Record<ManagementStatusCardId, number>
+): number {
+  return MANAGEMENT_STATUS_CARD_IDS.reduce((sum, id) => {
+    const v = amounts[id];
+    return sum + (v != null && Number.isFinite(v) ? v : 0);
+  }, 0);
+}
+
+export type ManagementCardReconciliation = {
+  countMatches: boolean;
+  valueMatches: boolean;
+  countDifference: number;
+  valueDifference: number;
+};
+
+export function reconcileManagementStatusCards(input: {
+  totalOrders: number;
+  totalNetValue: number;
+  counts: Record<ManagementStatusCardId, number>;
+  amounts: Record<ManagementStatusCardId, number>;
+}): ManagementCardReconciliation & {
+  statusCardsTotalCount: number;
+  statusCardsTotalValue: number;
+} {
+  const statusCardsTotalCount = sumManagementStatusCardCounts(input.counts);
+  const statusCardsTotalValue = sumManagementStatusCardAmounts(input.amounts);
+  const countDifference = input.totalOrders - statusCardsTotalCount;
+  const valueDifference =
+    Math.round((input.totalNetValue - statusCardsTotalValue) * 100) / 100;
+  return {
+    statusCardsTotalCount,
+    statusCardsTotalValue,
+    countMatches: countDifference === 0,
+    valueMatches: Math.abs(valueDifference) < 0.01,
+    countDifference,
+    valueDifference,
+  };
+}
+
+export type ManagementDashboardCard = {
+  key: string;
+  label: string;
+  count: number;
+  totalNetValue: number;
+  tooltip: string;
+  managementStatus?: ManagementStatusCardId;
+  isTotal?: boolean;
+};
+
+const TOTAL_CARD_TOOLTIP =
+  "Total de pedidos e valor líquido dentro dos filtros atuais (exceto filtro de card de status).";
+
+export function buildManagementDashboardCards(
+  rows: Array<{ executiveStatusLabel: string; totalNetValue: number | null | undefined }>
+): {
+  cards: ManagementDashboardCard[];
+  reconciliation: ManagementCardReconciliation & {
+    statusCardsTotalCount: number;
+    statusCardsTotalValue: number;
+  };
+  totalOrders: number;
+  totalNetValue: number;
+  validPortfolioCount: number;
+  validPortfolioValue: number;
+} {
+  const { counts, amounts } = buildManagementStatusCardMetrics(rows);
+  const totalOrders = rows.length;
+  const totalNetValue = rows.reduce((sum, row) => {
+    const v = row.totalNetValue;
+    return sum + (v != null && Number.isFinite(v) ? v : 0);
+  }, 0);
+  const reconciliation = reconcileManagementStatusCards({
+    totalOrders,
+    totalNetValue,
+    counts,
+    amounts,
+  });
+
+  if (process.env.NODE_ENV !== "production" && !reconciliation.countMatches) {
+    console.warn(
+      "[salesOrderManagement] Reconciliação de quantidade dos cards:",
+      reconciliation
+    );
+  }
+  if (process.env.NODE_ENV !== "production" && !reconciliation.valueMatches) {
+    console.warn(
+      "[salesOrderManagement] Reconciliação de valor dos cards:",
+      reconciliation
+    );
+  }
+
+  const statusCards: ManagementDashboardCard[] = MANAGEMENT_STATUS_CARDS.map((card) => ({
+    key: card.id,
+    label: card.label,
+    count: counts[card.id],
+    totalNetValue: amounts[card.id],
+    tooltip: card.hint,
+    managementStatus: card.id,
+  }));
+
+  const cards: ManagementDashboardCard[] = [
+    {
+      key: "total",
+      label: "Total no filtro",
+      count: totalOrders,
+      totalNetValue,
+      tooltip: TOTAL_CARD_TOOLTIP,
+      isTotal: true,
+    },
+    ...statusCards,
+  ];
+
+  return {
+    cards,
+    reconciliation,
+    totalOrders,
+    totalNetValue,
+    validPortfolioCount: totalOrders - counts.cancelledOrReturned,
+    validPortfolioValue: totalNetValue - amounts.cancelledOrReturned,
+  };
+}
+
+/** Monta cards do dashboard a partir de contagens/valores já agregados. */
+export function buildManagementDashboardCardsFromAggregates(
+  counts: Record<ManagementStatusCardId, number>,
+  amounts: Record<ManagementStatusCardId, number>
+): ManagementDashboardCard[] {
+  const totalOrders = sumManagementStatusCardCounts(counts);
+  const totalNetValue = sumManagementStatusCardAmounts(amounts);
+  const statusCards: ManagementDashboardCard[] = MANAGEMENT_STATUS_CARDS.map((card) => ({
+    key: card.id,
+    label: card.label,
+    count: counts[card.id],
+    totalNetValue: amounts[card.id],
+    tooltip: card.hint,
+    managementStatus: card.id,
+  }));
+  return [
+    {
+      key: "total",
+      label: "Total no filtro",
+      count: totalOrders,
+      totalNetValue,
+      tooltip: TOTAL_CARD_TOOLTIP,
+      isTotal: true,
+    },
+    ...statusCards,
+  ];
+}
+
+export function assertManagementCardsReconciliation(
+  reconciliation: ManagementCardReconciliation
+): void {
+  if (!reconciliation.countMatches) {
+    throw new Error(
+      `Reconciliação de cards: diferença de quantidade ${reconciliation.countDifference}`
+    );
+  }
+  if (!reconciliation.valueMatches) {
+    throw new Error(
+      `Reconciliação de cards: diferença de valor ${reconciliation.valueDifference}`
+    );
+  }
+}
