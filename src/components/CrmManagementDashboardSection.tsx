@@ -64,7 +64,8 @@ export const CrmManagementDashboardSection: React.FC<CrmManagementDashboardSecti
             Gestão Comercial
           </h3>
           <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-            Visão gerencial da carteira, riscos, oportunidades e follow-ups.
+            Visão executiva da operação comercial: KPIs agregados, rankings, alertas e indicadores de
+            gestão.
           </p>
           {data?.generatedAt ? (
             <p className="text-[11px] text-muted-foreground mt-1.5">

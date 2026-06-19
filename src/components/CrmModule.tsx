@@ -18,10 +18,7 @@ import {
   UserCircle,
   Pencil,
   Users,
-  UserCheck,
-  UserX,
   AlertTriangle,
-  CalendarDays,
   Sparkles,
   Target,
   Lightbulb,
@@ -32,8 +29,6 @@ import {
   Video,
   Briefcase,
   Shield,
-  ArrowRight,
-  ListTodo,
   Info,
   TrendingUp,
   ShoppingCart,
@@ -91,7 +86,6 @@ import {
   type SellerPeriodPreset,
 } from "@/src/components/crmSellerDashboardUi";
 import { CrmSellerDashboardSection } from "@/src/components/CrmSellerDashboardSection";
-import type { CrmSellerSubTabId } from "@/src/components/CrmSellerSubTabs";
 import { CrmSellerDashboardLists } from "@/src/components/CrmSellerDashboardLists";
 import {
   CrmCommercialManagementTabs,
@@ -102,6 +96,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import {
   canAccessCrmAny,
   canAccessCrmGeneral,
+  canAccessCrmPortfolio,
   canAccessCrmSeller,
   canFilterAllCrmSellers,
   isCrmOwnSellerOnly,
@@ -169,14 +164,6 @@ export type CrmActivity = {
   createdByEmail: string | null;
   createdAt: string;
   proposal: { number: number; title: string | null; status: string } | null;
-};
-
-type CrmDashboardBasic = {
-  totalCustomers: number;
-  customersWithContactLast30Days: number;
-  customersWithoutContactLast30Days: number;
-  overdueFollowUps: number;
-  upcomingFollowUpsNext7Days: number;
 };
 
 /** GET /api/crm/customers/:customerId/commercial-intelligence (Fase 1H-B). */
@@ -265,74 +252,6 @@ type ActivitiesResponse = { activities: CrmActivity[] };
 
 const CRM_LIST_LIMIT = 50;
 const CRM_ACTIVITY_LIMIT = 50;
-const CRM_AGENDA_BUCKET_LIMIT = 10;
-const CRM_AGENDA_PREVIEW_COUNT = 3;
-
-type CrmAgendaFilter = Exclude<CrmCustomerListFilter, "all">;
-
-type CrmAgendaBuckets = Record<CrmAgendaFilter, CrmCustomerListItem[]>;
-
-const CRM_AGENDA_CARDS: {
-  filter: CrmAgendaFilter;
-  title: string;
-  description: string;
-  emptyMessage: string;
-  badgeLabel: string;
-  badgeClass: string;
-  countFromDashboard: (d: CrmDashboardBasic) => number;
-  cardClass: string;
-  icon: LucideIcon;
-  iconClass: string;
-}[] = [
-  {
-    filter: "overdueFollowUp",
-    title: "Follow-ups atrasados",
-    description: "Clientes com ação comercial vencida.",
-    emptyMessage: "Nenhum follow-up atrasado.",
-    badgeLabel: "Atrasado",
-    badgeClass: "border-red-200 bg-red-50 text-red-900",
-    countFromDashboard: (d) => d.overdueFollowUps,
-    cardClass: "border-red-200/80 bg-gradient-to-br from-red-50/50 to-card",
-    icon: AlertTriangle,
-    iconClass: "text-red-700 bg-red-100",
-  },
-  {
-    filter: "upcomingFollowUp7",
-    title: "Próximos 7 dias",
-    description: "Clientes com próxima ação agendada.",
-    emptyMessage: "Nenhum follow-up agendado para os próximos 7 dias.",
-    badgeLabel: "Próximos 7d",
-    badgeClass: "border-sky-200 bg-sky-50 text-sky-900",
-    countFromDashboard: (d) => d.upcomingFollowUpsNext7Days,
-    cardClass: "border-sky-200/80 bg-gradient-to-br from-sky-50/60 to-card",
-    icon: CalendarDays,
-    iconClass: "text-sky-800 bg-sky-100",
-  },
-  {
-    filter: "withoutContact30",
-    title: "Sem contato há 30 dias",
-    description: "Clientes sem contato comercial recente.",
-    emptyMessage: "Nenhum cliente pendente neste filtro.",
-    badgeLabel: "Sem contato",
-    badgeClass: "border-amber-200 bg-amber-50 text-amber-900",
-    countFromDashboard: (d) => d.customersWithoutContactLast30Days,
-    cardClass: "border-amber-200/80 bg-gradient-to-br from-amber-50/50 to-card",
-    icon: UserX,
-    iconClass: "text-amber-800 bg-amber-100",
-  },
-  {
-    filter: "withContact30",
-    title: "Com contato recente",
-    description: "Clientes trabalhados nos últimos 30 dias.",
-    emptyMessage: "Nenhum contato recente registrado.",
-    badgeLabel: "Recente",
-    badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-900",
-    countFromDashboard: (d) => d.customersWithContactLast30Days,
-    cardClass: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/50 to-card",
-    icon: UserCheck,
-    iconClass: "text-emerald-800 bg-emerald-100",
-  },
-];
 
 const CHANNEL_OPTIONS = [
   "WHATSAPP",
@@ -1499,139 +1418,7 @@ const CRM_FILTER_CHIPS: { value: CrmCustomerListFilter; label: string }[] = [
   { value: "upcomingFollowUp7", label: "Próximos 7d" },
 ];
 
-const EMPTY_AGENDA_BUCKETS: CrmAgendaBuckets = {
-  overdueFollowUp: [],
-  upcomingFollowUp7: [],
-  withoutContact30: [],
-  withContact30: [],
-};
-
-function formatAgendaCustomerMeta(customer: CrmCustomerListItem): string {
-  const last = customer.lastContactAt
-    ? `Último: ${formatDateShortPt(customer.lastContactAt)}`
-    : "Sem contato";
-  const next = customer.nextFollowUpAt
-    ? ` · Próx.: ${formatDateShortPt(customer.nextFollowUpAt)}`
-    : "";
-  return `${last}${next}`;
-}
-
-async function fetchAgendaBucket(filter: CrmAgendaFilter): Promise<CrmCustomerListItem[]> {
-  const params = new URLSearchParams();
-  params.set("filter", filter);
-  params.set("limit", String(CRM_AGENDA_BUCKET_LIMIT));
-  params.set("offset", "0");
-  const data = await fetchJsonOk<CrmCustomersApiResponse>(`/api/crm/customers?${params.toString()}`);
-  return Array.isArray(data?.customers) ? data.customers : [];
-}
-
-type AgendaCommercialCardProps = {
-  config: (typeof CRM_AGENDA_CARDS)[number];
-  customers: CrmCustomerListItem[];
-  count: number | undefined;
-  isFilterActive: boolean;
-  onApplyFilter: () => void;
-  onSelectCustomer: (customer: CrmCustomerListItem) => void;
-};
-
-const AgendaCommercialCard: React.FC<AgendaCommercialCardProps> = ({
-  config,
-  customers,
-  count,
-  isFilterActive,
-  onApplyFilter,
-  onSelectCustomer,
-}) => {
-  const Icon = config.icon;
-  const preview = customers.slice(0, CRM_AGENDA_PREVIEW_COUNT);
-
-  return (
-    <div
-      className={cn(
-        "rounded-2xl border p-4 shadow-sm flex flex-col gap-3 min-h-[220px] transition-shadow",
-        config.cardClass,
-        isFilterActive && "ring-2 ring-primary/30 shadow-md"
-      )}
-    >
-      <button
-        type="button"
-        onClick={onApplyFilter}
-        className="text-left flex flex-col gap-2 group"
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className={cn("rounded-xl p-2 shrink-0", config.iconClass)}>
-            <Icon className="h-4 w-4" />
-          </div>
-          <span className="text-2xl font-bold tabular-nums text-foreground leading-none">
-            {typeof count === "number" ? count : "—"}
-          </span>
-        </div>
-        <div>
-          <p className="text-sm font-bold text-foreground leading-snug">{config.title}</p>
-          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{config.description}</p>
-        </div>
-      </button>
-
-      <div className="flex-1 space-y-1.5 min-h-[72px]">
-        {preview.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic py-2">{config.emptyMessage}</p>
-        ) : (
-          preview.map((customer) => (
-            <button
-              key={customer.id}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectCustomer(customer);
-              }}
-              className="w-full text-left rounded-lg border border-border/70 bg-background/80 px-2.5 py-2 hover:border-primary/40 hover:bg-accent/30 transition-colors"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-xs font-semibold text-foreground line-clamp-1">
-                  {getCustomerDisplayName(customer)}
-                </p>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase",
-                    config.badgeClass
-                  )}
-                >
-                  {config.badgeLabel}
-                </span>
-              </div>
-              <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                {getCustomerTaxId(customer) !== "—" ? getCustomerTaxId(customer) : "—"}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">
-                {formatAgendaCustomerMeta(customer)}
-              </p>
-            </button>
-          ))
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={onApplyFilter}
-        className={cn(
-          "inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors w-full",
-          isFilterActive
-            ? "border-primary bg-primary/10 text-primary"
-            : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
-        )}
-      >
-        {isFilterActive ? "Filtro ativo" : "Aplicar filtro"}
-        <ArrowRight className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-};
-
 export const CrmModule = () => {
-  const [dashboard, setDashboard] = useState<CrmDashboardBasic | null>(null);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-
   const [customers, setCustomers] = useState<CrmCustomerListItem[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customersError, setCustomersError] = useState<string | null>(null);
@@ -1639,10 +1426,6 @@ export const CrmModule = () => {
   const [searchApplied, setSearchApplied] = useState("");
   const [crmCustomerFilter, setCrmCustomerFilter] = useState<CrmCustomerListFilter>("all");
   const [listHasMore, setListHasMore] = useState(false);
-
-  const [agendaLoading, setAgendaLoading] = useState(true);
-  const [agendaError, setAgendaError] = useState<string | null>(null);
-  const [agendaBuckets, setAgendaBuckets] = useState<CrmAgendaBuckets>(EMPTY_AGENDA_BUCKETS);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activities, setActivities] = useState<CrmActivity[]>([]);
@@ -1691,6 +1474,7 @@ export const CrmModule = () => {
   const auth = useAuth();
   const canCrmGeneral = canAccessCrmGeneral(auth);
   const canCrmSeller = canAccessCrmSeller(auth);
+  const canCrmPortfolio = canAccessCrmPortfolio(auth);
   const canCrmAny = canAccessCrmAny(auth);
   const canFilterAllSellers = canFilterAllCrmSellers(auth);
   const isOwnSellerOnly = isCrmOwnSellerOnly(auth);
@@ -1714,7 +1498,6 @@ export const CrmModule = () => {
   const [sellerPeriodPreset, setSellerPeriodPreset] = useState<SellerPeriodPreset>("all");
   const [sellerDateFrom, setSellerDateFrom] = useState("");
   const [sellerDateTo, setSellerDateTo] = useState("");
-  const [activeSellerSubTab, setActiveSellerSubTab] = useState<CrmSellerSubTabId>("dashboard");
 
   useEffect(() => {
     if (!isOwnSellerOnly || sellerNotLinked || !auth.authUser) return;
@@ -1729,13 +1512,17 @@ export const CrmModule = () => {
   useEffect(() => {
     if (!canCrmAny) return;
     if (activeCrmManagementTab === "general" && !canCrmGeneral) {
-      setActiveCrmManagementTab("seller");
+      setActiveCrmManagementTab(canCrmSeller ? "seller" : "portfolio");
       return;
     }
     if (activeCrmManagementTab === "seller" && !canCrmSeller) {
-      setActiveCrmManagementTab("general");
+      setActiveCrmManagementTab(canCrmGeneral ? "general" : "portfolio");
+      return;
     }
-  }, [activeCrmManagementTab, canCrmAny, canCrmGeneral, canCrmSeller]);
+    if (activeCrmManagementTab === "portfolio" && !canCrmPortfolio) {
+      setActiveCrmManagementTab(canCrmGeneral ? "general" : "seller");
+    }
+  }, [activeCrmManagementTab, canCrmAny, canCrmGeneral, canCrmSeller, canCrmPortfolio]);
 
   const loadManagementDashboard = useCallback(async () => {
     setManagementDashboardLoading(true);
@@ -1894,42 +1681,6 @@ export const CrmModule = () => {
     void loadSellerDashboard(params);
   }, [buildSellerDashboardParams, loadSellerDashboard, sellerDateFrom, sellerDateTo]);
 
-  const loadDashboard = useCallback(async () => {
-    setDashboardLoading(true);
-    setDashboardError(null);
-    try {
-      const data = await fetchJsonOk<CrmDashboardBasic>("/api/crm/dashboard/basic");
-      setDashboard(data);
-    } catch (e) {
-      setDashboard(null);
-      setDashboardError(e instanceof Error ? e.message : "Não foi possível carregar os indicadores.");
-    } finally {
-      setDashboardLoading(false);
-    }
-  }, []);
-
-  const loadAgendaBuckets = useCallback(async () => {
-    setAgendaLoading(true);
-    setAgendaError(null);
-    try {
-      const [overdueFollowUp, upcomingFollowUp7, withoutContact30, withContact30] =
-        await Promise.all([
-          fetchAgendaBucket("overdueFollowUp"),
-          fetchAgendaBucket("upcomingFollowUp7"),
-          fetchAgendaBucket("withoutContact30"),
-          fetchAgendaBucket("withContact30"),
-        ]);
-      setAgendaBuckets({ overdueFollowUp, upcomingFollowUp7, withoutContact30, withContact30 });
-    } catch (e) {
-      setAgendaBuckets(EMPTY_AGENDA_BUCKETS);
-      setAgendaError(
-        e instanceof Error ? e.message : "Não foi possível carregar a agenda comercial."
-      );
-    } finally {
-      setAgendaLoading(false);
-    }
-  }, []);
-
   const loadCrmCustomers = useCallback(
     async (search: string, filter: CrmCustomerListFilter, offset: number) => {
       setCustomersLoading(true);
@@ -2024,19 +1775,10 @@ export const CrmModule = () => {
     if (!canCrmAny) return;
 
     if (canCrmGeneral) {
-      void loadDashboard();
       void loadManagementDashboard();
-      void loadAgendaBuckets();
-      if (activeCrmManagementTab === "general") {
-        void loadCrmCustomers("", "all", 0);
-      }
     } else {
-      setDashboard(null);
-      setDashboardLoading(false);
       setManagementDashboard(null);
       setManagementDashboardLoading(false);
-      setAgendaBuckets(EMPTY_AGENDA_BUCKETS);
-      setAgendaLoading(false);
     }
 
     if (canCrmSeller && !sellerNotLinked) {
@@ -2047,23 +1789,19 @@ export const CrmModule = () => {
     canCrmAny,
     canCrmGeneral,
     canCrmSeller,
-    loadDashboard,
     loadManagementDashboard,
     loadSellerDashboard,
-    loadAgendaBuckets,
-    loadCrmCustomers,
     sellerNotLinked,
   ]);
 
   useEffect(() => {
-    if (!canCrmAny || !canCrmSeller || sellerNotLinked) return;
-    if (activeCrmManagementTab !== "seller" || activeSellerSubTab !== "portfolio") return;
+    if (!canCrmAny || !canCrmPortfolio || sellerNotLinked) return;
+    if (activeCrmManagementTab !== "portfolio") return;
     void loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
   }, [
     activeCrmManagementTab,
-    activeSellerSubTab,
     canCrmAny,
-    canCrmSeller,
+    canCrmPortfolio,
     crmCustomerFilter,
     loadCrmCustomers,
     searchApplied,
@@ -2234,20 +1972,6 @@ export const CrmModule = () => {
     void loadCrmCustomers(searchApplied, next, 0);
   };
 
-  const selectCustomerFromAgenda = useCallback(
-    async (customer: CrmCustomerListItem, filter: CrmAgendaFilter) => {
-      if (filter !== crmCustomerFilter) {
-        setCrmCustomerFilter(filter);
-        await loadCrmCustomers(searchApplied, filter, 0);
-      }
-      setCustomers((prev) =>
-        prev.some((c) => c.id === customer.id) ? prev : [customer, ...prev]
-      );
-      setSelectedId(customer.id);
-    },
-    [crmCustomerFilter, searchApplied, loadCrmCustomers]
-  );
-
   const selectCustomerById = useCallback(
     (customerId: string, meta?: { displayName?: string; taxId?: string }) => {
       const existing = customers.find((c) => c.id === customerId);
@@ -2271,8 +1995,8 @@ export const CrmModule = () => {
         setCustomers((prev) => (prev.some((c) => c.id === customerId) ? prev : [stub, ...prev]));
         setSelectedId(customerId);
       }
-      if (activeCrmManagementTab === "seller") {
-        setActiveSellerSubTab("portfolio");
+      if (activeCrmManagementTab !== "portfolio") {
+        setActiveCrmManagementTab("portfolio");
       }
     },
     [customers, activeCrmManagementTab]
@@ -2329,9 +2053,7 @@ export const CrmModule = () => {
       window.setTimeout(() => setToast(null), 4000);
       await loadActivities(selectedId);
       await loadCommercialIntel(selectedId);
-      await loadManagementDashboard();
-      await loadDashboard();
-      await loadAgendaBuckets();
+      if (canCrmGeneral) await loadManagementDashboard();
       await loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
     } catch (err) {
       setModalError(err instanceof Error ? err.message : "Falha ao salvar o contato.");
@@ -2352,9 +2074,7 @@ export const CrmModule = () => {
       window.setTimeout(() => setToast(null), 3500);
       if (selectedId) await loadActivities(selectedId);
       if (selectedId) await loadCommercialIntel(selectedId);
-      await loadManagementDashboard();
-      await loadDashboard();
-      await loadAgendaBuckets();
+      if (canCrmGeneral) await loadManagementDashboard();
       await loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Não foi possível atualizar o contato.");
@@ -2394,64 +2114,19 @@ export const CrmModule = () => {
   }, [isOwnSellerOnly, selectedSellerKey, sellerOptions, sellerDashboard?.filters]);
 
   const showCustomerPortfolioGrid =
-    activeCrmManagementTab === "general" ||
-    (activeCrmManagementTab === "seller" && canCrmSeller && activeSellerSubTab === "portfolio");
-
-  const dashboardCards: {
-    label: string;
-    description: string;
-    value: number | undefined;
-    icon: LucideIcon;
-    cardClass: string;
-    iconClass: string;
-  }[] = [
-    {
-      label: "Total de clientes",
-      description: "Carteira cadastrada no sistema",
-      value: dashboard?.totalCustomers,
-      icon: Users,
-      cardClass: "border-slate-200/80 bg-gradient-to-br from-slate-50 to-card",
-      iconClass: "text-slate-600 bg-slate-100",
-    },
-    {
-      label: "Com contato 30 dias",
-      description: "Relacionamento ativo no mês",
-      value: dashboard?.customersWithContactLast30Days,
-      icon: UserCheck,
-      cardClass: "border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 to-card",
-      iconClass: "text-emerald-700 bg-emerald-100",
-    },
-    {
-      label: "Sem contato 30 dias",
-      description: "Precisam de reativação",
-      value: dashboard?.customersWithoutContactLast30Days,
-      icon: UserX,
-      cardClass: "border-amber-200/80 bg-gradient-to-br from-amber-50/80 to-card",
-      iconClass: "text-amber-800 bg-amber-100",
-    },
-    {
-      label: "Follow-ups atrasados",
-      description: "Ações pendentes vencidas",
-      value: dashboard?.overdueFollowUps,
-      icon: AlertTriangle,
-      cardClass: "border-red-200/80 bg-gradient-to-br from-red-50/60 to-card",
-      iconClass: "text-red-700 bg-red-100",
-    },
-    {
-      label: "Próximos follow-ups 7 dias",
-      description: "Agenda da semana",
-      value: dashboard?.upcomingFollowUpsNext7Days,
-      icon: CalendarDays,
-      cardClass: "border-sky-200/80 bg-gradient-to-br from-sky-50/80 to-card",
-      iconClass: "text-sky-800 bg-sky-100",
-    },
-  ];
+    activeCrmManagementTab === "portfolio" && canCrmPortfolio && !sellerNotLinked;
 
   const heroTemperatureLabel = heroTemperature ? displayLine(heroTemperature) : "—";
   const heroChannelLabel = heroChannel ? displayLine(heroChannel) : "—";
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] space-y-10 pb-4" data-tour="crm-root">
+    <div
+      className={cn(
+        "mx-auto w-full space-y-10 pb-4",
+        showCustomerPortfolioGrid ? "max-w-[1800px]" : "max-w-[1500px]"
+      )}
+      data-tour="crm-root"
+    >
       {toast ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -2470,120 +2145,28 @@ export const CrmModule = () => {
         />
 
         {activeCrmManagementTab === "general" && canCrmGeneral ? (
-          <>
-            <CrmManagementDashboardSection
-              data={managementDashboard}
-              loading={managementDashboardLoading}
-              error={managementDashboardError}
-              kpiCards={managementKpiCards}
-              onReload={() => void loadManagementDashboard()}
-              formatDateTimePt={formatDateTimePt}
-            >
-              {managementDashboard ? (
-                <CrmManagementLists
-                  data={managementDashboard}
-                  onSelectCustomer={selectCustomerById}
-                  formatDateTimePt={formatDateTimePt}
-                  formatDateShortPt={formatDateShortPt}
-                  formatIntelCurrency={formatIntelCurrency}
-                  formatNumberPt={formatNumberPt}
-                  formatIntelDaysSinceLastPurchase={formatIntelDaysSinceLastPurchase}
-                  formatCommercialStatusLabel={formatCommercialStatusLabel}
-                  displayLine={displayLine}
-                />
-              ) : null}
-            </CrmManagementDashboardSection>
-
-            <section className="space-y-4">
-        <div>
-          <h3 className="text-lg font-bold text-foreground">Indicadores da carteira</h3>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Visão rápida do relacionamento e da agenda comercial.
-          </p>
-        </div>
-        {dashboardLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Carregando indicadores…
-          </div>
-        ) : dashboardError ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            {dashboardError}
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            {dashboardCards.map((card) => {
-              const Icon = card.icon;
-              return (
-                <div
-                  key={card.label}
-                  className={cn(
-                    "rounded-2xl border p-5 shadow-sm flex flex-col gap-3 min-h-[132px]",
-                    card.cardClass
-                  )}
-                >
-                  <div className={cn("rounded-xl p-2.5 w-fit shrink-0", card.iconClass)}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-3xl font-bold tabular-nums leading-none text-foreground">
-                      {typeof card.value === "number" ? card.value : "—"}
-                    </p>
-                    <p className="text-sm font-semibold text-foreground mt-2 leading-snug">{card.label}</p>
-                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{card.description}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-4" aria-labelledby="crm-agenda-heading">
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-primary/10 p-2.5 text-primary shrink-0">
-            <ListTodo className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 id="crm-agenda-heading" className="text-lg font-bold text-foreground">
-              Agenda comercial
-            </h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Priorize follow-ups atrasados, próximos contatos e clientes sem contato recente.
-            </p>
-          </div>
-        </div>
-        {agendaLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-6">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Carregando agenda comercial…
-          </div>
-        ) : agendaError ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Não foi possível carregar a agenda comercial.
-            {agendaError !== "Não foi possível carregar a agenda comercial." ? (
-              <span className="block text-xs mt-1 opacity-80">{agendaError}</span>
-            ) : null}
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {CRM_AGENDA_CARDS.map((card) => (
-              <AgendaCommercialCard
-                key={card.filter}
-                config={card}
-                customers={agendaBuckets[card.filter]}
-                count={dashboard ? card.countFromDashboard(dashboard) : undefined}
-                isFilterActive={crmCustomerFilter === card.filter}
-                onApplyFilter={() => applyCustomerFilter(card.filter)}
-                onSelectCustomer={(customer) => {
-                  void selectCustomerFromAgenda(customer, card.filter);
-                }}
+          <CrmManagementDashboardSection
+            data={managementDashboard}
+            loading={managementDashboardLoading}
+            error={managementDashboardError}
+            kpiCards={managementKpiCards}
+            onReload={() => void loadManagementDashboard()}
+            formatDateTimePt={formatDateTimePt}
+          >
+            {managementDashboard ? (
+              <CrmManagementLists
+                data={managementDashboard}
+                onSelectCustomer={selectCustomerById}
+                formatDateTimePt={formatDateTimePt}
+                formatDateShortPt={formatDateShortPt}
+                formatIntelCurrency={formatIntelCurrency}
+                formatNumberPt={formatNumberPt}
+                formatIntelDaysSinceLastPurchase={formatIntelDaysSinceLastPurchase}
+                formatCommercialStatusLabel={formatCommercialStatusLabel}
+                displayLine={displayLine}
               />
-            ))}
-          </div>
-        )}
-      </section>
-          </>
+            ) : null}
+          </CrmManagementDashboardSection>
         ) : activeCrmManagementTab === "seller" && canCrmSeller ? (
           <CrmSellerDashboardSection
             data={sellerDashboard}
@@ -2604,12 +2187,11 @@ export const CrmModule = () => {
             onDateToChange={setSellerDateTo}
             onApplyCustomPeriod={handleApplySellerCustomPeriod}
             onReload={reloadSellerDashboard}
+            onOpenPortfolio={canCrmPortfolio ? () => setActiveCrmManagementTab("portfolio") : undefined}
             formatDateTimePt={formatDateTimePt}
-            activeSubTab={activeSellerSubTab}
-            onSubTabChange={setActiveSellerSubTab}
             sellerDisplayName={sellerDisplayName}
           >
-            {sellerDashboard && activeSellerSubTab === "dashboard" ? (
+            {sellerDashboard ? (
               <CrmSellerDashboardLists
                 data={sellerDashboard}
                 onSelectCustomer={selectCustomerById}
@@ -2621,21 +2203,40 @@ export const CrmModule = () => {
               />
             ) : null}
           </CrmSellerDashboardSection>
+        ) : activeCrmManagementTab === "portfolio" && canCrmPortfolio && sellerNotLinked ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+            Seu usuário ainda não está vinculado a um vendedor Nomus. Solicite ajuste ao administrador
+            para acessar a carteira de clientes.
+          </div>
         ) : null}
           </>
         )}
       </section>
 
       {showCustomerPortfolioGrid ? (
-      <div className="grid gap-8 lg:grid-cols-[minmax(360px,420px)_minmax(0,1fr)]">
+      <section className="space-y-6" aria-label="Carteira de clientes">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-primary/10 p-2.5 text-primary shrink-0">
+            <Users className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-foreground">Carteira de Clientes</h3>
+            <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
+              Busque, filtre e gerencie o relacionamento comercial. Selecione um cliente para abrir o
+              cockpit com histórico, agenda, oportunidades e observações.
+            </p>
+          </div>
+        </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(320px,400px)_minmax(0,1fr)]">
         <aside className="min-w-0">
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5 xl:sticky xl:top-4">
             <div>
-              <h3 className="text-lg font-bold text-foreground">Carteira de clientes</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {activeCrmManagementTab === "seller"
-                  ? "Busque e filtre os clientes do vendedor para abrir o cockpit comercial."
-                  : "Busque e filtre a carteira para abrir o cockpit do cliente."}
+              <p className="text-sm font-semibold text-foreground">Lista da carteira</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isOwnSellerOnly
+                  ? "Clientes vinculados ao seu usuário."
+                  : "Todos os clientes no escopo do seu perfil."}
               </p>
             </div>
             <form onSubmit={handleSearch} className="space-y-3">
@@ -2701,7 +2302,7 @@ export const CrmModule = () => {
                 </p>
               </div>
             ) : (
-              <ul className="space-y-2 max-h-[min(560px,58vh)] overflow-y-auto pr-1">
+              <ul className="space-y-2 max-h-[min(720px,75vh)] overflow-y-auto pr-1">
                 {customers.map((c) => {
                   const active = c.id === selectedId;
                   return (
@@ -3035,6 +2636,7 @@ export const CrmModule = () => {
           )}
         </main>
       </div>
+      </section>
       ) : null}
 
       {/* Modal perfil de relacionamento */}

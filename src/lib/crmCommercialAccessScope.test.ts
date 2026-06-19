@@ -170,8 +170,9 @@ describe("crmCommercialAccessScope", () => {
   it("CrmModule só carrega gestão geral quando canCrmGeneral", () => {
     const src = readFileSync(join(process.cwd(), "src/components/CrmModule.tsx"), "utf8");
     assert.match(src, /if \(canCrmGeneral\) \{[\s\S]*loadManagementDashboard/);
-    assert.match(src, /activeSellerSubTab === "portfolio"/);
+    assert.match(src, /activeCrmManagementTab === "portfolio"/);
     assert.match(src, /getDefaultCrmManagementTab\(auth\) \?\? "seller"/);
+    assert.doesNotMatch(src, /Indicadores da carteira/);
   });
 
   it("seller-dashboard exige crm.seller.own ou crm.seller.all no server", () => {

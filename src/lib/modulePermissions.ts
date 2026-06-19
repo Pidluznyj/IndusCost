@@ -138,6 +138,11 @@ export function canAccessCrmSeller(check: PermissionChecker): boolean {
   );
 }
 
+/** Carteira de clientes / cockpit comercial (gestor ou vendedor). */
+export function canAccessCrmPortfolio(check: PermissionChecker): boolean {
+  return canAccessCrmGeneral(check) || canAccessCrmSeller(check);
+}
+
 /** Pode filtrar qualquer vendedor na gestão comercial (gestor). */
 export function canFilterAllCrmSellers(check: PermissionChecker): boolean {
   return check.hasPermission("crm.seller.all");
