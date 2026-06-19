@@ -11,6 +11,20 @@ import type {
 } from "./salesOrderLifecycleTypes.js";
 import type { SalesOrderTimelineEvent } from "./salesOrderLifecycleTypes.js";
 import {
+  buildAuditMeta,
+  buildIntelligenceInvoices,
+  buildLifecycleRuleTrace,
+  buildOrderAuditFields,
+  buildRawDataPreview,
+  enrichIntelligenceItems,
+  type SalesOrderAuditRuleTraceEntry,
+  type SalesOrderIntelligenceAuditMeta,
+  type SalesOrderIntelligenceInvoice,
+  type SalesOrderIntelligenceRawData,
+} from "./salesOrderStatusAudit.js";
+import type { RawItemMatchType } from "./salesOrderNomusRaw.js";
+import type { SalesOrderItemStatusSource } from "./salesOrderStatusAudit.js";
+import {
   extractNomusProductionOrders,
   extractNomusRawNfes,
   parseNomusBrOrIsoDate,
@@ -44,6 +58,12 @@ export type SalesOrderIntelligencePayload = {
   order: {
     id: string;
     number: string;
+    orderCode: string;
+    externalSalesOrderId?: string | number | null;
+    externalSalesOrderCode?: string | null;
+    statusIndusCost: string;
+    statusNomusRaw?: string | number | null;
+    statusNomusLabel?: string | null;
     customerName: string;
     customerTaxId?: string | null;
     issueDate?: string | null;
@@ -52,7 +72,11 @@ export type SalesOrderIntelligencePayload = {
     sellerName?: string | null;
     companyName?: string | null;
   };
-  lifecycle: SalesOrderLifecycleSummary;
+  lifecycle: SalesOrderLifecycleSummary & {
+    ruleTrace: SalesOrderAuditRuleTraceEntry[];
+    warnings: string[];
+    suggestedActionLabel: string;
+  };
   timeline: SalesOrderTimelineEvent[];
   production: {
     hasLinkedProductionOrder: boolean;
@@ -71,7 +95,17 @@ export type SalesOrderIntelligencePayload = {
       dueDate?: string | null;
       isLate?: boolean;
       source: "model" | "nomus_raw" | "not_available";
+      rawSummary?: Record<string, unknown>;
     }>;
+    orders: Array<{
+      number?: string | null;
+      status?: string | null;
+      plannedDate?: string | null;
+      finishedDate?: string | null;
+      quantity?: number | null;
+      rawSummary?: Record<string, unknown>;
+    }>;
+    warnings: string[];
     dataQuality: {
       warnings: string[];
       source: "model" | "nomus_raw" | "not_available";
@@ -93,15 +127,27 @@ export type SalesOrderIntelligencePayload = {
       | "not_invoiced"
       | "unknown";
   };
+  invoices: SalesOrderIntelligenceInvoice[];
   items: Array<{
     id: string;
+    itemNumber?: string | null;
+    externalItemId?: string | number | null;
+    productId?: string | null;
+    externalProductId?: string | number | null;
+    sku?: string | null;
+    description?: string | null;
     productCode: string;
     productName: string;
     originalStatus?: string | null;
     normalizedStatus: SalesOrderItemNomusStatus;
     orderedQuantity: number;
+    quantityOrdered: number;
     fulfilledQuantity?: number | null;
+    quantityFulfilled?: number | null;
     invoicedQuantity?: number | null;
+    quantityInvoiced?: number | null;
+    quantityCancelled?: number | null;
+    quantityReturned?: number | null;
     pendingQuantity?: number | null;
     unit?: string | null;
     hasCut: boolean;
@@ -109,9 +155,18 @@ export type SalesOrderIntelligencePayload = {
     isReturned: boolean;
     hasLinkedProductionOrder: boolean;
     linkedProductionOrderNumbers: string[];
+    statusRaw?: string | number | null;
+    statusLabel?: string | null;
+    statusNormalized: SalesOrderItemNomusStatus;
+    statusSource: SalesOrderItemStatusSource;
+    rawMatchedBy: RawItemMatchType;
+    alerts: string[];
+    rawSummary: Record<string, unknown>;
   }>;
   risks: SalesOrderIntelligenceRisk[];
   suggestedActions: SalesOrderIntelligenceAction[];
+  rawData: SalesOrderIntelligenceRawData;
+  audit: SalesOrderIntelligenceAuditMeta;
   dataQuality: {
     warnings: string[];
     missingLinks: string[];
@@ -393,12 +448,28 @@ function mapProductionOrders(
       dueDate: op.dueDate,
       isLate,
       source: "nomus_raw" as const,
+      rawSummary: {
+        status: op.status,
+        number: op.number,
+        productCode: op.productCode,
+      },
     };
   });
+
+  const orders = productionOrders.map((op) => ({
+    number: op.number ?? null,
+    status: op.status ?? null,
+    plannedDate: op.dueDate ?? op.openedAt ?? null,
+    finishedDate: op.finishedAt ?? null,
+    quantity: op.plannedQuantity ?? null,
+    rawSummary: op.rawSummary,
+  }));
 
   return {
     hasLinkedProductionOrder: productionOrders.length > 0,
     productionOrders,
+    orders,
+    warnings,
     dataQuality: { warnings, source },
   };
 }
@@ -408,6 +479,8 @@ export function buildSalesOrderIntelligencePayload(input: {
     id: string;
     orderCode: string;
     status: string;
+    externalSalesOrderId?: number | null;
+    externalSalesOrderCode?: string | null;
     issueDate?: Date | string | null;
     expectedDeliveryDate?: Date | string | null;
     totalNetValue: unknown;
@@ -417,6 +490,7 @@ export function buildSalesOrderIntelligencePayload(input: {
     customer?: { companyName?: string | null; tradeName?: string | null; taxId?: string | null };
     items: Array<{
       id: string;
+      productId?: string | null;
       externalProductId?: number | null;
       skuSnapshot?: string | null;
       productNameSnapshot?: string | null;
@@ -468,10 +542,44 @@ export function buildSalesOrderIntelligencePayload(input: {
     ...production.dataQuality.warnings,
   ];
 
+  const ruleTrace = buildLifecycleRuleTrace({
+    lifecycle,
+    items,
+    hasInvoice: lifecycle.hasInvoice,
+  });
+  const invoices = buildIntelligenceInvoices(input.order.nomusRawResponse);
+  const rawData = buildRawDataPreview(input.order.nomusRawResponse);
+  const enrichedItems = enrichIntelligenceItems({
+    items,
+    dbItems: input.order.items,
+    nomusRawResponse: input.order.nomusRawResponse,
+  });
+  const orderAudit = buildOrderAuditFields({
+    statusIndusCost: input.order.status,
+    externalSalesOrderId: input.order.externalSalesOrderId,
+    externalSalesOrderCode: input.order.externalSalesOrderCode,
+    nomusRawResponse: input.order.nomusRawResponse,
+    lifecycle,
+  });
+  const audit = buildAuditMeta({
+    nomusRawResponse: input.order.nomusRawResponse,
+    lifecycle,
+    productionWarnings: production.warnings,
+    dataQualityWarnings: warnings,
+  });
+
+  const lifecycleWithAudit = {
+    ...lifecycle,
+    ruleTrace,
+    warnings: [...new Set([...lifecycle.riskFlags, ...warnings])],
+    suggestedActionLabel: suggestedActions[0]?.label ?? "Nenhuma ação sugerida",
+  };
+
   return {
     order: {
       id: input.order.id,
       number: input.order.orderCode,
+      ...orderAudit,
       customerName:
         input.order.customer?.tradeName?.trim() ||
         input.order.customer?.companyName?.trim() ||
@@ -483,7 +591,7 @@ export function buildSalesOrderIntelligencePayload(input: {
       sellerName: input.order.responsible ?? null,
       companyName: input.order.companyIssuer ?? null,
     },
-    lifecycle,
+    lifecycle: lifecycleWithAudit,
     timeline,
     production,
     invoicing: {
@@ -496,13 +604,16 @@ export function buildSalesOrderIntelligencePayload(input: {
       invoicedPercent: lifecycle.invoicedPercent,
       invoiceTiming: resolveInvoiceTiming(lifecycle),
     },
-    items: items.map((item, index) => ({
+    invoices,
+    items: enrichedItems.map((item, index) => ({
       ...item,
       unit: input.order.items[index]?.unit ?? null,
       hasLinkedProductionOrder: item.linkedProductionOrderNumbers.length > 0,
     })),
     risks,
     suggestedActions,
+    rawData,
+    audit,
     dataQuality: {
       warnings: [...new Set(warnings)],
       missingLinks,

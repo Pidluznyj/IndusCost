@@ -637,6 +637,9 @@ export function SalesOrderManagementPage() {
           </>
         )}
       </p>
+      <p className="text-xs text-muted-foreground" data-testid="sales-order-management-row-hint">
+        Clique no pedido para ver dados completos da integração.
+      </p>
 
       <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
@@ -689,7 +692,10 @@ export function SalesOrderManagementPage() {
                     onClick={() => void openDrawer(row)}
                     data-testid="sales-order-management-row"
                   >
-                    <td className="p-3 font-semibold text-primary">{row.number}</td>
+                    <td className="p-3">
+                      <div className="font-semibold text-primary">{row.number}</div>
+                      <div className="text-[10px] text-muted-foreground">Ver detalhes</div>
+                    </td>
                     <td className="p-3">{row.customerName}</td>
                     <td className="p-3">{formatSalesOrderDate(row.issueDate)}</td>
                     <td className="p-3">{formatSalesOrderDate(row.expectedDeliveryDate)}</td>

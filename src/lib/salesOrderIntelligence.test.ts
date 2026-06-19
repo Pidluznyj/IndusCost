@@ -91,6 +91,23 @@ describe("salesOrderIntelligence", () => {
     assert.equal(payload.invoicing.hasInvoice, true);
     assert.ok(payload.invoicing.invoiceNumbers.includes("12345"));
     assert.equal(payload.invoicing.invoiceCount, 1);
+    assert.equal(payload.invoices.length, 1);
+    assert.equal(payload.invoices[0].number, "12345");
+    assert.ok(payload.invoices[0].links.some((l) => l.label === "Ver no Faturamento"));
+  });
+
+  it("inclui status IndusCost e Nomus no pedido", () => {
+    const payload = buildSalesOrderIntelligencePayload(orderFixture());
+    assert.equal(payload.order.statusIndusCost, "SENT_TO_NOMUS");
+    assert.ok(payload.order.orderCode);
+    assert.ok(payload.lifecycle.ruleTrace.length > 0);
+  });
+
+  it("itens incluem origem e quantidades auditadas", () => {
+    const payload = buildSalesOrderIntelligencePayload(orderFixture());
+    assert.equal(payload.items[0].quantityOrdered, 10);
+    assert.equal(payload.items[0].statusSource, "item_raw");
+    assert.equal(payload.items[0].rawMatchedBy, "external_id");
   });
 
   it("inclui OP quando encontrada no raw", () => {
@@ -144,6 +161,8 @@ describe("salesOrderIntelligence", () => {
       })
     );
     assert.ok(payload.risks.some((r) => r.code === "invoice_after_deadline"));
+    const rule = payload.lifecycle.ruleTrace.find((r) => r.rule.includes("NF foi após prazo"));
+    assert.equal(rule?.result, "Sim");
   });
 
   it("risco pedido parcial", () => {
@@ -239,6 +258,20 @@ describe("salesOrderIntelligence", () => {
     });
     const { risks } = buildSalesOrderRisksAndActions({ lifecycle, items });
     assert.ok(risks.some((r) => r.code === "invoice_without_item_progress"));
+  });
+
+  it("pedido com status item 6 mostra cancelado", () => {
+    const payload = buildSalesOrderIntelligencePayload(
+      orderFixture({
+        order: {
+          nomusRawResponse: {
+            itensPedido: [{ idProduto: 100, status: 6, quantidade: 1, quantidadeCancelada: 1 }],
+          },
+        },
+      })
+    );
+    assert.equal(payload.items[0].statusNormalized, "cancelled");
+    assert.ok(payload.items[0].statusLabel?.includes("Cancelado"));
   });
 
   it("pedido cancelado não sugere validar faturamento", () => {

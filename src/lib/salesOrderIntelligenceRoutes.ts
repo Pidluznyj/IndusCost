@@ -36,6 +36,7 @@ export async function loadSalesOrderIntelligence(orderId: string) {
       items: {
         select: {
           id: true,
+          productId: true,
           externalProductId: true,
           skuSnapshot: true,
           productNameSnapshot: true,
@@ -51,6 +52,8 @@ export async function loadSalesOrderIntelligence(orderId: string) {
       id: order.id,
       orderCode: order.orderCode,
       status: order.status,
+      externalSalesOrderId: order.externalSalesOrderId,
+      externalSalesOrderCode: order.externalSalesOrderCode,
       issueDate: order.issueDate,
       expectedDeliveryDate: order.expectedDeliveryDate,
       totalNetValue: order.totalNetValue,

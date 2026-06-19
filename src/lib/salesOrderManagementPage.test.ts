@@ -93,6 +93,17 @@ describe("salesOrderManagementPage", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /SalesOrderIntelligenceDrawer/);
     assert.match(page, /openDrawer/);
+    assert.match(page, /sales-order-management-row-hint/);
+    assert.match(page, /Ver detalhes/);
+  });
+
+  it("drawer possui abas de raio-x do pedido", () => {
+    const ui = read("src/lib/salesOrderManagementUi.ts");
+    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
+    assert.match(ui, /nomus-data/);
+    assert.match(ui, /rule-audit/);
+    assert.match(drawer, /sales-order-intelligence-nomus-data/);
+    assert.match(drawer, /sales-order-intelligence-rule-audit/);
   });
 
   it("não há import de Prisma no frontend", () => {

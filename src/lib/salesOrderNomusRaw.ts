@@ -19,10 +19,12 @@ export type NomusRawItem = {
 export type NomusRawNfe = {
   numero: string | null;
   serie: string | null;
+  accessKey: string | null;
   status: string | null;
   dataProcessamento: string | null;
   dataEmissao: string | null;
   valor: number | null;
+  raw: Record<string, unknown>;
 };
 
 export type NomusRawProductionOrder = {
@@ -438,6 +440,11 @@ export function extractNomusRawNfes(nomusRawResponse: unknown): NomusRawNfe[] {
         asString(obj.nNF) ??
         (obj.numero != null ? String(obj.numero) : null),
       serie: asString(obj.serie) ?? (obj.serie != null ? String(obj.serie) : null),
+      accessKey:
+        asString(obj.chaveAcesso) ??
+        asString(obj.chave) ??
+        asString(obj.chNFe) ??
+        asString(obj.xmlChNFe),
       status: asString(obj.status),
       dataProcessamento: asString(obj.dataProcessamento),
       dataEmissao:
@@ -445,6 +452,7 @@ export function extractNomusRawNfes(nomusRawResponse: unknown): NomusRawNfe[] {
         asString(obj.dhEmi) ??
         asString(obj.xmlDhEmi),
       valor: readQuantity(obj, ["valor", "valorTotal", "xmlVNF", "vNF"]),
+      raw: obj,
     });
   }
   return out;
@@ -649,6 +657,76 @@ export function matchRawItemToDbItem(
   if (rawItems.length === 1) return rawItems[0];
 
   return null;
+}
+
+export type RawItemMatchType =
+  | "external_id"
+  | "product_id"
+  | "sku"
+  | "item_number"
+  | "description"
+  | "single_item_fallback"
+  | "none";
+
+/** Identifica como o item do raw foi associado ao item persistido no IndusCost. */
+export function resolveRawItemMatchType(
+  rawItems: NomusRawItem[],
+  dbItem: {
+    externalProductId?: number | null;
+    skuSnapshot?: string | null;
+    productNameSnapshot?: string | null;
+  },
+  options?: { itemIndex?: number; totalDbItems?: number }
+): RawItemMatchType {
+  if (rawItems.length === 0) return "none";
+
+  const matchesExternalId = (r: NomusRawItem): boolean => {
+    if (dbItem.externalProductId == null) return false;
+    if (r.idProduto === dbItem.externalProductId) return true;
+    const nestedId = asNumber(asObject(r.raw.produto)?.id);
+    const nestedProductId = asNumber(asObject(r.raw.produto)?.idProduto);
+    return nestedId === dbItem.externalProductId || nestedProductId === dbItem.externalProductId;
+  };
+
+  if (dbItem.externalProductId != null && rawItems.some(matchesExternalId)) {
+    return "external_id";
+  }
+
+  const sku = normalizeProductCode(dbItem.skuSnapshot);
+  if (sku && rawItems.some((r) => normalizeProductCode(r.codigoProduto) === sku)) {
+    return "sku";
+  }
+
+  const name = dbItem.productNameSnapshot?.trim().toLowerCase();
+  if (name) {
+    const byName = rawItems.some((r) => {
+      const rawName =
+        coerceNomusTextValue(r.raw.nomeProduto) ??
+        coerceNomusTextValue(r.raw.descricaoProduto) ??
+        coerceNomusTextValue(asObject(r.raw.produto)?.descricao) ??
+        coerceNomusTextValue(asObject(r.raw.produto)?.nome);
+      return rawName?.trim().toLowerCase() === name;
+    });
+    if (byName) return "description";
+  }
+
+  if (
+    options?.itemIndex != null &&
+    options.totalDbItems != null &&
+    options.totalDbItems === rawItems.length
+  ) {
+    return "item_number";
+  }
+
+  if (rawItems.length === 1 && options?.totalDbItems === 1) {
+    return "single_item_fallback";
+  }
+
+  if (rawItems.length === 1) {
+    return "single_item_fallback";
+  }
+
+  return "none";
 }
 
 export function resolveItemFulfilledQuantity(

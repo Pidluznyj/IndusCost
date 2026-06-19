@@ -207,12 +207,12 @@ export const MANAGEMENT_KPI_CARD_HINTS: Record<string, string> = {};
 
 export const INTELLIGENCE_DRAWER_TABS = [
   { id: "summary", label: "Resumo" },
-  { id: "timeline", label: "Linha do tempo" },
   { id: "items", label: "Itens" },
-  { id: "production", label: "OP / Produção" },
   { id: "invoicing", label: "NF / Faturamento" },
-  { id: "risks", label: "Riscos e ações" },
-  { id: "audit", label: "Dados e auditoria" },
+  { id: "production", label: "Produção / OP" },
+  { id: "timeline", label: "Timeline" },
+  { id: "nomus-data", label: "Dados Nomus" },
+  { id: "rule-audit", label: "Auditoria de regras" },
 ] as const;
 
 export type SalesOrderIntelligenceDrawerTabId =

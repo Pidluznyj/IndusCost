@@ -2,17 +2,14 @@ import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
-  CheckCircle2,
   Loader2,
   ShieldAlert,
   X,
 } from "lucide-react";
 import type { SalesOrderIntelligencePayload } from "@/src/lib/salesOrderIntelligence";
 import {
-  COMPLETION_STATUS_LABELS,
   formatDeadlineBadge,
   formatInvoiceBadge,
-  formatItemSituation,
   formatProductionBadge,
   formatSalesOrderDate,
   formatSalesOrderPercent,
@@ -21,8 +18,11 @@ import {
   TIMELINE_STATUS_LABELS,
   type SalesOrderIntelligenceDrawerTabId,
 } from "@/src/lib/salesOrderManagementUi";
-import { formatCurrency } from "@/src/lib/utils";
-import { cn } from "@/src/lib/utils";
+import {
+  formatItemStatusSourceLabel,
+  formatRawMatchedByLabel,
+} from "@/src/lib/salesOrderStatusAudit";
+import { cn, formatCurrency } from "@/src/lib/utils";
 import "./sales-order-intelligence.css";
 
 function SummaryCard({
@@ -78,6 +78,41 @@ function TimelineView({
   );
 }
 
+function CollapsibleJson({
+  title,
+  data,
+  testId,
+}: {
+  title: string;
+  data: unknown;
+  testId?: string;
+}) {
+  return (
+    <details className="rounded-lg border border-border bg-card" data-testid={testId}>
+      <summary className="cursor-pointer px-3 py-2 text-xs font-semibold">{title}</summary>
+      <pre className="max-h-64 overflow-auto border-t border-border p-3 text-[10px] leading-relaxed">
+        {JSON.stringify(data, null, 2)}
+      </pre>
+    </details>
+  );
+}
+
+function SourceBadge({ source }: { source: string }) {
+  const tone =
+    source === "nomus_raw"
+      ? "bg-blue-100 text-blue-900"
+      : source === "induscost"
+        ? "bg-violet-100 text-violet-900"
+        : source === "calculated"
+          ? "bg-amber-100 text-amber-900"
+          : "bg-slate-100 text-slate-800";
+  return (
+    <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", tone)}>
+      {source.replace(/_/g, " ")}
+    </span>
+  );
+}
+
 function TabPanel({
   tab,
   payload,
@@ -85,8 +120,19 @@ function TabPanel({
   tab: SalesOrderIntelligenceDrawerTabId;
   payload: SalesOrderIntelligencePayload;
 }) {
-  const { lifecycle, order, items, production, invoicing, risks, suggestedActions, dataQuality } =
-    payload;
+  const {
+    lifecycle,
+    order,
+    items,
+    production,
+    invoicing,
+    invoices,
+    risks,
+    suggestedActions,
+    dataQuality,
+    rawData,
+    audit,
+  } = payload;
 
   if (tab === "summary") {
     const topRisks = risks.slice(0, 3);
@@ -94,7 +140,20 @@ function TabPanel({
     return (
       <div className="space-y-4" data-testid="sales-order-intelligence-summary">
         <div className="grid grid-cols-2 gap-3">
+          <SummaryCard label="Pedido" value={order.orderCode} />
+          <SummaryCard label="Cliente" value={order.customerName} />
+          <SummaryCard label="Emissão" value={formatSalesOrderDate(order.issueDate)} />
+          <SummaryCard
+            label="Previsão"
+            value={formatSalesOrderDate(order.expectedDeliveryDate)}
+          />
+          <SummaryCard label="Valor" value={formatCurrency(order.totalNetValue)} />
           <SummaryCard label="Status gerencial" value={lifecycle.executiveStatusLabel} />
+          <SummaryCard label="Status IndusCost" value={order.statusIndusCost} />
+          <SummaryCard
+            label="Status Nomus"
+            value={order.statusNomusLabel ?? "Não localizado na integração"}
+          />
           <SummaryCard
             label="Prazo"
             value={formatDeadlineBadge(
@@ -123,11 +182,6 @@ function TabPanel({
             )}
           />
           <SummaryCard
-            label="Completeza"
-            value={COMPLETION_STATUS_LABELS[lifecycle.completionStatus]}
-          />
-          <SummaryCard label="Valor" value={formatCurrency(order.totalNetValue)} />
-          <SummaryCard
             label="% faturado"
             value={formatSalesOrderPercent(lifecycle.invoicedPercent)}
           />
@@ -142,12 +196,12 @@ function TabPanel({
             <p className="text-sm font-semibold mt-1">{mainAction.label}</p>
             <p className="text-xs text-muted-foreground mt-1">{mainAction.description}</p>
           </div>
-        ) : null}
+        ) : (
+          <SummaryCard label="Ação sugerida" value={lifecycle.suggestedActionLabel} />
+        )}
         {topRisks.length > 0 ? (
           <div>
-            <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2">
-              Riscos principais
-            </h3>
+            <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2">Riscos</h3>
             <ul className="space-y-2">
               {topRisks.map((risk) => (
                 <li key={risk.code} className="text-sm flex items-start gap-2">
@@ -171,47 +225,60 @@ function TabPanel({
 
   if (tab === "items") {
     return (
-      <div className="overflow-x-auto" data-testid="sales-order-intelligence-items">
+      <div className="overflow-x-auto space-y-3" data-testid="sales-order-intelligence-items">
         <table className="w-full text-left text-xs">
           <thead className="border-b border-border bg-accent/40">
             <tr>
-              <th className="p-2 font-semibold">Produto</th>
+              <th className="p-2 font-semibold">Item</th>
+              <th className="p-2 font-semibold">Código</th>
+              <th className="p-2 font-semibold">Descrição</th>
+              <th className="p-2 font-semibold text-right">Qtde pedida</th>
+              <th className="p-2 font-semibold text-right">Qtde atendida</th>
+              <th className="p-2 font-semibold text-right">Qtde faturada</th>
+              <th className="p-2 font-semibold text-right">Qtde cancelada</th>
               <th className="p-2 font-semibold">Status Nomus</th>
-              <th className="p-2 font-semibold">Normalizado</th>
-              <th className="p-2 font-semibold text-right">Pedida</th>
-              <th className="p-2 font-semibold text-right">Atendida</th>
-              <th className="p-2 font-semibold text-right">Faturada</th>
-              <th className="p-2 font-semibold text-right">Pendente</th>
-              <th className="p-2 font-semibold">OP</th>
-              <th className="p-2 font-semibold">NF</th>
-              <th className="p-2 font-semibold">Situação</th>
+              <th className="p-2 font-semibold">Status IndusCost</th>
+              <th className="p-2 font-semibold">Origem do status</th>
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id} className="border-b border-border/60">
-                <td className="p-2">
-                  <div className="font-medium">{item.productName}</div>
-                  <div className="text-muted-foreground">{item.productCode}</div>
-                </td>
-                <td className="p-2">{item.originalStatus ?? "—"}</td>
-                <td className="p-2">{ITEM_NOMUS_STATUS_LABELS[item.normalizedStatus]}</td>
-                <td className="p-2 text-right tabular-nums">{item.orderedQuantity}</td>
-                <td className="p-2 text-right tabular-nums">{item.fulfilledQuantity ?? "—"}</td>
-                <td className="p-2 text-right tabular-nums">{item.invoicedQuantity ?? "—"}</td>
-                <td className="p-2 text-right tabular-nums">{item.pendingQuantity ?? "—"}</td>
-                <td className="p-2">
-                  {item.linkedProductionOrderNumbers.length > 0
-                    ? item.linkedProductionOrderNumbers.join(", ")
-                    : "—"}
-                </td>
-                <td className="p-2">
-                  {(item.invoicedQuantity ?? 0) > 0 && invoicing.invoiceNumbers.length > 0
-                    ? invoicing.invoiceNumbers.join(", ")
-                    : "—"}
-                </td>
-                <td className="p-2">{formatItemSituation(item)}</td>
-              </tr>
+              <React.Fragment key={item.id}>
+                <tr className="border-b border-border/60">
+                  <td className="p-2">{item.itemNumber ?? "—"}</td>
+                  <td className="p-2">{item.sku ?? item.productCode}</td>
+                  <td className="p-2">{item.description ?? item.productName}</td>
+                  <td className="p-2 text-right tabular-nums">{item.quantityOrdered}</td>
+                  <td className="p-2 text-right tabular-nums">
+                    {item.quantityFulfilled ?? "Não informado"}
+                  </td>
+                  <td className="p-2 text-right tabular-nums">
+                    {item.quantityInvoiced ?? "Não informado"}
+                  </td>
+                  <td className="p-2 text-right tabular-nums">
+                    {item.quantityCancelled ?? "Não informado"}
+                  </td>
+                  <td className="p-2">{item.statusLabel ?? item.statusRaw ?? "Não informado"}</td>
+                  <td className="p-2">
+                    {ITEM_NOMUS_STATUS_LABELS[item.statusNormalized ?? item.normalizedStatus]}
+                  </td>
+                  <td className="p-2">
+                    {formatItemStatusSourceLabel(item.statusSource)}
+                    <span className="block text-[10px] text-muted-foreground">
+                      {formatRawMatchedByLabel(item.rawMatchedBy)}
+                    </span>
+                  </td>
+                </tr>
+                <tr className="border-b border-border/40 bg-muted/20">
+                  <td colSpan={10} className="p-2">
+                    <CollapsibleJson
+                      title="Ver raw do item"
+                      data={item.rawSummary}
+                      testId={`sales-order-item-raw-${item.id}`}
+                    />
+                  </td>
+                </tr>
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -225,7 +292,7 @@ function TabPanel({
       <div className="space-y-4" data-testid="sales-order-intelligence-production">
         {production.productionOrders.length === 0 ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-            <p className="font-semibold">Nenhuma OP vinculada encontrada.</p>
+            <p className="font-semibold">Nenhuma OP vinculada localizada na integração.</p>
             {opNotSynced ? (
               <p className="mt-1 text-xs">
                 OP não sincronizada/disponível no IndusCost para este pedido.
@@ -294,88 +361,189 @@ function TabPanel({
   }
 
   if (tab === "invoicing") {
-    const timingLabel =
-      invoicing.invoiceTiming === "after_due_date"
-        ? "NF após prazo"
-        : invoicing.invoiceTiming === "on_due_date"
-          ? "NF no prazo"
-          : invoicing.invoiceTiming === "before_due_date"
-            ? "NF antecipada"
-            : invoicing.invoiceTiming.replace(/_/g, " ");
-    const partialOrTotal =
-      invoicing.invoicedPercent != null && invoicing.invoicedPercent >= 99.5
-        ? "Total"
-        : invoicing.hasInvoice
-          ? "Parcial"
-          : "—";
+    if (invoices.length === 0) {
+      return (
+        <div className="space-y-3" data-testid="sales-order-intelligence-invoicing">
+          <p className="text-sm text-muted-foreground">
+            Nenhuma nota fiscal vinculada localizada na integração.
+          </p>
+          <SummaryCard
+            label="Resumo"
+            value={invoicing.hasInvoice ? "Indício de NF sem detalhes no raw" : "Sem NF"}
+          />
+        </div>
+      );
+    }
     return (
-      <div className="space-y-3" data-testid="sales-order-intelligence-invoicing">
-        <SummaryCard
-          label="Notas vinculadas"
-          value={
-            invoicing.invoiceNumbers.length > 0
-              ? invoicing.invoiceNumbers.join(", ")
-              : "Nenhuma NF processada"
-          }
-        />
-        <SummaryCard
-          label="Primeira emissão"
-          value={formatSalesOrderDate(invoicing.firstInvoiceDate ?? null)}
-        />
-        <SummaryCard
-          label="Última emissão"
-          value={formatSalesOrderDate(invoicing.lastInvoiceDate ?? null)}
-        />
-        <SummaryCard label="Valor faturado" value={formatCurrency(invoicing.invoicedAmount ?? 0)} />
-        <SummaryCard label="Timing" value={timingLabel} />
-        <SummaryCard label="Parcial/total" value={partialOrTotal} />
-        <SummaryCard
-          label="% faturado"
-          value={formatSalesOrderPercent(invoicing.invoicedPercent)}
-        />
+      <div className="overflow-x-auto space-y-3" data-testid="sales-order-intelligence-invoicing">
+        <table className="w-full text-left text-xs">
+          <thead className="border-b border-border bg-accent/40">
+            <tr>
+              <th className="p-2 font-semibold">NF</th>
+              <th className="p-2 font-semibold">Série</th>
+              <th className="p-2 font-semibold">Chave</th>
+              <th className="p-2 font-semibold">Emissão</th>
+              <th className="p-2 font-semibold">Processamento</th>
+              <th className="p-2 font-semibold text-right">Valor</th>
+              <th className="p-2 font-semibold">Status</th>
+              <th className="p-2 font-semibold">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invoices.map((inv) => (
+              <React.Fragment key={String(inv.id ?? inv.number)}>
+                <tr className="border-b border-border/60">
+                  <td className="p-2">{inv.number ?? "Não informado"}</td>
+                  <td className="p-2">{inv.series ?? "—"}</td>
+                  <td className="p-2 max-w-[8rem] truncate" title={inv.accessKey ?? undefined}>
+                    {inv.accessKey ?? "Não informado"}
+                  </td>
+                  <td className="p-2">{formatSalesOrderDate(inv.issueDate)}</td>
+                  <td className="p-2">{formatSalesOrderDate(inv.processingDate)}</td>
+                  <td className="p-2 text-right tabular-nums">
+                    {inv.totalValue != null ? formatCurrency(inv.totalValue) : "—"}
+                  </td>
+                  <td className="p-2">{inv.status ?? "—"}</td>
+                  <td className="p-2">
+                    <div className="flex flex-col gap-1">
+                      {inv.links.map((link) =>
+                        link.type === "copy" ? (
+                          <button
+                            key={link.label}
+                            type="button"
+                            className="text-left text-primary underline text-[11px]"
+                            onClick={() => void navigator.clipboard?.writeText(link.href)}
+                          >
+                            {link.label}
+                          </button>
+                        ) : (
+                          <a
+                            key={link.label}
+                            href={link.href}
+                            className="text-primary underline text-[11px]"
+                          >
+                            {link.label}
+                          </a>
+                        )
+                      )}
+                    </div>
+                  </td>
+                </tr>
+                <tr className="border-b border-border/40 bg-muted/20">
+                  <td colSpan={8} className="p-2">
+                    <CollapsibleJson title="Ver dados raw da NF" data={inv.rawSummary ?? {}} />
+                  </td>
+                </tr>
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
   }
 
-  if (tab === "risks") {
+  if (tab === "nomus-data") {
     return (
-      <div className="space-y-3" data-testid="sales-order-intelligence-risks">
-        {risks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum risco identificado no momento.</p>
+      <div className="space-y-3" data-testid="sales-order-intelligence-nomus-data">
+        {!rawData.orderRawAvailable ? (
+          <p className="text-sm text-muted-foreground">
+            Dados brutos da integração não disponíveis para este pedido.
+          </p>
         ) : (
-          risks.map((risk) => (
-            <div
-              key={risk.code}
-              className={cn(
-                "rounded-lg border px-3 py-3",
-                risk.severity === "high"
-                  ? "border-red-200 bg-red-50"
-                  : risk.severity === "medium"
-                    ? "border-amber-200 bg-amber-50"
-                    : "border-slate-200 bg-slate-50"
-              )}
-            >
-              <div className="flex items-start gap-2">
-                <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold">{risk.title}</p>
-                  <p className="text-xs mt-1">{risk.description}</p>
-                  <p className="text-xs mt-2 font-medium">Ação: {risk.suggestedAction}</p>
-                </div>
-              </div>
+          <>
+            <div>
+              <h3 className="text-xs font-bold uppercase text-muted-foreground">
+                Chaves principais do raw
+              </h3>
+              <p className="mt-1 text-xs break-words">{rawData.orderRawKeys.join(", ")}</p>
             </div>
-          ))
+            {rawData.previewTruncated ? (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                Prévia limitada. Dados completos disponíveis no banco.
+              </p>
+            ) : null}
+            <CollapsibleJson title="Raw do pedido (prévia)" data={rawData.orderRawPreview} />
+            {rawData.itemsRawPreview.map((item, i) => (
+              <div key={`item-raw-${i}`}>
+                <CollapsibleJson title={`Raw do item #${i + 1}`} data={item} />
+              </div>
+            ))}
+            {rawData.invoicesRawPreview.map((nfe, i) => (
+              <div key={`nfe-raw-${i}`}>
+                <CollapsibleJson title={`Raw da NF #${i + 1}`} data={nfe} />
+              </div>
+            ))}
+          </>
         )}
-        {suggestedActions.length > 0 ? (
-          <div className="pt-2">
+      </div>
+    );
+  }
+
+  if (tab === "rule-audit") {
+    return (
+      <div className="space-y-4" data-testid="sales-order-intelligence-rule-audit">
+        <div>
+          <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2">
+            Passo a passo das regras
+          </h3>
+          <ol className="space-y-2">
+            {lifecycle.ruleTrace.map((entry, index) => (
+              <li
+                key={`${entry.rule}-${index}`}
+                className="rounded-lg border border-border bg-card px-3 py-2 text-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold">
+                    Regra {index + 1}: {entry.rule}
+                  </p>
+                  <SourceBadge source={entry.source} />
+                </div>
+                <p className="mt-1">
+                  Resultado: <span className="font-medium">{entry.result}</span>
+                </p>
+                {entry.evidence ? (
+                  <p className="text-xs text-muted-foreground mt-1">Evidência: {entry.evidence}</p>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+        {risks.length > 0 ? (
+          <div>
             <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2">
-              Ações sugeridas
+              Divergências e alertas
             </h3>
             <ul className="space-y-2">
-              {suggestedActions.map((action) => (
-                <li key={`${action.priority}-${action.label}`} className="text-sm">
-                  <span className="font-semibold">{action.label}:</span> {action.description}
+              {risks.map((risk) => (
+                <li key={risk.code} className="text-sm flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                  <span>
+                    <span className="font-semibold">{risk.title}</span>
+                    <span className="text-muted-foreground"> — {risk.description}</span>
+                  </span>
                 </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        <div>
+          <h3 className="text-xs font-bold uppercase text-muted-foreground">Auditoria</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Gerado em {formatSalesOrderDate(audit.generatedAt)}
+          </p>
+          <p className="text-xs mt-2">Fontes: {audit.sourcesUsed.join(", ")}</p>
+          {audit.missingData.length > 0 ? (
+            <p className="text-xs mt-2 text-amber-800">
+              Ausentes: {audit.missingData.join(", ")}
+            </p>
+          ) : null}
+        </div>
+        {dataQuality.sourceNotes.length > 0 ? (
+          <div>
+            <h3 className="text-xs font-bold uppercase text-muted-foreground">Notas de origem</h3>
+            <ul className="mt-2 list-disc pl-4 text-xs text-muted-foreground space-y-1">
+              {dataQuality.sourceNotes.map((n) => (
+                <li key={n}>{n}</li>
               ))}
             </ul>
           </div>
@@ -385,67 +553,8 @@ function TabPanel({
   }
 
   return (
-    <div className="space-y-3" data-testid="sales-order-intelligence-audit">
-      <div>
-        <h3 className="text-xs font-bold uppercase text-muted-foreground">Fontes de dados</h3>
-        <ul className="mt-2 list-disc pl-4 text-sm space-y-1">
-          <li>SalesOrder — cabeçalho, status e valores do pedido</li>
-          <li>SalesOrderItem — itens persistidos no IndusCost</li>
-          <li>nomusRawResponse.nfes — NF-e processadas no Nomus</li>
-          <li>
-            OP —{" "}
-            {production.dataQuality.source === "nomus_raw"
-              ? "nomusRawResponse (sem modelo Prisma dedicado)"
-              : "não sincronizada/disponível"}
-          </li>
-          <li>nomusRawResponse.itensPedido — quantidades e status por item</li>
-        </ul>
-      </div>
-      <div>
-        <h3 className="text-xs font-bold uppercase text-muted-foreground">Status original Nomus</h3>
-        <p className="text-sm mt-1">{lifecycle.originalStatus ?? "—"}</p>
-      </div>
-      {dataQuality.missingLinks.length > 0 ? (
-        <div>
-          <h3 className="text-xs font-bold uppercase text-muted-foreground">Vínculos ausentes</h3>
-          <ul className="mt-2 space-y-1 text-sm">
-            {dataQuality.missingLinks.map((link) => (
-              <li key={link} className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-                {link === "nota_fiscal" ? "Sem vínculo NF" : "Sem vínculo OP"}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {dataQuality.warnings.length > 0 ? (
-        <div>
-          <h3 className="text-xs font-bold uppercase text-muted-foreground">Avisos de qualidade</h3>
-          <ul className="mt-2 space-y-1 text-sm">
-            {dataQuality.warnings.map((w) => (
-              <li key={w} className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-                {w}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <p className="flex items-center gap-2 text-sm text-emerald-700">
-          <CheckCircle2 className="h-4 w-4" />
-          Sem avisos de qualidade de dados.
-        </p>
-      )}
-      {dataQuality.sourceNotes.length > 0 ? (
-        <div>
-          <h3 className="text-xs font-bold uppercase text-muted-foreground">Notas de origem</h3>
-          <ul className="mt-2 list-disc pl-4 text-xs text-muted-foreground space-y-1">
-            {dataQuality.sourceNotes.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    <div className="space-y-3" data-testid="sales-order-intelligence-audit-fallback">
+      <p className="text-sm text-muted-foreground">Aba não disponível.</p>
     </div>
   );
 }
