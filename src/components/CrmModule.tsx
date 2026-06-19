@@ -103,6 +103,13 @@ import {
   isCrmSellerLinked,
 } from "@/src/lib/modulePermissions";
 import { AccessDenied } from "@/src/components/AccessDenied";
+import { CrmCustomerPortfolioSection } from "@/src/components/crm/CrmCustomerPortfolioSection";
+import type { CrmCommercialIntelResponse } from "@/src/lib/crmCommercialIntelligence";
+import type {
+  CrmCustomerListFilter,
+  CrmCustomerListItem,
+  CrmCustomersListResponse,
+} from "@/src/lib/crmCustomersListTypes";
 
 type SellerDashboardLoadParams = {
   externalSellerId?: number;
@@ -112,35 +119,9 @@ type SellerDashboardLoadParams = {
   dateTo?: string;
 };
 
-/** Cliente normalizado vindo de GET /api/crm/customers. */
-export type CrmCustomerListItem = {
-  id: string;
-  displayName: string;
-  tradeName: string | null;
-  taxId: string;
-  email: string | null;
-  phone: string | null;
-  city: string | null;
-  state: string | null;
-  address: string | null;
-  lastContactAt: string | null;
-  nextFollowUpAt: string | null;
-  contactCount: number;
-};
+export type { CrmCustomerListItem, CrmCustomerListFilter };
 
 export type CrmCustomer = CrmCustomerListItem;
-
-export type CrmCustomerListFilter =
-  | "all"
-  | "withoutContact30"
-  | "withContact30"
-  | "overdueFollowUp"
-  | "upcomingFollowUp7";
-
-type CrmCustomersApiResponse = {
-  customers: CrmCustomerListItem[];
-  pagination: { limit: number; offset: number; returned: number; hasMore: boolean };
-};
 
 export type CrmActivity = {
   id: string;
@@ -1359,31 +1340,6 @@ function CockpitTabs({
   );
 }
 
-function CustomerListBadges({ customer }: { customer: CrmCustomerListItem }) {
-  const hasContact = Boolean(customer.lastContactAt);
-  const hasFutureFollowUp =
-    customer.nextFollowUpAt != null &&
-    parseActivityDate(customer.nextFollowUpAt) > Date.now();
-  return (
-    <div className="flex flex-wrap gap-1.5 mt-2">
-      {!hasContact ? (
-        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">
-          Sem contato
-        </span>
-      ) : (
-        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-900">
-          Com histórico
-        </span>
-      )}
-      {hasFutureFollowUp ? (
-        <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase text-sky-900">
-          Follow-up futuro
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 function ProfileFormField({
   label,
   children,
@@ -1409,14 +1365,6 @@ const modalInputClass =
   "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
 const modalTextareaClass =
   "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
-
-const CRM_FILTER_CHIPS: { value: CrmCustomerListFilter; label: string }[] = [
-  { value: "all", label: "Todos" },
-  { value: "withoutContact30", label: "Sem contato 30d" },
-  { value: "withContact30", label: "Com contato 30d" },
-  { value: "overdueFollowUp", label: "Follow-up atrasado" },
-  { value: "upcomingFollowUp7", label: "Próximos 7d" },
-];
 
 export const CrmModule = () => {
   const [customers, setCustomers] = useState<CrmCustomerListItem[]>([]);
@@ -1462,7 +1410,7 @@ export const CrmModule = () => {
   const [profileForm, setProfileForm] = useState<ProfileFormState>({ ...EMPTY_PROFILE_FORM });
   const [activeCockpitTab, setActiveCockpitTab] = useState<CockpitTab>("timeline");
 
-  const [commercialIntel, setCommercialIntel] = useState<CommercialIntelResponse | null>(null);
+  const [commercialIntel, setCommercialIntel] = useState<CrmCommercialIntelResponse | null>(null);
   const [commercialIntelLoading, setCommercialIntelLoading] = useState(false);
   const [commercialIntelError, setCommercialIntelError] = useState<string | null>(null);
 
@@ -1494,6 +1442,7 @@ export const CrmModule = () => {
   const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
   const [sellerDashboardError, setSellerDashboardError] = useState<string | null>(null);
   const [selectedSellerKey, setSelectedSellerKey] = useState(SELLER_KEY_ALL);
+  const [portfolioSellerKey, setPortfolioSellerKey] = useState(SELLER_KEY_ALL);
   const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
   const [sellerPeriodPreset, setSellerPeriodPreset] = useState<SellerPeriodPreset>("all");
   const [sellerDateFrom, setSellerDateFrom] = useState("");
@@ -1682,7 +1631,7 @@ export const CrmModule = () => {
   }, [buildSellerDashboardParams, loadSellerDashboard, sellerDateFrom, sellerDateTo]);
 
   const loadCrmCustomers = useCallback(
-    async (search: string, filter: CrmCustomerListFilter, offset: number) => {
+    async (search: string, filter: CrmCustomerListFilter, offset: number, sellerKey: string) => {
       setCustomersLoading(true);
       setCustomersError(null);
       try {
@@ -1692,7 +1641,17 @@ export const CrmModule = () => {
         params.set("limit", String(CRM_LIST_LIMIT));
         params.set("offset", String(offset));
         params.set("filter", filter);
-        const data = await fetchJsonOk<CrmCustomersApiResponse>(`/api/crm/customers?${params.toString()}`);
+        if (canFilterAllSellers && sellerKey !== SELLER_KEY_ALL) {
+          const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === sellerKey);
+          if (opt?.sellerIdentityKey?.trim()) {
+            params.set("sellerIdentityKey", opt.sellerIdentityKey.trim());
+          } else if (opt?.externalSellerId !== null && opt?.externalSellerId !== undefined) {
+            params.set("externalSellerId", String(opt.externalSellerId));
+          }
+        }
+        const data = await fetchJsonOk<CrmCustomersListResponse>(
+          `/api/crm/customers?${params.toString()}`
+        );
         const list = Array.isArray(data?.customers) ? data.customers : [];
         setCustomers(list);
         setListHasMore(Boolean(data?.pagination?.hasMore));
@@ -1709,7 +1668,7 @@ export const CrmModule = () => {
         setCustomersLoading(false);
       }
     },
-    []
+    [canFilterAllSellers, sellerOptions]
   );
 
   const loadActivities = useCallback(async (customerId: string) => {
@@ -1753,7 +1712,7 @@ export const CrmModule = () => {
     setCommercialIntelLoading(true);
     setCommercialIntelError(null);
     try {
-      const data = await fetchJsonOk<CommercialIntelResponse>(
+      const data = await fetchJsonOk<CrmCommercialIntelResponse>(
         `/api/crm/customers/${customerId}/commercial-intelligence`
       );
       setCommercialIntel(data);
@@ -1797,13 +1756,14 @@ export const CrmModule = () => {
   useEffect(() => {
     if (!canCrmAny || !canCrmPortfolio || sellerNotLinked) return;
     if (activeCrmManagementTab !== "portfolio") return;
-    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0, portfolioSellerKey);
   }, [
     activeCrmManagementTab,
     canCrmAny,
     canCrmPortfolio,
     crmCustomerFilter,
     loadCrmCustomers,
+    portfolioSellerKey,
     searchApplied,
     sellerNotLinked,
   ]);
@@ -1964,12 +1924,17 @@ export const CrmModule = () => {
     e.preventDefault();
     const q = searchInput.trim();
     setSearchApplied(q);
-    void loadCrmCustomers(q, crmCustomerFilter, 0);
+    void loadCrmCustomers(q, crmCustomerFilter, 0, portfolioSellerKey);
   };
 
   const applyCustomerFilter = (next: CrmCustomerListFilter) => {
     setCrmCustomerFilter(next);
-    void loadCrmCustomers(searchApplied, next, 0);
+    void loadCrmCustomers(searchApplied, next, 0, portfolioSellerKey);
+  };
+
+  const handlePortfolioSellerChange = (key: string) => {
+    setPortfolioSellerKey(key);
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0, key);
   };
 
   const selectCustomerById = useCallback(
@@ -1991,6 +1956,11 @@ export const CrmModule = () => {
           lastContactAt: null,
           nextFollowUpAt: null,
           contactCount: 0,
+          primarySellerResponsible: null,
+          primaryExternalSellerId: null,
+          hasPurchaseHistory: false,
+          hasOpenPortfolio: false,
+          hasOverdueFollowUp: false,
         };
         setCustomers((prev) => (prev.some((c) => c.id === customerId) ? prev : [stub, ...prev]));
         setSelectedId(customerId);
@@ -2054,7 +2024,7 @@ export const CrmModule = () => {
       await loadActivities(selectedId);
       await loadCommercialIntel(selectedId);
       if (canCrmGeneral) await loadManagementDashboard();
-      await loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
+      await loadCrmCustomers(searchApplied, crmCustomerFilter, 0, portfolioSellerKey);
     } catch (err) {
       setModalError(err instanceof Error ? err.message : "Falha ao salvar o contato.");
     } finally {
@@ -2075,7 +2045,7 @@ export const CrmModule = () => {
       if (selectedId) await loadActivities(selectedId);
       if (selectedId) await loadCommercialIntel(selectedId);
       if (canCrmGeneral) await loadManagementDashboard();
-      await loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
+      await loadCrmCustomers(searchApplied, crmCustomerFilter, 0, portfolioSellerKey);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Não foi possível atualizar o contato.");
     }
@@ -2115,6 +2085,35 @@ export const CrmModule = () => {
 
   const showCustomerPortfolioGrid =
     activeCrmManagementTab === "portfolio" && canCrmPortfolio && !sellerNotLinked;
+
+  const portfolioScopeLabel = useMemo(() => {
+    if (isOwnSellerOnly) {
+      const name = auth.authUser?.sellerResponsibleName?.trim();
+      return name
+        ? `Escopo: seus clientes (${name})`
+        : "Escopo: clientes vinculados ao seu usuário.";
+    }
+    if (portfolioSellerKey === SELLER_KEY_ALL) {
+      return "Escopo: todos os clientes conforme seu perfil de acesso.";
+    }
+    const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === portfolioSellerKey);
+    if (opt) return `Escopo: clientes de ${formatSellerOptionLabel(opt)}`;
+    return "Escopo: filtro de vendedor ativo.";
+  }, [auth.authUser?.sellerResponsibleName, isOwnSellerOnly, portfolioSellerKey, sellerOptions]);
+
+  const portfolioFormatters = useMemo(
+    () => ({
+      formatDateShortPt,
+      formatDateTimePt,
+      formatIntelCurrency,
+      formatCommercialStatusLabel,
+      displayLine,
+      getCustomerDisplayName,
+      getCustomerTaxId,
+      formatCityState,
+    }),
+    []
+  );
 
   const heroTemperatureLabel = heroTemperature ? displayLine(heroTemperature) : "—";
   const heroChannelLabel = heroChannel ? displayLine(heroChannel) : "—";
@@ -2214,265 +2213,49 @@ export const CrmModule = () => {
       </section>
 
       {showCustomerPortfolioGrid ? (
-      <section className="space-y-6" aria-label="Carteira de clientes">
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-primary/10 p-2.5 text-primary shrink-0">
-            <Users className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-foreground">Carteira de Clientes</h3>
-            <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-              Busque, filtre e gerencie o relacionamento comercial. Selecione um cliente para abrir o
-              cockpit com histórico, agenda, oportunidades e observações.
-            </p>
-          </div>
-        </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(320px,400px)_minmax(0,1fr)]">
-        <aside className="min-w-0">
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5 xl:sticky xl:top-4">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Lista da carteira</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {isOwnSellerOnly
-                  ? "Clientes vinculados ao seu usuário."
-                  : "Todos os clientes no escopo do seu perfil."}
-              </p>
-            </div>
-            <form onSubmit={handleSearch} className="space-y-3">
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Buscar
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Buscar por nome, fantasia, CNPJ, e-mail ou telefone..."
-                  className="w-full pl-11 pr-3 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
-              >
-                <Search className="h-4 w-4" />
-                Buscar
-              </button>
-            </form>
-
-            <div className="space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Filtros rápidos
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {CRM_FILTER_CHIPS.map((chip) => (
-                  <button
-                    key={chip.value}
-                    type="button"
-                    onClick={() => applyCustomerFilter(chip.value)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
-                      crmCustomerFilter === chip.value
-                        ? "border-primary bg-primary/15 text-primary ring-2 ring-primary/25 shadow-sm"
-                        : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    )}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {customersLoading ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                Buscando clientes…
-              </div>
-            ) : customersError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                {customersError}
-              </div>
-            ) : customers.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
-                <p className="text-sm font-semibold text-foreground">Nenhum cliente encontrado</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Nenhum cliente encontrado para os filtros informados.
-                </p>
-              </div>
-            ) : (
-              <ul className="space-y-2 max-h-[min(720px,75vh)] overflow-y-auto pr-1">
-                {customers.map((c) => {
-                  const active = c.id === selectedId;
-                  return (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(c.id)}
-                        className={cn(
-                          "w-full text-left rounded-xl border px-4 py-3.5 transition-all",
-                          active
-                            ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/20"
-                            : "border-border/80 bg-background hover:border-primary/30 hover:bg-accent/40"
-                        )}
-                      >
-                        <p className="font-semibold text-sm text-foreground leading-snug line-clamp-2">
-                          {getCustomerDisplayName(c)}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1 tabular-nums">
-                          {getCustomerTaxId(c) !== "—" ? getCustomerTaxId(c) : "Documento não informado"}
-                        </p>
-                        {formatCityState(c.city, c.state) !== "—" ? (
-                          <p className="text-xs text-muted-foreground mt-1">{formatCityState(c.city, c.state)}</p>
-                        ) : null}
-                        <p className="text-[11px] text-muted-foreground mt-2">
-                          Último contato:{" "}
-                          <span className="font-medium text-foreground">
-                            {formatDateShortPt(c.lastContactAt)}
-                          </span>
-                        </p>
-                        <CustomerListBadges customer={c} />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {!customersLoading && !customersError && listHasMore ? (
-              <p className="text-[11px] text-muted-foreground text-center pt-1">
-                Há mais resultados. Refine a busca ou use filtros.
-              </p>
-            ) : null}
-          </div>
-        </aside>
-
-        <main className="space-y-6 min-w-0">
-          {!selectedCustomer ? (
-            <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-12 text-center">
-              <UserCircle className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-              <p className="text-base font-semibold text-foreground">Selecione um cliente da carteira</p>
-              <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-                Selecione um cliente da carteira para visualizar o cockpit comercial.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="rounded-2xl border border-border bg-card p-6 sm:p-8 shadow-sm space-y-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex items-start gap-4 min-w-0">
-                    <div className="rounded-xl bg-primary/10 p-3 text-primary shrink-0">
-                      <Building2 className="h-6 w-6" />
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <h2 className="text-2xl sm:text-3xl font-bold leading-tight break-words text-foreground">
-                        {getCustomerDisplayName(selectedCustomer)}
-                      </h2>
-                      {strField(selectedCustomer.tradeName) ? (
-                        <p className="text-sm text-muted-foreground">
-                          Fantasia: {displayLine(selectedCustomer.tradeName)}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 shrink-0">
-                    {selectedId ? (
-                      <Link
-                        to={buildCustomerIntelligencePath(selectedId)}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/15"
-                      >
-                        <Sparkles className="h-4 w-4" />
-                        Inteligência
-                      </Link>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={openModal}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Novo contato
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openProfileModal}
-                      disabled={profileLoading}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-semibold hover:bg-accent disabled:opacity-60"
-                    >
-                      <Pencil className="h-4 w-4" />
-                      {selectedCustomerProfile ? "Editar perfil" : "Criar perfil"}
-                    </button>
-                  </div>
-                </div>
-
-                <dl className="grid gap-4 sm:grid-cols-2 text-sm">
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">CNPJ / CPF</dt>
-                    <dd className="font-semibold mt-1">{getCustomerTaxId(selectedCustomer)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Telefone</dt>
-                    <dd className="font-semibold mt-1 flex items-center gap-1.5">
-                      <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      {displayLine(selectedCustomer.phone)}
-                    </dd>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">E-mail</dt>
-                    <dd className="font-semibold mt-1 flex items-center gap-1.5 break-all">
-                      <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      {displayLine(selectedCustomer.email)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Cidade / UF</dt>
-                    <dd className="font-semibold mt-1 flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      {formatCityState(selectedCustomer.city, selectedCustomer.state)}
-                    </dd>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Endereço</dt>
-                    <dd className="font-semibold mt-1 break-words">{displayLine(selectedCustomer.address)}</dd>
-                  </div>
-                </dl>
-
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 pt-2 border-t border-border">
-                  <StatChip label="Último contato" value={sheetStats.lastContact} icon={History} />
-                  <StatChip label="Próximo follow-up" value={sheetStats.nextFollowUp} icon={CalendarClock} />
-                  <StatChip label="Total de contatos" value={String(sheetStats.total)} icon={MessageSquare} />
-                  <div className="rounded-xl border border-border/80 bg-background/80 p-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                      <Thermometer className="h-4 w-4 shrink-0" />
-                      <span className="text-[11px] font-semibold uppercase tracking-wide">Temperatura</span>
-                    </div>
-                    {heroTemperature ? (
-                      <span
-                        className={cn(
-                          "inline-flex rounded-full border px-2.5 py-1 text-xs font-bold uppercase",
-                          temperatureBadgeClass(heroTemperature)
-                        )}
-                      >
-                        {heroTemperatureLabel}
-                      </span>
-                    ) : (
-                      <p className="text-sm font-bold text-foreground">—</p>
-                    )}
-                  </div>
-                  <StatChip label="Canal preferido" value={heroChannelLabel} icon={Radio} />
-                </div>
-              </div>
-
-              <CommercialIntelBoard
-                loading={commercialIntelLoading}
-                error={commercialIntelError}
-                intel={commercialIntel}
-                onRetry={() => {
-                  if (selectedId) void loadCommercialIntel(selectedId);
-                }}
-              />
-
-              <CockpitTabs active={activeCockpitTab} onChange={setActiveCockpitTab} />
+        <CrmCustomerPortfolioSection
+          isOwnSellerOnly={isOwnSellerOnly}
+          showSellerFilter={canFilterAllSellers}
+          sellerOptions={sellerOptions}
+          portfolioSellerKey={portfolioSellerKey}
+          onPortfolioSellerChange={handlePortfolioSellerChange}
+          scopeLabel={portfolioScopeLabel}
+          searchInput={searchInput}
+          onSearchInputChange={setSearchInput}
+          onSearchSubmit={handleSearch}
+          crmCustomerFilter={crmCustomerFilter}
+          onFilterChange={applyCustomerFilter}
+          customers={customers}
+          customersLoading={customersLoading}
+          customersError={customersError}
+          listHasMore={listHasMore}
+          selectedId={selectedId}
+          onSelectCustomer={setSelectedId}
+          selectedCustomer={selectedCustomer}
+          intel={commercialIntel}
+          intelLoading={commercialIntelLoading}
+          intelError={commercialIntelError}
+          onIntelRetry={() => {
+            if (selectedId) void loadCommercialIntel(selectedId);
+          }}
+          profile={
+            selectedCustomerProfile
+              ? {
+                  commercialTemperature: selectedCustomerProfile.commercialTemperature,
+                  relationshipLevel: selectedCustomerProfile.relationshipLevel,
+                  relationshipNotes: selectedCustomerProfile.relationshipNotes,
+                  preferredChannel: selectedCustomerProfile.preferredChannel,
+                }
+              : null
+          }
+          activities={activities}
+          activitiesLoading={activitiesLoading}
+          intelligencePath={selectedId ? buildCustomerIntelligencePath(selectedId) : "#"}
+          onRegisterContact={openModal}
+          onEditProfile={openProfileModal}
+          formatters={portfolioFormatters}
+        >
+          <CockpitTabs active={activeCockpitTab} onChange={setActiveCockpitTab} />
 
               {activeCockpitTab === "timeline" ? (
                 <section className="space-y-5">
@@ -2632,11 +2415,8 @@ export const CrmModule = () => {
                 </section>
               )}
 
-            </>
-          )}
-        </main>
-      </div>
-      </section>
+
+        </CrmCustomerPortfolioSection>
       ) : null}
 
       {/* Modal perfil de relacionamento */}

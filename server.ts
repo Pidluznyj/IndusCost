@@ -41,6 +41,11 @@ import {
   resolveCrmCommercialAccessScope,
 } from "./src/lib/crmCommercialAccessScope.js";
 import { buildCrmSellerCustomerPortfolioWhere, salesOrderMatchesCrmSellerScope } from "./src/lib/crmCustomerSellerScope.js";
+import {
+  fetchCrmCustomersList,
+  parseCrmCustomerListFilter,
+  parseCrmCustomerListSellerQuery,
+} from "./src/lib/crmCustomersList.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
   applyCommercialActivityProposalToCreate,
@@ -11706,222 +11711,23 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       let offset = Number.parseInt(offsetRaw || "0", 10);
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
 
-      const filterAllowed = new Set([
-        "all",
-        "withContact30",
-        "withoutContact30",
-        "overdueFollowUp",
-        "upcomingFollowUp7",
-      ]);
-      const filter = filterAllowed.has(filterRaw) ? filterRaw : "all";
-
-      const now = new Date();
-      const since30 = new Date(now);
-      since30.setUTCDate(since30.getUTCDate() - 30);
-      const in7 = new Date(now);
-      in7.setUTCDate(in7.getUTCDate() + 7);
-
-      const doneLikeStatuses = [
-        "DONE",
-        "done",
-        "Done",
-        "CLOSED",
-        "closed",
-        "CANCELLED",
-        "Canceled",
-        "CANCELED",
-        "canceled",
-        "cancelled",
-      ];
-
-      let searchWhere: Prisma.CustomerWhereInput | undefined;
-      if (searchRaw.length > 0) {
-        const digits = searchRaw.replace(/\D/g, "");
-        let taxIdIds: string[] = [];
-        if (digits.length >= 2) {
-          const like = `%${digits}%`;
-          taxIdIds = (
-            await prisma.$queryRaw<{ id: string }[]>(
-              Prisma.sql`
-                SELECT c."id"
-                FROM "Customer" c
-                WHERE regexp_replace(COALESCE(c."taxId", ''), '[^0-9]', '', 'g') LIKE ${like}
-              `
+      const filter = parseCrmCustomerListFilter(filterRaw);
+      const sellerQuery =
+        commercialScope.dataScope === "global"
+          ? parseCrmCustomerListSellerQuery(
+              req.query.externalSellerId,
+              req.query.sellerIdentityKey
             )
-          ).map((r) => r.id);
-        }
-        const ors: Prisma.CustomerWhereInput[] = [
-          { companyName: { contains: searchRaw, mode: "insensitive" } },
-          { tradeName: { contains: searchRaw, mode: "insensitive" } },
-          { email: { contains: searchRaw, mode: "insensitive" } },
-          { phone: { contains: searchRaw, mode: "insensitive" } },
-          { city: { contains: searchRaw, mode: "insensitive" } },
-          { state: { contains: searchRaw, mode: "insensitive" } },
-        ];
-        if (taxIdIds.length > 0) {
-          ors.push({ id: { in: taxIdIds } });
-        }
-        searchWhere = { OR: ors };
-      }
+          : { externalSellerId: null, sellerIdentityKey: null };
 
-      let filterWhere: Prisma.CustomerWhereInput | undefined;
-      if (filter === "withContact30") {
-        filterWhere = {
-          CommercialActivity: {
-            some: {
-              OR: [
-                { AND: [{ contactDate: { not: null } }, { contactDate: { gte: since30 } }] },
-                { AND: [{ contactDate: null }, { createdAt: { gte: since30 } }] },
-              ],
-            },
-          },
-        };
-      } else if (filter === "withoutContact30") {
-        filterWhere = {
-          NOT: {
-            CommercialActivity: {
-              some: {
-                OR: [
-                  { AND: [{ contactDate: { not: null } }, { contactDate: { gte: since30 } }] },
-                  { AND: [{ contactDate: null }, { createdAt: { gte: since30 } }] },
-                ],
-              },
-            },
-          },
-        };
-      } else if (filter === "overdueFollowUp") {
-        filterWhere = {
-          CommercialActivity: {
-            some: {
-              nextActionAt: { not: null, lt: now },
-              status: { notIn: doneLikeStatuses },
-            },
-          },
-        };
-      } else if (filter === "upcomingFollowUp7") {
-        filterWhere = {
-          CommercialActivity: {
-            some: {
-              nextActionAt: { not: null, gte: now, lt: in7 },
-              status: { notIn: doneLikeStatuses },
-            },
-          },
-        };
-      }
-
-      const andParts: Prisma.CustomerWhereInput[] = [];
-      const portfolioWhere = buildCrmSellerCustomerPortfolioWhere(commercialScope);
-      if (portfolioWhere) andParts.push(portfolioWhere);
-      if (filterWhere) andParts.push(filterWhere);
-      if (searchWhere) andParts.push(searchWhere);
-      const where: Prisma.CustomerWhereInput =
-        andParts.length === 0 ? {} : andParts.length === 1 ? andParts[0]! : { AND: andParts };
-
-      const take = limit + 1;
-      const rows = await prisma.customer.findMany({
-        where,
-        orderBy: { companyName: "asc" },
-        skip: offset,
-        take,
-        select: {
-          id: true,
-          companyName: true,
-          tradeName: true,
-          taxId: true,
-          email: true,
-          phone: true,
-          city: true,
-          state: true,
-          address: true,
-        },
+      const payload = await fetchCrmCustomersList(prisma, commercialScope, {
+        search: searchRaw,
+        filter,
+        limit,
+        offset,
+        sellerQuery,
       });
-
-      const hasMore = rows.length > limit;
-      const pageRows = rows.slice(0, limit);
-      const ids = pageRows.map((r) => r.id);
-
-      const isClosedStatus = (status?: string | null) =>
-        ["done", "closed", "cancelled", "canceled"].includes(String(status ?? "").trim().toLowerCase());
-
-      const aggMap = new Map<
-        string,
-        { contactCount: number; lastContactAt: Date | null; nextFollowUpAt: Date | null }
-      >();
-
-      if (ids.length > 0) {
-        const activities = await prisma.commercialActivity.findMany({
-          where: { customerId: { in: ids } },
-          select: {
-            customerId: true,
-            contactDate: true,
-            createdAt: true,
-            nextActionAt: true,
-            status: true,
-          },
-        });
-
-        for (const activity of activities) {
-          const key = activity.customerId;
-          const current = aggMap.get(key) ?? {
-            contactCount: 0,
-            lastContactAt: null as Date | null,
-            nextFollowUpAt: null as Date | null,
-          };
-
-          current.contactCount += 1;
-
-          const effectiveContactDate = activity.contactDate ?? activity.createdAt;
-          if (
-            effectiveContactDate &&
-            (!current.lastContactAt || effectiveContactDate > current.lastContactAt)
-          ) {
-            current.lastContactAt = effectiveContactDate;
-          }
-
-          if (
-            activity.nextActionAt &&
-            activity.nextActionAt > now &&
-            !isClosedStatus(activity.status)
-          ) {
-            if (!current.nextFollowUpAt || activity.nextActionAt < current.nextFollowUpAt) {
-              current.nextFollowUpAt = activity.nextActionAt;
-            }
-          }
-
-          aggMap.set(key, current);
-        }
-      }
-
-      const customers = pageRows.map((c) => {
-        const agg = aggMap.get(c.id);
-        const lastContactAt = agg?.lastContactAt ? agg.lastContactAt.toISOString() : null;
-        const nextFollowUpAt = agg?.nextFollowUpAt ? agg.nextFollowUpAt.toISOString() : null;
-        const contactCount = agg?.contactCount ?? 0;
-        return {
-          id: c.id,
-          displayName: c.companyName,
-          tradeName: c.tradeName ?? null,
-          taxId: c.taxId,
-          email: c.email ?? null,
-          phone: c.phone ?? null,
-          city: c.city ?? null,
-          state: c.state ?? null,
-          address: c.address ?? null,
-          lastContactAt,
-          nextFollowUpAt,
-          contactCount,
-        };
-      });
-
-      res.json({
-        customers,
-        pagination: {
-          limit,
-          offset,
-          returned: customers.length,
-          hasMore,
-        },
-      });
+      res.json(payload);
     } catch (error) {
       console.error("GET /api/crm/customers", error);
       res.status(500).json({ error: "Erro ao buscar clientes para o CRM." });

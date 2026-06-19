@@ -90,10 +90,20 @@ describe("crmCommercialLayout", () => {
 
   it("componentes do cockpit permanecem na carteira", () => {
     const crm = readFileSync(join(process.cwd(), "src/components/CrmModule.tsx"), "utf8");
-    assert.match(crm, /CommercialIntelBoard/);
+    const portfolio = readFileSync(
+      join(process.cwd(), "src/components/crm/CrmCustomerPortfolioSection.tsx"),
+      "utf8"
+    );
+    const cockpit = readFileSync(
+      join(process.cwd(), "src/components/crm/CrmCustomerAccountCockpit.tsx"),
+      "utf8"
+    );
+    assert.match(crm, /CrmCustomerPortfolioSection/);
     assert.match(crm, /CockpitTabs/);
-    assert.match(crm, /CRM_FILTER_CHIPS/);
-    assert.match(crm, /xl:grid-cols-\[minmax\(320px,400px\)_minmax\(0,1fr\)\]/);
+    assert.match(portfolio, /CRM_PORTFOLIO_FILTER_CHIPS/);
+    assert.match(portfolio, /xl:grid-cols-\[minmax\(320px,400px\)_minmax\(0,1fr\)\]/);
+    assert.match(cockpit, /Resumo comercial/);
+    assert.match(cockpit, /Agenda comercial/);
   });
 
   it("nenhum cálculo de KPI foi alterado nos serviços", () => {
