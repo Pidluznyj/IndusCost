@@ -14,6 +14,7 @@ import { getSalesOrderNetValue } from "./crmCommercialOrderRules.js";
 import {
   financeSalesOrdersMetricsAreFinite,
   parseFinanceSalesOrdersFilters,
+  resolveFinanceSalesOrdersPeriodBounds,
   resolveFinanceSalesOrdersYearContext,
   resolveSalesOrderNetAmount,
 } from "./financeSalesOrdersDashboard.js";
@@ -74,6 +75,53 @@ describe("financeSalesOrdersDashboard", () => {
     assert.match(src, /salesOrderInvoicingSql/);
   });
 
+  it("parseFinanceSalesOrdersFilters — status logístico BI", () => {
+    const f = parseFinanceSalesOrdersFilters({
+      year: "2026",
+      logisticStatus: "overduePending",
+    });
+    assert.equal(f.logisticStatus, "overduePending");
+    const invalid = parseFinanceSalesOrdersFilters({ logisticStatus: "invalid" });
+    assert.equal(invalid.logisticStatus, null);
+  });
+
+  it("resolveFinanceSalesOrdersPeriodBounds respeita mês", () => {
+    const monthBounds = resolveFinanceSalesOrdersPeriodBounds({
+      year: 2026,
+      month: 3,
+      company: null,
+      customerId: null,
+      customerSearch: null,
+      sellerName: null,
+      status: null,
+      invoiceStatus: "all",
+      logisticStatus: null,
+    });
+    assert.equal(monthBounds.from.getMonth(), 2);
+    assert.equal(monthBounds.to.getMonth(), 2);
+
+    const yearBounds = resolveFinanceSalesOrdersPeriodBounds({
+      year: 2026,
+      month: null,
+      company: null,
+      customerId: null,
+      customerSearch: null,
+      sellerName: null,
+      status: null,
+      invoiceStatus: "all",
+      logisticStatus: null,
+    });
+    assert.equal(yearBounds.from.getMonth(), 0);
+    assert.equal(yearBounds.to.getMonth(), 11);
+  });
+
+  it("usa extended metrics no service", () => {
+    const src = readFileSync(join(process.cwd(), "src/lib/financeSalesOrdersDashboard.ts"), "utf8");
+    assert.match(src, /buildExtendedMetricsFromOrders/);
+    assert.match(src, /manufacturingStatusBreakdown/);
+    assert.match(src, /logisticStatusBreakdown/);
+  });
+
   it("financeSalesOrdersDashboardPayload tem contrato mínimo válido", () => {
     const payload: FinanceSalesOrdersDashboardPayload = {
       generatedAt: new Date().toISOString(),
@@ -86,10 +134,12 @@ describe("financeSalesOrdersDashboard", () => {
         sellerName: null,
         status: null,
         invoiceStatus: "all",
+        logisticStatus: null,
       },
       summary: {
         selectedYear: 2026,
         selectedMonth: null,
+        totalOrdersAmount: 0,
         monthSalesAmount: 0,
         monthSalesPreviousYearAmount: 0,
         monthSalesGrowthAmount: 0,
@@ -98,14 +148,15 @@ describe("financeSalesOrdersDashboard", () => {
         previousYtdSalesAmount: 0,
         ytdGrowthAmount: 0,
         ytdGrowthPercent: 0,
-        monthTargetAmount: 0,
-        yearTargetAmount: 0,
-        monthAchievementPercent: 0,
-        yearAchievementPercent: 0,
+        monthTargetAmount: null,
+        yearTargetAmount: null,
+        monthTargetConfigured: false,
+        monthAchievementPercent: null,
+        yearAchievementPercent: null,
         monthProjectedAmount: 0,
         yearProjectedAmount: 0,
-        projectedMonthAchievementPercent: 0,
-        projectedYearAchievementPercent: 0,
+        projectedMonthAchievementPercent: null,
+        projectedYearAchievementPercent: null,
         dailyAverageAmount: 0,
         orderCount: 0,
         itemCount: 0,
@@ -129,7 +180,12 @@ describe("financeSalesOrdersDashboard", () => {
       })),
       realizedProjected: [],
       topCustomers: [],
+      topSellers: [],
       statusBreakdown: [],
+      manufacturingStatusBreakdown: [],
+      logisticStatusBreakdown: [],
+      criticalOrders: [],
+      openPortfolioEvolution: [],
       portfolioBreakdown: {
         notInvoicedAmount: 0,
         notInvoicedCount: 0,
@@ -149,8 +205,12 @@ describe("financeSalesOrdersDashboard", () => {
         excludedErrorOrdersCount: 0,
         missingIssueDateCount: 0,
         missingCustomerCount: 0,
-        targetDerived: true,
+        targetConfigured: false,
+        targetDerived: false,
         targetRule: "test",
+        lastNomusSyncAt: null,
+        calculationRules: [],
+        openPortfolioEvolutionNote: "test",
       },
     };
     assert.equal(payload.monthlyComparison.length, 12);
@@ -176,7 +236,7 @@ describe("financeSalesOrdersDashboard", () => {
 
   it("resolveFinanceSalesOrdersYearContext ajusta mês", () => {
     const ctx = resolveFinanceSalesOrdersYearContext(
-      { year: 2026, month: 3, company: null, customerId: null, customerSearch: null, sellerName: null, status: null, invoiceStatus: "all" },
+      { year: 2026, month: 3, company: null, customerId: null, customerSearch: null, sellerName: null, status: null, invoiceStatus: "all", logisticStatus: null },
       new Date(2026, 5, 15)
     );
     assert.equal(ctx.ytdMonthLimit, 3);
@@ -194,6 +254,7 @@ describe("financeSalesOrdersDashboard", () => {
       summary: {
         selectedYear: 2026,
         selectedMonth: 6,
+        totalOrdersAmount: 1000,
         monthSalesAmount: 1000,
         monthSalesPreviousYearAmount: 800,
         monthSalesGrowthAmount: 200,
@@ -202,14 +263,15 @@ describe("financeSalesOrdersDashboard", () => {
         previousYtdSalesAmount: 4000,
         ytdGrowthAmount: 1000,
         ytdGrowthPercent: 25,
-        monthTargetAmount: 1040,
-        yearTargetAmount: 5200,
-        monthAchievementPercent: 96,
-        yearAchievementPercent: 96,
+        monthTargetAmount: null,
+        yearTargetAmount: null,
+        monthTargetConfigured: false,
+        monthAchievementPercent: null,
+        yearAchievementPercent: null,
         monthProjectedAmount: 1100,
         yearProjectedAmount: 6000,
-        projectedMonthAchievementPercent: 105,
-        projectedYearAchievementPercent: 115,
+        projectedMonthAchievementPercent: null,
+        projectedYearAchievementPercent: null,
         dailyAverageAmount: 100,
         orderCount: 10,
         itemCount: 50,
@@ -234,6 +296,11 @@ describe("financeSalesOrdersDashboard", () => {
         },
       ],
       topCustomers: [{ customerId: "1", customerName: "A", amount: 100, orderCount: 1, averageTicketAmount: 100, sharePercent: 100 }],
+      topSellers: [{ sellerName: "Ana", amount: 100, orderCount: 1, averageTicketAmount: 100, sharePercent: 100 }],
+      manufacturingStatusBreakdown: [{ code: "2", label: "Liberado", amount: 100, orderCount: 1 }],
+      logisticStatusBreakdown: [],
+      criticalOrders: [],
+      openPortfolioEvolution: [],
     } as never;
     assert.equal(financeSalesOrdersMetricsAreFinite(payload), true);
   });

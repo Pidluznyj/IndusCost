@@ -1,4 +1,5 @@
 import type { DashboardChartSeriesConfig, SalesOrdersDashboardTab } from "./executiveDashboardTypes.js";
+import type { BiLogisticStatusCardId } from "./salesOrderLogisticStatus.js";
 
 export type FinanceSalesOrdersInvoiceStatus = "all" | "with_invoice" | "without_invoice";
 
@@ -11,11 +12,15 @@ export type FinanceSalesOrdersDashboardFilters = {
   sellerName: string | null;
   status: string | null;
   invoiceStatus: FinanceSalesOrdersInvoiceStatus;
+  logisticStatus: BiLogisticStatusCardId | null;
 };
 
 export type FinanceSalesOrdersDashboardSummary = {
   selectedYear: number;
   selectedMonth: number | null;
+
+  /** Valor total de pedidos no período filtrado (issueDate). */
+  totalOrdersAmount: number;
 
   monthSalesAmount: number;
   monthSalesPreviousYearAmount: number;
@@ -29,6 +34,7 @@ export type FinanceSalesOrdersDashboardSummary = {
 
   monthTargetAmount: number | null;
   yearTargetAmount: number | null;
+  monthTargetConfigured: boolean;
 
   monthAchievementPercent: number | null;
   yearAchievementPercent: number | null;
@@ -39,6 +45,7 @@ export type FinanceSalesOrdersDashboardSummary = {
   projectedMonthAchievementPercent: number | null;
   projectedYearAchievementPercent: number | null;
 
+  /** Média diária: dias úteis decorridos no YTD (seg–sex, sem feriados). */
   dailyAverageAmount: number | null;
   orderCount: number;
   itemCount: number;
@@ -84,11 +91,56 @@ export type FinanceSalesOrdersTopCustomerRow = {
   sharePercent: number | null;
 };
 
+export type FinanceSalesOrdersTopSellerRow = {
+  sellerName: string;
+  amount: number;
+  orderCount: number;
+  averageTicketAmount: number | null;
+  sharePercent: number | null;
+};
+
 export type FinanceSalesOrdersStatusBreakdownRow = {
   status: string;
   label: string;
   amount: number;
   orderCount: number;
+};
+
+export type FinanceSalesOrdersManufacturingStatusBreakdownRow = {
+  code: string;
+  label: string;
+  amount: number;
+  orderCount: number;
+};
+
+export type FinanceSalesOrdersLogisticStatusBreakdownRow = {
+  cardId: BiLogisticStatusCardId;
+  label: string;
+  amount: number;
+  orderCount: number;
+  sharePercent: number | null;
+  hint: string;
+};
+
+export type FinanceSalesOrdersCriticalOrderRow = {
+  orderId: string;
+  orderCode: string;
+  customerName: string;
+  sellerName: string;
+  amount: number;
+  logisticStatusLabel: string;
+  logisticStatusCardId: BiLogisticStatusCardId;
+  hasProcessedInvoice: boolean;
+  expectedDeliveryDate: string | null;
+  reasons: Array<"overdue_pending" | "high_open_portfolio" | "without_invoice" | "review_data">;
+};
+
+export type FinanceSalesOrdersOpenPortfolioEvolutionRow = {
+  month: number;
+  monthLabel: string;
+  openAmount: number;
+  openCount: number;
+  issuedAmount: number;
 };
 
 export type FinanceSalesOrdersPortfolioBreakdown = {
@@ -109,8 +161,12 @@ export type FinanceSalesOrdersDataQuality = {
   excludedErrorOrdersCount: number;
   missingIssueDateCount: number;
   missingCustomerCount: number;
+  targetConfigured: boolean;
   targetDerived: boolean;
   targetRule: string;
+  lastNomusSyncAt: string | null;
+  calculationRules: string[];
+  openPortfolioEvolutionNote: string;
 };
 
 export type FinanceSalesOrdersDashboardPayload = {
@@ -120,7 +176,12 @@ export type FinanceSalesOrdersDashboardPayload = {
   monthlyComparison: FinanceSalesOrdersMonthlyComparisonRow[];
   realizedProjected: FinanceSalesOrdersRealizedProjectedRow[];
   topCustomers: FinanceSalesOrdersTopCustomerRow[];
+  topSellers: FinanceSalesOrdersTopSellerRow[];
   statusBreakdown: FinanceSalesOrdersStatusBreakdownRow[];
+  manufacturingStatusBreakdown: FinanceSalesOrdersManufacturingStatusBreakdownRow[];
+  logisticStatusBreakdown: FinanceSalesOrdersLogisticStatusBreakdownRow[];
+  criticalOrders: FinanceSalesOrdersCriticalOrderRow[];
+  openPortfolioEvolution: FinanceSalesOrdersOpenPortfolioEvolutionRow[];
   portfolioBreakdown: FinanceSalesOrdersPortfolioBreakdown;
   chartSeries: DashboardChartSeriesConfig;
   tab: SalesOrdersDashboardTab;
@@ -140,4 +201,13 @@ export const FINANCE_SALES_ORDERS_MONTH_LABELS = [
   "Out",
   "Nov",
   "Dez",
+] as const;
+
+export const FINANCE_SALES_ORDERS_CALCULATION_RULES = [
+  "Pedido emitido: SalesOrder.issueDate no período filtrado.",
+  "Faturado: nfes.dataProcessamento presente no nomusRawResponse.",
+  "Carteira aberta: pedido válido sem NF processada.",
+  "Status logístico BI: regra Power BI (DataPlanejada vs DataReal / status item 1–3).",
+  "Média diária: valor YTD ÷ dias úteis decorridos (seg–sex, sem feriados).",
+  "Status fabricação: código Nomus 1–6 por item mais pendente do pedido.",
 ] as const;

@@ -143,10 +143,12 @@ describe("financeModuleTabsValidation", () => {
   it("Pedidos de Venda — contrato mínimo finito com dados zerados", () => {
     const payload = {
       summary: {
+        totalOrdersAmount: 0,
         monthSalesAmount: 0,
         ytdSalesAmount: 0,
-        monthTargetAmount: 0,
-        yearTargetAmount: 0,
+        monthTargetAmount: null,
+        yearTargetAmount: null,
+        monthTargetConfigured: false,
         openPortfolioAmount: 0,
         orderCount: 0,
         itemCount: 0,
@@ -160,6 +162,11 @@ describe("financeModuleTabsValidation", () => {
         growthPercent: 0,
       })),
       topCustomers: [],
+      topSellers: [],
+      manufacturingStatusBreakdown: [],
+      logisticStatusBreakdown: [],
+      criticalOrders: [],
+      openPortfolioEvolution: [],
     } as never;
     assert.equal(financeSalesOrdersMetricsAreFinite(payload), true);
   });

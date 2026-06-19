@@ -551,6 +551,11 @@ const ITEM_STATUS_RULES: Array<{ match: RegExp; status: SalesOrderItemNomusStatu
 export const NOMUS_SALES_ORDER_ITEM_STATUS_BY_CODE: Readonly<
   Record<number, SalesOrderItemNomusStatus>
 > = {
+  1: "awaiting_release",
+  2: "released",
+  3: "partially_fulfilled",
+  4: "fully_fulfilled",
+  5: "fulfilled_with_cut",
   6: "cancelled",
 };
 
