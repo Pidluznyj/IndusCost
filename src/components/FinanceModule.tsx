@@ -15,6 +15,8 @@ import { canViewFinanceAccountsReceivable } from "@/src/lib/financeAccountsRecei
 import { canViewFinanceBilling } from "@/src/lib/financeBillingPermissions";
 import { canViewFinanceCashFlow } from "@/src/lib/financeCashFlowPermissions";
 import { canViewFinanceExecutiveReport } from "@/src/lib/financeExecutiveReportPermissions";
+import { canViewFinanceSalesOrders } from "@/src/lib/financeSalesOrdersPermissions";
+import { FinanceSalesOrdersPage } from "@/src/components/finance/FinanceSalesOrdersPage";
 import {
   FINANCE_SECTIONS,
   getFinanceDefaultPath,
@@ -38,12 +40,14 @@ export function FinanceModule() {
   const canViewBilling = canViewFinanceBilling(auth);
   const canViewCashFlow = canViewFinanceCashFlow(auth);
   const canViewExecutiveReport = canViewFinanceExecutiveReport(auth);
+  const canViewSalesOrders = canViewFinanceSalesOrders(auth);
 
   const visibleSections = FINANCE_SECTIONS.filter((section) => {
     if (section.id === "cash-flow") return canViewCashFlow;
     if (section.id === "accounts-receivable") return canViewAccountsReceivable;
     if (section.id === "accounts-payable") return canViewAccountsPayable;
     if (section.id === "billing") return canViewBilling;
+    if (section.id === "sales-orders") return canViewSalesOrders;
     if (section.id === "executive-report") return canViewExecutiveReport;
     return false;
   });
@@ -89,6 +93,13 @@ export function FinanceModule() {
     ) : (
       <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
         Sem permissão para Faturamento.
+      </div>
+    ),
+    "sales-orders": canViewSalesOrders ? (
+      <FinanceSalesOrdersPage />
+    ) : (
+      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
+        Sem permissão para Pedidos de Venda.
       </div>
     ),
     "executive-report": canViewExecutiveReport ? (
@@ -148,6 +159,7 @@ export function FinanceModule() {
         <Route path="accounts-receivable" element={sectionRoutes["accounts-receivable"]} />
         <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
         <Route path="billing" element={sectionRoutes.billing} />
+        <Route path="sales-orders" element={sectionRoutes["sales-orders"]} />
         <Route path="executive-report" element={sectionRoutes["executive-report"]} />
         <Route path="*" element={<FinanceCanonicalRedirect />} />
       </Routes>

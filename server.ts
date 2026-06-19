@@ -120,6 +120,7 @@ import { registerNomusAccountsPayableRoutes } from "./src/lib/nomusAccountsPayab
 import { registerFinanceAccountsReceivableRoutes } from "./src/lib/financeAccountsReceivableRoutes.js";
 import { registerFinanceAccountsPayableRoutes } from "./src/lib/financeAccountsPayableRoutes.js";
 import { registerFinanceBillingRoutes } from "./src/lib/financeBillingRoutes.js";
+import { registerFinanceSalesOrdersRoutes } from "./src/lib/financeSalesOrdersRoutes.js";
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
@@ -13283,6 +13284,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
+  });
+
+  registerFinanceSalesOrdersRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
   });
 
   registerFinanceCashFlowRoutes(app, {
