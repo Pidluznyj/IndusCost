@@ -212,6 +212,13 @@ function collectRiskCodes(
   lifecycle: SalesOrderLifecycleSummary,
   items: EnrichedLifecycleItem[]
 ): string[] {
+  if (
+    lifecycle.operationalStatus === "cancelled" ||
+    lifecycle.operationalStatus === "fully_returned"
+  ) {
+    return [];
+  }
+
   const codes = new Set<string>(lifecycle.riskFlags);
 
   if (
@@ -260,6 +267,27 @@ function buildSuggestedActions(
   risks: SalesOrderIntelligenceRisk[],
   lifecycle: SalesOrderLifecycleSummary
 ): SalesOrderIntelligenceAction[] {
+  if (lifecycle.operationalStatus === "cancelled") {
+    return [
+      {
+        priority: 1,
+        label: "Nenhuma ação necessária",
+        description: "Pedido cancelado.",
+        actionType: "none",
+      },
+    ];
+  }
+  if (lifecycle.operationalStatus === "fully_returned") {
+    return [
+      {
+        priority: 1,
+        label: "Nenhuma ação necessária",
+        description: "Pedido devolvido totalmente.",
+        actionType: "none",
+      },
+    ];
+  }
+
   const actions: SalesOrderIntelligenceAction[] = [];
   let priority = 1;
   for (const risk of risks) {

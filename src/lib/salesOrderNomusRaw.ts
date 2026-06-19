@@ -66,7 +66,15 @@ const SALES_ORDER_RAW_FIELD_ALIASES: Record<string, readonly string[]> = {
 };
 
 const SALES_ORDER_ITEM_RAW_FIELD_ALIASES: Record<string, readonly string[]> = {
-  status: ["status", "situacao", "situacaoItem", "statusItem"],
+  status: [
+    "status",
+    "situacao",
+    "situacaoItem",
+    "statusItem",
+    "descricaoStatus",
+    "descricaoStatusItem",
+    "descricao_status",
+  ],
   quantity: ["quantidade", "qtdPedida", "quantidadePedida"],
   quantityFulfilled: ["quantidadeAtendida", "qtdAtendida", "quantidadeAtendimento"],
   quantityInvoiced: ["quantidadeFaturada", "qtdFaturada", "quantidadeNF"],
@@ -190,12 +198,24 @@ function readQuantity(obj: Record<string, unknown>, keys: string[]): number | nu
   return null;
 }
 
+function inferCancelledStatusFromQuantities(raw: Record<string, unknown>): string | null {
+  const ordered = readQuantity(raw, ["quantidade", "qtdPedida", "quantidadePedida"]);
+  const cancelled = readQuantity(raw, ["quantidadeCancelada", "qtdCancelada"]);
+  if (ordered != null && cancelled != null && ordered > 0 && cancelled >= ordered) {
+    return "Cancelado";
+  }
+  return null;
+}
+
 function mapRawItem(raw: Record<string, unknown>): NomusRawItem {
+  const status =
+    asString(extractSalesOrderItemRawField(raw, "status")) ??
+    inferCancelledStatusFromQuantities(raw);
   return {
     item: asNumber(raw.item) ?? asString(raw.item),
     idProduto: asNumber(raw.idProduto),
     codigoProduto: asString(raw.codigoProduto) ?? asString(raw.codigo),
-    status: asString(raw.status) ?? asString(raw.situacao) ?? asString(raw.statusItem),
+    status,
     quantidade: readQuantity(raw, ["quantidade", "qtdPedida", "quantidadePedida"]),
     quantidadeAtendida: readQuantity(raw, [
       "quantidadeAtendida",
@@ -356,7 +376,8 @@ export function matchRawItemToDbItem(
     externalProductId?: number | null;
     skuSnapshot?: string | null;
     productNameSnapshot?: string | null;
-  }
+  },
+  options?: { itemIndex?: number; totalDbItems?: number }
 ): NomusRawItem | null {
   if (rawItems.length === 0) return null;
   if (dbItem.externalProductId != null) {
@@ -379,6 +400,14 @@ export function matchRawItemToDbItem(
     );
     if (byName) return byName;
   }
+  if (
+    options?.itemIndex != null &&
+    options.totalDbItems != null &&
+    options.totalDbItems === rawItems.length
+  ) {
+    return rawItems[options.itemIndex] ?? null;
+  }
+  if (rawItems.length === 1) return rawItems[0];
   return null;
 }
 

@@ -2,6 +2,7 @@ import type {
   SalesOrderCompletionStatus,
   SalesOrderDeadlineStatus,
   SalesOrderItemNomusStatus,
+  SalesOrderOperationalStatus,
   SalesOrderTimelineEventStatus,
 } from "./salesOrderLifecycleTypes.js";
 
@@ -109,8 +110,12 @@ export function formatSalesOrderDate(value: string | null | undefined): string {
 
 export function formatDeadlineBadge(
   status: SalesOrderDeadlineStatus,
-  daysOverdue: number | null
+  daysOverdue: number | null,
+  operationalStatus?: SalesOrderOperationalStatus
 ): string {
+  if (operationalStatus === "cancelled" || operationalStatus === "fully_returned") {
+    return "—";
+  }
   if (status === "on_time") return "No prazo";
   if (status === "due_today") return "Vence hoje";
   if (status === "overdue") {
@@ -125,7 +130,14 @@ export function formatDeadlineBadge(
   return "—";
 }
 
-export function formatInvoiceBadge(hasInvoice: boolean, invoicedPercent: number | null): string {
+export function formatInvoiceBadge(
+  hasInvoice: boolean,
+  invoicedPercent: number | null,
+  operationalStatus?: SalesOrderOperationalStatus
+): string {
+  if (operationalStatus === "cancelled" || operationalStatus === "fully_returned") {
+    return "Não aplicável";
+  }
   if (!hasInvoice) return "Sem NF";
   if (invoicedPercent != null && invoicedPercent >= 99.5) return "NF total";
   if (invoicedPercent != null && invoicedPercent > 0) return "NF parcial";
@@ -135,8 +147,19 @@ export function formatInvoiceBadge(hasInvoice: boolean, invoicedPercent: number 
 export function formatProductionBadge(
   hasOp: boolean,
   isLate: boolean,
-  options?: { finished?: boolean; label?: string | null; status?: string | null }
+  options?: {
+    finished?: boolean;
+    label?: string | null;
+    status?: string | null;
+    operationalStatus?: SalesOrderOperationalStatus;
+  }
 ): string {
+  if (
+    options?.operationalStatus === "cancelled" ||
+    options?.operationalStatus === "fully_returned"
+  ) {
+    return "Não aplicável";
+  }
   if (!hasOp) return "Sem OP";
   if (options?.label) return options.label;
   if (isLate) return "OP atrasada";
@@ -147,7 +170,13 @@ export function formatProductionBadge(
   return "Com OP";
 }
 
-export function formatBillingBadge(billingStatus: string): string {
+export function formatBillingBadge(
+  billingStatus: string,
+  operationalStatus?: SalesOrderOperationalStatus
+): string {
+  if (operationalStatus === "cancelled" || operationalStatus === "fully_returned") {
+    return "Não aplicável";
+  }
   if (billingStatus === "not_invoiced") return "Sem NF";
   if (billingStatus === "partially_invoiced") return "NF parcial";
   if (billingStatus === "fully_invoiced") return "NF total";

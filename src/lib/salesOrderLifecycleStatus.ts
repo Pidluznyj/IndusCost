@@ -114,8 +114,11 @@ function enrichItems(
   productionOrders: ReturnType<typeof extractNomusProductionOrders>,
   hasInvoice: boolean
 ): EnrichedLifecycleItem[] {
-  return input.items.map((item) => {
-    const raw = matchRawItemToDbItem(rawItems, item);
+  return input.items.map((item, itemIndex) => {
+    const raw = matchRawItemToDbItem(rawItems, item, {
+      itemIndex,
+      totalDbItems: input.items.length,
+    });
     const ordered = Math.max(0, decimalToNumber(item.quantity) ?? 0);
     const originalStatus = raw?.status ?? null;
     const normalizedStatus = normalizeSalesOrderItemNomusStatus(originalStatus);
@@ -172,14 +175,33 @@ function deriveBillingStatus(
   return "unknown";
 }
 
+function isOrderFullyCancelled(
+  originalStatus: string,
+  items: EnrichedLifecycleItem[]
+): boolean {
+  return (
+    isCancelledSalesOrderStatus(originalStatus) ||
+    (items.length > 0 && items.every((i) => i.isCancelled))
+  );
+}
+
+function isOrderFullyReturned(items: EnrichedLifecycleItem[]): boolean {
+  return items.length > 0 && items.every((i) => i.normalizedStatus === "fully_returned");
+}
+
+function isTerminalOperationalStatus(status: SalesOrderOperationalStatus): boolean {
+  return status === "cancelled" || status === "fully_returned";
+}
+
 function deriveDeadlineStatus(input: {
   expectedDeliveryDate: Date | null;
   firstInvoiceDate: Date | null;
   referenceDate: Date;
   hasInvoice: boolean;
   isCancelled: boolean;
+  isFullyReturned: boolean;
 }): SalesOrderDeadlineStatus {
-  if (input.isCancelled) return "unknown";
+  if (input.isCancelled || input.isFullyReturned) return "unknown";
   if (!input.expectedDeliveryDate) return "no_due_date";
   const due = startOfLocalDay(input.expectedDeliveryDate);
   const today = startOfLocalDay(input.referenceDate);
@@ -199,6 +221,7 @@ function deriveDeadlineStatus(input: {
 function deriveCompletionStatus(items: EnrichedLifecycleItem[]): SalesOrderCompletionStatus {
   if (items.length === 0) return "unknown";
   if (items.every((i) => i.isCancelled)) return "cancelled";
+  if (items.some((i) => i.isCancelled) && items.some((i) => !i.isCancelled)) return "mixed";
   if (items.every((i) => i.normalizedStatus === "fully_returned")) return "returned";
   if (items.some((i) => i.isReturned)) return "mixed";
   if (items.some((i) => i.hasCut)) return "with_cut";
@@ -278,9 +301,19 @@ function buildRiskFlags(input: {
   hasLinkedProductionOrder: boolean;
   productionOrderLate: boolean;
   requiresProduction: boolean;
+  operationalStatus: SalesOrderOperationalStatus;
 }): SalesOrderRiskFlag[] {
   const flags: SalesOrderRiskFlag[] = [];
-  if (isCancelledSalesOrderStatus(input.originalStatus)) return flags;
+  if (
+    isCancelledSalesOrderStatus(input.originalStatus) ||
+    input.operationalStatus === "cancelled" ||
+    (input.items.length > 0 && input.items.every((i) => i.isCancelled))
+  ) {
+    return flags;
+  }
+  if (isOrderFullyReturned(input.items) || input.operationalStatus === "fully_returned") {
+    return flags;
+  }
 
   if (
     !input.hasInvoice &&
@@ -360,19 +393,21 @@ export function buildSalesOrderLifecycleSummary(
       : null;
 
   const hasCut = items.some((i) => i.hasCut);
+  const orderFullyCancelled = isOrderFullyCancelled(input.originalStatus, items);
+  const orderFullyReturned = isOrderFullyReturned(items);
   const billingStatus = deriveBillingStatus(
     hasInvoice,
     invoicedQuantityTotal,
     orderedQuantityTotal,
     hasCut
   );
-  const isCancelled = isCancelledSalesOrderStatus(input.originalStatus);
   const deadlineStatus = deriveDeadlineStatus({
     expectedDeliveryDate,
     firstInvoiceDate: invoiceMeta.first,
     referenceDate,
     hasInvoice,
-    isCancelled,
+    isCancelled: orderFullyCancelled,
+    isFullyReturned: orderFullyReturned,
   });
   const completionStatus = deriveCompletionStatus(items);
   const operationalStatus = deriveOperationalStatus({
@@ -384,7 +419,12 @@ export function buildSalesOrderLifecycleSummary(
   });
 
   let executive = EXECUTIVE_LABELS[operationalStatus];
-  if (deadlineStatus === "overdue" && !hasInvoice && !isCancelled) {
+  if (
+    deadlineStatus === "overdue" &&
+    !hasInvoice &&
+    !orderFullyCancelled &&
+    !isTerminalOperationalStatus(operationalStatus)
+  ) {
     executive = { label: "Atrasado sem NF", priority: 88 };
   } else if (deadlineStatus === "invoiced_late") {
     executive = { label: "Faturado total com atraso", priority: 82 };
@@ -410,16 +450,17 @@ export function buildSalesOrderLifecycleSummary(
     hasLinkedProductionOrder: productionOrders.length > 0,
     productionOrderLate,
     requiresProduction: input.requiresProduction ?? false,
+    operationalStatus,
   });
 
   const daysUntilDue =
-    expectedDeliveryDate != null
-      ? diffCalendarDays(referenceDate, expectedDeliveryDate)
-      : null;
+    orderFullyCancelled || orderFullyReturned || !expectedDeliveryDate
+      ? null
+      : diffCalendarDays(referenceDate, expectedDeliveryDate);
   const daysOverdue =
-    expectedDeliveryDate != null && daysUntilDue != null && daysUntilDue < 0
-      ? Math.abs(daysUntilDue)
-      : null;
+    orderFullyCancelled || orderFullyReturned || expectedDeliveryDate == null || daysUntilDue == null || daysUntilDue >= 0
+      ? null
+      : Math.abs(daysUntilDue);
   const daysInvoiceEarlyOrLate =
     expectedDeliveryDate && invoiceMeta.first
       ? diffCalendarDays(invoiceMeta.first, expectedDeliveryDate)

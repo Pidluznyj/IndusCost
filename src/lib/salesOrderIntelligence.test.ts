@@ -240,4 +240,39 @@ describe("salesOrderIntelligence", () => {
     const { risks } = buildSalesOrderRisksAndActions({ lifecycle, items });
     assert.ok(risks.some((r) => r.code === "invoice_without_item_progress"));
   });
+
+  it("pedido cancelado não sugere validar faturamento", () => {
+    const { lifecycle, items } = buildSalesOrderLifecycleSummary({
+      salesOrderId: "so-2130",
+      salesOrderNumber: "PD 02130",
+      originalStatus: "SENT_TO_NOMUS",
+      issueDate: new Date(2026, 0, 23),
+      expectedDeliveryDate: new Date(2026, 0, 23),
+      referenceDate: REF,
+      nomusRawResponse: {
+        itensPedido: [
+          {
+            codigoProduto: "630.01AA",
+            descricaoStatus: "Cancelado",
+            quantidade: 1,
+            quantidadeCancelada: 1,
+          },
+        ],
+        nfes: [],
+      },
+      items: [
+        {
+          id: "item-1",
+          externalProductId: 1,
+          skuSnapshot: "630.01AA",
+          productNameSnapshot: "Filtro",
+          quantity: 1,
+        },
+      ],
+    });
+    const { risks, suggestedActions } = buildSalesOrderRisksAndActions({ lifecycle, items });
+    assert.equal(risks.length, 0);
+    assert.equal(suggestedActions[0]?.label, "Nenhuma ação necessária");
+    assert.ok(!suggestedActions.some((a) => a.label === "Validar faturamento"));
+  });
 });

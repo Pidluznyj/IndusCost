@@ -214,4 +214,56 @@ describe("salesOrderManagementDashboard", () => {
     assert.ok(Number.isFinite(cards.openOrders));
     assert.ok(Number.isFinite(cards.withoutProductionOrder));
   });
+
+  it("PD 02130 — gestão mostra cancelado e não entra em aberto/atrasado/sem OP", () => {
+    const cancelled = {
+      id: "so-2130",
+      orderCode: "PD 02130",
+      status: "SENT_TO_NOMUS",
+      issueDate: new Date(2026, 0, 23),
+      expectedDeliveryDate: new Date(2026, 0, 23),
+      totalNetValue: 360,
+      responsible: "Vendedor",
+      companyIssuer: "Empresa",
+      nomusRawResponse: {
+        itensPedido: [
+          {
+            item: 10,
+            codigoProduto: "630.01AA",
+            descricaoStatus: "Cancelado",
+            quantidade: 1,
+            quantidadeCancelada: 1,
+          },
+        ],
+        nfes: [],
+      },
+      Customer: { companyName: "Simone Viana Coelho", tradeName: null, taxId: null },
+      items: [
+        {
+          id: "item-2130",
+          externalProductId: 63001,
+          skuSnapshot: "630.01AA",
+          productNameSnapshot: "Filtro de Água Aqua Vitae CRISTAL",
+          quantity: 1,
+        },
+      ],
+    };
+    const open = orderBase({
+      id: "so-open",
+      expectedDeliveryDate: new Date(2026, 4, 1),
+      nomusRawResponse: { itensPedido: [], nfes: [] },
+    });
+    const { rows, cards } = buildManagementRowsFromOrders([cancelled, open], {}, REF);
+    const pdRow = rows.find((r) => r.orderCode === "PD 02130");
+    assert.ok(pdRow);
+    assert.equal(pdRow.executiveStatusLabel, "Cancelado");
+    assert.equal(pdRow.operationalStatus, "cancelled");
+    assert.equal(pdRow.completionStatus, "cancelled");
+    assert.equal(pdRow.suggestedActionLabel, "Nenhuma ação necessária");
+    assert.ok(!pdRow.riskFlags.includes("overdue_without_invoice"));
+    assert.equal(cards.cancelledOrReturned, 1);
+    assert.equal(cards.openOrders, 1);
+    assert.equal(cards.overdueWithoutInvoice, 1);
+    assert.equal(cards.withoutProductionOrder, 1);
+  });
 });

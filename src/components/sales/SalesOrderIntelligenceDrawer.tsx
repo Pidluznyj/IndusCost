@@ -97,11 +97,19 @@ function TabPanel({
           <SummaryCard label="Status gerencial" value={lifecycle.executiveStatusLabel} />
           <SummaryCard
             label="Prazo"
-            value={formatDeadlineBadge(lifecycle.deadlineStatus, lifecycle.daysOverdue)}
+            value={formatDeadlineBadge(
+              lifecycle.deadlineStatus,
+              lifecycle.daysOverdue,
+              lifecycle.operationalStatus
+            )}
           />
           <SummaryCard
             label="NF"
-            value={formatInvoiceBadge(lifecycle.hasInvoice, lifecycle.invoicedPercent)}
+            value={formatInvoiceBadge(
+              lifecycle.hasInvoice,
+              lifecycle.invoicedPercent,
+              lifecycle.operationalStatus
+            )}
           />
           <SummaryCard
             label="OP"
@@ -110,6 +118,7 @@ function TabPanel({
               lifecycle.productionOrderLate,
               {
                 status: production.productionOrders[0]?.status ?? production.dataQuality.source,
+                operationalStatus: lifecycle.operationalStatus,
               }
             )}
           />

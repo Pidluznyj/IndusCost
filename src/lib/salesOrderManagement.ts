@@ -190,26 +190,39 @@ export function buildSalesOrderManagementCards(
   let delivered = 0;
   let cancelledOrReturned = 0;
 
+  const isTerminal = (lifecycle: (typeof rows)[number]["lifecycle"]) =>
+    lifecycle.operationalStatus === "cancelled" ||
+    lifecycle.operationalStatus === "fully_returned" ||
+    lifecycle.operationalStatus === "partially_returned";
+
   for (const { lifecycle } of rows) {
-    if (
-      lifecycle.operationalStatus !== "cancelled" &&
-      lifecycle.operationalStatus !== "fully_returned" &&
-      lifecycle.operationalStatus !== "partially_returned"
-    ) {
+    if (!isTerminal(lifecycle)) {
       openOrders += 1;
     }
-    if (lifecycle.riskFlags.includes("overdue_without_invoice")) overdueWithoutInvoice += 1;
-    if (lifecycle.deadlineStatus === "invoiced_on_time") invoicedOnTime += 1;
-    if (lifecycle.deadlineStatus === "invoiced_late") invoicedLate += 1;
+    if (!isTerminal(lifecycle) && lifecycle.riskFlags.includes("overdue_without_invoice")) {
+      overdueWithoutInvoice += 1;
+    }
+    if (!isTerminal(lifecycle) && lifecycle.deadlineStatus === "invoiced_on_time") {
+      invoicedOnTime += 1;
+    }
+    if (!isTerminal(lifecycle) && lifecycle.deadlineStatus === "invoiced_late") {
+      invoicedLate += 1;
+    }
     if (
-      lifecycle.completionStatus === "partial" ||
-      lifecycle.completionStatus === "with_cut"
+      !isTerminal(lifecycle) &&
+      (lifecycle.completionStatus === "partial" || lifecycle.completionStatus === "with_cut")
     ) {
       partialOrCut += 1;
     }
-    if (!lifecycle.hasLinkedProductionOrder) withoutProductionOrder += 1;
-    if (lifecycle.productionOrderLate) productionLate += 1;
-    if (lifecycle.operationalStatus === "delivered") delivered += 1;
+    if (!isTerminal(lifecycle) && !lifecycle.hasLinkedProductionOrder) {
+      withoutProductionOrder += 1;
+    }
+    if (!isTerminal(lifecycle) && lifecycle.productionOrderLate) {
+      productionLate += 1;
+    }
+    if (!isTerminal(lifecycle) && lifecycle.operationalStatus === "delivered") {
+      delivered += 1;
+    }
     if (
       lifecycle.operationalStatus === "cancelled" ||
       lifecycle.operationalStatus === "fully_returned" ||

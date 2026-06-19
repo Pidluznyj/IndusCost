@@ -612,9 +612,17 @@ export function SalesOrderManagementPage() {
                     <td className="p-3">
                       <span
                         className={badgeClass("deadline")}
-                        title={formatDeadlineBadge(row.deadlineStatus, row.daysOverdue)}
+                        title={formatDeadlineBadge(
+                          row.deadlineStatus,
+                          row.daysOverdue,
+                          row.operationalStatus
+                        )}
                       >
-                        {formatDeadlineBadge(row.deadlineStatus, row.daysOverdue)}
+                        {formatDeadlineBadge(
+                          row.deadlineStatus,
+                          row.daysOverdue,
+                          row.operationalStatus
+                        )}
                       </span>
                     </td>
                     <td className="p-3">
@@ -623,12 +631,20 @@ export function SalesOrderManagementPage() {
                         title={
                           row.deadlineStatus === "invoiced_late"
                             ? "NF após prazo"
-                            : formatInvoiceBadge(row.hasInvoice, row.invoicedPercent)
+                            : formatInvoiceBadge(
+                                row.hasInvoice,
+                                row.invoicedPercent,
+                                row.operationalStatus
+                              )
                         }
                       >
                         {row.deadlineStatus === "invoiced_late"
                           ? "NF após prazo"
-                          : formatInvoiceBadge(row.hasInvoice, row.invoicedPercent)}
+                          : formatInvoiceBadge(
+                              row.hasInvoice,
+                              row.invoicedPercent,
+                              row.operationalStatus
+                            )}
                       </span>
                     </td>
                     <td className="p-3">
@@ -640,6 +656,7 @@ export function SalesOrderManagementPage() {
                           {
                             label: row.productionOrderLabel,
                             status: row.productionOrderStatus,
+                            operationalStatus: row.operationalStatus,
                           }
                         )}
                       >
@@ -649,6 +666,7 @@ export function SalesOrderManagementPage() {
                           {
                             label: row.productionOrderLabel,
                             status: row.productionOrderStatus,
+                            operationalStatus: row.operationalStatus,
                           }
                         )}
                       </span>

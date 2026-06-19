@@ -361,4 +361,121 @@ describe("salesOrderLifecycleStatus", () => {
     assert.equal(extractSalesOrderRawField(null, "status"), undefined);
     assert.equal(normalizeSalesOrderItemNomusStatus, normalizeSalesOrderItemStatus);
   });
+
+  function pd02130Fixture(overrides: Record<string, unknown> = {}) {
+    return {
+      salesOrderId: "so-2130",
+      salesOrderNumber: "PD 02130",
+      originalStatus: "SENT_TO_NOMUS",
+      issueDate: new Date(2026, 0, 23),
+      expectedDeliveryDate: new Date(2026, 0, 23),
+      referenceDate: new Date(2026, 5, 15),
+      items: [
+        {
+          id: "item-2130",
+          externalProductId: 63001001,
+          skuSnapshot: "630.01AA",
+          productNameSnapshot: "Filtro de Água Aqua Vitae CRISTAL",
+          quantity: 1,
+        },
+      ],
+      nomusRawResponse: {
+        itensPedido: [
+          {
+            item: 10,
+            idProduto: 999999,
+            codigoProduto: "630.01AA",
+            descricaoStatus: "Cancelado",
+            quantidade: 1,
+            quantidadeCancelada: 1,
+          },
+        ],
+        nfes: [],
+      },
+      ...overrides,
+    };
+  }
+
+  it("PD 02130 — item cancelado no Nomus não vira atrasado sem NF", () => {
+    const { lifecycle } = buildSalesOrderLifecycleSummary(pd02130Fixture());
+    assert.equal(lifecycle.operationalStatus, "cancelled");
+    assert.equal(lifecycle.completionStatus, "cancelled");
+    assert.equal(lifecycle.executiveStatusLabel, "Cancelado");
+    assert.ok(!lifecycle.riskFlags.includes("overdue_without_invoice"));
+    assert.ok(!lifecycle.riskFlags.includes("missing_production_order"));
+    assert.equal(lifecycle.daysOverdue, null);
+    assert.equal(lifecycle.deadlineStatus, "unknown");
+  });
+
+  it("pedido cancelado com prazo vencido não mostra atraso", () => {
+    const { lifecycle } = buildSalesOrderLifecycleSummary(
+      baseOrder({
+        expectedDeliveryDate: new Date(2026, 0, 1),
+        referenceDate: new Date(2026, 5, 15),
+        nomusRawResponse: rawItem("Cancelado"),
+      })
+    );
+    assert.equal(lifecycle.operationalStatus, "cancelled");
+    assert.equal(lifecycle.daysOverdue, null);
+    assert.notEqual(lifecycle.executiveStatusLabel, "Atrasado sem NF");
+  });
+
+  it("pedido cancelado sem status textual usa quantidade cancelada", () => {
+    const { lifecycle } = buildSalesOrderLifecycleSummary(
+      baseOrder({
+        nomusRawResponse: {
+          itensPedido: [
+            {
+              idProduto: 100,
+              codigoProduto: "SKU-1",
+              quantidade: 10,
+              quantidadeCancelada: 10,
+            },
+          ],
+        },
+      })
+    );
+    assert.equal(lifecycle.operationalStatus, "cancelled");
+    assert.equal(lifecycle.completionStatus, "cancelled");
+  });
+
+  it("pedido parcialmente cancelado permanece misto", () => {
+    const { lifecycle } = buildSalesOrderLifecycleSummary(
+      baseOrder({
+        items: [
+          {
+            id: "item-1",
+            externalProductId: 100,
+            skuSnapshot: "SKU-1",
+            productNameSnapshot: "Produto A",
+            quantity: 10,
+          },
+          {
+            id: "item-2",
+            externalProductId: 200,
+            skuSnapshot: "SKU-2",
+            productNameSnapshot: "Produto B",
+            quantity: 5,
+          },
+        ],
+        nomusRawResponse: rawTwoItems({ status: "Cancelado" }, { status: "Liberado" }),
+      })
+    );
+    assert.notEqual(lifecycle.operationalStatus, "cancelled");
+    assert.equal(lifecycle.completionStatus, "mixed");
+    assert.ok(lifecycle.riskFlags.includes("mixed_item_status"));
+  });
+
+  it("pedido devolvido totalmente não conta como atrasado sem NF", () => {
+    const { lifecycle } = buildSalesOrderLifecycleSummary(
+      baseOrder({
+        expectedDeliveryDate: new Date(2026, 0, 1),
+        referenceDate: new Date(2026, 5, 15),
+        nomusRawResponse: rawItem("Devolvido totalmente"),
+      })
+    );
+    assert.equal(lifecycle.operationalStatus, "fully_returned");
+    assert.ok(!lifecycle.riskFlags.includes("overdue_without_invoice"));
+    assert.equal(lifecycle.daysOverdue, null);
+  });
 });
