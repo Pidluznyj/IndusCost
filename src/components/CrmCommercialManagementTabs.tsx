@@ -70,6 +70,7 @@ export function getDefaultCrmManagementTab(auth: {
   hasPermission: (p: string) => boolean;
   hasAnyPermission: (ps: string[]) => boolean;
 }): CrmManagementTabId | null {
+  if (canAccessCrmSeller(auth) && !canAccessCrmGeneral(auth)) return "seller";
   if (canAccessCrmGeneral(auth)) return "general";
   if (canAccessCrmSeller(auth)) return "seller";
   return null;

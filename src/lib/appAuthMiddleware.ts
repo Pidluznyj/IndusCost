@@ -4,6 +4,7 @@ import {
   hasPermission,
   type AppAuthContext,
 } from "@/src/lib/appAuth.js";
+import { resolveCrmSellerDashboardQueryScope } from "@/src/lib/crmCommercialAccessScope.js";
 
 export function sendAuthForbidden(res: Response, requiredPermissions: string[]): Response {
   return res.status(403).json({
@@ -127,44 +128,31 @@ export function resolveSellerDashboardScope(
   parseExternalSellerId: (raw: unknown) => number | null,
   parseResponsible: (raw: unknown) => string | null
 ): SellerDashboardScopeResult {
-  if (hasPermission(auth, "crm.seller.all")) {
-    const externalSellerId = parseExternalSellerId(queryExternalSellerId);
-    const responsible = parseResponsible(queryResponsible);
-    return {
-      ok: true,
-      scopeMode: "all",
-      ...sellerDashboardMatchFilters(externalSellerId, responsible),
-    };
-  }
-
-  if (hasPermission(auth, "crm.seller.own")) {
-    const externalSellerId = auth.externalSellerId;
-    const responsible = auth.sellerResponsibleName?.trim() || null;
-    if (externalSellerId == null && !responsible) {
+  const result = resolveCrmSellerDashboardQueryScope(
+    auth,
+    queryExternalSellerId,
+    queryResponsible,
+    parseExternalSellerId,
+    parseResponsible
+  );
+  if (!result.ok || !result.sellerScope) {
+    if (result.ok === false) {
       return {
         ok: false,
-        status: 403,
-        body: {
-          error: "SELLER_NOT_LINKED",
-          message: "Seu usuário não está vinculado a um vendedor Nomus.",
-        },
+        status: result.status,
+        body: result.body,
       };
     }
     return {
-      ok: true,
-      scopeMode: "own",
-      ...sellerDashboardMatchFilters(externalSellerId, responsible),
+      ok: false,
+      status: 403,
+      body: { error: "FORBIDDEN", message: "Acesso negado." },
     };
   }
-
   return {
-    ok: false,
-    status: 403,
-    body: {
-      error: "FORBIDDEN",
-      message:
-        "Permissão insuficiente: é necessário crm.seller.own ou crm.seller.all para consultar o dashboard por vendedor.",
-      requiredPermissions: ["crm.seller.own", "crm.seller.all"],
-    },
+    ok: true,
+    scopeMode: result.sellerScope.scopeMode,
+    externalSellerId: result.sellerScope.externalSellerId,
+    responsible: result.sellerScope.responsible,
   };
 }

@@ -36,6 +36,13 @@ import {
   SellerDashboardBadRequest,
 } from "./src/lib/crmSellerDashboardService.js";
 import {
+  isCustomerInCrmCommercialScope,
+  requireCrmCommercialDataScope,
+  resolveCrmCommercialAccessScope,
+} from "./src/lib/crmCommercialAccessScope.js";
+import { buildCrmSellerCustomerPortfolioWhere, salesOrderMatchesCrmSellerScope } from "./src/lib/crmCustomerSellerScope.js";
+import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
+import {
   applyCommercialActivityProposalToCreate,
   applyCommercialActivityProposalToUpdate,
   applyCommercialActivitySalesOrderToCreate,
@@ -11585,78 +11592,18 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
-  app.get("/api/crm/dashboard/basic", requireAppAuth, requireAnyPermission(["crm.view", "crm.customer_cockpit.view", "customers.view"]), async (_req, res) => {
+  app.get("/api/crm/dashboard/basic", requireAppAuth, requireAnyPermission(["crm.view", "crm.customer_cockpit.view", "customers.view"]), async (req, res) => {
     try {
-      const now = new Date();
-      const since30 = new Date(now);
-      since30.setUTCDate(since30.getUTCDate() - 30);
-      const in7 = new Date(now);
-      in7.setUTCDate(in7.getUTCDate() + 7);
-
-      const [totalCustomersRow] = await prisma.$queryRaw<{ c: bigint }[]>(
-        Prisma.sql`SELECT COUNT(*)::bigint AS c FROM "Customer"`
-      );
-      const totalCustomers = Number(totalCustomersRow?.c ?? 0n);
-
-      const [withContactRow] = await prisma.$queryRaw<{ c: bigint }[]>(
-        Prisma.sql`
-          SELECT COUNT(DISTINCT a."customerId")::bigint AS c
-          FROM "CommercialActivity" a
-          WHERE COALESCE(a."contactDate", a."createdAt") >= ${since30}
-        `
-      );
-      const customersWithContactLast30Days = Number(withContactRow?.c ?? 0n);
-
-      const [withoutContactRow] = await prisma.$queryRaw<{ c: bigint }[]>(
-        Prisma.sql`
-          SELECT COUNT(*)::bigint AS c
-          FROM "Customer" c
-          WHERE NOT EXISTS (
-            SELECT 1
-            FROM "CommercialActivity" a
-            WHERE a."customerId" = c."id"
-              AND COALESCE(a."contactDate", a."createdAt") >= ${since30}
-          )
-        `
-      );
-      const customersWithoutContactLast30Days = Number(withoutContactRow?.c ?? 0n);
-
-      const [overdueRow] = await prisma.$queryRaw<{ c: bigint }[]>(
-        Prisma.sql`
-          SELECT COUNT(*)::bigint AS c
-          FROM "CommercialActivity" a
-          WHERE a."nextActionAt" IS NOT NULL
-            AND a."nextActionAt" < ${now}
-            AND (
-              a."status" IS NULL
-              OR LOWER(TRIM(a."status")) NOT IN ('done', 'closed', 'cancelled', 'canceled')
-            )
-        `
-      );
-      const overdueFollowUps = Number(overdueRow?.c ?? 0n);
-
-      const [upcomingRow] = await prisma.$queryRaw<{ c: bigint }[]>(
-        Prisma.sql`
-          SELECT COUNT(*)::bigint AS c
-          FROM "CommercialActivity" a
-          WHERE a."nextActionAt" IS NOT NULL
-            AND a."nextActionAt" >= ${now}
-            AND a."nextActionAt" < ${in7}
-            AND (
-              a."status" IS NULL
-              OR LOWER(TRIM(a."status")) NOT IN ('done', 'closed', 'cancelled', 'canceled')
-            )
-        `
-      );
-      const upcomingFollowUpsNext7Days = Number(upcomingRow?.c ?? 0n);
-
-      res.json({
-        totalCustomers,
-        customersWithContactLast30Days,
-        customersWithoutContactLast30Days,
-        overdueFollowUps,
-        upcomingFollowUpsNext7Days,
-      });
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) {
+        return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+      }
+      const scopeResult = requireCrmCommercialDataScope(authUser);
+      if (scopeResult.ok === false) {
+        return res.status(scopeResult.status).json(scopeResult.body);
+      }
+      const payload = await buildCrmDashboardBasicResponse(scopeResult.scope);
+      res.json(payload);
     } catch (error) {
       console.error("GET /api/crm/dashboard/basic", error);
       res.status(500).json({ error: "Erro ao montar indicadores do CRM." });
@@ -11675,7 +11622,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   /** CRM Fase 3 — gestão comercial por vendedor (base principal: SalesOrder). */
-  app.get("/api/crm/seller-dashboard", requireAppAuth, requireAnyPermission(["crm.seller.view", "crm.seller.own", "crm.seller.all"]), async (req, res) => {
+  app.get("/api/crm/seller-dashboard", requireAppAuth, requireAnyPermission(["crm.seller.own", "crm.seller.all"]), async (req, res) => {
     const parseExternalSellerIdQuery = (raw: unknown): number | null => {
       if (raw === undefined || raw === null || raw === "") return null;
       const n = Number.parseInt(String(raw).trim(), 10);
@@ -11728,6 +11675,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   /** Busca paginada de clientes para o CRM + agregados de CommercialActivity (sem alterar /api/customers). */
   app.get("/api/crm/customers", requireAppAuth, requireAnyPermission(["crm.view", "crm.customer_cockpit.view", "customers.view"]), async (req, res) => {
     try {
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) {
+        return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+      }
+      const scopeResult = requireCrmCommercialDataScope(authUser);
+      if (scopeResult.ok === false) {
+        return res.status(scopeResult.status).json(scopeResult.body);
+      }
+      const commercialScope = scopeResult.scope;
+
       const searchRaw = typeof req.query.search === "string" ? req.query.search.trim() : "";
       const limitRaw = typeof req.query.limit === "string" ? req.query.limit.trim() : "";
       const offsetRaw = typeof req.query.offset === "string" ? req.query.offset.trim() : "";
@@ -11844,6 +11801,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       }
 
       const andParts: Prisma.CustomerWhereInput[] = [];
+      const portfolioWhere = buildCrmSellerCustomerPortfolioWhere(commercialScope);
+      if (portfolioWhere) andParts.push(portfolioWhere);
       if (filterWhere) andParts.push(filterWhere);
       if (searchWhere) andParts.push(searchWhere);
       const where: Prisma.CustomerWhereInput =
@@ -12141,6 +12100,24 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       return res.status(400).json({ error: "customerId inválido." });
     }
     try {
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) {
+        return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+      }
+      const commercialScope = resolveCrmCommercialAccessScope(authUser);
+      if (commercialScope.dataScope === "none") {
+        return res.status(403).json({
+          error: commercialScope.blockedReason ?? "FORBIDDEN",
+          message: commercialScope.blockedMessage ?? "Acesso negado.",
+        });
+      }
+      if (!(await isCustomerInCrmCommercialScope(customerId, commercialScope))) {
+        return res.status(403).json({
+          error: "FORBIDDEN",
+          message: "Este cliente não pertence à sua carteira comercial.",
+        });
+      }
+
       const customer = await prisma.customer.findUnique({
         where: { id: customerId },
         select: { id: true, companyName: true, taxId: true },
@@ -12171,6 +12148,24 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     const OPEN_NEGOTIATION_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] as const;
 
     try {
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) {
+        return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+      }
+      const commercialScope = resolveCrmCommercialAccessScope(authUser);
+      if (commercialScope.dataScope === "none") {
+        return res.status(403).json({
+          error: commercialScope.blockedReason ?? "FORBIDDEN",
+          message: commercialScope.blockedMessage ?? "Acesso negado.",
+        });
+      }
+      if (!(await isCustomerInCrmCommercialScope(customerId, commercialScope))) {
+        return res.status(403).json({
+          error: "FORBIDDEN",
+          message: "Este cliente não pertence à sua carteira comercial.",
+        });
+      }
+
       const customerRow = await prisma.customer.findUnique({
         where: { id: customerId },
         select: { id: true, companyName: true, tradeName: true, taxId: true },
@@ -12221,6 +12216,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         .filter((order) =>
           salesOrderMatchesCustomer(order.customerId, customerRow, order.Customer?.taxId)
         )
+        .filter((order) =>
+          salesOrderMatchesCrmSellerScope(
+            { externalSellerId: order.externalSellerId, responsible: order.responsible },
+            commercialScope
+          )
+        )
         .map((order) => ({
           id: order.id,
           orderCode: order.orderCode,
@@ -12253,6 +12254,24 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       return res.status(400).json({ error: "customerId inválido." });
     }
     try {
+      const authUser = await getCurrentAppUser(req);
+      if (!authUser) {
+        return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+      }
+      const commercialScope = resolveCrmCommercialAccessScope(authUser);
+      if (commercialScope.dataScope === "none") {
+        return res.status(403).json({
+          error: commercialScope.blockedReason ?? "FORBIDDEN",
+          message: commercialScope.blockedMessage ?? "Acesso negado.",
+        });
+      }
+      if (!(await isCustomerInCrmCommercialScope(customerId, commercialScope))) {
+        return res.status(403).json({
+          error: "FORBIDDEN",
+          message: "Este cliente não pertence à sua carteira comercial.",
+        });
+      }
+
       const rawBody = req.body;
       if (rawBody && typeof rawBody === "object") {
         const approx = JSON.stringify(rawBody).length;

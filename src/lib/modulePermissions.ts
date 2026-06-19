@@ -133,7 +133,9 @@ export function canAccessCrmGeneral(check: PermissionChecker): boolean {
 }
 
 export function canAccessCrmSeller(check: PermissionChecker): boolean {
-  return check.hasAnyPermission(["crm.seller.view", "crm.seller.own", "crm.seller.all"]);
+  return (
+    check.hasPermission("crm.seller.all") || check.hasPermission("crm.seller.own")
+  );
 }
 
 /** Pode filtrar qualquer vendedor na gestão comercial (gestor). */

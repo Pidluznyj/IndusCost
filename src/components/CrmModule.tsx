@@ -1697,8 +1697,33 @@ export const CrmModule = () => {
     isOwnSellerOnly && auth.authUser != null && !isCrmSellerLinked(auth.authUser);
 
   const [activeCrmManagementTab, setActiveCrmManagementTab] = useState<CrmManagementTabId>(
-    () => getDefaultCrmManagementTab(auth) ?? "general"
+    () => getDefaultCrmManagementTab(auth) ?? "seller"
   );
+
+  useEffect(() => {
+    const def = getDefaultCrmManagementTab(auth);
+    if (def) setActiveCrmManagementTab(def);
+  }, [auth.authUser?.id, canCrmGeneral, canCrmSeller]);
+
+  const [sellerDashboard, setSellerDashboard] = useState<SellerDashboardResponse | null>(null);
+  const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
+  const [sellerDashboardError, setSellerDashboardError] = useState<string | null>(null);
+  const [selectedSellerKey, setSelectedSellerKey] = useState(SELLER_KEY_ALL);
+  const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
+  const [sellerPeriodPreset, setSellerPeriodPreset] = useState<SellerPeriodPreset>("all");
+  const [sellerDateFrom, setSellerDateFrom] = useState("");
+  const [sellerDateTo, setSellerDateTo] = useState("");
+  const [activeSellerSubTab, setActiveSellerSubTab] = useState<CrmSellerSubTabId>("dashboard");
+
+  useEffect(() => {
+    if (!isOwnSellerOnly || sellerNotLinked || !auth.authUser) return;
+    const user = auth.authUser;
+    if (user.externalSellerId != null) {
+      setSelectedSellerKey(`id:${user.externalSellerId}`);
+    } else if (user.sellerResponsibleName?.trim()) {
+      setSelectedSellerKey(`r:${user.sellerResponsibleName.trim().toLowerCase()}`);
+    }
+  }, [isOwnSellerOnly, sellerNotLinked, auth.authUser]);
 
   useEffect(() => {
     if (!canCrmAny) return;
@@ -1710,15 +1735,6 @@ export const CrmModule = () => {
       setActiveCrmManagementTab("general");
     }
   }, [activeCrmManagementTab, canCrmAny, canCrmGeneral, canCrmSeller]);
-  const [sellerDashboard, setSellerDashboard] = useState<SellerDashboardResponse | null>(null);
-  const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
-  const [sellerDashboardError, setSellerDashboardError] = useState<string | null>(null);
-  const [selectedSellerKey, setSelectedSellerKey] = useState(SELLER_KEY_ALL);
-  const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
-  const [sellerPeriodPreset, setSellerPeriodPreset] = useState<SellerPeriodPreset>("all");
-  const [sellerDateFrom, setSellerDateFrom] = useState("");
-  const [sellerDateTo, setSellerDateTo] = useState("");
-  const [activeSellerSubTab, setActiveSellerSubTab] = useState<CrmSellerSubTabId>("dashboard");
 
   const loadManagementDashboard = useCallback(async () => {
     setManagementDashboardLoading(true);
@@ -1999,20 +2015,52 @@ export const CrmModule = () => {
   }, []);
 
   useEffect(() => {
-    void loadDashboard();
-    void loadManagementDashboard();
+    if (!canCrmAny) return;
+
+    if (canCrmGeneral) {
+      void loadDashboard();
+      void loadManagementDashboard();
+      void loadAgendaBuckets();
+      if (activeCrmManagementTab === "general") {
+        void loadCrmCustomers("", "all", 0);
+      }
+    } else {
+      setDashboard(null);
+      setDashboardLoading(false);
+      setManagementDashboard(null);
+      setManagementDashboardLoading(false);
+      setAgendaBuckets(EMPTY_AGENDA_BUCKETS);
+      setAgendaLoading(false);
+    }
+
     if (canCrmSeller && !sellerNotLinked) {
       void loadSellerDashboard();
     }
-    void loadAgendaBuckets();
-    void loadCrmCustomers("", "all", 0);
   }, [
+    activeCrmManagementTab,
+    canCrmAny,
+    canCrmGeneral,
     canCrmSeller,
     loadDashboard,
     loadManagementDashboard,
     loadSellerDashboard,
     loadAgendaBuckets,
     loadCrmCustomers,
+    sellerNotLinked,
+  ]);
+
+  useEffect(() => {
+    if (!canCrmAny || !canCrmSeller || sellerNotLinked) return;
+    if (activeCrmManagementTab !== "seller" || activeSellerSubTab !== "portfolio") return;
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, 0);
+  }, [
+    activeCrmManagementTab,
+    activeSellerSubTab,
+    canCrmAny,
+    canCrmSeller,
+    crmCustomerFilter,
+    loadCrmCustomers,
+    searchApplied,
     sellerNotLinked,
   ]);
 
