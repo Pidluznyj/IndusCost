@@ -18,6 +18,14 @@ import {
 } from "@/src/lib/financeExecutiveReportPresentation";
 import { ExecutiveChartShell } from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
+import {
+  EXECUTIVE_CHART_BAR_LABEL_SIZE,
+  EXECUTIVE_CHART_LEGEND,
+  EXECUTIVE_CHART_MARGIN,
+  EXECUTIVE_CHART_X_TICK,
+  EXECUTIVE_CHART_Y_AXIS_WIDTH,
+  EXECUTIVE_CHART_Y_TICK,
+} from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
 
 const OPEN_COLOR = "#2563EB";
 const OVERDUE_COLOR = "#DC2626";
@@ -86,23 +94,24 @@ export function ExecutiveScheduleChart({
       scenarioText={scenarioText}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
+        <BarChart data={data} margin={EXECUTIVE_CHART_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
           <XAxis
             dataKey="name"
-            tick={{ fontSize: 11, fill: "#64748B" }}
+            interval={0}
+            tick={EXECUTIVE_CHART_X_TICK}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
-            tick={{ fontSize: 11, fill: "#64748B" }}
+            tick={EXECUTIVE_CHART_Y_TICK}
             tickFormatter={formatExecutiveReportAxisCurrency}
-            width={88}
+            width={EXECUTIVE_CHART_Y_AXIS_WIDTH}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip content={<ScheduleTooltip />} />
-          <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+          <Legend wrapperStyle={EXECUTIVE_CHART_LEGEND} />
           <Bar dataKey="openAmount" name={openLabel} fill={OPEN_COLOR} radius={[4, 4, 0, 0]} maxBarSize={24}>
             {data.map((entry) => (
               <Cell
@@ -113,7 +122,10 @@ export function ExecutiveScheduleChart({
                 strokeWidth={entry.isCurrentMonth ? 1 : 0}
               />
             ))}
-            <LabelList dataKey="openAmount" content={<ChartBarValueLabel />} />
+            <LabelList
+              dataKey="openAmount"
+              content={<ChartBarValueLabel fontSize={EXECUTIVE_CHART_BAR_LABEL_SIZE} />}
+            />
           </Bar>
           <Bar dataKey="overdueAmount" name={overdueLabel} fill={OVERDUE_COLOR} radius={[4, 4, 0, 0]} maxBarSize={24}>
             {data.map((entry) => (
@@ -123,10 +135,16 @@ export function ExecutiveScheduleChart({
                 opacity={entry.isCurrentMonth ? 1 : 0.85}
               />
             ))}
-            <LabelList dataKey="overdueAmount" content={<ChartBarValueLabel />} />
+            <LabelList
+              dataKey="overdueAmount"
+              content={<ChartBarValueLabel fontSize={EXECUTIVE_CHART_BAR_LABEL_SIZE} />}
+            />
           </Bar>
           <Bar dataKey="upcomingAmount" name="A vencer" fill={UPCOMING_COLOR} radius={[4, 4, 0, 0]} maxBarSize={24}>
-            <LabelList dataKey="upcomingAmount" content={<ChartBarValueLabel />} />
+            <LabelList
+              dataKey="upcomingAmount"
+              content={<ChartBarValueLabel fontSize={EXECUTIVE_CHART_BAR_LABEL_SIZE} />}
+            />
           </Bar>
         </BarChart>
       </ResponsiveContainer>

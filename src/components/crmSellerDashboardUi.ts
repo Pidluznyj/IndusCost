@@ -98,6 +98,9 @@ export function resolveSellerPeriodRange(
 }
 
 export function buildSellerOptionKey(option: SellerOption): string {
+  if (option.sellerIdentityKey?.trim()) {
+    return `n:${option.sellerIdentityKey.trim()}`;
+  }
   if (option.externalSellerId !== null && option.externalSellerId !== undefined) {
     return `id:${option.externalSellerId}`;
   }
@@ -106,11 +109,19 @@ export function buildSellerOptionKey(option: SellerOption): string {
 }
 
 export function formatSellerOptionLabel(option: SellerOption): string {
-  const name = (option.responsible ?? "").trim() || "Sem responsável";
-  if (option.externalSellerId !== null && option.externalSellerId !== undefined) {
-    return `${name} (ID ${option.externalSellerId})`;
+  const name = (option.displayName ?? option.responsible ?? "").trim() || "Sem responsável";
+  return name;
+}
+
+export function formatSellerOptionDetail(option: SellerOption): string | null {
+  if (option.needsReview) return "Revisar dados — nomes conflitantes no mesmo grupo";
+  if ((option.externalSellerIds?.length ?? 0) > 1) {
+    return `IDs Nomus internos: ${option.externalSellerIds!.join(", ")}`;
   }
-  return `${name} (sem ID Nomus)`;
+  if (option.hasOrdersWithoutNomusId && (option.externalSellerIds?.length ?? 0) > 0) {
+    return "Inclui pedidos com e sem ID Nomus";
+  }
+  return null;
 }
 
 export function buildSellerKpiCards(

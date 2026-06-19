@@ -22,6 +22,13 @@ import {
   ExecutiveTargetHint,
 } from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
+import {
+  EXECUTIVE_CHART_BAR_LABEL_SIZE,
+  EXECUTIVE_CHART_MARGIN,
+  EXECUTIVE_CHART_X_TICK_EMPHASIS,
+  EXECUTIVE_CHART_Y_AXIS_WIDTH,
+  EXECUTIVE_CHART_Y_TICK,
+} from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
 
 function RealizedTooltip({
   active,
@@ -88,18 +95,18 @@ export function ExecutiveRealizedProjectedChart({
         scenarioText={scenarioText}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
+          <BarChart data={chartData} margin={EXECUTIVE_CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: 12, fill: "#334155", fontWeight: 600 }}
+              tick={EXECUTIVE_CHART_X_TICK_EMPHASIS}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
-              tick={{ fontSize: 11, fill: "#64748B" }}
+              tick={EXECUTIVE_CHART_Y_TICK}
               tickFormatter={(v) => formatExecutiveReportPresentationCurrency(v)}
-              width={96}
+              width={EXECUTIVE_CHART_Y_AXIS_WIDTH}
               axisLine={false}
               tickLine={false}
             />
@@ -114,7 +121,10 @@ export function ExecutiveRealizedProjectedChart({
                   strokeWidth={entry.highlight ? 2 : 0}
                 />
               ))}
-              <LabelList dataKey="value" content={<ChartBarValueLabel />} />
+              <LabelList
+                dataKey="value"
+                content={<ChartBarValueLabel fontSize={EXECUTIVE_CHART_BAR_LABEL_SIZE} />}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

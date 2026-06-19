@@ -8,9 +8,17 @@ export type SellerDashboardFilters = {
 };
 
 export type SellerOption = {
+  displayName: string;
+  normalizedName: string;
+  sellerIdentityKey: string;
   externalSellerId: number | null;
+  externalSellerIds: number[];
   responsible: string | null;
   ordersCount: number;
+  hasOrdersWithoutNomusId?: boolean;
+  mergedFragmentCount?: number;
+  sourceSellerKeys?: string[];
+  needsReview?: boolean;
 };
 
 export type SellerDashboardTopProduct = {

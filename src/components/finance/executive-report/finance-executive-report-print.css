@@ -184,10 +184,10 @@
   }
 
   .executive-section-intro {
-    font-size: 7.5pt !important;
+    font-size: 8pt !important;
     color: #475569 !important;
     margin: 0 0 2mm !important;
-    line-height: 1.4 !important;
+    line-height: 1.45 !important;
   }
 
   .executive-print-cover {
@@ -280,17 +280,17 @@
   }
 
   .finance-executive-report-section-title {
-    font-size: 13pt !important;
+    font-size: 14pt !important;
     margin-bottom: 1mm !important;
   }
 
   .finance-executive-report-section-subtitle {
-    font-size: 8pt !important;
+    font-size: 8.5pt !important;
     margin-bottom: 2mm !important;
   }
 
   .finance-executive-section-eyebrow {
-    font-size: 6.5pt !important;
+    font-size: 7pt !important;
   }
 
   .executive-kpi-grid,
@@ -314,17 +314,17 @@
   }
 
   .finance-executive-kpi-value {
-    font-size: 12pt !important;
+    font-size: 13pt !important;
     white-space: nowrap;
   }
 
   .finance-executive-kpi-label {
-    font-size: 6pt !important;
+    font-size: 6.5pt !important;
   }
 
   .finance-executive-kpi-hint {
-    font-size: 6pt !important;
-    line-height: 1.3 !important;
+    font-size: 6.5pt !important;
+    line-height: 1.35 !important;
   }
 
   .executive-chart,
@@ -345,30 +345,35 @@
   }
 
   .executive-chart-title {
-    font-size: 9pt !important;
+    font-size: 10pt !important;
   }
 
   .executive-chart-subtitle {
-    font-size: 6.5pt !important;
+    font-size: 7.5pt !important;
   }
 
   .executive-chart-body {
-    height: 58mm !important;
-    min-height: 58mm !important;
-    max-height: 58mm !important;
+    height: 65mm !important;
+    min-height: 65mm !important;
+    max-height: 65mm !important;
     overflow: hidden !important;
   }
 
   .executive-chart-body .recharts-responsive-container,
   .executive-chart-body .recharts-wrapper {
-    height: 58mm !important;
-    max-height: 58mm !important;
+    height: 65mm !important;
+    max-height: 65mm !important;
+  }
+
+  .executive-chart-body .recharts-cartesian-axis-tick text,
+  .executive-chart-body .recharts-legend-item-text {
+    font-size: 8pt !important;
   }
 
   .executive-chart-scenario {
     break-inside: avoid;
     page-break-inside: avoid;
-    font-size: 7pt !important;
+    font-size: 7.5pt !important;
     padding: 1.5mm 2mm !important;
     margin: 1mm 0 1.5mm !important;
   }
@@ -378,7 +383,7 @@
   }
 
   .executive-target-hint {
-    font-size: 6.5pt !important;
+    font-size: 7pt !important;
     margin: 1mm 0 0 !important;
     color: #64748b !important;
   }
@@ -387,15 +392,15 @@
   .finance-executive-reading {
     break-inside: avoid;
     page-break-inside: avoid;
-    font-size: 8pt !important;
+    font-size: 8.5pt !important;
     padding: 2mm 2.5mm !important;
   }
 
   .finance-executive-narrative-bullets {
     margin: 0 !important;
     padding-left: 4mm !important;
-    font-size: 8pt !important;
-    line-height: 1.35 !important;
+    font-size: 8.5pt !important;
+    line-height: 1.4 !important;
   }
 
   .finance-executive-narrative-bullets li {

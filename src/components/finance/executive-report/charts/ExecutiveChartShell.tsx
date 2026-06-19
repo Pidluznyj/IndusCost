@@ -3,8 +3,9 @@ import { cn } from "@/src/lib/utils";
 import { EXECUTIVE_REPORT_EMPTY_MESSAGE } from "@/src/lib/financeExecutiveReportPresentation";
 import { EXECUTIVE_REPORT_AUTO_TARGET_SHORT } from "@/src/lib/financeExecutiveReportUxCopy";
 import { ExecutiveChartScenario } from "@/src/components/finance/executive-report/charts/ExecutiveChartScenario";
+import { EXECUTIVE_CHART_HEIGHT } from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
 
-export const EXECUTIVE_CHART_HEIGHT = 400;
+export { EXECUTIVE_CHART_HEIGHT };
 
 export function ExecutiveChartShell({
   title,

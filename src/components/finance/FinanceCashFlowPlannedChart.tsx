@@ -23,6 +23,15 @@ import {
   ChartBarValueLabel,
   ChartLineValueLabel,
 } from "@/src/components/finance/shared/ChartValueLabel";
+import {
+  EXECUTIVE_CHART_BAR_LABEL_SIZE,
+  EXECUTIVE_CHART_LEGEND,
+  EXECUTIVE_CHART_LINE_LABEL_SIZE,
+  EXECUTIVE_CHART_MARGIN,
+  EXECUTIVE_CHART_X_TICK,
+  EXECUTIVE_CHART_Y_AXIS_WIDTH,
+  EXECUTIVE_CHART_Y_TICK,
+} from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
 
 export const FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT = 340;
 
@@ -67,15 +76,32 @@ export function FinanceCashFlowPlannedChart({
   height = FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT,
   showValueLabels = false,
   testId = "finance-cash-flow-planned-chart",
+  presentation = "default",
 }: {
   data: ExecutiveMonthlyPlannedChartRow[];
   height?: number;
   showValueLabels?: boolean;
   testId?: string;
+  presentation?: "default" | "executive";
 }) {
-  const margin = showValueLabels
-    ? { top: 28, right: 12, left: 0, bottom: 4 }
-    : { top: 8, right: 12, left: 0, bottom: 4 };
+  const isExecutive = presentation === "executive";
+  const margin =
+    showValueLabels || isExecutive
+      ? isExecutive
+        ? EXECUTIVE_CHART_MARGIN
+        : { top: 28, right: 12, left: 0, bottom: 4 }
+      : { top: 8, right: 12, left: 0, bottom: 4 };
+
+  const xTick = isExecutive
+    ? EXECUTIVE_CHART_X_TICK
+    : { fontSize: 10, fill: FINANCE_BI_COLORS.textSecondary };
+  const yTick = isExecutive
+    ? EXECUTIVE_CHART_Y_TICK
+    : { fontSize: 10, fill: FINANCE_BI_COLORS.textSecondary };
+  const yAxisWidth = isExecutive ? EXECUTIVE_CHART_Y_AXIS_WIDTH : 84;
+  const legendStyle = isExecutive ? EXECUTIVE_CHART_LEGEND : { fontSize: 10 };
+  const barLabelSize = isExecutive ? EXECUTIVE_CHART_BAR_LABEL_SIZE : undefined;
+  const lineLabelSize = isExecutive ? EXECUTIVE_CHART_LINE_LABEL_SIZE : undefined;
 
   return (
     <div data-testid={testId} style={{ width: "100%", height }}>
@@ -86,19 +112,19 @@ export function FinanceCashFlowPlannedChart({
           <XAxis
             dataKey="name"
             interval={0}
-            tick={{ fontSize: 10, fill: FINANCE_BI_COLORS.textSecondary }}
+            tick={xTick}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
-            tick={{ fontSize: 10, fill: FINANCE_BI_COLORS.textSecondary }}
+            tick={yTick}
             tickFormatter={(v: number) => formatFinanceCurrencyCompact(v)}
-            width={84}
+            width={yAxisWidth}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip content={<PlannedMonthlyTooltip />} />
-          <Legend wrapperStyle={{ fontSize: 10 }} />
+          <Legend wrapperStyle={legendStyle} />
           <Bar
             dataKey="netBalance"
             name="Saldo líquido mensal"
@@ -112,7 +138,10 @@ export function FinanceCashFlowPlannedChart({
               />
             ))}
             {showValueLabels ? (
-              <LabelList dataKey="netBalance" content={<ChartBarValueLabel />} />
+              <LabelList
+                dataKey="netBalance"
+                content={<ChartBarValueLabel fontSize={barLabelSize} />}
+              />
             ) : null}
           </Bar>
           <Line
@@ -125,7 +154,10 @@ export function FinanceCashFlowPlannedChart({
             connectNulls={false}
           >
             {showValueLabels ? (
-              <LabelList dataKey="accumulatedBalance" content={<ChartLineValueLabel />} />
+              <LabelList
+                dataKey="accumulatedBalance"
+                content={<ChartLineValueLabel fontSize={lineLabelSize} />}
+              />
             ) : null}
           </Line>
         </ComposedChart>

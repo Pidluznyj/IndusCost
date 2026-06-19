@@ -56,7 +56,7 @@
 }
 
 .finance-executive-report-section-title {
-  font-size: 1.5rem;
+  font-size: 1.625rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--exec-ink);
@@ -65,16 +65,16 @@
 }
 
 .finance-executive-report-section-subtitle {
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: var(--exec-muted);
   line-height: 1.45;
   max-width: 52rem;
 }
 
 .executive-section-intro {
-  font-size: 0.86rem;
+  font-size: 0.95rem;
   color: #475569;
-  line-height: 1.5;
+  line-height: 1.55;
   margin: -0.75rem 0 1.5rem;
   max-width: 54rem;
 }
@@ -118,14 +118,19 @@
   overflow: hidden;
 }
 
+.executive-chart-body .recharts-cartesian-axis-tick text,
+.executive-chart-body .recharts-legend-item-text {
+  font-size: 13px !important;
+}
+
 .executive-chart-scenario {
   margin: 0.5rem 0 0.75rem;
-  padding: 0.65rem 0.85rem;
+  padding: 0.75rem 0.95rem;
   border-radius: 0.65rem;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: 0.9rem;
+  line-height: 1.5;
   color: #475569;
 }
 
@@ -185,7 +190,7 @@
 }
 
 .finance-executive-kpi-label {
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -194,7 +199,7 @@
 }
 
 .finance-executive-kpi-value {
-  font-size: clamp(1.45rem, 2.2vw, 1.85rem);
+  font-size: clamp(1.55rem, 2.4vw, 2rem);
   font-weight: 800;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
@@ -207,13 +212,13 @@
 }
 
 .finance-executive-kpi-sub {
-  font-size: 0.74rem;
+  font-size: 0.82rem;
   color: var(--exec-muted);
   line-height: 1.35;
 }
 
 .finance-executive-kpi-hint {
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   color: #64748b;
   line-height: 1.35;
 }
@@ -231,8 +236,8 @@
 }
 
 .finance-executive-narrative-bullets li {
-  font-size: 0.92rem;
-  line-height: 1.45;
+  font-size: 1rem;
+  line-height: 1.5;
   color: #334155;
 }
 
@@ -242,8 +247,8 @@
   background: #f1f5f9;
   border-radius: 0 0.875rem 0.875rem 0;
   padding: 1rem 1.25rem;
-  font-size: 0.95rem;
-  line-height: 1.55;
+  font-size: 1.02rem;
+  line-height: 1.6;
   color: #334155;
   margin: 0;
 }
@@ -255,7 +260,7 @@
 }
 
 .finance-executive-narrative-title {
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   font-weight: 700;
   color: var(--exec-accent);
   text-transform: uppercase;
@@ -266,7 +271,7 @@
   background: #fafbfd;
   border: 1px solid var(--exec-border);
   border-radius: 1rem;
-  padding: 1.25rem 1.35rem 1rem;
+  padding: 1.35rem 1.5rem 1.15rem;
 }
 
 .executive-chart-shell--empty {
@@ -277,27 +282,27 @@
 }
 
 .executive-chart-header {
-  margin-bottom: 0.85rem;
+  margin-bottom: 1rem;
 }
 
 .executive-chart-title {
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 700;
   color: var(--exec-ink);
   letter-spacing: -0.02em;
 }
 
 .executive-chart-subtitle {
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   color: var(--exec-muted);
-  margin-top: 0.2rem;
-  line-height: 1.4;
+  margin-top: 0.25rem;
+  line-height: 1.45;
 }
 
 .executive-chart-empty-message {
   text-align: center;
   color: var(--exec-muted);
-  font-size: 0.92rem;
+  font-size: 1rem;
   padding: 2rem 1rem;
 }
 
@@ -305,10 +310,10 @@
   background: #fff;
   border: 1px solid var(--exec-border);
   border-radius: 0.75rem;
-  padding: 0.75rem 0.9rem;
+  padding: 0.8rem 1rem;
   box-shadow: 0 8px 24px rgb(15 23 42 / 10%);
-  font-size: 0.78rem;
-  line-height: 1.45;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .executive-chart-tooltip-title {
@@ -318,7 +323,7 @@
 }
 
 .executive-target-hint {
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   color: #b45309;
   font-style: italic;
   padding-left: 0.15rem;

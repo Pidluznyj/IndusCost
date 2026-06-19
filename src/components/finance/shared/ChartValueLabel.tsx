@@ -5,7 +5,9 @@ import {
   buildChartLineLabelProps,
 } from "@/src/lib/chartValueLabels";
 
-export function ChartBarValueLabel(props: LabelProps) {
+export function ChartBarValueLabel(
+  props: LabelProps & { fontSize?: number }
+) {
   const built = buildChartBarLabelProps({
     x: props.x as number,
     y: props.y as number,
@@ -18,7 +20,7 @@ export function ChartBarValueLabel(props: LabelProps) {
       x={built.x}
       y={built.y}
       fill={built.fill}
-      fontSize={9}
+      fontSize={props.fontSize ?? 9}
       fontWeight={600}
       textAnchor="middle"
     >
@@ -27,7 +29,9 @@ export function ChartBarValueLabel(props: LabelProps) {
   );
 }
 
-export function ChartLineValueLabel(props: LabelProps) {
+export function ChartLineValueLabel(
+  props: LabelProps & { fontSize?: number }
+) {
   const built = buildChartLineLabelProps({
     x: props.x as number,
     y: props.y as number,
@@ -39,7 +43,7 @@ export function ChartLineValueLabel(props: LabelProps) {
       x={built.x}
       y={built.y}
       fill="#1E3A5F"
-      fontSize={8}
+      fontSize={props.fontSize ?? 8}
       fontWeight={600}
       textAnchor="middle"
     >

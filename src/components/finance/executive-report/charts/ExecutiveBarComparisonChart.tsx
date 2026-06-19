@@ -21,6 +21,14 @@ import {
 } from "@/src/lib/financeExecutiveReportPresentation";
 import { ExecutiveChartShell } from "@/src/components/finance/executive-report/charts/ExecutiveChartShell";
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
+import {
+  EXECUTIVE_CHART_BAR_LABEL_SIZE,
+  EXECUTIVE_CHART_LEGEND,
+  EXECUTIVE_CHART_MARGIN,
+  EXECUTIVE_CHART_X_TICK,
+  EXECUTIVE_CHART_Y_AXIS_WIDTH,
+  EXECUTIVE_CHART_Y_TICK,
+} from "@/src/components/finance/executive-report/charts/executiveReportChartTheme";
 
 function ComparisonTooltip({
   active,
@@ -91,23 +99,24 @@ export function ExecutiveBarComparisonChart({
       scenarioText={scenarioText}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 28, right: 16, left: 4, bottom: 4 }}>
+        <BarChart data={data} margin={EXECUTIVE_CHART_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
           <XAxis
             dataKey="name"
-            tick={{ fontSize: 11, fill: "#64748B" }}
+            interval={0}
+            tick={EXECUTIVE_CHART_X_TICK}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
-            tick={{ fontSize: 11, fill: "#64748B" }}
+            tick={EXECUTIVE_CHART_Y_TICK}
             tickFormatter={formatExecutiveReportAxisCurrency}
-            width={88}
+            width={EXECUTIVE_CHART_Y_AXIS_WIDTH}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip content={<ComparisonTooltip years={years} />} />
-          <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+          <Legend wrapperStyle={EXECUTIVE_CHART_LEGEND} />
           {years.map((series) => (
             <Bar
               key={series.year}
@@ -126,7 +135,10 @@ export function ExecutiveBarComparisonChart({
                   strokeWidth={entry.isCurrentMonth ? 1 : 0}
                 />
               ))}
-              <LabelList dataKey={`y${series.year}`} content={<ChartBarValueLabel />} />
+              <LabelList
+                dataKey={`y${series.year}`}
+                content={<ChartBarValueLabel fontSize={EXECUTIVE_CHART_BAR_LABEL_SIZE} />}
+              />
             </Bar>
           ))}
         </BarChart>

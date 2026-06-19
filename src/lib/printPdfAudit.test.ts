@@ -207,7 +207,7 @@ describe("printPdfAudit — Relatório Presidencial", () => {
   it("footer e gráfico com área segura e labels", () => {
     const css = read("src/components/finance/executive-report/finance-executive-report-print.css");
     assert.match(css, /executive-chart-body/);
-    assert.match(css, /58mm/);
+    assert.match(css, /65mm/);
     assert.match(css, /executive-chart-scenario/);
     assert.match(css, /executive-print-page-footer/);
   });
