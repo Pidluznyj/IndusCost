@@ -26,7 +26,12 @@ export function registerFinanceSalesOrdersRoutes(app: express.Express, auth: Aut
       res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/sales-orders/dashboard", error);
-      res.status(500).json({ error: "Erro ao carregar dashboard de pedidos de venda." });
+      const message =
+        error instanceof Error ? error.message : "Falha ao montar dashboard de pedidos de venda.";
+      res.status(500).json({
+        error: "Erro ao carregar dashboard de pedidos de venda.",
+        message,
+      });
     }
   });
 

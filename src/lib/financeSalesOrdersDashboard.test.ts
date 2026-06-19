@@ -17,6 +17,7 @@ import {
   resolveFinanceSalesOrdersYearContext,
   resolveSalesOrderNetAmount,
 } from "./financeSalesOrdersDashboard.js";
+import type { FinanceSalesOrdersDashboardPayload } from "./financeSalesOrdersDashboardTypes.js";
 import { buildFinanceSalesOrdersExportCsv } from "./financeSalesOrdersExport.js";
 import { FINANCE_SALES_ORDERS_MONTH_LABELS } from "./financeSalesOrdersDashboardTypes.js";
 
@@ -40,6 +41,120 @@ describe("financeSalesOrdersDashboard", () => {
     assert.equal(f.month, 6);
     const all = parseFinanceSalesOrdersFilters({ year: "2026", month: "" });
     assert.equal(all.month, null);
+  });
+
+  it("parseFinanceSalesOrdersFilters — todos os filtros do dashboard", () => {
+    const f = parseFinanceSalesOrdersFilters({
+      year: "2026",
+      month: "3",
+      company: "SM",
+      customerId: "cust-1",
+      customerSearch: "esmal",
+      sellerName: "Rodrigo",
+      status: "SENT_TO_NOMUS",
+      invoiceStatus: "with_invoice",
+    });
+    assert.equal(f.year, 2026);
+    assert.equal(f.month, 3);
+    assert.equal(f.company, "SM");
+    assert.equal(f.customerId, "cust-1");
+    assert.equal(f.customerSearch, "esmal");
+    assert.equal(f.sellerName, "Rodrigo");
+    assert.equal(f.status, "SENT_TO_NOMUS");
+    assert.equal(f.invoiceStatus, "with_invoice");
+
+    const semNf = parseFinanceSalesOrdersFilters({ year: "2026", invoiceStatus: "without_invoice" });
+    assert.equal(semNf.invoiceStatus, "without_invoice");
+  });
+
+  it("queryPortfolioFiltered usa SQL de NF compartilhado", () => {
+    const src = readFileSync(join(process.cwd(), "src/lib/financeSalesOrdersDashboard.ts"), "utf8");
+    assert.match(src, /orderIsInvoicedSql/);
+    assert.match(src, /orderNotInvoicedSql/);
+    assert.match(src, /salesOrderInvoicingSql/);
+  });
+
+  it("financeSalesOrdersDashboardPayload tem contrato mínimo válido", () => {
+    const payload: FinanceSalesOrdersDashboardPayload = {
+      generatedAt: new Date().toISOString(),
+      filters: {
+        year: 2026,
+        month: null,
+        company: null,
+        customerId: null,
+        customerSearch: null,
+        sellerName: null,
+        status: null,
+        invoiceStatus: "all",
+      },
+      summary: {
+        selectedYear: 2026,
+        selectedMonth: null,
+        monthSalesAmount: 0,
+        monthSalesPreviousYearAmount: 0,
+        monthSalesGrowthAmount: 0,
+        monthSalesGrowthPercent: 0,
+        ytdSalesAmount: 0,
+        previousYtdSalesAmount: 0,
+        ytdGrowthAmount: 0,
+        ytdGrowthPercent: 0,
+        monthTargetAmount: 0,
+        yearTargetAmount: 0,
+        monthAchievementPercent: 0,
+        yearAchievementPercent: 0,
+        monthProjectedAmount: 0,
+        yearProjectedAmount: 0,
+        projectedMonthAchievementPercent: 0,
+        projectedYearAchievementPercent: 0,
+        dailyAverageAmount: 0,
+        orderCount: 0,
+        itemCount: 0,
+        averageTicketAmount: 0,
+        openPortfolioAmount: 0,
+        openPortfolioCount: 0,
+        invoicedOrdersAmount: 0,
+        invoicedOrdersCount: 0,
+        notInvoicedOrdersAmount: 0,
+        notInvoicedOrdersCount: 0,
+        overdueOpenOrdersAmount: 0,
+        overdueOpenOrdersCount: 0,
+      },
+      monthlyComparison: FINANCE_SALES_ORDERS_MONTH_LABELS.map((monthLabel, i) => ({
+        month: i + 1,
+        monthLabel,
+        currentYearAmount: 0,
+        previousYearAmount: 0,
+        differenceAmount: 0,
+        growthPercent: 0,
+      })),
+      realizedProjected: [],
+      topCustomers: [],
+      statusBreakdown: [],
+      portfolioBreakdown: {
+        notInvoicedAmount: 0,
+        notInvoicedCount: 0,
+        invoicedAmount: 0,
+        invoicedCount: 0,
+        overdueAmount: 0,
+        overdueCount: 0,
+        onTimeOpenAmount: 0,
+        onTimeOpenCount: 0,
+      },
+      chartSeries: {} as never,
+      tab: { available: true } as never,
+      dataQuality: {
+        warnings: [],
+        source: "SalesOrder/SalesOrderItem",
+        excludedCancelledOrdersCount: 0,
+        excludedErrorOrdersCount: 0,
+        missingIssueDateCount: 0,
+        missingCustomerCount: 0,
+        targetDerived: true,
+        targetRule: "test",
+      },
+    };
+    assert.equal(payload.monthlyComparison.length, 12);
+    assert.equal(financeSalesOrdersMetricsAreFinite(payload), true);
   });
 
   it("mês Todos não define month no filtro", () => {

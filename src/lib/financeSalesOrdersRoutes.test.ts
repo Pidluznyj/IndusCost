@@ -25,6 +25,14 @@ describe("financeSalesOrdersRoutes", () => {
     const routes = readFileSync(join(process.cwd(), "src/lib/financeSalesOrdersRoutes.ts"), "utf8");
     assert.match(routes, /Erro ao carregar dashboard de pedidos de venda/);
     assert.match(routes, /status\(500\)/);
+    assert.match(routes, /message/);
+    assert.match(routes, /console\.error/);
+  });
+
+  it("SQL de NF usa helper tolerante a formatos Nomus", () => {
+    const invoicing = readFileSync(join(process.cwd(), "src/lib/salesOrderInvoicingSql.ts"), "utf8");
+    assert.match(invoicing, /nomusNfesJsonbArraySql/);
+    assert.match(invoicing, /jsonb_typeof\(\$\{raw\}\) = 'array'/);
   });
 
   it("não usa Proposal", () => {

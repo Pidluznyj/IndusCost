@@ -1,15 +1,33 @@
 import { Prisma } from "@prisma/client";
 
+/**
+ * Array JSON de NFes em nomusRawResponse — alinhado ao CRM (`crmCustomersList`) com
+ * fallbacks para formatos Nomus legados (array no topo, NFe única como objeto).
+ * Sempre retorna um jsonb array para jsonb_array_elements (evita 500 no PostgreSQL).
+ */
+export function nomusNfesJsonbArraySql(alias: string) {
+  const raw = Prisma.raw(`${alias}."nomusRawResponse"`);
+  return Prisma.sql`
+    CASE
+      WHEN ${raw} IS NULL THEN '[]'::jsonb
+      WHEN jsonb_typeof(${raw}) = 'array'
+        AND jsonb_typeof(${raw} -> 'nfes') = 'array'
+      THEN ${raw} -> 'nfes'
+      WHEN jsonb_typeof(${raw}) = 'array'
+      THEN ${raw}
+      WHEN jsonb_typeof(${raw} -> 'nfes') = 'array'
+      THEN ${raw} -> 'nfes'
+      WHEN jsonb_typeof(${raw} -> 'nfes') = 'object'
+      THEN jsonb_build_array(${raw} -> 'nfes')
+      ELSE '[]'::jsonb
+    END
+  `;
+}
+
 /** Elementos NFe em nomusRawResponse — mesma regra do CRM/relatórios comerciais. */
 export function nomusNfesElementsSql(alias: string) {
   return Prisma.sql`
-    jsonb_array_elements(
-      CASE
-        WHEN jsonb_typeof(${Prisma.raw(`${alias}."nomusRawResponse"`)}->'nfes') = 'array'
-        THEN ${Prisma.raw(`${alias}."nomusRawResponse"`)}->'nfes'
-        ELSE '[]'::jsonb
-      END
-    ) AS nfe
+    jsonb_array_elements(${nomusNfesJsonbArraySql(alias)}) AS nfe
   `;
 }
 

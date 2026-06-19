@@ -67,6 +67,26 @@ describe("financeSalesOrdersPage", () => {
     assert.match(page, /\/api\/finance\/sales-orders\/export/);
   });
 
+  it("exibe erro amigável com detalhe da API", () => {
+    const page = read("src/components/finance/FinanceSalesOrdersPage.tsx");
+    assert.match(page, /console\.error\("FinanceSalesOrdersPage\.load"/);
+    assert.match(page, /Não foi possível carregar o dashboard de Pedidos de Venda/);
+    assert.match(page, /e\.message/);
+  });
+
+  it("renderiza estado vazio na tabela de top clientes", () => {
+    const page = read("src/components/finance/FinanceSalesOrdersPage.tsx");
+    assert.match(page, /FinanceBiEmptyState/);
+    assert.match(page, /topCustomers\.length === 0/);
+  });
+
+  it("não regressão: outras abas financeiras não importam página de pedidos", () => {
+    const billing = read("src/components/finance/FinanceBillingPage.tsx");
+    const ar = read("src/components/finance/FinanceAccountsReceivablePage.tsx");
+    assert.doesNotMatch(billing, /FinanceSalesOrdersPage/);
+    assert.doesNotMatch(ar, /FinanceSalesOrdersPage/);
+  });
+
   it("não importa Prisma no frontend", () => {
     assert.doesNotMatch(read("src/components/finance/FinanceSalesOrdersPage.tsx"), /@prisma\/client/);
   });

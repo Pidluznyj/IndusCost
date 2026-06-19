@@ -31,6 +31,7 @@ import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { FinanceApErrorBanner, FinanceApLoadingBlock } from "@/src/components/finance/FinanceAccountsPayableUiShared";
+import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
 import { FinanceSalesOrdersMonthlyChart } from "@/src/components/finance/sales-orders/FinanceSalesOrdersMonthlyChart";
 import { FinanceSalesOrdersProjectionChart } from "@/src/components/finance/sales-orders/FinanceSalesOrdersProjectionChart";
 import { ExecutiveChartScenario } from "@/src/components/finance/executive-report/charts/ExecutiveChartScenario";
@@ -162,7 +163,13 @@ export function FinanceSalesOrdersPage() {
       setData(payload);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setError("Não foi possível carregar o dashboard de Pedidos de Venda.");
+      console.error("FinanceSalesOrdersPage.load", e);
+      const detail = e instanceof Error ? e.message.trim() : "";
+      setError(
+        detail
+          ? `Não foi possível carregar o dashboard de Pedidos de Venda. ${detail}`
+          : "Não foi possível carregar o dashboard de Pedidos de Venda."
+      );
       setData(null);
     } finally {
       if (!ac.signal.aborted) setLoading(false);
@@ -483,21 +490,32 @@ export function FinanceSalesOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.topCustomers.map((row) => (
-                  <tr key={row.customerId ?? row.customerName} className="border-b border-border/50">
-                    <td className="py-2 pr-3">{row.customerName}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
-                      {formatExecutiveCurrency(row.amount)}
-                    </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{row.orderCount}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
-                      {formatExecutiveCurrency(row.averageTicketAmount)}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {formatExecutivePercent(row.sharePercent, 1)}
+                {data.topCustomers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-6">
+                      <FinanceBiEmptyState
+                        title="Nenhum cliente no período"
+                        description="Não há pedidos emitidos para os filtros aplicados."
+                      />
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  data.topCustomers.map((row) => (
+                    <tr key={row.customerId ?? row.customerName} className="border-b border-border/50">
+                      <td className="py-2 pr-3">{row.customerName}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {formatExecutiveCurrency(row.amount)}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{row.orderCount}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {formatExecutiveCurrency(row.averageTicketAmount)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums">
+                        {formatExecutivePercent(row.sharePercent, 1)}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
