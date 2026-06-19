@@ -13,7 +13,6 @@ import {
   formatProductionBadge,
   formatSalesOrderDate,
   formatSalesOrderPercent,
-  formatInvoiceTimingLabel,
   INTELLIGENCE_DRAWER_TABS,
   ITEM_NOMUS_STATUS_LABELS,
   TIMELINE_STATUS_LABELS,
@@ -23,7 +22,6 @@ import {
   formatItemStatusSourceLabel,
   formatRawMatchedByLabel,
 } from "@/src/lib/salesOrderStatusAudit";
-import { formatLogisticEvidenceLine } from "@/src/lib/salesOrderLogisticStatus";
 import { cn, formatCurrency } from "@/src/lib/utils";
 import "./sales-order-intelligence.css";
 
@@ -487,69 +485,38 @@ function TabPanel({
       <div className="space-y-4" data-testid="sales-order-intelligence-rule-audit">
         <div className="rounded-lg border border-border bg-card px-3 py-3">
           <h3 className="text-xs font-bold uppercase text-muted-foreground">
-            Card gerencial (Gestão de Pedidos)
+            Status Logístico (BI)
           </h3>
-          <p className="text-sm font-semibold mt-1">{managementCard.cardLabel}</p>
-          <p className="text-xs text-muted-foreground mt-1">{managementCard.ruleHint}</p>
+          <p className="text-sm font-semibold mt-1">{logisticStatus.label}</p>
+          <p className="text-xs text-muted-foreground mt-2">{logisticStatus.ruleExplanation}</p>
           <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
             <div>
-              <dt className="text-muted-foreground">Prazo previsto</dt>
-              <dd className="font-medium">{formatSalesOrderDate(managementCard.expectedDeliveryDate)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Data da NF</dt>
-              <dd className="font-medium">{formatSalesOrderDate(managementCard.firstInvoiceDate)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">NF vs prazo</dt>
-              <dd className="font-medium">{formatInvoiceTimingLabel(managementCard.invoiceTiming)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Status raw Nomus</dt>
+              <dt className="text-muted-foreground">Data planejada</dt>
               <dd className="font-medium">
-                {managementCard.statusNomusRaw != null && managementCard.statusNomusRaw !== ""
-                  ? String(managementCard.statusNomusRaw)
-                  : "Não informado"}
+                {formatSalesOrderDate(logisticStatus.evidence.plannedDeliveryDate)}
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Itens atendidos</dt>
-              <dd className="font-medium">{managementCard.itemsFulfilled}</dd>
+              <dt className="text-muted-foreground">NF processada</dt>
+              <dd className="font-medium">
+                {formatSalesOrderDate(logisticStatus.evidence.invoiceProcessingDate)}
+              </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Itens cancelados</dt>
-              <dd className="font-medium">{managementCard.itemsCancelled}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Itens com corte</dt>
-              <dd className="font-medium">{managementCard.itemsWithCut}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Label operacional</dt>
-              <dd className="font-medium">{managementCard.executiveStatusLabel}</dd>
+              <dt className="text-muted-foreground">Status item (raw)</dt>
+              <dd className="font-medium">
+                {logisticStatus.evidence.itemStatusCodes.length > 0
+                  ? logisticStatus.evidence.itemStatusCodes.join(", ")
+                  : "Não informado"}
+              </dd>
             </div>
           </dl>
         </div>
         <div className="rounded-lg border border-border bg-card px-3 py-3">
           <h3 className="text-xs font-bold uppercase text-muted-foreground">
-            Status logístico (regra BI adaptada)
+            Status gerencial interno (secundário)
           </h3>
-          <p className="text-sm font-semibold mt-1">{logisticStatus.label}</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            {formatLogisticEvidenceLine(logisticStatus)}
-          </p>
-          <p className="text-xs mt-2">
-            Códigos de item no raw:{" "}
-            {logisticStatus.evidence.itemStatusCodes.length > 0
-              ? logisticStatus.evidence.itemStatusCodes.join(", ")
-              : "Não informado"}
-          </p>
-        </div>
-        <div className="rounded-lg border border-border bg-card px-3 py-3">
-          <h3 className="text-xs font-bold uppercase text-muted-foreground">
-            Status gerencial IndusCost
-          </h3>
-          <p className="text-sm font-semibold mt-1">{lifecycle.executiveStatusLabel}</p>
+          <p className="text-sm font-semibold mt-1">{managementCard.executiveStatusLabel}</p>
         </div>
         {logisticVsExecutive.diverges ? (
           <div

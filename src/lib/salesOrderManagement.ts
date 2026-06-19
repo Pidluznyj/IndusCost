@@ -53,6 +53,7 @@ export type SalesOrderManagementFilters = {
   partialOrCut?: boolean | null;
   noProductionOrder?: boolean | null;
   managementStatus?: ManagementStatusCardId | "";
+  logisticStatus?: ManagementStatusCardId | "";
   startDate?: Date | null;
   endDate?: Date | null;
   status?: string;
@@ -111,7 +112,15 @@ export function parseSalesOrderManagementFilters(
     managementStatus:
       typeof query.managementStatus === "string" && isManagementStatusCardId(query.managementStatus)
         ? query.managementStatus
-        : "",
+        : typeof query.logisticStatus === "string" && isManagementStatusCardId(query.logisticStatus)
+          ? query.logisticStatus
+          : "",
+    logisticStatus:
+      typeof query.logisticStatus === "string" && isManagementStatusCardId(query.logisticStatus)
+        ? query.logisticStatus
+        : typeof query.managementStatus === "string" && isManagementStatusCardId(query.managementStatus)
+          ? query.managementStatus
+          : "",
     status: typeof query.status === "string" ? query.status.trim() : undefined,
   };
 }
@@ -176,10 +185,8 @@ function matchesManagementFilters(
     return false;
   }
   if (filters.noProductionOrder === true && lifecycle.hasLinkedProductionOrder) return false;
-  if (
-    filters.managementStatus &&
-    row.managementStatusCardId !== filters.managementStatus
-  ) {
+  const logisticFilter = filters.logisticStatus || filters.managementStatus;
+  if (logisticFilter && row.logisticStatusCardId !== logisticFilter) {
     return false;
   }
   return true;
@@ -188,7 +195,7 @@ function matchesManagementFilters(
 function omitManagementStatusFilter(
   filters: SalesOrderManagementFilters
 ): SalesOrderManagementFilters {
-  return { ...filters, managementStatus: "" };
+  return { ...filters, managementStatus: "", logisticStatus: "" };
 }
 
 export function sortManagementRowsByRisk(rows: SalesOrderManagementRow[]): SalesOrderManagementRow[] {
@@ -204,22 +211,32 @@ export function sortManagementRowsByRisk(rows: SalesOrderManagementRow[]): Sales
 
 export function buildSalesOrderManagementCards(
   rows: Array<
-    Pick<SalesOrderManagementRow, "executiveStatusLabel" | "totalNetValue"> & {
-      managementStatusCardId?: SalesOrderManagementRow["managementStatusCardId"];
+    Pick<SalesOrderManagementRow, "totalNetValue"> & {
+      logisticStatusCardId: SalesOrderManagementRow["logisticStatusCardId"];
     }
   >
 ): SalesOrderManagementCards {
-  return buildManagementStatusCardMetrics(rows).counts;
+  return buildManagementStatusCardMetrics(
+    rows.map((row) => ({
+      logisticStatusCardId: row.logisticStatusCardId,
+      totalNetValue: row.totalNetValue,
+    }))
+  ).counts;
 }
 
 export function buildSalesOrderManagementCardAmounts(
   rows: Array<
-    Pick<SalesOrderManagementRow, "executiveStatusLabel" | "totalNetValue"> & {
-      managementStatusCardId?: SalesOrderManagementRow["managementStatusCardId"];
+    Pick<SalesOrderManagementRow, "totalNetValue"> & {
+      logisticStatusCardId: SalesOrderManagementRow["logisticStatusCardId"];
     }
   >
 ): SalesOrderManagementCardAmounts {
-  return buildManagementStatusCardMetrics(rows).amounts;
+  return buildManagementStatusCardMetrics(
+    rows.map((row) => ({
+      logisticStatusCardId: row.logisticStatusCardId,
+      totalNetValue: row.totalNetValue,
+    }))
+  ).amounts;
 }
 
 export function buildManagementRowsFromOrders(

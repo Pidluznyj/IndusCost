@@ -143,7 +143,7 @@ export function SalesOrderManagementPage() {
     if (partialOrCut) params.set("partialOrCut", "true");
     if (noProductionOrder) params.set("noProductionOrder", "true");
     if (productionLate) params.set("productionLate", "true");
-    if (selectedManagementStatus) params.set("managementStatus", selectedManagementStatus);
+    if (selectedManagementStatus) params.set("logisticStatus", selectedManagementStatus);
     return params.toString();
   }, [
     page,
@@ -230,12 +230,12 @@ export function SalesOrderManagementPage() {
 
   const kpiIcons: Record<string, React.ComponentType<{ className?: string }>> = {
     total: LayoutGrid,
-    overdueWithoutInvoice: AlertTriangle,
-    invoicedOnTime: Receipt,
-    invoicedLate: Clock,
-    partialOrCut: Package,
-    cancelledOrReturned: AlertTriangle,
-    reviewUnknown: FileText,
+    deliveredOnTime: Receipt,
+    deliveredLate: Clock,
+    overduePending: AlertTriangle,
+    onTimePending: Package,
+    finishedOrCancelled: AlertTriangle,
+    reviewData: FileText,
   };
 
   const toggleManagementStatusCard = useCallback((cardId: ManagementStatusCardId) => {
@@ -484,7 +484,7 @@ export function SalesOrderManagementPage() {
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Status gerencial
+          Status Logístico
         </p>
         <div className="indus-kpi-grid mt-2">
           {displayDashboardCards.map((card) => {
@@ -492,8 +492,12 @@ export function SalesOrderManagementPage() {
             const isTotal = card.isTotal === true;
             const isActive = isTotal
               ? selectedManagementStatus === ""
-              : selectedManagementStatus === card.managementStatus;
+              : selectedManagementStatus === card.logisticStatus;
             const countLabel = `${card.count} pedido${card.count === 1 ? "" : "s"}`;
+            const percentHint =
+              card.percentOfTotal != null && !isTotal
+                ? `${card.tooltip} (${card.percentOfTotal}% do total no filtro)`
+                : card.tooltip;
             return (
               <button
                 key={card.key}
@@ -506,7 +510,7 @@ export function SalesOrderManagementPage() {
                 data-active={isActive ? "true" : "false"}
                 onClick={() => {
                   if (isTotal) clearManagementStatusCardFilter();
-                  else if (card.managementStatus) toggleManagementStatusCard(card.managementStatus);
+                  else if (card.logisticStatus) toggleManagementStatusCard(card.logisticStatus);
                 }}
                 className={cn(
                   "text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
@@ -519,7 +523,7 @@ export function SalesOrderManagementPage() {
                   value={loading || loadError ? "—" : countLabel}
                   sub={loading || loadError ? undefined : formatCurrency(card.totalNetValue)}
                   loading={loading}
-                  hint={card.tooltip}
+                  hint={percentHint}
                 />
               </button>
             );
@@ -538,7 +542,7 @@ export function SalesOrderManagementPage() {
                 </span>
               </>
             ) : null}{" "}
-            não cancelados/devolvidos
+            não finalizados/cancelados (BI)
           </p>
         ) : null}
       </div>
@@ -681,7 +685,7 @@ export function SalesOrderManagementPage() {
                 <th className="p-3 font-semibold">Emissão</th>
                 <th className="p-3 font-semibold">Previsão entrega</th>
                 <th className="p-3 font-semibold text-right">Valor</th>
-                <th className="p-3 font-semibold">Status gerencial</th>
+                <th className="p-3 font-semibold">Status Logístico</th>
                 <th className="p-3 font-semibold">Prazo</th>
                 <th className="p-3 font-semibold">NF</th>
                 <th className="p-3 font-semibold">OP</th>
@@ -732,7 +736,7 @@ export function SalesOrderManagementPage() {
                         className={badgeClass("status")}
                         title={row.executiveStatusLabel}
                       >
-                        {row.managementCardLabel ?? row.executiveStatusLabel}
+                        {row.logisticStatusLabel}
                       </span>
                     </td>
                     <td className="p-3">

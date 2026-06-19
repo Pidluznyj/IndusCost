@@ -142,9 +142,9 @@ describe("PD 02130 real raw sanitizado", () => {
       items: [{ ...PD_02130_SANITIZED_DB_ITEM }],
     };
     const { cards } = buildManagementRowsFromOrders([order], {}, REF);
-    assert.equal(cards.overdueWithoutInvoice, 0);
-    assert.equal(cards.reviewUnknown, 0);
-    assert.equal(cards.cancelledOrReturned, 1);
+    assert.equal(cards.overduePending, 0);
+    assert.equal(cards.reviewData, 0);
+    assert.equal(cards.finishedOrCancelled, 1);
   });
 
   it("cards — PD 02130 com pedido aberto não contamina cancelado", () => {
@@ -157,7 +157,7 @@ describe("PD 02130 real raw sanitizado", () => {
       id: "so-open",
       orderCode: "PD 99999",
       nomusRawResponse: {
-        itensPedido: [{ idProduto: 1, status: "Liberado", quantidade: 1 }],
+        itensPedido: [{ idProduto: 1, status: 2, quantidade: 1 }],
         nfes: [],
       },
       items: [
@@ -172,9 +172,9 @@ describe("PD 02130 real raw sanitizado", () => {
       expectedDeliveryDate: new Date(2026, 4, 1),
     };
     const { cards } = buildManagementRowsFromOrders([cancelled, open], {}, REF);
-    assert.equal(cards.cancelledOrReturned, 1);
-    assert.equal(cards.overdueWithoutInvoice, 1);
-    assert.equal(cards.reviewUnknown, 0);
+    assert.equal(cards.finishedOrCancelled, 1);
+    assert.equal(cards.overduePending, 1);
+    assert.equal(cards.reviewData, 0);
   });
 
   it("parcialmente cancelado permanece misto", () => {

@@ -289,9 +289,9 @@ async function main(): Promise<void> {
     console.log("\n--- RESUMO ESPERADO PÓS-FIX ---");
     console.log(
       `executiveStatusLabel: ${lifecycle.executiveStatusLabel}`,
-      `\noverdueWithoutInvoice: ${cards.overdueWithoutInvoice}`,
-      `\nreviewUnknown: ${cards.reviewUnknown}`,
-      `\ncancelledOrReturned: ${cards.cancelledOrReturned}`
+      `\noverduePending: ${cards.overduePending}`,
+      `\nreviewData: ${cards.reviewData}`,
+      `\nfinishedOrCancelled: ${cards.finishedOrCancelled}`
     );
   }
 }

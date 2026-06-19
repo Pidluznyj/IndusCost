@@ -15,15 +15,15 @@ describe("salesOrderManagementPage", () => {
     assert.match(page, /data-testid="sales-order-management-page"/);
   });
 
-  it("cards de status gerencial no topo com clique para filtrar", () => {
+  it("cards Status Logístico BI no topo com clique para filtrar", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    const status = read("src/lib/salesOrderManagementStatus.ts");
+    const logistic = read("src/lib/salesOrderLogisticStatus.ts");
     assert.match(page, /displayDashboardCards/);
     assert.match(page, /toggleManagementStatusCard/);
     assert.match(page, /management-status-card-/);
-    assert.match(status, /Total no filtro/);
+    assert.match(logistic, /Total no filtro/);
+    assert.match(page, /logisticStatus/);
     assert.doesNotMatch(page, /Pedidos em aberto/);
-    assert.doesNotMatch(page, /Sem OP vinculada/);
   });
 
   it("card ativo e limpar filtro do card", () => {
@@ -43,10 +43,10 @@ describe("salesOrderManagementPage", () => {
     assert.match(page, /noProductionOrder/);
   });
 
-  it("tabela mostra status gerencial", () => {
+  it("tabela mostra coluna Status Logístico", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /Status gerencial/);
-    assert.match(page, /managementCardLabel/);
+    assert.match(page, /Status Logístico/);
+    assert.match(page, /logisticStatusLabel/);
   });
 
   it("tabela mostra NF", () => {
@@ -97,50 +97,49 @@ describe("salesOrderManagementPage", () => {
     assert.match(page, /Ver detalhes/);
   });
 
-  it("drawer possui abas de raio-x do pedido", () => {
+  it("drawer possui bloco Status Logístico BI", () => {
     const ui = read("src/lib/salesOrderManagementUi.ts");
     const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
     assert.match(ui, /nomus-data/);
     assert.match(ui, /rule-audit/);
     assert.match(drawer, /sales-order-intelligence-nomus-data/);
     assert.match(drawer, /sales-order-intelligence-rule-audit/);
-    assert.match(drawer, /Card gerencial/);
-    assert.match(drawer, /Status logístico/);
+    assert.match(drawer, /Status Logístico \(BI\)/);
+    assert.match(drawer, /ruleExplanation/);
   });
 
-  it("UI contém os 7 cards gerenciais obrigatórios", () => {
-    const status = read("src/lib/salesOrderManagementStatus.ts");
+  it("UI contém os 7 cards Status Logístico BI obrigatórios", () => {
+    const logistic = read("src/lib/salesOrderLogisticStatus.ts");
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     const required = [
       "Total no filtro",
-      "Atrasados aguardando NF",
-      "Faturados no prazo",
-      "Faturados com atraso",
-      "Finalizados com corte",
-      "Canceladas / devolvidas",
-      "Revisar",
+      "Entregue no Prazo",
+      "Entregue com Atraso",
+      "Atrasado (Pendente)",
+      "No Prazo (Pendente)",
+      "Finalizado/Cancelado",
+      "Revisar dados",
     ];
     for (const label of required) {
-      assert.match(status, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.match(logistic, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
     assert.match(page, /management-status-card-total/);
     assert.match(page, /management-status-card-\$\{card\.key\}/);
-    assert.match(status, /overdueWithoutInvoice/);
-    assert.match(status, /invoicedOnTime/);
-    assert.match(status, /invoicedLate/);
-    assert.match(status, /partialOrCut/);
-    assert.match(status, /cancelledOrReturned/);
-    assert.match(status, /reviewUnknown/);
+    assert.match(logistic, /deliveredOnTime/);
+    assert.match(logistic, /deliveredLate/);
+    assert.match(logistic, /overduePending/);
+    assert.match(logistic, /onTimePending/);
+    assert.match(logistic, /finishedOrCancelled/);
+    assert.match(logistic, /reviewData/);
   });
 
   it("primeiro card é Total no filtro com quantidade e valor", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    const status = read("src/lib/salesOrderManagementStatus.ts");
-    assert.match(status, /Total no filtro/);
+    const logistic = read("src/lib/salesOrderLogisticStatus.ts");
+    assert.match(logistic, /Total no filtro/);
     assert.match(page, /management-status-card-total/);
     assert.match(page, /formatCurrency\(card\.totalNetValue\)/);
     assert.match(page, /pedido/);
-    assert.doesNotMatch(page, /Pedidos em aberto/);
   });
 
   it("clique no card total limpa filtro de status", () => {

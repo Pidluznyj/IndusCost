@@ -279,7 +279,7 @@ describe("salesOrderIntelligence", () => {
     );
     assert.equal(payload.items[0].statusNormalized, "cancelled");
     assert.ok(payload.items[0].statusLabel?.includes("Cancelado"));
-    assert.equal(payload.logisticStatus.label, "Cancelado");
+    assert.equal(payload.logisticStatus.label, "Finalizado/Cancelado");
   });
 
   it("pedido cancelado não sugere validar faturamento", () => {

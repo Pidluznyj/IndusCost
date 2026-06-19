@@ -18,7 +18,7 @@ export type SalesOrderManagementCards = Record<ManagementStatusCardId, number>;
 
 export type SalesOrderManagementCardAmounts = Record<ManagementStatusCardId, number>;
 
-/** Resumo gerencial dos cards + reconciliação com o total do filtro. */
+/** Resumo dos cards Status Logístico BI + reconciliação com o total do filtro. */
 export type SalesOrderManagementSummary = {
   totalOrdersCount: number;
   totalNetValue: number;
@@ -27,17 +27,14 @@ export type SalesOrderManagementSummary = {
   statusCardsTotalCount: number;
   statusCardsTotalValue: number;
   reconciliation: ManagementCardReconciliation;
-  /** Pedidos exibidos no grid após filtro de card de status. */
+  /** Pedidos exibidos no grid após filtro de card. */
   gridFilteredCount: number;
-  overdueWithoutInvoiceCount: number;
-  invoicedOnTimeCount: number;
-  invoicedLateCount: number;
-  partiallyFulfilledCount: number;
-  fulfilledWithCutCount: number;
-  deliveredCount: number;
-  cancelledOrReturnedCount: number;
-  awaitingInProgressCount: number;
-  reviewUnknownCount: number;
+  deliveredOnTimeCount: number;
+  deliveredLateCount: number;
+  overduePendingCount: number;
+  onTimePendingCount: number;
+  finishedOrCancelledCount: number;
+  reviewDataCount: number;
 };
 
 export function cardsToManagementSummary(
@@ -66,32 +63,31 @@ export function cardsToManagementSummary(
   return {
     totalOrdersCount,
     totalNetValue: options.totalNetValue ?? 0,
-    validPortfolioCount: options.validPortfolioCount ?? totalOrdersCount - cards.cancelledOrReturned,
+    validPortfolioCount:
+      options.validPortfolioCount ??
+      totalOrdersCount - cards.finishedOrCancelled,
     validPortfolioValue: options.validPortfolioValue ?? 0,
     statusCardsTotalCount: reconciliation.statusCardsTotalCount,
     statusCardsTotalValue: reconciliation.statusCardsTotalValue,
     reconciliation,
     gridFilteredCount: options.gridFilteredCount ?? totalOrdersCount,
-    overdueWithoutInvoiceCount: cards.overdueWithoutInvoice,
-    invoicedOnTimeCount: cards.invoicedOnTime,
-    invoicedLateCount: cards.invoicedLate,
-    partiallyFulfilledCount: cards.partialOrCut,
-    fulfilledWithCutCount: cards.partialOrCut,
-    deliveredCount: 0,
-    cancelledOrReturnedCount: cards.cancelledOrReturned,
-    awaitingInProgressCount: 0,
-    reviewUnknownCount: cards.reviewUnknown,
+    deliveredOnTimeCount: cards.deliveredOnTime,
+    deliveredLateCount: cards.deliveredLate,
+    overduePendingCount: cards.overduePending,
+    onTimePendingCount: cards.onTimePending,
+    finishedOrCancelledCount: cards.finishedOrCancelled,
+    reviewDataCount: cards.reviewData,
   };
 }
 
 function sumCardCounts(cards: SalesOrderManagementCards): number {
   return (
-    cards.overdueWithoutInvoice +
-    cards.invoicedOnTime +
-    cards.invoicedLate +
-    cards.partialOrCut +
-    cards.cancelledOrReturned +
-    cards.reviewUnknown
+    cards.deliveredOnTime +
+    cards.deliveredLate +
+    cards.overduePending +
+    cards.onTimePending +
+    cards.finishedOrCancelled +
+    cards.reviewData
   );
 }
 
@@ -111,10 +107,10 @@ export type SalesOrderManagementRow = {
   responsible: string | null;
 
   executiveStatusLabel: string;
-  /** Card gerencial canônico (6 buckets). */
-  managementStatusCardId: ManagementStatusCardId;
-  /** Label executivo para coluna do grid. */
-  managementCardLabel: string;
+  /** Status Logístico BI — card/filtro principal da gestão. */
+  logisticStatusCardId: ManagementStatusCardId;
+  /** Label exato da fórmula BI para coluna do grid. */
+  logisticStatusLabel: string;
   operationalStatus: SalesOrderOperationalStatus;
   billingStatus: SalesOrderBillingStatus;
   deadlineStatus: SalesOrderDeadlineStatus;

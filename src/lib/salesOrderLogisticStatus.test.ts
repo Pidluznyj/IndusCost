@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildSalesOrderBiLogisticStatus,
   buildSalesOrderLogisticStatus,
   compareLogisticToExecutiveStatus,
   NOMUS_CANCELLED_ITEM_STATUS_CODES,
@@ -9,7 +10,7 @@ import {
 
 const REF = new Date(2026, 5, 15);
 
-describe("salesOrderLogisticStatus", () => {
+describe("salesOrderBiLogisticStatus — fórmula Power BI", () => {
   it("expõe códigos pendentes e cancelados documentados", () => {
     assert.ok(NOMUS_PENDING_ITEM_STATUS_CODES.has(1));
     assert.ok(NOMUS_PENDING_ITEM_STATUS_CODES.has(2));
@@ -17,71 +18,139 @@ describe("salesOrderLogisticStatus", () => {
     assert.ok(NOMUS_CANCELLED_ITEM_STATUS_CODES.has(6));
   });
 
-  it("pedido com NF antes/na data prevista gera Faturado no prazo", () => {
-    const result = buildSalesOrderLogisticStatus({
+  it("1. NF antes da data planejada → Entregue no Prazo", () => {
+    const result = buildSalesOrderBiLogisticStatus({
       expectedDeliveryDate: new Date(2026, 5, 20),
       nomusRawResponse: {
         nfes: [{ dataProcessamento: "15/06/2026", numero: "1" }],
-        itensPedido: [{ status: "Liberado", quantidade: 10 }],
+        itensPedido: [{ status: 2, quantidade: 10 }],
       },
       referenceDate: REF,
     });
-    assert.equal(result.label, "Faturado no prazo");
+    assert.equal(result.label, "Entregue no Prazo");
+    assert.equal(result.cardId, "deliveredOnTime");
   });
 
-  it("pedido com NF após data prevista gera Faturado com atraso", () => {
-    const result = buildSalesOrderLogisticStatus({
+  it("2. NF no mesmo dia da data planejada → Entregue no Prazo", () => {
+    const result = buildSalesOrderBiLogisticStatus({
+      expectedDeliveryDate: new Date(2026, 5, 15),
+      nomusRawResponse: {
+        nfes: [{ dataProcessamento: "15/06/2026", numero: "1" }],
+        itensPedido: [{ status: 1, quantidade: 5 }],
+      },
+      referenceDate: REF,
+    });
+    assert.equal(result.label, "Entregue no Prazo");
+  });
+
+  it("3. NF depois da data planejada → Entregue com Atraso", () => {
+    const result = buildSalesOrderBiLogisticStatus({
       expectedDeliveryDate: new Date(2026, 5, 1),
       nomusRawResponse: {
         nfes: [{ dataProcessamento: "15/06/2026", numero: "1" }],
-        itensPedido: [{ status: "Liberado", quantidade: 10 }],
+        itensPedido: [{ status: 3, quantidade: 10 }],
       },
       referenceDate: REF,
     });
-    assert.equal(result.label, "Faturado com atraso");
+    assert.equal(result.label, "Entregue com Atraso");
+    assert.equal(result.cardId, "deliveredLate");
   });
 
-  it("sem NF, status item 2 e prazo vencido gera Atrasado pendente", () => {
-    const result = buildSalesOrderLogisticStatus({
-      expectedDeliveryDate: new Date(2026, 5, 1),
-      nomusRawResponse: {
-        itensPedido: [{ idProduto: 1, status: 2, quantidade: 5 }],
-      },
-      referenceDate: REF,
-    });
-    assert.equal(result.label, "Atrasado pendente");
+  it("4-6. Sem NF, status 1/2/3 e prazo vencido → Atrasado (Pendente)", () => {
+    for (const status of [1, 2, 3]) {
+      const result = buildSalesOrderBiLogisticStatus({
+        expectedDeliveryDate: new Date(2026, 5, 1),
+        nomusRawResponse: {
+          itensPedido: [{ idProduto: 1, status, quantidade: 5 }],
+        },
+        referenceDate: REF,
+      });
+      assert.equal(result.label, "Atrasado (Pendente)", `status ${status}`);
+      assert.equal(result.cardId, "overduePending");
+    }
   });
 
-  it("sem NF, status item 1 e prazo futuro gera No prazo pendente", () => {
-    const result = buildSalesOrderLogisticStatus({
-      expectedDeliveryDate: new Date(2026, 6, 1),
-      nomusRawResponse: {
-        itensPedido: [{ idProduto: 1, status: 1, quantidade: 5 }],
-      },
-      referenceDate: REF,
-    });
-    assert.equal(result.label, "No prazo pendente");
+  it("7-9. Sem NF, status 1/2/3 e prazo futuro → No Prazo (Pendente)", () => {
+    for (const status of [1, 2, 3]) {
+      const result = buildSalesOrderBiLogisticStatus({
+        expectedDeliveryDate: new Date(2026, 6, 1),
+        nomusRawResponse: {
+          itensPedido: [{ idProduto: 1, status, quantidade: 5 }],
+        },
+        referenceDate: REF,
+      });
+      assert.equal(result.label, "No Prazo (Pendente)", `status ${status}`);
+      assert.equal(result.cardId, "onTimePending");
+    }
   });
 
-  it("sem NF e status item 6 gera Cancelado (PD 02130)", () => {
-    const result = buildSalesOrderLogisticStatus({
+  it("10. Sem NF, status fora de 1/2/3 → Finalizado/Cancelado", () => {
+    const result = buildSalesOrderBiLogisticStatus({
       expectedDeliveryDate: new Date(2026, 0, 23),
       nomusRawResponse: {
         itensPedido: [{ status: 6, quantidade: 1, quantidadeCancelada: 1 }],
       },
       referenceDate: REF,
     });
-    assert.equal(result.label, "Cancelado");
-    const cmp = compareLogisticToExecutiveStatus(result, "Cancelado");
-    assert.equal(cmp.diverges, false);
+    assert.equal(result.label, "Finalizado/Cancelado");
+    assert.equal(result.cardId, "finishedOrCancelled");
   });
 
-  it("divergência entre logístico e gerencial é sinalizada", () => {
-    const logistic = buildSalesOrderLogisticStatus({
+  it("11. Status item não numérico sem NF → Revisar dados", () => {
+    const result = buildSalesOrderBiLogisticStatus({
+      expectedDeliveryDate: new Date(2026, 6, 1),
+      nomusRawResponse: {
+        itensPedido: [{ status: "Liberado", quantidade: 5 }],
+      },
+      referenceDate: REF,
+    });
+    assert.equal(result.label, "Revisar dados");
+    assert.equal(result.cardId, "reviewData");
+  });
+
+  it("12. Sem DataPlanejada e sem NF → Revisar dados", () => {
+    const result = buildSalesOrderBiLogisticStatus({
+      expectedDeliveryDate: null,
+      nomusRawResponse: {
+        itensPedido: [{ status: 1, quantidade: 5 }],
+      },
+      referenceDate: REF,
+    });
+    assert.equal(result.label, "Revisar dados");
+  });
+
+  it("com NF não cai em pendente mesmo com item status 1/2/3", () => {
+    const result = buildSalesOrderBiLogisticStatus({
+      expectedDeliveryDate: new Date(2026, 4, 1),
+      nomusRawResponse: {
+        nfes: [{ dataProcessamento: "15/06/2026" }],
+        itensPedido: [{ status: 1, quantidade: 10 }],
+      },
+      referenceDate: REF,
+    });
+    assert.notEqual(result.label, "Atrasado (Pendente)");
+    assert.notEqual(result.label, "No Prazo (Pendente)");
+    assert.equal(result.label, "Entregue com Atraso");
+  });
+
+  it("alias buildSalesOrderLogisticStatus retorna mesmo resultado", () => {
+    const input = {
+      expectedDeliveryDate: new Date(2026, 6, 1),
+      nomusRawResponse: { itensPedido: [{ status: 2, quantidade: 1 }] },
+      referenceDate: REF,
+    };
+    assert.deepEqual(
+      buildSalesOrderLogisticStatus(input).label,
+      buildSalesOrderBiLogisticStatus(input).label
+    );
+  });
+
+  it("divergência entre logístico BI e gerencial é sinalizada", () => {
+    const logistic = buildSalesOrderBiLogisticStatus({
       expectedDeliveryDate: new Date(2026, 5, 1),
       nomusRawResponse: {
         nfes: [{ dataProcessamento: "15/06/2026" }],
-        itensPedido: [{ status: "Atendido totalmente", quantidade: 10, quantidadeFaturada: 10 }],
+        itensPedido: [{ status: 1, quantidade: 10 }],
       },
       referenceDate: REF,
     });

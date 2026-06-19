@@ -1,17 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildSalesOrderLifecycleSummary } from "./salesOrderLifecycleStatus.js";
 import {
   buildManagementRowsFromOrders,
   buildSalesOrderManagementCards,
 } from "./salesOrderManagement.js";
 import {
-  MANAGEMENT_STATUS_CARDS,
+  BI_LOGISTIC_STATUS_CARDS,
   assertManagementCardsReconciliation,
   buildManagementDashboardCards,
-  getManagementCardGridLabel,
-  resolveManagementCardFromLifecycle,
-  resolveManagementStatusCardId,
   sumManagementStatusCardAmounts,
   sumManagementStatusCardCounts,
 } from "./salesOrderManagementStatus.js";
@@ -33,7 +29,7 @@ function orderBase(overrides: Record<string, unknown> = {}) {
         {
           idProduto: 1,
           codigoProduto: "SKU-1",
-          status: "Liberado",
+          status: 2,
           quantidade: 10,
           quantidadeAtendida: 0,
           quantidadeFaturada: 0,
@@ -55,174 +51,92 @@ function orderBase(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("salesOrderManagementStatus", () => {
-  it("mapeia status gerencial para 6 cards exclusivos", () => {
-    assert.equal(resolveManagementStatusCardId("Atrasado sem NF"), "overdueWithoutInvoice");
-    assert.equal(resolveManagementStatusCardId("Faturado total no prazo"), "invoicedOnTime");
-    assert.equal(resolveManagementStatusCardId("Faturado total com atraso"), "invoicedLate");
-    assert.equal(resolveManagementStatusCardId("Cancelado"), "cancelledOrReturned");
-    assert.equal(resolveManagementStatusCardId("Liberado"), "reviewUnknown");
-    assert.equal(resolveManagementStatusCardId("Status desconhecido"), "reviewUnknown");
+describe("salesOrderManagementDashboard — Status Logístico BI", () => {
+  it("cards cobrem 6 categorias BI + total", () => {
+    assert.equal(BI_LOGISTIC_STATUS_CARDS.length, 6);
+    assert.ok(BI_LOGISTIC_STATUS_CARDS.some((c) => c.label === "Entregue no Prazo"));
+    assert.ok(BI_LOGISTIC_STATUS_CARDS.some((c) => c.label === "Entregue com Atraso"));
+    assert.ok(BI_LOGISTIC_STATUS_CARDS.some((c) => c.label === "Atrasado (Pendente)"));
+    assert.ok(BI_LOGISTIC_STATUS_CARDS.some((c) => c.label === "No Prazo (Pendente)"));
+    assert.ok(BI_LOGISTIC_STATUS_CARDS.some((c) => c.label === "Finalizado/Cancelado"));
+    assert.ok(BI_LOGISTIC_STATUS_CARDS.some((c) => c.label === "Revisar dados"));
   });
 
-  it("cards principais cobrem 6 categorias gerenciais + total", () => {
-    assert.equal(MANAGEMENT_STATUS_CARDS.length, 6);
-    assert.ok(MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Atrasados aguardando NF"));
-    assert.ok(MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Faturados no prazo"));
-    assert.ok(MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Faturados com atraso"));
-    assert.ok(MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Finalizados com corte"));
-    assert.ok(MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Canceladas / devolvidas"));
-    assert.ok(MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Revisar"));
-    assert.ok(!MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Pedidos em aberto"));
-    assert.ok(!MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Entregues"));
-    assert.ok(!MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Aguardando/em andamento"));
-  });
-
-  it("grid label é amigável por card", () => {
-    assert.equal(getManagementCardGridLabel("overdueWithoutInvoice"), "Atrasado aguardando NF");
-    assert.equal(getManagementCardGridLabel("invoicedOnTime"), "Faturado no prazo");
-    assert.equal(getManagementCardGridLabel("cancelledOrReturned"), "Cancelado / devolvido");
-  });
-});
-
-describe("salesOrderManagementDashboard cards", () => {
-  it("pedido atrasado sem NF conta apenas no card correspondente", () => {
-    const overdue = orderBase({ expectedDeliveryDate: new Date(2026, 4, 1) });
-    const { rows, cards } = buildManagementRowsFromOrders([overdue], {}, REF);
-    assert.equal(rows[0].managementStatusCardId, "overdueWithoutInvoice");
-    assert.equal(cards.overdueWithoutInvoice, 1);
-    assert.equal(cards.cancelledOrReturned, 0);
-    assert.equal(cards.invoicedOnTime, 0);
-  });
-
-  it("pedido faturado no prazo conta em Faturados no prazo", () => {
+  it("pedido com NF no prazo → Entregue no Prazo", () => {
     const order = orderBase({
       expectedDeliveryDate: new Date(2026, 5, 20),
       nomusRawResponse: {
-        itensPedido: [
-          {
-            idProduto: 1,
-            codigoProduto: "SKU-1",
-            status: "Atendido totalmente",
-            quantidade: 10,
-            quantidadeAtendida: 10,
-            quantidadeFaturada: 10,
-          },
-        ],
-        nfes: [{ dataProcessamento: "20/06/2026", numero: "456" }],
+        itensPedido: [{ idProduto: 1, status: 2, quantidade: 10 }],
+        nfes: [{ dataProcessamento: "15/06/2026", numero: "456" }],
       },
     });
     const { rows, cards } = buildManagementRowsFromOrders([order], {}, REF);
-    assert.equal(rows[0].managementStatusCardId, "invoicedOnTime");
-    assert.equal(cards.invoicedOnTime, 1);
-    assert.equal(cards.overdueWithoutInvoice, 0);
+    assert.equal(rows[0].logisticStatusLabel, "Entregue no Prazo");
+    assert.equal(cards.deliveredOnTime, 1);
+    assert.equal(cards.overduePending, 0);
   });
 
-  it("pedido faturado com atraso conta em Faturados com atraso", () => {
+  it("pedido com NF após prazo → Entregue com Atraso", () => {
     const order = orderBase({
       expectedDeliveryDate: new Date(2026, 4, 1),
       nomusRawResponse: {
-        itensPedido: [
-          {
-            idProduto: 1,
-            status: "Liberado",
-            quantidade: 10,
-            quantidadeAtendida: 10,
-            quantidadeFaturada: 10,
-          },
-        ],
+        itensPedido: [{ idProduto: 1, status: 2, quantidade: 10 }],
         nfes: [{ dataProcessamento: "15/06/2026", numero: "100" }],
       },
     });
     const { rows, cards } = buildManagementRowsFromOrders([order], {}, REF);
-    assert.equal(rows[0].managementStatusCardId, "invoicedLate");
-    assert.equal(cards.invoicedLate, 1);
+    assert.equal(rows[0].logisticStatusLabel, "Entregue com Atraso");
+    assert.equal(cards.deliveredLate, 1);
   });
 
-  it("pedido atendido parcialmente entra em Finalizados com corte", () => {
+  it("sem NF, status 2 e prazo vencido → Atrasado (Pendente)", () => {
+    const overdue = orderBase({ expectedDeliveryDate: new Date(2026, 4, 1) });
+    const { rows, cards } = buildManagementRowsFromOrders([overdue], {}, REF);
+    assert.equal(rows[0].logisticStatusLabel, "Atrasado (Pendente)");
+    assert.equal(cards.overduePending, 1);
+  });
+
+  it("sem NF, status 1 e prazo futuro → No Prazo (Pendente)", () => {
     const order = orderBase({
+      expectedDeliveryDate: new Date(2026, 6, 1),
       nomusRawResponse: {
-        itensPedido: [
-          {
-            idProduto: 1,
-            status: "Atendido parcialmente",
-            quantidade: 10,
-            quantidadeAtendida: 5,
-            quantidadeFaturada: 5,
-          },
-        ],
-        nfes: [{ dataProcessamento: "10/06/2026", numero: "50" }],
+        itensPedido: [{ idProduto: 1, status: 1, quantidade: 10 }],
+        nfes: [],
       },
     });
     const { rows, cards } = buildManagementRowsFromOrders([order], {}, REF);
-    assert.equal(rows[0].managementStatusCardId, "partialOrCut");
-    assert.equal(cards.partialOrCut, 1);
+    assert.equal(rows[0].logisticStatusLabel, "No Prazo (Pendente)");
+    assert.equal(cards.onTimePending, 1);
   });
 
-  it("pedido cancelado conta em Canceladas/devolvidas e não em outros cards", () => {
+  it("sem NF, status 6 → Finalizado/Cancelado", () => {
     const cancelled = orderBase({
       nomusRawResponse: {
-        itensPedido: [
-          {
-            item: 10,
-            status: 6,
-            quantidade: 1,
-            quantidadeCancelada: 1,
-          },
-        ],
+        itensPedido: [{ item: 10, status: 6, quantidade: 1, quantidadeCancelada: 1 }],
         nfes: [],
       },
     });
     const { rows, cards } = buildManagementRowsFromOrders([cancelled], {}, REF);
-    assert.equal(rows[0].managementStatusCardId, "cancelledOrReturned");
-    assert.equal(cards.cancelledOrReturned, 1);
-    assert.equal(cards.overdueWithoutInvoice, 0);
-    assert.equal(cards.reviewUnknown, 0);
+    assert.equal(rows[0].logisticStatusLabel, "Finalizado/Cancelado");
+    assert.equal(cards.finishedOrCancelled, 1);
+    assert.equal(cards.overduePending, 0);
   });
 
-  it("pedido faturado total não entra em Atrasados aguardando NF", () => {
+  it("pedido com NF não entra em Atrasado (Pendente)", () => {
     const order = orderBase({
       expectedDeliveryDate: new Date(2026, 4, 1),
       nomusRawResponse: {
-        itensPedido: [
-          {
-            idProduto: 1,
-            status: "Atendido totalmente",
-            quantidade: 10,
-            quantidadeAtendida: 10,
-            quantidadeFaturada: 10,
-          },
-        ],
+        itensPedido: [{ status: 2, quantidade: 10 }],
         nfes: [{ dataProcessamento: "15/06/2026", numero: "200" }],
       },
     });
     const { rows, cards } = buildManagementRowsFromOrders([order], {}, REF);
-    assert.notEqual(rows[0].managementStatusCardId, "overdueWithoutInvoice");
-    assert.equal(cards.overdueWithoutInvoice, 0);
-    assert.equal(cards.invoicedLate, 1);
+    assert.notEqual(rows[0].logisticStatusLabel, "Atrasado (Pendente)");
+    assert.equal(cards.overduePending, 0);
+    assert.equal(cards.deliveredLate, 1);
   });
 
-  it("status desconhecido entra em Revisar", () => {
-    const { lifecycle } = buildSalesOrderLifecycleSummary({
-      salesOrderId: "x",
-      salesOrderNumber: "X",
-      originalStatus: "OK",
-      issueDate: new Date(),
-      items: [
-        {
-          id: "i1",
-          skuSnapshot: "S",
-          productNameSnapshot: "P",
-          quantity: 1,
-        },
-      ],
-      nomusRawResponse: { itensPedido: [{ status: "XYZ_INVALIDO", quantidade: 1 }] },
-      referenceDate: REF,
-    });
-    assert.equal(resolveManagementCardFromLifecycle(lifecycle), "reviewUnknown");
-  });
-
-  it("filtro managementStatus reduz grid e mantém contagem do card", () => {
+  it("filtro logisticStatus reduz grid e mantém contagem do card", () => {
     const overdue = orderBase({
       id: "so-overdue",
       expectedDeliveryDate: new Date(2026, 4, 1),
@@ -232,31 +146,23 @@ describe("salesOrderManagementDashboard cards", () => {
       orderCode: "PD 99999",
       expectedDeliveryDate: new Date(2026, 6, 1),
       nomusRawResponse: {
-        itensPedido: [
-          {
-            idProduto: 1,
-            status: "Liberado",
-            quantidade: 10,
-            quantidadeAtendida: 10,
-            quantidadeFaturada: 10,
-          },
-        ],
-        nfes: [{ dataProcessamento: "10/06/2026", numero: "99" }],
+        itensPedido: [{ status: 1, quantidade: 10 }],
+        nfes: [],
       },
     });
     const base = buildManagementRowsFromOrders([overdue, onTime], {}, REF);
-    assert.equal(base.cards.overdueWithoutInvoice, 1);
+    assert.equal(base.cards.overduePending, 1);
     assert.equal(base.dashboardCards[0]?.label, "Total no filtro");
     assert.equal(base.dashboardCards[0]?.count, 2);
     assert.equal(base.dashboardCards.length, 7);
 
     const filtered = buildManagementRowsFromOrders(
       [overdue, onTime],
-      { managementStatus: "overdueWithoutInvoice" },
+      { logisticStatus: "overduePending" },
       REF
     );
     assert.equal(filtered.rows.length, 1);
-    assert.equal(filtered.cards.overdueWithoutInvoice, 1);
+    assert.equal(filtered.cards.overduePending, 1);
     assert.equal(filtered.summary.gridFilteredCount, 1);
     assert.equal(filtered.summary.totalOrdersCount, 2);
   });
@@ -283,21 +189,8 @@ describe("salesOrderManagementDashboard cards", () => {
   });
 
   it("buildSalesOrderManagementCards não retorna NaN/Infinity", () => {
-    const { lifecycle } = buildSalesOrderLifecycleSummary({
-      salesOrderId: "x",
-      salesOrderNumber: "X",
-      originalStatus: "OK",
-      issueDate: new Date(),
-      items: [],
-      referenceDate: REF,
-    });
-    const cardId = resolveManagementCardFromLifecycle(lifecycle);
     const cards = buildSalesOrderManagementCards([
-      {
-        executiveStatusLabel: lifecycle.executiveStatusLabel,
-        totalNetValue: 100,
-        managementStatusCardId: cardId,
-      },
+      { logisticStatusCardId: "onTimePending", totalNetValue: 100 },
     ]);
     for (const value of Object.values(cards)) {
       assert.ok(Number.isFinite(value));
