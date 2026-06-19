@@ -12,6 +12,18 @@ import {
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
+import {
+  buildFinanceModuleEyebrow,
+  FINANCE_FILTER_PANEL_TITLE,
+  FINANCE_HEADER_ACTION_EXPORT_CSV,
+  FINANCE_HEADER_ACTION_REFRESH,
+} from "@/src/lib/financeModuleUiStandards";
+import { FINANCE_SALES_ORDERS_EXECUTIVE_SUBTITLE } from "@/src/lib/financeDataAuditCopy";
+import {
+  FinanceModuleEmptyState,
+  FinanceModuleErrorBanner,
+  FinanceModuleLoadingBlock,
+} from "@/src/components/finance/shared/FinanceModuleStates";
 import type { FinanceSalesOrdersDashboardPayload } from "@/src/lib/financeSalesOrdersDashboardTypes";
 import {
   buildFinanceSalesOrdersMonthlyComparisonNarrative,
@@ -33,8 +45,6 @@ import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilte
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
-import { FinanceApErrorBanner, FinanceApLoadingBlock } from "@/src/components/finance/FinanceAccountsPayableUiShared";
-import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyState";
 import { FinanceSalesOrdersMonthlyChart } from "@/src/components/finance/sales-orders/FinanceSalesOrdersMonthlyChart";
 import { FinanceSalesOrdersProjectionChart } from "@/src/components/finance/sales-orders/FinanceSalesOrdersProjectionChart";
 import { FinanceSalesOrdersBreakdownChart } from "@/src/components/finance/sales-orders/FinanceSalesOrdersBreakdownChart";
@@ -281,14 +291,14 @@ export function FinanceSalesOrdersPage() {
     <FinanceBiDashboardShell>
       <div data-testid="finance-sales-orders-page">
       <FinanceExecutivePageHeader
-        eyebrow="FINANCEIRO · PEDIDOS DE VENDA"
+        eyebrow={buildFinanceModuleEyebrow("sales-orders")}
         title="Pedidos de Venda"
-        subtitle="Dashboard gerencial de pedidos emitidos, carteira, faturamento, status logístico BI e comparativo anual."
+        subtitle={FINANCE_SALES_ORDERS_EXECUTIVE_SUBTITLE}
         updatedAt={data?.generatedAt}
         actions={[
           {
             id: "refresh",
-            label: "Atualizar",
+            label: FINANCE_HEADER_ACTION_REFRESH,
             onClick: () => void load(),
             disabled: loading,
             loading,
@@ -297,7 +307,7 @@ export function FinanceSalesOrdersPage() {
           },
           {
             id: "export",
-            label: "Exportar CSV",
+            label: FINANCE_HEADER_ACTION_EXPORT_CSV,
             onClick: () => void exportCsv(),
             disabled: exporting || loading || !data,
             loading: exporting,
@@ -308,7 +318,14 @@ export function FinanceSalesOrdersPage() {
         extraActions={<FinanceDataAuditButton onClick={() => setAuditOpen(true)} />}
       />
 
+      <FinanceDataAuditDrawer
+        open={auditOpen}
+        onClose={() => setAuditOpen(false)}
+        sections={auditSections}
+      />
+
       <FinanceBiFilterPanel
+        title={FINANCE_FILTER_PANEL_TITLE}
         expanded={filtersExpanded}
         onToggle={() => setFiltersExpanded((v) => !v)}
         filterStatus={filterStatus}
@@ -442,8 +459,16 @@ export function FinanceSalesOrdersPage() {
         }
       />
 
-      {error ? <FinanceApErrorBanner message={error} /> : null}
-      {loading && !data ? <FinanceApLoadingBlock label="Carregando pedidos de venda…" /> : null}
+      {error ? (
+        <FinanceModuleErrorBanner
+          message={error}
+          onRetry={() => void load()}
+          onDismiss={() => setError(null)}
+        />
+      ) : null}
+      {loading && !data ? (
+        <FinanceModuleLoadingBlock label="Carregando pedidos de venda…" />
+      ) : null}
 
       {summary && data ? (
         <>
@@ -585,7 +610,7 @@ export function FinanceSalesOrdersPage() {
                 {data.criticalOrders.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-6">
-                      <FinanceBiEmptyState
+                      <FinanceModuleEmptyState
                         title="Nenhum pedido crítico"
                         description="Não há pedidos atrasados, em revisão ou com alto valor em carteira nos filtros."
                       />
@@ -630,7 +655,7 @@ export function FinanceSalesOrdersPage() {
                 {data.topSellers.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-6">
-                      <FinanceBiEmptyState
+                      <FinanceModuleEmptyState
                         title="Nenhum vendedor no período"
                         description="Não há pedidos emitidos para os filtros aplicados."
                       />
@@ -701,7 +726,7 @@ export function FinanceSalesOrdersPage() {
                 {data.topCustomers.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-6">
-                      <FinanceBiEmptyState
+                      <FinanceModuleEmptyState
                         title="Nenhum cliente no período"
                         description="Não há pedidos emitidos para os filtros aplicados."
                       />
@@ -729,12 +754,6 @@ export function FinanceSalesOrdersPage() {
           </div>
         </>
       ) : null}
-
-      <FinanceDataAuditDrawer
-        open={auditOpen}
-        onClose={() => setAuditOpen(false)}
-        sections={auditSections}
-      />
       </div>
     </FinanceBiDashboardShell>
   );

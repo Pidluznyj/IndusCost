@@ -35,7 +35,7 @@ export const FINANCE_BILLING_EXECUTIVE_SUBTITLE =
   "Receita fiscal por NF-e autorizada." as const;
 
 export const FINANCE_AUDIT_SECTION_COMPARISON = "Comparativo" as const;
-export const FINANCE_AUDIT_SECTION_TECHNICAL = "Ações técnicas" as const;
+export const FINANCE_AUDIT_SECTION_TECHNICAL = "Informações técnicas" as const;
 
 export const FINANCE_AP_AUDIT_RULES = [
   "Pedidos de compra não entram na visão gerencial.",
@@ -53,3 +53,9 @@ export const FINANCE_BILLING_AUDIT_RULES = [
 
 export const FINANCE_BILLING_COMPARISON_NOTE =
   "Pedidos de Venda são usados apenas para comparação com o faturamento fiscal. O faturamento oficial considera NF-e autorizada." as const;
+
+export const FINANCE_EXECUTIVE_REPORT_SUBTITLE =
+  "Visão executiva consolidada de caixa, recebíveis, pagáveis, faturamento e pedidos." as const;
+
+export const FINANCE_SALES_ORDERS_EXECUTIVE_SUBTITLE =
+  "Dashboard gerencial de pedidos emitidos, carteira, faturamento, status logístico BI e comparativo anual." as const;

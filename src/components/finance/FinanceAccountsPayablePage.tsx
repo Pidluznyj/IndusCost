@@ -107,6 +107,12 @@ import {
   FINANCE_AUDIT_SECTION_TECHNICAL,
   FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE,
 } from "@/src/lib/financeDataAuditCopy";
+import {
+  buildFinanceModuleEyebrow,
+  FINANCE_FILTER_PANEL_TITLE,
+  FINANCE_HEADER_ACTION_EXPORT_CSV,
+  FINANCE_HEADER_ACTION_REFRESH,
+} from "@/src/lib/financeModuleUiStandards";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import {
   FINANCE_KPI_AP_DUE_30_DAYS,
@@ -635,7 +641,7 @@ export function FinanceAccountsPayablePage() {
   return (
     <FinanceBiDashboardShell>
       <FinanceExecutivePageHeader
-        eyebrow="FINANCEIRO · CONTAS A PAGAR"
+        eyebrow={buildFinanceModuleEyebrow("accounts-payable")}
         title="Contas a Pagar"
         subtitle={FINANCE_AP_EXECUTIVE_SUBTITLE}
         updatedAt={headerUpdatedAt}
@@ -643,7 +649,7 @@ export function FinanceAccountsPayablePage() {
         actions={[
           {
             id: "refresh",
-            label: "Atualizar",
+            label: FINANCE_HEADER_ACTION_REFRESH,
             onClick: () => void loadDashboard(),
             disabled: loading,
             loading,
@@ -657,7 +663,7 @@ export function FinanceAccountsPayablePage() {
             ? [
                 {
                   id: "export",
-                  label: "Exportar CSV",
+                  label: FINANCE_HEADER_ACTION_EXPORT_CSV,
                   onClick: () => void handleExport(),
                   disabled: exporting || loading,
                   loading: exporting,
@@ -713,7 +719,7 @@ export function FinanceAccountsPayablePage() {
       ) : null}
 
       <FinanceBiFilterPanel
-        title="Filtros principais"
+        title={FINANCE_FILTER_PANEL_TITLE}
         expanded={showAdvancedFilters}
         onToggle={() => setShowAdvancedFilters((v) => !v)}
         filterStatus={filterStatus}

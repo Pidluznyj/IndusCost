@@ -112,8 +112,8 @@ describe("financeModuleTabsValidation", () => {
 
       it("página tem loading e tratamento de erro", () => {
         const page = read(tab.page);
-        assert.match(page, /loading|Loader2|Carregando/i);
-        assert.match(page, /setError|setDashboardError|setNfeError|dashboardError/i);
+        assert.match(page, /loading|Loader2|Carregando|FinanceModulePageLoading/i);
+        assert.match(page, /setError|setDashboardError|dashboardError|buildFinanceTabLoadError/i);
       });
     });
   }
@@ -190,7 +190,7 @@ describe("financeModuleTabsValidation", () => {
   });
 
   it("frontend não quebra com payload vazio — empty states", () => {
-    assert.match(read("src/components/finance/FinanceSalesOrdersPage.tsx"), /FinanceBiEmptyState/);
+    assert.match(read("src/components/finance/FinanceSalesOrdersPage.tsx"), /FinanceModuleEmptyState|FinanceBiEmptyState/);
     assert.match(
       read("src/components/finance/FinanceAccountsReceivableTitlesTab.tsx"),
       /TabEmpty/

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "@/src/lib/financeAccountsReceivableManagement";
 import {
   buildFinanceArDashboardQuery,
@@ -106,6 +107,13 @@ import {
   FINANCE_AR_EXECUTIVE_SUBTITLE,
   FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE,
 } from "@/src/lib/financeDataAuditCopy";
+import {
+  buildFinanceModuleEyebrow,
+  FINANCE_FILTER_PANEL_TITLE,
+  FINANCE_HEADER_ACTION_EXPORT_CSV,
+  FINANCE_HEADER_ACTION_REFRESH,
+} from "@/src/lib/financeModuleUiStandards";
+import { FinanceModuleErrorBanner } from "@/src/components/finance/shared/FinanceModuleStates";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import {
   FINANCE_KPI_AR_DELINQUENCY,
@@ -533,9 +541,7 @@ export function FinanceAccountsReceivablePage() {
       setData(payload);
     } catch (e) {
       setDashboardError(
-        e instanceof Error
-          ? e.message
-          : "Não foi possível carregar o dashboard. Tente atualizar em instantes."
+        buildFinanceTabLoadError("Não foi possível carregar Contas a Receber.", e)
       );
     } finally {
       setLoading(false);
@@ -653,7 +659,7 @@ export function FinanceAccountsReceivablePage() {
   return (
     <FinanceBiDashboardShell>
       <FinanceExecutivePageHeader
-        eyebrow="FINANCEIRO · CONTAS A RECEBER"
+        eyebrow={buildFinanceModuleEyebrow("accounts-receivable")}
         title="Contas a Receber"
         subtitle={FINANCE_AR_EXECUTIVE_SUBTITLE}
         updatedAt={headerUpdatedAt}
@@ -661,7 +667,7 @@ export function FinanceAccountsReceivablePage() {
         actions={[
           {
             id: "refresh",
-            label: "Atualizar",
+            label: FINANCE_HEADER_ACTION_REFRESH,
             onClick: () => void loadDashboard(),
             disabled: loading,
             loading,
@@ -675,7 +681,7 @@ export function FinanceAccountsReceivablePage() {
             ? [
                 {
                   id: "export",
-                  label: "Exportar CSV",
+                  label: FINANCE_HEADER_ACTION_EXPORT_CSV,
                   onClick: () => void handleExport(),
                   disabled: exporting || loading,
                   loading: exporting,
@@ -706,7 +712,11 @@ export function FinanceAccountsReceivablePage() {
 
       <main data-testid="finance-main-content">
       {dashboardError ? (
-        <FinanceArErrorBanner message={dashboardError} onDismiss={() => setDashboardError(null)} />
+        <FinanceModuleErrorBanner
+          message={dashboardError}
+          onRetry={() => void loadDashboard()}
+          onDismiss={() => setDashboardError(null)}
+        />
       ) : null}
       {exportError ? (
         <FinanceArErrorBanner message={exportError} onDismiss={() => setExportError(null)} />
@@ -716,7 +726,7 @@ export function FinanceAccountsReceivablePage() {
       ) : null}
 
       <FinanceBiFilterPanel
-        title="Filtros principais"
+        title={FINANCE_FILTER_PANEL_TITLE}
         compact
         expanded={showAdvancedFilters}
         onToggle={() => setShowAdvancedFilters((v) => !v)}

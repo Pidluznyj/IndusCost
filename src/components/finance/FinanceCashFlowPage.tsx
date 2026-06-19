@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Loader2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   buildFinanceCashFlowDashboardQuery,
   buildFinanceCashFlowExportQuery,
@@ -65,6 +66,16 @@ import {
   countFinanceDataAuditWarnings,
 } from "@/src/lib/financeDataAudit";
 import { FINANCE_CASH_FLOW_EXECUTIVE_SUBTITLE, FINANCE_EXECUTIVE_FILTER_SCOPE_NOTE } from "@/src/lib/financeDataAuditCopy";
+import {
+  buildFinanceModuleEyebrow,
+  FINANCE_FILTER_PANEL_TITLE,
+  FINANCE_HEADER_ACTION_EXPORT_CSV,
+  FINANCE_HEADER_ACTION_REFRESH,
+} from "@/src/lib/financeModuleUiStandards";
+import {
+  FinanceModuleErrorBanner,
+  FinanceModulePageLoading,
+} from "@/src/components/finance/shared/FinanceModuleStates";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
 
@@ -124,7 +135,9 @@ export function FinanceCashFlowPage() {
       const data = await fetchJsonOk<FinanceCashFlowDashboardPayload>(url);
       setPayload(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha ao carregar fluxo de caixa.");
+      setError(
+        buildFinanceTabLoadError("Não foi possível carregar o Fluxo de Caixa.", e)
+      );
       setPayload(null);
     } finally {
       setLoading(false);
@@ -177,7 +190,7 @@ export function FinanceCashFlowPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha na exportação.");
+      setError(buildFinanceTabLoadError("Não foi possível exportar o Fluxo de Caixa.", e));
     } finally {
       setExporting(false);
     }
@@ -233,14 +246,14 @@ export function FinanceCashFlowPage() {
     <FinanceBiDashboardShell>
       <div data-testid="cash-flow-page" className="contents">
       <FinanceExecutivePageHeader
-        eyebrow="FINANCEIRO · FLUXO DE CAIXA"
+        eyebrow={buildFinanceModuleEyebrow("cash-flow")}
         title="Fluxo de Caixa"
         subtitle={FINANCE_CASH_FLOW_EXECUTIVE_SUBTITLE}
         updatedAt={headerUpdatedAt}
         actions={[
           {
             id: "refresh",
-            label: "Atualizar",
+            label: FINANCE_HEADER_ACTION_REFRESH,
             onClick: () => void loadDashboard(),
             disabled: loading,
             loading,
@@ -251,9 +264,9 @@ export function FinanceCashFlowPage() {
             ? [
                 {
                   id: "export",
-                  label: "Exportar",
+                  label: FINANCE_HEADER_ACTION_EXPORT_CSV,
                   onClick: () => void handleExport(),
-                  disabled: exporting || loading,
+                  disabled: exporting || loading || !payload,
                   loading: exporting,
                   icon: <Download className="h-4 w-4" />,
                   variant: "accent" as const,
@@ -291,6 +304,7 @@ export function FinanceCashFlowPage() {
       <main data-testid="finance-main-content">
       <div data-testid="cash-flow-filters">
       <FinanceBiFilterPanel
+        title={FINANCE_FILTER_PANEL_TITLE}
         expanded={showAdvancedFilters}
         onToggle={() => setShowAdvancedFilters((v) => !v)}
         filterStatus={filterStatus}
@@ -502,16 +516,15 @@ export function FinanceCashFlowPage() {
       </nav>
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-          {error}
-        </div>
+        <FinanceModuleErrorBanner
+          message={error}
+          onRetry={() => void loadDashboard()}
+          onDismiss={() => setError(null)}
+        />
       ) : null}
 
       {loading && !payload ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-12 justify-center">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Carregando fluxo de caixa…
-        </div>
+        <FinanceModulePageLoading label="Carregando fluxo de caixa…" />
       ) : null}
 
       {payload && activeTab === "overview" ? (

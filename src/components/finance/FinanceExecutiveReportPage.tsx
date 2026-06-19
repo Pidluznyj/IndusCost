@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceExecutiveReport } from "@/src/lib/financeExecutiveReportTypes";
 import { canViewFinanceExecutiveReport } from "@/src/lib/financeExecutiveReportPermissions";
 import {
@@ -20,8 +20,30 @@ import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding
 import { ExecutiveReportFilters } from "@/src/components/finance/executive-report/ExecutiveReportFilters";
 import { ExecutiveReportDocument } from "@/src/components/finance/executive-report/ExecutiveReportDocument";
 import { ExecutiveDataQualityAlert } from "@/src/components/finance/executive-report/ExecutiveDataQualityAlert";
+import { FinanceDataAuditDrawer } from "@/src/components/finance/shared/FinanceDataAuditDrawer";
+import { buildFinanceExecutiveReportAuditSections } from "@/src/lib/financeDataAudit";
+import { FINANCE_MODULE_TAB_ENDPOINTS } from "@/src/lib/financeModuleUiStandards";
+import {
+  FinanceModuleErrorBanner,
+  FinanceModulePageLoading,
+} from "@/src/components/finance/shared/FinanceModuleStates";
+import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 
 const ROUTE_BODY_CLASS = "finance-executive-report-route";
+
+function buildExecutiveReportFilterAuditItems(
+  filters: FinanceExecutiveReportUiFilters
+): Array<{ label: string; value: string }> {
+  return [
+    { label: "Ano", value: filters.year || "—" },
+    { label: "Mês", value: filters.month || "Todos" },
+    { label: "Data-base", value: filters.asOfDate || "—" },
+    { label: "Empresa", value: filters.company },
+    { label: "Tipo de cliente", value: filters.customerType },
+    { label: "NF emitida", value: filters.nfeFilter },
+    { label: "Top N", value: filters.topN },
+  ];
+}
 
 export function FinanceExecutiveReportPage() {
   const auth = useAuth();
@@ -37,12 +59,14 @@ export function FinanceExecutiveReportPage() {
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [auditOpen, setAuditOpen] = useState(false);
 
   const appliedQuery = useMemo(
     () => buildFinanceExecutiveReportQuery(appliedFilters),
     [appliedFilters]
   );
   const hasPendingFilterChanges = !financeExecutiveReportFiltersEqual(draftFilters, appliedFilters);
+  const filterStatus = resolveFinanceBiFilterStatus(appliedQuery.length > 0, hasPendingFilterChanges);
 
   useEffect(() => {
     document.body.classList.add(ROUTE_BODY_CLASS);
@@ -74,9 +98,7 @@ export function FinanceExecutiveReportPage() {
     } catch (err) {
       setReport(null);
       setError(
-        err instanceof Error
-          ? err.message
-          : "Não foi possível carregar o Relatório Presidencial. Tente novamente."
+        buildFinanceTabLoadError("Não foi possível carregar o Relatório Presidencial.", err)
       );
     } finally {
       setLoading(false);
@@ -89,6 +111,12 @@ export function FinanceExecutiveReportPage() {
 
   const handleApply = () => {
     setAppliedFilters(normalizeFinanceExecutiveReportUiFilters(draftFilters));
+  };
+
+  const handleClear = () => {
+    const defaults = createDefaultFinanceExecutiveReportUiFilters();
+    setDraftFilters(defaults);
+    setAppliedFilters(defaults);
   };
 
   const handlePrint = () => {
@@ -108,6 +136,17 @@ export function FinanceExecutiveReportPage() {
     window.print();
   };
 
+  const auditSections = useMemo(
+    () =>
+      buildFinanceExecutiveReportAuditSections({
+        endpoint: `${FINANCE_MODULE_TAB_ENDPOINTS["executive-report"]}${appliedQuery ? `?${appliedQuery}` : ""}`,
+        generatedAt: report?.generatedAt,
+        appliedFilterItems: buildExecutiveReportFilterAuditItems(appliedFilters),
+        warnings: report?.dataQuality.warnings,
+      }),
+    [appliedFilters, appliedQuery, report?.dataQuality.warnings, report?.generatedAt]
+  );
+
   if (!canView) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
@@ -122,26 +161,32 @@ export function FinanceExecutiveReportPage() {
         draft={draftFilters}
         onChange={setDraftFilters}
         onApply={handleApply}
+        onClear={handleClear}
         onRefresh={() => void loadReport()}
         onPrint={handlePrint}
+        onAudit={() => setAuditOpen(true)}
+        auditWarningCount={report?.dataQuality.warnings.length ?? 0}
         applyDisabled={!hasPendingFilterChanges}
         loading={loading}
+        filterStatus={filterStatus}
+      />
+
+      <FinanceDataAuditDrawer
+        open={auditOpen}
+        onClose={() => setAuditOpen(false)}
+        sections={auditSections}
       />
 
       {error ? (
-        <div
-          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"
-          data-testid="executive-report-error"
-        >
-          {error}
-        </div>
+        <FinanceModuleErrorBanner
+          message={error}
+          onRetry={() => void loadReport()}
+          onDismiss={() => setError(null)}
+        />
       ) : null}
 
       {loading && !report ? (
-        <div className="flex items-center justify-center gap-2 py-24 text-sm text-[#64748b]">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Montando relatório presidencial…
-        </div>
+        <FinanceModulePageLoading label="Montando relatório presidencial…" />
       ) : null}
 
       {loading && report ? (
@@ -150,7 +195,6 @@ export function FinanceExecutiveReportPage() {
           data-testid="executive-report-loading-banner"
           role="status"
         >
-          <Loader2 className="h-4 w-4 animate-spin" />
           Atualizando relatório…
         </div>
       ) : null}

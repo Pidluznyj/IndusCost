@@ -18,6 +18,7 @@ import {
   FINANCE_AUDIT_SECTION_RULES,
   FINANCE_AUDIT_SECTION_SOURCES,
   FINANCE_AUDIT_SECTION_SYNC,
+  FINANCE_AUDIT_SECTION_TECHNICAL,
   FINANCE_AP_AUDIT_RULES,
   FINANCE_BILLING_AUDIT_RULES,
   FINANCE_BILLING_COMPARISON_NOTE,
@@ -430,4 +431,76 @@ export function buildFinanceBillingAuditSections(input: {
       paragraphs: [...FINANCE_BILLING_AUDIT_RULES],
     },
   ];
+}
+
+export function buildFinanceModuleTechnicalAuditSection(input: {
+  endpoint: string;
+  recordCount?: number | null;
+  notes?: string[];
+}): FinanceDataAuditSection {
+  const items: FinanceDataAuditListItem[] = [
+    { label: "Endpoint", value: input.endpoint },
+  ];
+  if (input.recordCount != null && Number.isFinite(input.recordCount)) {
+    items.push({ label: "Registros considerados", value: String(input.recordCount) });
+  }
+  if (input.notes?.length) {
+    return {
+      kind: "paragraphs",
+      id: "technical",
+      title: FINANCE_AUDIT_SECTION_TECHNICAL,
+      paragraphs: input.notes,
+    };
+  }
+  return {
+    kind: "list",
+    id: "technical",
+    title: FINANCE_AUDIT_SECTION_TECHNICAL,
+    items,
+  };
+}
+
+export function buildFinanceExecutiveReportAuditSections(input: {
+  endpoint: string;
+  generatedAt: string | null | undefined;
+  appliedFilterItems: FinanceDataAuditListItem[];
+  warnings?: string[];
+}): FinanceDataAuditSection[] {
+  const sections: FinanceDataAuditSection[] = [
+    {
+      kind: "list",
+      id: "sources",
+      title: FINANCE_AUDIT_SECTION_SOURCES,
+      items: [
+        { label: "Relatório Presidencial", value: "Consolidação das abas Financeiro" },
+      ],
+    },
+    {
+      kind: "list",
+      id: "sync",
+      title: FINANCE_AUDIT_SECTION_SYNC,
+      items: [
+        {
+          label: "Gerado em",
+          value: input.generatedAt ? formatFinanceDateTime(input.generatedAt) : "—",
+        },
+      ],
+    },
+    {
+      kind: "list",
+      id: "filters",
+      title: FINANCE_AUDIT_SECTION_FILTERS,
+      items: input.appliedFilterItems,
+    },
+    buildFinanceModuleTechnicalAuditSection({ endpoint: input.endpoint }),
+  ];
+  if (input.warnings?.length) {
+    sections.push({
+      kind: "status",
+      id: "warnings",
+      title: "Observações",
+      items: input.warnings.map((text) => ({ text })),
+    });
+  }
+  return sections;
 }

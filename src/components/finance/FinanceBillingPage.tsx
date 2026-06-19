@@ -80,6 +80,11 @@ import {
   FINANCE_BILLING_EXECUTIVE_SUBTITLE,
 } from "@/src/lib/financeDataAuditCopy";
 import {
+  buildFinanceModuleEyebrow,
+  FINANCE_FILTER_PANEL_TITLE,
+  FINANCE_HEADER_ACTION_REFRESH,
+} from "@/src/lib/financeModuleUiStandards";
+import {
   FINANCE_KPI_BILLING_DELTA_VS_PREV_YEAR,
   FINANCE_KPI_BILLING_FORECAST,
   FINANCE_KPI_BILLING_GROSS_FOUND,
@@ -494,7 +499,7 @@ export function FinanceBillingPage() {
   return (
     <FinanceBiDashboardShell>
       <FinanceExecutivePageHeader
-        eyebrow="FINANCEIRO · FATURAMENTO"
+        eyebrow={buildFinanceModuleEyebrow("billing")}
         title="Faturamento"
         subtitle={FINANCE_BILLING_EXECUTIVE_SUBTITLE}
         updatedAt={headerUpdatedAt}
@@ -502,7 +507,7 @@ export function FinanceBillingPage() {
         actions={[
           {
             id: "refresh",
-            label: "Atualizar",
+            label: FINANCE_HEADER_ACTION_REFRESH,
             onClick: handleRefreshAll,
             disabled: loading,
             loading,
@@ -610,7 +615,7 @@ export function FinanceBillingPage() {
       ) : null}
 
       <FinanceBiFilterPanel
-        title="Filtros principais"
+        title={FINANCE_FILTER_PANEL_TITLE}
         expanded={showAdvancedFilters}
         onToggle={() => setShowAdvancedFilters((v) => !v)}
         filterStatus={filterStatus}
