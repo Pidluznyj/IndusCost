@@ -200,30 +200,10 @@ export function formatItemSituation(item: {
   return ITEM_NOMUS_STATUS_LABELS[item.normalizedStatus] ?? "—";
 }
 
-export const MANAGEMENT_KPI_CARDS = [
-  { id: "openOrders", label: "Pedidos em aberto" },
-  { id: "overdueWithoutInvoice", label: "Atrasados sem NF" },
-  { id: "invoicedOnTime", label: "Faturados no prazo" },
-  { id: "invoicedLate", label: "Faturados com atraso" },
-  { id: "partialOrCut", label: "Parciais/com corte" },
-  { id: "withoutProductionOrder", label: "Sem OP vinculada" },
-  { id: "productionLate", label: "OP atrasada" },
-  { id: "delivered", label: "Entregues" },
-  { id: "cancelledOrReturned", label: "Cancelados/devolvidos" },
-] as const;
+export const MANAGEMENT_KPI_CARDS = [] as const;
 
-export const MANAGEMENT_KPI_CARD_HINTS: Record<(typeof MANAGEMENT_KPI_CARDS)[number]["id"], string> = {
-  openOrders: "Pedidos ainda em fluxo operacional ou comercial, excluindo cancelados e devolvidos.",
-  overdueWithoutInvoice:
-    "Pedidos vencidos que ainda não têm nota fiscal emitida.",
-  invoicedOnTime: "Pedidos com NF processada dentro do prazo previsto de entrega.",
-  invoicedLate: "Pedidos com NF processada após a data prevista de entrega.",
-  partialOrCut: "Pedidos com atendimento parcial ou com corte em relação ao pedido original.",
-  withoutProductionOrder: "Pedidos sem ordem de produção vinculada no Nomus/IndusCost.",
-  productionLate: "Pedidos cuja OP vinculada está fora do prazo.",
-  delivered: "Pedidos com status operacional de entrega concluída.",
-  cancelledOrReturned: "Pedidos cancelados ou com devolução parcial/total.",
-};
+/** @deprecated Use MANAGEMENT_STATUS_CARDS from salesOrderManagementStatus */
+export const MANAGEMENT_KPI_CARD_HINTS: Record<string, string> = {};
 
 export const INTELLIGENCE_DRAWER_TABS = [
   { id: "summary", label: "Resumo" },

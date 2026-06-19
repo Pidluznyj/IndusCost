@@ -6,31 +6,28 @@ import type {
   SalesOrderRiskFlag,
 } from "./salesOrderLifecycleTypes.js";
 
-export type SalesOrderManagementCards = {
-  openOrders: number;
-  overdueWithoutInvoice: number;
-  invoicedOnTime: number;
-  invoicedLate: number;
-  partialOrCut: number;
-  withoutProductionOrder: number;
-  productionLate: number;
-  delivered: number;
-  cancelledOrReturned: number;
-};
+import type {
+  ManagementStatusCardId,
+} from "./salesOrderManagementStatus.js";
+
+export type SalesOrderManagementCards = Record<ManagementStatusCardId, number>;
+
+export type SalesOrderManagementCardAmounts = Record<ManagementStatusCardId, number>;
 
 /** Alias com nomes do contrato gerencial (cards → summary). */
 export type SalesOrderManagementSummary = {
   totalOrdersCount: number;
-  openOrdersCount: number;
+  /** Pedidos não cancelados/devolvidos no filtro — informativo, não é status exclusivo. */
+  validPortfolioCount: number;
   overdueWithoutInvoiceCount: number;
   invoicedOnTimeCount: number;
   invoicedLateCount: number;
   partiallyFulfilledCount: number;
   fulfilledWithCutCount: number;
-  withoutProductionOrderCount: number;
-  lateProductionOrderCount: number;
   deliveredCount: number;
   cancelledOrReturnedCount: number;
+  awaitingInProgressCount: number;
+  reviewUnknownCount: number;
 };
 
 export function cardsToManagementSummary(
@@ -39,16 +36,16 @@ export function cardsToManagementSummary(
 ): SalesOrderManagementSummary {
   return {
     totalOrdersCount,
-    openOrdersCount: cards.openOrders,
+    validPortfolioCount: totalOrdersCount - cards.cancelledOrReturned,
     overdueWithoutInvoiceCount: cards.overdueWithoutInvoice,
     invoicedOnTimeCount: cards.invoicedOnTime,
     invoicedLateCount: cards.invoicedLate,
     partiallyFulfilledCount: cards.partialOrCut,
     fulfilledWithCutCount: cards.partialOrCut,
-    withoutProductionOrderCount: cards.withoutProductionOrder,
-    lateProductionOrderCount: cards.productionLate,
     deliveredCount: cards.delivered,
     cancelledOrReturnedCount: cards.cancelledOrReturned,
+    awaitingInProgressCount: cards.awaitingInProgress,
+    reviewUnknownCount: cards.reviewUnknown,
   };
 }
 

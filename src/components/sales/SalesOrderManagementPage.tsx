@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Clock,
-  Factory,
   FileText,
   Loader2,
   Package,
@@ -18,10 +17,18 @@ import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import {
   getSalesOrderIntelligenceApiPath,
   getSalesOrderManagementApiPath,
+  type SalesOrderManagementCardAmounts,
   type SalesOrderManagementCards,
   type SalesOrderManagementRow,
 } from "@/src/lib/salesOrderManagementTypes";
 import type { SalesOrderIntelligencePayload } from "@/src/lib/salesOrderIntelligence";
+import {
+  MANAGEMENT_STATUS_CARDS,
+  emptyManagementStatusCardAmounts,
+  emptyManagementStatusCardCounts,
+  getManagementStatusFilterLabel,
+  type ManagementStatusCardId,
+} from "@/src/lib/salesOrderManagementStatus";
 import {
   BILLING_STATUS_FILTER_OPTIONS,
   COMPLETION_STATUS_FILTER_OPTIONS,
@@ -33,11 +40,10 @@ import {
   formatSalesOrderDate,
   formatSalesOrderPercent,
   INVOICE_FILTER_OPTIONS,
-  MANAGEMENT_KPI_CARD_HINTS,
-  MANAGEMENT_KPI_CARDS,
   OPERATIONAL_STATUS_FILTER_OPTIONS,
   PRODUCTION_ORDER_FILTER_OPTIONS,
 } from "@/src/lib/salesOrderManagementUi";
+import { cn } from "@/src/lib/utils";
 import { SalesOrderIntelligenceDrawer } from "@/src/components/sales/SalesOrderIntelligenceDrawer";
 
 type ManagementResponse = {
@@ -46,22 +52,14 @@ type ManagementResponse = {
   total: number;
   totalPages: number;
   cards: SalesOrderManagementCards;
+  cardAmounts?: SalesOrderManagementCardAmounts;
   rows: SalesOrderManagementRow[];
 };
 
 const PAGE_SIZE = 20;
 
-const EMPTY_CARDS: SalesOrderManagementCards = {
-  openOrders: 0,
-  overdueWithoutInvoice: 0,
-  invoicedOnTime: 0,
-  invoicedLate: 0,
-  partialOrCut: 0,
-  withoutProductionOrder: 0,
-  productionLate: 0,
-  delivered: 0,
-  cancelledOrReturned: 0,
-};
+const EMPTY_CARDS = emptyManagementStatusCardCounts();
+const EMPTY_CARD_AMOUNTS = emptyManagementStatusCardAmounts();
 
 function badgeClass(kind: "status" | "deadline" | "invoice" | "op" | "risk"): string {
   const base = "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide";
@@ -76,6 +74,7 @@ export function SalesOrderManagementPage() {
   const currentYear = new Date().getFullYear();
   const [rows, setRows] = useState<SalesOrderManagementRow[]>([]);
   const [cards, setCards] = useState<SalesOrderManagementCards>(EMPTY_CARDS);
+  const [cardAmounts, setCardAmounts] = useState<SalesOrderManagementCardAmounts>(EMPTY_CARD_AMOUNTS);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -101,6 +100,9 @@ export function SalesOrderManagementPage() {
   const [invoiceAfterDeadline, setInvoiceAfterDeadline] = useState(false);
   const [partialOrCut, setPartialOrCut] = useState(false);
   const [noProductionOrder, setNoProductionOrder] = useState(false);
+  const [productionLate, setProductionLate] = useState(false);
+  const [selectedManagementStatus, setSelectedManagementStatus] =
+    useState<ManagementStatusCardId | "">("");
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<SalesOrderManagementRow | null>(null);
@@ -131,6 +133,8 @@ export function SalesOrderManagementPage() {
     if (invoiceAfterDeadline) params.set("invoiceAfterDeadline", "true");
     if (partialOrCut) params.set("partialOrCut", "true");
     if (noProductionOrder) params.set("noProductionOrder", "true");
+    if (productionLate) params.set("productionLate", "true");
+    if (selectedManagementStatus) params.set("managementStatus", selectedManagementStatus);
     return params.toString();
   }, [
     page,
@@ -150,6 +154,8 @@ export function SalesOrderManagementPage() {
     invoiceAfterDeadline,
     partialOrCut,
     noProductionOrder,
+    productionLate,
+    selectedManagementStatus,
   ]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -162,6 +168,7 @@ export function SalesOrderManagementPage() {
       );
       setRows(data.rows ?? []);
       setCards(data.cards ?? EMPTY_CARDS);
+      setCardAmounts(data.cardAmounts ?? EMPTY_CARD_AMOUNTS);
       setTotal(data.total ?? 0);
       setTotalPages(Math.max(1, data.totalPages ?? 1));
     } catch (e) {
@@ -170,6 +177,7 @@ export function SalesOrderManagementPage() {
       setLoadError("Não foi possível carregar a Gestão de Pedidos.");
       setRows([]);
       setCards(EMPTY_CARDS);
+      setCardAmounts(EMPTY_CARD_AMOUNTS);
       setTotal(0);
       setTotalPages(1);
     } finally {
@@ -207,17 +215,35 @@ export function SalesOrderManagementPage() {
     return years;
   }, [currentYear]);
 
-  const kpiIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-    openOrders: ShoppingBag,
+  const kpiIcons: Record<ManagementStatusCardId, React.ComponentType<{ className?: string }>> = {
     overdueWithoutInvoice: AlertTriangle,
     invoicedOnTime: Receipt,
     invoicedLate: Clock,
     partialOrCut: Package,
-    withoutProductionOrder: Factory,
-    productionLate: Factory,
     delivered: Sparkles,
     cancelledOrReturned: AlertTriangle,
+    awaitingInProgress: ShoppingBag,
+    reviewUnknown: FileText,
   };
+
+  const toggleManagementStatusCard = useCallback((cardId: ManagementStatusCardId) => {
+    setSelectedManagementStatus((current) => (current === cardId ? "" : cardId));
+    setPage(1);
+  }, []);
+
+  const validPortfolioCount = useMemo(() => {
+    if (loading || loadError) return null;
+    const totalInCards =
+      cards.overdueWithoutInvoice +
+      cards.invoicedOnTime +
+      cards.invoicedLate +
+      cards.partialOrCut +
+      cards.delivered +
+      cards.cancelledOrReturned +
+      cards.awaitingInProgress +
+      cards.reviewUnknown;
+    return totalInCards - cards.cancelledOrReturned;
+  }, [cards, loadError, loading]);
 
   return (
     <div className="space-y-6" data-testid="sales-order-management-page">
@@ -431,6 +457,8 @@ export function SalesOrderManagementPage() {
             setInvoiceAfterDeadline(false);
             setPartialOrCut(false);
             setNoProductionOrder(false);
+            setProductionLate(false);
+            setSelectedManagementStatus("");
             setPage(1);
           }}
           className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
@@ -439,7 +467,60 @@ export function SalesOrderManagementPage() {
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Status gerencial
+        </p>
+        <div className="indus-kpi-grid mt-2">
+          {MANAGEMENT_STATUS_CARDS.map((card) => {
+            const Icon = kpiIcons[card.id] ?? FileText;
+            const amount = cards[card.id];
+            const valueAmount = cardAmounts[card.id];
+            const isActive = selectedManagementStatus === card.id;
+            return (
+              <button
+                key={card.id}
+                type="button"
+                data-testid={`management-status-card-${card.id}`}
+                data-active={isActive ? "true" : "false"}
+                onClick={() => toggleManagementStatusCard(card.id)}
+                className={cn(
+                  "text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                  isActive && "ring-2 ring-primary shadow-md"
+                )}
+              >
+                <FinanceBiKpiCard
+                  icon={Icon}
+                  label={card.label}
+                  value="—"
+                  amount={loading || loadError ? undefined : amount}
+                  amountFormat="number"
+                  sub={
+                    !loading && !loadError && valueAmount > 0
+                      ? formatCurrency(valueAmount)
+                      : undefined
+                  }
+                  loading={loading}
+                  hint={card.hint}
+                />
+              </button>
+            );
+          })}
+        </div>
+        {!loading && !loadError && validPortfolioCount != null ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Carteira válida no filtro:{" "}
+            <span className="font-semibold text-foreground">{validPortfolioCount}</span> pedido(s)
+            não cancelados/devolvidos
+          </p>
+        ) : null}
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Alertas operacionais
+        </p>
+        <div className="mt-2 flex flex-wrap gap-3">
         <label className="inline-flex items-center gap-2 text-xs font-medium">
           <input
             type="checkbox"
@@ -495,7 +576,41 @@ export function SalesOrderManagementPage() {
           />
           Parcial / com corte
         </label>
+        <label className="inline-flex items-center gap-2 text-xs font-medium">
+          <input
+            type="checkbox"
+            checked={productionLate}
+            onChange={(e) => {
+              setProductionLate(e.target.checked);
+              setPage(1);
+            }}
+          />
+          OP atrasada
+        </label>
+        </div>
       </div>
+
+      {selectedManagementStatus ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
+          <span>
+            Exibindo <span className="font-semibold">{total}</span> pedido(s) com status:{" "}
+            <span className="font-semibold">
+              {getManagementStatusFilterLabel(selectedManagementStatus)}
+            </span>
+          </span>
+          <button
+            type="button"
+            data-testid="clear-management-status-filter"
+            onClick={() => {
+              setSelectedManagementStatus("");
+              setPage(1);
+            }}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium hover:bg-muted"
+          >
+            Limpar filtro do card
+          </button>
+        </div>
+      ) : null}
 
       {loadError ? (
         <div
@@ -506,26 +621,6 @@ export function SalesOrderManagementPage() {
           {loadError}
         </div>
       ) : null}
-
-      <div className="indus-kpi-grid">
-        {MANAGEMENT_KPI_CARDS.map((card) => {
-          const Icon = kpiIcons[card.id] ?? FileText;
-          const amount = cards[card.id];
-          return (
-            <React.Fragment key={card.id}>
-              <FinanceBiKpiCard
-                icon={Icon}
-                label={card.label}
-                value="—"
-                amount={loading || loadError ? undefined : amount}
-                amountFormat="number"
-                loading={loading}
-                hint={MANAGEMENT_KPI_CARD_HINTS[card.id]}
-              />
-            </React.Fragment>
-          );
-        })}
-      </div>
 
       <p className="text-xs text-muted-foreground">
         {loading ? (

@@ -9,7 +9,14 @@ import {
   type SalesOrderIntelligencePayload,
 } from "./salesOrderIntelligence.js";
 import type { SalesOrderOperationalStatus } from "./salesOrderLifecycleTypes.js";
+import {
+  buildManagementStatusCardMetrics,
+  isManagementStatusCardId,
+  resolveManagementStatusCardId,
+  type ManagementStatusCardId,
+} from "./salesOrderManagementStatus.js";
 import type {
+  SalesOrderManagementCardAmounts,
   SalesOrderManagementCards,
   SalesOrderManagementRow,
 } from "./salesOrderManagementTypes.js";
@@ -44,6 +51,7 @@ export type SalesOrderManagementFilters = {
   invoiceAfterDeadline?: boolean | null;
   partialOrCut?: boolean | null;
   noProductionOrder?: boolean | null;
+  managementStatus?: ManagementStatusCardId | "";
   startDate?: Date | null;
   endDate?: Date | null;
   status?: string;
@@ -99,6 +107,10 @@ export function parseSalesOrderManagementFilters(
     invoiceAfterDeadline: bool("invoiceAfterDeadline"),
     partialOrCut: bool("partialOrCut"),
     noProductionOrder: bool("noProductionOrder"),
+    managementStatus:
+      typeof query.managementStatus === "string" && isManagementStatusCardId(query.managementStatus)
+        ? query.managementStatus
+        : "",
     status: typeof query.status === "string" ? query.status.trim() : undefined,
   };
 }
@@ -163,7 +175,19 @@ function matchesManagementFilters(
     return false;
   }
   if (filters.noProductionOrder === true && lifecycle.hasLinkedProductionOrder) return false;
+  if (
+    filters.managementStatus &&
+    resolveManagementStatusCardId(row.executiveStatusLabel) !== filters.managementStatus
+  ) {
+    return false;
+  }
   return true;
+}
+
+function omitManagementStatusFilter(
+  filters: SalesOrderManagementFilters
+): SalesOrderManagementFilters {
+  return { ...filters, managementStatus: "" };
 }
 
 export function sortManagementRowsByRisk(rows: SalesOrderManagementRow[]): SalesOrderManagementRow[] {
@@ -178,71 +202,15 @@ export function sortManagementRowsByRisk(rows: SalesOrderManagementRow[]): Sales
 }
 
 export function buildSalesOrderManagementCards(
-  rows: Array<{ lifecycle: ReturnType<typeof buildSalesOrderLifecycleSummary>["lifecycle"] }>
+  rows: Array<Pick<SalesOrderManagementRow, "executiveStatusLabel" | "totalNetValue">>
 ): SalesOrderManagementCards {
-  let openOrders = 0;
-  let overdueWithoutInvoice = 0;
-  let invoicedOnTime = 0;
-  let invoicedLate = 0;
-  let partialOrCut = 0;
-  let withoutProductionOrder = 0;
-  let productionLate = 0;
-  let delivered = 0;
-  let cancelledOrReturned = 0;
+  return buildManagementStatusCardMetrics(rows).counts;
+}
 
-  const isTerminal = (lifecycle: (typeof rows)[number]["lifecycle"]) =>
-    lifecycle.operationalStatus === "cancelled" ||
-    lifecycle.operationalStatus === "fully_returned" ||
-    lifecycle.operationalStatus === "partially_returned";
-
-  for (const { lifecycle } of rows) {
-    if (!isTerminal(lifecycle)) {
-      openOrders += 1;
-    }
-    if (!isTerminal(lifecycle) && lifecycle.riskFlags.includes("overdue_without_invoice")) {
-      overdueWithoutInvoice += 1;
-    }
-    if (!isTerminal(lifecycle) && lifecycle.deadlineStatus === "invoiced_on_time") {
-      invoicedOnTime += 1;
-    }
-    if (!isTerminal(lifecycle) && lifecycle.deadlineStatus === "invoiced_late") {
-      invoicedLate += 1;
-    }
-    if (
-      !isTerminal(lifecycle) &&
-      (lifecycle.completionStatus === "partial" || lifecycle.completionStatus === "with_cut")
-    ) {
-      partialOrCut += 1;
-    }
-    if (!isTerminal(lifecycle) && !lifecycle.hasLinkedProductionOrder) {
-      withoutProductionOrder += 1;
-    }
-    if (!isTerminal(lifecycle) && lifecycle.productionOrderLate) {
-      productionLate += 1;
-    }
-    if (!isTerminal(lifecycle) && lifecycle.operationalStatus === "delivered") {
-      delivered += 1;
-    }
-    if (
-      lifecycle.operationalStatus === "cancelled" ||
-      lifecycle.operationalStatus === "fully_returned" ||
-      lifecycle.operationalStatus === "partially_returned"
-    ) {
-      cancelledOrReturned += 1;
-    }
-  }
-
-  return {
-    openOrders,
-    overdueWithoutInvoice,
-    invoicedOnTime,
-    invoicedLate,
-    partialOrCut,
-    withoutProductionOrder,
-    productionLate,
-    delivered,
-    cancelledOrReturned,
-  };
+export function buildSalesOrderManagementCardAmounts(
+  rows: Array<Pick<SalesOrderManagementRow, "executiveStatusLabel" | "totalNetValue">>
+): SalesOrderManagementCardAmounts {
+  return buildManagementStatusCardMetrics(rows).amounts;
 }
 
 export function buildManagementRowsFromOrders(
@@ -261,7 +229,12 @@ export function buildManagementRowsFromOrders(
   }>,
   filters: SalesOrderManagementFilters,
   referenceDate = new Date()
-): { rows: SalesOrderManagementRow[]; cards: SalesOrderManagementCards; summary: SalesOrderManagementSummary } {
+): {
+  rows: SalesOrderManagementRow[];
+  cards: SalesOrderManagementCards;
+  cardAmounts: SalesOrderManagementCardAmounts;
+  summary: SalesOrderManagementSummary;
+} {
   const computed = orders.map((order) => {
     const { lifecycle, items } = buildSalesOrderLifecycleSummary({
       salesOrderId: order.id,
@@ -292,14 +265,23 @@ export function buildManagementRowsFromOrders(
     return { row, lifecycle };
   });
 
-  const filtered = computed.filter(({ row, lifecycle }) =>
+  const baseFilters = omitManagementStatusFilter(filters);
+  const baseFiltered = computed.filter(({ row, lifecycle }) =>
+    matchesManagementFilters(row, lifecycle, baseFilters)
+  );
+  const filtered = baseFiltered.filter(({ row, lifecycle }) =>
     matchesManagementFilters(row, lifecycle, filters)
   );
 
+  const cardRows = baseFiltered.map((f) => f.row);
+  const cards = buildSalesOrderManagementCards(cardRows);
+  const cardAmounts = buildSalesOrderManagementCardAmounts(cardRows);
+
   return {
     rows: sortManagementRowsByRisk(filtered.map((f) => f.row)),
-    cards: buildSalesOrderManagementCards(filtered),
-    summary: cardsToManagementSummary(buildSalesOrderManagementCards(filtered), filtered.length),
+    cards,
+    cardAmounts,
+    summary: cardsToManagementSummary(cards, filtered.length),
   };
 }
 
@@ -309,6 +291,7 @@ export type SalesOrderManagementResponse = {
   total: number;
   totalPages: number;
   cards: SalesOrderManagementCards;
+  cardAmounts?: SalesOrderManagementCardAmounts;
   summary?: SalesOrderManagementSummary;
   rows: SalesOrderManagementRow[];
 };

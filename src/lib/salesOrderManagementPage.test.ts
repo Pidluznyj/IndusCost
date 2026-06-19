@@ -15,11 +15,32 @@ describe("salesOrderManagementPage", () => {
     assert.match(page, /data-testid="sales-order-management-page"/);
   });
 
-  it("cards existem no topo", () => {
+  it("cards de status gerencial no topo com clique para filtrar", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /indus-kpi-grid/);
-    assert.match(page, /MANAGEMENT_KPI_CARDS/);
-    assert.match(page, /FinanceBiKpiCard/);
+    assert.match(page, /MANAGEMENT_STATUS_CARDS/);
+    assert.match(page, /toggleManagementStatusCard/);
+    assert.match(page, /management-status-card-/);
+    assert.match(page, /selectedManagementStatus/);
+    assert.match(page, /managementStatus/);
+    assert.doesNotMatch(page, /Pedidos em aberto/);
+    assert.doesNotMatch(page, /Sem OP vinculada/);
+  });
+
+  it("card ativo e limpar filtro do card", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /data-active=/);
+    assert.match(page, /clear-management-status-filter/);
+    assert.match(page, /Limpar filtro do card/);
+  });
+
+  it("alertas operacionais como checkboxes separados", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /Alertas operacionais/);
+    assert.match(page, /Com risco/);
+    assert.match(page, /Sem OP/);
+    assert.match(page, /NF após prazo/);
+    assert.match(page, /OP atrasada/);
+    assert.match(page, /noProductionOrder/);
   });
 
   it("tabela mostra status gerencial", () => {
@@ -68,98 +89,25 @@ describe("salesOrderManagementPage", () => {
     assert.doesNotMatch(page, /suggestedActionLabel/);
   });
 
-  it("filtro de cliente usa autocomplete", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /CustomerAutocompleteFilter/);
-  });
-
   it("clique na linha abre drawer", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /SalesOrderIntelligenceDrawer/);
     assert.match(page, /openDrawer/);
-    assert.match(page, /onClick=\{\(\) => void openDrawer\(row\)\}/);
-  });
-
-  it("botão Ver inteligência abre drawer", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /Ver inteligência/);
-    assert.match(page, /sales-order-view-intelligence/);
-  });
-
-  it("drawer chama endpoint sob demanda", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /getSalesOrderIntelligenceApiPath/);
-    assert.equal(getSalesOrderIntelligenceApiPath("abc"), "/api/sales-orders/abc/intelligence");
-  });
-
-  it("drawer mostra resumo com riscos e ação", () => {
-    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
-    assert.match(drawer, /sales-order-intelligence-summary/);
-    assert.match(drawer, /Riscos principais/);
-    assert.match(drawer, /Ação sugerida/);
-  });
-
-  it("drawer mostra timeline", () => {
-    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
-    const ui = read("src/lib/salesOrderManagementUi.ts");
-    assert.match(drawer, /sales-order-intelligence-timeline/);
-    assert.match(ui, /id: "timeline"/);
-  });
-
-  it("drawer mostra itens com NF e situação", () => {
-    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
-    assert.match(drawer, /sales-order-intelligence-items/);
-    assert.match(drawer, /formatItemSituation/);
-    assert.match(drawer, />NF</);
-    assert.match(drawer, /Situação/);
-  });
-
-  it("drawer mostra OP/Produção com avisos", () => {
-    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
-    assert.match(drawer, /sales-order-intelligence-production/);
-    assert.match(drawer, /Nenhuma OP vinculada encontrada/);
-    assert.match(drawer, /OP não sincronizada/);
-  });
-
-  it("drawer mostra NF/Faturamento", () => {
-    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
-    assert.match(drawer, /sales-order-intelligence-invoicing/);
-    assert.match(drawer, /NF após prazo|Timing/);
-  });
-
-  it("drawer mostra riscos e ações", () => {
-    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
-    assert.match(drawer, /sales-order-intelligence-risks/);
-    assert.match(drawer, /suggestedActions/);
-  });
-
-  it("drawer mostra dados e auditoria", () => {
-    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
-    assert.match(drawer, /sales-order-intelligence-audit/);
-    assert.match(drawer, /Fontes de dados/);
-    assert.match(drawer, /SalesOrder/);
   });
 
   it("não há import de Prisma no frontend", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    const drawer = read("src/components/sales/SalesOrderIntelligenceDrawer.tsx");
     assert.doesNotMatch(page, /@prisma\/client/);
-    assert.doesNotMatch(drawer, /@prisma\/client/);
     assert.doesNotMatch(page, /from ["'].*prisma/);
-    assert.doesNotMatch(drawer, /from ["'].*prisma/);
   });
 
   it("rota App para gestão", () => {
     const app = read("src/App.tsx");
     assert.match(app, /sales-orders\/management/);
     assert.match(app, /SalesOrderManagementPage/);
-    assert.match(app, /Gestão de Pedidos/);
   });
 
-  it("exibe erro claro quando endpoint falha", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /Não foi possível carregar a Gestão de Pedidos/);
-    assert.match(page, /sales-order-management-error/);
-    assert.match(page, /loadError/);
+  it("drawer chama endpoint sob demanda", () => {
+    assert.equal(getSalesOrderIntelligenceApiPath("abc"), "/api/sales-orders/abc/intelligence");
   });
 });

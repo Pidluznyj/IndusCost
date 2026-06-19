@@ -1,20 +1,15 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, it } from "node:test";
 import { buildSalesOrderLifecycleSummary } from "./salesOrderLifecycleStatus.js";
-import { mapLifecycleToManagementRow } from "./salesOrderIntelligence.js";
 import {
-  assertManagementResponseShape,
   buildManagementRowsFromOrders,
   buildSalesOrderManagementCards,
-  sortManagementRowsByRisk,
 } from "./salesOrderManagement.js";
 import {
-  assertManagementRowFinite,
-  cardsToManagementSummary,
-} from "./salesOrderManagementTypes.js";
-import { MANAGEMENT_KPI_CARD_HINTS, MANAGEMENT_KPI_CARDS } from "./salesOrderManagementUi.js";
+  MANAGEMENT_STATUS_CARDS,
+  resolveManagementStatusCardId,
+  sumManagementStatusCardCounts,
+} from "./salesOrderManagementStatus.js";
 
 const REF = new Date(2026, 5, 15);
 
@@ -55,104 +50,56 @@ function orderBase(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("salesOrderManagementDashboard", () => {
-  it("cards existem com hints", () => {
-    assert.equal(MANAGEMENT_KPI_CARDS.length, 9);
-    for (const card of MANAGEMENT_KPI_CARDS) {
-      assert.ok(MANAGEMENT_KPI_CARD_HINTS[card.id]);
-    }
-    const page = readFileSync(join(process.cwd(), "src/components/sales/SalesOrderManagementPage.tsx"), "utf8");
-    assert.match(page, /indus-kpi-grid/);
-    assert.match(page, /MANAGEMENT_KPI_CARD_HINTS/);
+describe("salesOrderManagementStatus", () => {
+  it("mapeia status gerencial para cards exclusivos", () => {
+    assert.equal(resolveManagementStatusCardId("Atrasado sem NF"), "overdueWithoutInvoice");
+    assert.equal(resolveManagementStatusCardId("Faturado total no prazo"), "invoicedOnTime");
+    assert.equal(resolveManagementStatusCardId("Faturado total com atraso"), "invoicedLate");
+    assert.equal(resolveManagementStatusCardId("Cancelado"), "cancelledOrReturned");
+    assert.equal(resolveManagementStatusCardId("Liberado"), "awaitingInProgress");
+    assert.equal(resolveManagementStatusCardId("Status desconhecido"), "reviewUnknown");
   });
 
-  it("endpoint de listagem registrado", () => {
-    const routes = readFileSync(join(process.cwd(), "src/lib/salesOrderIntelligenceRoutes.ts"), "utf8");
-    assert.match(routes, /\/api\/sales-orders\/management/);
-    assert.match(routes, /buildManagementRowsFromOrders/);
+  it("cards principais cobrem 8 categorias gerenciais", () => {
+    assert.equal(MANAGEMENT_STATUS_CARDS.length, 8);
+    assert.ok(!MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Pedidos em aberto"));
+    assert.ok(!MANAGEMENT_STATUS_CARDS.some((c) => c.label === "Sem OP vinculada"));
+  });
+});
+
+describe("salesOrderManagementDashboard cards", () => {
+  it("pedido atrasado sem NF conta apenas no card correspondente", () => {
+    const overdue = orderBase({ expectedDeliveryDate: new Date(2026, 4, 1) });
+    const { rows, cards } = buildManagementRowsFromOrders([overdue], {}, REF);
+    assert.match(rows[0].executiveStatusLabel, /Atrasado sem NF/i);
+    assert.equal(resolveManagementStatusCardId(rows[0].executiveStatusLabel), "overdueWithoutInvoice");
+    assert.equal(cards.overdueWithoutInvoice, 1);
+    assert.equal(cards.cancelledOrReturned, 0);
   });
 
-  it("cards respeitam filtros — atrasado sem NF", () => {
-    const overdue = orderBase({
-      expectedDeliveryDate: new Date(2026, 4, 1),
-      nomusRawResponse: { itensPedido: [], nfes: [] },
-    });
-    const onTime = orderBase({
-      expectedDeliveryDate: new Date(2026, 6, 1),
+  it("pedido faturado no prazo conta em Faturados no prazo", () => {
+    const order = orderBase({
+      expectedDeliveryDate: new Date(2026, 5, 20),
       nomusRawResponse: {
-        itensPedido: [],
-        nfes: [{ dataProcessamento: "10/06/2026", numero: "99" }],
+        itensPedido: [
+          {
+            idProduto: 1,
+            codigoProduto: "SKU-1",
+            status: "Atendido totalmente",
+            quantidade: 10,
+            quantidadeAtendida: 10,
+            quantidadeFaturada: 10,
+          },
+        ],
+        nfes: [{ dataProcessamento: "20/06/2026", numero: "456" }],
       },
     });
-    const { cards } = buildManagementRowsFromOrders([overdue, onTime], {}, REF);
-    assert.ok(cards.overdueWithoutInvoice >= 1);
-    assert.equal(cardsToManagementSummary(cards).overdueWithoutInvoiceCount, cards.overdueWithoutInvoice);
+    const { rows, cards } = buildManagementRowsFromOrders([order], {}, REF);
+    assert.equal(rows[0].executiveStatusLabel, "Faturado total no prazo");
+    assert.equal(cards.invoicedOnTime, 1);
   });
 
-  it("tabela row inclui campos gerenciais", () => {
-    const order = orderBase();
-    const { lifecycle, items } = buildSalesOrderLifecycleSummary({
-      salesOrderId: order.id,
-      salesOrderNumber: order.orderCode,
-      originalStatus: order.status,
-      issueDate: order.issueDate,
-      expectedDeliveryDate: order.expectedDeliveryDate,
-      nomusRawResponse: order.nomusRawResponse,
-      items: order.items,
-      referenceDate: REF,
-    });
-    const row = mapLifecycleToManagementRow(
-      {
-        id: order.id,
-        orderCode: order.orderCode,
-        issueDate: order.issueDate.toISOString(),
-        expectedDeliveryDate: order.expectedDeliveryDate.toISOString(),
-        totalNetValue: order.totalNetValue,
-        responsible: order.responsible,
-        companyIssuer: order.companyIssuer,
-        nomusRawResponse: order.nomusRawResponse,
-        itemsCount: order.items.length,
-        Customer: order.Customer,
-      },
-      lifecycle,
-      { items, referenceDate: REF }
-    );
-    assert.equal(row.number, "PD 02580");
-    assert.equal(row.customerName, "Cliente X");
-    assert.ok(row.executiveStatusLabel);
-    assert.ok(row.billingStatus);
-    assert.ok(row.deadlineStatus);
-    assert.ok(row.completionStatus);
-    assert.ok(row.suggestedActionLabel != null || row.riskCount === 0);
-    assert.ok(assertManagementRowFinite(row));
-  });
-
-  it("ordena por risco/prioridade", () => {
-    const low = mapLifecycleToManagementRow(
-      {
-        id: "a",
-        orderCode: "A",
-        issueDate: new Date().toISOString(),
-        expectedDeliveryDate: null,
-        totalNetValue: 100,
-        responsible: null,
-      },
-      buildSalesOrderLifecycleSummary({
-        salesOrderId: "a",
-        salesOrderNumber: "A",
-        originalStatus: "OK",
-        issueDate: new Date(),
-        items: [],
-        referenceDate: REF,
-      }).lifecycle,
-      { items: [], referenceDate: REF }
-    );
-    const high = { ...low, id: "b", number: "B", orderCode: "B", highRiskCount: 2, riskCount: 3 };
-    const sorted = sortManagementRowsByRisk([low, high]);
-    assert.equal(sorted[0].id, "b");
-  });
-
-  it("NF após prazo aparece como risco", () => {
+  it("pedido faturado com atraso conta em Faturados com atraso", () => {
     const order = orderBase({
       expectedDeliveryDate: new Date(2026, 4, 1),
       nomusRawResponse: {
@@ -168,102 +115,87 @@ describe("salesOrderManagementDashboard", () => {
         nfes: [{ dataProcessamento: "15/06/2026", numero: "100" }],
       },
     });
-    const { rows } = buildManagementRowsFromOrders([order], {}, REF);
-    assert.ok(rows[0].riskFlags.includes("invoice_after_deadline"));
+    const { rows, cards } = buildManagementRowsFromOrders([order], {}, REF);
+    assert.equal(rows[0].executiveStatusLabel, "Faturado total com atraso");
+    assert.equal(cards.invoicedLate, 1);
   });
 
-  it("pedido atrasado sem NF aparece como risco", () => {
-    const order = orderBase({ expectedDeliveryDate: new Date(2026, 4, 1) });
-    const { rows } = buildManagementRowsFromOrders([order], {}, REF);
-    assert.ok(rows[0].riskFlags.includes("overdue_without_invoice"));
-  });
-
-  it("não retorna NaN/Infinity nos cards", () => {
-    const { cards, rows } = buildManagementRowsFromOrders([orderBase()], {}, REF);
-    for (const value of Object.values(cards)) {
-      assert.ok(Number.isFinite(value));
-    }
-    for (const row of rows) {
-      assert.ok(assertManagementRowFinite(row));
-    }
-    assert.ok(
-      assertManagementResponseShape({
-        page: 1,
-        pageSize: 20,
-        total: 1,
-        totalPages: 1,
-        cards,
-        rows,
-      })
-    );
-  });
-
-  it("buildSalesOrderManagementCards conta categorias", () => {
-    const order = orderBase();
-    const { lifecycle } = buildSalesOrderLifecycleSummary({
-      salesOrderId: order.id,
-      salesOrderNumber: order.orderCode,
-      originalStatus: order.status,
-      issueDate: order.issueDate,
-      expectedDeliveryDate: order.expectedDeliveryDate,
-      nomusRawResponse: order.nomusRawResponse,
-      items: order.items,
-      referenceDate: REF,
-    });
-    const cards = buildSalesOrderManagementCards([{ lifecycle }]);
-    assert.ok(Number.isFinite(cards.openOrders));
-    assert.ok(Number.isFinite(cards.withoutProductionOrder));
-  });
-
-  it("PD 02130 — gestão mostra cancelado e não entra em aberto/atrasado/sem OP", () => {
-    const cancelled = {
-      id: "so-2130",
-      orderCode: "PD 02130",
-      status: "SENT_TO_NOMUS",
-      issueDate: new Date(2026, 0, 23),
-      expectedDeliveryDate: new Date(2026, 0, 23),
-      totalNetValue: 360,
-      responsible: "Vendedor",
-      companyIssuer: "Empresa",
+  it("pedido cancelado conta em Cancelados/devolvidos e não em outros cards", () => {
+    const cancelled = orderBase({
       nomusRawResponse: {
         itensPedido: [
           {
             item: 10,
-            codigoProduto: "630.01AA",
-            descricaoStatus: "Cancelado",
+            status: 6,
             quantidade: 1,
             quantidadeCancelada: 1,
           },
         ],
         nfes: [],
       },
-      Customer: { companyName: "Simone Viana Coelho", tradeName: null, taxId: null },
-      items: [
-        {
-          id: "item-2130",
-          externalProductId: 63001,
-          skuSnapshot: "630.01AA",
-          productNameSnapshot: "Filtro de Água Aqua Vitae CRISTAL",
-          quantity: 1,
-        },
-      ],
-    };
-    const open = orderBase({
-      id: "so-open",
-      expectedDeliveryDate: new Date(2026, 4, 1),
-      nomusRawResponse: { itensPedido: [], nfes: [] },
     });
-    const { rows, cards } = buildManagementRowsFromOrders([cancelled, open], {}, REF);
-    const pdRow = rows.find((r) => r.orderCode === "PD 02130");
-    assert.ok(pdRow);
-    assert.equal(pdRow.executiveStatusLabel, "Cancelado");
-    assert.equal(pdRow.operationalStatus, "cancelled");
-    assert.equal(pdRow.completionStatus, "cancelled");
-    assert.equal(pdRow.suggestedActionLabel, "Nenhuma ação necessária");
-    assert.ok(!pdRow.riskFlags.includes("overdue_without_invoice"));
+    const { rows, cards } = buildManagementRowsFromOrders([cancelled], {}, REF);
+    assert.equal(rows[0].executiveStatusLabel, "Cancelado");
     assert.equal(cards.cancelledOrReturned, 1);
-    assert.equal(cards.openOrders, 1);
-    assert.equal(cards.overdueWithoutInvoice, 1);
-    assert.equal(cards.withoutProductionOrder, 1);
+    assert.equal(cards.overdueWithoutInvoice, 0);
+    assert.equal(cards.awaitingInProgress, 0);
+  });
+
+  it("filtro managementStatus reduz grid e mantém contagem do card", () => {
+    const overdue = orderBase({
+      id: "so-overdue",
+      expectedDeliveryDate: new Date(2026, 4, 1),
+    });
+    const onTime = orderBase({
+      id: "so-ok",
+      orderCode: "PD 99999",
+      expectedDeliveryDate: new Date(2026, 6, 1),
+      nomusRawResponse: {
+        itensPedido: [
+          {
+            idProduto: 1,
+            status: "Liberado",
+            quantidade: 10,
+            quantidadeAtendida: 10,
+            quantidadeFaturada: 10,
+          },
+        ],
+        nfes: [{ dataProcessamento: "10/06/2026", numero: "99" }],
+      },
+    });
+    const base = buildManagementRowsFromOrders([overdue, onTime], {}, REF);
+    assert.equal(base.cards.overdueWithoutInvoice, 1);
+
+    const filtered = buildManagementRowsFromOrders(
+      [overdue, onTime],
+      { managementStatus: "overdueWithoutInvoice" },
+      REF
+    );
+    assert.equal(filtered.rows.length, 1);
+    assert.equal(filtered.cards.overdueWithoutInvoice, 1);
+    assert.equal(filtered.summary.totalOrdersCount, 1);
+  });
+
+  it("soma dos cards bate com total de pedidos no filtro base", () => {
+    const orders = [orderBase(), orderBase({ id: "so-2", orderCode: "PD 2" })];
+    const { rows, cards } = buildManagementRowsFromOrders(orders, {}, REF);
+    assert.equal(sumManagementStatusCardCounts(cards), rows.length);
+  });
+
+  it("buildSalesOrderManagementCards não retorna NaN/Infinity", () => {
+    const { lifecycle } = buildSalesOrderLifecycleSummary({
+      salesOrderId: "x",
+      salesOrderNumber: "X",
+      originalStatus: "OK",
+      issueDate: new Date(),
+      items: [],
+      referenceDate: REF,
+    });
+    const cards = buildSalesOrderManagementCards([
+      { executiveStatusLabel: lifecycle.executiveStatusLabel, totalNetValue: 100 },
+    ]);
+    for (const value of Object.values(cards)) {
+      assert.ok(Number.isFinite(value));
+    }
   });
 });

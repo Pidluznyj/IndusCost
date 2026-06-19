@@ -136,15 +136,14 @@ describe("PD 02130 real raw sanitizado", () => {
     );
   });
 
-  it("cards — PD 02130 isolado não entra em aberto/atrasado/sem OP", () => {
+  it("cards — PD 02130 isolado não entra em atrasado/aguardando", () => {
     const order = {
       ...PD_02130_SANITIZED_ORDER,
       items: [{ ...PD_02130_SANITIZED_DB_ITEM }],
     };
     const { cards } = buildManagementRowsFromOrders([order], {}, REF);
-    assert.equal(cards.openOrders, 0);
     assert.equal(cards.overdueWithoutInvoice, 0);
-    assert.equal(cards.withoutProductionOrder, 0);
+    assert.equal(cards.awaitingInProgress, 0);
     assert.equal(cards.cancelledOrReturned, 1);
   });
 
@@ -174,9 +173,8 @@ describe("PD 02130 real raw sanitizado", () => {
     };
     const { cards } = buildManagementRowsFromOrders([cancelled, open], {}, REF);
     assert.equal(cards.cancelledOrReturned, 1);
-    assert.equal(cards.openOrders, 1);
     assert.equal(cards.overdueWithoutInvoice, 1);
-    assert.equal(cards.withoutProductionOrder, 1);
+    assert.equal(cards.awaitingInProgress, 0);
   });
 
   it("parcialmente cancelado permanece misto", () => {
