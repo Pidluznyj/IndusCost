@@ -212,13 +212,13 @@ const DASHBOARD_CONTEXT = {
       "Visão estimada da necessidade de matéria-prima com base nos itens dos pedidos de venda selecionados.",
   },
   "sales-orders": {
-    moduleLabel: "Pedidos de venda — estimativa de uso",
+    moduleLabel: "Pedidos de venda — Inteligência de Matéria-Prima",
     backPath: "/sales-orders",
     backLabel: "Voltar para Pedidos de venda",
     baseBadge: "Base: pedidos de venda",
-    title: "Pedidos de venda — Estimativa de uso de matéria-prima",
+    title: "Pedidos de venda — Inteligência de Matéria-Prima",
     subtitle:
-      "Estimativa de quanto matéria-prima será necessária para atender os pedidos de venda filtrados, com base na composição atual dos produtos.",
+      "Uso previsto x realizado por pedido — estimativa de quanto matéria-prima será necessária para atender os pedidos filtrados.",
   },
 } as const;
 

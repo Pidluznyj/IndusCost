@@ -12812,9 +12812,17 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   });
 
+  registerSalesOrderIntelligenceRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+  });
+
   app.get("/api/sales-orders/:id", requireAppAuth, requireAnyPermission(["sales_orders.detail.view", "sales_orders.view"]), async (req, res) => {
     try {
       const { id } = req.params;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+        return res.status(400).json({ error: "ID de pedido inválido." });
+      }
       const row = await prisma.salesOrder.findUnique({
         where: { id },
         include: {
@@ -13296,11 +13304,6 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   });
 
   registerCustomerIntelligenceRoutes(app, {
-    requireAppAuth,
-    requireAnyPermission,
-  });
-
-  registerSalesOrderIntelligenceRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
   });

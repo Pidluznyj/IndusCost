@@ -449,11 +449,15 @@ export default function App() {
           }
         />
         <Route
+          path="sales-orders/material-usage"
+          element={<Navigate to="/sales-orders/material-demand" replace />}
+        />
+        <Route
           path="sales-orders/material-demand"
           element={
             <ModulePageShell
               title="Pedidos de venda — Inteligência de Matéria-Prima"
-              description="Demanda estimada de matéria-prima a partir dos pedidos de venda filtrados."
+              description="Previsto x Faturado — demanda estimada de matéria-prima a partir dos pedidos de venda filtrados."
             >
               <ProductMaterialDemandDashboard context="sales-orders" />
             </ModulePageShell>
@@ -657,7 +661,7 @@ export default function App() {
                     className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
                   >
                     <Factory className="h-4 w-4 text-primary" />
-                    Estimativa de uso de MP
+                    Inteligência de Matéria-Prima
                   </Link>
                   <ModuleIndicatorsButton to="/sales-orders/indicators" />
                 </>

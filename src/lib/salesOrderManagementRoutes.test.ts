@@ -33,6 +33,14 @@ describe("salesOrderManagementRoutes", () => {
     );
   });
 
+  it("management registrado antes de :id no server", () => {
+    const server = read("server.ts");
+    const registerIdx = server.indexOf("registerSalesOrderIntelligenceRoutes(app");
+    const detailIdx = server.indexOf('app.get("/api/sales-orders/:id"');
+    assert.ok(registerIdx > 0 && detailIdx > 0);
+    assert.ok(registerIdx < detailIdx);
+  });
+
   it("endpoint de inteligência sob demanda", () => {
     const routes = read("src/lib/salesOrderIntelligenceRoutes.ts");
     assert.match(routes, /\/api\/sales-orders\/:id\/intelligence/);

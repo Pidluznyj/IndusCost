@@ -286,7 +286,7 @@ export function buildManagementRowsFromOrders(
   return {
     rows: sortManagementRowsByRisk(filtered.map((f) => f.row)),
     cards: buildSalesOrderManagementCards(filtered),
-    summary: cardsToManagementSummary(buildSalesOrderManagementCards(filtered)),
+    summary: cardsToManagementSummary(buildSalesOrderManagementCards(filtered), filtered.length),
   };
 }
 
@@ -296,6 +296,7 @@ export type SalesOrderManagementResponse = {
   total: number;
   totalPages: number;
   cards: SalesOrderManagementCards;
+  summary?: SalesOrderManagementSummary;
   rows: SalesOrderManagementRow[];
 };
 

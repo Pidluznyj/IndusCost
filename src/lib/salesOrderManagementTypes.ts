@@ -20,6 +20,7 @@ export type SalesOrderManagementCards = {
 
 /** Alias com nomes do contrato gerencial (cards → summary). */
 export type SalesOrderManagementSummary = {
+  totalOrdersCount: number;
   openOrdersCount: number;
   overdueWithoutInvoiceCount: number;
   invoicedOnTimeCount: number;
@@ -33,9 +34,11 @@ export type SalesOrderManagementSummary = {
 };
 
 export function cardsToManagementSummary(
-  cards: SalesOrderManagementCards
+  cards: SalesOrderManagementCards,
+  totalOrdersCount = 0
 ): SalesOrderManagementSummary {
   return {
+    totalOrdersCount,
     openOrdersCount: cards.openOrders,
     overdueWithoutInvoiceCount: cards.overdueWithoutInvoice,
     invoicedOnTimeCount: cards.invoicedOnTime,

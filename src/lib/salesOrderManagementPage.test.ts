@@ -154,4 +154,11 @@ describe("salesOrderManagementPage", () => {
     assert.match(app, /SalesOrderManagementPage/);
     assert.match(app, /Gestão de Pedidos/);
   });
+
+  it("exibe erro claro quando endpoint falha", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.match(page, /Não foi possível carregar a Gestão de Pedidos/);
+    assert.match(page, /sales-order-management-error/);
+    assert.match(page, /loadError/);
+  });
 });

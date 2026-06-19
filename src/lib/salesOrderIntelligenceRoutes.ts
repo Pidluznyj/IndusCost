@@ -88,7 +88,7 @@ export async function loadSalesOrderManagementPage(
     },
   });
 
-  const { rows, cards } = buildManagementRowsFromOrders(orders, filters);
+  const { rows, cards, summary } = buildManagementRowsFromOrders(orders, filters);
   const total = rows.length;
   const start = (page - 1) * pageSize;
   const pageRows = rows.slice(start, start + pageSize);
@@ -99,6 +99,7 @@ export async function loadSalesOrderManagementPage(
     total,
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
     cards,
+    summary: { ...summary, totalOrdersCount: total },
     rows: pageRows,
   };
 }

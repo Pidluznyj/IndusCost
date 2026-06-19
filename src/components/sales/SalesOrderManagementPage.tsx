@@ -77,6 +77,7 @@ export function SalesOrderManagementPage() {
   const [rows, setRows] = useState<SalesOrderManagementRow[]>([]);
   const [cards, setCards] = useState<SalesOrderManagementCards>(EMPTY_CARDS);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -153,6 +154,7 @@ export function SalesOrderManagementPage() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await fetchJsonOk<ManagementResponse>(
         getSalesOrderManagementApiPath(queryString),
@@ -165,6 +167,7 @@ export function SalesOrderManagementPage() {
     } catch (e) {
       if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
       console.error(e);
+      setLoadError("Não foi possível carregar a Gestão de Pedidos.");
       setRows([]);
       setCards(EMPTY_CARDS);
       setTotal(0);
@@ -494,6 +497,16 @@ export function SalesOrderManagementPage() {
         </label>
       </div>
 
+      {loadError ? (
+        <div
+          className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          data-testid="sales-order-management-error"
+          role="alert"
+        >
+          {loadError}
+        </div>
+      ) : null}
+
       <div className="indus-kpi-grid">
         {MANAGEMENT_KPI_CARDS.map((card) => {
           const Icon = kpiIcons[card.id] ?? FileText;
@@ -504,7 +517,7 @@ export function SalesOrderManagementPage() {
                 icon={Icon}
                 label={card.label}
                 value="—"
-                amount={loading ? undefined : amount}
+                amount={loading || loadError ? undefined : amount}
                 amountFormat="number"
                 loading={loading}
                 hint={MANAGEMENT_KPI_CARD_HINTS[card.id]}
@@ -517,6 +530,8 @@ export function SalesOrderManagementPage() {
       <p className="text-xs text-muted-foreground">
         {loading ? (
           "Carregando gestão de pedidos…"
+        ) : loadError ? (
+          "Falha ao carregar pedidos."
         ) : total === 0 ? (
           "Nenhum pedido no filtro atual."
         ) : (
@@ -559,6 +574,12 @@ export function SalesOrderManagementPage() {
                   <td colSpan={15} className="p-8 text-center text-muted-foreground">
                     <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
                     Carregando…
+                  </td>
+                </tr>
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={15} className="p-8 text-center text-destructive">
+                    {loadError}
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
