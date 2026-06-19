@@ -67,6 +67,7 @@ export function aggregateAutoApplyTotals(
     parentsInNomusStage,
     parentsEvaluated: products.length,
     parentsApplied: 0,
+    parentsReadyToApply: 0,
     parentsNoChanges: 0,
     parentsBlocked: 0,
     parentsSkipped: 0,
@@ -79,6 +80,7 @@ export function aggregateAutoApplyTotals(
 
   for (const p of products) {
     if (p.status === "APPLIED") totals.parentsApplied += 1;
+    else if (p.status === "READY_TO_APPLY") totals.parentsReadyToApply += 1;
     else if (p.status === "NO_CHANGES") totals.parentsNoChanges += 1;
     else if (p.status === "BLOCKED") totals.parentsBlocked += 1;
     else if (p.status === "SKIPPED") totals.parentsSkipped += 1;

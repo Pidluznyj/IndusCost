@@ -11,6 +11,11 @@ import type {
   AutoApplyBomDashboardProductRow,
   AutoApplyDashboardFilter,
 } from "@/src/lib/nomusAutoApplyBomDashboardTypes";
+import {
+  classifyNomusBomApplyStatus,
+  productResultToStatusInput,
+  summarizeApplyActions,
+} from "@/src/lib/nomusBomApplyStatus";
 
 export type AutoApplyBlockBucketFilter =
   | "ALL"
@@ -75,6 +80,7 @@ export function derivePendingTypeLabel(row: AutoApplyBomDashboardProductRow): st
       if (row.metadataOnlyCount > 0) return "Metadata Nomus pendente";
       return "Sem pendência";
     default:
+      if (row.status === "READY_TO_APPLY") return "Corrigido / aguardando apply";
       if (row.status === "NO_CHANGES") return "Alinhado";
       if (row.status === "APPLIED") return "Aplicado";
       return "—";
@@ -97,6 +103,7 @@ export function deriveRecommendedTab(row: AutoApplyBomDashboardProductRow): Nomu
     case "AMBIGUOUS":
       return "product-import";
     default:
+      if (row.status === "READY_TO_APPLY") return "apply-plan";
       if (row.quantityDiffCount > 0 || row.metadataOnlyCount > 0) return "apply-plan";
       if (row.status === "BLOCKED") return "effective-pricing-bom";
       return "overview";
@@ -121,6 +128,9 @@ export function deriveRecommendedAction(row: AutoApplyBomDashboardProductRow): s
     case "EFFECTIVE_BOM_BLOCKED":
       return "Abrir BOM efetiva e resolver bloqueios estruturais.";
     default:
+      if (row.status === "READY_TO_APPLY") {
+        return "Produto liberado para apply. Revisar diff e aplicar na BOM oficial.";
+      }
       if (row.quantityDiffCount > 0) {
         return "Revisar Plano de aplicação / BOM efetiva e aplicar quando liberado.";
       }
@@ -168,6 +178,7 @@ export function deriveSeverity(row: AutoApplyBomDashboardProductRow): number {
     return 70;
   }
   if (row.status === "SKIPPED") return 60;
+  if (row.status === "READY_TO_APPLY") return 45;
   if (row.status === "APPLIED") return 20;
   return 10;
 }
@@ -237,6 +248,7 @@ export function computeAutoApplyStatusTotals(
 ): NomusBomAutoApplyTotals {
   let parentsNoChanges = 0;
   let parentsApplied = 0;
+  let parentsReadyToApply = 0;
   let parentsBlocked = 0;
   let parentsSkipped = 0;
   let parentsErrored = 0;
@@ -248,6 +260,9 @@ export function computeAutoApplyStatusTotals(
         break;
       case "APPLIED":
         parentsApplied += 1;
+        break;
+      case "READY_TO_APPLY":
+        parentsReadyToApply += 1;
         break;
       case "BLOCKED":
         parentsBlocked += 1;
@@ -269,6 +284,7 @@ export function computeAutoApplyStatusTotals(
     parentsInNomusStage: batchTotals?.parentsInNomusStage ?? parentsEvaluated,
     parentsEvaluated,
     parentsApplied,
+    parentsReadyToApply,
     parentsNoChanges,
     parentsBlocked,
     parentsSkipped,
@@ -282,9 +298,10 @@ export function computeAutoApplyStatusTotals(
 
 export function countRowsByPrimaryStatus(
   rows: AutoApplyBomDashboardProductRow[]
-): Record<"NO_CHANGES" | "APPLIED" | "BLOCKED" | "SKIPPED" | "ERROR", number> {
+): Record<"NO_CHANGES" | "READY_TO_APPLY" | "APPLIED" | "BLOCKED" | "SKIPPED" | "ERROR", number> {
   const counts = {
     NO_CHANGES: 0,
+    READY_TO_APPLY: 0,
     APPLIED: 0,
     BLOCKED: 0,
     SKIPPED: 0,
@@ -309,6 +326,7 @@ export function computeFilterCounts(
     LOCAL_PENDING: 0,
     SKIPPED: 0,
     NO_CHANGES: 0,
+    READY_TO_APPLY: 0,
     APPLIED: 0,
     ERROR: 0,
   };
@@ -364,13 +382,42 @@ export function enrichDashboardProductRow(
 ): AutoApplyBomDashboardProductRow {
   const actionsSummaryLines = (row.actionsPreview ?? []).map(formatActionPreviewLine);
   const actionsCount = row.actionsPreview?.length ?? 0;
-  return {
+  const classified = classifyNomusBomApplyStatus(
+    productResultToStatusInput({
+      parentCode: row.parentCode,
+      productId: row.productId,
+      status: row.status,
+      canApply: row.canApply,
+      blockingReasons: row.blockingReasons,
+      errorMessage: row.errorMessage,
+      actionsPreview: row.actionsPreview,
+      applyRunId: row.applyRunId,
+      resultStatus: row.resultStatus,
+    })
+  );
+  const summary = summarizeApplyActions(row.actionsPreview);
+  const diffSummary = `+${summary.add} ~${summary.update} -${summary.remove}`;
+
+  const enriched: AutoApplyBomDashboardProductRow = {
     ...row,
-    pendingTypeLabel: derivePendingTypeLabel(row),
-    recommendedAction: deriveRecommendedAction(row),
-    recommendedTab: deriveRecommendedTab(row),
-    severity: deriveSeverity(row),
+    status: classified.status,
+    readyToApply: classified.readyToApply,
+    hasUnappliedBomDiff: classified.hasUnappliedBomDiff,
+    appliedToOfficialBom: classified.appliedToOfficialBom,
+    diffSummary,
+    pendingTypeLabel: derivePendingTypeLabel({ ...row, status: classified.status }),
+    recommendedAction: classified.readyToApply
+      ? classified.recommendation
+      : deriveRecommendedAction({ ...row, status: classified.status }),
+    recommendedTab: deriveRecommendedTab({ ...row, status: classified.status }),
+    severity: deriveSeverity({ ...row, status: classified.status }),
     actionsCount,
     actionsSummaryLines,
   };
+
+  if (classified.readyToApply && !enriched.filterBuckets.includes("READY_TO_APPLY")) {
+    enriched.filterBuckets = [...enriched.filterBuckets, "READY_TO_APPLY"];
+  }
+
+  return enriched;
 }

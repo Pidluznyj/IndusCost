@@ -25,6 +25,7 @@ const SAMPLE_TOTALS = {
   parentsInNomusStage: 876,
   parentsEvaluated: 876,
   parentsApplied: 0,
+  parentsReadyToApply: 0,
   parentsNoChanges: 479,
   parentsBlocked: 389,
   parentsSkipped: 8,
@@ -89,6 +90,12 @@ function sample308Row(): AutoApplyBomDashboardProductRow {
     severity: 0,
     actionsCount: 0,
     actionsSummaryLines: [],
+    readyToApply: false,
+    hasUnappliedBomDiff: false,
+    appliedToOfficialBom: false,
+    planHash: null,
+    confirmationRequiredText: null,
+    diffSummary: "",
   });
 }
 
@@ -230,6 +237,12 @@ describe("nomusAutoApplyBomDashboardShared — busca e filtro", () => {
         severity: 0,
         actionsCount: 0,
         actionsSummaryLines: [],
+        readyToApply: false,
+        hasUnappliedBomDiff: false,
+        appliedToOfficialBom: false,
+        planHash: null,
+        confirmationRequiredText: null,
+        diffSummary: "",
       }),
     ];
     const all = [row, ...others];

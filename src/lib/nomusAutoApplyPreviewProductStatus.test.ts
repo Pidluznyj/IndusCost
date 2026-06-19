@@ -74,10 +74,31 @@ describe("mapControlledApplyPreviewToAutoApplyProduct", () => {
     );
     assert.equal(mapped.status, "BLOCKED");
   });
+
+  it("canApply com mutações → READY_TO_APPLY (não APPLIED)", () => {
+    const mapped = mapControlledApplyPreviewToAutoApplyProduct(
+      preview({
+        canApply: true,
+        actions: [
+          {
+            actionType: "UPDATE_PRODUCT_BOM_QUANTITY",
+            componentCode: "115.01--",
+            componentKind: "Material",
+            currentQuantity: 1,
+            effectiveQuantity: 2,
+            riskLevel: "LOW",
+            reason: "Divergência",
+          },
+        ],
+      })
+    );
+    assert.equal(mapped.status, "READY_TO_APPLY");
+    assert.equal(mapped.canApply, true);
+  });
 });
 
 describe("shouldRevalidateAutoApplyProductStatus", () => {
-  it("revalida BLOCKED e SKIPPED, não NO_CHANGES", () => {
+  it("revalida BLOCKED, READY_TO_APPLY e APPLIED legado sem applyRunId", () => {
     assert.equal(
       shouldRevalidateAutoApplyProductStatus({
         parentCode: "X",
@@ -87,6 +108,37 @@ describe("shouldRevalidateAutoApplyProductStatus", () => {
         blockingReasons: [],
       }),
       true
+    );
+    assert.equal(
+      shouldRevalidateAutoApplyProductStatus({
+        parentCode: "X",
+        productId: "p",
+        status: "READY_TO_APPLY",
+        canApply: true,
+        blockingReasons: [],
+      }),
+      true
+    );
+    assert.equal(
+      shouldRevalidateAutoApplyProductStatus({
+        parentCode: "X",
+        productId: "p",
+        status: "APPLIED",
+        canApply: true,
+        blockingReasons: [],
+      }),
+      true
+    );
+    assert.equal(
+      shouldRevalidateAutoApplyProductStatus({
+        parentCode: "X",
+        productId: "p",
+        status: "APPLIED",
+        canApply: true,
+        blockingReasons: [],
+        applyRunId: "run-1",
+      }),
+      false
     );
     assert.equal(
       shouldRevalidateAutoApplyProductStatus({

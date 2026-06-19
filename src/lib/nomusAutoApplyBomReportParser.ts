@@ -20,6 +20,7 @@ export type ParsedAutoApplyReport = {
 
 const VALID_STATUSES = new Set<NomusBomAutoApplyProductStatus>([
   "APPLIED",
+  "READY_TO_APPLY",
   "NO_CHANGES",
   "BLOCKED",
   "SKIPPED",
@@ -142,6 +143,9 @@ export function normalizeAutoApplyTotals(raw: unknown): NomusBomAutoApplyTotals 
     o.parentsNoChanges ?? o.parents_no_changes ?? o.noChanges ?? o.no_changes
   );
   const parentsApplied = readNumber(o.parentsApplied ?? o.parents_applied ?? o.applied);
+  const parentsReadyToApply = readNumber(
+    o.parentsReadyToApply ?? o.parents_ready_to_apply ?? o.readyToApply ?? o.ready_to_apply
+  );
   const parentsSkipped = readNumber(o.parentsSkipped ?? o.parents_skipped ?? o.skipped);
   const parentsErrored = readNumber(
     o.parentsErrored ?? o.parents_errored ?? o.errored ?? o.errors ?? o.errorCount
@@ -152,6 +156,7 @@ export function normalizeAutoApplyTotals(raw: unknown): NomusBomAutoApplyTotals 
     parentsBlocked > 0 ||
     parentsNoChanges > 0 ||
     parentsApplied > 0 ||
+    parentsReadyToApply > 0 ||
     parentsSkipped > 0 ||
     parentsErrored > 0;
 
@@ -164,6 +169,7 @@ export function normalizeAutoApplyTotals(raw: unknown): NomusBomAutoApplyTotals 
     ),
     parentsEvaluated,
     parentsApplied,
+    parentsReadyToApply,
     parentsNoChanges,
     parentsBlocked,
     parentsSkipped,

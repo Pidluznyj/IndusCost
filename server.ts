@@ -243,6 +243,11 @@ import {
   buildNomusAutoApplyBomDashboard,
   normalizeAutoApplyFilter,
 } from "./src/lib/nomusAutoApplyBomDashboard.js";
+import {
+  applyNomusBomBatchFromDashboard,
+  applyNomusBomFromDashboard,
+  previewNomusBomApplyReadiness,
+} from "./src/lib/nomusBomAutoApplyBatch.js";
 import { buildNomusEngineeringEqualizationActionPlan } from "./src/lib/nomusEngineeringEqualizationActionPlan.js";
 import {
   applyNomusMasterDataImport,
@@ -5030,6 +5035,90 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
           error: "AUTO_APPLY_BOM_DASHBOARD_FAILED",
           message,
         });
+      }
+    }
+  );
+
+  app.get(
+    "/api/nomus/bom-auto-apply/products/apply-readiness",
+    requireAppAuth,
+    requireAnyPermission([
+      "products.view",
+      "products.tab.bom",
+      "products.edit",
+    ]),
+    async (req, res) => {
+      try {
+        const parentCode = req.query.parentCode != null ? String(req.query.parentCode).trim() : "";
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        const result = await previewNomusBomApplyReadiness(parentCode);
+        return res.json(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao verificar elegibilidade.";
+        console.error("GET /api/nomus/bom-auto-apply/products/apply-readiness", error);
+        return res.status(500).json({ error: message });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/bom-auto-apply/products/:parentCode/apply",
+    requireAppAuth,
+    requirePermission("products.edit"),
+    async (req, res) => {
+      try {
+        const parentCode = String(req.params.parentCode ?? "").trim();
+        if (!parentCode) {
+          return res.status(400).json({ error: "parentCode é obrigatório." });
+        }
+        const approvedBy =
+          req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          "dashboard-user";
+        const result = await applyNomusBomFromDashboard({ parentCode, approvedBy });
+        const status =
+          result.status === "applied"
+            ? 200
+            : result.status === "blocked"
+              ? 422
+              : result.status === "error"
+                ? 500
+                : 409;
+        return res.status(status).json(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao aplicar BOM.";
+        console.error("POST /api/nomus/bom-auto-apply/products/:parentCode/apply", error);
+        return res.status(500).json({ error: message });
+      }
+    }
+  );
+
+  app.post(
+    "/api/nomus/bom-auto-apply/products/apply-batch",
+    requireAppAuth,
+    requirePermission("products.edit"),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const raw = body.parentCodes ?? body.productIds ?? [];
+        if (!Array.isArray(raw) || raw.length === 0) {
+          return res.status(400).json({ error: "parentCodes é obrigatório (array não vazio)." });
+        }
+        const parentCodes = raw.map((c: unknown) => String(c).trim()).filter(Boolean);
+        const approvedBy =
+          req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          "dashboard-user";
+        const result = await applyNomusBomBatchFromDashboard({ parentCodes, approvedBy });
+        return res.json(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao aplicar BOM em lote.";
+        console.error("POST /api/nomus/bom-auto-apply/products/apply-batch", error);
+        return res.status(500).json({ error: message });
       }
     }
   );

@@ -33,6 +33,11 @@ import {
 } from "@/src/lib/nomusEngineeringRunsRecentClient";
 import { fetchNomusAutoApplyBomDashboard } from "@/src/lib/nomusAutoApplyBomDashboardClient";
 import {
+  applyNomusBomProduct,
+  applyNomusBomProductBatch,
+  fetchNomusBomApplyReadiness,
+} from "@/src/lib/nomusBomAutoApplyBatchClient";
+import {
   filterDashboardProducts,
   sortDashboardProducts,
   type AutoApplyBlockBucketFilter,
@@ -62,6 +67,7 @@ const FILTER_OPTIONS: Array<{ value: AutoApplyDashboardFilter; label: string }> 
   { value: "LOCAL_PENDING", label: "Itens locais pendentes" },
   { value: "SKIPPED", label: "Ignorados" },
   { value: "NO_CHANGES", label: "Sem alteração" },
+  { value: "READY_TO_APPLY", label: "Prontos para aplicar" },
   { value: "APPLIED", label: "Aplicados" },
   { value: "ERROR", label: "Erros" },
 ];
@@ -94,6 +100,8 @@ function statusBadgeClass(status: AutoApplyBomDashboardProductRow["status"]): st
       return "bg-amber-100 text-amber-900";
     case "APPLIED":
       return "bg-emerald-100 text-emerald-900";
+    case "READY_TO_APPLY":
+      return "bg-violet-100 text-violet-900";
     case "NO_CHANGES":
       return "bg-sky-100 text-sky-900";
     default:
@@ -111,6 +119,8 @@ function statusLabel(status: AutoApplyBomDashboardProductRow["status"]): string 
       return "Ignorado";
     case "APPLIED":
       return "Aplicado";
+    case "READY_TO_APPLY":
+      return "Pronto para aplicar";
     case "NO_CHANGES":
       return "Sem alteração";
     default:
@@ -148,6 +158,20 @@ export const NomusEngineeringStatusBoard: React.FC<{
   const [sortBy, setSortBy] = useState<"product" | "severity">("severity");
   const [page, setPage] = useState(0);
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
+  const [selectedReadyCodes, setSelectedReadyCodes] = useState<Set<string>>(new Set());
+  const [applyModal, setApplyModal] = useState<
+    | null
+    | { mode: "single"; parentCode: string }
+    | { mode: "batch"; parentCodes: string[] }
+  >(null);
+  const [applyPreview, setApplyPreview] = useState<{
+    add: number;
+    update: number;
+    remove: number;
+    loading: boolean;
+  } | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [applyResultMessage, setApplyResultMessage] = useState<string | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, 300);
 
@@ -244,6 +268,93 @@ export const NomusEngineeringStatusBoard: React.FC<{
     onOpenProduct?.(row.parentCode, { tab: row.recommendedTab });
   };
 
+  const readyProductsOnPage = useMemo(
+    () => filteredProducts.filter((r) => r.readyToApply),
+    [filteredProducts]
+  );
+
+  const toggleReadySelection = (parentCode: string, checked: boolean) => {
+    setSelectedReadyCodes((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(parentCode);
+      else next.delete(parentCode);
+      return next;
+    });
+  };
+
+  const toggleSelectAllReadyOnPage = (checked: boolean) => {
+    setSelectedReadyCodes((prev) => {
+      const next = new Set(prev);
+      for (const row of pagedProducts) {
+        if (!row.readyToApply) continue;
+        if (checked) next.add(row.parentCode);
+        else next.delete(row.parentCode);
+      }
+      return next;
+    });
+  };
+
+  const openApplyModal = async (input: { mode: "single"; parentCode: string } | { mode: "batch"; parentCodes: string[] }) => {
+    setApplyModal(input);
+    setApplyResultMessage(null);
+    setApplyPreview({ add: 0, update: 0, remove: 0, loading: true });
+    try {
+      if (input.mode === "single") {
+        const readiness = await fetchNomusBomApplyReadiness(input.parentCode);
+        setApplyPreview({
+          add: readiness.actionsSummary.add,
+          update: readiness.actionsSummary.update,
+          remove: readiness.actionsSummary.remove,
+          loading: false,
+        });
+      } else {
+        let add = 0;
+        let update = 0;
+        let remove = 0;
+        for (const code of input.parentCodes) {
+          const readiness = await fetchNomusBomApplyReadiness(code);
+          add += readiness.actionsSummary.add;
+          update += readiness.actionsSummary.update;
+          remove += readiness.actionsSummary.remove;
+        }
+        setApplyPreview({ add, update, remove, loading: false });
+      }
+    } catch {
+      setApplyPreview({ add: 0, update: 0, remove: 0, loading: false });
+    }
+  };
+
+  const confirmApply = async () => {
+    if (!applyModal) return;
+    setApplying(true);
+    setApplyResultMessage(null);
+    try {
+      if (applyModal.mode === "single") {
+        const result = await applyNomusBomProduct(applyModal.parentCode);
+        setApplyResultMessage(result.message);
+        if (result.status === "applied") {
+          setSelectedReadyCodes((prev) => {
+            const next = new Set(prev);
+            next.delete(applyModal.parentCode);
+            return next;
+          });
+        }
+      } else {
+        const result = await applyNomusBomProductBatch(applyModal.parentCodes);
+        setApplyResultMessage(
+          `Aplicação concluída — Aplicados: ${result.summary.applied}, Sem alteração: ${result.summary.skipped}, Falharam: ${result.summary.errors}, Bloqueados: ${result.summary.blocked}`
+        );
+        setSelectedReadyCodes(new Set());
+      }
+      setApplyModal(null);
+      await loadAll();
+    } catch (e) {
+      setApplyResultMessage(e instanceof Error ? e.message : "Falha ao aplicar BOM.");
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const cardDefs: Array<{
     filter: AutoApplyDashboardFilter;
     icon: React.ReactNode;
@@ -267,6 +378,14 @@ export const NomusEngineeringStatusBoard: React.FC<{
       label: "Sem alteração",
       value: totals?.parentsNoChanges ?? "—",
       hint: "ProductBOM já alinhada com Nomus.",
+    },
+    {
+      filter: "READY_TO_APPLY",
+      icon: <Layers className="h-3.5 w-3.5" />,
+      tone: "info",
+      label: "Prontos para aplicar",
+      value: totals?.parentsReadyToApply ?? "—",
+      hint: "Correções liberadas pela engenharia e pendentes de gravação na ProductBOM.",
     },
     {
       filter: "APPLIED",
@@ -420,8 +539,10 @@ export const NomusEngineeringStatusBoard: React.FC<{
                   <p className="text-[10px] text-muted-foreground border border-dashed border-border rounded-lg px-3 py-2">
                     <span className="font-semibold">Totais da última execução batch APPLY:</span>{" "}
                     avaliados {autoApply.batchTotals.parentsEvaluated}, sem alteração{" "}
-                    {autoApply.batchTotals.parentsNoChanges}, aplicados {autoApply.batchTotals.parentsApplied},
-                    bloqueados {autoApply.batchTotals.parentsBlocked}, ignorados{" "}
+                    {autoApply.batchTotals.parentsNoChanges}, prontos para aplicar{" "}
+                    {autoApply.batchTotals.parentsReadyToApply ?? 0}, aplicados{" "}
+                    {autoApply.batchTotals.parentsApplied}, bloqueados{" "}
+                    {autoApply.batchTotals.parentsBlocked}, ignorados{" "}
                     {autoApply.batchTotals.parentsSkipped}, erros {autoApply.batchTotals.parentsErrored}.
                   </p>
                 ) : null}
@@ -570,26 +691,80 @@ export const NomusEngineeringStatusBoard: React.FC<{
                     {Math.min((page + 1) * PAGE_SIZE, filteredProducts.length)} de{" "}
                     {filteredProducts.length} produto(s) neste filtro
                     {autoApply.totalProducts > 0 ? ` (total no relatório: ${autoApply.totalProducts})` : ""}.
+                    {readyProductsOnPage.length > 0 ? (
+                      <> · {readyProductsOnPage.length} pronto(s) para aplicar neste filtro.</>
+                    ) : null}
                   </p>
+
+                  {selectedReadyCodes.size > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
+                      <span className="text-[11px] font-semibold text-violet-900">
+                        {selectedReadyCodes.size} produto(s) selecionado(s)
+                      </span>
+                      <button
+                        type="button"
+                        disabled={disabled || loading || applying}
+                        onClick={() =>
+                          void openApplyModal({
+                            mode: "batch",
+                            parentCodes: [...selectedReadyCodes],
+                          })
+                        }
+                        className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-700 px-3 text-[11px] font-bold text-white hover:bg-violet-800 disabled:opacity-50"
+                      >
+                        Aplicar selecionados
+                      </button>
+                      <button
+                        type="button"
+                        disabled={disabled || loading}
+                        onClick={() => setSelectedReadyCodes(new Set())}
+                        className="inline-flex h-8 items-center rounded-md border border-violet-300 px-2 text-[11px] font-semibold text-violet-900 hover:bg-violet-100"
+                      >
+                        Limpar seleção
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {applyResultMessage ? (
+                    <p className="text-[11px] rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900">
+                      {applyResultMessage}
+                    </p>
+                  ) : null}
 
                   <div className="overflow-x-auto rounded-lg border border-border">
                     <table className="min-w-full text-[11px]">
                       <thead className="bg-muted/50 text-left">
                         <tr>
+                          <th className="px-2 py-1.5 w-6">
+                            {filter === "READY_TO_APPLY" || readyProductsOnPage.length > 0 ? (
+                              <input
+                                type="checkbox"
+                                aria-label="Selecionar prontos na página"
+                                disabled={disabled || loading}
+                                checked={
+                                  pagedProducts.some((r) => r.readyToApply) &&
+                                  pagedProducts
+                                    .filter((r) => r.readyToApply)
+                                    .every((r) => selectedReadyCodes.has(r.parentCode))
+                                }
+                                onChange={(e) => toggleSelectAllReadyOnPage(e.target.checked)}
+                              />
+                            ) : null}
+                          </th>
                           <th className="px-2 py-1.5 w-6" />
                           <th className="px-2 py-1.5 font-semibold">Produto</th>
                           <th className="px-2 py-1.5 font-semibold">Status</th>
                           <th className="px-2 py-1.5 font-semibold">Tipo pendência</th>
+                          <th className="px-2 py-1.5 font-semibold">Resumo diff</th>
                           <th className="px-2 py-1.5 font-semibold">Motivo principal</th>
-                          <th className="px-2 py-1.5 font-semibold">Ações</th>
                           <th className="px-2 py-1.5 font-semibold">Recomendação</th>
-                          <th className="px-2 py-1.5 font-semibold text-right">Abrir</th>
+                          <th className="px-2 py-1.5 font-semibold text-right">Ações</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredProducts.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="px-2 py-3 text-muted-foreground italic">
+                            <td colSpan={10} className="px-2 py-3 text-muted-foreground italic">
                               {autoApply.hasProductList
                                 ? "Nenhum produto encontrado para este filtro."
                                 : "Lista de produtos indisponível no relatório atual."}
@@ -601,6 +776,19 @@ export const NomusEngineeringStatusBoard: React.FC<{
                             return (
                               <React.Fragment key={row.parentCode}>
                                 <tr className="border-t border-border/70 align-top">
+                                  <td className="px-1 py-1.5">
+                                    {row.readyToApply ? (
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Selecionar ${row.parentCode}`}
+                                        disabled={disabled || loading || applying}
+                                        checked={selectedReadyCodes.has(row.parentCode)}
+                                        onChange={(e) =>
+                                          toggleReadySelection(row.parentCode, e.target.checked)
+                                        }
+                                      />
+                                    ) : null}
+                                  </td>
                                   <td className="px-1 py-1.5">
                                     <button
                                       type="button"
@@ -652,23 +840,31 @@ export const NomusEngineeringStatusBoard: React.FC<{
                                   <td className="px-2 py-1.5 whitespace-nowrap">
                                     {row.pendingTypeLabel}
                                   </td>
-                                  <td className="px-2 py-1.5 max-w-[240px]">
-                                    <span className="line-clamp-2">{row.primaryReason}</span>
+                                  <td className="px-2 py-1.5 whitespace-nowrap font-mono text-[10px]">
+                                    {row.hasUnappliedBomDiff ? row.diffSummary : "—"}
                                   </td>
-                                  <td className="px-2 py-1.5">
-                                    <span className="font-semibold tabular-nums">{row.actionsCount}</span>
-                                    {row.actionsSummaryLines.length > 0 ? (
-                                      <span className="text-muted-foreground">
-                                        {" "}
-                                        · {row.actionsSummaryLines.slice(0, 2).join(" · ")}
-                                        {row.actionsSummaryLines.length > 2 ? "…" : ""}
-                                      </span>
-                                    ) : null}
+                                  <td className="px-2 py-1.5 max-w-[200px]">
+                                    <span className="line-clamp-2">{row.primaryReason}</span>
                                   </td>
                                   <td className="px-2 py-1.5 max-w-[220px]">
                                     <span className="line-clamp-2 text-[10px]">{row.recommendedAction}</span>
                                   </td>
-                                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                  <td className="px-2 py-1.5 text-right whitespace-nowrap space-x-1">
+                                    {row.readyToApply ? (
+                                      <button
+                                        type="button"
+                                        disabled={disabled || loading || applying}
+                                        onClick={() =>
+                                          void openApplyModal({
+                                            mode: "single",
+                                            parentCode: row.parentCode,
+                                          })
+                                        }
+                                        className="inline-flex items-center gap-1 rounded bg-violet-700 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-violet-800 disabled:opacity-50"
+                                      >
+                                        Aplicar BOM
+                                      </button>
+                                    ) : null}
                                     {onOpenProduct ? (
                                       <button
                                         type="button"
@@ -685,7 +881,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
                                 </tr>
                                 {expanded ? (
                                   <tr className="border-t border-border/40 bg-muted/20">
-                                    <td colSpan={8} className="px-3 py-2 space-y-2">
+                                    <td colSpan={10} className="px-3 py-2 space-y-2">
                                       {row.blockingReasons.length > 0 ? (
                                         <div>
                                           <p className="text-[10px] font-bold uppercase text-muted-foreground">
@@ -800,6 +996,70 @@ export const NomusEngineeringStatusBoard: React.FC<{
           Clique em <strong>Atualizar painel da engenharia</strong> para carregar Cadastro mestre e o
           relatório de auto apply BOM.
         </p>
+      ) : null}
+
+      {applyModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 shadow-xl space-y-3">
+            <h4 className="text-sm font-bold">Confirmar aplicação na ProductBOM</h4>
+            {applyModal.mode === "single" ? (
+              <p className="text-xs text-muted-foreground">
+                Você está prestes a atualizar a ProductBOM oficial deste produto com base na BOM
+                efetiva validada pela engenharia.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Você está prestes a aplicar a BOM oficial de {applyModal.parentCodes.length}{" "}
+                produto(s). Essa ação altera a ProductBOM oficial.
+              </p>
+            )}
+            {applyModal.mode === "single" ? (
+              <p className="text-xs font-mono font-semibold">Produto: {applyModal.parentCode}</p>
+            ) : (
+              <p className="text-xs">
+                Produtos selecionados: <strong>{applyModal.parentCodes.length}</strong>
+              </p>
+            )}
+            {applyPreview?.loading ? (
+              <p className="text-xs flex items-center gap-1 text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Calculando alterações previstas…
+              </p>
+            ) : applyPreview ? (
+              <ul className="text-xs space-y-0.5">
+                <li>Itens a adicionar: {applyPreview.add}</li>
+                <li>Itens a atualizar: {applyPreview.update}</li>
+                <li>Itens a remover/inativar: {applyPreview.remove}</li>
+              </ul>
+            ) : null}
+            <p className="text-xs font-semibold">Deseja continuar?</p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={applying}
+                onClick={() => setApplyModal(null)}
+                className="rounded-md border border-input px-3 py-1.5 text-xs font-semibold hover:bg-muted disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={applying || applyPreview?.loading}
+                onClick={() => void confirmApply()}
+                className="rounded-md bg-violet-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-800 disabled:opacity-50"
+              >
+                {applying ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Aplicando…
+                  </span>
+                ) : (
+                  "Confirmar apply"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

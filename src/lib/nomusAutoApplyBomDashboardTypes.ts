@@ -13,11 +13,13 @@ export type AutoApplyDashboardFilter =
   | "LOCAL_PENDING"
   | "SKIPPED"
   | "NO_CHANGES"
+  | "READY_TO_APPLY"
   | "APPLIED"
   | "ERROR";
 
 export type AutoApplyProductCategory =
   | "APPLIED"
+  | "READY_TO_APPLY"
   | "NO_CHANGES"
   | "BLOCKED"
   | "SKIPPED"
@@ -54,6 +56,14 @@ export type AutoApplyBomDashboardProductRow = {
   severity: number;
   actionsCount: number;
   actionsSummaryLines: string[];
+  readyToApply: boolean;
+  hasUnappliedBomDiff: boolean;
+  appliedToOfficialBom: boolean;
+  planHash: string | null;
+  confirmationRequiredText: string | null;
+  diffSummary: string;
+  applyRunId?: string | null;
+  resultStatus?: "APPLIED" | "NO_CHANGES";
 };
 
 export type AutoApplyBomDashboardLastRun = {

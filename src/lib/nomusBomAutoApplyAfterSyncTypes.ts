@@ -2,6 +2,7 @@ export type NomusBomAutoApplyMode = "DRY" | "APPLY";
 
 export type NomusBomAutoApplyProductStatus =
   | "APPLIED"
+  | "READY_TO_APPLY"
   | "NO_CHANGES"
   | "BLOCKED"
   | "SKIPPED"
@@ -30,12 +31,17 @@ export type NomusBomAutoApplyProductResult = {
     currentQuantity?: number | null;
     effectiveQuantity?: number | null;
   }>;
+  /** Hash do plano controlado — disponível após revalidação preview. */
+  planHash?: string;
+  effectiveBomHash?: string;
+  confirmationRequiredText?: string;
 };
 
 export type NomusBomAutoApplyTotals = {
   parentsInNomusStage: number;
   parentsEvaluated: number;
   parentsApplied: number;
+  parentsReadyToApply: number;
   parentsNoChanges: number;
   parentsBlocked: number;
   parentsSkipped: number;

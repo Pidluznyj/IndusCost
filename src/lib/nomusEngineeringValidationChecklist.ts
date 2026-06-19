@@ -78,6 +78,7 @@ export function buildEngineeringValidationChecklistMarkdown(input: {
     `| Produtos avaliados | ${input.totals.parentsEvaluated} |`,
     `| Sem alteração (ok) | ${input.totals.parentsNoChanges} |`,
     `| Aplicados | ${input.totals.parentsApplied} |`,
+    `| Prontos para aplicar | ${input.totals.parentsReadyToApply ?? 0} |`,
     `| Bloqueados | ${input.totals.parentsBlocked} |`,
     `| Ignorados | ${input.totals.parentsSkipped} |`,
     `| Erros | ${input.totals.parentsErrored} |`,
@@ -106,7 +107,7 @@ export function buildEngineeringValidationChecklistMarkdown(input: {
   }
 
   const sorted = [...actionable].sort((a, b) => {
-    const order = { ERROR: 0, BLOCKED: 1, SKIPPED: 2, APPLIED: 3, NO_CHANGES: 4 };
+    const order = { ERROR: 0, BLOCKED: 1, SKIPPED: 2, READY_TO_APPLY: 3, APPLIED: 4, NO_CHANGES: 5 };
     const diff = (order[a.status] ?? 9) - (order[b.status] ?? 9);
     return diff !== 0 ? diff : a.parentCode.localeCompare(b.parentCode);
   });
@@ -126,6 +127,12 @@ export function buildEngineeringValidationChecklistMarkdown(input: {
       severity: 0,
       actionsCount: 0,
       actionsSummaryLines: [],
+      readyToApply: false,
+      hasUnappliedBomDiff: false,
+      appliedToOfficialBom: false,
+      planHash: null,
+      confirmationRequiredText: null,
+      diffSummary: "",
     });
 
     lines.push(`### ${product.parentCode}`);

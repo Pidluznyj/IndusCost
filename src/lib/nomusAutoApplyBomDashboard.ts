@@ -13,6 +13,7 @@ import {
   computeFilterCounts,
   enrichDashboardProductRow,
 } from "@/src/lib/nomusAutoApplyBomDashboardShared";
+import { reconcileReportProductStatus } from "@/src/lib/nomusBomApplyStatus";
 import {
   parseAutoApplyReportJson,
   type ParsedAutoApplyReport,
@@ -33,6 +34,7 @@ export function normalizeAutoApplyFilter(value: string | undefined): AutoApplyDa
     "LOCAL_PENDING",
     "SKIPPED",
     "NO_CHANGES",
+    "READY_TO_APPLY",
     "APPLIED",
     "ERROR",
   ];
@@ -58,6 +60,14 @@ export function classifyAutoApplyProduct(
   | "severity"
   | "actionsCount"
   | "actionsSummaryLines"
+  | "readyToApply"
+  | "hasUnappliedBomDiff"
+  | "appliedToOfficialBom"
+  | "planHash"
+  | "confirmationRequiredText"
+  | "diffSummary"
+  | "applyRunId"
+  | "resultStatus"
 > {
   const blockingReasons = product.blockingReasons ?? [];
   const actions = product.actionsPreview ?? [];
@@ -79,6 +89,7 @@ export function classifyAutoApplyProduct(
 
   const categories = new Set<AutoApplyProductCategory>();
   if (product.status === "APPLIED") categories.add("APPLIED");
+  if (product.status === "READY_TO_APPLY") categories.add("READY_TO_APPLY");
   if (product.status === "NO_CHANGES") categories.add("NO_CHANGES");
   if (product.status === "BLOCKED") categories.add("BLOCKED");
   if (product.status === "SKIPPED") categories.add("SKIPPED");
@@ -104,6 +115,7 @@ export function classifyAutoApplyProduct(
   if (product.status === "BLOCKED") filterBuckets.add("BLOCKED");
   if (product.status === "SKIPPED") filterBuckets.add("SKIPPED");
   if (product.status === "NO_CHANGES") filterBuckets.add("NO_CHANGES");
+  if (product.status === "READY_TO_APPLY") filterBuckets.add("READY_TO_APPLY");
   if (product.status === "APPLIED") filterBuckets.add("APPLIED");
   if (product.status === "ERROR") filterBuckets.add("ERROR");
   if (quantityDiffCount > 0 || metadataOnlyCount > 0) filterBuckets.add("DIVERGENT");
@@ -118,6 +130,8 @@ export function classifyAutoApplyProduct(
   else if (metadataOnlyCount > 0)
     primaryReason = `${metadataOnlyCount} componente(s) aguardando metadata Nomus.`;
   else if (product.status === "NO_CHANGES") primaryReason = "Alinhado com Nomus — sem alteração necessária.";
+  else if (product.status === "READY_TO_APPLY")
+    primaryReason = "Correções resolvidas; BOM oficial ainda não aplicada.";
   else if (product.status === "APPLIED") primaryReason = "BOM aplicada/atualizada na última rotina.";
 
   return {
@@ -313,13 +327,18 @@ async function readLatestBatchRunReport(): Promise<ParsedAutoApplyReport | null>
 }
 
 function mapProductRows(products: NomusBomAutoApplyProductResult[]): AutoApplyBomDashboardProductRow[] {
-  return products.map((product) =>
-    enrichDashboardProductRow({
+  return products.map((raw) => {
+    const product = reconcileReportProductStatus(raw);
+    return enrichDashboardProductRow({
       parentCode: product.parentCode,
       productId: product.productId,
       status: product.status,
       canApply: product.canApply,
       errorMessage: product.errorMessage,
+      planHash: product.planHash ?? null,
+      confirmationRequiredText: product.confirmationRequiredText ?? null,
+      applyRunId: product.applyRunId ?? null,
+      resultStatus: product.resultStatus,
       ...classifyAutoApplyProduct(product),
       pendingTypeLabel: "",
       recommendedAction: "",
@@ -327,8 +346,12 @@ function mapProductRows(products: NomusBomAutoApplyProductResult[]): AutoApplyBo
       severity: 0,
       actionsCount: 0,
       actionsSummaryLines: [],
-    })
-  );
+      readyToApply: false,
+      hasUnappliedBomDiff: false,
+      appliedToOfficialBom: false,
+      diffSummary: "",
+    });
+  });
 }
 
 export async function buildNomusAutoApplyBomDashboard(input: {
@@ -385,6 +408,7 @@ export async function buildNomusAutoApplyBomDashboard(input: {
         LOCAL_PENDING: 0,
         SKIPPED: 0,
         NO_CHANGES: 0,
+        READY_TO_APPLY: 0,
         APPLIED: 0,
         ERROR: 0,
       },

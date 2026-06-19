@@ -69,6 +69,9 @@ export async function revalidateAutoApplyDashboardProducts(
       merged[index] = {
         ...mapControlledApplyPreviewToAutoApplyProduct(preview),
         errorMessage: undefined,
+        planHash: preview.planHash,
+        effectiveBomHash: preview.effectiveBomHash,
+        confirmationRequiredText: preview.confirmationRequiredText,
       };
     } catch {
       revalidationErrors += 1;

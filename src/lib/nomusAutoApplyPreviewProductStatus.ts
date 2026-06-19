@@ -3,14 +3,10 @@ import type {
   NomusBomAutoApplyProductResult,
   NomusBomAutoApplyProductStatus,
 } from "@/src/lib/nomusBomAutoApplyAfterSyncTypes";
-
-const MUTATING_ACTION_TYPES = new Set([
-  "CREATE_PRODUCT_BOM_LINE",
-  "UPDATE_PRODUCT_BOM_QUANTITY",
-  "UPDATE_PRODUCT_BOM_NOMUS_METADATA",
-  "REMOVE_PRODUCT_BOM_LINE",
-  "CONSOLIDATE_DUPLICATE_PRODUCT_BOM_LINES",
-]);
+import {
+  classifyNomusBomApplyStatus,
+  hasMutatingApplyActions,
+} from "@/src/lib/nomusBomApplyStatus";
 
 export function previewActionsSummary(
   preview: ControlledApplyPreview
@@ -52,18 +48,37 @@ export function mapControlledApplyPreviewToAutoApplyProduct(
     };
   }
 
-  const hasMutations = preview.actions.some((a) => MUTATING_ACTION_TYPES.has(a.actionType));
-  const status: NomusBomAutoApplyProductStatus = hasMutations ? "APPLIED" : "NO_CHANGES";
+  const hasMutations = hasMutatingApplyActions(previewActionsSummary(preview));
+  const classified = classifyNomusBomApplyStatus({
+    parentCode: preview.parentCode,
+    productId: preview.productId,
+    canApply: preview.canApply,
+    blockingReasons: preview.blockingReasons,
+    actionsPreview: previewActionsSummary(preview),
+  });
+  const status: NomusBomAutoApplyProductStatus = hasMutations
+    ? classified.status === "NO_CHANGES"
+      ? "NO_CHANGES"
+      : "READY_TO_APPLY"
+    : "NO_CHANGES";
 
   return {
     ...base,
     status,
-    resultStatus: hasMutations ? "APPLIED" : "NO_CHANGES",
+    planHash: preview.planHash,
+    effectiveBomHash: preview.effectiveBomHash,
+    confirmationRequiredText: preview.confirmationRequiredText,
   };
 }
 
 export function shouldRevalidateAutoApplyProductStatus(
   product: NomusBomAutoApplyProductResult
 ): boolean {
-  return product.status === "BLOCKED" || product.status === "SKIPPED" || product.status === "ERROR";
+  if (product.status === "BLOCKED" || product.status === "SKIPPED" || product.status === "ERROR") {
+    return true;
+  }
+  if (product.status === "READY_TO_APPLY") return true;
+  // Relatórios DRY/legados marcavam preview com mutações como APPLIED sem applyRunId.
+  if (product.status === "APPLIED" && !product.applyRunId) return true;
+  return false;
 }

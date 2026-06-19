@@ -19,6 +19,7 @@
     "sync:nomus:bom-components:dry": "tsx scripts/nomusBomComponentsSyncV1.ts",
     "sync:nomus:bom-components:apply": "tsx scripts/nomusBomComponentsSyncV1.ts --apply",
     "debug:ar-horizon": "tsx scripts/debug-accounts-receivable-horizon.ts",
+    "debug:nomus-ready-to-apply": "tsx scripts/debug-nomus-ready-to-apply.ts",
     "sync:nomus:accounts-receivable:apply": "tsx scripts/nomusAccountsReceivableSync.ts apply",
     "sync:nomus:accounts-payable:preview": "tsx scripts/nomusAccountsPayableSync.ts preview",
     "sync:nomus:accounts-payable:apply": "tsx scripts/nomusAccountsPayableSync.ts apply",

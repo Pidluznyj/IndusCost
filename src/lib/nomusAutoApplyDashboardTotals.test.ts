@@ -39,6 +39,12 @@ function mapRows(products: NomusBomAutoApplyProductResult[]) {
       severity: 0,
       actionsCount: 0,
       actionsSummaryLines: [],
+      readyToApply: false,
+      hasUnappliedBomDiff: false,
+      appliedToOfficialBom: false,
+      planHash: null,
+      confirmationRequiredText: null,
+      diffSummary: "",
     })
   );
 }
@@ -60,6 +66,7 @@ describe("computeAutoApplyStatusTotals", () => {
       parentsInNomusStage: 900,
       parentsEvaluated: 876,
       parentsApplied: 12,
+      parentsReadyToApply: 0,
       parentsNoChanges: 723,
       parentsBlocked: 0,
       parentsSkipped: 0,
@@ -79,6 +86,7 @@ describe("computeAutoApplyStatusTotals", () => {
     assert.equal(
       totals.parentsNoChanges +
         totals.parentsApplied +
+        totals.parentsReadyToApply +
         totals.parentsBlocked +
         totals.parentsSkipped +
         totals.parentsErrored,
