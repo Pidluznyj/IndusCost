@@ -1,328 +1,410 @@
 # IndusCost — Mapa do sistema
 
-Mapas operacionais derivados de inspeção direta do código. Útil para
-localizar o caminho frontend → cliente REST → endpoint → lib server →
-modelo Prisma de cada fluxo.
+> **Atualizado:** 2026-06-17  
+> **Branch:** `main`  
+> **Commit HEAD:** `26c54ef662c7c7606c2fd4ee29bc44bf711b6de7`
+
+Mapas operacionais derivados de inspeção direta do código. Útil para localizar o caminho **frontend → cliente REST → endpoint → lib → modelo Prisma** de cada fluxo.
+
+---
 
 ## 1. Modelos Prisma agrupados
 
-> Total: **51 models + 22 enums** em `prisma/schema.prisma`.
+> Total: **95 models + 55 enums** em `prisma/schema.prisma` (era 51 + 22 em `7c57130`).
 
 ### Identidade & permissões
-- `AppUser`, `AppSession`, `AppUserRole` (enum)
+- `AppUser`, `AppSession`, `AppUserRole`, `AccessProfile`, `AccessProfilePermission`
 
 ### Manufatura (núcleo)
 - `Product`, `ProductBOM`, `ProductRouting`
-- `ItemType` (enum: `PRODUCT | COMPONENT`)
-- `ProductCostingMode` (enum: `OWN_PROCESS | BOM_ONLY | FINISHING_SERVICE`)
 - `Material`, `MaterialPriceHistory`
 - `Machine`, `MachineCostComponent`
 - `Role`, `Employee`, `PayrollComponent`, `EmployeePayrollComponent`
 
 ### Custos & preço
-- `IndirectCost`, `TaxRule`, `TaxComponent`
-- `ProductPricing` (margem desejada × TaxRule)
+- `IndirectCost`, `TaxRule`, `TaxComponent`, `ProductPricing`
 - `PriceTable`, `PriceTableVersion`, `PriceTableItem`
-- `Simulation`, `NewProductSimulation` + status enum
-- `CostCalculationLog`, `CostCenter`
-- `ProductionHourCostSimulation`
+- `Simulation`, `NewProductSimulation`
+- `CostCalculationLog`, `CostCenter`, `ProductionHourCostSimulation`
 
 ### Comercial
-- `Customer`, `Proposal`, `ProposalItem`, `ProposalStatus` (enum)
-- `SalesOrder`, `SalesOrderItem`, `SalesOrderStatus` (enum)
-- `BrandingSettings`
+- `Customer`, `Proposal`, `ProposalItem`, `BrandingSettings`
+- **`SalesOrder`, `SalesOrderItem`** — fonte principal dashboards comerciais e financeiros
 
 ### CRM
-- `CommercialActivity`, `CrmCustomerProfile`, `CommercialAuditLog`
-- `IntegrationRun`
+- `CommercialActivity`, `CrmCustomerProfile`, `CommercialAuditLog`, `IntegrationRun`
 
-### Compras
-- `PurchaseRequest`, `PurchaseRequestItem` + enums (`PurchaseRequestStatus`,
-  `PurchasePriority`, `PurchaseLineType`, `PurchaseItemLineStatus`)
+### Financeiro Nomus (novo desde auditoria anterior)
+- **`NomusAccountsReceivable`** — Contas a Receber oficial
+- **`NomusAccountsPayable`** — Contas a Pagar oficial
+- **`NomusNfe`** — NF-e fiscal para Faturamento
 
-### Manutenção predial
+### Projetos (novo)
+- `Project`, `ProjectVersion`, `ProjectPricingConfig`, `ProjectPricingItem`
+- `ProjectSimulatedProduct`, `ProjectSimulatedItem`
+- **`ProjectStructureLine`** — BOM hierárquica isolada do projeto (não há model `ProjectLaborLine`)
+- `ProjectMold`, `ProjectCostAmortization`, `ProjectCostAmortizationAllocation`
+
+### Frota (novo)
+- `FleetVehicle`, `FleetDriver`, `FleetReservation`, `FleetReservationChecklist`, `FleetReservationChecklistItem`
+- `FleetMaintenance`, `FleetFueling`, `FleetFine`, `FleetIncident`, `FleetCost`, `FleetUsage`
+- `FleetPublicReservationRequest`, `FleetPublicReservationApprovalHistory`
+- `FleetVehicleChecklistToken`, `FleetChecklist`, `FleetChecklistItem`, `FleetSettings`, `FleetAuditLog`
+- `FleetVehicleContract`, `FleetVehicleDocument`, `FleetAttachment`
+
+### Nomus — stage, opcionais, governança
+- `NomusProductCatalog`, `NomusBomComponentStage`
+- `NomusOptionalPricingGroup`, `NomusOptionalPricingChoice` (+ `nomusStructureFingerprint`)
+- **`NomusBomReviewDecision`** (+ fingerprint, tipos de decisão)
+
+### Nomus — execução & sync financeiro
+- `NomusBomApplyRun`, `NomusBomApplyRunLine`
+- `NomusProductImportRun`, `NomusProductImportRunLine`
+- `EngineeringSyncRun`, `EngineeringChangeLog`
+
+### Compras & Manutenção predial
+- `PurchaseRequest`, `PurchaseRequestItem`
 - `MaintenanceRequest`, `MaintenanceRequestStatusHistory`
-- `MaintenanceStatus`, `MaintenancePriority`, `MaintenanceCategory` (enums)
 
-### Nomus — stage e governança
-- `NomusBomComponentStage` (ingestão de BOM crua + payload)
-- `NomusOptionalPricingGroup`, `NomusOptionalPricingChoice`,
-  `NomusOptionalPricingSelectionMode` (enum)
-- `NomusBomReviewDecision` + `NomusBomReviewDecisionType` (enum)
+### Backups históricos (persistidos)
+9 models `*_backup_*_20260413` — candidatos a arquivamento.
 
-### Nomus — execução
-- `NomusBomApplyRun`, `NomusBomApplyRunLine` + enums de status
-- `NomusProductImportRun`, `NomusProductImportRunLine` + status enum
-- `EngineeringSyncRun` + `EngineeringSyncRunMode`, `EngineeringSyncRunStatus` (enums)
-- `EngineeringChangeLog` + `EngineeringChangeEntityType`,
-  `EngineeringChangeOrigin` (enums) → tabela canônica de auditoria
+---
 
-### Backups históricos (persistidos no schema)
-> 9 modelos `*_backup_*_20260413` — ver auditoria para recomendação de
-> arquivamento.
+## 2. Endpoints — visão por módulo
 
-- `ProductBOM_backup_420_01A_20260413`
-- `ProductBOM_backup_61051_mola_atual_20260413`
-- `ProductBOM_backup_add_80001_montagem_20260413`
-- `ProductBOM_backup_auto_remap_componentes_comprados_20260413`
-- `ProductBOM_backup_remap_material_lote2_20260413`
-- `ProductBOM_backup_remap_material_lote4_20260413`
-- `ProductBOM_backup_remove_obsoletos_20260413`
-- `Product_backup_process_componentes_materiais_20260413`
-- `Product_backup_process_xlsx_20260413`
+> **~197** rotas em `server.ts` + registradores modulares. Contagem via `Select-String app\.(get|post|put|patch|delete)` em `server.ts`.
 
-## 2. Endpoints `server.ts` (176 rotas) — agrupados
+### 2.1 Financeiro — `/api/finance/*`
 
-> Lista exaustiva derivada de `Select-String app\.(get|post|put|patch|delete)`.
-> Linhas dadas para localização rápida.
+Registradores: `finance*Routes.ts` (importados em `server.ts` L132–137).
 
-### Auth & bootstrap
-- `GET /api/health` · `GET /api/bootstrap-admin/status` · `POST /api/bootstrap-admin/login` · `POST /api/bootstrap-admin/logout`
-- `POST /api/auth/login` · `POST /api/auth/logout` · `GET /api/auth/me`
+```
+GET  /api/finance/cash-flow/dashboard
+GET  /api/finance/cash-flow/audit
+GET  /api/finance/cash-flow/export
 
-### Admin / RBAC
-- `GET /api/admin/permissions/catalog`
-- `GET /api/admin/seller-options`
-- `GET /api/admin/users` · `POST /api/admin/users` · `PATCH /api/admin/users/:id`
-- `POST /api/admin/users/:id/reset-password`
-- `POST /api/admin/users/bootstrap-super-admin`
+GET  /api/finance/accounts-receivable/dashboard
+GET  /api/finance/accounts-receivable/titles
+GET  /api/finance/accounts-receivable/export
+GET  /api/finance/accounts-receivable/overdue
+GET  /api/finance/accounts-receivable/overdue/export.xlsx
 
-### Cadastros base
-- **Roles**: `GET/POST/PUT/DELETE /api/roles[:id]`
-- **Payroll**: `GET/POST/PUT/DELETE /api/payroll-components[:id]`
-- **Employees**: `GET/POST/PUT/DELETE /api/employees[:id]` + `PATCH /:id/status`
-- **Machines**: `GET/POST/PUT/DELETE /api/machines[:id]`
-- **Materials**: importer + CRUD completo + `PATCH /:id/status`
-- **Cost centers**: `GET/POST/PATCH /api/cost-centers[:id]`
-- **Products**: importer + CRUD + `bulk-delete` + `/:id/tree`
-- **Indirect costs**: `GET/POST/PUT/DELETE /api/indirect-costs[:id]` com `requireBootstrapForGlobalParamMutation`
-- **Tax rules**: `GET/POST/PUT/DELETE /api/tax-rules[:id]`
+GET  /api/finance/accounts-payable/dashboard
+GET  /api/finance/accounts-payable/titles
+GET  /api/finance/accounts-payable/export
 
-### Custos & cálculo
-- `GET /api/products/:id/cost-analysis`
-- `GET /api/products/:id/pricing-snapshot`
-- `GET /api/products/:id/tree`
-- `GET /api/products/bom-item-options`
+GET  /api/finance/billing/dashboard
+GET  /api/finance/billing/nfes
+GET  /api/finance/billing/export
+GET  /api/finance/billing/audit
+GET  /api/finance/billing/audit/export
+GET  /api/finance/billing/comparison
+GET  /api/finance/billing/sync-status
+POST /api/finance/billing/sync
 
-### Pricing
-- `GET /api/pricing` · `POST /api/pricing` · `POST /api/pricing/bulk-delete` · `DELETE /api/pricing/:id`
-- `GET /api/pricing/:productId/:taxRuleId/calculate`
-- `POST /api/pricing/simulate-unit` · `POST /api/pricing/simulate-batch`
-- `POST /api/pricing/apply-batch` ⚠️ **sem confirmação textual** (ver auditoria)
+GET  /api/finance/sales-orders/dashboard
+GET  /api/finance/sales-orders/export
 
-### Price tables
-- `GET /api/price-tables`
-- `POST /api/price-tables/:priceTableId/versions/generate-draft`
-- `GET /api/price-table-versions/:id/items`
-- `GET /api/price-tables/:priceTableId/products/:productId/published-price`
-- `POST /api/price-table-versions/:id/publish`
-
-### Simulações
-- `GET/POST/DELETE /api/simulations[:id]`
-- `GET /api/simulations/:id/compare`
-- `GET/POST/DELETE /api/new-product-simulations[:id]`
-- `POST /api/new-product-simulations/save` · `POST /:id/clone`
-
-### Branding / settings / nomus health
-- `GET/PUT /api/branding-settings`
-- `GET /api/settings/globals`
-- `GET /api/integrations/nomus/health`
-- `GET /api/settings/nomus-sync/logs[/:fileName]`
-- `GET/POST/DELETE /api/settings/production-hour-cost-simulations[/:id]`
-
-### Reports / consumo de material
-- `GET /api/reports/data`
-- `GET /api/products/material-demand/{summary|rows|facets|analysis}`
-- `GET /api/products/material-demand/materials/:materialId/details`
-
-### Nomus — BOM core
-- `GET /api/nomus/bom-comparison/report` · `/classification` · `/apply-plan`
-- `GET /api/nomus/parent-code-options`
-
-### Nomus — opcionais
-- `GET /api/nomus/bom-optionals/pricing-selection`
-- `GET /api/nomus/bom-optionals/pricing-selection/detail`
-- `GET /api/nomus/bom-optionals/pricing-selection/groups`
-- `GET/PUT/DELETE /api/nomus/bom-optionals/pricing-selection/groups/:groupId`
-- `POST /api/nomus/bom-optionals/pricing-selection/groups/:groupId/selection`
-
-### Nomus — BOM efetiva, impacto, decisões de revisão
-- `GET /api/nomus/effective-pricing-bom` · `/cost-impact`
-- `GET/POST/DELETE /api/nomus/effective-pricing-bom/review-decisions`
-- `GET /api/nomus/effective-pricing-bom/apply-preview`
-- `POST /api/nomus/effective-pricing-bom/apply` 🔒 **confirmação `APLICAR BOM NOMUS <CÓDIGO>`**
-
-### Nomus — Import simulação (produto novo)
-- `GET /api/nomus/product-import-simulation/preview`
-- `POST /api/nomus/product-import-simulation/import`
-
-### Nomus — Engenharia (cockpit + action plan + master data + equalize)
-- `GET /api/nomus/engineering-operations-cockpit`
-- `GET /api/nomus/engineering-equalization-action-plan`
-- `GET /api/nomus/master-data-import/diagnostic`
-- `GET /api/nomus/master-data-import/preview`
-- `POST /api/nomus/master-data-import/apply-safe` 🔒 **`IMPORTAR CADASTRO MESTRE NOMUS`**
-- `GET /api/nomus/master-data-equalize/preview`
-- `POST /api/nomus/master-data-equalize/apply` 🔒 **`IGUALAR BASES NOMUS`**
-- `GET /api/nomus/engineering-runs/recent`
-- `GET /api/products/:id/change-history`
-
-### Nomus — Engineering sync legado
-- `GET /api/nomus/engineering-sync/preview`
-- `POST /api/nomus/engineering-sync/apply`
-
-### Customers / CRM
-
-**Fonte comercial principal (2026-06):** Pedidos de Venda (`SalesOrder`). Propostas = pré-venda, CRUD, impressão e geração de pedido — não são proxy de receita/pipeline nos dashboards globais. Ver `docs/commercial/SALES_ORDER_AS_COMMERCIAL_SOURCE.md`.
-
-- Importer + CRUD + `GET /api/customers/indicators[/drilldown]`
-- `GET /api/customers/:id/commercial-360` — SalesOrder + ABC
-- `GET/POST/PATCH /api/customers/:customerId/commercial-activities[/:id]`
-- `GET /api/crm/dashboard/basic` · `/management-dashboard` · `/seller-dashboard`
-- `GET /api/crm/customers` · `/:customerId/profile` · `/commercial-intelligence`
-- `PUT /api/crm/customers/:customerId/profile`
-
-### Proposals & Sales orders
-- `GET /api/proposals` (+ filtros) · `:id` · `responsibles`
-- `POST/PUT/PATCH/DELETE /api/proposals[:id|:id/status]`
-- `POST /api/proposals/:id/generate-sales-order`
-- `GET /api/sales-orders[/:id]`
-
-### Maintenance
-- CRUD `/api/maintenance-requests` + history + status
-
-## 3. Mapa fluxo Nomus (frontend → backend → modelo)
-
-```text
-NomusMaintenanceOverviewPanel.tsx
-│
-├─► [sem produto]
-│   ├─ NomusEngineeringStatusBoard.tsx
-│   │  ├─► /api/nomus/engineering-operations-cockpit
-│   │  ├─► /api/nomus/master-data-import/diagnostic
-│   │  ├─► /api/nomus/master-data-equalize/preview
-│   │  └─► /api/nomus/engineering-runs/recent
-│   │
-│   ├─ NomusMasterDataImportPanel.tsx
-│   │  ├─► /api/nomus/master-data-import/{diagnostic|preview|apply-safe}
-│   │  └─► /api/nomus/master-data-equalize/{preview|apply}
-│   │
-│   └─ NomusEngineeringOperationsCockpitPanel.tsx
-│      ├─► /api/nomus/engineering-operations-cockpit
-│      └─► /api/nomus/engineering-equalization-action-plan
-│
-└─► [com produto]
-    ├─ ProductReleaseChecklist.tsx
-    │  └─► /api/nomus/engineering-equalization-action-plan
-    │
-    ├─ NomusEffectivePricingBomPanel
-    │  └─► /api/nomus/effective-pricing-bom
-    │
-    ├─ NomusEffectiveBomCostImpactPanel
-    │  └─► /api/nomus/effective-pricing-bom/cost-impact
-    │
-    ├─ NomusBomApplyPlanPanel
-    │  └─► /api/nomus/bom-comparison/apply-plan
-    │
-    ├─ NomusBomControlledApplySection (Aplicar BOM Nomus)
-    │  ├─► /api/nomus/effective-pricing-bom/apply-preview
-    │  └─► /api/nomus/effective-pricing-bom/apply  🔒
-    │
-    └─ ProductHistoryTab
-       └─► /api/products/:id/change-history
+GET  /api/finance/executive-report
 ```
 
-Backend (lib server-side) por endpoint:
+### 2.2 CRM Comercial — `/api/crm/*`
 
-| Endpoint Nomus | Lib server-side | Modelo Prisma escrito |
-|---|---|---|
-| `master-data-import/{diagnostic,preview}` | `nomusMasterDataImport.ts` | — |
-| `master-data-import/apply-safe` | `nomusMasterDataImport.ts` | `Product`, `Material`, `EngineeringChangeLog` (via productChangeHistory)\* |
-| `master-data-equalize/preview` | `nomusMasterDataEqualize.ts` | — |
-| `master-data-equalize/apply` | `nomusMasterDataEqualize.ts` | `Product`, `Material`, `EngineeringSyncRun`, `EngineeringChangeLog` |
-| `engineering-operations-cockpit` | `nomusEngineeringOperationsCockpit.ts` | — |
-| `engineering-equalization-action-plan` | `nomusEngineeringEqualizationActionPlan.ts` | — |
-| `effective-pricing-bom` | `nomusEffectivePricingBom.ts` | — (lê stage + ProductBOM) |
-| `effective-pricing-bom/cost-impact` | `nomusEffectiveBomCostImpact.ts` | — |
-| `effective-pricing-bom/apply-preview` | `nomusBomControlledApply.ts` | — |
-| `effective-pricing-bom/apply` | `nomusBomControlledApply.ts` | `ProductBOM`, `NomusBomApplyRun`, `NomusBomApplyRunLine`, `EngineeringSyncRun`, `EngineeringChangeLog` |
-| `engineering-runs/recent` | inline em `server.ts` | — |
-| `products/:id/change-history` | `productChangeHistory.ts` | — |
+```
+GET  /api/crm/dashboard/basic
+GET  /api/crm/management-dashboard          # Gestão Geral
+GET  /api/crm/seller-dashboard            # Gestão por Vendedor / Meu Dashboard
+GET  /api/crm/customers                     # Carteira de Clientes
+GET  /api/crm/customers/:id/profile
+PUT  /api/crm/customers/:id/profile
+GET  /api/crm/customers/:id/commercial-intelligence   # Inteligência do Cliente
+```
 
-\* `apply-safe` da Carga Mestre **não** registra `EngineeringChangeLog`
-por padrão; histórico é gerado retroativamente pelo Igualar Bases ou pelo
-script `master-data-history-backfill` (com confirmação textual).
+Escopo vendedor: `crmCommercialAccessScope.ts` + `resolveSellerDashboardScope` em `appAuthMiddleware.ts`.
 
-## 4. Scripts agrupados (42 arquivos em `scripts/`)
+### 2.3 Pedidos de Venda — operacional
 
-### Ingestão Nomus
-- `nomusBomComponentsSyncV1.ts`, `nomusProductsSyncV1.ts`,
-  `nomusCustomersSyncV1.ts`, `nomusProposalsSyncV1.ts`,
-  `nomusSalesOrdersSyncV1.ts`
-- Orquestrador: `nomusSyncOrchestrator.ts`
-- Diários: `runNomusDailySync.sh`, `runNomusSalesOrdersSync.sh`
+```
+GET  /api/sales-orders
+GET  /api/sales-orders/:id
+GET  /api/sales-orders/management           # Gestão de Pedidos + cards BI
+GET  /api/sales-orders/:id/intelligence     # Drawer raio-x
+```
 
-### Diagnóstico / preview Nomus (read-only)
-- `nomusBomCompareV1.ts`, `nomusBomBatchReportV1.ts`,
-  `nomusBomClassifyV1.ts`, `nomusBomApplyPlanV1.ts`,
-  `nomusBomApplyPreviewV1.ts`, `nomusBomApplyValidationPrint.ts`
-- `nomusEffectivePricingBomPreviewV1.ts`,
-  `nomusEffectiveBomCostImpactV1.ts`,
-  `nomusOptionalPricingStatusV1.ts`
-- `nomusProductImportSimulationPreviewV1.ts`,
-  `nomusProductImportDiagnosticV1.ts`
-- `nomusMasterDataImportDiagnosticV1.ts`,
-  `nomusMasterDataImportPreviewV1.ts`,
-  `nomusMasterDataEqualizePreviewV1.ts`
-- `nomusEngineeringReleaseCheckV1.ts`
+Registro: `registerSalesOrderIntelligenceRoutes` (`salesOrderIntelligenceRoutes.ts`).
 
-### Smokes read-only (com snapshot + FK check)
-- `nomusMaintenanceSmokeTestV1.ts`
-- `nomusEngineeringOperationsCockpitSmokeTestV1.ts`
-- `nomusEngineeringActionPlanSmokeTestV1.ts`
-- `nomusMasterDataImportSmokeTestV1.ts`
-- `nomusMasterDataEqualizeSmokeTestV1.ts`
-- `nomusBomApplyAfterMasterDataSmokeTestV1.ts`
-- `nomusEngineeringReleaseReadySmokeTestV1.ts`
+### 2.4 Projetos — `/api/projects/*`
 
-### Apply mutativo Nomus (confirmação textual obrigatória)
-- `nomusMasterDataImportApplySafeV1.ts` (`IMPORTAR CADASTRO MESTRE NOMUS`)
-- `nomusMasterDataEqualizeApplyV1.ts` (`IGUALAR BASES NOMUS`)
-- `nomusBomApplyOneV1.ts` (`APLICAR BOM NOMUS <CÓDIGO>`)
-- `nomusMasterDataHistoryBackfillV1.ts` (`BACKFILL HISTORICO NOMUS`)
+Registro: `registerProjectsRoutes` (`projectsRoutes.ts`, ~30 rotas).
 
-### Guardrail + utilitários
-- `checkFrontendServerImports.ts` (rodado por `npm run check:frontend-imports`)
-- `nomusNumberParser.ts` + teste
-- `nomusProductStructureDiscovery.ts`
-- `apply-api-permission-guards.mjs`, `fix-tags.mjs`, `patch-1f-tabs.mjs`
-- `seedPriceTables.ts`
+Principais:
 
-## 5. Componentes principais agrupados
+```
+GET  /api/projects/dashboard
+GET  /api/projects
+POST /api/projects
+GET  /api/projects/:id
+PATCH /api/projects/:id
+DELETE /api/projects/:id
+GET  /api/projects/lookup/{commercial-owners,customers,products,materials,simulations}
+GET  /api/projects/lookup/products/:productId/{snapshot,engineering-snapshot}
+POST /api/projects/:id/import-product-snapshot
+POST /api/projects/:id/simulated-products | simulated-items | structure-lines | molds
+GET/PUT /api/projects/:id/{pricing,cost-amortizations}
+```
 
-### Top-level (40 arquivos em `src/components`)
+### 2.5 Nomus Engenharia — endpoints novos/relevantes
 
-| Categoria | Arquivos principais |
-|---|---|
-| Auth/portal | `LandingPage.tsx`, `AuthLoginPage.tsx`, `RequireAuth.tsx`, `AccessDenied.tsx`, `PublicLandingRoute.tsx`, `PublicLoginRoute.tsx`, `DefaultModuleRedirect.tsx` |
-| Admin/RBAC | `AdminUsersModule.tsx`, `BrandingSettingsPanel.tsx`, `SettingsModule.tsx` |
-| Operacional | `ProductModule.tsx`, `MaterialModule.tsx`, `MachineModule.tsx`, `EmployeeModule.tsx`, `IndirectCostModule.tsx`, `TaxModule.tsx` |
-| Comercial / CRM | `ProposalModule.tsx`, `ProposalClientPreview.tsx`, `SalesOrdersModule.tsx`, `CustomerModule.tsx`, `CrmModule.tsx`, `CrmCommercialManagementTabs.tsx`, `CrmManagementDashboardSection.tsx`, `CrmManagementLists.tsx`, `CrmSellerDashboardSection.tsx`, `CrmSellerDashboardLists.tsx`, `CrmSellerSubTabs.tsx`, helpers `crmManagementTypes/ui.ts` e `crmSellerDashboardTypes/ui.ts` |
-| Pricing / simulação | `PricingModule.tsx`, `SimulationModule.tsx`, `NewProductSimulationReport.tsx` + teste |
-| Compras / Manutenção | `PurchaseModule.tsx`, `MaintenanceModule.tsx` |
-| Painéis técnicos | `DashboardModule.tsx`, `ReportsModule.tsx`, `SystemGuideModule.tsx` |
+```
+GET  /api/nomus/auto-apply-bom-dashboard
+GET  /api/nomus/bom-auto-apply/products/apply-readiness
+POST /api/nomus/bom-auto-apply/products/:parentCode/apply
+POST /api/nomus/bom-auto-apply/products/apply-batch
 
-### `src/components/product/` (29 arquivos)
+# Legado (mantidos)
+GET  /api/nomus/bom-comparison/{report,classification,apply-plan}
+GET  /api/nomus/effective-pricing-bom[/cost-impact|/apply-preview]
+POST /api/nomus/effective-pricing-bom/apply          🔒 APLICAR BOM NOMUS <CÓDIGO>
+GET/POST/DELETE /api/nomus/effective-pricing-bom/review-decisions
+GET/PUT/DELETE /api/nomus/bom-optionals/pricing-selection/...
+POST /api/nomus/master-data-import/apply-safe         🔒 IMPORTAR CADASTRO MESTRE NOMUS
+POST /api/nomus/master-data-equalize/apply            🔒 IGUALAR BASES NOMUS
+GET  /api/nomus/engineering-operations-cockpit
+GET  /api/nomus/engineering-equalization-action-plan
+GET  /api/products/:id/change-history
+```
 
-| Categoria | Arquivos |
-|---|---|
-| Manutenção Nomus | `NomusMaintenanceOverviewPanel`, `NomusMaintenanceProductBanner`, `NomusMaintenanceStepHeader`, `NomusMaintenanceDiagnosticPanel`, `NomusMaintenanceErrorCard`, `NomusMaintenancePendingPanel`, `NomusMaintenanceProductDiagnosticView`, `NomusLocalReviewSection`, `NomusParentCodePickerModal`, `NomusBomPartialSkuPickerModal`, `NomusBomDiffModal`, `ProductNomusMaintenanceSection` |
-| Central de Engenharia / Cockpit | `NomusEngineeringOperationsCockpitPanel`, `NomusEngineeringStatusBoard`, `NomusEngineeringSyncPanel` |
-| Cadastro mestre & Equalização | `NomusMasterDataImportPanel`, `ProductReleaseChecklist` |
-| BOM + custo + opcional | `NomusBomComparisonPanel`, `NomusBomClassificationPanel`, `NomusBomBatchReportPanel`, `NomusBomApplyPlanPanel`, `NomusBomControlledApplySection`, `NomusEffectivePricingBomPanel`, `NomusEffectiveBomCostImpactPanel`, `NomusOptionalPricingSelectionPanel`, `NomusProductImportSimulationPanel` |
-| Histórico / abas técnicas | `ProductHistoryTab`, `OpenBookCompositionTab`, `ProductBomTreeContextPanel` |
+### 2.6 Frota — `/api/fleet/*`
 
-## 6. Diagrama de auditoria (texto)
+Registro: `registerFleetManagementRoutes` (`fleetManagementRoutes.ts`) — alertas, veículos, reservas, checklist, relatórios, rotas públicas de reserva.
+
+### 2.7 Cadastros, pricing, auth (resumo — ver `server.ts`)
+
+Mantidos do mapa anterior: auth, admin/RBAC, roles, employees, machines, materials, products, indirect-costs, tax-rules, pricing, price-tables, simulations, branding, maintenance, purchase-requests, customers CRUD, proposals, sales-orders CRUD básico.
+
+---
+
+## 3. Fluxos frontend → backend → lib → model
+
+### 3.1 Financeiro — Fluxo de Caixa
+
+```text
+FinanceCashFlowPage.tsx
+  → GET /api/finance/cash-flow/dashboard
+    → financeCashFlowRoutes.ts
+      → loadCashFlowRows (Prisma AR + AP)
+      → buildFinanceCashFlowDashboard (financeCashFlowDashboard.ts)
+        → NomusAccountsReceivable + NomusAccountsPayable
+  → FinanceDataAuditDrawer (audit via ?audit=1 ou /cash-flow/audit)
+  → GET /api/finance/cash-flow/export (CSV)
+```
+
+Exceção YTD: `financeCashFlowExecutiveYtd.ts` — filtro mensal não altera acumulado anual.
+
+### 3.2 Financeiro — Contas a Receber
+
+```text
+FinanceAccountsReceivablePage.tsx
+  → GET /api/finance/accounts-receivable/dashboard
+    → loadFinanceArManagementRowsFromPrisma
+      → filterFinanceArManagementReportRows (fiscal backing, dedup, stale)
+        → NomusAccountsReceivable
+  → sub-aba Atrasados → GET …/overdue (+ export.xlsx)
+  → Horizonte carteira aberta: loadFinanceArOpenHorizonRowsFromPrisma (ignora período)
+```
+
+### 3.3 Financeiro — Faturamento
+
+```text
+FinanceBillingPage.tsx
+  → GET /api/finance/billing/dashboard?billingSource=nfe|sales_order
+    → billingSource=nfe  → buildBillingDashboardFromNfes → NomusNfe
+    → billingSource=sales_order → buildBillingDashboardTab → SalesOrder
+  → GET /api/finance/billing/nfes (lista NF-e)
+  → POST /api/finance/billing/sync (Nomus NF-e)
+```
+
+### 3.4 Financeiro — Pedidos de Venda (gerencial)
+
+```text
+FinanceSalesOrdersPage.tsx
+  → GET /api/finance/sales-orders/dashboard
+    → financeSalesOrdersDashboard.ts
+      → prisma.salesOrder + SQL NF (salesOrderInvoicingSql)
+      → financeSalesOrdersExtendedMetrics.ts (BI logístico, manufacturing, carteira)
+  → GET /api/finance/sales-orders/export
+```
+
+**Não usa Proposal.**
+
+### 3.5 Financeiro — Relatório Presidencial
+
+```text
+FinanceExecutiveReportPage.tsx
+  → GET /api/finance/executive-report
+    → buildFinanceExecutiveReport (consolida AR, AP, Fluxo×2, Pedidos, Faturamento)
+  → window.print() + executive-report-print.css (A4 landscape, 12 meses caixa anual)
+```
+
+### 3.6 CRM — Gestão por Vendedor
+
+```text
+CrmSellerDashboardSection.tsx
+  → GET /api/crm/seller-dashboard?sellerIdentityKey=…
+    → crmSellerDashboardService.ts
+      → resolveSellerDashboardScope (bloqueia vendedor own de ver outro)
+      → SalesOrder (+ CommercialActivity)
+```
+
+### 3.7 Gestão de Pedidos — Status Logístico BI
+
+```text
+SalesOrdersModule (gestão)
+  → GET /api/sales-orders/management?logisticStatus=…
+    → salesOrderIntelligenceRoutes.ts
+      → buildSalesOrderManagementCards
+        → buildSalesOrderLogisticStatus (salesOrderLogisticStatus.ts)
+          → nomusRawResponse (NF dataProcessamento, itens status 1–6)
+```
+
+### 3.8 Projetos — snapshot de produto
+
+```text
+ProjectAddItemModal / import
+  → GET /api/projects/lookup/products/:id/snapshot
+  → POST /api/projects/:id/import-product-snapshot
+    → projectsProductSnapshot.ts (cópia para ProjectStructureLine — não altera Product oficial)
+```
+
+Bloqueio: `PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION` em `projectsAddItemPolicy.ts`.
+
+### 3.9 Nomus — fila Prontos para aplicar
+
+```text
+NomusAutoApplyBomDashboard (product/)
+  → GET /api/nomus/auto-apply-bom-dashboard
+    → nomusAutoApplyBomDashboard.ts (parse relatório JSON, readyToApply)
+  → POST /api/nomus/bom-auto-apply/products/:parentCode/apply
+    → applyNomusBomFromDashboard
+      → nomusBomControlledApply.ts → ProductBOM, NomusBomApplyRun, EngineeringChangeLog
+  → POST /api/nomus/bom-auto-apply/products/apply-batch
+```
+
+Rotina automática (separada):
+
+```text
+npm run sync:nomus:all:apply
+  → nomusSyncOrchestrator.ts
+    → sync bom-components
+    → runNomusBomAutoApplyAfterSync (todo o stage, modo APPLY)
+```
+
+---
+
+## 4. Mapa fluxo Nomus Engenharia (herdado + extensões)
+
+```text
+ProductModule / NomusMaintenanceOverviewPanel
+│
+├─ [sem produto] Central de Engenharia
+│   ├─ NomusEngineeringStatusBoard → /api/nomus/engineering-operations-cockpit
+│   ├─ NomusMasterDataImportPanel → master-data-import / equalize
+│   └─ NomusAutoApplyBomDashboard → /api/nomus/auto-apply-bom-dashboard
+│       └─ apply individual/lote → /api/nomus/bom-auto-apply/products/…
+│
+└─ [com produto]
+    ├─ NomusEffectivePricingBomPanel → effective-pricing-bom
+    ├─ NomusBomControlledApplySection → apply 🔒
+    ├─ NomusOptionalPricingSelectionPanel → bom-optionals
+    └─ ProductHistoryTab → /api/products/:id/change-history
+```
+
+| Operação | Lib | Models escritos |
+|----------|-----|-----------------|
+| Apply controlado | `nomusBomControlledApply.ts` | `ProductBOM`, `NomusBomApplyRun`, `EngineeringSyncRun`, `EngineeringChangeLog` |
+| Review decision | `nomusBomReviewDecision.ts` | `NomusBomReviewDecision` (+ fingerprint) |
+| Auto-apply pós-sync | `nomusBomAutoApplyAfterSync.ts` | idem (batch) |
+| Apply dashboard | `applyNomusBomFromDashboard` | idem (unitário) |
+| Igualar bases | `nomusMasterDataEqualize.ts` | `Product`, `Material`, `EngineeringSyncRun`, `EngineeringChangeLog` |
+
+---
+
+## 5. Scripts agrupados (64 arquivos em `scripts/`)
+
+### Sync Nomus — cadastros & comercial
+- `nomusCustomersSyncV1.ts`, `nomusProductsSyncV1.ts`, `nomusBomComponentsSyncV1.ts`
+- `nomusProposalsSyncV1.ts`, `nomusSalesOrdersSyncV1.ts`
+- `nomusSyncOrchestrator.ts` — `sync:nomus:all:{dry,apply}` (+ auto-apply BOM no final)
+
+### Sync Nomus — financeiro
+- `nomusAccountsReceivableSync.ts` — `sync:nomus:accounts-receivable:apply`
+- `nomusAccountsPayableSync.ts` — `sync:nomus:accounts-payable:{preview,apply}`
+- `nomusNfesSync.ts` — `sync:nomus:nfes:{preview,apply,dry}`
+
+### BOM auto-apply & debug
+- `nomusBomAutoApplyAfterSyncV1.ts` — `sync:nomus:bom-auto-apply`
+- **`debug-nomus-ready-to-apply.ts`** — `debug:nomus-ready-to-apply`
+- `nomusAutoSyncBomApplySmokeTestV1.ts`
+
+### Diagnóstico / preview (read-only)
+- `nomusBomCompareV1.ts`, `nomusBomBatchReportV1.ts`, `nomusBomClassifyV1.ts`
+- `nomusEffectivePricingBomPreviewV1.ts`, `nomusMasterData*Preview*.ts`
+- Smokes: `nomusMasterDataImportSmokeTestV1.ts`, `nomusEngineeringReleaseReadySmokeTestV1.ts`, etc.
+
+### Apply mutativo (confirmação textual)
+- `nomusMasterDataImportApplySafeV1.ts`, `nomusMasterDataEqualizeApplyV1.ts`
+- `nomusBomApplyOneV1.ts`, `nomusMasterDataHistoryBackfillV1.ts`
+
+### Guardrail
+- `checkFrontendServerImports.ts` — `npm run check:frontend-imports`
+
+---
+
+## 6. Componentes principais (agrupados)
+
+### Financeiro (`src/components/finance/`)
+- Páginas: `FinanceCashFlowPage`, `FinanceAccountsReceivablePage`, `FinanceAccountsPayablePage`, `FinanceBillingPage`, `FinanceSalesOrdersPage`, `FinanceExecutiveReportPage`
+- Shell: `FinanceModule.tsx` (em `src/components/`)
+- Shared: `finance/shared/FinanceModuleStates.tsx`, `FinanceDataAuditDrawer`, `FinanceBiFilterPanel`
+- Subpastas: `cash-flow/`, `billing/`, `executive-report/`, `bi/`
+
+### CRM (`src/components/`)
+- `CrmModule.tsx`, `CrmCommercialManagementTabs.tsx`
+- `CrmManagementDashboardSection.tsx`, `CrmSellerDashboardSection.tsx`
+- `crm/customer-intelligence/*` — Inteligência do Cliente
+
+### Pedidos (`src/components/sales/`)
+- `SalesOrdersModule`, `SalesOrderIntelligenceDrawer`, `SalesOrderPrintView`
+
+### Projetos (`src/components/projects/`)
+- `ProjectsModule`, `ProjectStructureLineEditModal`, `ProjectIntakeActions`, `ProjectExecutiveReport`
+
+### Frota (`src/components/fleet/`)
+- 22 componentes — veículos, reservas, checklist, rotas públicas
+
+### Produto / Nomus (`src/components/product/`)
+- 29+ painéis Nomus incluindo `NomusAutoApplyBomDashboard`, cockpit, apply controlado
+
+---
+
+## 7. Testes por domínio (amostra)
+
+| Domínio | Arquivos | Exemplos |
+|---------|----------|----------|
+| Financeiro | ~103 | `financeModuleTabsValidation`, `financeExecutiveReportConsistency`, `financeCrossModuleReconciliation` |
+| CRM | ~10 | `crmCommercialAccessScope`, `crmSellerDashboard`, `crmManagementDashboard` |
+| Pedidos BI | ~8 | `salesOrderLogisticStatus`, `salesOrderManagementDashboard`, `financeSalesOrdersExtendedMetrics` |
+| Projetos | ~25 | `projectsService`, `projectsGuidedFlow`, `projectsProductEngineeringSnapshot` |
+| Nomus BOM | ~15 | `nomusBomReadyToApply`, `nomusBomApplyStatus`, `nomusEngineeringDecisionGovernance` |
+| Frota | ~10 | `fleetPublicReservation`, `fleetNavigation` |
+| Core legado | ~22 | `simulationFormula`, `pricingFormationIndicatorsStats` |
+
+Total `src/lib/*.test.ts`: **~289**.
+
+---
+
+## 8. Diagrama de auditoria engenharia (texto)
 
 ```text
             ┌───────────────────────────────────┐
@@ -333,20 +415,40 @@ script `master-data-history-backfill` (com confirmação textual).
                             ▼
             ┌───────────────────────────────────┐
             │       EngineeringChangeLog        │
-            │ entityType (PRODUCT | PRODUCT_BOM │
-            │  | MATERIAL | ROUTING | PRICE_INPUT) │
-            │ changeOrigin (NOMUS_SYNC |         │
-            │  NOMUS_ENGINEERING_APPLY |         │
-            │  MANUAL_EDIT | LOCAL_EXCEPTION)    │
-            │ oldValue/newValue + json + summary │
+            │ entityType | changeOrigin | json  │
             └───────────────────────────────────┘
+                            ▲
+            ┌───────────────┴───────────────────┐
+            │       NomusBomApplyRun             │
+            │  + NomusBomApplyRunLine              │
+            │  (apply controlado / auto-sync)      │
+            └─────────────────────────────────────┘
 ```
 
-Quem grava:
+Governança opcionais:
 
-| Operação | Modelo run-pai | Onde |
-|---|---|---|
-| Carga Mestre apply | (sem run pai por padrão; backfill cria) | `nomusMasterDataImport.ts` |
-| Igualar Bases apply | `EngineeringSyncRun` (mode=ALL_NOMUS_PRODUCTS) | `nomusMasterDataEqualize.ts` |
-| Aplicar BOM apply | `NomusBomApplyRun` técnico + `EngineeringSyncRun` (mode=ONE_PRODUCT) | `nomusBomControlledApply.ts` |
-| Backfill histórico | `EngineeringSyncRun` (origin=MASTER_DATA_HISTORY_BACKFILL) | `scripts/nomusMasterDataHistoryBackfillV1.ts` |
+```text
+NomusOptionalPricingGroup (nomusStructureFingerprint)
+  → NomusOptionalPricingChoice
+  → NomusBomReviewDecision (invalida se fingerprint + linha local divergirem)
+```
+
+---
+
+## 9. Riscos de mapa / pendências técnicas
+
+| ID | Risco | Impacto |
+|----|-------|---------|
+| P1 | `server.ts` ~12.4k linhas | Dificulta onboarding e revisão de PRs |
+| P1 | Auto-sync BOM aplica do stage inteiro | Pode colidir com fila manual `ready_to_apply` |
+| P2 | Endpoints financeiros espalhados em 7 registradores | Boa modularização, mas sem OpenAPI único |
+| P2 | `ProjectLaborLine` não existe | Documentar como `ProjectStructureLine` + `ProjectSimulatedItem` |
+| P2 | 9 models backup no schema | Poluição do Prisma Client |
+
+---
+
+## 10. Referências cruzadas
+
+- Estado detalhado por aba: `docs/induscost-system-current-state.md`
+- Fonte comercial SalesOrder: `docs/commercial/SALES_ORDER_AS_COMMERCIAL_SOURCE.md` (se existir)
+- Sync Nomus operacional: scripts `sync:nomus:*` em `package.json`
