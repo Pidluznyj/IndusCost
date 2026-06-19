@@ -47,12 +47,6 @@ describe("salesOrderManagementPage", () => {
     assert.match(page, /COMPLETION_STATUS_LABELS/);
   });
 
-  it("tabela mostra ação sugerida", () => {
-    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
-    assert.match(page, /Ação sugerida/);
-    assert.match(page, /suggestedActionLabel/);
-  });
-
   it("filtros existem incluindo NF e OP", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /operationalStatus/);
@@ -65,6 +59,13 @@ describe("salesOrderManagementPage", () => {
     assert.match(page, /invoiceAfterDeadline/);
     assert.match(page, /partialOrCut/);
     assert.match(page, /noProductionOrder/);
+  });
+
+  it("tabela não exibe colunas de alertas nem ação sugerida", () => {
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    assert.doesNotMatch(page, />Alertas</);
+    assert.doesNotMatch(page, />Ação sugerida</);
+    assert.doesNotMatch(page, /suggestedActionLabel/);
   });
 
   it("filtro de cliente usa autocomplete", () => {

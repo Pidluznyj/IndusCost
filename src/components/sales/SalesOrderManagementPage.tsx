@@ -563,28 +563,26 @@ export function SalesOrderManagementPage() {
                 <th className="p-3 font-semibold">Completeza</th>
                 <th className="p-3 font-semibold text-right">% fat.</th>
                 <th className="p-3 font-semibold text-right">% atend.</th>
-                <th className="p-3 font-semibold">Alertas</th>
-                <th className="p-3 font-semibold">Ação sugerida</th>
                 <th className="p-3 font-semibold w-28"> </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={15} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={13} className="p-8 text-center text-muted-foreground">
                     <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
                     Carregando…
                   </td>
                 </tr>
               ) : loadError ? (
                 <tr>
-                  <td colSpan={15} className="p-8 text-center text-destructive">
+                  <td colSpan={13} className="p-8 text-center text-destructive">
                     {loadError}
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={13} className="p-8 text-center text-muted-foreground">
                     Nenhum pedido encontrado.
                   </td>
                 </tr>
@@ -681,23 +679,6 @@ export function SalesOrderManagementPage() {
                     </td>
                     <td className="p-3 text-right tabular-nums">
                       {formatSalesOrderPercent(row.fulfilledPercent)}
-                    </td>
-                    <td className="p-3">
-                      {row.riskCount > 0 ? (
-                        <span
-                          className={badgeClass("risk")}
-                          title={row.riskFlags.join(", ")}
-                        >
-                          {row.highRiskCount > 0
-                            ? `${row.highRiskCount} alto · ${row.riskCount}`
-                            : `${row.riskCount} alerta(s)`}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="p-3 text-xs text-muted-foreground max-w-[140px] truncate" title={row.suggestedActionLabel ?? undefined}>
-                      {row.suggestedActionLabel ?? "—"}
                     </td>
                     <td className="p-3">
                       <button
