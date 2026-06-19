@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   buildFinanceApDashboardQuery,
   buildFinanceApExportQuery,
@@ -524,7 +525,12 @@ export function FinanceAccountsPayablePage() {
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       console.error("FinanceAccountsPayablePage.loadDashboard", e);
-      setDashboardError("Não foi possível carregar Contas a Pagar. Tente novamente.");
+      setDashboardError(
+        buildFinanceTabLoadError(
+          "Não foi possível carregar Contas a Pagar. Tente novamente.",
+          e
+        )
+      );
     } finally {
       if (!controller.signal.aborted) {
         setLoading(false);

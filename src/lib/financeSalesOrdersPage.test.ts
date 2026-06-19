@@ -70,8 +70,8 @@ describe("financeSalesOrdersPage", () => {
   it("exibe erro amigável com detalhe da API", () => {
     const page = read("src/components/finance/FinanceSalesOrdersPage.tsx");
     assert.match(page, /console\.error\("FinanceSalesOrdersPage\.load"/);
+    assert.match(page, /buildFinanceTabLoadError/);
     assert.match(page, /Não foi possível carregar o dashboard de Pedidos de Venda/);
-    assert.match(page, /e\.message/);
   });
 
   it("renderiza estado vazio na tabela de top clientes", () => {

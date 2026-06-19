@@ -6,6 +6,7 @@ import {
 } from "./financeSalesOrdersDashboard.js";
 import { buildFinanceSalesOrdersExportCsv } from "./financeSalesOrdersExport.js";
 import { FINANCE_SALES_ORDERS_VIEW_PERMISSIONS } from "./financeSalesOrdersPermissions.js";
+import { financeApiErrorJson } from "./financeTabLoadError.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -26,12 +27,9 @@ export function registerFinanceSalesOrdersRoutes(app: express.Express, auth: Aut
       res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/sales-orders/dashboard", error);
-      const message =
-        error instanceof Error ? error.message : "Falha ao montar dashboard de pedidos de venda.";
-      res.status(500).json({
-        error: "Erro ao carregar dashboard de pedidos de venda.",
-        message,
-      });
+      res.status(500).json(
+        financeApiErrorJson("Erro ao carregar dashboard de pedidos de venda.", error)
+      );
     }
   });
 

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceApTitlesPayload } from "@/src/lib/financeAccountsPayableTitles.js";
 import {
   buildFinanceApTitlesQuery,
@@ -83,7 +84,12 @@ export function FinanceApTitlesTab({
       setData(payload);
     } catch (e) {
       console.error("FinanceApTitlesTab.load", e);
-      setError("Não foi possível carregar Contas a Pagar. Tente novamente.");
+      setError(
+        buildFinanceTabLoadError(
+          "Não foi possível carregar os títulos de Contas a Pagar. Tente novamente.",
+          e
+        )
+      );
     } finally {
       setLoading(false);
     }

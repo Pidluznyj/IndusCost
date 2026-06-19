@@ -20,6 +20,7 @@ import {
   NomusNfesSyncConflictError,
   startNomusNfesSyncApply,
 } from "@/src/lib/nomusNfesSyncRunner.js";
+import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -42,7 +43,9 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/billing/dashboard", error);
-      return res.status(500).json({ error: "Não foi possível carregar o faturamento. Tente novamente." });
+      return res.status(500).json(
+        financeApiErrorJson("Não foi possível carregar o faturamento. Tente novamente.", error)
+      );
     }
   });
 
@@ -56,7 +59,9 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/billing/nfes", error);
-      return res.status(500).json({ error: "Não foi possível listar NF-e sincronizadas." });
+      return res.status(500).json(
+        financeApiErrorJson("Não foi possível listar NF-e sincronizadas.", error)
+      );
     }
   });
 
@@ -95,7 +100,9 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/billing/audit", error);
-      return res.status(500).json({ error: "Não foi possível gerar auditoria do faturamento." });
+      return res.status(500).json(
+        financeApiErrorJson("Não foi possível gerar auditoria do faturamento.", error)
+      );
     }
   });
 
@@ -134,7 +141,9 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/billing/comparison", error);
-      return res.status(500).json({ error: "Não foi possível gerar comparativo de faturamento." });
+      return res.status(500).json(
+        financeApiErrorJson("Não foi possível gerar comparativo de faturamento.", error)
+      );
     }
   });
 

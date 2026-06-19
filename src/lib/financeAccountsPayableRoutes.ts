@@ -21,6 +21,7 @@ import {
   parseFinanceApTitlesQuery,
 } from "@/src/lib/financeAccountsPayableTitles.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
+import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {
@@ -118,7 +119,9 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/dashboard", error);
-      return res.status(500).json({ error: "Erro ao montar dashboard de contas a pagar." });
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao montar dashboard de contas a pagar.", error)
+      );
     }
   });
 
@@ -152,7 +155,9 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/titles", error);
-      return res.status(500).json({ error: "Erro ao listar títulos de contas a pagar." });
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao listar títulos de contas a pagar.", error)
+      );
     }
   });
 

@@ -9,6 +9,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceSalesOrdersDashboardPayload } from "@/src/lib/financeSalesOrdersDashboardTypes";
 import {
   buildFinanceSalesOrdersMonthlyComparisonNarrative,
@@ -164,11 +165,11 @@ export function FinanceSalesOrdersPage() {
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       console.error("FinanceSalesOrdersPage.load", e);
-      const detail = e instanceof Error ? e.message.trim() : "";
       setError(
-        detail
-          ? `Não foi possível carregar o dashboard de Pedidos de Venda. ${detail}`
-          : "Não foi possível carregar o dashboard de Pedidos de Venda."
+        buildFinanceTabLoadError(
+          "Não foi possível carregar o dashboard de Pedidos de Venda.",
+          e
+        )
       );
       setData(null);
     } finally {

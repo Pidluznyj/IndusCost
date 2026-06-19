@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   buildFinanceBillingYearOptions,
   createDefaultFinanceBillingYear,
@@ -205,7 +206,13 @@ export function FinanceBillingPage() {
       setData(payload);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setError("Não foi possível carregar o faturamento. Tente novamente.");
+      console.error("FinanceBillingPage.loadDashboard", e);
+      setError(
+        buildFinanceTabLoadError(
+          "Não foi possível carregar o faturamento. Tente novamente.",
+          e
+        )
+      );
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -229,7 +236,10 @@ export function FinanceBillingPage() {
       setNfeList(payload);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setNfeError("Não foi possível listar NF-e sincronizadas.");
+      console.error("FinanceBillingPage.loadNfeList", e);
+      setNfeError(
+        buildFinanceTabLoadError("Não foi possível listar NF-e sincronizadas.", e)
+      );
     } finally {
       if (!controller.signal.aborted) setLoadingNfe(false);
     }
@@ -251,8 +261,14 @@ export function FinanceBillingPage() {
       setComparison(payload);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
+      console.error("FinanceBillingPage.loadComparison", e);
       setComparison(null);
-      setComparisonError("Não foi possível carregar o comparativo SalesOrder × NomusNfe.");
+      setComparisonError(
+        buildFinanceTabLoadError(
+          "Não foi possível carregar o comparativo SalesOrder × NomusNfe.",
+          e
+        )
+      );
     } finally {
       if (!controller.signal.aborted) setLoadingComparison(false);
     }
@@ -325,7 +341,10 @@ export function FinanceBillingPage() {
       setAudit(payload);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setAuditError("Não foi possível carregar a auditoria do faturamento.");
+      console.error("FinanceBillingPage.loadAudit", e);
+      setAuditError(
+        buildFinanceTabLoadError("Não foi possível carregar a auditoria do faturamento.", e)
+      );
     } finally {
       if (!controller.signal.aborted) setLoadingAudit(false);
     }
