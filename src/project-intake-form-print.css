@@ -231,3 +231,178 @@
     page-break-inside: avoid;
   }
 }
+
+/* Ficha Rápida de Estimativa — layout compacto (1–2 páginas A4) */
+
+.project-intake-quick-form-document {
+  font-size: 9pt;
+  line-height: 1.3;
+}
+
+.project-intake-quick-header {
+  margin-bottom: 0.75rem;
+}
+
+.project-intake-quick-header-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.project-intake-quick-field {
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  min-height: 1.25rem;
+}
+
+.project-intake-quick-field-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.project-intake-quick-field-value {
+  flex: 1;
+  border-bottom: 1px solid #cbd5e1;
+  min-height: 1.1rem;
+}
+
+.project-intake-quick-priority {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  margin-top: 0.6rem;
+}
+
+.project-intake-quick-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 0.5rem;
+}
+
+.project-intake-quick-checkbox-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid #334155;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.project-intake-quick-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem 0.75rem;
+}
+
+.project-intake-quick-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.2rem;
+}
+
+.project-intake-quick-inline-line {
+  flex: 1;
+  border-bottom: 1px solid #cbd5e1;
+  min-width: 4rem;
+}
+
+.project-intake-quick-section {
+  margin-bottom: 0.65rem;
+}
+
+.project-intake-quick-section .project-intake-form-section-title {
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+
+.project-intake-quick-table {
+  font-size: 7.5pt;
+}
+
+.project-intake-quick-table th,
+.project-intake-quick-table td {
+  padding: 0.25rem 0.35rem;
+}
+
+.project-intake-quick-mark-col {
+  text-align: center;
+  width: 3rem;
+}
+
+.project-intake-quick-money-col {
+  text-align: right;
+  width: 6rem;
+}
+
+.project-intake-quick-mold-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.project-intake-quick-subheading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin: 0.35rem 0 0.2rem;
+}
+
+.project-intake-quick-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 1rem;
+  margin: 0.35rem 0;
+}
+
+.project-intake-quick-signatures {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.project-intake-quick-signature {
+  display: grid;
+  grid-template-columns: 5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.project-intake-quick-signature-line {
+  border-bottom: 1px solid #334155;
+  min-height: 1.25rem;
+}
+
+.project-intake-quick-date-line {
+  font-size: 0.72rem;
+  color: #475569;
+  white-space: nowrap;
+}
+
+@media print {
+  .project-intake-quick-form-document {
+    font-size: 8.5pt;
+  }
+
+  .project-intake-quick-checkbox-box {
+    width: 11px;
+    height: 11px;
+    border-width: 1px;
+  }
+
+  .project-intake-quick-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

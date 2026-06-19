@@ -13,6 +13,7 @@ import type {
 
 export const PROJECT_INTAKE_FORM_VERSION = "1.0";
 export const PROJECT_INTAKE_FORM_TITLE = "Ficha de Abertura de Projeto";
+export const PROJECT_INTAKE_FORM_FULL_TITLE = "Ficha Completa de Abertura de Projeto";
 export const PROJECT_INTAKE_FORM_BUTTON_LABEL = "Imprimir Ficha de Abertura";
 export const PROJECT_INTAKE_FORM_BLANK_BUTTON_LABEL = "Ficha em branco";
 export const PROJECT_INTAKE_FORM_ROUTE_SUFFIX = "intake-form";
@@ -874,6 +875,33 @@ export function getProjectIntakeFormPrintPath(projectId: string): string {
 
 export function getBlankIntakeFormPrintPath(): string {
   return `${PROJECT_INTAKE_FORM_BLANK_PATH}/print`;
+}
+
+export function getProjectIntakeFormFullPath(projectId: string): string {
+  return `${getProjectIntakeFormPath(projectId)}/full`;
+}
+
+export function getProjectIntakeFormFullPrintPath(projectId: string): string {
+  return `${getProjectIntakeFormFullPath(projectId)}/print`;
+}
+
+export function getBlankIntakeFormFullPath(): string {
+  return `${PROJECT_INTAKE_FORM_BLANK_PATH}/full`;
+}
+
+export function getBlankIntakeFormFullPrintPath(): string {
+  return `${getBlankIntakeFormFullPath()}/print`;
+}
+
+export function isFullIntakeFormPath(pathname: string): boolean {
+  const parts = pathname.replace(/^\//, "").split("/").filter(Boolean);
+  const idx = parts.indexOf(PROJECT_INTAKE_FORM_ROUTE_SUFFIX);
+  if (idx < 0) return false;
+  return parts[idx + 1] === "full" || parts[idx + 2] === "full";
+}
+
+export function isQuickIntakeFormPath(pathname: string): boolean {
+  return isProjectIntakeFormPath(pathname) && !isFullIntakeFormPath(pathname);
 }
 
 export function isProjectIntakeFormPath(pathname: string): boolean {

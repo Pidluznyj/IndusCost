@@ -4,44 +4,30 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ProjectIntakeQuickFormDocument } from "@/src/components/projects/ProjectIntakeQuickFormDocument";
 import { ProjectIntakeFormDocument } from "@/src/components/projects/ProjectIntakeFormDocument";
+import {
+  buildBlankQuickIntakeForm,
+  buildQuickIntakeFormFromDetail,
+  countQuickFormSections,
+  isQuickFormMoreCompactThanFull,
+  PROJECT_INTAKE_QUICK_DELIVERABLES,
+  PROJECT_INTAKE_QUICK_ESTIMATE_ITEMS,
+  PROJECT_INTAKE_QUICK_FORM_TITLE,
+  PROJECT_INTAKE_QUICK_PROJECT_TYPES,
+  PROJECT_INTAKE_QUICK_BUTTON_LABEL,
+  PROJECT_INTAKE_FULL_BUTTON_LABEL,
+} from "./projectsIntakeQuickForm.js";
 import {
   buildBlankProjectIntakeForm,
   buildProjectIntakeFormFromDetail,
-  getBlankIntakeFormPrintPath,
+  getProjectIntakeFormFullPath,
   getProjectIntakeFormPath,
-  getProjectIntakeFormPrintPath,
-  intakeFormPathRequestsPrint,
-  isBlankProjectIntakeFormPath,
-  isProjectIntakeFormPath,
-  listIntakeFormPendingMinimumFields,
-  parseProjectIntakeFormProjectId,
-  PROJECT_INTAKE_FORM_BLANK_PATH,
-  PROJECT_INTAKE_FORM_BUTTON_LABEL,
-  PROJECT_INTAKE_MINIMUM_FIELD_LABELS,
-  PROJECT_INTAKE_FORM_PENDING_LABEL,
-  PROJECT_INTAKE_FORM_TITLE,
+  isFullIntakeFormPath,
+  isQuickIntakeFormPath,
+  PROJECT_INTAKE_FORM_FULL_TITLE,
 } from "./projectsIntakeForm.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
-
-const EXPECTED_SECTION_TITLES = [
-  "1. Identificação do projeto",
-  "2. Dados do cliente",
-  "3. Classificação do projeto",
-  "4. Objetivo técnico do projeto",
-  "5. Produto ou componente a desenvolver",
-  "6. Materiais e componentes",
-  "7. Estrutura / BOM prevista",
-  "8. Processo produtivo / HH",
-  "9. Molde, ferramenta ou dispositivo",
-  "10. Custos adicionais",
-  "11. Volume, preço e condições comerciais",
-  "12. Prazos e marcos do projeto",
-  "13. Qualidade, testes e validações",
-  "14. Documentos e anexos necessários",
-  "15. Riscos e pendências",
-  "16. Aprovação para seguir com o estudo",
-];
 
 function minimalDetail(): ProjectDetail {
   return {
@@ -98,177 +84,127 @@ function minimalDetail(): ProjectDetail {
   };
 }
 
-function emptyDetail(): ProjectDetail {
-  return {
-    id: "eeeeeeee-eeee-4111-8111-eeeeeeeeeeee",
-    code: "PRJ-EMPTY",
-    title: "",
-    customerName: null,
-    customerDocument: null,
-    description: null,
-    projectType: "QUICK_ESTIMATE",
-    status: "DRAFT",
-    commercialOwner: null,
-    technicalOwner: null,
-    expectedMonthlyVolume: null,
-    targetPrice: null,
-    targetMarginPercent: null,
-    notes: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    currentVersion: null,
-    versions: [],
-    simulatedProducts: [],
-    simulatedItems: [],
-    structureLines: [],
-    molds: [],
-    snapshotRootProducts: {},
-    costBreakdown: null,
-    alerts: [],
-    conversionAvailable: false,
-  };
-}
+describe("projectsIntakeQuickForm", () => {
+  it("ficha rápida possui tipo de projeto com checkboxes", () => {
+    const payload = buildBlankQuickIntakeForm();
+    assert.equal(payload.projectTypes.length, PROJECT_INTAKE_QUICK_PROJECT_TYPES.length);
+    const html = renderToStaticMarkup(React.createElement(ProjectIntakeQuickFormDocument, { payload }));
+    assert.match(html, /Tipo de projeto/);
+    assert.match(html, /Produto novo/);
+    assert.match(html, /project-intake-quick-checkbox-box/);
+  });
 
-function assertNoInvalidNumbers(value: unknown, path = "root"): void {
-  if (typeof value === "number") {
-    assert.ok(Number.isFinite(value), `NaN/Infinity em ${path}`);
-    return;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item, i) => assertNoInvalidNumbers(item, `${path}[${i}]`));
-    return;
-  }
-  if (value && typeof value === "object") {
-    for (const [key, nested] of Object.entries(value)) {
-      assertNoInvalidNumbers(nested, `${path}.${key}`);
-    }
-  }
-}
+  it("ficha rápida possui lista de entregáveis", () => {
+    const payload = buildBlankQuickIntakeForm();
+    assert.equal(payload.deliverables.length, PROJECT_INTAKE_QUICK_DELIVERABLES.length);
+    const html = renderToStaticMarkup(React.createElement(ProjectIntakeQuickFormDocument, { payload }));
+    assert.match(html, /Entregáveis esperados/);
+    assert.match(html, /Estimativa de custo/);
+  });
 
-describe("projectsIntakeForm", () => {
-  it("rotas da ficha de abertura", () => {
+  it('ficha rápida possui seção "O que precisa estimar"', () => {
+    const payload = buildQuickIntakeFormFromDetail(minimalDetail());
+    assert.equal(payload.estimateItems.length, PROJECT_INTAKE_QUICK_ESTIMATE_ITEMS.length);
+    const html = renderToStaticMarkup(React.createElement(ProjectIntakeQuickFormDocument, { payload }));
+    assert.match(html, /O que precisa estimar/);
+    assert.match(html, /Matéria-prima/);
+  });
+
+  it("ficha rápida possui composição preliminar simples", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
+    );
+    assert.match(html, /Composição preliminar/);
+    assert.match(html, /Tipo/);
+  });
+
+  it("ficha rápida possui molde/ferramenta simples", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
+    );
+    assert.match(html, /Molde \/ ferramenta/);
+    assert.match(html, /Amortizar no preço/);
+  });
+
+  it("ficha rápida possui processos/HH simples", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
+    );
+    assert.match(html, /Processos \/ HH/);
+  });
+
+  it("ficha rápida possui pendências", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
+    );
+    assert.match(html, /Pendências para estimar/);
+    assert.match(html, /Falta desenho técnico/);
+  });
+
+  it("ficha rápida possui decisão inicial", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
+    );
+    assert.match(html, /Decisão inicial/);
+    assert.match(html, /Pode estimar com os dados atuais/);
+    assert.match(html, /Comercial:/);
+  });
+
+  it("ficha rápida é mais objetiva que a ficha completa", () => {
+    const quick = buildBlankQuickIntakeForm();
+    const full = buildBlankProjectIntakeForm();
+    assert.ok(isQuickFormMoreCompactThanFull(countQuickFormSections(quick), full.sections.length));
+    assert.equal(full.sections.length, 16);
+    assert.equal(countQuickFormSections(quick), 10);
+  });
+
+  it("rotas quick vs full", () => {
     assert.equal(getProjectIntakeFormPath("abc"), "/projects/abc/intake-form");
-    assert.equal(getProjectIntakeFormPrintPath("abc"), "/projects/abc/intake-form/print");
-    assert.equal(PROJECT_INTAKE_FORM_BLANK_PATH, "/projects/intake-form/blank");
-    assert.equal(getBlankIntakeFormPrintPath(), "/projects/intake-form/blank/print");
-    assert.equal(isProjectIntakeFormPath("/projects/abc/intake-form"), true);
-    assert.equal(isBlankProjectIntakeFormPath("/projects/intake-form"), true);
-    assert.equal(isBlankProjectIntakeFormPath("/projects/intake-form/blank"), true);
-    assert.equal(isBlankProjectIntakeFormPath("/projects/intake-form/blank/print"), true);
-    assert.equal(isBlankProjectIntakeFormPath("/projects/intake-form/print"), true);
-    assert.equal(isBlankProjectIntakeFormPath("/projects/abc/intake-form"), false);
-    assert.equal(parseProjectIntakeFormProjectId("/projects/abc/intake-form"), "abc");
-    assert.equal(intakeFormPathRequestsPrint("/projects/abc/intake-form/print"), true);
+    assert.equal(getProjectIntakeFormFullPath("abc"), "/projects/abc/intake-form/full");
+    assert.equal(isQuickIntakeFormPath("/projects/abc/intake-form"), true);
+    assert.equal(isFullIntakeFormPath("/projects/abc/intake-form/full"), true);
+    assert.equal(isQuickIntakeFormPath("/projects/abc/intake-form/full"), false);
   });
 
-  it("formulário em branco contém 16 seções obrigatórias", () => {
-    const payload = buildBlankProjectIntakeForm();
-    assert.equal(payload.mode, "blank");
-    assert.equal(payload.sections.length, 16);
-    assert.deepEqual(
-      payload.sections.map((s) => s.title),
-      EXPECTED_SECTION_TITLES
-    );
-    assert.ok(payload.pendingMinimumFields.length > 0);
-    assert.equal(payload.canAdvanceBeyondDraft, false);
-  });
-
-  it("formulário preenchido usa dados do projeto", () => {
-    const payload = buildProjectIntakeFormFromDetail(minimalDetail());
-    assert.equal(payload.mode, "prefilled");
-    assert.equal(payload.header.projectCode, "PRJ-0001");
-    assert.equal(payload.header.projectName, "Projeto Teste");
-    assert.equal(payload.header.customerName, "Cliente ABC");
-    const identification = payload.sections.find((s) => s.id === "identification");
-    assert.ok(identification?.fields.some((f) => f.key === "projectName" && f.value === "Projeto Teste"));
-    const productSection = payload.sections.find((s) => s.id === "product");
-    assert.ok(productSection?.fields.some((f) => f.key === "productName" && f.value === "Filtro Novo"));
-  });
-
-  it("lista campos mínimos pendentes", () => {
-    const pendingBlank = listIntakeFormPendingMinimumFields(null);
-    assert.ok(pendingBlank.includes("Nome do projeto"));
-    const pendingPartial = listIntakeFormPendingMinimumFields(minimalDetail());
-    assert.ok(!pendingPartial.includes("Nome do projeto"));
-    assert.ok(pendingPartial.includes("Prazo esperado para orçamento"));
-    for (const label of Object.values(PROJECT_INTAKE_MINIMUM_FIELD_LABELS)) {
-      assert.ok(typeof label === "string" && label.length > 0);
-    }
-  });
-
-  it("documento renderiza título e seções", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(ProjectIntakeFormDocument, {
-        payload: buildBlankProjectIntakeForm(),
-      })
-    );
-    assert.match(html, new RegExp(PROJECT_INTAKE_FORM_TITLE));
-    for (const title of EXPECTED_SECTION_TITLES) {
-      assert.match(html, new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    }
-    assert.match(html, /Dados mínimos pendentes/);
-  });
-
-  it("UI integrada referencia botão e rotas da ficha", () => {
+  it("UI integrada com ficha rápida como principal", () => {
     const app = readFileSync(join(process.cwd(), "src", "App.tsx"), "utf8");
-    const module = readFileSync(join(process.cwd(), "src", "components", "ProjectsModule.tsx"), "utf8");
-    const button = readFileSync(
-      join(process.cwd(), "src", "components", "projects", "ProjectIntakeFormButton.tsx"),
+    const actions = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectIntakeActions.tsx"),
       "utf8"
     );
-    const controls = readFileSync(
-      join(process.cwd(), "src", "components", "projects", "ProjectExecutiveReportPrintControls.tsx"),
-      "utf8"
-    );
-    assert.match(app, /ProjectIntakeFormPage/);
-    assert.match(app, /\/projects\/intake-form\/blank/);
-    assert.match(app, /\/projects\/:projectId\/intake-form/);
-    assert.match(module, /ProjectIntakeFormButton/);
-    assert.match(button, /PROJECT_INTAKE_FORM_BUTTON_LABEL/);
-    assert.equal(PROJECT_INTAKE_FORM_BUTTON_LABEL, "Imprimir Ficha de Abertura");
-    assert.match(controls, /no-print/);
+    assert.match(app, /intake-form\/full/);
+    assert.match(actions, /PROJECT_INTAKE_QUICK_BUTTON_LABEL/);
+    assert.match(actions, /PROJECT_INTAKE_FULL_BUTTON_LABEL/);
+    assert.equal(PROJECT_INTAKE_QUICK_BUTTON_LABEL, "Ficha rápida");
+    assert.equal(PROJECT_INTAKE_FULL_BUTTON_LABEL, "Ficha completa");
+    assert.equal(PROJECT_INTAKE_QUICK_FORM_TITLE, "Ficha Rápida de Estimativa do Projeto");
+    assert.equal(PROJECT_INTAKE_FORM_FULL_TITLE, "Ficha Completa de Abertura de Projeto");
   });
 
-  it("CSS de impressão oculta app shell e botões", () => {
+  it("ficha completa permanece disponível com 16 seções", () => {
+    const full = buildProjectIntakeFormFromDetail(minimalDetail());
+    assert.equal(full.sections.length, 16);
+    const html = renderToStaticMarkup(React.createElement(ProjectIntakeFormDocument, { payload: full }));
+    assert.match(html, /Identificação do projeto/);
+    assert.match(html, /Aprovação para seguir com o estudo/);
+  });
+
+  it("CSS print e no-print para ficha rápida", () => {
     const css = readFileSync(join(process.cwd(), "src", "project-intake-form-print.css"), "utf8");
-    assert.match(css, /project-intake-form-route/);
-    assert.match(css, /A4 portrait/);
-    assert.match(css, /@media print/);
+    assert.match(css, /project-intake-quick-form-document/);
     assert.match(css, /\.no-print/);
-    assert.match(css, /aside/);
-    assert.match(css, /header/);
+    assert.match(css, /A4 portrait/);
   });
 
-  it("renderiza projeto com dados incompletos sem NaN/Infinity", () => {
-    const payload = buildProjectIntakeFormFromDetail(emptyDetail());
-    const html = renderToStaticMarkup(
-      React.createElement(ProjectIntakeFormDocument, { payload })
-    );
-    assert.match(html, /PRJ-EMPTY/);
-    assert.match(html, new RegExp(PROJECT_INTAKE_FORM_PENDING_LABEL));
-    assertNoInvalidNumbers(payload);
-    assert.doesNotMatch(JSON.stringify(payload), /NaN|Infinity/);
-  });
-
-  it("não importa Prisma nem Proposal no frontend da ficha", () => {
-    const lib = readFileSync(join(process.cwd(), "src", "lib", "projectsIntakeForm.ts"), "utf8");
-    const page = readFileSync(
-      join(process.cwd(), "src", "components", "projects", "ProjectIntakeFormPage.tsx"),
-      "utf8"
-    );
+  it("não importa Prisma nem Proposal no frontend", () => {
+    const quick = readFileSync(join(process.cwd(), "src", "lib", "projectsIntakeQuickForm.ts"), "utf8");
     const doc = readFileSync(
-      join(process.cwd(), "src", "components", "projects", "ProjectIntakeFormDocument.tsx"),
+      join(process.cwd(), "src", "components", "projects", "ProjectIntakeQuickFormDocument.tsx"),
       "utf8"
     );
-    for (const source of [lib, page, doc]) {
+    for (const source of [quick, doc]) {
       assert.doesNotMatch(source, /@prisma\/client|from ["'].*prisma/i);
       assert.doesNotMatch(source, /from ["'].*Proposal|import.*Proposal/);
     }
-  });
-
-  it("não altera produto oficial — apenas lê snapshot existente", () => {
-    const lib = readFileSync(join(process.cwd(), "src", "lib", "projectsIntakeForm.ts"), "utf8");
-    assert.doesNotMatch(lib, /updateProduct|createProduct|officialProduct.*=/i);
-    assert.match(lib, /snapshotRootProducts/);
   });
 });

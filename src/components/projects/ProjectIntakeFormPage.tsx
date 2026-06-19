@@ -9,10 +9,17 @@ import {
   buildProjectIntakeFormFromDetail,
   intakeFormPathRequestsPrint,
   isBlankProjectIntakeFormPath,
-  PROJECT_INTAKE_FORM_TITLE,
+  isFullIntakeFormPath,
+  PROJECT_INTAKE_FORM_FULL_TITLE,
 } from "@/src/lib/projectsIntakeForm";
+import {
+  buildBlankQuickIntakeForm,
+  buildQuickIntakeFormFromDetail,
+  PROJECT_INTAKE_QUICK_FORM_TITLE,
+} from "@/src/lib/projectsIntakeQuickForm";
 import { PROJECT_DETAIL_PATH } from "@/src/lib/projectsNavigation";
 import { ProjectIntakeFormDocument } from "@/src/components/projects/ProjectIntakeFormDocument";
+import { ProjectIntakeQuickFormDocument } from "@/src/components/projects/ProjectIntakeQuickFormDocument";
 import { ProjectExecutiveReportPrintControls } from "@/src/components/projects/ProjectExecutiveReportPrintControls";
 import type { ProjectDetail } from "@/src/types/projects";
 
@@ -31,6 +38,7 @@ export function ProjectIntakeFormPage() {
   const autoPrintedRef = useRef(false);
 
   const isBlank = isBlankProjectIntakeFormPath(location.pathname);
+  const isFull = isFullIntakeFormPath(location.pathname);
   const wantsPrint = intakeFormPathRequestsPrint(location.pathname);
 
   useEffect(() => {
@@ -88,18 +96,33 @@ export function ProjectIntakeFormPage() {
     };
   }, [canView, isBlank, projectId]);
 
-  const payload = useMemo(() => {
+  const quickPayload = useMemo(() => {
+    const generatedBy = auth.authUser?.name ?? auth.authUser?.email ?? null;
+    if (isBlank) return buildBlankQuickIntakeForm({ generatedBy });
+    if (!detail) return null;
+    return buildQuickIntakeFormFromDetail(detail, { generatedBy });
+  }, [auth.authUser?.email, auth.authUser?.name, detail, isBlank]);
+
+  const fullPayload = useMemo(() => {
+    if (!isFull) return null;
     const generatedBy = auth.authUser?.name ?? auth.authUser?.email ?? null;
     if (isBlank) return buildBlankProjectIntakeForm({ generatedBy });
     if (!detail) return null;
     return buildProjectIntakeFormFromDetail(detail, { generatedBy });
-  }, [auth.authUser?.email, auth.authUser?.name, detail, isBlank]);
+  }, [auth.authUser?.email, auth.authUser?.name, detail, isBlank, isFull]);
+
+  const payload = isFull ? fullPayload : quickPayload;
 
   useEffect(() => {
-    document.title = isBlank
-      ? `${PROJECT_INTAKE_FORM_TITLE} — em branco`
-      : `${payload?.header.projectCode ?? "Projeto"} — ${PROJECT_INTAKE_FORM_TITLE}`;
-  }, [isBlank, payload?.header.projectCode]);
+    const title = isFull
+      ? isBlank
+        ? `${PROJECT_INTAKE_FORM_FULL_TITLE} — em branco`
+        : `${fullPayload?.header.projectCode ?? "Projeto"} — ${PROJECT_INTAKE_FORM_FULL_TITLE}`
+      : isBlank
+        ? `${PROJECT_INTAKE_QUICK_FORM_TITLE} — em branco`
+        : `${quickPayload?.header.projectName ?? "Projeto"} — ${PROJECT_INTAKE_QUICK_FORM_TITLE}`;
+    document.title = title;
+  }, [fullPayload?.header.projectCode, isBlank, isFull, quickPayload?.header.projectName]);
 
   const handlePrint = useCallback(() => {
     if (!payload) return;
@@ -157,9 +180,15 @@ export function ProjectIntakeFormPage() {
         </div>
       ) : null}
 
-      {!loading && payload ? (
+      {!loading && quickPayload && !isFull ? (
+        <div className="project-intake-form-scroll mx-auto w-full max-w-[900px] print:max-w-none">
+          <ProjectIntakeQuickFormDocument payload={quickPayload} />
+        </div>
+      ) : null}
+
+      {!loading && fullPayload && isFull ? (
         <div className="project-intake-form-scroll mx-auto w-full max-w-[1180px] print:max-w-none">
-          <ProjectIntakeFormDocument payload={payload} />
+          <ProjectIntakeFormDocument payload={fullPayload} />
         </div>
       ) : null}
     </div>

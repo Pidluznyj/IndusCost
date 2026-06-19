@@ -1,10 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
-import { ClipboardList, FileText, Upload } from "lucide-react";
-import {
-  getProjectIntakeFormPath,
-  PROJECT_INTAKE_FORM_BUTTON_LABEL,
-} from "@/src/lib/projectsIntakeForm";
+import { ProjectIntakeActions } from "@/src/components/projects/ProjectIntakeActions";
 
 type Props = {
   canManage: boolean;
@@ -18,52 +13,29 @@ export function ProjectDocuments({ canManage, projectId }: Props) {
         <div>
           <h4 className="text-lg font-semibold">Documentos</h4>
           <p className="mt-1 text-sm text-muted-foreground">
-            Anexos do projeto, ficha de abertura imprimível e checklist de documentos técnicos.
+            Ficha rápida de estimativa, dossiê completo e planilha modelo para abertura de projetos.
           </p>
         </div>
-        {projectId ? (
-          <Link
-            to={getProjectIntakeFormPath(projectId)}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            <ClipboardList className="h-4 w-4" />
-            {PROJECT_INTAKE_FORM_BUTTON_LABEL}
-          </Link>
-        ) : null}
+        {projectId ? <ProjectIntakeActions projectId={projectId} layout="documents" /> : null}
       </div>
 
       {projectId ? (
         <div className="rounded-xl border border-border bg-muted/10 px-4 py-3 text-sm text-muted-foreground">
-          <div className="flex items-start gap-2">
-            <FileText className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>
-              Use a <strong>Ficha de Abertura de Projeto</strong> para reunir dados com cliente,
-              comercial, engenharia e custos antes de avançar a simulação. O sistema preenche
-              automaticamente o que já existir no projeto e deixa linhas em branco para completar
-              em reunião ou impressão.
-            </p>
-          </div>
+          <p>
+            Use a <strong>Ficha rápida</strong> em reuniões para marcar tipo, entregáveis e estimativas
+            preliminares. A <strong>Ficha completa</strong> reúne o dossiê detalhado. A{" "}
+            <strong>planilha modelo</strong> prepara dados para preenchimento offline e futura importação.
+          </p>
         </div>
       ) : null}
 
       <div className="rounded-xl border border-dashed border-border bg-muted/20 px-6 py-12 text-center">
-        <FileText className="mx-auto h-10 w-10 text-muted-foreground" />
-        <p className="mt-3 text-sm font-medium">Repositório de documentos em preparação</p>
+        <p className="text-sm font-medium">Repositório de anexos em preparação</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Nesta fase, os anexos podem ser registrados nas observações do projeto. Upload estruturado
-          será integrado em versão futura.
+          Nesta fase, documentos complementares podem ser registrados nas observações do projeto.
         </p>
         {canManage ? (
-          <button
-            type="button"
-            disabled
-            title="Em breve"
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm opacity-50"
-          >
-            <Upload className="h-4 w-4" />
-            Anexar documento
-            <span className="rounded bg-muted px-1.5 py-0.5 text-xs">Em breve</span>
-          </button>
+          <p className="mt-3 text-xs text-muted-foreground">Upload estruturado — em breve</p>
         ) : null}
       </div>
     </div>
