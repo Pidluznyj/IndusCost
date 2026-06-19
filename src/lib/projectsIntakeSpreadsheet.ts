@@ -5,7 +5,7 @@ import {
   PROJECT_INTAKE_QUICK_PENDING_ITEMS,
 } from "./projectsIntakeQuickForm.js";
 
-export const PROJECT_INTAKE_SPREADSHEET_VERSION = "1.0";
+export const PROJECT_INTAKE_SPREADSHEET_VERSION = "1.1";
 export const PROJECT_INTAKE_SPREADSHEET_FILENAME = "modelo-projeto-induscost.xlsx";
 export const PROJECT_INTAKE_SPREADSHEET_BUTTON_LABEL = "Baixar planilha modelo";
 
@@ -68,14 +68,15 @@ export const PROJECT_INTAKE_SHEET_03_ITEM_TYPES = [
 ] as const;
 
 export const PROJECT_INTAKE_SHEET_04_COLUMNS = [
+  "produto_grupo",
   "nivel",
   "tipo",
   "codigo",
   "descricao",
-  "quantidade",
+  "quantidade_horas",
   "unidade",
-  "perda_percentual",
   "custo_unitario_estimado",
+  "custo_total_estimado",
   "origem",
   "observacao",
 ] as const;
@@ -147,7 +148,8 @@ export const PROJECT_INTAKE_SPREADSHEET_SCHEMA: Record<
   },
   "04_Composicao_BOM": {
     columns: PROJECT_INTAKE_SHEET_04_COLUMNS,
-    description: "Composição preliminar / BOM para estimativa.",
+    description:
+      "Estrutura preliminar / composição do projeto (BOM hierárquica). Serviços entram nesta aba; valor hora será calculado depois pelo sistema.",
   },
   "05_Processos_HH": {
     columns: PROJECT_INTAKE_SHEET_05_COLUMNS,
@@ -243,9 +245,84 @@ export function buildProjectIntakeSpreadsheetWorkbook(): XLSX.WorkBook {
     wb,
     sheetFromRows(
       [
-        { nivel: "1", tipo: "MP", codigo: "", descricao: "", quantidade: "", unidade: "", perda_percentual: "", custo_unitario_estimado: "", origem: "", observacao: "" },
-        { nivel: "1", tipo: "Componente", codigo: "", descricao: "", quantidade: "", unidade: "", perda_percentual: "", custo_unitario_estimado: "", origem: "", observacao: "" },
-        { nivel: "1", tipo: "Serviço", codigo: "", descricao: "", quantidade: "", unidade: "", perda_percentual: "", custo_unitario_estimado: "", origem: "", observacao: "" },
+        {
+          produto_grupo: "Produto 1",
+          nivel: "0",
+          tipo: "Produto",
+          codigo: "",
+          descricao: "Torneira nova",
+          quantidade_horas: "1",
+          unidade: "UN",
+          custo_unitario_estimado: "",
+          custo_total_estimado: "",
+          origem: "",
+          observacao: "",
+        },
+        {
+          produto_grupo: "Produto 1",
+          nivel: "1",
+          tipo: "Componente",
+          codigo: "",
+          descricao: "Haste",
+          quantidade_horas: "1",
+          unidade: "UN",
+          custo_unitario_estimado: "",
+          custo_total_estimado: "",
+          origem: "",
+          observacao: "",
+        },
+        {
+          produto_grupo: "Produto 1",
+          nivel: "2",
+          tipo: "MP",
+          codigo: "",
+          descricao: "ABS",
+          quantidade_horas: "0,080",
+          unidade: "KG",
+          custo_unitario_estimado: "",
+          custo_total_estimado: "",
+          origem: "",
+          observacao: "",
+        },
+        {
+          produto_grupo: "Produto 1",
+          nivel: "2",
+          tipo: "Serviço",
+          codigo: "",
+          descricao: "Usinagem",
+          quantidade_horas: "20",
+          unidade: "H",
+          custo_unitario_estimado: "",
+          custo_total_estimado: "",
+          origem: "",
+          observacao: "Valor hora calculado depois pelo sistema",
+        },
+        {
+          produto_grupo: "Produto 2",
+          nivel: "0",
+          tipo: "Produto",
+          codigo: "",
+          descricao: "Componente novo",
+          quantidade_horas: "1",
+          unidade: "UN",
+          custo_unitario_estimado: "",
+          custo_total_estimado: "",
+          origem: "",
+          observacao: "",
+        },
+        {
+          produto_grupo: "Produto 2",
+          nivel: "1",
+          tipo: "MP",
+          codigo: "",
+          descricao: "Polipropileno",
+          quantidade_horas: "0,120",
+          unidade: "KG",
+          custo_unitario_estimado: "",
+          custo_total_estimado: "",
+          origem: "",
+          observacao: "",
+        },
       ],
       PROJECT_INTAKE_SHEET_04_COLUMNS
     ),
@@ -335,7 +412,7 @@ export function getSpreadsheetReferenceRowCounts(): Record<ProjectIntakeSpreadsh
     "01_Projeto": 1,
     "02_Entregaveis": DELIVERABLE_ROWS.length,
     "03_Itens": PROJECT_INTAKE_SHEET_03_ITEM_TYPES.length,
-    "04_Composicao_BOM": 3,
+    "04_Composicao_BOM": 6,
     "05_Processos_HH": 2,
     "06_Moldes_Ferramentas": 1,
     "07_Custos_Extras": PROJECT_INTAKE_SHEET_07_CATEGORIES.length,

@@ -13,10 +13,14 @@ import {
   isQuickFormMoreCompactThanFull,
   PROJECT_INTAKE_QUICK_DELIVERABLES,
   PROJECT_INTAKE_QUICK_ESTIMATE_ITEMS,
+  PROJECT_INTAKE_QUICK_FORM_SECTION_COUNT,
   PROJECT_INTAKE_QUICK_FORM_TITLE,
   PROJECT_INTAKE_QUICK_PROJECT_TYPES,
   PROJECT_INTAKE_QUICK_BUTTON_LABEL,
   PROJECT_INTAKE_FULL_BUTTON_LABEL,
+  PROJECT_INTAKE_QUICK_STRUCTURE_SECTION_TITLE,
+  PROJECT_INTAKE_QUICK_STRUCTURE_TYPES,
+  structureRowsFromDetail,
 } from "./projectsIntakeQuickForm.js";
 import {
   buildBlankProjectIntakeForm,
@@ -27,7 +31,41 @@ import {
   isQuickIntakeFormPath,
   PROJECT_INTAKE_FORM_FULL_TITLE,
 } from "./projectsIntakeForm.js";
-import type { ProjectDetail } from "@/src/types/projects.js";
+import type { ProjectDetail, ProjectStructureLineRow } from "@/src/types/projects.js";
+
+function structureLine(
+  partial: Partial<ProjectStructureLineRow> & Pick<ProjectStructureLineRow, "id" | "lineType" | "descriptionSnapshot">
+): ProjectStructureLineRow {
+  return {
+    simulatedProductId: null,
+    parentLineId: null,
+    level: null,
+    treePath: null,
+    snapshotRootProductId: null,
+    sourceType: "MANUAL",
+    existingProductId: null,
+    existingMaterialId: null,
+    simulatedItemId: null,
+    sourceOfficialBomId: null,
+    sourceOfficialRoutingId: null,
+    unitSnapshot: "UN",
+    quantity: 1,
+    lossPercent: 0,
+    officialQuantitySnapshot: null,
+    officialLossPercentSnapshot: null,
+    officialUnitCostSnapshot: null,
+    unitCostSnapshot: 0,
+    totalCost: 0,
+    costSource: null,
+    isChangedFromOfficial: false,
+    isMissingCost: false,
+    countsInSimulatedProductCost: true,
+    supplierNameSnapshot: null,
+    notes: null,
+    sortOrder: 0,
+    ...partial,
+  };
+}
 
 function minimalDetail(): ProjectDetail {
   return {
@@ -84,6 +122,86 @@ function minimalDetail(): ProjectDetail {
   };
 }
 
+function multiProductDetail(): ProjectDetail {
+  return {
+    ...minimalDetail(),
+    title: "Projeto Iris",
+    simulatedProducts: [
+      {
+        id: "prod-1",
+        provisionalCode: null,
+        description: "Torneira X",
+        unit: "UN",
+        estimatedWeight: null,
+        expectedVolume: null,
+        batchSize: null,
+        notes: null,
+      },
+      {
+        id: "prod-2",
+        provisionalCode: null,
+        description: "Torneira Y",
+        unit: "UN",
+        estimatedWeight: null,
+        expectedVolume: null,
+        batchSize: null,
+        notes: null,
+      },
+    ],
+    structureLines: [
+      structureLine({
+        id: "l1",
+        simulatedProductId: "prod-1",
+        parentLineId: null,
+        level: 1,
+        lineType: "COMPONENT",
+        descriptionSnapshot: "Haste",
+        sortOrder: 1,
+      }),
+      structureLine({
+        id: "l2",
+        simulatedProductId: "prod-1",
+        parentLineId: "l1",
+        level: 2,
+        lineType: "RAW_MATERIAL",
+        descriptionSnapshot: "ABS",
+        unitSnapshot: "KG",
+        quantity: 0.08,
+        sortOrder: 2,
+      }),
+      structureLine({
+        id: "l3",
+        simulatedProductId: "prod-1",
+        parentLineId: "l1",
+        level: 2,
+        lineType: "SERVICE",
+        descriptionSnapshot: "Injeção",
+        unitSnapshot: "UN",
+        quantity: 1,
+        sortOrder: 3,
+      }),
+      structureLine({
+        id: "l4",
+        simulatedProductId: "prod-2",
+        parentLineId: null,
+        level: 1,
+        lineType: "COMPONENT",
+        descriptionSnapshot: "Haste nova",
+        sortOrder: 1,
+      }),
+      structureLine({
+        id: "l5",
+        simulatedProductId: "prod-2",
+        parentLineId: null,
+        level: 1,
+        lineType: "PACKAGING",
+        descriptionSnapshot: "Embalagem",
+        sortOrder: 2,
+      }),
+    ],
+  };
+}
+
 describe("projectsIntakeQuickForm", () => {
   it("ficha rápida possui tipo de projeto com checkboxes", () => {
     const payload = buildBlankQuickIntakeForm();
@@ -110,12 +228,93 @@ describe("projectsIntakeQuickForm", () => {
     assert.match(html, /Matéria-prima/);
   });
 
-  it("ficha rápida possui composição preliminar simples", () => {
+  it("ficha rápida usa seção Estrutura preliminar / composição do projeto", () => {
     const html = renderToStaticMarkup(
       React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
     );
-    assert.match(html, /Composição preliminar/);
-    assert.match(html, /Tipo/);
+    assert.match(html, new RegExp(PROJECT_INTAKE_QUICK_STRUCTURE_SECTION_TITLE));
+    assert.doesNotMatch(html, /Composição preliminar/);
+    assert.match(html, /Produto\/Grupo/);
+    assert.match(html, /Nível/);
+    assert.match(html, /Qtde\/Horas/);
+  });
+
+  it("ficha rápida não possui seção separada Processos / HH", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
+    );
+    assert.doesNotMatch(html, /7\. Processos \/ HH/);
+    assert.doesNotMatch(html, /Valor hora/);
+  });
+
+  it("ficha rápida possui 8 seções numeradas de 1 a 8", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
+    );
+    assert.match(html, /1\. Tipo de projeto/);
+    assert.match(html, /2\. Entregáveis esperados/);
+    assert.match(html, /3\. Dados do item\/produto/);
+    assert.match(html, /4\. O que precisa estimar/);
+    assert.match(html, /5\. Estrutura preliminar \/ composição do projeto/);
+    assert.match(html, /6\. Molde \/ ferramenta/);
+    assert.match(html, /7\. Pendências para estimar/);
+    assert.match(html, /8\. Decisão inicial/);
+    assert.doesNotMatch(html, /9\. Decisão inicial/);
+    assert.equal(countQuickFormSections(buildBlankQuickIntakeForm()), PROJECT_INTAKE_QUICK_FORM_SECTION_COUNT);
+  });
+
+  it("estrutura preliminar possui tipos incluindo Serviço", () => {
+    assert.ok(PROJECT_INTAKE_QUICK_STRUCTURE_TYPES.includes("Serviço"));
+    const blank = buildBlankQuickIntakeForm();
+    assert.ok(blank.structureRows.some((r) => r.type === "Serviço"));
+    assert.ok(blank.structureRows.some((r) => r.unit === "H"));
+  });
+
+  it("ficha em branco traz linhas suficientes para preenchimento manual", () => {
+    const rows = buildBlankQuickIntakeForm().structureRows;
+    assert.ok(rows.length >= 12);
+    assert.ok(rows.some((r) => r.productGroup === "Produto 1" && r.level === 0 && r.type === "Produto"));
+    assert.ok(rows.some((r) => r.productGroup === "Produto 2" && r.type === "Serviço" && r.unit === "H"));
+  });
+
+  it("ficha preenchida com múltiplos produtos gera grupos separados", () => {
+    const rows = structureRowsFromDetail(multiProductDetail());
+    const groups = [...new Set(rows.map((r) => r.productGroup))];
+    assert.deepEqual(groups, ["Torneira X", "Torneira Y"]);
+    assert.ok(rows.filter((r) => r.productGroup === "Torneira X").some((r) => r.level === 0 && r.type === "Produto"));
+    assert.ok(rows.filter((r) => r.productGroup === "Torneira Y").some((r) => r.level === 0 && r.type === "Produto"));
+  });
+
+  it("produto com componente, MP e serviço aparece em níveis", () => {
+    const rows = structureRowsFromDetail(multiProductDetail()).filter((r) => r.productGroup === "Torneira X");
+    assert.ok(rows.some((r) => r.level === 1 && r.type === "Componente" && r.description === "Haste"));
+    assert.ok(rows.some((r) => r.level === 2 && r.type === "MP" && r.description === "ABS"));
+    assert.ok(rows.some((r) => r.level === 2 && r.type === "Serviço" && r.description === "Injeção"));
+  });
+
+  it("serviço manual com horas usa unidade H sem valor hora obrigatório", () => {
+    const detail = {
+      ...minimalDetail(),
+      structureLines: [
+        structureLine({
+          id: "svc-1",
+          simulatedProductId: "prod-1",
+          lineType: "PROCESS",
+          descriptionSnapshot: "Usinagem",
+          unitSnapshot: "HH",
+          quantity: 20,
+          unitCostSnapshot: 85,
+          sortOrder: 1,
+        }),
+      ],
+    };
+    const rows = structureRowsFromDetail(detail);
+    const service = rows.find((r) => r.description === "Usinagem");
+    assert.ok(service);
+    assert.equal(service.type, "Serviço");
+    assert.equal(service.unit, "H");
+    assert.equal(service.quantityHours, "20");
+    assert.equal(service.estimatedCost, null);
   });
 
   it("ficha rápida possui molde/ferramenta simples", () => {
@@ -124,13 +323,6 @@ describe("projectsIntakeQuickForm", () => {
     );
     assert.match(html, /Molde \/ ferramenta/);
     assert.match(html, /Amortizar no preço/);
-  });
-
-  it("ficha rápida possui processos/HH simples", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
-    );
-    assert.match(html, /Processos \/ HH/);
   });
 
   it("ficha rápida possui pendências", () => {
@@ -155,7 +347,7 @@ describe("projectsIntakeQuickForm", () => {
     const full = buildBlankProjectIntakeForm();
     assert.ok(isQuickFormMoreCompactThanFull(countQuickFormSections(quick), full.sections.length));
     assert.equal(full.sections.length, 16);
-    assert.equal(countQuickFormSections(quick), 10);
+    assert.equal(countQuickFormSections(quick), 8);
   });
 
   it("rotas quick vs full", () => {
@@ -192,6 +384,7 @@ describe("projectsIntakeQuickForm", () => {
   it("CSS print e no-print para ficha rápida", () => {
     const css = readFileSync(join(process.cwd(), "src", "project-intake-form-print.css"), "utf8");
     assert.match(css, /project-intake-quick-form-document/);
+    assert.match(css, /project-intake-quick-structure-table/);
     assert.match(css, /\.no-print/);
     assert.match(css, /A4 portrait/);
   });

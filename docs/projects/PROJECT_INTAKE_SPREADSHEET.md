@@ -1,6 +1,6 @@
 # Planilha modelo — Ficha de Abertura de Projeto
 
-Versão do schema: **1.0**  
+Versão do schema: **1.1**  
 Arquivo gerado: `modelo-projeto-induscost.xlsx`
 
 ## Objetivo
@@ -22,8 +22,8 @@ Implementação: `src/lib/projectsIntakeSpreadsheet.ts` — geração client-sid
 | `01_Projeto` | Dados gerais do projeto |
 | `02_Entregaveis` | Entregáveis esperados (marcar X) |
 | `03_Itens` | Produto, componentes, MP, serviços |
-| `04_Composicao_BOM` | Composição preliminar / BOM |
-| `05_Processos_HH` | Processos e horas-homem |
+| `04_Composicao_BOM` | Estrutura preliminar / composição do projeto (BOM hierárquica) |
+| `05_Processos_HH` | Processos e horas-homem (ficha completa; na ficha rápida serviços vão na composição) |
 | `06_Moldes_Ferramentas` | Moldes e ferramentas |
 | `07_Custos_Extras` | Custos adicionais |
 | `08_Pendencias` | Pendências e bloqueios |
@@ -71,18 +71,54 @@ Implementação: `src/lib/projectsIntakeSpreadsheet.ts` — geração client-sid
 
 ### 04_Composicao_BOM
 
+Estrutura preliminar tipo BOM, alinhada à **Ficha Rápida de Estimativa** (seção 5). Permite múltiplos produtos no mesmo projeto, níveis hierárquicos e serviços com horas.
+
 | Coluna | Descrição |
 |--------|-----------|
-| `nivel` | Nível na estrutura (1, 2, …) |
-| `tipo` | MP, Componente, Serviço, etc. |
-| `codigo` | Código |
-| `descricao` | Descrição |
-| `quantidade` | Quantidade por unidade do produto |
-| `unidade` | Unidade |
-| `perda_percentual` | Perda % |
-| `custo_unitario_estimado` | Custo unitário |
+| `produto_grupo` | Identificador do produto/grupo (ex.: `Produto 1`, `Torneira Iris`) |
+| `nivel` | Nível na estrutura: `0` = produto raiz, `1` = componente direto, `2+` = MP/serviços filhos |
+| `tipo` | Produto, Componente, MP, Serviço, Embalagem, Molde/Ferramenta, Outro |
+| `codigo` | Código provisório ou existente |
+| `descricao` | Descrição do item ou serviço |
+| `quantidade_horas` | Quantidade por unidade do pai **ou** horas para serviços |
+| `unidade` | UN, KG, H, etc. |
+| `custo_unitario_estimado` | Custo unitário estimado (opcional na ficha rápida) |
+| `custo_total_estimado` | Custo total estimado (opcional) |
 | `origem` | Origem do item |
 | `observacao` | Notas |
+
+#### Múltiplos produtos
+
+Use `produto_grupo` para separar cada produto simulado do projeto. Cada grupo começa com uma linha `nivel` **0** e `tipo` **Produto**.
+
+Exemplo com dois produtos:
+
+| produto_grupo | nivel | tipo | descricao |
+|---------------|------:|------|-----------|
+| Produto 1 | 0 | Produto | Torneira nova |
+| Produto 1 | 1 | Componente | Haste |
+| Produto 1 | 2 | MP | ABS |
+| Produto 2 | 0 | Produto | Componente novo |
+| Produto 2 | 1 | MP | Polipropileno |
+
+#### Níveis da BOM
+
+- **Nível 0:** produto/entregável raiz do grupo.
+- **Nível 1:** componentes diretos do produto.
+- **Nível 2+:** matéria-prima, serviços ou subcomponentes abaixo do componente pai.
+
+A hierarquia é indicada pelo par `produto_grupo` + `nivel` + ordem das linhas (importação futura pode usar `parent` implícito pela ordem).
+
+#### Serviços e horas
+
+Serviços (usinagem, erosão, eletrodo, impressão 3D, montagem etc.) entram nesta aba com `tipo` = **Serviço**.
+
+- Para serviço medido em horas: preencher `quantidade_horas` (ex.: `20`) e `unidade` = **H**.
+- Exemplo: usinagem 20 horas → `tipo` Serviço, `descricao` Usinagem, `quantidade_horas` 20, `unidade` H.
+- **Não é necessário** preencher valor hora na ficha rápida; o sistema buscará/calculará o valor hora posteriormente.
+- O custo estimado pode ficar em branco ou ser preenchido apenas se já for conhecido.
+
+Na **ficha rápida impressa**, não há aba/seção separada de Processos/HH — todos os serviços ficam nesta composição.
 
 ### 05_Processos_HH
 

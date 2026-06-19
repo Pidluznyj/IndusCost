@@ -39,11 +39,17 @@ describe("projectsIntakeSpreadsheet", () => {
     }
   });
 
+  it("aba 04_Composicao_BOM possui colunas hierárquicas", () => {
+    assert.deepEqual(listSpreadsheetSheetColumns("04_Composicao_BOM"), PROJECT_INTAKE_SHEET_04_COLUMNS);
+    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("produto_grupo"));
+    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("nivel"));
+    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("quantidade_horas"));
+  });
+
   it("cada aba possui colunas esperadas", () => {
     assert.deepEqual(listSpreadsheetSheetColumns("01_Projeto"), PROJECT_INTAKE_SHEET_01_COLUMNS);
     assert.deepEqual(listSpreadsheetSheetColumns("02_Entregaveis"), PROJECT_INTAKE_SHEET_02_COLUMNS);
     assert.deepEqual(listSpreadsheetSheetColumns("03_Itens"), PROJECT_INTAKE_SHEET_03_COLUMNS);
-    assert.deepEqual(listSpreadsheetSheetColumns("04_Composicao_BOM"), PROJECT_INTAKE_SHEET_04_COLUMNS);
     assert.deepEqual(listSpreadsheetSheetColumns("05_Processos_HH"), PROJECT_INTAKE_SHEET_05_COLUMNS);
     assert.deepEqual(listSpreadsheetSheetColumns("06_Moldes_Ferramentas"), PROJECT_INTAKE_SHEET_06_COLUMNS);
     assert.deepEqual(listSpreadsheetSheetColumns("07_Custos_Extras"), PROJECT_INTAKE_SHEET_07_COLUMNS);
@@ -66,6 +72,13 @@ describe("projectsIntakeSpreadsheet", () => {
     assert.ok("nome_projeto" in projeto[0]);
     const entregaveis = XLSX.utils.sheet_to_json<Record<string, string>>(parsed.Sheets["02_Entregaveis"]);
     assert.ok(entregaveis.length >= 10);
+    const composicao = XLSX.utils.sheet_to_json<Record<string, string>>(parsed.Sheets["04_Composicao_BOM"], {
+      defval: "",
+    });
+    assert.ok(composicao.length >= 2);
+    assert.ok("produto_grupo" in composicao[0]);
+    assert.ok("quantidade_horas" in composicao[0]);
+    assert.ok(composicao.some((r) => r.tipo === "Serviço" && r.unidade === "H"));
   });
 
   it("botão de download referenciado na UI", () => {
@@ -78,11 +91,16 @@ describe("projectsIntakeSpreadsheet", () => {
     assert.match(PROJECT_INTAKE_SPREADSHEET_FILENAME, /\.xlsx$/);
   });
 
-  it("documentação da planilha existe", () => {
+  it("documentação da planilha explica composição hierárquica e serviços", () => {
     const doc = readFileSync(join(process.cwd(), "docs", "projects", "PROJECT_INTAKE_SPREADSHEET.md"), "utf8");
     assert.match(doc, /01_Projeto/);
     assert.match(doc, /Importação futura/);
     assert.match(doc, /nome_projeto/);
+    assert.match(doc, /produto_grupo/);
+    assert.match(doc, /Múltiplos produtos/);
+    assert.match(doc, /Serviços e horas/);
+    assert.match(doc, /valor hora/i);
+    assert.match(doc, /quantidade_horas/);
   });
 
   it("não importa Prisma nem Proposal", () => {

@@ -3,6 +3,7 @@ import {
   PROJECT_INTAKE_QUICK_FORM_TITLE,
   PROJECT_INTAKE_QUICK_PENDING_LABEL,
   PROJECT_INTAKE_QUICK_PRIORITIES,
+  PROJECT_INTAKE_QUICK_STRUCTURE_SECTION_TITLE,
   type ProjectIntakeQuickFormPayload,
   type QuickChecklistItem,
 } from "@/src/lib/projectsIntakeQuickForm";
@@ -133,27 +134,31 @@ export function ProjectIntakeQuickFormDocument({ payload }: Props) {
         </table>
       </section>
 
-      <section className="project-intake-form-section project-intake-quick-section">
-        <h2 className="project-intake-form-section-title">5. Composição preliminar</h2>
-        <table className="project-intake-form-table project-intake-quick-table">
+      <section className="project-intake-form-section project-intake-quick-section project-intake-quick-structure-section">
+        <h2 className="project-intake-form-section-title">5. {PROJECT_INTAKE_QUICK_STRUCTURE_SECTION_TITLE}</h2>
+        <table className="project-intake-form-table project-intake-quick-table project-intake-quick-structure-table">
           <thead>
             <tr>
+              <th>Produto/Grupo</th>
+              <th>Nível</th>
               <th>Tipo</th>
               <th>Código</th>
               <th>Descrição</th>
-              <th>Qtde</th>
+              <th>Qtde/Horas</th>
               <th>Unidade</th>
               <th>Custo est.</th>
               <th>Obs.</th>
             </tr>
           </thead>
           <tbody>
-            {payload.compositionRows.map((row, i) => (
-              <tr key={`${row.type}-${i}`}>
-                <td>{row.type}</td>
+            {payload.structureRows.map((row, i) => (
+              <tr key={`${row.productGroup}-${row.level}-${i}`}>
+                <td>{displayValue(row.productGroup, mode)}</td>
+                <td className="project-intake-quick-level-col">{row.level}</td>
+                <td>{displayValue(row.type, mode)}</td>
                 <td>{displayValue(row.code, mode)}</td>
                 <td>{displayValue(row.description, mode)}</td>
-                <td>{displayValue(row.quantity, mode)}</td>
+                <td>{displayValue(row.quantityHours, mode)}</td>
                 <td>{displayValue(row.unit, mode)}</td>
                 <td>{displayValue(row.estimatedCost, mode)}</td>
                 <td>{displayValue(row.notes, mode)}</td>
@@ -187,38 +192,12 @@ export function ProjectIntakeQuickFormDocument({ payload }: Props) {
       </section>
 
       <section className="project-intake-form-section project-intake-quick-section">
-        <h2 className="project-intake-form-section-title">7. Processos / HH</h2>
-        <table className="project-intake-form-table project-intake-quick-table">
-          <thead>
-            <tr>
-              <th>Processo</th>
-              <th>Interno/Externo</th>
-              <th>Tempo/HH</th>
-              <th>Valor hora</th>
-              <th>Custo est.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payload.processRows.map((row, i) => (
-              <tr key={i}>
-                <td>{displayValue(row.process, mode)}</td>
-                <td>{displayValue(row.internalExternal, mode)}</td>
-                <td>{displayValue(row.timeHh, mode)}</td>
-                <td>{displayValue(row.hourRate, mode)}</td>
-                <td>{displayValue(row.estimatedCost, mode)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="project-intake-form-section project-intake-quick-section">
-        <h2 className="project-intake-form-section-title">8. Pendências para estimar</h2>
+        <h2 className="project-intake-form-section-title">7. Pendências para estimar</h2>
         <ChecklistGrid items={payload.pendingItems} />
       </section>
 
       <section className="project-intake-form-section project-intake-quick-section">
-        <h2 className="project-intake-form-section-title">9. Decisão inicial</h2>
+        <h2 className="project-intake-form-section-title">8. Decisão inicial</h2>
         <ChecklistGrid items={payload.decisions} />
         <div className="project-intake-quick-signatures">
           {payload.signatures.map((sig) => (

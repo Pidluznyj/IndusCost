@@ -335,6 +335,24 @@
   padding: 0.25rem 0.35rem;
 }
 
+.project-intake-quick-structure-table {
+  font-size: 6.75pt;
+}
+
+.project-intake-quick-structure-table th,
+.project-intake-quick-structure-table td {
+  padding: 0.2rem 0.25rem;
+}
+
+.project-intake-quick-level-col {
+  text-align: center;
+  width: 2rem;
+}
+
+.project-intake-quick-structure-section {
+  break-inside: auto;
+}
+
 .project-intake-quick-mark-col {
   text-align: center;
   width: 3rem;
