@@ -16,7 +16,7 @@ export const PROJECT_INTAKE_FORM_TITLE = "Ficha de Abertura de Projeto";
 export const PROJECT_INTAKE_FORM_BUTTON_LABEL = "Imprimir Ficha de Abertura";
 export const PROJECT_INTAKE_FORM_BLANK_BUTTON_LABEL = "Ficha em branco";
 export const PROJECT_INTAKE_FORM_ROUTE_SUFFIX = "intake-form";
-export const PROJECT_INTAKE_FORM_PENDING_LABEL = "PENDENTE";
+export const PROJECT_INTAKE_FORM_PENDING_LABEL = "Pendente";
 export const PROJECT_INTAKE_FORM_NOT_INFORMED = "—";
 
 export const PROJECT_INTAKE_NATURE_OPTIONS = [
@@ -860,7 +860,9 @@ export function buildProjectIntakeFormFromDetail(
   };
 }
 
-export const PROJECT_INTAKE_FORM_BLANK_PATH = `/projects/${PROJECT_INTAKE_FORM_ROUTE_SUFFIX}`;
+export const PROJECT_INTAKE_FORM_BLANK_PATH = `/projects/${PROJECT_INTAKE_FORM_ROUTE_SUFFIX}/blank`;
+/** Alias legado — redireciona para /blank */
+export const PROJECT_INTAKE_FORM_BLANK_LEGACY_PATH = `/projects/${PROJECT_INTAKE_FORM_ROUTE_SUFFIX}`;
 
 export function getProjectIntakeFormPath(projectId: string): string {
   return `/projects/${projectId}/${PROJECT_INTAKE_FORM_ROUTE_SUFFIX}`;
@@ -883,7 +885,14 @@ export function isProjectIntakeFormPath(pathname: string): boolean {
 
 export function isBlankProjectIntakeFormPath(pathname: string): boolean {
   const parts = pathname.replace(/^\//, "").split("/").filter(Boolean);
-  return parts[0] === "projects" && parts[1] === PROJECT_INTAKE_FORM_ROUTE_SUFFIX;
+  if (parts[0] !== "projects" || parts[1] !== PROJECT_INTAKE_FORM_ROUTE_SUFFIX) return false;
+  if (!parts[2] || parts[2] === "print") return true;
+  return parts[2] === "blank";
+}
+
+export function isLegacyBlankIntakeFormPath(pathname: string): boolean {
+  const parts = pathname.replace(/^\//, "").split("/").filter(Boolean);
+  return parts[0] === "projects" && parts[1] === PROJECT_INTAKE_FORM_ROUTE_SUFFIX && !parts[2];
 }
 
 export function parseProjectIntakeFormProjectId(pathname: string): string | null {

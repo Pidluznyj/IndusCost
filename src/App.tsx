@@ -283,6 +283,8 @@ export default function App() {
       <Route element={<RequireAuth />}>
       <Route path="/projects/intake-form" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/intake-form/print" element={<ProjectIntakeFormPage />} />
+      <Route path="/projects/intake-form/blank" element={<ProjectIntakeFormPage />} />
+      <Route path="/projects/intake-form/blank/print" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/:projectId/intake-form" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/:projectId/intake-form/print" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/:projectId/report" element={<ProjectExecutiveReportPage />} />

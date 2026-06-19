@@ -15,7 +15,7 @@ export function ProjectExecutiveReportPrintControls({
   backLabel = "Voltar ao projeto",
 }: Props) {
   return (
-    <div className="project-executive-report-print-no-print mx-auto mb-4 flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-3 print:hidden">
+    <div className="no-print project-executive-report-print-no-print mx-auto mb-4 flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-3 print:hidden">
       <button
         type="button"
         onClick={onBack}

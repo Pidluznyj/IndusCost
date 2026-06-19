@@ -181,14 +181,17 @@
   }
 
   body.project-intake-form-route .project-executive-report-print-no-print,
-  .project-executive-report-print-no-print {
+  body.project-intake-form-route .no-print,
+  .project-executive-report-print-no-print,
+  .no-print {
     display: none !important;
   }
 
   body.project-intake-form-route #root > * > aside,
   body.project-intake-form-route #root > * > header,
   body.project-intake-form-route nav,
-  body.project-intake-form-route .project-executive-report-print-no-print {
+  body.project-intake-form-route .project-executive-report-print-no-print,
+  body.project-intake-form-route .no-print {
     display: none !important;
   }
 
