@@ -39,11 +39,20 @@ describe("projectsIntakeSpreadsheet", () => {
     }
   });
 
-  it("aba 04_Composicao_BOM possui colunas hierárquicas", () => {
+  it("aba 03_Itens possui colunas de produtos/entregáveis", () => {
+    assert.deepEqual(listSpreadsheetSheetColumns("03_Itens"), PROJECT_INTAKE_SHEET_03_COLUMNS);
+    assert.ok(PROJECT_INTAKE_SHEET_03_COLUMNS.includes("codigo_sku"));
+    assert.ok(PROJECT_INTAKE_SHEET_03_COLUMNS.includes("produto_entregavel"));
+    assert.ok(PROJECT_INTAKE_SHEET_03_COLUMNS.includes("quantidade_prevista"));
+  });
+
+  it("aba 04_Composicao_BOM possui colunas hierárquicas com item pai", () => {
     assert.deepEqual(listSpreadsheetSheetColumns("04_Composicao_BOM"), PROJECT_INTAKE_SHEET_04_COLUMNS);
-    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("produto_grupo"));
+    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("produto_entregavel"));
     assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("nivel"));
-    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("quantidade_horas"));
+    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("item_pai"));
+    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("quantidade_por_unidade"));
+    assert.ok(PROJECT_INTAKE_SHEET_04_COLUMNS.includes("horas_quantidade_servico"));
   });
 
   it("cada aba possui colunas esperadas", () => {
@@ -70,15 +79,17 @@ describe("projectsIntakeSpreadsheet", () => {
     });
     assert.ok(projeto.length >= 1);
     assert.ok("nome_projeto" in projeto[0]);
-    const entregaveis = XLSX.utils.sheet_to_json<Record<string, string>>(parsed.Sheets["02_Entregaveis"]);
-    assert.ok(entregaveis.length >= 10);
+    const itens = XLSX.utils.sheet_to_json<Record<string, string>>(parsed.Sheets["03_Itens"], { defval: "" });
+    assert.ok(itens.length >= 5);
+    assert.ok("produto_entregavel" in itens[0]);
     const composicao = XLSX.utils.sheet_to_json<Record<string, string>>(parsed.Sheets["04_Composicao_BOM"], {
       defval: "",
     });
-    assert.ok(composicao.length >= 2);
-    assert.ok("produto_grupo" in composicao[0]);
-    assert.ok("quantidade_horas" in composicao[0]);
-    assert.ok(composicao.some((r) => r.tipo === "Serviço" && r.unidade === "H"));
+    assert.ok(composicao.length >= 10);
+    assert.ok("produto_entregavel" in composicao[0]);
+    assert.ok("item_pai" in composicao[0]);
+    assert.ok(composicao.some((r) => r.produto_entregavel === "610.51AA" && r.item_pai === "306.02AA"));
+    assert.ok(composicao.some((r) => r.tipo === "Serviço" && r.horas_quantidade_servico === "15"));
   });
 
   it("botão de download referenciado na UI", () => {
@@ -91,16 +102,18 @@ describe("projectsIntakeSpreadsheet", () => {
     assert.match(PROJECT_INTAKE_SPREADSHEET_FILENAME, /\.xlsx$/);
   });
 
-  it("documentação da planilha explica composição hierárquica e serviços", () => {
+  it("documentação da planilha explica item pai e exemplo 610.51AA", () => {
     const doc = readFileSync(join(process.cwd(), "docs", "projects", "PROJECT_INTAKE_SPREADSHEET.md"), "utf8");
     assert.match(doc, /01_Projeto/);
     assert.match(doc, /Importação futura/);
-    assert.match(doc, /nome_projeto/);
-    assert.match(doc, /produto_grupo/);
+    assert.match(doc, /produto_entregavel/);
+    assert.match(doc, /item_pai/);
+    assert.match(doc, /610\.51AA/);
     assert.match(doc, /Múltiplos produtos/);
     assert.match(doc, /Serviços e horas/);
     assert.match(doc, /valor hora/i);
-    assert.match(doc, /quantidade_horas/);
+    assert.match(doc, /quantidade_por_unidade/);
+    assert.match(doc, /horas_quantidade_servico/);
   });
 
   it("não importa Prisma nem Proposal", () => {

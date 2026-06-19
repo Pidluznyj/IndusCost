@@ -1,6 +1,6 @@
 # Planilha modelo — Ficha de Abertura de Projeto
 
-Versão do schema: **1.1**  
+Versão do schema: **1.2**  
 Arquivo gerado: `modelo-projeto-induscost.xlsx`
 
 ## Objetivo
@@ -21,8 +21,8 @@ Implementação: `src/lib/projectsIntakeSpreadsheet.ts` — geração client-sid
 |-----|------------|
 | `01_Projeto` | Dados gerais do projeto |
 | `02_Entregaveis` | Entregáveis esperados (marcar X) |
-| `03_Itens` | Produto, componentes, MP, serviços |
-| `04_Composicao_BOM` | Estrutura preliminar / composição do projeto (BOM hierárquica) |
+| `03_Itens` | Produtos / entregáveis raiz (ficha rápida 5.1) |
+| `04_Composicao_BOM` | Estrutura preliminar / BOM com item pai (ficha rápida 5.2) |
 | `05_Processos_HH` | Processos e horas-homem (ficha completa; na ficha rápida serviços vão na composição) |
 | `06_Moldes_Ferramentas` | Moldes e ferramentas |
 | `07_Custos_Extras` | Custos adicionais |
@@ -57,68 +57,74 @@ Implementação: `src/lib/projectsIntakeSpreadsheet.ts` — geração client-sid
 
 ### 03_Itens
 
+Produtos e entregáveis raiz do projeto — corresponde à seção **5.1** da ficha rápida.
+
 | Coluna | Descrição |
 |--------|-----------|
-| `tipo_item` | Produto, Componente, Matéria-prima, Serviço, Embalagem, Outro |
-| `codigo_existente` | Código no sistema, se houver |
-| `descricao` | Descrição do item |
-| `produto_base` | Produto oficial base para copiar |
-| `unidade` | UN, KG, etc. |
-| `quantidade` | Quantidade |
-| `custo_estimado_unitario` | Custo unitário estimado |
-| `origem` | Comprado, fabricado, terceiro |
+| `item` | Número sequencial (1, 2, 3…) |
+| `codigo_sku` | Código/SKU do produto ou entregável, se existir |
+| `produto_entregavel` | Nome do produto/entregável |
+| `tipo` | Produto novo, Componente novo, Produto alterado, etc. |
+| `unidade` | UN, PC, KG, etc. |
+| `quantidade_prevista` | Quantidade prevista do entregável |
 | `observacao` | Notas |
 
 ### 04_Composicao_BOM
 
-Estrutura preliminar tipo BOM, alinhada à **Ficha Rápida de Estimativa** (seção 5). Permite múltiplos produtos no mesmo projeto, níveis hierárquicos e serviços com horas.
+Estrutura preliminar tipo BOM — corresponde à seção **5.2** da ficha rápida. Permite múltiplos produtos, níveis hierárquicos, **item pai** e serviços com horas.
 
 | Coluna | Descrição |
 |--------|-----------|
-| `produto_grupo` | Identificador do produto/grupo (ex.: `Produto 1`, `Torneira Iris`) |
-| `nivel` | Nível na estrutura: `0` = produto raiz, `1` = componente direto, `2+` = MP/serviços filhos |
+| `produto_entregavel` | SKU ou nome do produto/entregável raiz (ex.: `610.51AA`) |
+| `nivel` | `0` = produto raiz, `1` = componente direto, `2+` = MP/serviço/subcomponente |
+| `item_pai` | Código ou descrição do item pai (`—` no produto raiz) |
 | `tipo` | Produto, Componente, MP, Serviço, Embalagem, Molde/Ferramenta, Outro |
-| `codigo` | Código provisório ou existente |
-| `descricao` | Descrição do item ou serviço |
-| `quantidade_horas` | Quantidade por unidade do pai **ou** horas para serviços |
-| `unidade` | UN, KG, H, etc. |
-| `custo_unitario_estimado` | Custo unitário estimado (opcional na ficha rápida) |
-| `custo_total_estimado` | Custo total estimado (opcional) |
-| `origem` | Origem do item |
+| `codigo` | Código do item |
+| `descricao` | Descrição livre |
+| `um` | UN, PC, KG, H, etc. |
+| `quantidade_por_unidade` | Consumo técnico por unidade do pai (ex.: `0,002900` KG) |
+| `horas_quantidade_servico` | Horas ou quantidade do serviço (ex.: `20` para usinagem) |
+| `custo_estimado` | Opcional na ficha rápida |
 | `observacao` | Notas |
 
-#### Múltiplos produtos
+#### Produto/Entregável vs Item pai
 
-Use `produto_grupo` para separar cada produto simulado do projeto. Cada grupo começa com uma linha `nivel` **0** e `tipo` **Produto**.
-
-Exemplo com dois produtos:
-
-| produto_grupo | nivel | tipo | descricao |
-|---------------|------:|------|-----------|
-| Produto 1 | 0 | Produto | Torneira nova |
-| Produto 1 | 1 | Componente | Haste |
-| Produto 1 | 2 | MP | ABS |
-| Produto 2 | 0 | Produto | Componente novo |
-| Produto 2 | 1 | MP | Polipropileno |
+- **`produto_entregavel`:** identifica a qual produto raiz do projeto a linha pertence (ex.: `610.51AA`, `Torneira Iris`).
+- **`item_pai`:** identifica o item imediatamente acima na hierarquia (ex.: MP `115.01--` com pai `306.02AA` Porca Grossa).
 
 #### Níveis da BOM
 
-- **Nível 0:** produto/entregável raiz do grupo.
+- **Nível 0:** produto/entregável raiz.
 - **Nível 1:** componentes diretos do produto.
-- **Nível 2+:** matéria-prima, serviços ou subcomponentes abaixo do componente pai.
+- **Nível 2+:** MPs, serviços ou subcomponentes abaixo do componente pai.
 
-A hierarquia é indicada pelo par `produto_grupo` + `nivel` + ordem das linhas (importação futura pode usar `parent` implícito pela ordem).
+#### Componente com MPs
+
+Exemplo (produto `610.51AA`):
+
+| produto_entregavel | nivel | item_pai | tipo | codigo | descricao | um | quantidade_por_unidade |
+|--------------------|------:|----------|------|--------|-----------|-----|------------------------|
+| 610.51AA | 0 | — | Produto | 610.51AA | Torneira Longa Branca | UN | 1 |
+| 610.51AA | 1 | 610.51AA | Componente | 306.02AA | Porca Grossa Branca | PC | 1 |
+| 610.51AA | 2 | 306.02AA | MP | 115.01-- | PP Polipropileno H 503 | KG | 0,002900 |
+| 610.51AA | 2 | 306.02AA | MP | 121.16-- | MasterBatch Branco | KG | 0,000087 |
+
+#### Múltiplos produtos
+
+Repita o bloco acaixo para cada produto/entregável, mantendo `produto_entregavel` consistente em todas as linhas do grupo.
 
 #### Serviços e horas
 
-Serviços (usinagem, erosão, eletrodo, impressão 3D, montagem etc.) entram nesta aba com `tipo` = **Serviço**.
+Serviços entram nesta aba com `tipo` = **Serviço**:
 
-- Para serviço medido em horas: preencher `quantidade_horas` (ex.: `20`) e `unidade` = **H**.
-- Exemplo: usinagem 20 horas → `tipo` Serviço, `descricao` Usinagem, `quantidade_horas` 20, `unidade` H.
-- **Não é necessário** preencher valor hora na ficha rápida; o sistema buscará/calculará o valor hora posteriormente.
-- O custo estimado pode ficar em branco ou ser preenchido apenas se já for conhecido.
+- Preencher `horas_quantidade_servico` (ex.: `20`) e `um` = **H** para usinagem/erosão.
+- Exemplo: CNC 15 h → `horas_quantidade_servico` = 15, `um` = H, `item_pai` = componente relacionado.
+- **Não é necessário** preencher valor hora; o sistema calcula depois.
+- Na ficha rápida, não há seção separada Processos/HH.
 
-Na **ficha rápida impressa**, não há aba/seção separada de Processos/HH — todos os serviços ficam nesta composição.
+#### Regra de custo
+
+O custo estimado e valor hora são opcionais na ficha rápida/offline. O IndusCost calculará valor hora e custos quando a estrutura for importada ou montada no projeto.
 
 ### 05_Processos_HH
 

@@ -19,7 +19,10 @@ import {
   PROJECT_INTAKE_QUICK_BUTTON_LABEL,
   PROJECT_INTAKE_FULL_BUTTON_LABEL,
   PROJECT_INTAKE_QUICK_STRUCTURE_SECTION_TITLE,
+  PROJECT_INTAKE_QUICK_STRUCTURE_INSTRUCTION,
+  PROJECT_INTAKE_QUICK_BLANK_STRUCTURE_ROW_COUNT,
   PROJECT_INTAKE_QUICK_STRUCTURE_TYPES,
+  deliverableProductsFromDetail,
   structureRowsFromDetail,
 } from "./projectsIntakeQuickForm.js";
 import {
@@ -228,15 +231,18 @@ describe("projectsIntakeQuickForm", () => {
     assert.match(html, /Matéria-prima/);
   });
 
-  it("ficha rápida usa seção Estrutura preliminar / composição do projeto", () => {
+  it("ficha rápida usa seção Estrutura preliminar / BOM do projeto", () => {
     const html = renderToStaticMarkup(
       React.createElement(ProjectIntakeQuickFormDocument, { payload: buildBlankQuickIntakeForm() })
     );
     assert.match(html, new RegExp(PROJECT_INTAKE_QUICK_STRUCTURE_SECTION_TITLE));
-    assert.doesNotMatch(html, /Composição preliminar/);
-    assert.match(html, /Produto\/Grupo/);
-    assert.match(html, /Nível/);
-    assert.match(html, /Qtde\/Horas/);
+    assert.match(html, /5\.1 Produtos \/ entregáveis do projeto/);
+    assert.match(html, /5\.2 Estrutura \/ composição preliminar/);
+    assert.match(html, /Item pai/);
+    assert.match(html, /Produto\/Entregável/);
+    assert.match(html, /Qtde por un\./);
+    assert.match(html, /Hrs\/Qtde serviço/);
+    assert.match(html, /Use uma linha por item da estrutura/);
   });
 
   it("ficha rápida não possui seção separada Processos / HH", () => {
@@ -255,7 +261,7 @@ describe("projectsIntakeQuickForm", () => {
     assert.match(html, /2\. Entregáveis esperados/);
     assert.match(html, /3\. Dados do item\/produto/);
     assert.match(html, /4\. O que precisa estimar/);
-    assert.match(html, /5\. Estrutura preliminar \/ composição do projeto/);
+    assert.match(html, /5\. Estrutura preliminar \/ BOM do projeto/);
     assert.match(html, /6\. Molde \/ ferramenta/);
     assert.match(html, /7\. Pendências para estimar/);
     assert.match(html, /8\. Decisão inicial/);
@@ -265,40 +271,54 @@ describe("projectsIntakeQuickForm", () => {
 
   it("estrutura preliminar possui tipos incluindo Serviço", () => {
     assert.ok(PROJECT_INTAKE_QUICK_STRUCTURE_TYPES.includes("Serviço"));
-    const blank = buildBlankQuickIntakeForm();
-    assert.ok(blank.structureRows.some((r) => r.type === "Serviço"));
-    assert.ok(blank.structureRows.some((r) => r.unit === "H"));
   });
 
-  it("ficha em branco traz linhas suficientes para preenchimento manual", () => {
-    const rows = buildBlankQuickIntakeForm().structureRows;
-    assert.ok(rows.length >= 12);
-    assert.ok(rows.some((r) => r.productGroup === "Produto 1" && r.level === 0 && r.type === "Produto"));
-    assert.ok(rows.some((r) => r.productGroup === "Produto 2" && r.type === "Serviço" && r.unit === "H"));
+  it("ficha em branco traz linhas vazias sem Produto 1/Produto 2 preenchidos", () => {
+    const payload = buildBlankQuickIntakeForm();
+    assert.equal(payload.structureRows.length, PROJECT_INTAKE_QUICK_BLANK_STRUCTURE_ROW_COUNT);
+    assert.ok(payload.structureRows.every((row) => !row.productDeliverable?.trim()));
+    assert.ok(payload.structureRows.every((row) => !row.type?.trim()));
+    assert.ok(payload.deliverableProducts.every((row) => !row.name?.trim()));
+    const html = renderToStaticMarkup(React.createElement(ProjectIntakeQuickFormDocument, { payload }));
+    assert.doesNotMatch(html, /Produto 1/);
+    assert.doesNotMatch(html, /Produto 2/);
   });
 
-  it("ficha preenchida com múltiplos produtos gera grupos separados", () => {
-    const rows = structureRowsFromDetail(multiProductDetail());
-    const groups = [...new Set(rows.map((r) => r.productGroup))];
+  it("ficha preenchida lista produtos em 5.1 e agrupa estrutura por entregável", () => {
+    const detail = multiProductDetail();
+    const products = deliverableProductsFromDetail(detail);
+    assert.equal(products.length, 2);
+    assert.equal(products[0]?.name, "Torneira X");
+    assert.equal(products[1]?.name, "Torneira Y");
+
+    const rows = structureRowsFromDetail(detail);
+    const groups = [...new Set(rows.map((r) => r.productDeliverable))];
     assert.deepEqual(groups, ["Torneira X", "Torneira Y"]);
-    assert.ok(rows.filter((r) => r.productGroup === "Torneira X").some((r) => r.level === 0 && r.type === "Produto"));
-    assert.ok(rows.filter((r) => r.productGroup === "Torneira Y").some((r) => r.level === 0 && r.type === "Produto"));
+    assert.ok(rows.filter((r) => r.productDeliverable === "Torneira X").some((r) => r.level === 0 && r.type === "Produto"));
   });
 
-  it("produto com componente, MP e serviço aparece em níveis", () => {
-    const rows = structureRowsFromDetail(multiProductDetail()).filter((r) => r.productGroup === "Torneira X");
-    assert.ok(rows.some((r) => r.level === 1 && r.type === "Componente" && r.description === "Haste"));
-    assert.ok(rows.some((r) => r.level === 2 && r.type === "MP" && r.description === "ABS"));
-    assert.ok(rows.some((r) => r.level === 2 && r.type === "Serviço" && r.description === "Injeção"));
+  it("produto com componente, MP e serviço aparece com item pai e níveis", () => {
+    const rows = structureRowsFromDetail(multiProductDetail()).filter((r) => r.productDeliverable === "Torneira X");
+    const haste = rows.find((r) => r.description === "Haste");
+    const abs = rows.find((r) => r.description === "ABS");
+    assert.ok(haste);
+    assert.equal(haste.level, 1);
+    assert.equal(haste.parentItem, "Torneira X");
+    assert.ok(abs);
+    assert.equal(abs.level, 2);
+    assert.equal(abs.parentItem, "Haste");
+    assert.ok(rows.some((r) => r.type === "Serviço" && r.description === "Injeção"));
   });
 
-  it("serviço manual com horas usa unidade H sem valor hora obrigatório", () => {
+  it("serviço manual com horas usa Hrs/Qtde serviço sem valor hora obrigatório", () => {
     const detail = {
       ...minimalDetail(),
       structureLines: [
         structureLine({
           id: "svc-1",
           simulatedProductId: "prod-1",
+          parentLineId: null,
+          level: 1,
           lineType: "PROCESS",
           descriptionSnapshot: "Usinagem",
           unitSnapshot: "HH",
@@ -313,7 +333,8 @@ describe("projectsIntakeQuickForm", () => {
     assert.ok(service);
     assert.equal(service.type, "Serviço");
     assert.equal(service.unit, "H");
-    assert.equal(service.quantityHours, "20");
+    assert.equal(service.serviceHours, "20");
+    assert.equal(service.quantityPerUnit, null);
     assert.equal(service.estimatedCost, null);
   });
 

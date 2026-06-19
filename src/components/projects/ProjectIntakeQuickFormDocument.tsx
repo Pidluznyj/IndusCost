@@ -136,30 +136,71 @@ export function ProjectIntakeQuickFormDocument({ payload }: Props) {
 
       <section className="project-intake-form-section project-intake-quick-section project-intake-quick-structure-section">
         <h2 className="project-intake-form-section-title">5. {PROJECT_INTAKE_QUICK_STRUCTURE_SECTION_TITLE}</h2>
-        <table className="project-intake-form-table project-intake-quick-table project-intake-quick-structure-table">
+
+        <h3 className="project-intake-quick-subheading">5.1 Produtos / entregáveis do projeto</h3>
+        <table className="project-intake-form-table project-intake-quick-table">
           <thead>
             <tr>
-              <th>Produto/Grupo</th>
+              <th>Item</th>
+              <th>Código/SKU</th>
+              <th>Produto/entregável</th>
+              <th>Tipo</th>
+              <th>Unidade</th>
+              <th>Qtde prevista</th>
+              <th>Observação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payload.deliverableProducts.map((row) => (
+              <tr key={row.item}>
+                <td>{row.item}</td>
+                <td>{displayValue(row.codeSku, mode)}</td>
+                <td>{displayValue(row.name, mode)}</td>
+                <td>{displayValue(row.type, mode)}</td>
+                <td>{displayValue(row.unit, mode)}</td>
+                <td>{displayValue(row.plannedQuantity, mode)}</td>
+                <td>{displayValue(row.notes, mode)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <h3 className="project-intake-quick-subheading">5.2 Estrutura / composição preliminar</h3>
+        <p className="project-intake-quick-structure-note">{payload.structureInstruction}</p>
+        <p className="project-intake-quick-structure-hint">{payload.structureLevelHint}</p>
+        {payload.structureContinuationNote ? (
+          <p className="project-intake-quick-structure-hint">{payload.structureContinuationNote}</p>
+        ) : null}
+        <table className="project-intake-form-table project-intake-quick-table project-intake-quick-structure-table project-intake-quick-bom-table">
+          <thead>
+            <tr>
+              <th>Produto/Entregável</th>
               <th>Nível</th>
+              <th>Item pai</th>
               <th>Tipo</th>
               <th>Código</th>
               <th>Descrição</th>
-              <th>Qtde/Horas</th>
-              <th>Unidade</th>
+              <th>UM</th>
+              <th>Qtde por un.</th>
+              <th>Hrs/Qtde serviço</th>
               <th>Custo est.</th>
               <th>Obs.</th>
             </tr>
           </thead>
           <tbody>
             {payload.structureRows.map((row, i) => (
-              <tr key={`${row.productGroup}-${row.level}-${i}`}>
-                <td>{displayValue(row.productGroup, mode)}</td>
-                <td className="project-intake-quick-level-col">{row.level}</td>
+              <tr key={`${row.productDeliverable ?? "row"}-${i}`}>
+                <td>{displayValue(row.productDeliverable, mode)}</td>
+                <td className="project-intake-quick-level-col">
+                  {row.level != null ? row.level : displayValue(null, mode)}
+                </td>
+                <td>{displayValue(row.parentItem, mode)}</td>
                 <td>{displayValue(row.type, mode)}</td>
                 <td>{displayValue(row.code, mode)}</td>
                 <td>{displayValue(row.description, mode)}</td>
-                <td>{displayValue(row.quantityHours, mode)}</td>
                 <td>{displayValue(row.unit, mode)}</td>
+                <td>{displayValue(row.quantityPerUnit, mode)}</td>
+                <td>{displayValue(row.serviceHours, mode)}</td>
                 <td>{displayValue(row.estimatedCost, mode)}</td>
                 <td>{displayValue(row.notes, mode)}</td>
               </tr>

@@ -336,7 +336,27 @@
 }
 
 .project-intake-quick-structure-table {
-  font-size: 6.75pt;
+  font-size: 6.25pt;
+}
+
+.project-intake-quick-structure-table thead {
+  display: table-header-group;
+}
+
+.project-intake-quick-bom-table tbody tr {
+  break-inside: avoid;
+}
+
+.project-intake-quick-structure-note {
+  font-size: 0.72rem;
+  color: #4b5563;
+  margin: 0.25rem 0 0.15rem;
+}
+
+.project-intake-quick-structure-hint {
+  font-size: 0.68rem;
+  color: #9ca3af;
+  margin: 0 0 0.35rem;
 }
 
 .project-intake-quick-structure-table th,
