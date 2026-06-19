@@ -74,18 +74,85 @@ const SALES_ORDER_ITEM_RAW_FIELD_ALIASES: Record<string, readonly string[]> = {
     "descricaoStatus",
     "descricaoStatusItem",
     "descricao_status",
+    "descricaoSituacao",
+    "descricaoSituacaoItem",
+    "situacaoPedidoItem",
+    "situacaoItemPedido",
+    "statusPedidoItem",
+    "statusDescricao",
+    "nomeStatus",
+    "statusNome",
   ],
-  quantity: ["quantidade", "qtdPedida", "quantidadePedida"],
+  quantity: [
+    "quantidade",
+    "qtdPedida",
+    "quantidadePedida",
+    "qtdePedida",
+    "qtd_pedida",
+    "quantidade_pedida",
+  ],
   quantityFulfilled: ["quantidadeAtendida", "qtdAtendida", "quantidadeAtendimento"],
   quantityInvoiced: ["quantidadeFaturada", "qtdFaturada", "quantidadeNF"],
-  quantityCanceled: ["quantidadeCancelada", "qtdCancelada"],
+  quantityCanceled: [
+    "quantidadeCancelada",
+    "qtdCancelada",
+    "qtdeCancelada",
+    "quantidade_cancelada",
+    "qtde_cancelada",
+    "qtd_cancelada",
+  ],
   quantityReturned: ["quantidadeDevolvida", "qtdDevolvida"],
   quantityShipped: ["quantidadeEnviada", "qtdEnviada"],
   quantityDelivered: ["quantidadeEntregue", "qtdEntregue"],
   expectedDeliveryDate: ["dataEntrega", "dataEntregaItem", "dataPrevisaoEntrega"],
-  productCode: ["codigoProduto", "codigo", "sku"],
-  productName: ["nomeProduto", "descricaoProduto", "produto"],
+  productCode: [
+    "codigoProduto",
+    "codigo",
+    "sku",
+    "codigo_produto",
+    "productCode",
+  ],
+  productName: ["nomeProduto", "descricaoProduto", "produto", "descricao"],
+  itemNumber: ["item", "numeroItem", "sequencia", "idItemPedido", "numero"],
 };
+
+const NOMUS_ITEM_ARRAY_KEYS = [
+  "itensPedido",
+  "itens",
+  "items",
+  "pedidoItens",
+  "itensDoPedido",
+] as const;
+
+const NOMUS_NESTED_LABEL_KEYS = [
+  "descricao",
+  "nome",
+  "label",
+  "titulo",
+  "texto",
+  "status",
+  "nomeStatus",
+  "statusNome",
+  "descricaoStatus",
+] as const;
+
+const ORDERED_QTY_KEYS = [
+  "quantidade",
+  "qtdPedida",
+  "quantidadePedida",
+  "qtdePedida",
+  "qtd_pedida",
+  "quantidade_pedida",
+];
+
+const CANCELLED_QTY_KEYS = [
+  "quantidadeCancelada",
+  "qtdCancelada",
+  "qtdeCancelada",
+  "quantidade_cancelada",
+  "qtde_cancelada",
+  "qtd_cancelada",
+];
 
 function readFirstRawValue(
   obj: Record<string, unknown>,
@@ -198,25 +265,132 @@ function readQuantity(obj: Record<string, unknown>, keys: string[]): number | nu
   return null;
 }
 
-function inferCancelledStatusFromQuantities(raw: Record<string, unknown>): string | null {
-  const ordered = readQuantity(raw, ["quantidade", "qtdPedida", "quantidadePedida"]);
-  const cancelled = readQuantity(raw, ["quantidadeCancelada", "qtdCancelada"]);
-  if (ordered != null && cancelled != null && ordered > 0 && cancelled >= ordered) {
-    return "Cancelado";
+/** Converte string, número ou objeto Nomus ({ descricao, nome }) em texto. */
+export function coerceNomusTextValue(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const s = value.trim();
+    return s.length > 0 ? s : null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  const obj = asObject(value);
+  if (!obj) return null;
+  for (const key of NOMUS_NESTED_LABEL_KEYS) {
+    const nested = coerceNomusTextValue(obj[key]);
+    if (nested) return nested;
   }
   return null;
 }
 
+function normalizeProductCode(value: string | null | undefined): string | null {
+  const s = value?.trim().toLowerCase();
+  return s || null;
+}
+
+function extractItemProductCode(raw: Record<string, unknown>): string | null {
+  const direct = coerceNomusTextValue(extractSalesOrderItemRawField(raw, "productCode"));
+  if (direct) return direct;
+  const produto = asObject(raw.produto);
+  if (produto) {
+    return (
+      coerceNomusTextValue(produto.codigo) ??
+      coerceNomusTextValue(produto.codigoProduto) ??
+      coerceNomusTextValue(produto.sku) ??
+      null
+    );
+  }
+  return null;
+}
+
+function extractItemIdProduto(raw: Record<string, unknown>): number | null {
+  const direct = asNumber(raw.idProduto);
+  if (direct != null) return direct;
+  const produto = asObject(raw.produto);
+  if (!produto) return null;
+  return asNumber(produto.id) ?? asNumber(produto.idProduto);
+}
+
+function extractItemNumber(raw: Record<string, unknown>): number | string | null {
+  const fromAliases = coerceNomusTextValue(extractSalesOrderItemRawField(raw, "itemNumber"));
+  if (fromAliases) {
+    const asNum = asNumber(fromAliases);
+    return asNum ?? fromAliases;
+  }
+  return asNumber(raw.item) ?? asString(raw.item);
+}
+
+export function isSalesOrderItemCancelledByRawQuantity(
+  rawItem: unknown
+): boolean {
+  const obj = asObject(rawItem);
+  if (!obj) return false;
+  const ordered = readQuantity(obj, ORDERED_QTY_KEYS);
+  const cancelled = readQuantity(obj, CANCELLED_QTY_KEYS);
+  return ordered != null && cancelled != null && ordered > 0 && cancelled >= ordered;
+}
+
+export function deepExtractNomusItemStatus(raw: Record<string, unknown>): string | null {
+  for (const alias of SALES_ORDER_ITEM_RAW_FIELD_ALIASES.status) {
+    const text = coerceNomusTextValue(raw[alias]);
+    if (text) return text;
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (/status|situac/i.test(key)) {
+      const text = coerceNomusTextValue(value);
+      if (text) return text;
+    }
+  }
+  if (isSalesOrderItemCancelledByRawQuantity(raw)) return "Cancelado";
+  return null;
+}
+
+export function extractNomusItemStatusFromItemRaw(rawItem: unknown): string | null {
+  const obj = asObject(rawItem);
+  if (!obj) return null;
+  return deepExtractNomusItemStatus(obj);
+}
+
+export function extractNomusItemStatusFromOrderRaw(
+  orderRaw: unknown,
+  dbItem: {
+    externalProductId?: number | null;
+    skuSnapshot?: string | null;
+    productNameSnapshot?: string | null;
+  },
+  options?: { itemIndex?: number; totalDbItems?: number }
+): string | null {
+  const rawItems = extractNomusRawItems(orderRaw);
+  const matched = matchRawItemToDbItem(rawItems, dbItem, options);
+  if (!matched) return null;
+  return matched.status ?? deepExtractNomusItemStatus(matched.raw);
+}
+
+export function resolveSalesOrderItemNomusStatus(
+  orderRaw: unknown,
+  dbItem: {
+    externalProductId?: number | null;
+    skuSnapshot?: string | null;
+    productNameSnapshot?: string | null;
+  },
+  options?: { itemIndex?: number; totalDbItems?: number }
+): SalesOrderItemNomusStatus {
+  const statusText = extractNomusItemStatusFromOrderRaw(orderRaw, dbItem, options);
+  return normalizeSalesOrderItemNomusStatus(statusText);
+}
+
+function inferCancelledStatusFromQuantities(raw: Record<string, unknown>): string | null {
+  if (isSalesOrderItemCancelledByRawQuantity(raw)) return "Cancelado";
+  return null;
+}
+
 function mapRawItem(raw: Record<string, unknown>): NomusRawItem {
-  const status =
-    asString(extractSalesOrderItemRawField(raw, "status")) ??
-    inferCancelledStatusFromQuantities(raw);
+  const status = deepExtractNomusItemStatus(raw);
   return {
-    item: asNumber(raw.item) ?? asString(raw.item),
-    idProduto: asNumber(raw.idProduto),
-    codigoProduto: asString(raw.codigoProduto) ?? asString(raw.codigo),
+    item: extractItemNumber(raw),
+    idProduto: extractItemIdProduto(raw),
+    codigoProduto: extractItemProductCode(raw),
     status,
-    quantidade: readQuantity(raw, ["quantidade", "qtdPedida", "quantidadePedida"]),
+    quantidade: readQuantity(raw, ORDERED_QTY_KEYS),
     quantidadeAtendida: readQuantity(raw, [
       "quantidadeAtendida",
       "qtdAtendida",
@@ -227,7 +401,7 @@ function mapRawItem(raw: Record<string, unknown>): NomusRawItem {
       "qtdFaturada",
       "quantidadeNF",
     ]),
-    quantidadeCancelada: readQuantity(raw, ["quantidadeCancelada", "qtdCancelada"]),
+    quantidadeCancelada: readQuantity(raw, CANCELLED_QTY_KEYS),
     quantidadeDevolvida: readQuantity(raw, ["quantidadeDevolvida", "qtdDevolvida"]),
     quantidadeEnviada: readQuantity(raw, ["quantidadeEnviada", "qtdEnviada"]),
     quantidadeEntregue: readQuantity(raw, ["quantidadeEntregue", "qtdEntregue"]),
@@ -239,12 +413,16 @@ function mapRawItem(raw: Record<string, unknown>): NomusRawItem {
 export function extractNomusRawItems(nomusRawResponse: unknown): NomusRawItem[] {
   const root = asObject(nomusRawResponse);
   if (!root) return [];
-  const items = root.itensPedido;
-  if (!Array.isArray(items)) return [];
-  return items
-    .map((item) => asObject(item))
-    .filter((item): item is Record<string, unknown> => item != null)
-    .map(mapRawItem);
+  for (const key of NOMUS_ITEM_ARRAY_KEYS) {
+    const items = root[key];
+    if (!Array.isArray(items)) continue;
+    const mapped = items
+      .map((item) => asObject(item))
+      .filter((item): item is Record<string, unknown> => item != null)
+      .map(mapRawItem);
+    if (mapped.length > 0) return mapped;
+  }
+  return [];
 }
 
 export function extractNomusRawNfes(nomusRawResponse: unknown): NomusRawNfe[] {
@@ -380,26 +558,41 @@ export function matchRawItemToDbItem(
   options?: { itemIndex?: number; totalDbItems?: number }
 ): NomusRawItem | null {
   if (rawItems.length === 0) return null;
+
+  const matchesExternalId = (r: NomusRawItem): boolean => {
+    if (dbItem.externalProductId == null) return false;
+    if (r.idProduto === dbItem.externalProductId) return true;
+    const nestedId = asNumber(asObject(r.raw.produto)?.id);
+    const nestedProductId = asNumber(asObject(r.raw.produto)?.idProduto);
+    return nestedId === dbItem.externalProductId || nestedProductId === dbItem.externalProductId;
+  };
+
   if (dbItem.externalProductId != null) {
-    const byProduct = rawItems.find((r) => r.idProduto === dbItem.externalProductId);
+    const byProduct = rawItems.find(matchesExternalId);
     if (byProduct) return byProduct;
   }
-  const sku = dbItem.skuSnapshot?.trim().toLowerCase();
+
+  const sku = normalizeProductCode(dbItem.skuSnapshot);
   if (sku) {
     const bySku = rawItems.find(
-      (r) => r.codigoProduto?.trim().toLowerCase() === sku
+      (r) => normalizeProductCode(r.codigoProduto) === sku
     );
     if (bySku) return bySku;
   }
+
   const name = dbItem.productNameSnapshot?.trim().toLowerCase();
   if (name) {
-    const byName = rawItems.find(
-      (r) =>
-        asString(r.raw.nomeProduto)?.trim().toLowerCase() === name ||
-        asString(r.raw.descricaoProduto)?.trim().toLowerCase() === name
-    );
+    const byName = rawItems.find((r) => {
+      const rawName =
+        coerceNomusTextValue(r.raw.nomeProduto) ??
+        coerceNomusTextValue(r.raw.descricaoProduto) ??
+        coerceNomusTextValue(asObject(r.raw.produto)?.descricao) ??
+        coerceNomusTextValue(asObject(r.raw.produto)?.nome);
+      return rawName?.trim().toLowerCase() === name;
+    });
     if (byName) return byName;
   }
+
   if (
     options?.itemIndex != null &&
     options.totalDbItems != null &&
@@ -407,7 +600,13 @@ export function matchRawItemToDbItem(
   ) {
     return rawItems[options.itemIndex] ?? null;
   }
+
+  if (rawItems.length === 1 && options?.totalDbItems === 1) {
+    return rawItems[0];
+  }
+
   if (rawItems.length === 1) return rawItems[0];
+
   return null;
 }
 

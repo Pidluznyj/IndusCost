@@ -18,6 +18,7 @@ import {
   formatYmdLocal,
   matchRawItemToDbItem,
   normalizeSalesOrderItemNomusStatus,
+  deepExtractNomusItemStatus,
   parseNomusBrOrIsoDate,
   resolveItemFulfilledQuantity,
   resolveItemInvoicedQuantity,
@@ -120,7 +121,8 @@ function enrichItems(
       totalDbItems: input.items.length,
     });
     const ordered = Math.max(0, decimalToNumber(item.quantity) ?? 0);
-    const originalStatus = raw?.status ?? null;
+    const originalStatus =
+      raw?.status ?? (raw ? deepExtractNomusItemStatus(raw.raw) : null);
     const normalizedStatus = normalizeSalesOrderItemNomusStatus(originalStatus);
     const fulfilledQuantity = resolveItemFulfilledQuantity(ordered, raw, normalizedStatus);
     const invoicedQuantity = resolveItemInvoicedQuantity(
