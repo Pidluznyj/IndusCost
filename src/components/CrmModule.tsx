@@ -112,6 +112,7 @@ import { AccessDenied } from "@/src/components/AccessDenied";
 type SellerDashboardLoadParams = {
   externalSellerId?: number;
   responsible?: string;
+  sellerIdentityKey?: string;
   dateFrom?: string;
   dateTo?: string;
 };
@@ -1770,7 +1771,9 @@ export const CrmModule = () => {
     try {
       const searchParams = new URLSearchParams();
       if (!isOwnSellerOnly) {
-        if (params?.externalSellerId !== null && params?.externalSellerId !== undefined) {
+        if (params?.sellerIdentityKey?.trim()) {
+          searchParams.set("sellerIdentityKey", params.sellerIdentityKey.trim());
+        } else if (params?.externalSellerId !== null && params?.externalSellerId !== undefined) {
           searchParams.set("externalSellerId", String(params.externalSellerId));
         } else if (params?.responsible?.trim()) {
           searchParams.set("responsible", params.responsible.trim());
@@ -1790,6 +1793,7 @@ export const CrmModule = () => {
       const isUnfiltered =
         params?.externalSellerId === undefined &&
         !params?.responsible?.trim() &&
+        !params?.sellerIdentityKey?.trim() &&
         !params?.dateFrom?.trim() &&
         !params?.dateTo?.trim();
       if (canFilterAllSellers && isUnfiltered && Array.isArray(data.sellerOptions)) {
@@ -1827,7 +1831,9 @@ export const CrmModule = () => {
 
       if (!isOwnSellerOnly && sellerKey !== SELLER_KEY_ALL) {
         const opt = sellerOptions.find((o) => buildSellerOptionKey(o) === sellerKey);
-        if (opt?.externalSellerId !== null && opt?.externalSellerId !== undefined) {
+        if (opt?.sellerIdentityKey?.trim()) {
+          params.sellerIdentityKey = opt.sellerIdentityKey.trim();
+        } else if (opt?.externalSellerId !== null && opt?.externalSellerId !== undefined) {
           params.externalSellerId = opt.externalSellerId;
         } else if (opt?.responsible?.trim()) {
           params.responsible = opt.responsible.trim();

@@ -110,7 +110,8 @@ describe("crmCommercialAccessScope", () => {
     assert.equal(result.ok, true);
     if (!result.ok || !result.sellerScope) throw new Error("expected ok");
     assert.equal(result.sellerScope.scopeMode, "own");
-    assert.equal(result.sellerScope.externalSellerId, 464);
+    assert.equal(result.sellerScope.sellerIdentityKey, "gislene lima");
+    assert.equal(result.sellerScope.externalSellerId, null);
     assert.equal(result.sellerScope.responsible, null);
   });
 
@@ -139,10 +140,16 @@ describe("crmCommercialAccessScope", () => {
     assert.equal(canAccessCrmSeller(checkerFromPermissions(auth.permissions)), false);
   });
 
-  it("crmCommercialSellerMatchFilters prioriza ID Nomus", () => {
+  it("crmCommercialSellerMatchFilters prioriza sellerIdentityKey quando informado", () => {
+    assert.deepEqual(crmCommercialSellerMatchFilters(464, "GISLENE LIMA", "gislene lima"), {
+      externalSellerId: null,
+      responsible: null,
+      sellerIdentityKey: "gislene lima",
+    });
     assert.deepEqual(crmCommercialSellerMatchFilters(464, "GISLENE LIMA"), {
       externalSellerId: 464,
       responsible: null,
+      sellerIdentityKey: null,
     });
   });
 

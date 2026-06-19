@@ -7,6 +7,7 @@ import {
   SELLER_KEY_ALL,
   SELLER_PERIOD_PRESET_OPTIONS,
   buildSellerOptionKey,
+  formatSellerOptionDetail,
   formatSellerOptionLabel,
 } from "@/src/components/crmSellerDashboardUi";
 import { CrmSellerSubTabs, type CrmSellerSubTabId } from "@/src/components/CrmSellerSubTabs";
@@ -169,10 +170,11 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
                 <option value={SELLER_KEY_ALL}>Todos os vendedores (visão geral)</option>
                 {sellerOptions.map((opt) => {
                   const key = buildSellerOptionKey(opt);
+                  const detail = formatSellerOptionDetail(opt);
+                  const label = formatSellerOptionLabel(opt);
                   return (
-                    <option key={key} value={key}>
-                      {formatSellerOptionLabel(opt)} — {opt.ordersCount} ped. / {opt.proposalsCount}{" "}
-                      prop.
+                    <option key={key} value={key} title={detail ?? undefined}>
+                      {label}
                     </option>
                   );
                 })}
@@ -257,19 +259,23 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
           {(data?.filters?.externalSellerId !== null &&
             data?.filters?.externalSellerId !== undefined) ||
           data?.filters?.responsible ||
+          data?.filters?.sellerIdentityKey ||
           data?.filters?.dateFrom ||
           data?.filters?.dateTo ? (
             <p className="text-[10px] text-muted-foreground">
               Filtros ativos:
-              {data?.filters?.externalSellerId !== null &&
-              data?.filters?.externalSellerId !== undefined
-                ? ` vendedor ID ${data.filters.externalSellerId}`
-                : ""}
-              {data?.filters?.responsible && !data?.filters?.externalSellerId
-                ? ` ${data.filters.responsible}`
-                : data?.filters?.responsible
-                  ? ` · ${data.filters.responsible}`
+              {data?.filters?.sellerIdentityKey
+                ? ` ${data.filters.sellerIdentityKey}`
+                : data?.filters?.externalSellerId !== null &&
+                    data?.filters?.externalSellerId !== undefined
+                  ? ` vendedor ID ${data.filters.externalSellerId}`
                   : ""}
+              {data?.filters?.responsible && !data?.filters?.sellerIdentityKey
+                ? data?.filters?.externalSellerId !== null &&
+                  data?.filters?.externalSellerId !== undefined
+                  ? ` · ${data.filters.responsible}`
+                  : ` ${data.filters.responsible}`
+                : ""}
               {data?.filters?.dateFrom || data?.filters?.dateTo
                 ? ` · período ${data.filters.dateFrom ?? "…"} a ${data.filters.dateTo ?? "…"}`
                 : ""}

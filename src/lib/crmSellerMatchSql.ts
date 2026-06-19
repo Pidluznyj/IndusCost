@@ -5,7 +5,16 @@ import { Prisma } from "@prisma/client";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
 
 export function buildSellerResponsibleNormalizedSql(alias: string): Prisma.Sql {
-  return Prisma.sql`LOWER(REGEXP_REPLACE(TRIM(COALESCE(${Prisma.raw(`${alias}."responsible"`)}, '')), '\\s+', ' ', 'g'))`;
+  const col = Prisma.raw(`${alias}."responsible"`);
+  return Prisma.sql`
+    LOWER(
+      translate(
+        REGEXP_REPLACE(TRIM(COALESCE(${col}, '')), '\\s+', ' ', 'g'),
+        'áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ',
+        'aaaaaeeeeiiiiooooouuuucnAAAAAEEEEIIIIOOOOOUUUUCN'
+      )
+    )
+  `;
 }
 
 /** Filtra pedidos pelo nome normalizado exato do responsável (consolida todos os IDs com mesmo nome). */
@@ -25,8 +34,16 @@ export function buildCrmSellerFilterSql(
     sellerIdentityKey: string | null;
   }
 ): Prisma.Sql {
-  if (filter.sellerIdentityKey?.trim()) {
-    return buildSellerMatchByIdentityKeySql(alias, filter.sellerIdentityKey);
+  const key = filter.sellerIdentityKey?.trim();
+  if (key) {
+    if (key.startsWith("__ID_ONLY__:")) {
+      const idRaw = key.slice("__ID_ONLY__:".length);
+      const id = Number.parseInt(idRaw, 10);
+      if (Number.isFinite(id)) {
+        return Prisma.sql`${Prisma.raw(`${alias}."externalSellerId"`)} = ${id}`;
+      }
+    }
+    return buildSellerMatchByIdentityKeySql(alias, key);
   }
   if (filter.externalSellerId !== null && filter.responsible !== null) {
     return Prisma.sql`(

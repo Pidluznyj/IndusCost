@@ -3,6 +3,7 @@
 export type SellerDashboardFilters = {
   externalSellerId: number | null;
   responsible: string | null;
+  sellerIdentityKey?: string | null;
   dateFrom: string | null;
   dateTo: string | null;
 };
@@ -45,7 +46,10 @@ export type SellerDashboardSummary = {
 };
 
 export type SellerDashboardBySeller = {
+  displayName?: string;
+  sellerIdentityKey?: string;
   externalSellerId: number | null;
+  externalSellerIds?: number[];
   responsible: string | null;
   ordersCount: number;
   ordersValue: number;

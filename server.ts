@@ -11649,7 +11649,8 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         req.query.externalSellerId,
         req.query.responsible,
         parseExternalSellerIdQuery,
-        parseResponsibleQuery
+        parseResponsibleQuery,
+        req.query.sellerIdentityKey
       );
       if (sellerScope.ok === false) {
         return res.status(sellerScope.status).json(sellerScope.body);
@@ -11659,8 +11660,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         scopeMode: sellerScope.scopeMode,
         externalSellerId: sellerScope.externalSellerId,
         responsible: sellerScope.responsible,
+        sellerIdentityKey: sellerScope.sellerIdentityKey,
         dateFrom: typeof req.query.dateFrom === "string" ? req.query.dateFrom : null,
         dateTo: typeof req.query.dateTo === "string" ? req.query.dateTo : null,
+        linkedUser:
+          sellerScope.scopeMode === "own"
+            ? {
+                externalSellerId: authUser.externalSellerId,
+                sellerResponsibleName: authUser.sellerResponsibleName,
+              }
+            : null,
       });
       res.json(payload);
     } catch (error) {

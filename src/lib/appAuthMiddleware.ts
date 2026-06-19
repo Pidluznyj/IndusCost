@@ -106,6 +106,7 @@ export type SellerDashboardScopeResult =
       scopeMode: SellerDashboardScopeMode;
       externalSellerId: number | null;
       responsible: string | null;
+      sellerIdentityKey: string | null;
     }
   | { ok: false; status: number; body: Record<string, unknown> };
 
@@ -126,14 +127,16 @@ export function resolveSellerDashboardScope(
   queryExternalSellerId: unknown,
   queryResponsible: unknown,
   parseExternalSellerId: (raw: unknown) => number | null,
-  parseResponsible: (raw: unknown) => string | null
+  parseResponsible: (raw: unknown) => string | null,
+  querySellerIdentityKey?: unknown
 ): SellerDashboardScopeResult {
   const result = resolveCrmSellerDashboardQueryScope(
     auth,
     queryExternalSellerId,
     queryResponsible,
     parseExternalSellerId,
-    parseResponsible
+    parseResponsible,
+    querySellerIdentityKey
   );
   if (!result.ok || !result.sellerScope) {
     if (result.ok === false) {
@@ -154,5 +157,6 @@ export function resolveSellerDashboardScope(
     scopeMode: result.sellerScope.scopeMode,
     externalSellerId: result.sellerScope.externalSellerId,
     responsible: result.sellerScope.responsible,
+    sellerIdentityKey: result.sellerScope.sellerIdentityKey,
   };
 }

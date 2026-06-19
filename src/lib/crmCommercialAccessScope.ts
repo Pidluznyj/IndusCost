@@ -5,6 +5,8 @@
 import { Prisma } from "@prisma/client";
 import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
+import { buildCrmSellerFilterSql } from "@/src/lib/crmSellerMatchSql.js";
 
 export type CrmCommercialDataScope = "global" | "own" | "none";
 
@@ -16,6 +18,8 @@ export type CrmCommercialAccessScope = {
   sellerLocked: boolean;
   externalSellerId: number | null;
   responsible: string | null;
+  /** Filtro consolidado por nome normalizado (prioridade sobre ID quando há nome no vínculo). */
+  sellerIdentityKey: string | null;
   sellerLinked: boolean;
   /** Quando own sem vínculo Nomus no usuário. */
   blockedReason: "SELLER_NOT_LINKED" | "FORBIDDEN" | null;
@@ -33,16 +37,28 @@ export function isCrmSellerUserLinked(user: {
   return user.externalSellerId != null || Boolean(user.sellerResponsibleName?.trim());
 }
 
-/** ID Nomus tem prioridade; responsible só quando ID ausente (paridade com seller-dashboard). */
+/** ID Nomus tem prioridade legada; sellerIdentityKey consolida todos os IDs com mesmo nome. */
 export function crmCommercialSellerMatchFilters(
   externalSellerId: number | null,
-  responsible: string | null
-): { externalSellerId: number | null; responsible: string | null } {
+  responsible: string | null,
+  sellerIdentityKey?: string | null
+): {
+  externalSellerId: number | null;
+  responsible: string | null;
+  sellerIdentityKey: string | null;
+} {
+  if (sellerIdentityKey?.trim()) {
+    return { externalSellerId: null, responsible: null, sellerIdentityKey: sellerIdentityKey.trim() };
+  }
   if (externalSellerId !== null) {
-    return { externalSellerId, responsible: null };
+    return { externalSellerId, responsible: null, sellerIdentityKey: null };
   }
   const resp = responsible?.trim() || null;
-  return { externalSellerId: null, responsible: resp };
+  return {
+    externalSellerId: null,
+    responsible: resp,
+    sellerIdentityKey: resp ? normalizeSellerIdentityName(resp) : null,
+  };
 }
 
 export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommercialAccessScope {
@@ -73,9 +89,11 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
   }
 
   const sellerLocked = dataScope === "own";
+  const ownName = dataScope === "own" ? responsible : null;
   const match = crmCommercialSellerMatchFilters(
     dataScope === "own" ? externalSellerId : null,
-    dataScope === "own" ? responsible : null
+    dataScope === "own" ? responsible : null,
+    ownName ? normalizeSellerIdentityName(ownName) : null
   );
 
   return {
@@ -86,6 +104,7 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
     sellerLocked,
     externalSellerId: match.externalSellerId,
     responsible: match.responsible,
+    sellerIdentityKey: match.sellerIdentityKey,
     sellerLinked,
     blockedReason,
     blockedMessage,
@@ -124,18 +143,21 @@ export type SellerDashboardQueryScope = {
   scopeMode: "all" | "own";
   externalSellerId: number | null;
   responsible: string | null;
+  sellerIdentityKey: string | null;
 };
 
 /**
  * Escopo efetivo do seller-dashboard.
- * Vendedor (own): ignora query e força vínculo do usuário — opção mais segura contra tampering.
+ * Vendedor (own): ignora query e força vínculo do usuário.
+ * Com nome no vínculo, usa sellerIdentityKey para incluir todos os IDs Nomus com mesmo nome normalizado.
  */
 export function resolveCrmSellerDashboardQueryScope(
   auth: AppAuthContext,
   queryExternalSellerId: unknown,
   queryResponsible: unknown,
   parseExternalSellerId: (raw: unknown) => number | null,
-  parseResponsible: (raw: unknown) => string | null
+  parseResponsible: (raw: unknown) => string | null,
+  querySellerIdentityKey?: unknown
 ): CrmCommercialAccessScopeResult & { sellerScope?: SellerDashboardQueryScope } {
   const base = resolveCrmCommercialAccessScope(auth);
 
@@ -155,12 +177,16 @@ export function resolveCrmSellerDashboardQueryScope(
   if (hasPermission(auth, "crm.seller.all")) {
     const externalSellerId = parseExternalSellerId(queryExternalSellerId);
     const responsible = parseResponsible(queryResponsible);
+    const sellerIdentityKey =
+      typeof querySellerIdentityKey === "string" && querySellerIdentityKey.trim()
+        ? normalizeSellerIdentityName(querySellerIdentityKey)
+        : null;
     return {
       ok: true,
       scope: base,
       sellerScope: {
         scopeMode: "all",
-        ...crmCommercialSellerMatchFilters(externalSellerId, responsible),
+        ...crmCommercialSellerMatchFilters(externalSellerId, responsible, sellerIdentityKey),
       },
     };
   }
@@ -176,13 +202,19 @@ export function resolveCrmSellerDashboardQueryScope(
     };
   }
 
+  const ownName = auth.sellerResponsibleName?.trim() || null;
+  const ownMatch = crmCommercialSellerMatchFilters(
+    base.externalSellerId,
+    ownName,
+    ownName ? normalizeSellerIdentityName(ownName) : null
+  );
+
   return {
     ok: true,
     scope: base,
     sellerScope: {
       scopeMode: "own",
-      externalSellerId: base.externalSellerId,
-      responsible: base.responsible,
+      ...ownMatch,
     },
   };
 }
@@ -191,35 +223,29 @@ export function resolveCrmSellerDashboardQueryScope(
 export function buildCrmSalesOrderSellerMatchSql(
   alias: string,
   externalSellerId: number | null,
-  responsible: string | null
+  responsible: string | null,
+  sellerIdentityKey?: string | null
 ): Prisma.Sql {
-  const col = (field: string) => Prisma.raw(`${alias}."${field}"`);
-  if (externalSellerId !== null && responsible !== null) {
-    return Prisma.sql`(
-      ${col("externalSellerId")} = ${externalSellerId}
-      OR (
-        ${col("externalSellerId")} IS NULL
-        AND ${col("responsible")} IS NOT NULL
-        AND LOWER(TRIM(${col("responsible")})) = LOWER(TRIM(${responsible}))
-      )
-    )`;
-  }
-  if (externalSellerId !== null) {
-    return Prisma.sql`${col("externalSellerId")} = ${externalSellerId}`;
-  }
-  if (responsible !== null) {
-    return Prisma.sql`LOWER(TRIM(${col("responsible")})) = LOWER(TRIM(${responsible}))`;
-  }
-  return Prisma.sql`TRUE`;
+  return buildCrmSellerFilterSql(alias, {
+    externalSellerId,
+    responsible,
+    sellerIdentityKey: sellerIdentityKey ?? null,
+  });
 }
 
 /** Cliente na carteira do vendedor (pelo menos um SalesOrder válido). */
 export function buildCrmSellerCustomerExistsSql(
   customerAlias: string,
   externalSellerId: number | null,
-  responsible: string | null
+  responsible: string | null,
+  sellerIdentityKey?: string | null
 ): Prisma.Sql {
-  const sellerMatch = buildCrmSalesOrderSellerMatchSql("so", externalSellerId, responsible);
+  const sellerMatch = buildCrmSalesOrderSellerMatchSql(
+    "so",
+    externalSellerId,
+    responsible,
+    sellerIdentityKey
+  );
   return Prisma.sql`
     EXISTS (
       SELECT 1
@@ -243,7 +269,12 @@ export async function isCustomerInCrmCommercialScope(
       SELECT 1::int AS ok
       FROM "Customer" c
       WHERE c."id" = ${customerId}::uuid
-        AND ${buildCrmSellerCustomerExistsSql("c", scope.externalSellerId, scope.responsible)}
+        AND ${buildCrmSellerCustomerExistsSql(
+          "c",
+          scope.externalSellerId,
+          scope.responsible,
+          scope.sellerIdentityKey
+        )}
       LIMIT 1
     `
   );

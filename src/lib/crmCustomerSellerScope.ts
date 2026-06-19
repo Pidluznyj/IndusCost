@@ -1,16 +1,24 @@
 import type { Prisma } from "@prisma/client";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope";
+import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
 
 const VALID_ORDER_STATUSES = ["CANCELLED", "ERROR"] as const;
 
 export function buildCrmSellerSalesOrderWhere(
   externalSellerId: number | null,
-  responsible: string | null
+  responsible: string | null,
+  sellerIdentityKey?: string | null
 ): Prisma.SalesOrderWhereInput {
   const statusFilter: Prisma.SalesOrderWhereInput = {
     status: { notIn: [...VALID_ORDER_STATUSES] },
   };
 
+  if (sellerIdentityKey?.trim()) {
+    return {
+      ...statusFilter,
+      responsible: { equals: sellerIdentityKey.trim(), mode: "insensitive" },
+    };
+  }
   if (externalSellerId !== null) {
     return { ...statusFilter, externalSellerId };
   }
@@ -29,7 +37,11 @@ export function buildCrmSellerCustomerPortfolioWhere(
   if (scope.dataScope !== "own") return undefined;
   return {
     salesOrders: {
-      some: buildCrmSellerSalesOrderWhere(scope.externalSellerId, scope.responsible),
+      some: buildCrmSellerSalesOrderWhere(
+        scope.externalSellerId,
+        scope.responsible,
+        scope.sellerIdentityKey
+      ),
     },
   };
 }
@@ -39,6 +51,10 @@ export function salesOrderMatchesCrmSellerScope(
   scope: CrmCommercialAccessScope
 ): boolean {
   if (scope.dataScope !== "own") return true;
+  if (scope.sellerIdentityKey) {
+    const rowKey = normalizeSellerIdentityName(order.responsible ?? "");
+    return rowKey === scope.sellerIdentityKey;
+  }
   if (scope.externalSellerId !== null) {
     return order.externalSellerId === scope.externalSellerId;
   }

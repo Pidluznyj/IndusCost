@@ -9,6 +9,14 @@ import {
   sellerDashIso,
   sellerDashToNumber,
 } from "@/src/lib/crmSellerDashboard";
+import {
+  buildRawSellerKeyFromRow,
+  consolidateSellerRowFragments,
+  consolidatedIdentityMatchesUser,
+  consolidatedOptionToSellerOption,
+  normalizeSellerIdentityName,
+} from "@/src/lib/crmSellerIdentityConsolidation";
+import { buildCrmSellerFilterSql } from "@/src/lib/crmSellerMatchSql";
 
 const LIST_LIMIT = 20;
 const DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -17,8 +25,14 @@ export type SellerDashboardRequest = {
   scopeMode: "all" | "own";
   externalSellerId: number | null;
   responsible: string | null;
+  sellerIdentityKey: string | null;
   dateFrom: string | null;
   dateTo: string | null;
+  /** Escopo own: usuário vinculado (para filtrar opções consolidadas). */
+  linkedUser?: {
+    externalSellerId: number | null;
+    sellerResponsibleName: string | null;
+  } | null;
 };
 
 export class SellerDashboardBadRequest extends Error {
@@ -68,6 +82,9 @@ export async function buildCrmSellerDashboardResponse(
 
   const filterExternalSellerId = input.externalSellerId;
   const filterResponsible = input.responsible;
+  const filterSellerIdentityKey =
+    input.sellerIdentityKey?.trim() ||
+    (filterResponsible?.trim() ? normalizeSellerIdentityName(filterResponsible) : null);
   const sellerScopeMode = input.scopeMode;
   const nowMs = now.getTime();
 
@@ -93,28 +110,12 @@ export async function buildCrmSellerDashboardResponse(
     )
   `;
 
-  const buildSellerMatchSql = (
-    externalSellerId: number | null,
-    responsible: string | null
-  ) => {
-    if (externalSellerId !== null && responsible !== null) {
-      return Prisma.sql`(
-        so."externalSellerId" = ${externalSellerId}
-        OR (
-          so."externalSellerId" IS NULL
-          AND so."responsible" IS NOT NULL
-          AND LOWER(TRIM(so."responsible")) = LOWER(TRIM(${responsible}))
-        )
-      )`;
-    }
-    if (externalSellerId !== null) {
-      return Prisma.sql`so."externalSellerId" = ${externalSellerId}`;
-    }
-    if (responsible !== null) {
-      return Prisma.sql`LOWER(TRIM(so."responsible")) = LOWER(TRIM(${responsible}))`;
-    }
-    return Prisma.sql`TRUE`;
-  };
+  const buildSellerMatchSql = () =>
+    buildCrmSellerFilterSql("so", {
+      externalSellerId: filterExternalSellerId,
+      responsible: filterResponsible,
+      sellerIdentityKey: filterSellerIdentityKey,
+    });
 
   const sellerKeyExprSql = Prisma.sql`
     CASE
@@ -176,7 +177,7 @@ export async function buildCrmSellerDashboardResponse(
   const soValidMetricsSql = Prisma.sql`so.status::text NOT IN ('CANCELLED', 'ERROR')`;
   const soValidOrdersScopeSql = Prisma.sql`${soOrdersScopeSql} AND ${soValidMetricsSql}`;
   const soOpenPortfolioScopeSql = Prisma.sql`${soValidOrdersScopeSql} AND NOT ${orderIsInvoicedSql("so")}`;
-  const soSellerMatch = buildSellerMatchSql(filterExternalSellerId, filterResponsible);
+  const soSellerMatch = buildSellerMatchSql();
 
   const [
     sellerOptionsRows,
@@ -423,20 +424,21 @@ export async function buildCrmSellerDashboardResponse(
   const ordersValue = sellerDashToNumber(summary?.orders_value);
   const topProduct = topProductRows[0];
 
-  const sellerRowInScope = (row: {
-    external_seller_id: number | null;
-    responsible: string | null;
-  }) => {
-    if (sellerScopeMode !== "own") return true;
-    if (filterExternalSellerId !== null) {
-      return row.external_seller_id === filterExternalSellerId;
-    }
-    if (filterResponsible) {
-      const rowName = (row.responsible ?? "").trim().toLowerCase();
-      return rowName === filterResponsible.trim().toLowerCase();
-    }
-    return false;
-  };
+  const consolidatedOptions = consolidateSellerRowFragments(sellerOptionsRows);
+  const scopedConsolidated =
+    sellerScopeMode === "own" && input.linkedUser
+      ? consolidatedOptions.filter((opt) =>
+          consolidatedIdentityMatchesUser(opt, input.linkedUser!)
+        )
+      : consolidatedOptions;
+
+  const consolidatedBySeller = consolidateSellerRowFragments(
+    bySellerRows.map((row) => ({
+      external_seller_id: row.external_seller_id,
+      responsible: row.responsible,
+      orders_count: row.orders_count,
+    }))
+  );
 
   const mapDeliveryDays = (expected: Date | null) => {
     if (!expected) {
@@ -458,14 +460,11 @@ export async function buildCrmSellerDashboardResponse(
     filters: {
       externalSellerId: filterExternalSellerId,
       responsible: filterResponsible,
+      sellerIdentityKey: filterSellerIdentityKey,
       dateFrom: filterDateFrom,
       dateTo: filterDateTo,
     },
-    sellerOptions: sellerOptionsRows.filter(sellerRowInScope).map((row) => ({
-      externalSellerId: row.external_seller_id,
-      responsible: row.responsible ?? null,
-      ordersCount: row.orders_count,
-    })),
+    sellerOptions: scopedConsolidated.map(consolidatedOptionToSellerOption),
     summary: {
       ordersCount,
       ordersValue,
@@ -487,16 +486,29 @@ export async function buildCrmSellerDashboardResponse(
         : null,
       ordersWithoutLinkedProposalCount: summary?.orders_without_linked_proposal_count ?? 0,
     },
-    bySeller: bySellerRows.filter(sellerRowInScope).map((row) => ({
-      externalSellerId: row.external_seller_id,
-      responsible: row.responsible ?? null,
-      ordersCount: row.orders_count,
-      ordersValue: sellerDashToNumber(row.orders_value),
-      invoicedOrdersCount: row.invoiced_orders_count,
-      invoicedOrdersValue: sellerDashToNumber(row.invoiced_orders_value),
-      openOrdersCount: row.open_orders_count,
-      openOrdersValue: sellerDashToNumber(row.open_orders_value),
-    })),
+    bySeller: consolidatedBySeller.map((opt) => {
+      const rows = bySellerRows.filter((row) =>
+        opt.sourceSellerKeys.includes(
+          buildRawSellerKeyFromRow(row.external_seller_id, row.responsible)
+        )
+      );
+      return {
+        displayName: opt.displayName,
+        sellerIdentityKey: opt.sellerIdentityKey,
+        externalSellerId: opt.externalSellerId,
+        externalSellerIds: opt.externalSellerIds,
+        responsible: opt.responsible,
+        ordersCount: opt.ordersCount,
+        ordersValue: rows.reduce((sum, r) => sum + sellerDashToNumber(r.orders_value), 0),
+        invoicedOrdersCount: rows.reduce((sum, r) => sum + (r.invoiced_orders_count ?? 0), 0),
+        invoicedOrdersValue: rows.reduce(
+          (sum, r) => sum + sellerDashToNumber(r.invoiced_orders_value),
+          0
+        ),
+        openOrdersCount: rows.reduce((sum, r) => sum + (r.open_orders_count ?? 0), 0),
+        openOrdersValue: rows.reduce((sum, r) => sum + sellerDashToNumber(r.open_orders_value), 0),
+      };
+    }),
     openPortfolioOrders: openPortfolioRows.map((row) => {
       const delivery = mapDeliveryDays(row.expected_delivery_date);
       return {
