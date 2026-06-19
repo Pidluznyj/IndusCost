@@ -16,7 +16,10 @@ import {
 } from "./financeNomusArReportFreshness.js";
 import { isFinanceArGhostTitle, isFinanceInternalGroupPerson } from "./financeInternalGroupExclusions.js";
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
-import { buildFinanceArHorizonSummary } from "./financeHorizonAggregation.js";
+import {
+  buildAccountsReceivableOpenHorizon,
+  type AccountsReceivableOpenHorizon,
+} from "./financeAccountsReceivableHorizon.js";
 
 export type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 
@@ -663,7 +666,8 @@ export function buildFinanceAccountsReceivableDashboard(
   rows: FinanceArDashboardRow[],
   filters: FinanceArDashboardFilters = { status: "all" },
   referenceDate: Date = new Date(),
-  syncCutoff?: NomusArReportSyncCutoff | null
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  options?: { horizonSourceRows?: FinanceArDashboardRow[] }
 ) {
   const filteredRows = filterFinanceArManagementReportRows(
     rows,
@@ -1141,6 +1145,12 @@ export function buildFinanceAccountsReceivableDashboard(
       ignoredInternalGroupPayables: 0,
       ignoredPurchaseOrderAgendaPayables: 0,
     },
-    financialHorizon: buildFinanceArHorizonSummary(rows, filters, referenceDate, syncCutoff),
+    financialHorizon: buildAccountsReceivableOpenHorizon(
+      options?.horizonSourceRows ?? rows,
+      referenceDate,
+      syncCutoff
+    ),
   };
 }
+
+export type { AccountsReceivableOpenHorizon };

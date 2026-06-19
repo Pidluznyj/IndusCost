@@ -118,7 +118,7 @@ import {
   FINANCE_KPI_AR_TOTAL_RECEIVABLE,
 } from "@/src/lib/financeKpiTooltips";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
-import { FinanceHorizonSection } from "@/src/components/finance/shared/FinanceHorizonSection";
+import { FinanceArOpenHorizonSection } from "@/src/components/finance/FinanceArOpenHorizonSection";
 
 /* ─────────────────────────────────────────────────────────────────
    ACTION CENTER — deriva de criticalTitles + dataQualitySummary
@@ -964,11 +964,7 @@ export function FinanceAccountsReceivablePage() {
         </div>
       </section>
 
-      <FinanceHorizonSection
-        summary={data?.financialHorizon}
-        variant="ar"
-        loading={loading}
-      />
+      <FinanceArOpenHorizonSection horizon={data?.financialHorizon} loading={loading} />
 
       {/* ─── CHARTS ─── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

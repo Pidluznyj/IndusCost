@@ -74,6 +74,11 @@ export async function loadFinanceArManagementRowsFromPrisma(
 }
 
 export {
+  buildFinanceArPrismaWhereForOpenHorizon,
+  loadFinanceArOpenHorizonRowsFromPrisma,
+} from "./financeAccountsReceivableHorizon.js";
+
+export {
   buildNomusArReportSyncCutoff,
   isFinanceArExcludedFromReports,
   mergeFinanceArPrismaWhereWithSyncCutoff,

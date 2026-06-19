@@ -1,7 +1,7 @@
 /** Tipos do payload GET /api/finance/accounts-receivable/dashboard */
 
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
-import type { FinanceHorizonSummary } from "./financeHorizonAggregation.js";
+import type { AccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 import {
   DEFAULT_FINANCE_AR_OVERDUE_UI_FILTERS,
   type FinanceArOverdueUiFilters,
@@ -183,7 +183,7 @@ export type FinanceArDashboardPayload = {
   dataQualityAlerts: FinanceArDataQualityAlerts;
   dataQualitySummary: FinanceArDataQualityAlertItem[];
   dataSanitization: FinanceDataSanitization;
-  financialHorizon: FinanceHorizonSummary;
+  financialHorizon: AccountsReceivableOpenHorizon;
 };
 
 export type FinanceArUiFilters = {

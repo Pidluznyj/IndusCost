@@ -12,6 +12,7 @@ import {
 } from "@/src/lib/financeAccountsReceivableExport.js";
 import { financeArExportFilename } from "@/src/lib/financeAccountsReceivableFormat.js";
 import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
+import { loadFinanceArOpenHorizonRowsFromPrisma } from "@/src/lib/financeAccountsReceivableHorizon.js";
 import {
   buildFinanceArTitlesPayload,
   parseFinanceArTitlesQuery,
@@ -88,8 +89,15 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
 
       const filters = parseFinanceArFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
+      const referenceDate = new Date();
       const { rows, syncCutoff } = await loadFinanceArRows(filters);
-      const payload = buildFinanceAccountsReceivableDashboard(rows, filters, new Date(), syncCutoff);
+      const { rows: horizonSourceRows } = await loadFinanceArOpenHorizonRowsFromPrisma(
+        prisma,
+        referenceDate
+      );
+      const payload = buildFinanceAccountsReceivableDashboard(rows, filters, referenceDate, syncCutoff, {
+        horizonSourceRows,
+      });
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/dashboard", error);

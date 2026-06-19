@@ -221,14 +221,14 @@ describe("financeHorizonAggregation Billing", () => {
 });
 
 describe("financeHorizonUx", () => {
-  it("páginas financeiras exibem seção de horizonte com FinanceKpiCard", () => {
-    for (const file of [
-      "FinanceAccountsPayablePage.tsx",
-      "FinanceAccountsReceivablePage.tsx",
-      "FinanceBillingPage.tsx",
-    ]) {
+  it("páginas financeiras exibem seção de horizonte", () => {
+    for (const [file, pattern] of [
+      ["FinanceAccountsPayablePage.tsx", /FinanceHorizonSection/],
+      ["FinanceAccountsReceivablePage.tsx", /FinanceArOpenHorizonSection/],
+      ["FinanceBillingPage.tsx", /FinanceHorizonSection/],
+    ] as const) {
       const src = readFileSync(join(process.cwd(), "src", "components", "finance", file), "utf8");
-      assert.match(src, /FinanceHorizonSection/);
+      assert.match(src, pattern);
       assert.match(src, /financialHorizon/);
     }
   });
