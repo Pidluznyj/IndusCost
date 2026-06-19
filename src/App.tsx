@@ -23,6 +23,7 @@ import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
+import { ProjectIntakeFormPage } from "./components/projects/ProjectIntakeFormPage";
 import { FleetModule } from "./components/FleetModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
 import { FleetPublicReservationPage } from "./components/fleet/FleetPublicReservationPage";
@@ -280,6 +281,10 @@ export default function App() {
       <Route path="/reservar-carro" element={<FleetPublicReservationShortLinkPage />} />
       <Route path="/r/:sub" element={<FleetPublicReservationShortLinkPage />} />
       <Route element={<RequireAuth />}>
+      <Route path="/projects/intake-form" element={<ProjectIntakeFormPage />} />
+      <Route path="/projects/intake-form/print" element={<ProjectIntakeFormPage />} />
+      <Route path="/projects/:projectId/intake-form" element={<ProjectIntakeFormPage />} />
+      <Route path="/projects/:projectId/intake-form/print" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/:projectId/report" element={<ProjectExecutiveReportPage />} />
       <Route element={<Layout />}>
         <Route

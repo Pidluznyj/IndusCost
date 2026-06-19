@@ -1,0 +1,230 @@
+/* Impressão — Ficha de Abertura de Projeto (/projects/.../intake-form) */
+
+.project-intake-form-route-page {
+  color: #0f172a;
+}
+
+.project-intake-form-scroll {
+  background: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.08);
+  padding: 1.5rem;
+}
+
+.project-intake-form-document {
+  font-size: 10pt;
+  line-height: 1.35;
+}
+
+.project-intake-form-header {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.project-intake-form-brand-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.project-intake-form-brand-subtitle {
+  margin-top: 0.25rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.project-intake-form-brand-meta {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.project-intake-form-header-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin-top: 1rem;
+}
+
+.project-intake-form-header-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.project-intake-form-section {
+  margin-bottom: 1rem;
+}
+
+.project-intake-form-section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0 0 0.6rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.project-intake-form-subtitle {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.project-intake-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 1rem;
+}
+
+.project-intake-form-field-full {
+  grid-column: 1 / -1;
+}
+
+.project-intake-form-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.project-intake-form-required {
+  color: #b45309;
+}
+
+.project-intake-form-value {
+  min-height: 1.35rem;
+  margin-top: 0.15rem;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 0.1rem;
+  white-space: pre-wrap;
+}
+
+.project-intake-form-table-wrap {
+  margin-top: 0.75rem;
+}
+
+.project-intake-form-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8pt;
+}
+
+.project-intake-form-table th,
+.project-intake-form-table td {
+  border: 1px solid #cbd5e1;
+  padding: 0.35rem 0.4rem;
+  vertical-align: top;
+}
+
+.project-intake-form-table th {
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.project-intake-form-signature-cell {
+  min-height: 2rem;
+}
+
+.project-intake-form-alert {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.project-intake-form-help {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.project-intake-form-pending-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+}
+
+.project-intake-form-footer {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.75rem;
+  color: #64748b;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.project-intake-form-route {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.project-intake-form-route,
+  body.project-intake-form-route * {
+    visibility: visible !important;
+  }
+
+  body.project-intake-form-route .project-executive-report-print-no-print,
+  .project-executive-report-print-no-print {
+    display: none !important;
+  }
+
+  body.project-intake-form-route #root > * > aside,
+  body.project-intake-form-route #root > * > header,
+  body.project-intake-form-route nav,
+  body.project-intake-form-route .project-executive-report-print-no-print {
+    display: none !important;
+  }
+
+  .project-intake-form-route-page,
+  .project-intake-form-scroll,
+  .project-intake-form-document {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  .project-intake-form-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .page-break-before {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .project-intake-form-table thead {
+    display: table-header-group !important;
+  }
+
+  .project-intake-form-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

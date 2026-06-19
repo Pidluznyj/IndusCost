@@ -11,6 +11,7 @@ import "./material-demand-print.css";
 import "./proposal-print.css";
 import "./cnpj-intelligence-print.css";
 import "./project-executive-report-print.css";
+import "./project-intake-form-print.css";
 import "./components/finance/executive-report/finance-executive-report.css";
 import "./components/finance/executive-report/finance-executive-report-print.css";
 

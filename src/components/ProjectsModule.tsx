@@ -44,6 +44,8 @@ import { PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION } from "@/src/lib/projectsAd
 import { ProjectEngineeringItemModal } from "@/src/components/projects/ProjectEngineeringItemModal";
 import { ProjectGuidedCostsTab } from "@/src/components/projects/ProjectGuidedCostsTab";
 import { ProjectExecutiveReportButton } from "@/src/components/projects/ProjectExecutiveReportButton";
+import { ProjectIntakeFormButton } from "@/src/components/projects/ProjectIntakeFormButton";
+import { PROJECT_INTAKE_FORM_BLANK_PATH, PROJECT_INTAKE_FORM_BLANK_BUTTON_LABEL } from "@/src/lib/projectsIntakeForm";
 import { ProjectGuidedMoldModal } from "@/src/components/projects/ProjectGuidedMoldModal";
 import { ProjectHistory } from "@/src/components/projects/ProjectHistory";
 import { ProjectHomeAssistant } from "@/src/components/projects/ProjectHomeAssistant";
@@ -316,6 +318,13 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
             Novo projeto
           </button>
         ) : null}
+        <Link
+          to={PROJECT_INTAKE_FORM_BLANK_PATH}
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-muted"
+        >
+          <FolderKanban className="h-4 w-4" />
+          {PROJECT_INTAKE_FORM_BLANK_BUTTON_LABEL}
+        </Link>
       </div>
 
       {error ? (
@@ -810,6 +819,7 @@ function ProjectDetailView({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ProjectIntakeFormButton projectId={projectId} />
           <ProjectExecutiveReportButton projectId={projectId} />
           <button
             type="button"
@@ -919,7 +929,7 @@ function ProjectDetailView({
         />
       ) : null}
 
-      {tab === "documents" ? <ProjectDocuments canManage={canManage} /> : null}
+      {tab === "documents" ? <ProjectDocuments canManage={canManage} projectId={projectId} /> : null}
 
       {tab === "history" ? (
         <ProjectHistory

@@ -317,6 +317,29 @@ export const PROJECTS_MODULE_FEATURE_AUDIT: ProjectsModuleFeatureAudit[] = [
     recommendedNextStep: "Aplicar projects.approve em workflow de status.",
   },
   {
+    id: "intake-form",
+    name: "Ficha de Abertura de Projeto",
+    category: "reporting",
+    status: "implemented",
+    files: [
+      "src/lib/projectsIntakeForm.ts",
+      "src/components/projects/ProjectIntakeFormDocument.tsx",
+      "src/components/projects/ProjectIntakeFormPage.tsx",
+      "src/components/projects/ProjectIntakeFormButton.tsx",
+      "src/project-intake-form-print.css",
+    ],
+    endpoints: ["GET /api/projects/:id"],
+    models: ["Project", "ProjectVersion", "ProjectSimulatedProduct", "ProjectStructureLine", "ProjectMold"],
+    description:
+      "Formulário imprimível em branco ou preenchido com dados do projeto para briefing técnico-comercial.",
+    limitations: [
+      "Formulário somente leitura/impressão — edição digital em versão futura.",
+      "Sem PDF server-side.",
+      "Anexos ainda não persistidos em model dedicado.",
+    ],
+    recommendedNextStep: "Formulário digital editável com checklist de pendências.",
+  },
+  {
     id: "executive-report",
     name: "Relatório executivo do projeto",
     category: "reporting",
