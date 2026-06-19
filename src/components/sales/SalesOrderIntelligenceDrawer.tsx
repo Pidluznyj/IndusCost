@@ -13,6 +13,7 @@ import {
   formatProductionBadge,
   formatSalesOrderDate,
   formatSalesOrderPercent,
+  formatInvoiceTimingLabel,
   INTELLIGENCE_DRAWER_TABS,
   ITEM_NOMUS_STATUS_LABELS,
   TIMELINE_STATUS_LABELS,
@@ -481,9 +482,54 @@ function TabPanel({
   }
 
   if (tab === "rule-audit") {
-    const { logisticStatus, logisticVsExecutive } = payload;
+    const { logisticStatus, logisticVsExecutive, managementCard } = payload;
     return (
       <div className="space-y-4" data-testid="sales-order-intelligence-rule-audit">
+        <div className="rounded-lg border border-border bg-card px-3 py-3">
+          <h3 className="text-xs font-bold uppercase text-muted-foreground">
+            Card gerencial (Gestão de Pedidos)
+          </h3>
+          <p className="text-sm font-semibold mt-1">{managementCard.cardLabel}</p>
+          <p className="text-xs text-muted-foreground mt-1">{managementCard.ruleHint}</p>
+          <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div>
+              <dt className="text-muted-foreground">Prazo previsto</dt>
+              <dd className="font-medium">{formatSalesOrderDate(managementCard.expectedDeliveryDate)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Data da NF</dt>
+              <dd className="font-medium">{formatSalesOrderDate(managementCard.firstInvoiceDate)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">NF vs prazo</dt>
+              <dd className="font-medium">{formatInvoiceTimingLabel(managementCard.invoiceTiming)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Status raw Nomus</dt>
+              <dd className="font-medium">
+                {managementCard.statusNomusRaw != null && managementCard.statusNomusRaw !== ""
+                  ? String(managementCard.statusNomusRaw)
+                  : "Não informado"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Itens atendidos</dt>
+              <dd className="font-medium">{managementCard.itemsFulfilled}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Itens cancelados</dt>
+              <dd className="font-medium">{managementCard.itemsCancelled}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Itens com corte</dt>
+              <dd className="font-medium">{managementCard.itemsWithCut}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Label operacional</dt>
+              <dd className="font-medium">{managementCard.executiveStatusLabel}</dd>
+            </div>
+          </dl>
+        </div>
         <div className="rounded-lg border border-border bg-card px-3 py-3">
           <h3 className="text-xs font-bold uppercase text-muted-foreground">
             Status logístico (regra BI adaptada)

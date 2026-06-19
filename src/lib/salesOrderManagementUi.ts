@@ -205,6 +205,31 @@ export const MANAGEMENT_KPI_CARDS = [] as const;
 /** @deprecated Use MANAGEMENT_STATUS_CARDS from salesOrderManagementStatus */
 export const MANAGEMENT_KPI_CARD_HINTS: Record<string, string> = {};
 
+export function formatInvoiceTimingLabel(
+  timing:
+    | "before_due_date"
+    | "on_due_date"
+    | "after_due_date"
+    | "no_due_date"
+    | "not_invoiced"
+    | "unknown"
+): string {
+  switch (timing) {
+    case "before_due_date":
+      return "NF antes do prazo";
+    case "on_due_date":
+      return "NF no prazo";
+    case "after_due_date":
+      return "NF após o prazo";
+    case "no_due_date":
+      return "Sem prazo para comparar";
+    case "not_invoiced":
+      return "Sem NF";
+    default:
+      return "Não determinado";
+  }
+}
+
 export const INTELLIGENCE_DRAWER_TABS = [
   { id: "summary", label: "Resumo" },
   { id: "items", label: "Itens" },

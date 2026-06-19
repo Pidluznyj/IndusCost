@@ -143,7 +143,7 @@ describe("PD 02130 real raw sanitizado", () => {
     };
     const { cards } = buildManagementRowsFromOrders([order], {}, REF);
     assert.equal(cards.overdueWithoutInvoice, 0);
-    assert.equal(cards.awaitingInProgress, 0);
+    assert.equal(cards.reviewUnknown, 0);
     assert.equal(cards.cancelledOrReturned, 1);
   });
 
@@ -174,7 +174,7 @@ describe("PD 02130 real raw sanitizado", () => {
     const { cards } = buildManagementRowsFromOrders([cancelled, open], {}, REF);
     assert.equal(cards.cancelledOrReturned, 1);
     assert.equal(cards.overdueWithoutInvoice, 1);
-    assert.equal(cards.awaitingInProgress, 0);
+    assert.equal(cards.reviewUnknown, 0);
   });
 
   it("parcialmente cancelado permanece misto", () => {

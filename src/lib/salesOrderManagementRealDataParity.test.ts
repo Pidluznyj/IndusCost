@@ -126,7 +126,7 @@ describe("salesOrderManagementRealDataParity", () => {
     assert.equal(rows.length, 4);
     assert.ok(summary.totalOrdersCount > 0);
     assert.ok(summary.validPortfolioCount > 0);
-    assert.ok(cards.awaitingInProgress >= 1);
+    assert.ok(cards.reviewUnknown >= 1);
     const semNf = rows.filter((r) => !r.hasInvoice);
     assert.ok(semNf.length >= 1);
     assert.ok(rows.every((r) => Number.isFinite(r.totalNetValue)));

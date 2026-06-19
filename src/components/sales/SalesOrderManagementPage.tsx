@@ -7,8 +7,6 @@ import {
   Loader2,
   Package,
   Receipt,
-  ShoppingBag,
-  Sparkles,
 } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency } from "@/src/lib/utils";
@@ -236,9 +234,7 @@ export function SalesOrderManagementPage() {
     invoicedOnTime: Receipt,
     invoicedLate: Clock,
     partialOrCut: Package,
-    delivered: Sparkles,
     cancelledOrReturned: AlertTriangle,
-    awaitingInProgress: ShoppingBag,
     reviewUnknown: FileText,
   };
 
@@ -255,8 +251,11 @@ export function SalesOrderManagementPage() {
   const displayDashboardCards = useMemo((): ManagementDashboardCard[] => {
     if (dashboardCards.length > 0) return dashboardCards;
     if (loading || loadError) return [];
-    return buildManagementDashboardCardsFromAggregates(cards, cardAmounts);
-  }, [cardAmounts, cards, dashboardCards, loadError, loading]);
+    return buildManagementDashboardCardsFromAggregates(cards, cardAmounts, {
+      totalOrders: managementSummary?.totalOrdersCount,
+      totalNetValue: managementSummary?.totalNetValue,
+    });
+  }, [cardAmounts, cards, dashboardCards, loadError, loading, managementSummary]);
 
   const validPortfolioCount = managementSummary?.validPortfolioCount ?? null;
   const validPortfolioValue = managementSummary?.validPortfolioValue ?? null;
@@ -733,7 +732,7 @@ export function SalesOrderManagementPage() {
                         className={badgeClass("status")}
                         title={row.executiveStatusLabel}
                       >
-                        {row.executiveStatusLabel}
+                        {row.managementCardLabel ?? row.executiveStatusLabel}
                       </span>
                     </td>
                     <td className="p-3">

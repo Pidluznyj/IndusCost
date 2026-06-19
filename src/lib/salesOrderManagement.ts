@@ -13,7 +13,6 @@ import {
   buildManagementDashboardCards,
   buildManagementStatusCardMetrics,
   isManagementStatusCardId,
-  resolveManagementStatusCardId,
   type ManagementStatusCardId,
   type ManagementDashboardCard,
 } from "./salesOrderManagementStatus.js";
@@ -179,7 +178,7 @@ function matchesManagementFilters(
   if (filters.noProductionOrder === true && lifecycle.hasLinkedProductionOrder) return false;
   if (
     filters.managementStatus &&
-    resolveManagementStatusCardId(row.executiveStatusLabel) !== filters.managementStatus
+    row.managementStatusCardId !== filters.managementStatus
   ) {
     return false;
   }
@@ -204,13 +203,21 @@ export function sortManagementRowsByRisk(rows: SalesOrderManagementRow[]): Sales
 }
 
 export function buildSalesOrderManagementCards(
-  rows: Array<Pick<SalesOrderManagementRow, "executiveStatusLabel" | "totalNetValue">>
+  rows: Array<
+    Pick<SalesOrderManagementRow, "executiveStatusLabel" | "totalNetValue"> & {
+      managementStatusCardId?: SalesOrderManagementRow["managementStatusCardId"];
+    }
+  >
 ): SalesOrderManagementCards {
   return buildManagementStatusCardMetrics(rows).counts;
 }
 
 export function buildSalesOrderManagementCardAmounts(
-  rows: Array<Pick<SalesOrderManagementRow, "executiveStatusLabel" | "totalNetValue">>
+  rows: Array<
+    Pick<SalesOrderManagementRow, "executiveStatusLabel" | "totalNetValue"> & {
+      managementStatusCardId?: SalesOrderManagementRow["managementStatusCardId"];
+    }
+  >
 ): SalesOrderManagementCardAmounts {
   return buildManagementStatusCardMetrics(rows).amounts;
 }

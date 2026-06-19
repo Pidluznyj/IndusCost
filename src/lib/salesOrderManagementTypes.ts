@@ -77,9 +77,9 @@ export function cardsToManagementSummary(
     invoicedLateCount: cards.invoicedLate,
     partiallyFulfilledCount: cards.partialOrCut,
     fulfilledWithCutCount: cards.partialOrCut,
-    deliveredCount: cards.delivered,
+    deliveredCount: 0,
     cancelledOrReturnedCount: cards.cancelledOrReturned,
-    awaitingInProgressCount: cards.awaitingInProgress,
+    awaitingInProgressCount: 0,
     reviewUnknownCount: cards.reviewUnknown,
   };
 }
@@ -90,9 +90,7 @@ function sumCardCounts(cards: SalesOrderManagementCards): number {
     cards.invoicedOnTime +
     cards.invoicedLate +
     cards.partialOrCut +
-    cards.delivered +
     cards.cancelledOrReturned +
-    cards.awaitingInProgress +
     cards.reviewUnknown
   );
 }
@@ -113,6 +111,10 @@ export type SalesOrderManagementRow = {
   responsible: string | null;
 
   executiveStatusLabel: string;
+  /** Card gerencial canônico (6 buckets). */
+  managementStatusCardId: ManagementStatusCardId;
+  /** Label executivo para coluna do grid. */
+  managementCardLabel: string;
   operationalStatus: SalesOrderOperationalStatus;
   billingStatus: SalesOrderBillingStatus;
   deadlineStatus: SalesOrderDeadlineStatus;

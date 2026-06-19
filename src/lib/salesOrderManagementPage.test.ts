@@ -46,7 +46,7 @@ describe("salesOrderManagementPage", () => {
   it("tabela mostra status gerencial", () => {
     const page = read("src/components/sales/SalesOrderManagementPage.tsx");
     assert.match(page, /Status gerencial/);
-    assert.match(page, /executiveStatusLabel/);
+    assert.match(page, /managementCardLabel/);
   });
 
   it("tabela mostra NF", () => {
@@ -104,7 +104,33 @@ describe("salesOrderManagementPage", () => {
     assert.match(ui, /rule-audit/);
     assert.match(drawer, /sales-order-intelligence-nomus-data/);
     assert.match(drawer, /sales-order-intelligence-rule-audit/);
+    assert.match(drawer, /Card gerencial/);
     assert.match(drawer, /Status logístico/);
+  });
+
+  it("UI contém os 7 cards gerenciais obrigatórios", () => {
+    const status = read("src/lib/salesOrderManagementStatus.ts");
+    const page = read("src/components/sales/SalesOrderManagementPage.tsx");
+    const required = [
+      "Total no filtro",
+      "Atrasados aguardando NF",
+      "Faturados no prazo",
+      "Faturados com atraso",
+      "Finalizados com corte",
+      "Canceladas / devolvidas",
+      "Revisar",
+    ];
+    for (const label of required) {
+      assert.match(status, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+    assert.match(page, /management-status-card-total/);
+    assert.match(page, /management-status-card-\$\{card\.key\}/);
+    assert.match(status, /overdueWithoutInvoice/);
+    assert.match(status, /invoicedOnTime/);
+    assert.match(status, /invoicedLate/);
+    assert.match(status, /partialOrCut/);
+    assert.match(status, /cancelledOrReturned/);
+    assert.match(status, /reviewUnknown/);
   });
 
   it("primeiro card é Total no filtro com quantidade e valor", () => {

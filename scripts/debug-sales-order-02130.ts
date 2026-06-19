@@ -290,7 +290,7 @@ async function main(): Promise<void> {
     console.log(
       `executiveStatusLabel: ${lifecycle.executiveStatusLabel}`,
       `\noverdueWithoutInvoice: ${cards.overdueWithoutInvoice}`,
-      `\nawaitingInProgress: ${cards.awaitingInProgress}`,
+      `\nreviewUnknown: ${cards.reviewUnknown}`,
       `\ncancelledOrReturned: ${cards.cancelledOrReturned}`
     );
   }

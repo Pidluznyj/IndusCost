@@ -35,6 +35,13 @@ import {
   compareLogisticToExecutiveStatus,
   type SalesOrderLogisticStatusResult,
 } from "./salesOrderLogisticStatus.js";
+import {
+  getManagementCardGridLabel,
+  getManagementStatusCardHint,
+  getManagementStatusCardLabel,
+  resolveManagementCardFromLifecycle,
+  type ManagementStatusCardId,
+} from "./salesOrderManagementStatus.js";
 
 export type { SalesOrderLogisticStatusResult } from "./salesOrderLogisticStatus.js";
 
@@ -181,6 +188,20 @@ export type SalesOrderIntelligencePayload = {
     warnings: string[];
     missingLinks: string[];
     sourceNotes: string[];
+  };
+  managementCard: {
+    cardId: ManagementStatusCardId;
+    cardLabel: string;
+    gridLabel: string;
+    ruleHint: string;
+    executiveStatusLabel: string;
+    expectedDeliveryDate?: string | null;
+    firstInvoiceDate?: string | null;
+    invoiceTiming: SalesOrderIntelligencePayload["invoicing"]["invoiceTiming"];
+    itemsFulfilled: number;
+    itemsCancelled: number;
+    itemsWithCut: number;
+    statusNomusRaw?: string | number | null;
   };
 };
 
@@ -595,6 +616,9 @@ export function buildSalesOrderIntelligencePayload(input: {
     lifecycle.executiveStatusLabel
   );
 
+  const managementCardId = resolveManagementCardFromLifecycle(lifecycle);
+  const invoiceTiming = resolveInvoiceTiming(lifecycle);
+
   return {
     order: {
       id: input.order.id,
@@ -636,6 +660,20 @@ export function buildSalesOrderIntelligencePayload(input: {
     audit,
     logisticStatus,
     logisticVsExecutive,
+    managementCard: {
+      cardId: managementCardId,
+      cardLabel: getManagementStatusCardLabel(managementCardId),
+      gridLabel: getManagementCardGridLabel(managementCardId),
+      ruleHint: getManagementStatusCardHint(managementCardId),
+      executiveStatusLabel: lifecycle.executiveStatusLabel,
+      expectedDeliveryDate: lifecycle.expectedDeliveryDate,
+      firstInvoiceDate: lifecycle.firstInvoiceDate,
+      invoiceTiming,
+      itemsFulfilled: lifecycle.itemsFullyFulfilled + lifecycle.itemsDelivered + lifecycle.itemsShipped,
+      itemsCancelled: lifecycle.itemsCancelled,
+      itemsWithCut: lifecycle.itemsFulfilledWithCut,
+      statusNomusRaw: orderAudit.statusNomusRaw,
+    },
     dataQuality: {
       warnings: [...new Set(warnings)],
       missingLinks,
@@ -705,6 +743,7 @@ export function mapLifecycleToManagementRow(
     lifecycle,
     referenceDate
   );
+  const managementStatusCardId = resolveManagementCardFromLifecycle(lifecycle);
 
   return {
     id: order.id,
@@ -720,6 +759,8 @@ export function mapLifecycleToManagementRow(
     companyName: order.companyIssuer ?? null,
     responsible: order.responsible,
     executiveStatusLabel: lifecycle.executiveStatusLabel,
+    managementStatusCardId,
+    managementCardLabel: getManagementCardGridLabel(managementStatusCardId),
     operationalStatus: lifecycle.operationalStatus,
     billingStatus: lifecycle.billingStatus,
     deadlineStatus: lifecycle.deadlineStatus,
