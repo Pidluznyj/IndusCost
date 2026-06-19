@@ -102,6 +102,17 @@ describe("salesOrderLifecycleStatus", () => {
     assert.equal(normalizeSalesOrderItemStatus(""), "unknown");
   });
 
+  it("mapeia código numérico Nomus 6 como cancelado", () => {
+    assert.equal(normalizeSalesOrderItemStatus(6), "cancelled");
+    assert.equal(normalizeSalesOrderItemStatus("6"), "cancelled");
+    assert.equal(normalizeSalesOrderItemNomusStatus(6), "cancelled");
+  });
+
+  it("código numérico desconhecido permanece unknown", () => {
+    assert.equal(normalizeSalesOrderItemStatus(99), "unknown");
+    assert.equal(normalizeSalesOrderItemStatus("42"), "unknown");
+  });
+
   it("pedido aguardando liberação", () => {
     const { lifecycle } = buildSalesOrderLifecycleSummary(
       baseOrder({ nomusRawResponse: rawItem("Aguardando liberação") })

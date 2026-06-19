@@ -535,13 +535,54 @@ const ITEM_STATUS_RULES: Array<{ match: RegExp; status: SalesOrderItemNomusStatu
   { match: /^entreg/, status: "delivered" },
 ];
 
+/**
+ * Códigos numéricos de `itensPedido[].status` no Nomus.
+ * Evidência em produção: PD 02130 com status=6 = Cancelado.
+ * TODO: mapear demais códigos quando houver enum/documentação oficial Nomus.
+ */
+export const NOMUS_SALES_ORDER_ITEM_STATUS_BY_CODE: Readonly<
+  Record<number, SalesOrderItemNomusStatus>
+> = {
+  6: "cancelled",
+};
+
+function parseNomusItemStatusCode(status: unknown): number | null {
+  if (typeof status === "number" && Number.isFinite(status)) return Math.trunc(status);
+  if (typeof status === "string") {
+    const trimmed = status.trim();
+    if (/^\d+$/.test(trimmed)) return Number.parseInt(trimmed, 10);
+  }
+  return null;
+}
+
+/** Mapeia código numérico Nomus → status normalizado; null se não mapeado. */
+export function normalizeNomusSalesOrderItemStatusCode(
+  status: unknown
+): SalesOrderItemNomusStatus | null {
+  const code = parseNomusItemStatusCode(status);
+  if (code == null) return null;
+  return NOMUS_SALES_ORDER_ITEM_STATUS_BY_CODE[code] ?? null;
+}
+
 export function normalizeSalesOrderItemNomusStatus(
-  originalStatus: string | null | undefined
+  originalStatus: unknown
 ): SalesOrderItemNomusStatus {
-  if (!originalStatus?.trim()) return "unknown";
-  const norm = normalizeText(originalStatus);
+  const fromCode = normalizeNomusSalesOrderItemStatusCode(originalStatus);
+  if (fromCode) return fromCode;
+
+  const text =
+    typeof originalStatus === "string"
+      ? originalStatus
+      : typeof originalStatus === "number" && Number.isFinite(originalStatus)
+        ? String(originalStatus)
+        : null;
+  if (!text?.trim()) return "unknown";
+  const norm = normalizeText(text);
   for (const rule of ITEM_STATUS_RULES) {
     if (rule.match.test(norm)) return rule.status;
+  }
+  if (parseNomusItemStatusCode(text) != null) {
+    return "unknown";
   }
   return "unknown";
 }

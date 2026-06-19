@@ -165,6 +165,8 @@ async function main(): Promise<void> {
     const rawItems = extractNomusRawItems(raw);
     console.log(`\n--- itensPedido extraídos: ${rawItems.length} ---`);
     rawItems.forEach((ri, idx) => {
+      const statusRaw = extractSalesOrderItemRawField(ri.raw, "status");
+      const normalizedFinal = normalizeSalesOrderItemNomusStatus(statusRaw ?? ri.status);
       console.log(`\n[item ${idx}]`);
       console.log(
         JSON.stringify(
@@ -181,8 +183,10 @@ async function main(): Promise<void> {
           2
         )
       );
+      console.log("status raw:", statusRaw);
       console.log("status aliases:", extractSalesOrderItemRawField(ri.raw, "status"));
       console.log("normalized:", normalizeSalesOrderItemNomusStatus(ri.status));
+      console.log("normalized status final:", normalizedFinal);
     });
 
     console.log("\n--- MATCH item DB ↔ raw ---");
@@ -282,6 +286,14 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(rows[0] ?? null, jsonReplacer, 2));
     console.log("\n--- CARDS ---");
     console.log(JSON.stringify(cards, jsonReplacer, 2));
+    console.log("\n--- RESUMO ESPERADO PÓS-FIX ---");
+    console.log(
+      `executiveStatusLabel: ${lifecycle.executiveStatusLabel}`,
+      `\nopenOrders: ${cards.openOrders}`,
+      `\noverdueWithoutInvoice: ${cards.overdueWithoutInvoice}`,
+      `\nwithoutProductionOrder: ${cards.withoutProductionOrder}`,
+      `\ncancelledOrReturned: ${cards.cancelledOrReturned}`
+    );
   }
 }
 

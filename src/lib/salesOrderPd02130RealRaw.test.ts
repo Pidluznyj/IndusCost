@@ -5,7 +5,8 @@ import { buildManagementRowsFromOrders } from "./salesOrderManagement.js";
 import {
   extractNomusItemStatusFromOrderRaw,
   extractNomusRawItems,
-  isSalesOrderItemCancelledByRawQuantity,
+  normalizeNomusSalesOrderItemStatusCode,
+  normalizeSalesOrderItemStatus,
   resolveSalesOrderItemNomusStatus,
 } from "./salesOrderNomusRaw.js";
 import {
@@ -14,6 +15,7 @@ import {
   formatProductionBadge,
 } from "./salesOrderManagementUi.js";
 import {
+  PD_02130_NESTED_STATUS_NOMUS_RAW,
   PD_02130_SANITIZED_DB_ITEM,
   PD_02130_SANITIZED_NOMUS_RAW,
   PD_02130_SANITIZED_ORDER,
@@ -22,17 +24,24 @@ import {
 const REF = new Date(2026, 5, 15);
 
 describe("PD 02130 real raw sanitizado", () => {
-  it("extrai status Cancelado de situacaoItemPedido aninhado", () => {
+  it("normalizeSalesOrderItemStatus(6) e (\"6\") retornam cancelled", () => {
+    assert.equal(normalizeSalesOrderItemStatus(6), "cancelled");
+    assert.equal(normalizeSalesOrderItemStatus("6"), "cancelled");
+    assert.equal(normalizeNomusSalesOrderItemStatusCode(6), "cancelled");
+    assert.equal(normalizeNomusSalesOrderItemStatusCode("6"), "cancelled");
+  });
+
+  it("extrai status numérico 6 de itensPedido[]", () => {
     const rawItems = extractNomusRawItems(PD_02130_SANITIZED_NOMUS_RAW);
     assert.equal(rawItems.length, 1);
-    assert.equal(rawItems[0]?.status, "Cancelado");
+    assert.equal(rawItems[0]?.status, "6");
     assert.equal(
       extractNomusItemStatusFromOrderRaw(
         PD_02130_SANITIZED_NOMUS_RAW,
         PD_02130_SANITIZED_DB_ITEM,
         { itemIndex: 0, totalDbItems: 1 }
       ),
-      "Cancelado"
+      "6"
     );
     assert.equal(
       resolveSalesOrderItemNomusStatus(
@@ -44,18 +53,43 @@ describe("PD 02130 real raw sanitizado", () => {
     );
   });
 
-  it("resolve codigo do produto em produto.codigo", () => {
-    const rawItems = extractNomusRawItems(PD_02130_SANITIZED_NOMUS_RAW);
-    assert.equal(rawItems[0]?.codigoProduto, "630.01AA");
-    assert.equal(rawItems[0]?.idProduto, 184726);
+  it("status numérico desconhecido permanece unknown com warning", () => {
+    const { lifecycle, items } = buildSalesOrderLifecycleSummary({
+      salesOrderId: "so-unknown-code",
+      salesOrderNumber: "PD UNK",
+      originalStatus: "SENT_TO_NOMUS",
+      issueDate: new Date(2026, 0, 1),
+      expectedDeliveryDate: new Date(2026, 5, 1),
+      referenceDate: REF,
+      nomusRawResponse: {
+        itensPedido: [{ idProduto: 1, status: 99, quantidade: 1 }],
+        nfes: [],
+      },
+      items: [
+        {
+          id: "i1",
+          externalProductId: 1,
+          skuSnapshot: "SKU",
+          productNameSnapshot: "Produto",
+          quantity: 1,
+        },
+      ],
+    });
+    assert.equal(items[0]?.normalizedStatus, "unknown");
+    assert.ok(lifecycle.riskFlags.includes("unknown_item_status"));
+    assert.ok(
+      lifecycle.dataQuality.warnings.some((w) => w.includes("Status de item não mapeado: 99"))
+    );
+    assert.equal(normalizeNomusSalesOrderItemStatusCode(99), null);
   });
 
-  it("quantidade cancelada total marca item como cancelado", () => {
-  const item = PD_02130_SANITIZED_NOMUS_RAW.itensPedido[0];
-    assert.ok(isSalesOrderItemCancelledByRawQuantity(item));
+  it("formato aninhado situacaoItemPedido continua cancelado", () => {
+    const rawItems = extractNomusRawItems(PD_02130_NESTED_STATUS_NOMUS_RAW);
+    assert.equal(rawItems[0]?.status, "Cancelado");
+    assert.equal(normalizeSalesOrderItemStatus(rawItems[0]?.status), "cancelled");
   });
 
-  it("lifecycle — PD 02130 não vira atrasado sem NF", () => {
+  it("lifecycle — PD 02130 com status 6 não vira atrasado sem NF", () => {
     const { lifecycle } = buildSalesOrderLifecycleSummary({
       salesOrderId: PD_02130_SANITIZED_ORDER.id,
       salesOrderNumber: PD_02130_SANITIZED_ORDER.orderCode,
@@ -70,8 +104,10 @@ describe("PD 02130 real raw sanitizado", () => {
     assert.equal(lifecycle.completionStatus, "cancelled");
     assert.equal(lifecycle.executiveStatusLabel, "Cancelado");
     assert.notEqual(lifecycle.deadlineStatus, "overdue");
+    assert.equal(lifecycle.itemsCancelled, 1);
     assert.ok(!lifecycle.riskFlags.includes("overdue_without_invoice"));
     assert.ok(!lifecycle.riskFlags.includes("missing_production_order"));
+    assert.ok(!lifecycle.riskFlags.includes("unknown_item_status"));
     assert.equal(lifecycle.daysOverdue, null);
   });
 
@@ -156,9 +192,8 @@ describe("PD 02130 real raw sanitizado", () => {
           {
             idProduto: 1,
             produto: { codigo: "A" },
-            situacaoItemPedido: { descricao: "Cancelado" },
+            status: 6,
             quantidade: 1,
-            quantidadeCancelada: 1,
           },
           {
             idProduto: 2,
