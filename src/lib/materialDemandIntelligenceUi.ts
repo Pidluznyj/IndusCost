@@ -30,6 +30,59 @@ export const MATERIAL_DEMAND_INTELLIGENCE_INTERPRETATION = [
   },
 ] as const;
 
+export const MATERIAL_DEMAND_CALCULATION_EXPLAINER = [
+  {
+    title: "Sem status de produção",
+    text: "Não há status real de produção disponível no Nomus integrado. A estimativa usa pedido, NF, saldo em aberto e janelas de tempo.",
+  },
+  {
+    title: "Pedido faturado totalmente",
+    text: "Pedidos com faturamento integral não geram necessidade futura de matéria-prima.",
+  },
+  {
+    title: "Pedido parcial com saldo vivo",
+    text: "Pedidos parcialmente faturados só geram necessidade enquanto o saldo está dentro da janela viva (14 dias após emissão ou última NF).",
+  },
+  {
+    title: "Saldo parcial antigo",
+    text: "Saldos parciais envelhecidos saem da compra recomendada e podem ir para revisão.",
+  },
+  {
+    title: "Saldos críticos (>30 dias)",
+    text: "Saldos com mais de 30 dias fora da janela viva entram como potencial de faturamento não realizado, não como demanda automática.",
+  },
+  {
+    title: "Data de entrega",
+    text: "A data de entrega é prioridade logística, mas não é a única base para decidir a compra de matéria-prima.",
+  },
+] as const;
+
+export type IntelligenceEmptyStateHints = {
+  title: string;
+  message: string;
+  suggestions: string[];
+};
+
+export function buildIntelligenceEmptyStateHints(
+  summary: RawMaterialIntelligenceBlock["summary"] | undefined
+): IntelligenceEmptyStateHints {
+  const missingBom = safeDisplayNumber(summary?.missingBomCount);
+  const suggestions = [
+    "Revise o período e os filtros de cliente, produto ou vendedor.",
+    "Amplie o intervalo de datas ou remova filtros restritivos.",
+  ];
+  if (missingBom > 0) {
+    suggestions.push(
+      `${missingBom} item(ns) sem BOM — revise a estrutura de produtos antes de confiar na estimativa.`
+    );
+  }
+  return {
+    title: "Nenhum dado na estimativa",
+    message: "Não encontramos matéria-prima, pedidos ou saldos para os filtros aplicados.",
+    suggestions,
+  };
+}
+
 export type MaterialDemandIntelligenceUiFilters = {
   calculationMode: "recommended" | "conservative";
   estimationStatus: RawMaterialDemandStatus | "ALL";
@@ -178,6 +231,8 @@ export function emptyIntelligenceBlock(): RawMaterialIntelligenceBlock {
     orders: [],
     unservedBalances: [],
     reviewItems: [],
+    detailLines: [],
+    orderNfesByOrderId: {},
     audit: {
       source: "",
       rulesVersion: "",

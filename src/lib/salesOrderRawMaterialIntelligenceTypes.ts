@@ -118,6 +118,35 @@ export type RawMaterialIntelligenceReviewItem = {
   suggestedAction: string;
 };
 
+/** Linha de detalhe material × pedido × produto para drilldown e exportação. */
+export type RawMaterialIntelligenceDetailLine = {
+  materialId: string;
+  materialCode: string | null;
+  materialName: string;
+  unitLabel: string;
+  orderId: string;
+  orderNumber: string;
+  customerName: string | null;
+  productCode: string | null;
+  productName: string | null;
+  soldQuantity: number;
+  invoicedQuantity: number;
+  openQuantity: number;
+  openNetAmount: number;
+  estimationStatus: RawMaterialDemandStatus;
+  estimationStatusLabel: string;
+  factorUsed: number;
+  bomQuantityPerUnit: number;
+  recommendedQuantity: number;
+  conservativeQuantity: number;
+  reviewQuantity: number;
+  unservedRevenueAmount: number;
+  recommendedIncluded: boolean;
+  conservativeIncluded: boolean;
+  inclusionReason: string;
+  warnings: string[];
+};
+
 export type RawMaterialIntelligenceAudit = {
   source: string;
   rulesVersion: string;
@@ -135,6 +164,8 @@ export type RawMaterialIntelligenceBlock = {
   orders: RawMaterialIntelligenceOrderRow[];
   unservedBalances: RawMaterialIntelligenceUnservedBalanceRow[];
   reviewItems: RawMaterialIntelligenceReviewItem[];
+  detailLines: RawMaterialIntelligenceDetailLine[];
+  orderNfesByOrderId: Record<string, MaterialUsageNfeSummary[]>;
   audit: RawMaterialIntelligenceAudit;
 };
 

@@ -1,7 +1,9 @@
 import React from "react";
+import { Search } from "lucide-react";
 import { formatDatePtBr } from "@/src/components/contextual/materialDemandDashboardUi";
 import {
   agingBandLabel,
+  buildIntelligenceEmptyStateHints,
   estimationStatusBadgeClass,
   formatConfidenceLabel,
   MATERIAL_DEMAND_INTELLIGENCE_INTERPRETATION,
@@ -30,6 +32,28 @@ function pctFactor(v: number): string {
   const n = safeDisplayNumber(v);
   if (n >= 1) return "100%";
   return `${formatNumberAdaptive(n * 100)}%`;
+}
+
+export function MaterialDemandIntelligenceEmptyState({
+  summary,
+}: {
+  summary?: RawMaterialIntelligenceBlock["summary"];
+}) {
+  const hints = buildIntelligenceEmptyStateHints(summary);
+  return (
+    <div
+      className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center space-y-3"
+      data-testid="material-intelligence-empty-state"
+    >
+      <p className="text-sm font-semibold text-foreground">{hints.title}</p>
+      <p className="text-sm text-muted-foreground max-w-lg mx-auto">{hints.message}</p>
+      <ul className="text-sm text-muted-foreground list-disc pl-5 text-left max-w-md mx-auto space-y-1">
+        {hints.suggestions.map((s) => (
+          <li key={s}>{s}</li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function MaterialDemandInterpretationBlock() {
@@ -100,8 +124,10 @@ export function MaterialDemandIntelligenceAuditPanel({
 
 export function MaterialDemandIntelligenceMaterialsTable({
   rows,
+  onMaterialClick,
 }: {
   rows: RawMaterialIntelligenceMaterialRow[];
+  onMaterialClick?: (materialId: string) => void;
 }) {
   return (
     <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden" data-testid="material-intelligence-materials-table">
@@ -121,18 +147,26 @@ export function MaterialDemandIntelligenceMaterialsTable({
               <th className="px-3 py-2 text-right">Produtos</th>
               <th className="px-3 py-2 text-right">Em revisão</th>
               <th className="px-3 py-2">Confiança</th>
+              {onMaterialClick ? <th className="px-3 py-2 w-24" /> : null}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
-                  Nenhuma matéria-prima na estimativa para os filtros aplicados.
+                <td colSpan={onMaterialClick ? 10 : 9} className="px-4 py-8 text-center text-muted-foreground">
+                  Nenhuma matéria-prima na estimativa para os filtros aplicados. Tente ampliar o período ou revisar os filtros.
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.materialId} className="border-b border-border/70">
+                <tr
+                  key={row.materialId}
+                  className={cn(
+                    "border-b border-border/70",
+                    onMaterialClick && "cursor-pointer hover:bg-accent/40"
+                  )}
+                  onClick={onMaterialClick ? () => onMaterialClick(row.materialId) : undefined}
+                >
                   <td className="px-3 py-2">
                     <div className="font-medium">{row.materialName}</div>
                     <div className="text-xs text-muted-foreground font-mono">{row.materialCode ?? "—"}</div>
@@ -145,6 +179,22 @@ export function MaterialDemandIntelligenceMaterialsTable({
                   <td className="px-3 py-2 text-right tabular-nums">{row.relatedProductsCount}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{qty(row.reviewQuantity)}</td>
                   <td className="px-3 py-2">{formatConfidenceLabel(row.confidence)}</td>
+                  {onMaterialClick ? (
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                        data-testid="material-intelligence-material-detail-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMaterialClick(row.materialId);
+                        }}
+                      >
+                        <Search className="h-3 w-3" aria-hidden />
+                        Detalhar
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}
@@ -155,7 +205,13 @@ export function MaterialDemandIntelligenceMaterialsTable({
   );
 }
 
-export function MaterialDemandIntelligenceOrdersTable({ rows }: { rows: RawMaterialIntelligenceOrderRow[] }) {
+export function MaterialDemandIntelligenceOrdersTable({
+  rows,
+  onOrderClick,
+}: {
+  rows: RawMaterialIntelligenceOrderRow[];
+  onOrderClick?: (orderId: string) => void;
+}) {
   return (
     <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden" data-testid="material-intelligence-orders-table">
       <div className="border-b border-border px-4 py-3">
@@ -177,18 +233,26 @@ export function MaterialDemandIntelligenceOrdersTable({ rows }: { rows: RawMater
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2 text-right">Fator</th>
               <th className="px-3 py-2 text-right">Valor aberto</th>
+              {onOrderClick ? <th className="px-3 py-2 w-24" /> : null}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={12} className="px-4 py-8 text-center text-muted-foreground">
-                  Nenhum pedido considerado na estimativa.
+                <td colSpan={onOrderClick ? 13 : 12} className="px-4 py-8 text-center text-muted-foreground">
+                  Nenhum pedido considerado na estimativa. Revise filtros ou amplie o período.
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={`${row.orderId}-${row.productCode}`} className="border-b border-border/70">
+                <tr
+                  key={`${row.orderId}-${row.productCode}`}
+                  className={cn(
+                    "border-b border-border/70",
+                    onOrderClick && "cursor-pointer hover:bg-accent/40"
+                  )}
+                  onClick={onOrderClick ? () => onOrderClick(row.orderId) : undefined}
+                >
                   <td className="px-3 py-2 font-medium">{row.orderNumber}</td>
                   <td className="px-3 py-2">{row.customerName ?? "—"}</td>
                   <td className="px-3 py-2 max-w-[160px] truncate" title={row.productName ?? undefined}>
@@ -212,6 +276,22 @@ export function MaterialDemandIntelligenceOrdersTable({ rows }: { rows: RawMater
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{pctFactor(row.factorUsed)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(row.openNetAmount)}</td>
+                  {onOrderClick ? (
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                        data-testid="material-intelligence-order-detail-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOrderClick(row.orderId);
+                        }}
+                      >
+                        <Search className="h-3 w-3" aria-hidden />
+                        Detalhar
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}

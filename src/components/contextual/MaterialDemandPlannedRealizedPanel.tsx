@@ -1,12 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Info, Loader2, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Info, Loader2, Search } from "lucide-react";
 import { FinanceBiKpiCard } from "@/src/components/finance/bi/FinanceBiKpiCard";
 import {
   MaterialUsageAuditDrawer,
   MATERIAL_USAGE_AUDIT_BUTTON_TOOLTIP,
 } from "@/src/components/contextual/MaterialUsageAuditDrawer";
 import {
+  MaterialDemandCalculationExplainerPanel,
+  MaterialDemandIntelligenceDrilldownDrawer,
+  type IntelligenceDrilldownTarget,
+} from "@/src/components/contextual/MaterialDemandIntelligenceDrilldownDrawer";
+import {
   MaterialDemandIntelligenceAuditPanel,
+  MaterialDemandIntelligenceEmptyState,
   MaterialDemandIntelligenceMaterialsTable,
   MaterialDemandIntelligenceOrdersTable,
   MaterialDemandIntelligenceReviewTable,
@@ -26,6 +32,15 @@ import type {
   MaterialUsagePlannedRealizedSummary,
 } from "@/src/lib/materialDemandPlannedRealizedTypes";
 import { materialDemandUiFiltersToQueryParams, type MaterialDemandUiFilters } from "@/src/lib/materialDemandFilters";
+import { hasIntelligenceDisplayData } from "@/src/lib/materialDemandIntelligenceDrilldown";
+import {
+  buildIntelligenceMaterialsCsv,
+  buildIntelligenceOrdersCsv,
+  buildIntelligenceReviewCsv,
+  buildIntelligenceUnservedCsv,
+  downloadIntelligenceCsv,
+  intelligenceExportFilename,
+} from "@/src/lib/materialDemandIntelligenceExport";
 import {
   appendIntelligenceQueryParams,
   DEFAULT_MATERIAL_DEMAND_INTELLIGENCE_UI_FILTERS,
@@ -245,6 +260,19 @@ export function MaterialDemandPlannedRealizedPanel({
   );
   const [reviewOnlyFilter, setReviewOnlyFilter] = useState(false);
   const [showLegacyTable, setShowLegacyTable] = useState(false);
+  const [drilldownTarget, setDrilldownTarget] = useState<IntelligenceDrilldownTarget | null>(null);
+
+  const openMaterialDrilldown = useCallback((materialId: string) => {
+    setDrilldownTarget({ kind: "material", materialId });
+  }, []);
+
+  const openOrderDrilldown = useCallback((orderId: string) => {
+    setDrilldownTarget({ kind: "order", orderId });
+  }, []);
+
+  const closeDrilldown = useCallback(() => {
+    setDrilldownTarget(null);
+  }, []);
 
   const openAudit = useCallback((row: MaterialUsagePlannedRealizedRow) => {
     setAuditPreviewRow(row);
@@ -301,6 +329,53 @@ export function MaterialDemandPlannedRealizedPanel({
   }, [intelligence, intelligenceFilters, reviewOnlyFilter]);
 
   const intelligenceSummary = intelligence?.summary;
+
+  const intelligenceHasDisplayData = useMemo(() => {
+    if (!filteredIntelligence) return false;
+    return hasIntelligenceDisplayData({
+      ...intelligence!,
+      materials: filteredIntelligence.materials,
+      orders: filteredIntelligence.orders,
+      unservedBalances: filteredIntelligence.unservedBalances,
+      reviewItems: filteredIntelligence.reviewItems,
+    });
+  }, [filteredIntelligence, intelligence]);
+
+  const handleExportIntelligence = useCallback(
+    (kind: "materials" | "orders" | "unserved" | "review") => {
+      if (!intelligence) return;
+      const view = filteredIntelligence
+        ? {
+            ...intelligence,
+            materials: filteredIntelligence.materials,
+            orders: filteredIntelligence.orders,
+            unservedBalances: filteredIntelligence.unservedBalances,
+            reviewItems: filteredIntelligence.reviewItems,
+            detailLines: intelligence.detailLines.filter((line) => {
+              if (filteredIntelligence.orders.length === 0) return true;
+              return filteredIntelligence.orders.some(
+                (o) => o.orderId === line.orderId && o.productCode === line.productCode
+              );
+            }),
+          }
+        : intelligence;
+
+      const builders = {
+        materials: () => buildIntelligenceMaterialsCsv(view),
+        orders: () => buildIntelligenceOrdersCsv(view),
+        unserved: () => buildIntelligenceUnservedCsv(view),
+        review: () => buildIntelligenceReviewCsv(view),
+      };
+      const prefixes = {
+        materials: "estimativa-mp-materiais",
+        orders: "estimativa-mp-pedidos",
+        unserved: "estimativa-mp-saldos-antigos",
+        review: "estimativa-mp-revisao",
+      };
+      downloadIntelligenceCsv(intelligenceExportFilename(prefixes[kind]), builders[kind]());
+    },
+    [intelligence, filteredIntelligence]
+  );
 
   const quantityLabel = useMemo(() => {
     if (!summary) return "Quantidade";
@@ -401,11 +476,70 @@ export function MaterialDemandPlannedRealizedPanel({
 
       {showIntelligence && filteredIntelligence ? (
         <>
+          <div
+            className="flex flex-wrap items-center gap-2"
+            data-testid="material-intelligence-export-bar"
+          >
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Exportar CSV
+            </span>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+              data-testid="material-intelligence-export-materials"
+              onClick={() => handleExportIntelligence("materials")}
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              Matérias-primas
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+              data-testid="material-intelligence-export-orders"
+              onClick={() => handleExportIntelligence("orders")}
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              Pedidos
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+              data-testid="material-intelligence-export-unserved"
+              onClick={() => handleExportIntelligence("unserved")}
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              Saldos antigos
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+              data-testid="material-intelligence-export-review"
+              onClick={() => handleExportIntelligence("review")}
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              Revisão
+            </button>
+          </div>
+
+          <MaterialDemandCalculationExplainerPanel />
           <MaterialDemandInterpretationBlock />
-          <MaterialDemandIntelligenceMaterialsTable rows={filteredIntelligence.materials} />
-          <MaterialDemandIntelligenceOrdersTable rows={filteredIntelligence.orders} />
-          <MaterialDemandIntelligenceUnservedTable rows={filteredIntelligence.unservedBalances} />
-          <MaterialDemandIntelligenceReviewTable rows={filteredIntelligence.reviewItems} />
+
+          {!intelligenceHasDisplayData ? (
+            <MaterialDemandIntelligenceEmptyState summary={intelligence?.summary} />
+          ) : (
+            <>
+              <MaterialDemandIntelligenceMaterialsTable
+                rows={filteredIntelligence.materials}
+                onMaterialClick={openMaterialDrilldown}
+              />
+              <MaterialDemandIntelligenceOrdersTable
+                rows={filteredIntelligence.orders}
+                onOrderClick={openOrderDrilldown}
+              />
+              <MaterialDemandIntelligenceUnservedTable rows={filteredIntelligence.unservedBalances} />
+              <MaterialDemandIntelligenceReviewTable rows={filteredIntelligence.reviewItems} />
+            </>
+          )}
           <MaterialDemandIntelligenceAuditPanel audit={intelligence!.audit} summary={intelligence!.summary} />
         </>
       ) : null}
@@ -631,6 +765,13 @@ export function MaterialDemandPlannedRealizedPanel({
         materialId={auditMaterialId}
         previewRow={auditPreviewRow}
         filters={appliedFilters}
+      />
+
+      <MaterialDemandIntelligenceDrilldownDrawer
+        open={drilldownTarget != null}
+        target={drilldownTarget}
+        intelligence={intelligence ?? null}
+        onClose={closeDrilldown}
       />
     </div>
   );

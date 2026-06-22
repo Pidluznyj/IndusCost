@@ -14,6 +14,7 @@ import {
 } from "./materialDemandPlannedRealized.js";
 import type { MaterialDemandFilters, MaterialDemandInvoicingScope } from "./materialDemandFilters.js";
 import type { MaterialUsageContribution } from "./materialDemandPlannedRealizedTypes.js";
+import { buildRawMaterialIntelligenceDetailLines } from "./materialDemandIntelligenceDrilldown.js";
 import {
   classifyRawMaterialDemandItem,
   calculateRawMaterialDemandForItem,
@@ -690,12 +691,32 @@ export function buildSalesOrderRawMaterialIntelligencePayload(input: {
     seller: input.intelligenceFilters.seller,
   };
 
+  const materialIdByCode = new Map<string, string>();
+  for (const c of contributions) {
+    if (c.materialCode) materialIdByCode.set(c.materialCode, c.materialId);
+    materialIdByCode.set(c.materialId, c.materialId);
+  }
+  for (const row of materials) {
+    if (row.materialCode) materialIdByCode.set(row.materialCode, row.materialId);
+    materialIdByCode.set(row.materialId, row.materialId);
+  }
+
+  const detailLines = buildRawMaterialIntelligenceDetailLines({
+    demandLines,
+    orders: intelligenceOrders,
+    contributions,
+    unservedBalances,
+    materialIdByCode,
+  });
+
   const intelligence: RawMaterialIntelligenceBlock = {
     summary: intelligenceSummary,
     materials,
     orders: intelligenceOrders,
     unservedBalances,
     reviewItems,
+    detailLines,
+    orderNfesByOrderId: nfeByOrderId,
     audit: {
       source: RAW_MATERIAL_INTELLIGENCE_SOURCE,
       rulesVersion: RAW_MATERIAL_INTELLIGENCE_RULES_VERSION,
