@@ -138,6 +138,7 @@ export const PERMISSION_TEMPLATES: Record<
       "settings.operational.manage",
       "finance.view",
       "finance.accountsReceivable.view",
+      "crm.customers.assign_seller",
     ],
   },
   read_only: {
