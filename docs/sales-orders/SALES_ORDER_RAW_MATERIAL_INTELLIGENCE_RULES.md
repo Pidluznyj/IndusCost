@@ -3,14 +3,97 @@
 **Projeto:** IndusCost / My Industry  
 **Tela:** Pedidos de Venda → Inteligência de Matéria-Prima  
 **Rota:** `/sales-orders/material-demand`  
-**Status:** Blueprint de evolução (documentação apenas — sem alteração de código neste passo)  
-**Atualizado:** 2026-06-17
+**Aba principal da nova regra:** `Previsto x Realizado` (`enableIntelligence` quando `context="sales-orders"`)  
+**Status:** **Implementado** (motor, endpoint, UI, drilldown, CSV, validação)  
+**Atualizado:** 2026-06-22  
+**Commits de referência:** `863f374` (blueprint) → `5b33dd6` (motor) → `bba8683` (endpoint) → `fde0a87` (UI) → `caf23ee` (transparência) → `43fbbeb` (validação)
 
-> Complementar: [`NOMUS_SALES_ORDER_STATUS_MAPPING.md`](./NOMUS_SALES_ORDER_STATUS_MAPPING.md), [`../commercial/SALES_ORDER_AS_COMMERCIAL_SOURCE.md`](../commercial/SALES_ORDER_AS_COMMERCIAL_SOURCE.md), `src/lib/materialDemandPlannedRealized.ts`, `src/lib/systemDataLineageAudit.ts` (feature `material-demand`).
+> Complementar: [`NOMUS_SALES_ORDER_STATUS_MAPPING.md`](./NOMUS_SALES_ORDER_STATUS_MAPPING.md), [`../commercial/SALES_ORDER_AS_COMMERCIAL_SOURCE.md`](../commercial/SALES_ORDER_AS_COMMERCIAL_SOURCE.md), [`../induscost-system-current-state.md`](../induscost-system-current-state.md), `src/lib/systemDataLineageAudit.ts` (feature `material-demand`).
 
 ---
 
-## 0. Problema e motivação
+## 0. Onde fica a tela
+
+| Item | Valor |
+|------|--------|
+| Menu | **Pedidos de Venda → Inteligência de Matéria-Prima** |
+| Rota frontend | `/sales-orders/material-demand` |
+| Componente | `ProductMaterialDemandDashboard` (`context="sales-orders"`) |
+| Painel da nova regra | `MaterialDemandPlannedRealizedPanel` (`enableIntelligence={true}`) na aba **Previsto x Realizado** |
+| Permissão | Mesma do módulo de demanda de MP em pedidos (`material-demand` em `sales-orders`) |
+
+Contexto `products/material-demand` mantém a visão legada de estimativa de uso (sem bloco `intelligence`).
+
+---
+
+## 0.1 Objetivo
+
+Estimar **quanto de matéria-prima** provavelmente será necessário para atender pedidos em aberto, com base em:
+
+| Entrada | Fonte no IndusCost |
+|---------|-------------------|
+| **Pedidos** | `SalesOrder` + `SalesOrderItem` |
+| **Faturamento** | `nomusRawResponse.nfes`, `itensPedido[].quantidadeFaturada` |
+| **Saldo em aberto** | quantidade vendida − quantidade faturada (ou fallback por valor) |
+| **Janela padrão de 14 dias** | Constante `billingCycleDays` / `partialBillingLiveDays` |
+| **BOM** | `ProductBOM` via `buildOpenBookRawMaterialExplosionPerUnit` |
+
+A tela responde: necessidade recomendada, conservadora, incerteza, itens em revisão, saldos críticos e potencial de faturamento não realizado — com drilldown e exportação CSV para uso operacional.
+
+---
+
+## 0.2 O que a tela **não** usa
+
+Registrar explicitamente para evitar interpretação errada na manutenção:
+
+| Não usado | Motivo |
+|-----------|--------|
+| **Status real de produção** | Não está disponível nem é confiável no Nomus integrado |
+| **Ordem de produção (OP) como gatilho de consumo** | Sem vínculo confiável pedido → chão de fábrica |
+| **Baixa de estoque / movimentação física** | Realizado fiscal (NF) ≠ consumo de MP |
+| **`expectedDeliveryDate` como única base de compra** | Usada apenas como **prioridade logística** (hint), não substitui janela fiscal de 14 dias |
+
+Textos na UI: subtítulo do painel, bloco **Como este cálculo funciona**, auditoria (`PRODUCTION_STATUS_WARNING` no service).
+
+---
+
+## 0.3 Regras principais (resumo operacional)
+
+| Regra | Comportamento |
+|-------|----------------|
+| Pedido **faturado totalmente** | Necessidade recomendada = 0; não entra como compra futura; contabilizado em `excludedFullyInvoicedCount` |
+| Pedido **sem NF dentro de 14 dias** da emissão | Entra na **necessidade recomendada**; status `Aberto dentro do ciclo` |
+| Pedido **sem NF vencido** (> 14 dias) | **Não** entra na recomendada; vai para **revisão**; pode entrar no **conservador**; status `Aberto atrasado sem NF` |
+| Pedido **parcial com saldo vivo** | Calcula só o **saldo restante** × BOM; status `Parcial atendido — saldo vivo` |
+| Pedido **parcial envelhecido** | Sai da recomendada; vai para revisão; status `Parcial atendido — saldo envelhecido` |
+| Saldo **> 30 dias** fora da janela viva | KPI **Potencial de faturamento não realizado** + tabela **Saldos antigos não atendidos**; **não** distorce compra recomendada |
+| Produto **sem BOM** | Não quebra o cálculo; entra em **revisão** com motivo **Sem BOM** |
+| **Data de entrega** | Prioridade logística visível na UI; **não** é a única base da janela de consumo |
+| **Faturado > vendido** | Saldo normalizado para zero + warning + `reviewRequired` (dados inconsistentes) |
+
+Motor puro: `src/lib/salesOrderRawMaterialEstimation.ts`  
+Orquestração + payload: `src/lib/salesOrderRawMaterialIntelligenceService.ts`
+
+---
+
+## 0.4 Indicadores (cards KPI)
+
+Exibidos na aba **Previsto x Realizado** (contexto pedidos):
+
+| Card | Campo no payload (`intelligence.summary`) |
+|------|---------------------------------------------|
+| Necessidade recomendada | `recommendedDemandQuantity` / `recommendedDemandValue` |
+| Necessidade conservadora | `conservativeDemandQuantity` / `conservativeDemandValue` |
+| Diferença por incerteza | `uncertaintyDemandQuantity` / `uncertaintyDemandValue` |
+| Itens em revisão | `reviewItemsCount` |
+| Saldo crítico > 30 dias | `criticalUnservedBalanceAmount` |
+| Potencial de faturamento não realizado | `unservedRevenuePotential` |
+| Itens sem BOM | `missingBomCount` |
+| Confiabilidade da estimativa | `confidence` (`HIGH` / `MEDIUM` / `LOW`) |
+
+---
+
+## 0.5 Problema que a regra resolve
 
 A tela já existe e estima consumo de matéria-prima a partir de **pedidos de venda** (`SalesOrder`) e **BOM** (`ProductBOM` / explosão open book). Hoje, quando o filtro ou a agregação dependem demais de **`expectedDeliveryDate`**, pedidos **já faturados** podem continuar entrando na necessidade futura e **superestimar compra**.
 
@@ -41,12 +124,15 @@ A tela responde, para o período e filtros aplicados:
 | Quais pedidos geram incerteza? | **Itens em revisão** + motivo |
 | Quanto de saldo vendido está parado sem faturamento? | **Potencial de faturamento não realizado** + **Saldo crítico > 30 dias** |
 
-Endpoints atuais (não alterar neste blueprint):
+Endpoints (inalterados em contrato; payload `planned-vs-realized` estendido):
 
-- `GET /api/sales-orders/material-demand/summary`
-- `GET /api/sales-orders/material-demand/planned-vs-realized`
+- `GET /api/sales-orders/material-demand/summary` — visão legada / outras abas
+- `GET /api/sales-orders/material-demand/planned-vs-realized` — **bloco `intelligence`** + `summary`, `rows`, `dataQuality` legados
+- `GET /api/sales-orders/material-demand/planned-vs-realized/materials/:materialId/details` — auditoria previsto×faturado (legado, sob demanda)
 
-Componente UI: `ProductMaterialDemandDashboard` (`context="sales-orders"`).
+Query params adicionais em `planned-vs-realized`: `calculationMode` (`recommended` \| `conservative`), `estimationStatus`, `periodStart`, `periodEnd`, `seller` / `responsible`.
+
+Componentes UI: `ProductMaterialDemandDashboard` → `MaterialDemandPlannedRealizedPanel` (`enableIntelligence`); seções em `MaterialDemandIntelligenceSections.tsx`; drilldown em `MaterialDemandIntelligenceDrilldownDrawer.tsx`.
 
 ---
 
@@ -62,6 +148,18 @@ Componente UI: `ProductMaterialDemandDashboard` (`context="sales-orders"`).
 | **Diferença por incerteza** | `necessidadeConservadora − necessidadeRecomendada` (valor e/ou quantidade). |
 | **Potencial de faturamento não realizado** | Valor estimado de saldo antigo não atendido (`saldo × preço líquido unitário` ou valor líquido aberto). |
 | **Itens em revisão** | Pedidos/itens sem BOM, fallback de valor, status ambíguo ou saldo envelhecido — exigem olhar humano antes de comprar. |
+
+### Faixas de atraso (saldos antigos — UI)
+
+| Dias fora da janela viva | Label na UI |
+|--------------------------|-------------|
+| 0–14 | Dentro do ciclo |
+| 15–30 | Atenção |
+| 31–60 | Crítico |
+| 61–90 | Muito crítico |
+| 90+ | Provável perda / revisar |
+
+Helper: `agingBandLabel` em `materialDemandIntelligenceUi.ts`; bucket técnico: `resolveAgingBucket` no service.
 
 ### Janelas de tempo (constantes)
 
@@ -271,9 +369,11 @@ Reutilizar padrão visual de `MaterialDemandKpiGrid` / `MaterialDemandPlannedRea
 | **Estimativa por matéria-prima** | MP, unidade, necessidade recomendada, conservadora, custo, % do total |
 | **Pedidos considerados** | Pedido, cliente, status estimado, saldo vivo, janela, MP impactada |
 | **Saldos antigos não atendidos** | Pedidos com saldo crítico / potencial não realizado |
-| **Itens em revisão** | Motivo: sem BOM, fallback valor, atrasado sem NF, parcial envelhecido |
+| **Itens em revisão** | Motivo: sem BOM, fallback valor, atrasado sem NF, parcial envelhecido, dados inconsistentes |
 
-Export CSV (fase 4): estender `materialDemandExport.ts` com colunas de status estimado e confiança.
+**Drilldown (implementado):** clique em matéria-prima ou pedido → drawer com produtos, pedidos, NFs, BOM e motivo de inclusão/exclusão.
+
+**Export CSV (implementado, client-side):** `materialDemandIntelligenceExport.ts` — matérias-primas, pedidos, saldos antigos, revisão (colunas com status, necessidade, fator, motivo de revisão).
 
 ---
 
@@ -291,19 +391,82 @@ Textos obrigatórios (drawer / banner — alinhar a `materialDemandPlannedRealiz
 
 ## 10. Fases de implementação
 
-| Fase | Entrega | Arquivos-alvo (referência) |
-|------|---------|----------------------------|
-| **1** | Motor puro: status estimado, saldo vivo/envelhecido, janelas, agregação MP | Novo: `salesOrderRawMaterialIntelligence.ts` + testes |
-| **2** | Endpoint/payload: estender summary e planned-vs-realized **ou** novo sub-recurso | `server.ts`, tipos em `materialDemandPlannedRealizedTypes.ts` |
-| **3** | UI: cards, modos recomendado/conservador, tabelas | `ProductMaterialDemandDashboard.tsx`, `MaterialDemandDashboardPanels.tsx` |
-| **4** | CSV, drawer auditoria, textos | `materialDemandExport.ts`, `materialDemandPlannedRealizedAuditCopy.ts` |
-| **5** | Regressão: `materialDemandPlannedRealized.test.ts`, `materialDemandFilters.test.ts`, lint, build | CI local |
+| Fase | Entrega | Status |
+|------|---------|--------|
+| **0** | Blueprint (este documento) | ✅ `863f374` |
+| **1** | Motor puro | ✅ `salesOrderRawMaterialEstimation.ts` + testes |
+| **2** | Endpoint / payload `intelligence` | ✅ `salesOrderRawMaterialIntelligenceService.ts`, `server.ts` |
+| **3** | UI cards, filtros, tabelas | ✅ `MaterialDemandPlannedRealizedPanel`, `MaterialDemandIntelligenceSections` |
+| **4** | Drilldown, CSV, explicação do cálculo | ✅ `MaterialDemandIntelligenceDrilldownDrawer`, `materialDemandIntelligenceExport.ts` |
+| **5** | Validação cenários + regressão | ✅ `salesOrderRawMaterialIntelligenceValidation.test.ts` |
 
-**Fora de escopo desta evolução:** alterar sync Nomus, schema `SalesOrder`, status de produção real, compras automáticas.
+**Fora de escopo (mantido):** alterar sync Nomus, schema `SalesOrder`, status de produção real, compras automáticas.
 
 ---
 
-## 11. Decisões técnicas registradas
+## 11. Arquivos principais
+
+### Libs (motor e API)
+
+| Arquivo | Papel |
+|---------|--------|
+| `src/lib/salesOrderRawMaterialEstimation.ts` | Classificação, janelas, saldo vivo/envelhecido, demanda por item |
+| `src/lib/salesOrderRawMaterialIntelligenceTypes.ts` | Tipos do bloco `intelligence` e `detailLines` |
+| `src/lib/salesOrderRawMaterialIntelligenceService.ts` | Monta payload; integra BOM, filtros, revisão, auditoria |
+| `src/lib/materialDemandIntelligenceUi.ts` | Filtros UI, labels, empty state, texto explicativo |
+| `src/lib/materialDemandIntelligenceDrilldown.ts` | Views de drilldown material/pedido |
+| `src/lib/materialDemandIntelligenceExport.ts` | Builders CSV |
+| `src/lib/materialDemandPlannedRealized.ts` | Agregação legada previsto×faturado (mantida) |
+| `src/lib/materialDemandFilters.ts` | Filtros compartilhados (+ `seller`, `calculationMode` via query) |
+
+### Componentes React
+
+| Arquivo | Papel |
+|---------|--------|
+| `src/components/contextual/ProductMaterialDemandDashboard.tsx` | Shell da tela; `enableIntelligence` em sales-orders |
+| `src/components/contextual/MaterialDemandPlannedRealizedPanel.tsx` | KPIs, filtros, tabelas, export, estados loading/error/empty |
+| `src/components/contextual/MaterialDemandIntelligenceSections.tsx` | Tabelas, interpretação, auditoria, empty state |
+| `src/components/contextual/MaterialDemandIntelligenceDrilldownDrawer.tsx` | Drilldown + “Como este cálculo funciona” |
+| `src/components/contextual/MaterialUsageAuditDrawer.tsx` | Auditoria legada previsto×faturado por MP (mantida) |
+
+### Endpoints (`server.ts`)
+
+| Método | Caminho |
+|--------|---------|
+| GET | `/api/sales-orders/material-demand/planned-vs-realized` |
+| GET | `/api/sales-orders/material-demand/planned-vs-realized/materials/:materialId/details` |
+| GET | `/api/sales-orders/material-demand/summary` (+ demais rotas legadas do módulo) |
+
+### Testes
+
+| Arquivo | Cobertura |
+|---------|-----------|
+| `salesOrderRawMaterialEstimation.test.ts` | Regras unitárias do motor |
+| `salesOrderRawMaterialIntelligenceService.test.ts` | Payload e integração service |
+| `salesOrderRawMaterialIntelligenceValidation.test.ts` | 14 cenários de negócio obrigatórios |
+| `materialDemandIntelligenceUi.test.ts` | Estrutura da UI |
+| `materialDemandIntelligenceDrilldown.test.ts` | Drilldown e detail lines |
+| `materialDemandIntelligenceTransparency.test.ts` | CSV, explicação, empty state |
+| `materialDemandPlannedRealizedPage.test.ts` | Painel e drawer legado |
+| `materialDemandPlannedRealizedAuditRoutes.test.ts` | Contrato do endpoint details |
+
+---
+
+## 12. Riscos e limitações
+
+| Risco | Impacto | Mitigação na tela |
+|-------|---------|-------------------|
+| **Falta de quantidade faturada por item** no Nomus | Saldo estimado por valor | Fallback com confiança `LOW` + warning; card de confiabilidade |
+| **Fallback por valor** | Proporção aproximada de faturamento | Item pode ir para revisão; não entra como `HIGH` |
+| **Falta de BOM** | Sem consumo calculado | Motivo **Sem BOM** em revisão; KPI `missingBomCount` |
+| **Pedidos parciais antigos** | Risco de compra indevida | Excluídos da recomendada; potencial não realizado separado |
+| **Inexistência de status de produção** | Não saber se já fabricou | Texto explícito na UI; só evidência fiscal |
+| **Dados inconsistentes** (ex.: faturado > vendido) | Saldo negativo teórico | Normalização + revisão |
+| **Mistura de unidades** na agregação | Totais de quantidade não comparáveis | Mensagem “várias unidades” no legado; MP por unidade na tabela |
+
+---
+
+## 13. Decisões técnicas registradas
 
 | # | Decisão | Motivo |
 |---|---------|--------|
@@ -318,27 +481,28 @@ Textos obrigatórios (drawer / banner — alinhar a `materialDemandPlannedRealiz
 
 ---
 
-## 12. Referência rápida — estado atual vs alvo
+## 14. Referência rápida — estado implementado
 
-| Aspecto | Hoje | Alvo |
-|---------|------|------|
-| Base de período | `issueDate` ou `expectedDeliveryDate` | Janela estimada de consumo (§5) |
-| Previsto vs realizado | NF binária + portfolio | Saldo vivo + status estimado |
-| Pedido faturado no prazo de entrega mas filtro por entrega futura | Pode inflar previsto | Excluído se atendido totalmente |
-| KPI risco saldo parado | Parcial (`notInvoicedOrdersCount`) | Potencial não realizado + crítico 30d |
-| Modos | `invoicingScope` | + recomendado / conservador |
+| Aspecto | Comportamento atual |
+|---------|---------------------|
+| Base de período | Overlap da **janela estimada de consumo** com filtro do usuário (§5) |
+| Previsto vs realizado | Bloco `intelligence` na mesma rota; legado colapsável na UI |
+| Pedido faturado totalmente | Excluído da necessidade recomendada |
+| KPI risco saldo parado | Potencial não realizado + crítico 30d + tabela saldos antigos |
+| Modos | `calculationMode=recommended` \| `conservative` + filtros de status |
+| Transparência | Drilldown MP/pedido, CSV, auditoria com regras 14d/30d |
 
 ---
 
-## 13. Critérios de aceite da implementação (futura)
+## 15. Critérios de aceite (validados)
 
-- [ ] Pedido 100% faturado não entra na necessidade recomendada.
-- [ ] Pedido sem NF dentro de 14 dias da emissão entra com saldo total.
-- [ ] Pedido sem NF após 14 dias não entra na recomendada; aparece em revisão.
-- [ ] Parcial com NF recente: só saldo restante na recomendada.
-- [ ] Parcial com NF antiga (> 14d): revisão + potencial não realizado se > 30d.
-- [ ] Sem BOM: revisão, sem consumo automático.
-- [ ] Cancelado: excluído.
-- [ ] Filtro de período usa overlap com janela estimada, não só data de entrega.
-- [ ] Testes unitários cobrem cada status §3 sem dados reais de cliente.
-- [ ] Lint e build passam; nenhuma alteração em sync Nomus.
+- [x] Pedido 100% faturado não entra na necessidade recomendada.
+- [x] Pedido sem NF dentro de 14 dias da emissão entra com saldo total.
+- [x] Pedido sem NF após 14 dias não entra na recomendada; aparece em revisão.
+- [x] Parcial com NF recente: só saldo restante na recomendada.
+- [x] Parcial com NF antiga (> 14d): revisão + potencial não realizado se > 30d.
+- [x] Sem BOM: revisão, sem consumo automático.
+- [x] Cancelado: excluído.
+- [x] Filtro de período usa overlap com janela estimada, não só data de entrega.
+- [x] Testes unitários cobrem cada status §3 (`salesOrderRawMaterialEstimation.test.ts`, `salesOrderRawMaterialIntelligenceValidation.test.ts`).
+- [x] Lint e build passam; nenhuma alteração em sync Nomus nem schema Prisma.

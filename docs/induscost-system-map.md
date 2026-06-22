@@ -158,9 +158,16 @@ GET  /api/sales-orders
 GET  /api/sales-orders/:id
 GET  /api/sales-orders/management           # Gestão de Pedidos + cards BI
 GET  /api/sales-orders/:id/intelligence     # Drawer raio-x
+
+# Inteligência de Matéria-Prima (demanda MP a partir de pedidos)
+GET  /api/sales-orders/material-demand/summary
+GET  /api/sales-orders/material-demand/planned-vs-realized          # + bloco intelligence
+GET  /api/sales-orders/material-demand/planned-vs-realized/materials/:materialId/details
 ```
 
-Registro: `registerSalesOrderIntelligenceRoutes` (`salesOrderIntelligenceRoutes.ts`).
+Registro: `registerSalesOrderIntelligenceRoutes` (`salesOrderIntelligenceRoutes.ts`); handlers material-demand em `server.ts` (`buildMaterialDemandPlannedVsRealizedDataset`).
+
+Documentação da regra: [`docs/sales-orders/SALES_ORDER_RAW_MATERIAL_INTELLIGENCE_RULES.md`](sales-orders/SALES_ORDER_RAW_MATERIAL_INTELLIGENCE_RULES.md).
 
 ### 2.4 Projetos — `/api/projects/*`
 
@@ -296,7 +303,28 @@ SalesOrdersModule (gestão)
           → nomusRawResponse (NF dataProcessamento, itens status 1–6)
 ```
 
-### 3.8 Projetos — snapshot de produto
+### 3.8 Inteligência de Matéria-Prima (Pedidos de Venda)
+
+```text
+App.tsx → /sales-orders/material-demand
+  → ProductMaterialDemandDashboard (context=sales-orders)
+    → aba Previsto x Realizado
+      → MaterialDemandPlannedRealizedPanel (enableIntelligence)
+        → GET /api/sales-orders/material-demand/planned-vs-realized?calculationMode=…
+          → buildMaterialDemandPlannedVsRealizedDataset (server.ts)
+            → buildSalesOrderRawMaterialIntelligencePayload
+              → salesOrderRawMaterialIntelligenceService.ts
+                → classifyRawMaterialDemandItem / calculateRawMaterialDemandForItem
+                  → salesOrderRawMaterialEstimation.ts
+                → SalesOrder + SalesOrderItem + nomusRawResponse + ProductBOM (explosão)
+        → drilldown client-side (detailLines no payload intelligence)
+        → CSV client-side (materialDemandIntelligenceExport.ts)
+        → GET …/materials/:id/details (auditoria legada previsto×faturado, sob demanda)
+```
+
+**Não usa:** status real de produção Nomus. **Usa:** pedido, faturamento, saldo aberto, janela 14d, BOM.
+
+### 3.9 Projetos — snapshot de produto
 
 ```text
 ProjectAddItemModal / import
@@ -307,7 +335,7 @@ ProjectAddItemModal / import
 
 Bloqueio: `PROJECTS_BLOCK_IN_PROJECT_PRODUCT_CREATION` em `projectsAddItemPolicy.ts`.
 
-### 3.9 Nomus — fila Prontos para aplicar
+### 3.10 Nomus — fila Prontos para aplicar
 
 ```text
 NomusAutoApplyBomDashboard (product/)

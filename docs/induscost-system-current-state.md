@@ -1,9 +1,9 @@
 # IndusCost — Estado atual do sistema
 
-> **Atualizado:** 2026-06-17  
+> **Atualizado:** 2026-06-22  
 > **Branch:** `main`  
-> **Commit HEAD:** `13f39bb` (`fix(finance): reforcar permissoes, auditoria HTTP e guards na revisao final CC/AP.`)  
-> **Commit anterior documentado:** `7c57130` (auditoria INDUSCOST-SYSTEM-AUDIT-AND-ACTION-PLAN-A)
+> **Commit HEAD:** `43fbbeb` (`fix(sales-orders): validar regras de inteligencia MP e corrigir faturado > vendido.`)  
+> **Commit anterior documentado:** `13f39bb` (auditoria financeira CC/AP)
 
 Fotografia do repositório **sem alteração funcional**. Cada afirmação abaixo deriva de inspeção do código em `26c54ef`.
 
@@ -24,6 +24,7 @@ Desde `7c57130`, os maiores incrementos foram:
 | Financeiro | 6 abas BI com AR/AP/NF-e/Fluxo/Pedidos/Relatório Presidencial |
 | CRM Comercial | Escopo por vendedor, carteira dedicada, inteligência do cliente |
 | Pedidos de Venda | Gestão operacional + Status Logístico BI (Power BI) |
+| **Inteligência de Matéria-Prima** | Estimativa de compra por saldo vivo, BOM e janela 14d (sem status de produção) |
 | Projetos | Ficha rápida, BOM isolada, snapshots de produto |
 | Nomus Engenharia | Fila “Prontos para aplicar”, auto-apply pós-sync, fingerprint de governança |
 | Frota | Módulo completo com reservas públicas e checklist |
@@ -252,6 +253,25 @@ Dois contextos distintos no código:
 ### 6.3 Dashboard financeiro Pedidos de Venda
 
 **Pronto** — KPIs, gráficos (carteira, comparativo anual, top vendedores, críticos), export CSV, auditoria. Não usa Proposal.
+
+### 6.4 Inteligência de Matéria-Prima (`/sales-orders/material-demand`)
+
+**Pronto** — regra fiscal de saldo vivo implementada na aba **Previsto x Realizado** (não é módulo separado de rota).
+
+| Item | Detalhe |
+|------|---------|
+| Menu | Pedidos de Venda → **Inteligência de Matéria-Prima** |
+| UI | `ProductMaterialDemandDashboard` (`context="sales-orders"`) → `MaterialDemandPlannedRealizedPanel` com `enableIntelligence` |
+| Endpoint principal | `GET /api/sales-orders/material-demand/planned-vs-realized` → bloco `intelligence` |
+| Motor | `salesOrderRawMaterialEstimation.ts` + `salesOrderRawMaterialIntelligenceService.ts` |
+| **Não usa** | Status real de produção Nomus; `expectedDeliveryDate` só como hint logístico |
+| Entradas | Pedidos, NF/faturamento, saldo aberto, janela **14 dias**, explosão BOM |
+| KPIs | Recomendada, conservadora, incerteza, revisão, crítico >30d, potencial não realizado, confiabilidade |
+| Transparência | Drilldown MP/pedido, export CSV (4 arquivos), bloco “Como este cálculo funciona” |
+| Documentação | [`docs/sales-orders/SALES_ORDER_RAW_MATERIAL_INTELLIGENCE_RULES.md`](sales-orders/SALES_ORDER_RAW_MATERIAL_INTELLIGENCE_RULES.md) |
+| Testes | `salesOrderRawMaterialIntelligenceValidation.test.ts` (14 cenários), + ~60 testes MP/inteligência |
+
+Contexto `products/material-demand` mantém estimativa de uso legada (sem `intelligence`).
 
 ---
 
