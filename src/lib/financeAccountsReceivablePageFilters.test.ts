@@ -100,7 +100,7 @@ describe("financeAccountsReceivablePageFilters", () => {
     assert.ok(page.includes("buildFinanceArDashboardQuery(appliedFilters)"));
     assert.ok(page.includes("FinanceArAgingChart"));
     assert.ok(page.includes("FinanceArTopDebtorsChart"));
-    assert.ok(page.includes("Exportar CSV"));
+    assert.ok(page.includes("FINANCE_HEADER_ACTION_EXPORT_CSV"));
   });
 
   it("cabeçalho executivo compacto com auditoria em drawer", () => {
@@ -118,8 +118,8 @@ describe("financeAccountsReceivablePageFilters", () => {
     assert.ok(page.includes("FinanceDataAuditDrawer"));
     assert.ok(page.includes("FinanceDataAuditButton"));
     assert.ok(page.includes("compact"));
-    assert.ok(page.includes("Atualizar"));
-    assert.ok(page.includes("Exportar CSV"));
+    assert.ok(page.includes("FINANCE_HEADER_ACTION_REFRESH"));
+    assert.ok(page.includes("FINANCE_HEADER_ACTION_EXPORT_CSV"));
     assert.ok(page.includes("FinanceAccountsReceivableSyncPanel"));
     assert.ok(page.includes("defaultExpanded={false}"));
 
