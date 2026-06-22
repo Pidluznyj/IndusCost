@@ -2,6 +2,10 @@
 
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import type { FinanceHorizonSummary } from "./financeHorizonAggregation.js";
+import type {
+  FinanceApClassificationFilterOptions,
+  FinanceApClassificationSummary,
+} from "./financeAccountsPayableCostCenterIntegration.js";
 
 export const FINANCE_AP_SUPPLIER_RANKING_LIMIT = 100;
 export const FINANCE_AP_COMPANY_SUMMARY_LIMIT = 50;
@@ -186,6 +190,8 @@ export type FinanceApDashboardPayload = {
   dataSanitization: FinanceDataSanitization;
   purchaseOrderScheduleAudit: FinanceApPurchaseOrderScheduleAudit;
   financialHorizon: FinanceHorizonSummary;
+  classificationSummary?: FinanceApClassificationSummary;
+  classificationFilterOptions?: FinanceApClassificationFilterOptions;
 };
 
 export type FinanceApUiFilters = {
@@ -203,6 +209,9 @@ export type FinanceApUiFilters = {
   suspendPayment: string;
   paymentMethodName: string;
   bankAccountName: string;
+  costCenterId: string;
+  supplierId: string;
+  classificationStatus: string;
 };
 
 /** Filtros reservados para paridade com BI — não implementados nesta fase. */
@@ -247,6 +256,9 @@ export const EMPTY_FINANCE_AP_UI_FILTERS: FinanceApUiFilters = {
   suspendPayment: "all",
   paymentMethodName: "",
   bankAccountName: "",
+  costCenterId: "",
+  supplierId: "",
+  classificationStatus: "all",
 };
 
 /** Filtros iniciais seguros: ano corrente como período padrão de vencimento. */
@@ -304,7 +316,10 @@ export function isDefaultFinanceApUiFilters(
     filters.documentQuery === defaults.documentQuery &&
     filters.suspendPayment === defaults.suspendPayment &&
     filters.paymentMethodName === defaults.paymentMethodName &&
-    filters.bankAccountName === defaults.bankAccountName
+    filters.bankAccountName === defaults.bankAccountName &&
+    filters.costCenterId === defaults.costCenterId &&
+    filters.supplierId === defaults.supplierId &&
+    filters.classificationStatus === defaults.classificationStatus
   );
 }
 
@@ -334,12 +349,13 @@ export const FINANCE_AP_MONTH_OPTIONS = [
 
 /** Se mês informado sem ano, usa o ano corrente para evitar erro 400 na API. */
 export function normalizeFinanceApUiFilters(filters: FinanceApUiFilters): FinanceApUiFilters {
-  const year = filters.year.trim();
-  const month = filters.month.trim();
+  const merged: FinanceApUiFilters = { ...EMPTY_FINANCE_AP_UI_FILTERS, ...filters };
+  const year = merged.year.trim();
+  const month = merged.month.trim();
   if (month && !year) {
-    return { ...filters, year: String(new Date().getFullYear()), month };
+    return { ...merged, year: String(new Date().getFullYear()), month };
   }
-  return filters;
+  return merged;
 }
 
 export function buildFinanceApTitlesQuery(
@@ -413,6 +429,8 @@ export function buildFinanceApExportQuery(filters: FinanceApUiFilters): string {
   return q ? `${q}&format=csv` : "format=csv";
 }
 
+export { FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS } from "./financeAccountsPayableCostCenterIntegration.js";
+
 export function buildFinanceApDashboardQuery(filters: FinanceApUiFilters): string {
   const normalized = normalizeFinanceApUiFilters(filters);
   const q = new URLSearchParams();
@@ -434,5 +452,10 @@ export function buildFinanceApDashboardQuery(filters: FinanceApUiFilters): strin
     q.set("paymentMethodName", normalized.paymentMethodName.trim());
   }
   if (normalized.bankAccountName.trim()) q.set("bankAccountName", normalized.bankAccountName.trim());
+  if (normalized.costCenterId.trim()) q.set("costCenterId", normalized.costCenterId.trim());
+  if (normalized.supplierId.trim()) q.set("supplierId", normalized.supplierId.trim());
+  if (normalized.classificationStatus !== "all") {
+    q.set("classificationStatus", normalized.classificationStatus);
+  }
   return q.toString();
 }

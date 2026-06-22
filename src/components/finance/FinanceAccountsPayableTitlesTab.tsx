@@ -33,6 +33,13 @@ import {
   FinanceApScrollableTable,
   FinanceApStickyTableHead,
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
+import { FinanceApTitleClassificationSheet } from "@/src/components/finance/FinanceApTitleClassificationSheet";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { canManageFinanceApAllocations } from "@/src/lib/financeAccountsPayablePermissions";
+import {
+  FINANCE_AP_NO_CLASSIFICATION,
+  FINANCE_AP_UNIDENTIFIED_SUPPLIER,
+} from "@/src/lib/financeAccountsPayableCostCenterIntegration";
 
 export function FinanceApTitlesTab({
   filters,
@@ -47,6 +54,9 @@ export function FinanceApTitlesTab({
   localFilter: FinanceApTitlesLocalFilter;
   onLocalFilterChange: (value: FinanceApTitlesLocalFilter) => void;
 }) {
+  const auth = useAuth();
+  const canEditClassification = canManageFinanceApAllocations(auth);
+  const [selectedExternalId, setSelectedExternalId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<"dueDate" | "balancePayable" | "externalId">("dueDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -202,12 +212,16 @@ export function FinanceApTitlesTab({
 
       {data?.items.length ? (
         <>
-          <FinanceApScrollableTable tableClassName="min-w-[1400px]">
+          <FinanceApScrollableTable tableClassName="min-w-[1680px]">
             <FinanceApStickyTableHead>
               <tr className="text-left text-[10px] font-bold uppercase text-muted-foreground">
                 <th className="p-2 whitespace-nowrap">ID Nomus</th>
                 <th className="p-2 min-w-[100px]">Empresa</th>
                 <th className="p-2 min-w-[120px]">Fornecedor</th>
+                <th className="p-2 min-w-[120px]">Fornec. consolidado</th>
+                <th className="p-2 min-w-[120px]">Centro de custo</th>
+                <th className="p-2 whitespace-nowrap">Origem classif.</th>
+                <th className="p-2 whitespace-nowrap">Status classif.</th>
                 <th className="p-2 whitespace-nowrap">CNPJ</th>
                 <th className="p-2 min-w-[140px]">Descrição</th>
                 <th className="p-2 whitespace-nowrap">Venc. original</th>
@@ -228,10 +242,39 @@ export function FinanceApTitlesTab({
             </FinanceApStickyTableHead>
             <tbody>
               {data.items.map((row) => (
-                <tr key={row.externalId} className="border-b border-border/60 hover:bg-muted/20">
+                <tr
+                  key={row.externalId}
+                  className="border-b border-border/60 hover:bg-muted/20 cursor-pointer"
+                  onClick={() => setSelectedExternalId(row.externalId)}
+                >
                   <td className="p-2 font-mono text-xs">{row.externalId}</td>
                   <td className="p-2">{displayFinanceText(row.companyName)}</td>
                   <td className="p-2">{displayFinanceText(row.personName)}</td>
+                  <td className="p-2 text-xs">
+                    {displayFinanceText(
+                      row.consolidatedSupplierName ?? FINANCE_AP_UNIDENTIFIED_SUPPLIER
+                    )}
+                  </td>
+                  <td className="p-2 text-xs">
+                    {displayFinanceText(row.costCenterLabel ?? FINANCE_AP_NO_CLASSIFICATION)}
+                  </td>
+                  <td className="p-2 text-xs">
+                    {displayFinanceText(row.classificationOriginLabel ?? "—")}
+                  </td>
+                  <td className="p-2 text-xs">
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                        row.isClassified
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          : "border-amber-200 bg-amber-50 text-amber-800"
+                      )}
+                    >
+                      {displayFinanceText(
+                        row.classificationStatusLabel ?? FINANCE_AP_NO_CLASSIFICATION
+                      )}
+                    </span>
+                  </td>
                   <td className="p-2 font-mono text-xs">{displayFinanceText(row.personCnpj)}</td>
                   <td className="p-2 max-w-[180px] truncate" title={row.description ?? undefined}>
                     {displayFinanceText(row.description)}
@@ -291,6 +334,12 @@ export function FinanceApTitlesTab({
           </div>
         </>
       ) : null}
+
+      <FinanceApTitleClassificationSheet
+        externalId={selectedExternalId}
+        canEdit={canEditClassification}
+        onClose={() => setSelectedExternalId(null)}
+      />
     </div>
   );
 }

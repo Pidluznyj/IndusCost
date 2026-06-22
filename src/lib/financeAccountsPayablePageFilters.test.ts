@@ -53,8 +53,8 @@ describe("financeAccountsPayablePageFilters", () => {
     assert.ok(page.includes("FinanceApTopDebtorsChart"));
     assert.ok(page.includes("FinanceDetailTabs"));
     assert.ok(page.includes("FINANCE_AP_EXECUTIVE_TABS"));
-    assert.ok(page.includes("Atualizar"));
-    assert.ok(page.includes("Exportar CSV"));
+    assert.ok(page.includes("FINANCE_HEADER_ACTION_REFRESH"));
+    assert.ok(page.includes("FINANCE_HEADER_ACTION_EXPORT_CSV"));
   });
 
   it("alterar rascunho não altera query aplicada até aplicar manualmente", () => {

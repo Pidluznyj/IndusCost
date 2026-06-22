@@ -44,6 +44,13 @@ export const FINANCE_AP_AUDIT_RULES = [
   "Títulos pagos seguem a regra financeira oficial de alocação.",
 ] as const;
 
+export const FINANCE_AP_CLASSIFICATION_AUDIT_NOTES = [
+  "Os títulos de Contas a Pagar vêm do Nomus (NomusAccountsPayable) e não são alterados pela classificação gerencial.",
+  "O fornecedor consolidado é uma consolidação derivada de aliases e vínculos financeiros — distinto do nome no título Nomus.",
+  "Centro de custo e rateio são camada gerencial sobre o título oficial, para análise e alocação interna.",
+  "Classificação automática ou manual não altera valor, saldo nem status do título original no Nomus.",
+] as const;
+
 export const FINANCE_BILLING_AUDIT_RULES = [
   "Somente NF-e autorizada entra no faturamento.",
   "NF-e de entrada não entra como receita.",

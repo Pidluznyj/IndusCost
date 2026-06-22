@@ -28,6 +28,7 @@ import {
   FINANCE_AP_SUSPEND_PAYMENT_OPTIONS,
   FINANCE_AP_MONTH_OPTIONS,
   FINANCE_AP_STATUS_OPTIONS,
+  FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS,
   FINANCE_AP_EXECUTIVE_TABS,
   FINANCE_AP_SECONDARY_TABS,
   normalizeFinanceApUiFilters,
@@ -57,6 +58,7 @@ import {
 } from "@/src/lib/financeAccountsPayableFormat";
 import {
   canExportFinanceAccountsPayable,
+  canManageFinanceApAllocations,
   canRunFinanceAccountsPayableSync,
 } from "@/src/lib/financeAccountsPayablePermissions";
 import {
@@ -606,18 +608,35 @@ export function FinanceAccountsPayablePage() {
 
   const handleRemoveFilterChip = useCallback((field: keyof FinanceApUiFilters) => {
     const next: FinanceApUiFilters = { ...appliedFilters };
-    if (field === "status" || field === "suspendPayment") next[field] = "all";
-    else if (field === "year") next[field] = String(new Date().getFullYear());
+    if (field === "status" || field === "suspendPayment" || field === "classificationStatus") {
+      next[field] = "all";
+    } else if (field === "year") next[field] = String(new Date().getFullYear());
     else next[field] = "";
     const normalized = normalizeFinanceApUiFilters(next);
     setDraftFilters(normalized);
     setAppliedFilters(normalized);
   }, [appliedFilters]);
 
-  const appliedFilterChips = useMemo(
-    () => buildFinanceApFilterChips(appliedFilters, handleRemoveFilterChip),
-    [appliedFilters, handleRemoveFilterChip]
-  );
+  const classificationFilterOptions = data?.classificationFilterOptions;
+
+  const appliedFilterChips = useMemo(() => {
+    const chips = buildFinanceApFilterChips(appliedFilters, handleRemoveFilterChip);
+    return chips.map((chip) => {
+      if (chip.id === "costCenterId" && classificationFilterOptions) {
+        const cc = classificationFilterOptions.costCenters.find(
+          (row) => row.id === appliedFilters.costCenterId
+        );
+        if (cc) return { ...chip, label: `Centro de custo: ${cc.code} — ${cc.name}` };
+      }
+      if (chip.id === "supplierId" && classificationFilterOptions) {
+        const supplier = classificationFilterOptions.suppliers.find(
+          (row) => row.id === appliedFilters.supplierId
+        );
+        if (supplier) return { ...chip, label: `Fornec. consolidado: ${supplier.name}` };
+      }
+      return chip;
+    });
+  }, [appliedFilters, classificationFilterOptions, handleRemoveFilterChip]);
 
   const headerUpdatedAt = cards?.lastSyncAt ?? data?.generatedAt ?? null;
 
@@ -809,6 +828,39 @@ export function FinanceAccountsPayablePage() {
             value={draftFilters.bankAccountName}
             onChange={(v) => setDraftFilters((f) => ({ ...f, bankAccountName: v }))}
           />
+          <FilterSelect
+            label="Centro de custo"
+            value={draftFilters.costCenterId}
+            onChange={(v) => setDraftFilters((f) => ({ ...f, costCenterId: v }))}
+            options={[
+              { value: "", label: "Todos" },
+              ...(classificationFilterOptions?.costCenters.map((cc) => ({
+                value: cc.id,
+                label: `${cc.code} — ${cc.name}`,
+              })) ?? []),
+            ]}
+          />
+          <FilterSelect
+            label="Fornecedor consolidado"
+            value={draftFilters.supplierId}
+            onChange={(v) => setDraftFilters((f) => ({ ...f, supplierId: v }))}
+            options={[
+              { value: "", label: "Todos" },
+              ...(classificationFilterOptions?.suppliers.map((s) => ({
+                value: s.id,
+                label: s.document ? `${s.name} (${s.document})` : s.name,
+              })) ?? []),
+            ]}
+          />
+          <FilterSelect
+            label="Status classificação"
+            value={draftFilters.classificationStatus}
+            onChange={(v) => setDraftFilters((f) => ({ ...f, classificationStatus: v }))}
+            options={FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+            }))}
+          />
         </div>
       </FinanceBiFilterPanel>
 
@@ -935,6 +987,49 @@ export function FinanceAccountsPayablePage() {
             />
           )}
         </div>
+        {data?.classificationSummary ? (
+          <div className="px-5 pb-5 border-t border-[#E5E7EB] pt-4">
+            <p className="text-[10px] font-bold uppercase text-muted-foreground mb-3">
+              Classificação por centro de custo
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <FinanceKpiCard
+                icon={CheckCircle2}
+                label="Total classificado"
+                value="—"
+                amount={loading ? undefined : data.classificationSummary.classifiedAmount}
+                amountFormat="currency"
+                subtitle="Camada gerencial — não altera AP oficial"
+                tone="info"
+                loading={loading}
+              />
+              <FinanceKpiCard
+                icon={AlertTriangle}
+                label="Total sem classificação"
+                value="—"
+                amount={loading ? undefined : data.classificationSummary.unclassifiedAmount}
+                amountFormat="currency"
+                subtitle="Títulos sem alocação completa"
+                tone={
+                  (data.classificationSummary.unclassifiedAmount ?? 0) > 0 ? "warning" : "neutral"
+                }
+                loading={loading}
+              />
+              <FinanceKpiCard
+                icon={TrendingDown}
+                label="% classificado"
+                value={
+                  loading
+                    ? "—"
+                    : `${data.classificationSummary.classifiedPercentage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+                }
+                subtitle="Sobre o valor considerado no filtro"
+                tone="neutral"
+                loading={loading}
+              />
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <FinanceHorizonSection

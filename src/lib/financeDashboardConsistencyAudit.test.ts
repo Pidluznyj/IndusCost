@@ -325,6 +325,9 @@ describe("financeDashboardConsistencyAudit — Contas a Pagar", () => {
       paymentMethodName: "",
       bankAccountName: "",
       suspendPayment: "all",
+      costCenterId: "",
+      supplierId: "",
+      classificationStatus: "all",
     });
     const exportQs = buildFinanceApExportQuery(applied);
     assert.ok(exportQs.includes(buildFinanceApDashboardQuery(applied)));

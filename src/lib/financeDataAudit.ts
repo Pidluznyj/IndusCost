@@ -20,6 +20,7 @@ import {
   FINANCE_AUDIT_SECTION_SYNC,
   FINANCE_AUDIT_SECTION_TECHNICAL,
   FINANCE_AP_AUDIT_RULES,
+  FINANCE_AP_CLASSIFICATION_AUDIT_NOTES,
   FINANCE_BILLING_AUDIT_RULES,
   FINANCE_BILLING_COMPARISON_NOTE,
 } from "./financeDataAuditCopy.js";
@@ -360,7 +361,7 @@ export function buildFinanceApAuditSections(input: {
   appliedFilterItems: FinanceDataAuditListItem[];
   dataSanitization?: FinanceDataSanitization | null;
 }): FinanceDataAuditSection[] {
-  return buildFinanceArApAuditSections({
+  const sections = buildFinanceArApAuditSections({
     moduleLabel: "Contas a Pagar",
     nomusSource: "NomusAccountsPayable — sincronizado do Nomus",
     lastSyncAt: input.lastSyncAt,
@@ -370,6 +371,19 @@ export function buildFinanceApAuditSections(input: {
     dataSanitization: input.dataSanitization,
     rules: [...FINANCE_AP_AUDIT_RULES],
   });
+  const classificationSection: FinanceDataAuditSection = {
+    kind: "paragraphs",
+    id: "ap-classification",
+    title: "Classificação financeira (centro de custo)",
+    paragraphs: [...FINANCE_AP_CLASSIFICATION_AUDIT_NOTES],
+  };
+  const ignoredIndex = sections.findIndex((section) => section.id === "ignored");
+  if (ignoredIndex >= 0) {
+    sections.splice(ignoredIndex, 0, classificationSection);
+  } else {
+    sections.push(classificationSection);
+  }
+  return sections;
 }
 
 export function buildFinanceBillingAuditSections(input: {

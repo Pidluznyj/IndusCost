@@ -72,6 +72,11 @@ export type FinanceApTitleListItem = {
   exclusionReason: string | null;
   isPurchaseOrderSchedule: boolean;
   syncedAt: string;
+  consolidatedSupplierName?: string;
+  costCenterLabel?: string;
+  classificationOriginLabel?: string;
+  classificationStatusLabel?: string;
+  isClassified?: boolean;
 };
 
 export type FinanceApTitlesPayload = {

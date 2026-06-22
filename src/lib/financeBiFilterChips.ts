@@ -5,6 +5,7 @@ import {
   type FinanceArUiFilters,
 } from "./financeAccountsReceivableDashboardTypes.js";
 import {
+  FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS,
   FINANCE_AP_MONTH_OPTIONS,
   FINANCE_AP_STATUS_OPTIONS,
   FINANCE_AP_SUSPEND_PAYMENT_OPTIONS,
@@ -111,6 +112,18 @@ export function buildFinanceApFilterChips(
   }
   if (filters.bankAccountName.trim()) {
     push("bankAccountName", `Conta: ${filters.bankAccountName.trim()}`);
+  }
+  if (filters.costCenterId.trim()) {
+    push("costCenterId", `Centro de custo: ${filters.costCenterId.trim()}`);
+  }
+  if (filters.supplierId.trim()) {
+    push("supplierId", `Fornec. consolidado: ${filters.supplierId.trim()}`);
+  }
+  if (filters.classificationStatus !== "all") {
+    push(
+      "classificationStatus",
+      `Classificação: ${optionLabel(FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS, filters.classificationStatus)}`
+    );
   }
 
   return chips;

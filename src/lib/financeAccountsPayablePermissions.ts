@@ -25,3 +25,7 @@ export function canExportFinanceAccountsPayable(auth: FinanceApPermissionCheck):
 export function canRunFinanceAccountsPayableSync(auth: FinanceApPermissionCheck): boolean {
   return auth.hasPermission("settings.nomus.sync");
 }
+
+export function canManageFinanceApAllocations(auth: FinanceApPermissionCheck): boolean {
+  return auth.hasPermission("finance.ap_allocations.manage");
+}

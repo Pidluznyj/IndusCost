@@ -4,6 +4,7 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   buildFinanceAccountsPayableDashboard,
   buildFinanceApPrismaWhere,
+  filterFinanceApRows,
   FinanceApFilterParseError,
   mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
@@ -11,8 +12,16 @@ import {
   type FinanceApDashboardFilters,
 } from "@/src/lib/financeAccountsPayableDashboard.js";
 import {
-  buildFinanceApExportCsv,
-} from "@/src/lib/financeAccountsPayableExport.js";
+  buildApClassificationFilterOptions,
+  buildApCostCenterIntegrationContext,
+  buildApTitleClassificationDetailDefault,
+  buildFinanceApExportCsvWithClassification,
+  computeApClassificationSummary,
+  createDefaultApCostCenterIntegrationDeps,
+  enrichFinanceApTitlesPayload,
+  filterApRowsByClassification,
+  parseFinanceApClassificationStatusFilter,
+} from "@/src/lib/financeAccountsPayableCostCenterIntegration.js";
 import { financeApExportFilename } from "@/src/lib/financeAccountsPayableFormat.js";
 import {
   buildFinanceApTitlesPayload,
@@ -116,7 +125,21 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
       if (!filters) return;
       const { rows, syncCutoff } = await loadFinanceApRows(filters);
       const payload = buildFinanceAccountsPayableDashboard(rows, filters, new Date(), syncCutoff);
-      return res.json(payload);
+      const integrationDeps = createDefaultApCostCenterIntegrationDeps();
+      const ctx = await buildApCostCenterIntegrationContext(
+        rows.map((row) => row.externalId),
+        integrationDeps
+      );
+      const filteredForSummary = filterFinanceApRows(rows, filters, new Date(), syncCutoff);
+      const [costCenters, suppliers] = await Promise.all([
+        integrationDeps.loadCostCenters(),
+        integrationDeps.loadSuppliers(),
+      ]);
+      return res.json({
+        ...payload,
+        classificationSummary: computeApClassificationSummary(filteredForSummary, ctx),
+        classificationFilterOptions: buildApClassificationFilterOptions(costCenters, suppliers),
+      });
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/dashboard", error);
       return res.status(500).json(
@@ -143,16 +166,31 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
         orderBy: { dueDate: "asc" },
       });
       const mapped = rows.map(mapPrismaRowToFinanceApTitleRow);
+      const integrationDeps = createDefaultApCostCenterIntegrationDeps();
+      const classificationFilters = {
+        costCenterId:
+          typeof rawQuery.costCenterId === "string" ? rawQuery.costCenterId.trim() : undefined,
+        supplierId:
+          typeof rawQuery.supplierId === "string" ? rawQuery.supplierId.trim() : undefined,
+        classificationStatus: parseFinanceApClassificationStatusFilter(rawQuery.classificationStatus),
+      };
+      const ctx = await buildApCostCenterIntegrationContext(
+        mapped.map((row) => row.externalId),
+        integrationDeps
+      );
+      const rowsForTitles = filterApRowsByClassification(mapped, ctx, classificationFilters);
+      const referenceDate = new Date();
       const payload = buildFinanceApTitlesPayload(
-        mapped,
+        rowsForTitles,
         {
           ...query,
           filters: loadFilters,
         },
-        new Date(),
+        referenceDate,
         syncCutoff
       );
-      return res.json(payload);
+      const rowsById = new Map(rowsForTitles.map((row) => [row.externalId, row]));
+      return res.json(enrichFinanceApTitlesPayload(payload, rowsById, ctx, referenceDate));
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/titles", error);
       return res.status(500).json(
@@ -172,7 +210,18 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
       const filters = resolveFinanceApLoadFilters(res, query);
       if (!filters) return;
       const { rows, syncCutoff } = await loadFinanceApRows(filters);
-      const csv = buildFinanceApExportCsv(rows, filters, new Date(), syncCutoff);
+      const integrationDeps = createDefaultApCostCenterIntegrationDeps();
+      const ctx = await buildApCostCenterIntegrationContext(
+        rows.map((row) => row.externalId),
+        integrationDeps
+      );
+      const csv = buildFinanceApExportCsvWithClassification(
+        rows,
+        filters,
+        ctx,
+        new Date(),
+        syncCutoff
+      );
       const filename = financeApExportFilename();
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -180,6 +229,37 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/export", error);
       return res.status(500).json({ error: "Erro ao exportar contas a pagar." });
+    }
+  });
+
+  app.get("/api/finance/accounts-payable/titles/:id/classification", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+
+      const externalId = Number(req.params.id);
+      if (!Number.isFinite(externalId) || externalId <= 0) {
+        return res.status(400).json({ error: "ID do título inválido." });
+      }
+
+      const row = await prisma.nomusAccountsPayable.findUnique({
+        where: { externalId },
+        select: FINANCE_AP_TITLE_SELECT,
+      });
+      if (!row) {
+        return res.status(404).json({ error: "Título não encontrado." });
+      }
+
+      const mapped = mapPrismaRowToFinanceApTitleRow(row);
+      const detail = await buildApTitleClassificationDetailDefault(mapped);
+      return res.json(detail);
+    } catch (error) {
+      console.error("GET /api/finance/accounts-payable/titles/:id/classification", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao carregar classificação do título.", error)
+      );
     }
   });
 }
