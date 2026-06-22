@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ExternalLink, Loader2, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import type { FinanceApTitleClassificationDetail } from "@/src/lib/financeAccountsPayableCostCenterIntegration";
+import type { FinanceApTitleClassificationDetail } from "@/src/lib/financeAccountsPayableCostCenterTypes";
 import {
   formatFinanceCurrency,
   formatFinanceDateTime,

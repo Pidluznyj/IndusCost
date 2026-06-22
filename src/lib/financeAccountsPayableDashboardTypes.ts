@@ -5,7 +5,7 @@ import type { FinanceHorizonSummary } from "./financeHorizonAggregation.js";
 import type {
   FinanceApClassificationFilterOptions,
   FinanceApClassificationSummary,
-} from "./financeAccountsPayableCostCenterIntegration.js";
+} from "./financeAccountsPayableCostCenterTypes.js";
 
 export const FINANCE_AP_SUPPLIER_RANKING_LIMIT = 100;
 export const FINANCE_AP_COMPANY_SUMMARY_LIMIT = 50;
@@ -429,7 +429,7 @@ export function buildFinanceApExportQuery(filters: FinanceApUiFilters): string {
   return q ? `${q}&format=csv` : "format=csv";
 }
 
-export { FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS } from "./financeAccountsPayableCostCenterIntegration.js";
+export { FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS } from "./financeAccountsPayableCostCenterShared.js";
 
 export function buildFinanceApDashboardQuery(filters: FinanceApUiFilters): string {
   const normalized = normalizeFinanceApUiFilters(filters);

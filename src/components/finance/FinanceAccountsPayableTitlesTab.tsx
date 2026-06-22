@@ -39,7 +39,7 @@ import { canManageFinanceApAllocations } from "@/src/lib/financeAccountsPayableP
 import {
   FINANCE_AP_NO_CLASSIFICATION,
   FINANCE_AP_UNIDENTIFIED_SUPPLIER,
-} from "@/src/lib/financeAccountsPayableCostCenterIntegration";
+} from "@/src/lib/financeAccountsPayableCostCenterShared";
 
 export function FinanceApTitlesTab({
   filters,

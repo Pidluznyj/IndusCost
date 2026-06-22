@@ -28,26 +28,34 @@ import {
 import { resolveSupplierForAccountsPayable } from "@/src/lib/financeAccountsPayableCostCenterAllocation.js";
 import type { NomusApReportSyncCutoff } from "@/src/lib/financeNomusApReportFreshness.js";
 import { prisma } from "@/src/lib/prisma.js";
+import {
+  FINANCE_AP_NO_CLASSIFICATION,
+  FINANCE_AP_UNIDENTIFIED_SUPPLIER,
+  type FinanceApClassificationStatusFilter,
+} from "@/src/lib/financeAccountsPayableCostCenterShared.js";
+import type {
+  FinanceApClassificationAuditEntry,
+  FinanceApClassificationFilterOptions,
+  FinanceApClassificationSummary,
+  FinanceApTitleClassificationDetail,
+  FinanceApTitleClassificationEnrichment,
+  FinanceApTitleClassificationLine,
+} from "@/src/lib/financeAccountsPayableCostCenterTypes.js";
 
-export const FINANCE_AP_UNIDENTIFIED_SUPPLIER = "Fornecedor não identificado";
-export const FINANCE_AP_NO_CLASSIFICATION = "Sem classificação";
-
-export type FinanceApClassificationStatusFilter =
-  | "all"
-  | "classified"
-  | "unclassified"
-  | "manual"
-  | "automatic"
-  | "split";
-
-export const FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS = [
-  { value: "all", label: "Todos" },
-  { value: "classified", label: "Classificados" },
-  { value: "unclassified", label: "Sem classificação" },
-  { value: "manual", label: "Manual" },
-  { value: "automatic", label: "Automático" },
-  { value: "split", label: "Rateio" },
-] as const;
+export {
+  FINANCE_AP_NO_CLASSIFICATION,
+  FINANCE_AP_UNIDENTIFIED_SUPPLIER,
+  FINANCE_AP_CLASSIFICATION_STATUS_OPTIONS,
+  type FinanceApClassificationStatusFilter,
+} from "@/src/lib/financeAccountsPayableCostCenterShared.js";
+export type {
+  FinanceApClassificationAuditEntry,
+  FinanceApClassificationFilterOptions,
+  FinanceApClassificationSummary,
+  FinanceApTitleClassificationDetail,
+  FinanceApTitleClassificationEnrichment,
+  FinanceApTitleClassificationLine,
+} from "@/src/lib/financeAccountsPayableCostCenterTypes.js";
 
 export const FINANCE_AP_CLASSIFICATION_EXPORT_HEADERS = [
   "Fornecedor consolidado",
@@ -61,63 +69,6 @@ export type ApIntegrationAllocationRow = AllocationDashboardRow & {
   source: "AUTO_RULE" | "MANUAL" | "BATCH";
   lockedManual: boolean;
   ruleId: string | null;
-};
-
-export type FinanceApTitleClassificationLine = {
-  allocationId: string;
-  costCenterId: string;
-  costCenterCode: string;
-  costCenterName: string;
-  percentage: number;
-  amount: number;
-  source: "AUTO_RULE" | "MANUAL" | "BATCH";
-  sourceLabel: string;
-  ruleId: string | null;
-  ruleLabel: string | null;
-  lockedManual: boolean;
-};
-
-export type FinanceApTitleClassificationEnrichment = {
-  consolidatedSupplierId: string | null;
-  consolidatedSupplierName: string;
-  consolidatedSupplierDocument: string | null;
-  costCenterLabel: string;
-  classificationOriginLabel: string;
-  classificationStatusLabel: string;
-  classificationStatusKey: FinanceApClassificationStatusFilter | "classified";
-  isClassified: boolean;
-  isSplit: boolean;
-  isManualLocked: boolean;
-  allocatedPercentage: number;
-  allocatedAmount: number;
-  lines: FinanceApTitleClassificationLine[];
-};
-
-export type FinanceApClassificationSummary = {
-  classifiedAmount: number;
-  unclassifiedAmount: number;
-  classifiedPercentage: number;
-};
-
-export type FinanceApClassificationFilterOptions = {
-  costCenters: Array<{ id: string; code: string; name: string }>;
-  suppliers: Array<{ id: string; name: string; document: string | null }>;
-};
-
-export type FinanceApClassificationAuditEntry = {
-  id: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  userName: string | null;
-  createdAt: string;
-  summary: string;
-};
-
-export type FinanceApTitleClassificationDetail = {
-  externalId: number;
-  enrichment: FinanceApTitleClassificationEnrichment;
-  auditHistory: FinanceApClassificationAuditEntry[];
 };
 
 export type ApCostCenterIntegrationContext = {
