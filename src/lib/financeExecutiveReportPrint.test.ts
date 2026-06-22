@@ -14,7 +14,7 @@ describe("financeExecutiveReportPrint", () => {
       join(process.cwd(), "src", "components", "finance", "executive-report", "ExecutiveReportFilters.tsx"),
       "utf8"
     );
-    assert.match(filters, /Imprimir \/ Salvar PDF/);
+    assert.match(filters, /FINANCE_HEADER_ACTION_EXPORT_PDF|Exportar PDF/);
     assert.match(filters, /executive-report-print-button/);
     assert.match(filters, /onPrint/);
   });

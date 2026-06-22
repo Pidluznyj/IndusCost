@@ -70,6 +70,8 @@ describe("financeCashFlowReconciliation", () => {
       balanceReceivable: 100_000,
       amountReceivable: 100_000,
       dueDate: new Date(2026, 0, 10),
+      sourceInvoiceId: 1,
+      sourceInvoiceNumber: "NF-100",
     });
     const ap = apRow({
       balancePayable: 80_000,
@@ -96,6 +98,8 @@ describe("financeCashFlowReconciliation", () => {
     const ar = arRow({
       balanceReceivable: 100_000,
       dueDate: new Date(2026, 1, 5),
+      sourceInvoiceId: 1,
+      sourceInvoiceNumber: "NF-101",
     });
     const ap = apRow({
       balancePayable: 130_000,
@@ -107,7 +111,7 @@ describe("financeCashFlowReconciliation", () => {
     assert.equal(payload.reconciliation.netCashFlow, -30_000);
   });
 
-  it("modo realizado usa settlementDate mesmo com dateBase=vencimento", () => {
+  it("modo realizado aloca AR pelo vencimento (dueDate)", () => {
     const payload = buildFinanceCashFlowDashboard(
       [
         arRow({
@@ -115,6 +119,8 @@ describe("financeCashFlowReconciliation", () => {
           amountReceived: 5000,
           dueDate: new Date(2026, 2, 20),
           settlementDate: new Date(2026, 1, 10),
+          sourceInvoiceId: 1,
+          sourceInvoiceNumber: "NF-102",
         }),
       ],
       [],
@@ -123,8 +129,8 @@ describe("financeCashFlowReconciliation", () => {
     );
     const fev = payload.monthlySeries.find((p) => p.month === 2);
     const mar = payload.monthlySeries.find((p) => p.month === 3);
-    assert.equal(fev?.inflowAmount, 5000);
-    assert.equal(mar?.inflowAmount ?? 0, 0);
+    assert.equal(fev?.inflowAmount ?? 0, 0);
+    assert.equal(mar?.inflowAmount, 5000);
   });
 
   it("origem Com NF afeta somente entradas AR", () => {
@@ -186,6 +192,8 @@ describe("financeCashFlowReconciliation", () => {
       externalId: 20,
       balanceReceivable: 300,
       dueDate: new Date(2026, 4, 1),
+      sourceInvoiceId: 1,
+      sourceInvoiceNumber: "NF-200",
     });
     const settledAr = arRow({
       externalId: 21,
@@ -193,6 +201,8 @@ describe("financeCashFlowReconciliation", () => {
       amountReceived: 200,
       settlementDate: new Date(2026, 4, 5),
       dueDate: new Date(2026, 4, 10),
+      sourceInvoiceId: 2,
+      sourceInvoiceNumber: "NF-201",
     });
     const payload = buildFinanceCashFlowDashboard(
       [openAr, settledAr],

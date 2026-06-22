@@ -58,7 +58,14 @@ function apRow(overrides: Partial<FinanceApDashboardRow> = {}): FinanceApDashboa
 describe("financeCrossModuleReconciliation", () => {
   it("previsto: AR em aberto = entradas do fluxo", () => {
     const rec = reconcileFinanceModulesFromCashFlowFilters(
-      [arRow({ balanceReceivable: 100_000, dueDate: new Date(2026, 0, 10) })],
+      [
+        arRow({
+          balanceReceivable: 100_000,
+          dueDate: new Date(2026, 0, 10),
+          sourceInvoiceId: 1,
+          sourceInvoiceNumber: "NF-100",
+        }),
+      ],
       [apRow({ balancePayable: 80_000, dueDate: new Date(2026, 0, 12) })],
       { viewMode: "projected", dateBase: "due", status: "all", year: 2026 },
       REF
@@ -79,7 +86,10 @@ describe("financeCrossModuleReconciliation", () => {
         arRow({
           balanceReceivable: 0,
           amountReceived: 40_000,
+          dueDate: new Date(2026, 1, 5),
           settlementDate: new Date(2026, 1, 8),
+          sourceInvoiceId: 1,
+          sourceInvoiceNumber: "NF-40",
         }),
       ],
       [
