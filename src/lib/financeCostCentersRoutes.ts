@@ -11,7 +11,13 @@ import {
   parseFinanceCostCentersListQuery,
   updateFinancialCostCenterDefault,
 } from "@/src/lib/financeCostCenters.js";
+import {
+  buildFinanceCostCenterDashboardDefault,
+  FinanceCostCenterDashboardError,
+  parseFinanceCostCenterDashboardFilters,
+} from "@/src/lib/financeCostCenterDashboard.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
+import { FinanceApFilterParseError } from "@/src/lib/financeAccountsPayableDashboard.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -29,6 +35,13 @@ export const FINANCE_COST_CENTERS_MANAGE_PERMISSIONS = ["finance.cost_centers.ma
 function handleValidationError(res: express.Response, error: FinanceCostCenterValidationError) {
   const status = error.code === "NOT_FOUND" ? 404 : 400;
   return res.status(status).json({ error: error.message, code: error.code });
+}
+
+function handleDashboardError(
+  res: express.Response,
+  error: FinanceCostCenterDashboardError | FinanceApFilterParseError
+) {
+  return res.status(400).json({ error: error.message, code: "code" in error ? error.code : "INVALID_FILTER" });
 }
 
 export function registerFinanceCostCentersRoutes(app: express.Express, auth: AuthGuards) {
@@ -57,6 +70,28 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
       console.error("GET /api/finance/cost-centers", error);
       return res.status(500).json(
         financeApiErrorJson("Erro ao listar centros de custo financeiros.", error)
+      );
+    }
+  });
+
+  app.get("/api/finance/cost-centers/dashboard", ...viewGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const filters = parseFinanceCostCenterDashboardFilters(req.query as Record<string, unknown>);
+      const payload = await buildFinanceCostCenterDashboardDefault(filters);
+      return res.json(payload);
+    } catch (error) {
+      if (
+        error instanceof FinanceCostCenterDashboardError ||
+        error instanceof FinanceApFilterParseError
+      ) {
+        return handleDashboardError(res, error);
+      }
+      console.error("GET /api/finance/cost-centers/dashboard", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao montar dashboard de centros de custo.", error)
       );
     }
   });
