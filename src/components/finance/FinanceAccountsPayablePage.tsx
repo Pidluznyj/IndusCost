@@ -128,6 +128,8 @@ import {
 } from "@/src/lib/financeKpiTooltips";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceHorizonSection } from "@/src/components/finance/shared/FinanceHorizonSection";
+import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
+import { mapApAgingBucketsToCards } from "@/src/lib/financeAgingBucketDrilldownTypes";
 
 type ActionItem = {
   id: string;
@@ -1035,7 +1037,27 @@ export function FinanceAccountsPayablePage() {
         summary={data?.financialHorizon}
         variant="ap"
         loading={loading}
+        filters={appliedFilters}
+        enableDrilldown
       />
+
+      <section className={financeBiSectionClass}>
+        <div className="px-5 py-4 border-b border-[#E5E7EB]">
+          <h2 className="text-sm font-bold text-[#111827]">Aging — saldo em aberto por faixa</h2>
+          <p className="text-[11px] text-[#6B7280] mt-0.5">
+            Clique em um card para ver os títulos da faixa. Os valores respeitam os filtros globais aplicados.
+          </p>
+        </div>
+        <div className="p-5">
+          <FinanceAgingBucketDrilldownSection
+            module="ap"
+            cards={mapApAgingBucketsToCards(data?.agingBuckets ?? [])}
+            filters={appliedFilters}
+            loadingCards={loading && !data}
+            cardTone={(key) => (key.startsWith("overdue") ? "danger" : "neutral")}
+          />
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {loading && !data ? (

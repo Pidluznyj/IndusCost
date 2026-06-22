@@ -127,6 +127,8 @@ import {
 } from "@/src/lib/financeKpiTooltips";
 import { financeBiCardClass, financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceArOpenHorizonSection } from "@/src/components/finance/FinanceArOpenHorizonSection";
+import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
+import { mapArAgingBucketsToCards } from "@/src/lib/financeAgingBucketDrilldownTypes";
 
 /* ─────────────────────────────────────────────────────────────────
    ACTION CENTER — deriva de criticalTitles + dataQualitySummary
@@ -975,6 +977,24 @@ export function FinanceAccountsReceivablePage() {
       </section>
 
       <FinanceArOpenHorizonSection horizon={data?.financialHorizon} loading={loading} />
+
+      <section className={financeBiSectionClass}>
+        <div className="px-5 py-4 border-b border-[#E5E7EB]">
+          <h2 className="text-sm font-bold text-[#111827]">Aging — saldo em aberto por faixa</h2>
+          <p className="text-[11px] text-[#6B7280] mt-0.5">
+            Clique em um card para ver os títulos da faixa. Os valores respeitam os filtros globais aplicados.
+          </p>
+        </div>
+        <div className="p-5">
+          <FinanceAgingBucketDrilldownSection
+            module="ar"
+            cards={mapArAgingBucketsToCards(data?.agingBuckets ?? [])}
+            filters={appliedFilters}
+            loadingCards={loading && !data}
+            cardTone={(key) => (key.startsWith("overdue") ? "danger" : "neutral")}
+          />
+        </div>
+      </section>
 
       {/* ─── CHARTS ─── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

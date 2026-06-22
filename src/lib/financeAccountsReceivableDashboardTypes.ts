@@ -322,6 +322,7 @@ export function buildFinanceArTitlesQuery(
     overdueOnly?: boolean;
     qualityAlert?: FinanceArDataQualityAlertKey;
     localFilter?: string;
+    agingBucket?: string;
   }
 ): string {
   const base = buildFinanceArDashboardQuery(filters);
@@ -336,6 +337,7 @@ export function buildFinanceArTitlesQuery(
   if (extras?.localFilter && extras.localFilter !== "all") {
     q.set("localFilter", extras.localFilter);
   }
+  if (extras?.agingBucket?.trim()) q.set("agingBucket", extras.agingBucket.trim());
   return q.toString();
 }
 

@@ -26,6 +26,7 @@ import {
 import {
   buildFinanceApHorizonSummary,
 } from "./financeHorizonAggregation.js";
+import { assignFinanceDashboardAgingBucketKey } from "./financeDashboardAgingBuckets.js";
 import {
   isFinanceApExcludedFromReports,
   isNomusApStaleForReports,
@@ -493,19 +494,10 @@ export function computeDaysOverdue(dueDate: Date | null, today: Date): number {
 }
 
 function assignAgingBucketKey(dueDate: Date, today: Date): FinanceApAgingBucketKey {
-  const due = startOfLocalDay(dueDate);
-  const t = startOfLocalDay(today);
-  const diffDays = Math.floor((due.getTime() - t.getTime()) / MS_PER_DAY);
-  if (diffDays > 0) return "upcoming";
-  if (diffDays === 0) return "dueToday";
-  const overdueDays = -diffDays;
-  if (overdueDays <= 7) return "overdue1to7";
-  if (overdueDays <= 15) return "overdue8to15";
-  if (overdueDays <= 30) return "overdue16to30";
-  if (overdueDays <= 60) return "overdue31to60";
-  if (overdueDays <= 90) return "overdue61to90";
-  return "overdue90plus";
+  return assignFinanceDashboardAgingBucketKey(dueDate, today);
 }
+
+export { assignFinanceDashboardAgingBucketKey };
 
 function isDueInRange(dueDate: Date | null, from: Date, to: Date): boolean {
   if (!dueDate) return false;

@@ -10,6 +10,8 @@ import {
 import {
   classifyFinanceArTitle,
   computeDaysOverdue,
+  isFinanceArAllowedInManagementReport,
+  isFinanceArOpen,
   mapPrismaRowToFinanceArDashboardRow,
   parseFinanceArDashboardFilters,
   roundMoney,
@@ -17,7 +19,24 @@ import {
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
 import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
-import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
+import {
+  isFinanceArExcludedFromReports,
+  resolveEffectiveNomusArReportSyncCutoff,
+  type NomusArReportSyncCutoff,
+} from "./financeNomusArReportFreshness.js";
+import {
+  isFinanceDashboardAgingBucketKey,
+  isFinanceHorizonDrilldownBucketKey,
+  parseFinanceAgingBucketParam,
+  resolveFinanceAgingBucketMeta,
+  rowMatchesFinanceDashboardAgingBucket,
+  rowMatchesFinanceHorizonDrilldownBucket,
+  type FinanceAgingBucketParam,
+} from "./financeDashboardAgingBuckets.js";
+import type { FinanceAgingBucketSelectionMeta } from "./financeDashboardAgingBuckets.js";
+import type {
+  FinanceTitlesBucketTotals,
+} from "./financeAgingBucketDrilldownTypes.js";
 
 export type FinanceArTitlesSortBy = "dueDate" | "balanceReceivable" | "externalId";
 export type FinanceArTitlesSortDirection = "asc" | "desc";
@@ -32,6 +51,7 @@ export type FinanceArTitlesQuery = {
   overdueOnly?: boolean;
   qualityAlert?: FinanceArDataQualityAlertKey;
   localFilter: FinanceArTitlesLocalFilter;
+  agingBucket?: FinanceAgingBucketParam;
 };
 
 export type FinanceArTitleListItem = {
@@ -64,6 +84,8 @@ export type FinanceArTitlesPayload = {
   sortBy: FinanceArTitlesSortBy;
   sortDirection: FinanceArTitlesSortDirection;
   items: FinanceArTitleListItem[];
+  selectedBucket?: FinanceAgingBucketSelectionMeta;
+  bucketTotals?: FinanceTitlesBucketTotals;
 };
 
 function parsePositiveInt(value: unknown, fallback: number, max: number): number {
@@ -90,6 +112,7 @@ export function parseFinanceArTitlesQuery(query: Record<string, unknown>): Finan
   const qualityRaw = String(query.qualityAlert ?? "").trim();
   const qualityAlert = isFinanceArQualityAlertKey(qualityRaw) ? qualityRaw : undefined;
   const localFilter = parseFinanceArTitlesLocalFilter(query.localFilter);
+  const agingBucket = parseFinanceAgingBucketParam(query.agingBucket);
   return {
     page: parsePositiveInt(query.page, 1, 10_000),
     limit: parsePositiveInt(query.limit, 50, 200),
@@ -100,6 +123,7 @@ export function parseFinanceArTitlesQuery(query: Record<string, unknown>): Finan
     overdueOnly,
     qualityAlert,
     localFilter,
+    agingBucket,
   };
 }
 
@@ -176,21 +200,59 @@ export function mapRowToTitleListItem(
   };
 }
 
+function rowMatchesArAgingBucketDrilldown(
+  row: FinanceArDashboardRow,
+  bucketKey: FinanceAgingBucketParam,
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
+): boolean {
+  if (row.suspendCollection === true) return false;
+  if (!isFinanceArOpen(row)) return false;
+  if (!row.dueDate) return false;
+  if (!Number.isFinite(row.balanceReceivable) || row.balanceReceivable <= 0) return false;
+
+  if (isFinanceDashboardAgingBucketKey(bucketKey)) {
+    return rowMatchesFinanceDashboardAgingBucket(row.dueDate, bucketKey, referenceDate);
+  }
+
+  if (!isFinanceHorizonDrilldownBucketKey(bucketKey)) return false;
+  const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff([row], syncCutoff);
+  if (isFinanceArExcludedFromReports(row, effectiveCutoff)) return false;
+  if (!isFinanceArAllowedInManagementReport(row, referenceDate)) return false;
+  return rowMatchesFinanceHorizonDrilldownBucket(row.dueDate, bucketKey, referenceDate);
+}
+
 export function buildFinanceArTitlesPayload(
   rows: FinanceArDashboardRow[],
   query: FinanceArTitlesQuery,
   referenceDate: Date = new Date(),
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceArTitlesPayload {
-  let filtered = filterFinanceArManagementReportRows(rows, query.filters, referenceDate, syncCutoff);
+  const isHorizonDrilldown =
+    query.agingBucket != null && isFinanceHorizonDrilldownBucketKey(query.agingBucket);
 
-  const effectiveLocalFilter =
-    query.localFilter !== "all"
-      ? query.localFilter
-      : query.overdueOnly
-        ? "overdue"
-        : "all";
-  filtered = filterArTitleRowsByLocalFilter(filtered, effectiveLocalFilter, referenceDate);
+  let filtered: FinanceArDashboardRow[];
+  if (isHorizonDrilldown) {
+    filtered = rows.filter((row) =>
+      rowMatchesArAgingBucketDrilldown(row, query.agingBucket!, referenceDate, syncCutoff)
+    );
+  } else {
+    filtered = filterFinanceArManagementReportRows(rows, query.filters, referenceDate, syncCutoff);
+
+    const effectiveLocalFilter =
+      query.localFilter !== "all"
+        ? query.localFilter
+        : query.overdueOnly
+          ? "overdue"
+          : "all";
+    filtered = filterArTitleRowsByLocalFilter(filtered, effectiveLocalFilter, referenceDate);
+
+    if (query.agingBucket) {
+      filtered = filtered.filter((row) =>
+        rowMatchesArAgingBucketDrilldown(row, query.agingBucket!, referenceDate, syncCutoff)
+      );
+    }
+  }
 
   if (query.search) {
     filtered = filtered.filter((row) => rowMatchesSearch(row, query.search!));
@@ -204,6 +266,15 @@ export function buildFinanceArTitlesPayload(
 
   const mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));
   mapped.sort((a, b) => compareTitles(a, b, query.sortBy, query.sortDirection));
+
+  const bucketTotals: FinanceTitlesBucketTotals | undefined = query.agingBucket
+    ? {
+        openBalanceAmount: roundMoney(
+          mapped.reduce((sum, item) => sum + item.balanceReceivable, 0)
+        ),
+        titlesCount: mapped.length,
+      }
+    : undefined;
 
   const total = mapped.length;
   const totalPages = Math.max(1, Math.ceil(total / query.limit));
@@ -219,6 +290,10 @@ export function buildFinanceArTitlesPayload(
     sortBy: query.sortBy,
     sortDirection: query.sortDirection,
     items,
+    selectedBucket: query.agingBucket
+      ? resolveFinanceAgingBucketMeta(query.agingBucket)
+      : undefined,
+    bucketTotals,
   };
 }
 

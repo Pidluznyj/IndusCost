@@ -30,6 +30,24 @@ import {
   resolveFinanceApTitleExclusionReason,
   type FinanceApTitlesLocalFilter,
 } from "./financeAccountsPayableTitlesLocalFilter.js";
+import {
+  matchesFinanceApHorizonEntityFilters,
+} from "./financeHorizonAggregation.js";
+import {
+  isFinanceDashboardAgingBucketKey,
+  isFinanceHorizonDrilldownBucketKey,
+  parseFinanceAgingBucketParam,
+  resolveFinanceAgingBucketMeta,
+  rowMatchesFinanceDashboardAgingBucket,
+  rowMatchesFinanceHorizonDrilldownBucket,
+  type FinanceAgingBucketParam,
+  type FinanceHorizonDrilldownBucketKey,
+} from "./financeDashboardAgingBuckets.js";
+import type { FinanceAgingBucketSelectionMeta } from "./financeDashboardAgingBuckets.js";
+import type {
+  FinanceTitlesBucketTotals,
+} from "./financeAgingBucketDrilldownTypes.js";
+import { isFinanceApOpen } from "./financeAccountsPayableDashboard.js";
 
 export type FinanceApTitlesSortBy = "dueDate" | "balancePayable" | "externalId";
 export type FinanceApTitlesSortDirection = "asc" | "desc";
@@ -44,6 +62,7 @@ export type FinanceApTitlesQuery = {
   overdueOnly?: boolean;
   qualityAlert?: FinanceApDataQualityAlertKey;
   localFilter: FinanceApTitlesLocalFilter;
+  agingBucket?: FinanceAgingBucketParam;
 };
 
 export type FinanceApTitleListItem = {
@@ -87,6 +106,8 @@ export type FinanceApTitlesPayload = {
   sortBy: FinanceApTitlesSortBy;
   sortDirection: FinanceApTitlesSortDirection;
   items: FinanceApTitleListItem[];
+  selectedBucket?: FinanceAgingBucketSelectionMeta;
+  bucketTotals?: FinanceTitlesBucketTotals;
 };
 
 function parsePositiveInt(value: unknown, fallback: number, max: number): number {
@@ -122,6 +143,7 @@ export function parseFinanceApTitlesQuery(query: Record<string, unknown>): Finan
     overdueOnly,
     qualityAlert,
     localFilter: parseFinanceApTitlesLocalFilter(query.localFilter),
+    agingBucket: parseFinanceAgingBucketParam(query.agingBucket),
   };
 }
 
@@ -240,18 +262,79 @@ function filterRowsForTitlesGrid(
   return filterApTitleRowsByLocalFilter(filtered, query.localFilter, referenceDate);
 }
 
+function rowMatchesApAgingBucketDrilldown(
+  row: FinanceApDashboardRow,
+  bucketKey: FinanceAgingBucketParam,
+  filters: FinanceApDashboardFilters,
+  referenceDate: Date,
+  syncCutoff?: NomusApReportSyncCutoff | null,
+  horizonMode = false
+): boolean {
+  if (row.suspendPayment === true) return false;
+  if (!isFinanceApOpen(row)) return false;
+  const operationalDueDate = getAccountsPayableOperationalDueDate(row);
+  if (!operationalDueDate) return false;
+  const balance = row.balancePayable;
+  if (!Number.isFinite(balance) || balance <= 0) return false;
+
+  if (horizonMode) {
+    if (!matchesFinanceApHorizonEntityFilters(row, filters, referenceDate)) return false;
+    return rowMatchesFinanceHorizonDrilldownBucket(
+      operationalDueDate,
+      bucketKey as FinanceHorizonDrilldownBucketKey,
+      referenceDate
+    );
+  }
+
+  if (isFinanceDashboardAgingBucketKey(bucketKey)) {
+    return rowMatchesFinanceDashboardAgingBucket(operationalDueDate, bucketKey, referenceDate);
+  }
+
+  return false;
+}
+
 export function buildFinanceApTitlesPayload(
   rows: FinanceApDashboardRow[],
   query: FinanceApTitlesQuery,
   referenceDate: Date = new Date(),
   syncCutoff?: NomusApReportSyncCutoff | null
 ): FinanceApTitlesPayload {
-  let filtered = filterRowsForTitlesGrid(rows, query, referenceDate, syncCutoff);
+  const isHorizonDrilldown =
+    query.agingBucket != null && isFinanceHorizonDrilldownBucketKey(query.agingBucket);
 
-  if (query.overdueOnly) {
-    filtered = filtered.filter(
-      (row) => classifyFinanceApTitle(row, referenceDate) === "overdue"
+  let filtered: FinanceApDashboardRow[];
+  if (isHorizonDrilldown) {
+    filtered = rows.filter((row) =>
+      rowMatchesApAgingBucketDrilldown(
+        row,
+        query.agingBucket!,
+        query.filters,
+        referenceDate,
+        syncCutoff,
+        true
+      )
     );
+  } else {
+    filtered = filterRowsForTitlesGrid(rows, query, referenceDate, syncCutoff);
+
+    if (query.overdueOnly) {
+      filtered = filtered.filter(
+        (row) => classifyFinanceApTitle(row, referenceDate) === "overdue"
+      );
+    }
+
+    if (query.agingBucket) {
+      filtered = filtered.filter((row) =>
+        rowMatchesApAgingBucketDrilldown(
+          row,
+          query.agingBucket!,
+          query.filters,
+          referenceDate,
+          syncCutoff,
+          false
+        )
+      );
+    }
   }
 
   if (query.search) {
@@ -267,6 +350,15 @@ export function buildFinanceApTitlesPayload(
   const mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));
   mapped.sort((a, b) => compareTitles(a, b, query.sortBy, query.sortDirection));
 
+  const bucketTotals: FinanceTitlesBucketTotals | undefined = query.agingBucket
+    ? {
+        openBalanceAmount: roundMoney(
+          mapped.reduce((sum, item) => sum + item.balancePayable, 0)
+        ),
+        titlesCount: mapped.length,
+      }
+    : undefined;
+
   const total = mapped.length;
   const totalPages = Math.max(1, Math.ceil(total / query.limit));
   const page = Math.min(query.page, totalPages);
@@ -281,6 +373,10 @@ export function buildFinanceApTitlesPayload(
     sortBy: query.sortBy,
     sortDirection: query.sortDirection,
     items,
+    selectedBucket: query.agingBucket
+      ? resolveFinanceAgingBucketMeta(query.agingBucket)
+      : undefined,
+    bucketTotals,
   };
 }
 

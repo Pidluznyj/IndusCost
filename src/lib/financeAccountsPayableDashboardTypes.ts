@@ -369,6 +369,7 @@ export function buildFinanceApTitlesQuery(
     overdueOnly?: boolean;
     qualityAlert?: FinanceApDataQualityAlertKey;
     localFilter?: string;
+    agingBucket?: string;
   }
 ): string {
   const base = buildFinanceApDashboardQuery(filters);
@@ -383,6 +384,7 @@ export function buildFinanceApTitlesQuery(
   if (extras?.localFilter && extras.localFilter !== "all") {
     q.set("localFilter", extras.localFilter);
   }
+  if (extras?.agingBucket?.trim()) q.set("agingBucket", extras.agingBucket.trim());
   return q.toString();
 }
 

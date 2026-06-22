@@ -1,24 +1,15 @@
 import React from "react";
 import { CalendarRange } from "lucide-react";
 import { FinanceKpiCard, type FinanceKpiCardProps } from "@/src/components/finance/shared/FinanceKpiCard";
-import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
-import type { FinanceHorizonBucketKey, FinanceHorizonBucketValue } from "@/src/lib/financeHorizonBuckets";
 import type { FinanceHorizonSummary } from "@/src/lib/financeHorizonAggregation";
 import { financeBiSectionClass } from "@/src/lib/financeBiDashboardTheme";
-import {
-  FINANCE_HORIZON_AP_BUCKET_TOOLTIPS,
-  FINANCE_HORIZON_AR_BUCKET_TOOLTIPS,
-  FINANCE_HORIZON_BILLING_BUCKET_TOOLTIPS,
-  FINANCE_HORIZON_TOTAL_TOOLTIP,
-} from "@/src/lib/financeKpiTooltips";
+import { FinanceAgingBucketDrilldownSection } from "@/src/components/finance/shared/FinanceAgingBucketDrilldownSection";
+import { mapHorizonBucketsToCards } from "@/src/lib/financeAgingBucketDrilldownTypes";
+import type { FinanceApUiFilters } from "@/src/lib/financeAccountsPayableDashboardTypes";
+import type { FinanceArUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
+import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 
 type FinanceHorizonVariant = "ap" | "ar" | "billing";
-
-const BUCKET_TOOLTIPS: Record<FinanceHorizonVariant, Record<string, string>> = {
-  ap: FINANCE_HORIZON_AP_BUCKET_TOOLTIPS,
-  ar: FINANCE_HORIZON_AR_BUCKET_TOOLTIPS,
-  billing: FINANCE_HORIZON_BILLING_BUCKET_TOOLTIPS,
-};
 
 type HorizonSkeletonCard = FinanceKpiCardProps & { id: string };
 
@@ -31,50 +22,22 @@ const HORIZON_SKELETON_CARDS: HorizonSkeletonCard[] = Array.from({ length: 6 }, 
   compact: true,
 }));
 
-function bucketHelper(variant: FinanceHorizonVariant, key: FinanceHorizonBucketKey): string {
-  if (key === "total_60") return FINANCE_HORIZON_TOTAL_TOOLTIP;
-  return BUCKET_TOOLTIPS[variant][key] ?? FINANCE_HORIZON_TOTAL_TOOLTIP;
-}
-
-function HorizonCard({
-  bucket,
-  countUnitLabel,
-  variant,
-  loading,
-}: {
-  bucket: FinanceHorizonBucketValue;
-  countUnitLabel: string;
-  variant: FinanceHorizonVariant;
-  loading?: boolean;
-}) {
-  const countLabel =
-    bucket.count > 0 ? `${bucket.count} ${countUnitLabel}` : bucket.key === "total_60" ? "Soma das faixas" : "—";
-
-  return (
-    <FinanceKpiCard
-      icon={CalendarRange}
-      label={bucket.label}
-      value={loading ? "…" : formatFinanceKpiCurrency(bucket.amount)}
-      subtitle={countLabel}
-      helperText={bucketHelper(variant, bucket.key)}
-      compact
-      loading={loading}
-    />
-  );
-}
-
 export function FinanceHorizonSection({
   summary,
   variant,
   loading = false,
+  filters,
+  enableDrilldown = false,
 }: {
   summary: FinanceHorizonSummary | null | undefined;
   variant: FinanceHorizonVariant;
   loading?: boolean;
+  filters?: FinanceApUiFilters | FinanceArUiFilters;
+  enableDrilldown?: boolean;
 }) {
   if (!summary && !loading) return null;
 
-  const cards = summary ? [...summary.buckets, summary.total] : [];
+  const cards = summary ? mapHorizonBucketsToCards(summary.buckets, summary.total) : [];
 
   return (
     <section className={financeBiSectionClass}>
@@ -90,23 +53,38 @@ export function FinanceHorizonSection({
           <p className="text-[10px] text-[#9CA3AF] mt-1 leading-snug">{summary.scopeNote}</p>
         ) : null}
       </div>
-      <div className="p-5 indus-kpi-grid indus-kpi-grid--wide">
-        {loading && !summary
-          ? HORIZON_SKELETON_CARDS.map(({ id, ...cardProps }) => (
+      <div className="p-5">
+        {enableDrilldown && variant === "ap" && filters ? (
+          <FinanceAgingBucketDrilldownSection
+            module="ap"
+            cards={cards}
+            filters={filters}
+            horizonMode
+            loadingCards={loading && !summary}
+          />
+        ) : loading && !summary ? (
+          <div className="indus-kpi-grid indus-kpi-grid--wide">
+            {HORIZON_SKELETON_CARDS.map(({ id, ...cardProps }) => (
               <React.Fragment key={id}>
                 <FinanceKpiCard {...cardProps} />
               </React.Fragment>
-            ))
-          : cards.map((bucket) => (
+            ))}
+          </div>
+        ) : (
+          <div className="indus-kpi-grid indus-kpi-grid--wide">
+            {cards.map((bucket) => (
               <React.Fragment key={bucket.key}>
-                <HorizonCard
-                  bucket={bucket}
-                  countUnitLabel={summary?.countUnitLabel ?? "item(ns)"}
-                  variant={variant}
-                  loading={loading}
+                <FinanceKpiCard
+                  icon={CalendarRange}
+                  label={bucket.label}
+                  value={formatFinanceKpiCurrency(bucket.amount)}
+                  subtitle={bucket.count > 0 ? `${bucket.count} título(s)` : "—"}
+                  compact
                 />
               </React.Fragment>
             ))}
+          </div>
+        )}
       </div>
     </section>
   );
