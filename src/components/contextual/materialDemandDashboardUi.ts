@@ -26,7 +26,7 @@ export const MATERIAL_DEMAND_TAB_HINTS: Record<MaterialDemandDashboardTab, strin
   "usage-estimate":
     "Quanto de cada matéria-prima será necessário para atender os pedidos filtrados no período selecionado.",
   "planned-vs-realized":
-    "Compara a necessidade prevista de matéria-prima com o que foi efetivamente faturado.",
+    "Estimativa inteligente de compra com saldo vivo, cenário conservador e itens em revisão.",
   summary: "Indicadores consolidados, distribuição por valor e evolução mensal estimada.",
   "by-material": "Lista analítica por matéria-prima com percentuais e detalhamento expandível.",
   "by-period": "Necessidade agrupada por mês e evolução temporal da estimativa.",

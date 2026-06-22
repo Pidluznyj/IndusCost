@@ -218,7 +218,7 @@ const DASHBOARD_CONTEXT = {
     baseBadge: "Base: pedidos de venda",
     title: "Pedidos de venda — Inteligência de Matéria-Prima",
     subtitle:
-      "Uso previsto x realizado por pedido — estimativa de quanto matéria-prima será necessária para atender os pedidos filtrados.",
+      "Estimativa de matéria-prima com base em pedidos, faturamento e saldo em aberto — com janela padrão de 14 dias.",
   },
 } as const;
 
@@ -1553,6 +1553,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                   appliedFilters={appliedFilters}
                   filterKey={filterKey}
                   retryNonce={retryNonce}
+                  enableIntelligence={context === "sales-orders"}
                 />
               ) : null}
 

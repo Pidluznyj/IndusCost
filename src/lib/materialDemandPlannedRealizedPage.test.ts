@@ -20,6 +20,7 @@ function readDrawer(): string {
 test("painel usa drawer lateral — sanfona inline removida", () => {
   const panel = readPanel();
   assert.match(panel, /MaterialUsageAuditDrawer/);
+  assert.match(panel, /enableIntelligence/);
   assert.doesNotMatch(panel, /MaterialPlannedRealizedDrillDown/);
   assert.doesNotMatch(panel, /expandedMaterialId/);
 });
