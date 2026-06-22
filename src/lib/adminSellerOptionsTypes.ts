@@ -35,3 +35,40 @@ export function buildAdminSellerOptionKey(
   }
   return `name:${option.normalizedName}`;
 }
+
+function formatCompactBrlAdmin(value: number): string | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+export function formatAdminSellerOptionCounts(option: AdminSellerOption): string {
+  const orderVal = formatCompactBrlAdmin(option.ordersValue);
+  const base = orderVal
+    ? `${option.ordersCount} ped. · ${orderVal}`
+    : `${option.ordersCount} ped.`;
+  const propPart =
+    option.proposalsCount > 0 ? ` · ${option.proposalsCount} prop. negociação` : "";
+  return `${base}${propPart}`;
+}
+
+export function formatAdminSellerOptionSublabel(option: AdminSellerOption): string {
+  const idPart =
+    option.externalSellerIds.length > 1
+      ? `IDs Nomus ${option.externalSellerIds.join(", ")}`
+      : option.externalSellerId != null
+        ? `ID Nomus ${option.externalSellerId}`
+        : "Sem ID — fallback por nome";
+  const confidenceLabel =
+    option.confidence === "HIGH" ? "Alta confiança" : "Média confiança (sem ID Nomus)";
+  const counts = formatAdminSellerOptionCounts(option);
+  const mergeNote =
+    option.mergedFragmentCount > 1
+      ? ` · Consolida ${option.mergedFragmentCount} registros Nomus`
+      : "";
+  return `${idPart} · ${confidenceLabel} · ${counts}${mergeNote}`;
+}

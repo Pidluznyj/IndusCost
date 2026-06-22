@@ -233,16 +233,22 @@ describe("financeAccountsPayableCostCenterIntegration", () => {
     assert.equal(payload.total, 1);
   });
 
-  it("11. frontend AP não importa Prisma", () => {
+  it("11. frontend AP não importa Prisma nem integration server-side", () => {
     const files = [
       "src/components/finance/FinanceAccountsPayablePage.tsx",
       "src/components/finance/FinanceAccountsPayableTitlesTab.tsx",
       "src/components/finance/FinanceApTitleClassificationSheet.tsx",
+      "src/lib/financeAccountsPayableDashboardTypes.ts",
+      "src/lib/financeBiFilterChips.ts",
     ];
     for (const file of files) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       assert.ok(!source.includes("@prisma/client"), `${file} must not import Prisma`);
       assert.ok(!source.includes('from "@/src/lib/prisma'), `${file} must not import prisma lib`);
+      assert.ok(
+        !source.includes("financeAccountsPayableCostCenterIntegration"),
+        `${file} must not import financeAccountsPayableCostCenterIntegration`
+      );
     }
   });
 

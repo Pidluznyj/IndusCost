@@ -8,7 +8,11 @@ import {
 } from "@/src/lib/crmSellerIdentityConsolidation.js";
 
 export type { AdminSellerOption, AdminSellerOptionConfidence } from "@/src/lib/adminSellerOptionsTypes";
-export { buildAdminSellerOptionKey } from "@/src/lib/adminSellerOptionsTypes";
+export {
+  buildAdminSellerOptionKey,
+  formatAdminSellerOptionCounts,
+  formatAdminSellerOptionSublabel,
+} from "@/src/lib/adminSellerOptionsTypes";
 
 export function normalizeSellerNameForGrouping(value: string): string {
   return normalizeSellerIdentityName(value).toUpperCase();
@@ -164,43 +168,6 @@ export function consolidateAdminSellerMetricsRows(
   }
 
   return options;
-}
-
-export function formatAdminSellerOptionSublabel(option: AdminSellerOption): string {
-  const idPart =
-    option.externalSellerIds.length > 1
-      ? `IDs Nomus ${option.externalSellerIds.join(", ")}`
-      : option.externalSellerId != null
-        ? `ID Nomus ${option.externalSellerId}`
-        : "Sem ID — fallback por nome";
-  const confidenceLabel =
-    option.confidence === "HIGH" ? "Alta confiança" : "Média confiança (sem ID Nomus)";
-  const counts = formatAdminSellerOptionCounts(option);
-  const mergeNote =
-    option.mergedFragmentCount > 1
-      ? ` · Consolida ${option.mergedFragmentCount} registros Nomus`
-      : "";
-  return `${idPart} · ${confidenceLabel} · ${counts}${mergeNote}`;
-}
-
-export function formatAdminSellerOptionCounts(option: AdminSellerOption): string {
-  const orderVal = formatCompactBrlAdmin(option.ordersValue);
-  const base = orderVal
-    ? `${option.ordersCount} ped. · ${orderVal}`
-    : `${option.ordersCount} ped.`;
-  const propPart =
-    option.proposalsCount > 0 ? ` · ${option.proposalsCount} prop. negociação` : "";
-  return `${base}${propPart}`;
-}
-
-function formatCompactBrlAdmin(value: number): string | null {
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
 }
 
 /**

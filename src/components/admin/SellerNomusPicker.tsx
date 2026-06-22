@@ -7,12 +7,10 @@ import {
 } from "@/src/components/shared/SearchableSelect";
 import {
   buildAdminSellerOptionKey,
-  type AdminSellerOption,
-} from "@/src/lib/adminSellerOptionsTypes";
-import {
   formatAdminSellerOptionCounts,
   formatAdminSellerOptionSublabel,
-} from "@/src/lib/adminSellerOptions";
+  type AdminSellerOption,
+} from "@/src/lib/adminSellerOptionsTypes";
 
 export type SellerNomusPickerValue = {
   externalSellerId: string;

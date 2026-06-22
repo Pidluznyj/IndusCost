@@ -13,6 +13,8 @@ export default defineConfig(({mode}) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        '@/src/lib/prisma.js': path.resolve(__dirname, 'src/lib/prisma.browser-stub.ts'),
+        '@/src/lib/prisma': path.resolve(__dirname, 'src/lib/prisma.browser-stub.ts'),
       },
     },
     server: {
