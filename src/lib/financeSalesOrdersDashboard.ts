@@ -470,18 +470,24 @@ async function queryExcludedCounts(): Promise<{
   missingIssueDate: number;
   missingCustomer: number;
 }> {
-  const [cancelled, error, missingIssue, missingCustomer] = await Promise.all([
-    prisma.salesOrder.count({ where: { status: "CANCELLED" } }),
-    prisma.salesOrder.count({ where: { status: "ERROR" } }),
-    prisma.salesOrder.count({ where: { issueDate: null as unknown as Date } }),
-    prisma.salesOrder.count({ where: { customerId: null as unknown as string } }),
-  ]);
-  return {
-    cancelled,
-    error,
-    missingIssueDate: missingIssue,
-    missingCustomer,
+  const fallback = {
+    cancelled: 0,
+    error: 0,
+    missingIssueDate: 0,
+    missingCustomer: 0,
   };
+  try {
+    const [cancelled, error] = await Promise.all([
+      prisma.salesOrder.count({ where: { status: "CANCELLED" } }),
+      prisma.salesOrder.count({ where: { status: "ERROR" } }),
+    ]);
+    // issueDate e customerId são NOT NULL em schema.prisma — Prisma não aceita where: { field: null }.
+    // Legado com NULL no banco, se existir, não entra neste contador diagnóstico (evita quebra do dashboard).
+    return { cancelled, error, missingIssueDate: 0, missingCustomer: 0 };
+  } catch (err) {
+    console.error("financeSalesOrdersDashboard queryExcludedCounts", err);
+    return fallback;
+  }
 }
 
 export async function buildFinanceSalesOrdersDashboard(

@@ -31,6 +31,22 @@ describe("financeSalesOrdersDashboard", () => {
     assert.doesNotMatch(src, /Proposal/);
   });
 
+  it("auditoria não filtra issueDate/customerId null via Prisma (campos obrigatórios no schema)", () => {
+    const schema = readFileSync(join(process.cwd(), "prisma/schema.prisma"), "utf8");
+    const salesOrderBlock = schema.match(/model SalesOrder \{[\s\S]*?\n\}/)?.[0] ?? "";
+    assert.match(salesOrderBlock, /issueDate\s+DateTime\s+@default/);
+    assert.match(salesOrderBlock, /customerId\s+String\s+@db\.Uuid/);
+    assert.doesNotMatch(salesOrderBlock, /issueDate\s+DateTime\?/);
+    assert.doesNotMatch(salesOrderBlock, /customerId\s+String\?/);
+
+    const src = readFileSync(join(process.cwd(), "src/lib/financeSalesOrdersDashboard.ts"), "utf8");
+    assert.doesNotMatch(src, /issueDate:\s*null/);
+    assert.doesNotMatch(src, /customerId:\s*null/);
+    assert.match(src, /missingIssueDate:\s*0/);
+    assert.match(src, /missingCustomer:\s*0/);
+    assert.match(src, /queryExcludedCounts[\s\S]*catch/);
+  });
+
   it("resolveSalesOrderNetAmount usa totalNetValue", () => {
     assert.equal(resolveSalesOrderNetAmount({ totalNetValue: 1500 }), 1500);
     assert.equal(getSalesOrderNetValue({ totalNetValue: null }), 0);
