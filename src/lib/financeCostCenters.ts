@@ -273,8 +273,16 @@ export function parseFinanceCostCenterUpdateBody(body: unknown): FinanceCostCent
 export function parseFinanceCostCentersListQuery(
   query: Record<string, unknown>
 ): FinanceCostCentersListQuery {
-  const rawStatus = typeof query.status === "string" ? query.status.trim().toUpperCase() : "all";
-  if (!rawStatus || rawStatus === "ALL") return { status: "all" };
+  const rawStatus =
+    typeof query.status === "string" ? query.status.trim().toUpperCase() : "ALL";
+  if (
+    !rawStatus ||
+    rawStatus === "ALL" ||
+    rawStatus === "TODOS" ||
+    rawStatus === "TODO"
+  ) {
+    return { status: "all" };
+  }
   const status = parseFinanceCostCenterStatus(rawStatus, { required: true });
   return { status: status! };
 }

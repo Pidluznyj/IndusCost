@@ -2980,9 +2980,38 @@ model FinancialCostCenter {
   children        FinancialCostCenter[]                 @relation("FinancialCostCenterTree")
   costCenterRules SupplierCostCenterRule[]
   allocations     AccountsPayableCostCenterAllocation[]
+  reclassificationRulesTarget FinancialCostCenterReclassificationRule[]
 
   @@index([status])
   @@index([parentId])
+}
+
+/// Regra gerencial de reclassificação de centro de custo (ex.: descrição AP → subcentro).
+model FinancialCostCenterReclassificationRule {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String
+  description          String?
+  priority             Int      @default(100)
+  isActive             Boolean  @default(true)
+  sourceCostCenterName String?
+  sourceParentName     String?
+  targetCostCenterId   String   @db.Uuid
+  matchFields          Json
+  keywords             Json
+  matchMode            String   @default("CONTAINS_ANY")
+  applyToSources       Json
+  skipManual           Boolean  @default(true)
+  notes                String?
+  createdByUserId      String?
+  createdByName        String?
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  targetCostCenter FinancialCostCenter @relation(fields: [targetCostCenterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([isActive])
+  @@index([priority])
+  @@index([targetCostCenterId])
 }
 
 /// Regra fornecedor → centro de custo (classificação automática futura).

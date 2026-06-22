@@ -14,6 +14,7 @@ import {
   financeModuleFilterFieldClass,
   financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards";
+import { FinanceCostCenterReclassificationPanel } from "@/src/components/finance/cost-centers/FinanceCostCenterReclassificationPanel";
 
 type AuditLogRow = {
   id: string;
@@ -26,9 +27,10 @@ type AuditLogRow = {
 
 type Props = {
   canView: boolean;
+  canManage?: boolean;
 };
 
-export function FinanceCostCenterAuditTab({ canView }: Props) {
+export function FinanceCostCenterAuditTab({ canView, canManage = false }: Props) {
   const [rows, setRows] = useState<AuditLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +76,7 @@ export function FinanceCostCenterAuditTab({ canView }: Props) {
 
   return (
     <div className="space-y-4" data-testid="finance-cost-centers-audit-tab">
+      <FinanceCostCenterReclassificationPanel canManage={canManage} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">

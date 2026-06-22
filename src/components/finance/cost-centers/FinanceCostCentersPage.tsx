@@ -295,7 +295,12 @@ export function FinanceCostCentersPage() {
       ) : activeTab === "unclassified" ? (
         <FinanceModuleErrorBanner message="Sem permissão para classificação de títulos." />
       ) : null}
-      {activeTab === "audit" ? <FinanceCostCenterAuditTab canView={canViewAudit} /> : null}
+      {activeTab === "audit" ? (
+        <FinanceCostCenterAuditTab
+          canView={canViewAudit}
+          canManage={canManageRules || canManageCenters}
+        />
+      ) : null}
 
       <FinanceDataAuditDrawer
         open={auditOpen}
