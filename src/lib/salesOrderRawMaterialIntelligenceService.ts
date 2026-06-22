@@ -336,7 +336,7 @@ export function buildSalesOrderRawMaterialIntelligencePayload(input: {
         const hasPerItemInvoicedQty = raw?.quantidadeFaturada != null;
         const invoicedQtyForEstimation =
           hasPerItemInvoicedQty && raw?.quantidadeFaturada != null
-            ? Math.max(0, raw.quantidadeFaturada)
+            ? Math.min(soldQty, Math.max(0, raw.quantidadeFaturada))
             : hasInvoicing
               ? null
               : 0;
@@ -446,7 +446,7 @@ export function buildSalesOrderRawMaterialIntelligencePayload(input: {
         if (classification.reviewRequired || classification.status === "MISSING_BOM") {
           const reason =
             classification.status === "MISSING_BOM"
-              ? "Produto sem BOM válida"
+              ? "Sem BOM"
               : classification.warnings[0] ?? classification.statusLabel;
           reviewItems.push({
             reason,

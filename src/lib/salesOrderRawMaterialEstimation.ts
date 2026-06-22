@@ -291,9 +291,12 @@ export function resolveInvoicedQuantity(item: RawMaterialDemandOrderItemInput): 
 
   const direct = item.invoicedQuantity;
   if (direct != null && Number.isFinite(direct) && direct >= 0) {
+    if (sold > 0 && direct > sold) {
+      warnings.push("Quantidade faturada maior que vendida; saldo normalizado para zero.");
+    }
     return {
       quantity: Math.min(safeNonNegativeNumber(direct), sold),
-      confidence: "HIGH",
+      confidence: sold > 0 && direct > sold ? "LOW" : "HIGH",
       usedValueFallback: false,
       warnings,
     };
@@ -500,14 +503,22 @@ export function classifyRawMaterialDemandItem(
       resolveInvoicedQuantity(item).quantity >= resolveSoldQuantity(item)) ||
     isFullyInvoicedByAmount(item);
 
+  const invoicedOverflow =
+    item.invoicedQuantity != null &&
+    Number.isFinite(item.invoicedQuantity) &&
+    resolveSoldQuantity(item) > 0 &&
+    item.invoicedQuantity > resolveSoldQuantity(item);
+
   if (fullyInvoiced) {
     return {
-      status: "FULLY_INVOICED",
-      statusLabel: RAW_MATERIAL_DEMAND_STATUS_LABELS.FULLY_INVOICED,
+      status: invoicedOverflow ? "REVIEW_DATA" : "FULLY_INVOICED",
+      statusLabel: invoicedOverflow
+        ? RAW_MATERIAL_DEMAND_STATUS_LABELS.REVIEW_DATA
+        : RAW_MATERIAL_DEMAND_STATUS_LABELS.FULLY_INVOICED,
       includeInRecommended: false,
       includeInConservative: false,
       includeInUnservedRevenue: false,
-      reviewRequired: false,
+      reviewRequired: invoicedOverflow,
       openQuantity: 0,
       openNetAmount: 0,
       lastInvoiceDate,
@@ -515,7 +526,9 @@ export function classifyRawMaterialDemandItem(
       liveWindowEnd,
       daysAfterLiveWindow: 0,
       overlapFactor: 0,
-      confidence: resolveClassificationConfidence(openResolution, hasValidBom, "FULLY_INVOICED"),
+      confidence: invoicedOverflow
+        ? "LOW"
+        : resolveClassificationConfidence(openResolution, hasValidBom, "FULLY_INVOICED"),
       warnings,
     };
   }

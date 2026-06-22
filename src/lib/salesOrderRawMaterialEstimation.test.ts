@@ -253,6 +253,34 @@ describe("salesOrderRawMaterialEstimation — regras de negócio", () => {
     assert.notEqual(rows[0]!.recommendedDemand, 200);
   });
 
+  it("10b. quantidade faturada maior que vendida normaliza saldo e alerta", () => {
+    const open = resolveOpenQuantity(
+      item({
+        itemId: "i10b",
+        orderId: "o10b",
+        quantity: 100,
+        hasInvoicing: true,
+        invoicedQuantity: 150,
+      })
+    );
+    assert.equal(open.quantity, 0);
+    assert.ok(open.warnings.some((w) => w.includes("maior que vendida")));
+    const cls = classifyRawMaterialDemandItem({
+      item: item({
+        itemId: "i10b",
+        orderId: "o10b",
+        quantity: 100,
+        hasInvoicing: true,
+        invoicedQuantity: 150,
+        lastInvoiceDate: new Date(2026, 5, 10),
+      }),
+      referenceDate: REF,
+      hasValidBom: true,
+    });
+    assert.equal(cls.reviewRequired, true);
+    assert.equal(cls.openQuantity, 0);
+  });
+
   it("11. necessidade conservadora considera saldo aberto com risco", () => {
     const rows = demandRows(
       item({
