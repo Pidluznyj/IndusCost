@@ -3,6 +3,10 @@ import { Plus, RefreshCw } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDto } from "@/src/lib/financeCostCenters";
+import {
+  buildFinanceCostCentersListApiPath,
+  FINANCE_COST_CENTERS_LIST_STATUS_OPTIONS,
+} from "@/src/lib/financeCostCentersPageTypes";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   FinanceModuleEmptyState,
@@ -11,6 +15,10 @@ import {
 } from "@/src/components/finance/shared/FinanceModuleStates";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { cn } from "@/src/lib/utils";
+import {
+  financeModuleFilterFieldClass,
+  financeModuleFilterLabelClass,
+} from "@/src/lib/financeModuleUiStandards";
 
 type Props = {
   canManage: boolean;
@@ -25,13 +33,14 @@ export function FinanceCostCentersCrudTab({ canManage, onChanged }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ code: "", name: "", description: "" });
   const [saving, setSaving] = useState(false);
+  const [listStatusFilter, setListStatusFilter] = useState("all");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const payload = await fetchJsonOk<{ items: FinanceCostCenterDto[] }>(
-        "/api/finance/cost-centers",
+        buildFinanceCostCentersListApiPath(listStatusFilter),
         { credentials: "include" }
       );
       setItems(payload.items);
@@ -41,7 +50,7 @@ export function FinanceCostCentersCrudTab({ canManage, onChanged }: Props) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [listStatusFilter]);
 
   useEffect(() => {
     void load();
@@ -120,10 +129,24 @@ export function FinanceCostCentersCrudTab({ canManage, onChanged }: Props) {
 
   return (
     <div className="space-y-4" data-testid="finance-cost-centers-crud-tab">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Cadastre a estrutura de centros de custo usada na classificação gerencial de AP.
         </p>
+        <label className="space-y-1">
+          <span className={financeModuleFilterLabelClass()}>Status</span>
+          <select
+            className={financeModuleFilterFieldClass()}
+            value={listStatusFilter}
+            onChange={(e) => setListStatusFilter(e.target.value)}
+          >
+            {FINANCE_COST_CENTERS_LIST_STATUS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="flex gap-2">
           <button
             type="button"

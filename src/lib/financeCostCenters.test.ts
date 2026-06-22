@@ -5,8 +5,12 @@ import { describe, it } from "node:test";
 import {
   createFinancialCostCenter,
   FinanceCostCenterValidationError,
+  isFinanceCostCenterListStatusAll,
   listFinancialCostCenters,
   normalizeFinanceCostCenterCode,
+  parseFinanceCostCentersListQuery,
+  parseFinanceCostCenterCreateBody,
+  parseFinanceCostCenterUpdateBody,
   serializeFinanceCostCenter,
   updateFinancialCostCenter,
   wouldCreateCircularFinanceCostCenterParent,
@@ -238,5 +242,62 @@ describe("financeCostCenters", () => {
     assertDtoHasNoUndefined(created);
     const listed = await listFinancialCostCenters(deps);
     listed.items.forEach(assertDtoHasNoUndefined);
+  });
+
+  it("11. listagem aceita status all/Todos/vazio sem erro", async () => {
+    const state: MockState = { centers: [], activeRulesByCenterId: new Map(), nextId: 1 };
+    seedCenter(state, { code: "A1", status: "ACTIVE" });
+    seedCenter(state, { code: "I1", status: "INACTIVE" });
+    const deps = createMockDeps(state);
+
+    assert.deepEqual(parseFinanceCostCentersListQuery({}), { status: "all" });
+    assert.deepEqual(parseFinanceCostCentersListQuery({ status: "" }), { status: "all" });
+    assert.deepEqual(parseFinanceCostCentersListQuery({ status: "all" }), { status: "all" });
+    assert.deepEqual(parseFinanceCostCentersListQuery({ status: "Todos" }), { status: "all" });
+    assert.deepEqual(parseFinanceCostCentersListQuery({ status: "TODOS" }), { status: "all" });
+    assert.ok(isFinanceCostCenterListStatusAll(undefined));
+    assert.ok(isFinanceCostCenterListStatusAll(null));
+
+    const all = await listFinancialCostCenters(deps, { status: "all" });
+    assert.equal(all.items.length, 2);
+
+    const empty = await listFinancialCostCenters(deps, parseFinanceCostCentersListQuery({ status: "" }));
+    assert.equal(empty.items.length, 2);
+  });
+
+  it("12. listagem filtra ACTIVE e INACTIVE", async () => {
+    const state: MockState = { centers: [], activeRulesByCenterId: new Map(), nextId: 1 };
+    seedCenter(state, { code: "A1", status: "ACTIVE" });
+    seedCenter(state, { code: "A2", status: "ACTIVE" });
+    seedCenter(state, { code: "I1", status: "INACTIVE" });
+    const deps = createMockDeps(state);
+
+    const active = await listFinancialCostCenters(deps, { status: "ACTIVE" });
+    assert.equal(active.items.length, 2);
+    assert.ok(active.items.every((row) => row.status === "ACTIVE"));
+
+    const inactive = await listFinancialCostCenters(deps, { status: "INACTIVE" });
+    assert.equal(inactive.items.length, 1);
+    assert.equal(inactive.items[0]!.status, "INACTIVE");
+  });
+
+  it("13. create/update rejeitam status inválido", async () => {
+    assert.throws(
+      () => parseFinanceCostCenterCreateBody({ code: "X", name: "Teste", status: "OPEN" }),
+      (error: unknown) =>
+        error instanceof FinanceCostCenterValidationError && error.code === "INVALID_STATUS"
+    );
+
+    assert.throws(
+      () => parseFinanceCostCenterUpdateBody({ status: "Todos" }),
+      (error: unknown) =>
+        error instanceof FinanceCostCenterValidationError && error.code === "INVALID_STATUS"
+    );
+
+    assert.throws(
+      () => parseFinanceCostCenterCreateBody({ code: "Z", name: "Z", status: "invalid" }),
+      (error: unknown) =>
+        error instanceof FinanceCostCenterValidationError && error.code === "INVALID_STATUS"
+    );
   });
 });

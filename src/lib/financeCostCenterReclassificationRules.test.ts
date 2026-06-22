@@ -212,12 +212,3 @@ describe("evaluateReclassificationRuleForAllocation", () => {
     assert.equal(result.applies, false);
   });
 });
-
-describe("parseFinanceCostCentersListQuery — status Todos", () => {
-  it("aceita TODOS como sem filtro", async () => {
-    const { parseFinanceCostCentersListQuery } = await import("./financeCostCenters.js");
-    assert.deepEqual(parseFinanceCostCentersListQuery({ status: "Todos" }), { status: "all" });
-    assert.deepEqual(parseFinanceCostCentersListQuery({ status: "all" }), { status: "all" });
-    assert.deepEqual(parseFinanceCostCentersListQuery({}), { status: "all" });
-  });
-});

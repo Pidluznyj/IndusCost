@@ -39,6 +39,24 @@ export const FINANCE_COST_CENTERS_CLASSIFICATION_OPTIONS = [
   { value: "unclassified", label: "Sem classificação" },
 ] as const;
 
+/** Filtro de status do cadastro de centros de custo (não confundir com status de título AP). */
+export const FINANCE_COST_CENTERS_LIST_STATUS_OPTIONS = [
+  { value: "all", label: "Todos" },
+  { value: "ACTIVE", label: "Ativo" },
+  { value: "INACTIVE", label: "Inativo" },
+] as const;
+
+export function buildFinanceCostCentersListApiPath(status?: string | null): string {
+  const raw = String(status ?? "").trim();
+  if (!raw || raw.toLowerCase() === "all" || raw.toLowerCase() === "todos") {
+    return "/api/finance/cost-centers";
+  }
+  if (raw === "ACTIVE" || raw === "INACTIVE") {
+    return `/api/finance/cost-centers?status=${raw}`;
+  }
+  return "/api/finance/cost-centers";
+}
+
 export const FINANCE_COST_CENTERS_STATUS_OPTIONS = FINANCE_AR_STATUS_OPTIONS;
 
 export function createDefaultFinanceCostCentersUiFilters(): FinanceCostCentersUiFilters {

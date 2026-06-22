@@ -96,6 +96,16 @@ export type FinanceCostCentersDeps = {
 
 const VALID_STATUSES = new Set<FinancialCostCenterStatus>(["ACTIVE", "INACTIVE"]);
 
+const LIST_STATUS_ALL_ALIASES = new Set(["ALL", "TODOS", "TODO"]);
+
+/** Indica ausência de filtro de status na listagem (Todos / all / vazio). */
+export function isFinanceCostCenterListStatusAll(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string" && value.trim() === "") return true;
+  const normalized = String(value).trim().toUpperCase();
+  return LIST_STATUS_ALL_ALIASES.has(normalized);
+}
+
 export function normalizeFinanceCostCenterCode(code: string): string {
   return code.trim().toUpperCase();
 }
@@ -273,17 +283,13 @@ export function parseFinanceCostCenterUpdateBody(body: unknown): FinanceCostCent
 export function parseFinanceCostCentersListQuery(
   query: Record<string, unknown>
 ): FinanceCostCentersListQuery {
-  const rawStatus =
-    typeof query.status === "string" ? query.status.trim().toUpperCase() : "ALL";
-  if (
-    !rawStatus ||
-    rawStatus === "ALL" ||
-    rawStatus === "TODOS" ||
-    rawStatus === "TODO"
-  ) {
+  if (isFinanceCostCenterListStatusAll(query.status)) {
     return { status: "all" };
   }
-  const status = parseFinanceCostCenterStatus(rawStatus, { required: true });
+  if (typeof query.status !== "string") {
+    return { status: "all" };
+  }
+  const status = parseFinanceCostCenterStatus(query.status.trim(), { required: true });
   return { status: status! };
 }
 
