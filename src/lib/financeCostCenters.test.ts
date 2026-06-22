@@ -207,6 +207,8 @@ describe("financeCostCenters", () => {
     assert.match(routes, /FINANCE_COST_CENTERS_MANAGE_PERMISSIONS/);
     assert.match(routes, /finance\.cost_centers\.manage/);
     assert.match(routes, /\/api\/finance\/cost-centers/);
+    assert.match(routes, /\/api\/finance\/cost-center-audit/);
+    assert.match(routes, /FINANCE_COST_CENTER_AUDIT_VIEW_PERMISSIONS/);
     assert.match(server, /registerFinanceCostCentersRoutes/);
   });
 

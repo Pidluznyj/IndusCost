@@ -103,7 +103,7 @@ export function registerFinanceAccountsPayableCostCenterAllocationRoutes(
     }
   });
 
-  app.post("/api/finance/accounts-payable/classify-batch-preview", ...viewGuard, async (req, res) => {
+  app.post("/api/finance/accounts-payable/classify-batch-preview", ...batchApplyGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });

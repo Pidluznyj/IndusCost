@@ -2,7 +2,7 @@
 
 > **Atualizado:** 2026-06-17  
 > **Branch:** `main`  
-> **Commit HEAD:** `26c54ef662c7c7606c2fd4ee29bc44bf711b6de7` (`feat(finance): padronizar UX visual e operacional das abas do modulo Financeiro.`)  
+> **Commit HEAD:** `bd6439063d190c2ad86f6de0cc9e2e6d5752e25e` (`feat(finance): scripts CLI seguros para fornecedores e classificacao CC em implantacao.`)  
 > **Commit anterior documentado:** `7c57130` (auditoria INDUSCOST-SYSTEM-AUDIT-AND-ACTION-PLAN-A)
 
 Fotografia do repositório **sem alteração funcional**. Cada afirmação abaixo deriva de inspeção do código em `26c54ef`.
@@ -80,6 +80,7 @@ Registradas em `src/lib/financeNavigation.ts`, renderizadas por `src/components/
 | Contas a Pagar | `/finance/accounts-payable` | `FinanceAccountsPayablePage` | **Pronto** |
 | Faturamento | `/finance/billing` | `FinanceBillingPage` | **Pronto** |
 | Pedidos de Venda | `/finance/sales-orders` | `FinanceSalesOrdersPage` | **Pronto** |
+| Centros de Custo | `/finance/cost-centers` | `FinanceCostCentersPage` | **Pronto** |
 | Relatório Presidencial | `/finance/executive-report` | `FinanceExecutiveReportPage` | **Pronto** |
 
 UX padronizada (`financeModuleUiStandards.ts`, `FinanceModuleStates.tsx`): breadcrumb `FINANCEIRO · ABA`, painel **Filtros**, botões **Atualizar** / **Exportar CSV** / **Exportar PDF**, drawer **Dados e auditoria**.
@@ -99,6 +100,12 @@ UX padronizada (`financeModuleUiStandards.ts`, `FinanceModuleStates.tsx`): bread
 | `GET /api/finance/accounts-payable/dashboard` | `financeAccountsPayableDashboard.ts` | `NomusAccountsPayable` |
 | `GET /api/finance/accounts-payable/titles` | `financeAccountsPayableTitles.ts` | idem |
 | `GET /api/finance/accounts-payable/export` | `financeAccountsPayableExport.ts` | idem |
+| `GET /api/finance/accounts-payable/titles/:id/classification` | `financeAccountsPayableCostCenterIntegration.ts` | leitura de alocações (não altera AP) |
+| `GET /api/finance/cost-centers` (+ dashboard, CRUD) | `financeCostCenters.ts`, `financeCostCenterDashboard.ts` | `FinancialCostCenter` |
+| `GET /api/finance/supplier-cost-center-rules` | `financeSupplierCostCenterRules.ts` | `SupplierCostCenterRule` |
+| `GET /api/finance/accounts-payable/classification-summary` | `financeAccountsPayableCostCenterAllocation.ts` | `AccountsPayableCostCenterAllocation` |
+| `GET /api/finance/cost-center-audit` | `financeCostCenterAudit.ts` | `FinancialCostCenterAuditLog` |
+| `GET /api/finance/suppliers/rebuild-from-ap-preview` | `financeSupplierRebuild.ts` | `FinancialSupplier` + aliases |
 | `GET /api/finance/billing/dashboard` | `financeBillingDashboard.ts` | `NomusNfe` (padrão) ou `SalesOrder` (`billingSource=sales_order`) |
 | `GET /api/finance/billing/nfes` | `financeBillingNfeList.ts` | `NomusNfe` |
 | `GET /api/finance/billing/comparison` | `financeBillingNfeComparison.ts` | NF-e vs pedidos |
@@ -116,7 +123,7 @@ Registro: `server.ts` chama `registerFinance*Routes()` (linhas ~13194–13223).
 | Domínio | Fonte oficial | Regras notáveis |
 |---------|---------------|-----------------|
 | AR | `NomusAccountsReceivable` | Freshness (`syncedAt` − 1h); dedup Com NF; **vencidos sem NF excluídos** da visão gerencial; horizonte de carteira aberta **ignora filtro de período** |
-| AP | `NomusAccountsPayable` | Exclui intercompany e pedido de compra (`type=2`); data operacional quando `scheduleDate > dueDate` |
+| AP | `NomusAccountsPayable` | Exclui intercompany e pedido de compra (`type=2`); data operacional quando `scheduleDate > dueDate`; **classificação CC é camada gerencial** (`AccountsPayableCostCenterAllocation`) sem alterar título Nomus |
 | Fluxo de Caixa | AR + AP saneados | Modos previsto/realizado/combinado; YTD ignora filtro mensal; gráfico anual sempre Jan–Dez no Relatório Presidencial |
 | Faturamento | **`NomusNfe`** (padrão `billingSource=nfe`) | Comparativo anual; sync dedicado `sync:nomus:nfes:*` |
 | Pedidos (financeiro) | **`SalesOrder` / `SalesOrderItem`** | Status logístico BI; manufacturing Nomus 1–6; **meta comercial não configurada** (`monthTargetConfigured: false`) |
@@ -129,12 +136,34 @@ Registro: `server.ts` chama `registerFinance*Routes()` (linhas ~13194–13223).
 - `financeModuleUiStandards.test.ts` (28) — UX padronizada
 - `financeCashFlowDashboard.test.ts`, `financeCashFlowExecutiveYtd.test.ts`
 - `financeAccountsReceivableDashboard.test.ts`, `financeAccountsReceivableOverdue.test.ts`, `financeAccountsReceivableFiscalBacking.test.ts`
-- `financeAccountsPayableDashboard.test.ts`
+- `financeAccountsPayableDashboard.test.ts`, `financeAccountsPayableCostCenterIntegration.test.ts`
+- `financeCostCenters.test.ts`, `financeCostCenterDashboard.test.ts`, `financeSupplierRebuild.test.ts`, `financeAccountsPayableCostCenterAllocation.test.ts`, `financeCostCenterScripts.test.ts`
 - `financeBillingDashboard.test.ts`, `financeBillingNfeDashboard.test.ts`
 - `financeSalesOrdersDashboard.test.ts`, `financeSalesOrdersExtendedMetrics.test.ts`, `financeSalesOrdersPage.test.ts`
 - `financeExecutiveReport.test.ts`, `financeExecutiveReportPrint.test.ts`, `financeExecutiveReportConsistency.test.ts`
 
 **Lint e build passam** no commit base.
+
+### 4.6 Centros de Custo e fornecedores financeiros (2026-06)
+
+| Camada | Status | Observação |
+|--------|--------|------------|
+| Schema Prisma | **Pronto** | `FinancialSupplier`, `FinancialSupplierAlias`, `FinancialCostCenter`, `SupplierCostCenterRule`, `AccountsPayableCostCenterAllocation`, `FinancialCostCenterAuditLog` |
+| UI `/finance/cost-centers` | **Pronto** | 6 abas: visão geral, CRUD CC, fornecedores, regras, sem classificação, auditoria |
+| Enriquecimento AP | **Pronto** | Contas a Pagar exibe fornecedor consolidado/CC **sem alterar** cards oficiais |
+| Scripts CLI servidor | **Pronto** | Preview/apply com confirmação textual; `finance:cc-integrity-check` read-only |
+| Classificação manual UI | **Parcial** | API `POST .../cost-center-allocation` existe; UI AP só linka para aba sem classificação |
+| Deploy produção | **Pendente** | **Não aplicar classificação em produção sem rodar previews no servidor** |
+
+Scripts (`package.json`):
+
+```bash
+npm run finance:suppliers-from-ap:preview
+npm run finance:suppliers-from-ap:apply -- --confirm="RECONSTRUIR FORNECEDORES AP"
+npm run finance:cc-classification:preview -- --unclassified-only
+npm run finance:cc-classification:apply -- --unclassified-only --confirm="APLICAR CENTROS DE CUSTO AP"
+npm run finance:cc-integrity-check
+```
 
 ### 4.5 Problemas conhecidos / pendências Financeiro
 

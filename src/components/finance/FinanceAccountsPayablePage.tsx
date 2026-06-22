@@ -58,7 +58,6 @@ import {
 } from "@/src/lib/financeAccountsPayableFormat";
 import {
   canExportFinanceAccountsPayable,
-  canManageFinanceApAllocations,
   canRunFinanceAccountsPayableSync,
 } from "@/src/lib/financeAccountsPayablePermissions";
 import {

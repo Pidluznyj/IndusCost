@@ -54,6 +54,16 @@ export const FINANCE_AP_EXPORT_PERMISSIONS = [
   ...FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS,
 ] as const;
 
+export const FINANCE_AP_ALLOCATION_VIEW_PERMISSIONS = [
+  "finance.ap_allocations.view",
+  "finance.view",
+] as const;
+
+export const FINANCE_AP_CLASSIFICATION_READ_PERMISSIONS = [
+  ...FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS,
+  ...FINANCE_AP_ALLOCATION_VIEW_PERMISSIONS,
+] as const;
+
 const FINANCE_AP_DASHBOARD_SELECT = {
   ...FINANCE_AP_TITLE_SELECT,
 } as const;
@@ -111,6 +121,10 @@ function parseFinanceApTitlesOrRespond(
 export function registerFinanceAccountsPayableRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
   const guard = [requireAppAuth, requireAnyPermission([...FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS])] as const;
+  const classificationGuard = [
+    requireAppAuth,
+    requireAnyPermission([...FINANCE_AP_CLASSIFICATION_READ_PERMISSIONS]),
+  ] as const;
   const exportGuard = [requireAppAuth, requireAnyPermission([...FINANCE_AP_EXPORT_PERMISSIONS])] as const;
 
   app.get("/api/finance/accounts-payable/dashboard", ...guard, async (req, res) => {
@@ -232,7 +246,7 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
     }
   });
 
-  app.get("/api/finance/accounts-payable/titles/:id/classification", ...guard, async (req, res) => {
+  app.get("/api/finance/accounts-payable/titles/:id/classification", ...classificationGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {

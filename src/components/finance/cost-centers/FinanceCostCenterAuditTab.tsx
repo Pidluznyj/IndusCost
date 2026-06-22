@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
 import {
   FinanceModuleEmptyState,
@@ -50,9 +51,9 @@ export function FinanceCostCenterAuditTab({ canView }: Props) {
         { credentials: "include" }
       );
       setRows(payload.items);
-    } catch {
+    } catch (e) {
       setRows([]);
-      setError(null);
+      setError(buildFinanceTabLoadError("Não foi possível carregar a auditoria de classificação.", e));
     } finally {
       setLoading(false);
     }

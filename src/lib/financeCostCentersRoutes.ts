@@ -16,6 +16,11 @@ import {
   FinanceCostCenterDashboardError,
   parseFinanceCostCenterDashboardFilters,
 } from "@/src/lib/financeCostCenterDashboard.js";
+import {
+  FINANCE_COST_CENTER_AUDIT_VIEW_PERMISSIONS,
+  listFinanceCostCenterAuditLogs,
+  parseFinanceCostCenterAuditListQuery,
+} from "@/src/lib/financeCostCenterAudit.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 import { FinanceApFilterParseError } from "@/src/lib/financeAccountsPayableDashboard.js";
 
@@ -54,6 +59,26 @@ export function registerFinanceCostCentersRoutes(app: express.Express, auth: Aut
     requireAppAuth,
     requireAnyPermission([...FINANCE_COST_CENTERS_MANAGE_PERMISSIONS]),
   ] as const;
+  const auditGuard = [
+    requireAppAuth,
+    requireAnyPermission([...FINANCE_COST_CENTER_AUDIT_VIEW_PERMISSIONS]),
+  ] as const;
+
+  app.get("/api/finance/cost-center-audit", ...auditGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const query = parseFinanceCostCenterAuditListQuery(req.query as Record<string, unknown>);
+      const payload = await listFinanceCostCenterAuditLogs(query);
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/finance/cost-center-audit", error);
+      return res.status(500).json(
+        financeApiErrorJson("Erro ao listar auditoria de classificação.", error)
+      );
+    }
+  });
 
   app.get("/api/finance/cost-centers", ...viewGuard, async (req, res) => {
     try {

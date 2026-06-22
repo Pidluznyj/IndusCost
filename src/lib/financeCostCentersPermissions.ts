@@ -51,6 +51,6 @@ export function canViewFinanceCostCenterAudit(auth: FinanceCostCentersPermission
   return (
     auth.hasPermission("finance.cost_center_audit.view") ||
     auth.hasPermission("finance.ap_allocations.view") ||
-    auth.hasPermission("finance.cost_centers.view")
+    auth.hasPermission("finance.view")
   );
 }

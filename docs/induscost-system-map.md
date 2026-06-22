@@ -2,7 +2,7 @@
 
 > **Atualizado:** 2026-06-17  
 > **Branch:** `main`  
-> **Commit HEAD:** `26c54ef662c7c7606c2fd4ee29bc44bf711b6de7`
+> **Commit HEAD:** `bd6439063d190c2ad86f6de0cc9e2e6d5752e25e`
 
 Mapas operacionais derivados de inspeção direta do código. Útil para localizar o caminho **frontend → cliente REST → endpoint → lib → modelo Prisma** de cada fluxo.
 
@@ -38,6 +38,13 @@ Mapas operacionais derivados de inspeção direta do código. Útil para localiz
 - **`NomusAccountsReceivable`** — Contas a Receber oficial
 - **`NomusAccountsPayable`** — Contas a Pagar oficial
 - **`NomusNfe`** — NF-e fiscal para Faturamento
+
+### Financeiro gerencial (centros de custo / fornecedores)
+- **`FinancialSupplier`**, **`FinancialSupplierAlias`**
+- **`FinancialCostCenter`**
+- **`SupplierCostCenterRule`**
+- **`AccountsPayableCostCenterAllocation`**
+- **`FinancialCostCenterAuditLog`**
 
 ### Projetos (novo)
 - `Project`, `ProjectVersion`, `ProjectPricingConfig`, `ProjectPricingItem`
@@ -92,7 +99,28 @@ GET  /api/finance/accounts-receivable/overdue/export.xlsx
 
 GET  /api/finance/accounts-payable/dashboard
 GET  /api/finance/accounts-payable/titles
+GET  /api/finance/accounts-payable/titles/:id/classification
 GET  /api/finance/accounts-payable/export
+GET  /api/finance/accounts-payable/classification-summary
+GET  /api/finance/accounts-payable/unclassified
+POST /api/finance/accounts-payable/classify-batch-preview   # finance.ap_allocations.apply_batch
+POST /api/finance/accounts-payable/classify-batch-apply     # finance.ap_allocations.apply_batch
+POST /api/finance/accounts-payable/:id/cost-center-allocation  # finance.ap_allocations.manage
+
+GET  /api/finance/cost-centers
+GET  /api/finance/cost-centers/dashboard
+GET  /api/finance/cost-centers/:id
+POST /api/finance/cost-centers
+PATCH /api/finance/cost-centers/:id
+GET  /api/finance/cost-center-audit
+
+GET  /api/finance/supplier-cost-center-rules
+POST /api/finance/supplier-cost-center-rules
+PATCH /api/finance/supplier-cost-center-rules/:id
+DELETE /api/finance/supplier-cost-center-rules/:id
+
+GET  /api/finance/suppliers/rebuild-from-ap-preview
+POST /api/finance/suppliers/rebuild-from-ap-apply
 
 GET  /api/finance/billing/dashboard
 GET  /api/finance/billing/nfes

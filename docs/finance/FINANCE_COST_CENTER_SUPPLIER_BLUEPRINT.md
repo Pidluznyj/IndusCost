@@ -3,9 +3,9 @@
 **Projeto:** IndusCost / My Industry  
 **Módulo:** Financeiro → Classificação gerencial AP  
 **Data do blueprint:** 2026-06-17  
-**Fase:** Documentação oficial pré-implementação (sem alteração de código funcional)
+**Status:** Implementado (commits `e025fdf` … `bd64390`) — ver seção 11 e scripts CLI
 
-> Documento de referência para implementação completa da funcionalidade.  
+> Documento de referência para a funcionalidade entregue.  
 > Baseado na auditoria técnica de jun/2026 sobre `NomusAccountsPayable`, dashboard AP existente e model `CostCenter` de Compras.  
 > Complementar: `docs/induscost-system-current-state.md`, `docs/induscost-system-map.md`.
 
@@ -630,6 +630,24 @@ Arquivos espelho (padrão do projeto): `financeCostCentersPermissions.ts`, `fina
 | **personId instável Nomus** | **P1** | Alias tipo `NOMUS_PERSON_ID`; não unique global; documento como âncora |
 | **Confusão CostCenter Compras vs Financial** | **P1** | Nomes distintos na UI; permissões separadas; doc operacional |
 | **Multi-empresa** — mesmo fornecedor, empresas diferentes | **P2** | `companyId` em alias e regra; matching escopado |
+
+---
+
+## 11. Scripts CLI de implantação (servidor)
+
+Executar **sempre preview antes de apply**. Apply exige confirmação textual exata.
+
+| Script | Modo | Confirmação apply |
+|--------|------|-------------------|
+| `scripts/finance-suppliers-from-ap-preview.ts` | Read-only | — |
+| `scripts/finance-suppliers-from-ap-apply.ts` | Mutação | `RECONSTRUIR FORNECEDORES AP` |
+| `scripts/finance-cost-center-classification-preview.ts` | Read-only | — |
+| `scripts/finance-cost-center-classification-apply.ts` | Mutação | `APLICAR CENTROS DE CUSTO AP` |
+| `scripts/finance-cost-center-integrity-check.ts` | Read-only | — |
+
+Atalhos npm: `finance:suppliers-from-ap:preview`, `finance:suppliers-from-ap:apply`, `finance:cc-classification:preview`, `finance:cc-classification:apply`, `finance:cc-integrity-check`.
+
+**Regra de deploy:** nenhuma classificação em produção sem rodar os previews no servidor e revisar o relatório de integridade.
 
 ---
 
