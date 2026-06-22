@@ -1,11 +1,51 @@
 /** Cliente HTTP mínimo para APIs REST Nomus — sem logar credenciais. */
 
+import { createHash } from "node:crypto";
+
 const SENSITIVE_HEADER_NAMES = new Set([
   "authorization",
   "proxy-authorization",
   "cookie",
   "set-cookie",
 ]);
+
+/**
+ * Qualquer nome de variável/header contendo estes termos é mascarado por completo.
+ * Garante que NOMUS_AUTH, NOMUS_TOKEN, *_KEY, *_SECRET, *_PASSWORD, *_VALUE nunca vazem.
+ */
+const SENSITIVE_NAME_PATTERN = /(AUTH|TOKEN|KEY|SECRET|PASSWORD|VALUE)/i;
+
+export const NOMUS_REDACTED_PLACEHOLDER = "<redigido>";
+
+export function isSensitiveLogKey(name: string): boolean {
+  return SENSITIVE_HEADER_NAMES.has(name.toLowerCase()) || SENSITIVE_NAME_PATTERN.test(name);
+}
+
+/**
+ * Resumo seguro de uma credencial: presença, comprimento, prefixo e hash curto.
+ * Nunca expõe o valor real.
+ */
+export function describeNomusCredential(value: string | undefined | null): {
+  present: boolean;
+  length: number;
+  startsWithBasic: boolean;
+  hash12: string | null;
+} {
+  const trimmed = (value ?? "").trim();
+  return {
+    present: trimmed.length > 0,
+    length: trimmed.length,
+    startsWithBasic: trimmed.startsWith("Basic "),
+    hash12: trimmed ? createHash("sha256").update(trimmed).digest("hex").slice(0, 12) : null,
+  };
+}
+
+/** Remove tokens/credenciais de um texto de erro antes de logar. */
+export function sanitizeNomusErrorBody(body: string, maxLength = 300): string {
+  return body
+    .replace(/(Basic|Bearer)\s+[A-Za-z0-9+/=._-]+/gi, "$1 <redigido>")
+    .slice(0, maxLength);
+}
 
 export function buildNomusHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -42,7 +82,7 @@ export function redactNomusUrlForLog(url: URL | string): string {
 export function redactHeadersForLog(headers: Record<string, string>): Record<string, string> {
   const redacted: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
-    redacted[key] = SENSITIVE_HEADER_NAMES.has(key.toLowerCase()) ? "***" : value;
+    redacted[key] = isSensitiveLogKey(key) ? NOMUS_REDACTED_PLACEHOLDER : value;
   }
   return redacted;
 }
@@ -61,7 +101,9 @@ export async function fetchNomusJson(
   url: URL,
   options: FetchNomusJsonOptions = {}
 ): Promise<unknown> {
-  const maxRetries = options.maxRetries ?? 6;
+  const envMaxRetries = Number.parseInt((process.env.NOMUS_MAX_RETRIES ?? "").trim(), 10);
+  const maxRetries =
+    options.maxRetries ?? (Number.isFinite(envMaxRetries) && envMaxRetries >= 0 ? envMaxRetries : 10);
   const retryBaseMs = options.retryBaseMs ?? 700;
   const logPrefix = options.logPrefix ?? "[nomus]";
   const headers = buildNomusHeaders();
@@ -96,7 +138,10 @@ export async function fetchNomusJson(
 
     const retryable = res.status === 429 || res.status >= 500;
     if (!retryable || attempt === maxRetries) {
-      throw new Error(`Falha HTTP ${res.status} em ${redactNomusUrlForLog(url)}: ${body.slice(0, 300)}`);
+      const safeBody = sanitizeNomusErrorBody(body);
+      throw new Error(
+        `Falha HTTP ${res.status} em ${redactNomusUrlForLog(url)}: ${safeBody || "(sem corpo)"}`
+      );
     }
     await sleep(retryBaseMs * Math.pow(2, attempt));
   }

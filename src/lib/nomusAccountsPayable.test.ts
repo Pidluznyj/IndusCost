@@ -18,9 +18,20 @@ import {
   buildAccountsPayablePageParams,
   hasNextAccountsPayablePage,
   pickAccountsPayableArray,
+  resolveAccountsPayablePageSize,
   shouldStopAccountsPayablePagination,
 } from "./nomusAccountsPayableSyncLogic.js";
-import { buildNomusHeaders, buildNomusUrl, redactHeadersForLog } from "./nomusRestClient.js";
+import {
+  buildNomusHeaders,
+  buildNomusUrl,
+  fetchNomusJson,
+  redactHeadersForLog,
+  sanitizeNomusErrorBody,
+} from "./nomusRestClient.js";
+import {
+  NOMUS_FINANCIAL_DEFAULT_PAGE_SIZE,
+  resolveNomusFinancialPageSize,
+} from "./nomusFinancialSyncQueryParams.js";
 import { Prisma } from "@prisma/client";
 
 describe("nomusAccountsPayableParser", () => {
@@ -208,21 +219,51 @@ describe("nomusAccountsPayableSyncLogic", () => {
     assert.equal(arr.length, 1);
   });
 
-  it("default page params use pagina only (no tamanhoPagina)", () => {
-    const params = buildAccountsPayablePageParams(1, 50, {});
-    assert.equal(params.pagina, "1");
-    assert.equal(params.tamanhoPagina, undefined);
-
-    const url = buildNomusUrl("https://host/rest/", "contasPagar", params);
-    assert.equal(url.searchParams.get("pagina"), "1");
-    assert.equal(url.searchParams.get("tamanhoPagina"), null);
-    assert.doesNotMatch(url.search, /tamanhoPagina/);
+  it("pickAccountsPayableArray reads { dados: [...] } and nested data.dados", () => {
+    assert.equal(pickAccountsPayableArray({ dados: [{ id: 1 }, { id: 2 }] }).length, 2);
+    assert.equal(pickAccountsPayableArray({ data: { dados: [{ id: 9 }] } }).length, 1);
   });
 
-  it("sends tamanhoPagina only when NOMUS_AP_SEND_PAGE_SIZE=1", () => {
-    const params = buildAccountsPayablePageParams(2, 50, { NOMUS_AP_SEND_PAGE_SIZE: "1" });
-    assert.equal(params.pagina, "2");
-    assert.equal(params.tamanhoPagina, "50");
+  it("builds full BI query params (pagina, tamanhoPagina, datas, apenasPendentes, ordenacao)", () => {
+    const params = buildAccountsPayablePageParams(3, 1000, {});
+    assert.equal(params.pagina, "3");
+    assert.equal(params.tamanhoPagina, "1000");
+    assert.equal(params.dataInicio, "01/01/2020");
+    assert.equal(params.dataFim, "31/12/2030");
+    assert.equal(params.apenasPendentes, "false");
+    assert.equal(params.ordenacao, "dataVencimento");
+
+    const url = buildNomusUrl("https://host/rest/", "contasPagar", params);
+    assert.equal(url.searchParams.get("pagina"), "3");
+    assert.equal(url.searchParams.get("tamanhoPagina"), "1000");
+    assert.equal(url.searchParams.get("dataInicio"), "01/01/2020");
+    assert.equal(url.searchParams.get("ordenacao"), "dataVencimento");
+  });
+
+  it("financial page size defaults to 1000 and is overridable", () => {
+    assert.equal(NOMUS_FINANCIAL_DEFAULT_PAGE_SIZE, 1000);
+    assert.equal(resolveAccountsPayablePageSize({}), 1000);
+    assert.equal(resolveNomusFinancialPageSize({ NOMUS_PAGE_SIZE: "250" }), 250);
+    assert.equal(
+      resolveNomusFinancialPageSize({ NOMUS_PAGE_SIZE: "250", NOMUS_FINANCIAL_PAGE_SIZE: "500" }),
+      500
+    );
+  });
+
+  it("env overrides the date window", () => {
+    const params = buildAccountsPayablePageParams(1, 1000, {
+      NOMUS_FINANCIAL_START_DATE: "01/06/2024",
+      NOMUS_FINANCIAL_END_DATE: "30/06/2024",
+    });
+    assert.equal(params.dataInicio, "01/06/2024");
+    assert.equal(params.dataFim, "30/06/2024");
+  });
+
+  it("throws a clear error for invalid date format", () => {
+    assert.throws(
+      () => buildAccountsPayablePageParams(1, 1000, { NOMUS_FINANCIAL_START_DATE: "2024-06-01" }),
+      /NOMUS_FINANCIAL_START_DATE inválida/
+    );
   });
 
   it("stops pagination when page has less than 50 items", () => {
@@ -248,9 +289,60 @@ describe("nomusRestClient (accounts payable)", () => {
       NOMUS_AUTH_HEADER_VALUE: "Basic abc123",
     } as NodeJS.ProcessEnv);
     const logged = redactHeadersForLog(headers);
-    assert.equal(logged.Authorization, "***");
+    assert.equal(logged.Authorization, "<redigido>");
     assert.doesNotMatch(JSON.stringify(logged), /secret-token/);
     assert.doesNotMatch(JSON.stringify(logged), /abc123/);
+  });
+
+  it("redactHeadersForLog masks NOMUS_AUTH and all sensitive env names", () => {
+    const logged = redactHeadersForLog({
+      NOMUS_AUTH: "Basic abc",
+      NOMUS_AUTH_HEADER_VALUE: "Basic abc",
+      NOMUS_TOKEN: "x",
+      NOMUS_API_KEY: "x",
+      NOMUS_PASSWORD: "x",
+      NOMUS_CLIENT_SECRET: "x",
+      NORMAL: "ok",
+    });
+    assert.equal(logged.NOMUS_AUTH, "<redigido>");
+    assert.equal(logged.NOMUS_AUTH_HEADER_VALUE, "<redigido>");
+    assert.equal(logged.NOMUS_TOKEN, "<redigido>");
+    assert.equal(logged.NOMUS_API_KEY, "<redigido>");
+    assert.equal(logged.NOMUS_PASSWORD, "<redigido>");
+    assert.equal(logged.NOMUS_CLIENT_SECRET, "<redigido>");
+    assert.equal(logged.NORMAL, "ok");
+    assert.doesNotMatch(JSON.stringify(logged), /Basic abc/);
+  });
+
+  it("sanitizeNomusErrorBody strips Basic/Bearer credentials", () => {
+    const sanitized = sanitizeNomusErrorBody('{"auth":"Basic c2VjcmV0OnBhc3M=","status":400}');
+    assert.doesNotMatch(sanitized, /c2VjcmV0OnBhc3M=/);
+    assert.match(sanitized, /Basic <redigido>/);
+  });
+
+  it("fetchNomusJson surfaces sanitized HTTP 400 body without token", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response('{"status":400,"message":"Bearer secret-leak parametro invalido"}', {
+        status: 400,
+      })) as typeof fetch;
+    try {
+      await assert.rejects(
+        fetchNomusJson(new URL("https://host/rest/contasPagar?pagina=1"), {
+          maxRetries: 0,
+          logPrefix: "[test]",
+        }),
+        (error: Error) => {
+          assert.match(error.message, /Falha HTTP 400/);
+          assert.match(error.message, /parametro invalido/);
+          assert.doesNotMatch(error.message, /secret-leak/);
+          assert.doesNotMatch(error.message, /pagina=1/);
+          return true;
+        }
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

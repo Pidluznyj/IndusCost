@@ -15,8 +15,10 @@ import {
   isAccountsReceivableOpen,
 } from "./nomusAccountsReceivableSummary.js";
 import {
+  buildAccountsReceivablePageParams,
   hasNextAccountsReceivablePage,
   pickAccountsReceivableArray,
+  resolveAccountsReceivablePageSize,
   shouldStopAccountsReceivablePagination,
 } from "./nomusAccountsReceivableSyncLogic.js";
 import { buildNomusHeaders, buildNomusUrl, redactHeadersForLog } from "./nomusRestClient.js";
@@ -170,6 +172,26 @@ describe("nomusAccountsReceivableSyncLogic", () => {
     assert.equal(arr.length, 1);
   });
 
+  it("pickAccountsReceivableArray reads { dados: [...] } and nested data.dados", () => {
+    assert.equal(pickAccountsReceivableArray({ dados: [{ id: 1 }, { id: 2 }] }).length, 2);
+    assert.equal(pickAccountsReceivableArray({ data: { dados: [{ id: 9 }] } }).length, 1);
+  });
+
+  it("builds the same full BI query params as AP", () => {
+    const params = buildAccountsReceivablePageParams(2, 1000, {});
+    assert.equal(params.pagina, "2");
+    assert.equal(params.tamanhoPagina, "1000");
+    assert.equal(params.dataInicio, "01/01/2020");
+    assert.equal(params.dataFim, "31/12/2030");
+    assert.equal(params.apenasPendentes, "false");
+    assert.equal(params.ordenacao, "dataVencimento");
+  });
+
+  it("financial page size defaults to 1000 and respects env overrides", () => {
+    assert.equal(resolveAccountsReceivablePageSize({}), 1000);
+    assert.equal(resolveAccountsReceivablePageSize({ NOMUS_FINANCIAL_PAGE_SIZE: "750" }), 750);
+  });
+
   it("stops pagination when page has less than 50 items", () => {
     assert.equal(shouldStopAccountsReceivablePagination(49), true);
     assert.equal(shouldStopAccountsReceivablePagination(50), false);
@@ -192,7 +214,7 @@ describe("nomusRestClient", () => {
       NOMUS_AUTH_HEADER_VALUE: "Basic abc123",
     } as NodeJS.ProcessEnv);
     const logged = redactHeadersForLog(headers);
-    assert.equal(logged.Authorization, "***");
+    assert.equal(logged.Authorization, "<redigido>");
     assert.doesNotMatch(JSON.stringify(logged), /secret-token/);
     assert.doesNotMatch(JSON.stringify(logged), /abc123/);
   });

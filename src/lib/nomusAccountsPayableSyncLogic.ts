@@ -1,5 +1,11 @@
 /** Lógica pura de paginação/extração para sync de contas a pagar Nomus. */
 
+import {
+  buildNomusFinancialPageParams,
+  resolveNomusFinancialPageSize,
+  type NomusFinancialQueryEnv,
+} from "./nomusFinancialSyncQueryParams.js";
+
 export type JsonObject = Record<string, unknown>;
 
 export const NOMUS_ACCOUNTS_PAYABLE_PAGE_SIZE = 50;
@@ -54,14 +60,17 @@ export function pickAccountsPayableArray(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
   const data = payload as Record<string, unknown>;
+  const nested = data.data as Record<string, unknown> | undefined;
   const candidates = [
     data.contasPagar,
     data.contas_pagar,
+    data.dados,
     data.data,
     data.results,
     data.items,
-    (data.data as Record<string, unknown> | undefined)?.contasPagar,
-    (data.data as Record<string, unknown> | undefined)?.contas_pagar,
+    nested?.contasPagar,
+    nested?.contas_pagar,
+    nested?.dados,
   ];
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) return candidate;
@@ -103,19 +112,24 @@ export function computePaginationPlan(options: AccountsPayableSyncCliOptions): {
   return { firstPage, lastPage };
 }
 
-export type AccountsPayablePageEnv = {
-  NOMUS_AP_SEND_PAGE_SIZE?: string;
-};
+export type AccountsPayablePageEnv = NomusFinancialQueryEnv;
 
-/** Query params da página AP — live Nomus rejeita `tamanhoPagina` (HTTP 400). */
+/**
+ * Query params da página AP — alinhados à chamada funcional do Power BI
+ * (pagina, tamanhoPagina, dataInicio, dataFim, apenasPendentes, ordenacao).
+ * Delega ao helper financeiro compartilhado para AP e AR usarem a mesma estratégia.
+ */
 export function buildAccountsPayablePageParams(
   page: number,
   pageSize: number,
   env: AccountsPayablePageEnv = process.env
 ): Record<string, string> {
-  const params: Record<string, string> = { pagina: String(page) };
-  if (env.NOMUS_AP_SEND_PAGE_SIZE === "1") {
-    params.tamanhoPagina = String(pageSize);
-  }
-  return params;
+  return buildNomusFinancialPageParams(page, pageSize, env);
+}
+
+/** Resolve o tamanho de página financeiro (default 1000) para Contas a Pagar. */
+export function resolveAccountsPayablePageSize(
+  env: NomusFinancialQueryEnv = process.env
+): number {
+  return resolveNomusFinancialPageSize(env);
 }

@@ -1,5 +1,11 @@
 /** Lógica pura de paginação/extração para sync de contas a receber Nomus. */
 
+import {
+  buildNomusFinancialPageParams,
+  resolveNomusFinancialPageSize,
+  type NomusFinancialQueryEnv,
+} from "./nomusFinancialSyncQueryParams.js";
+
 export type JsonObject = Record<string, unknown>;
 
 export const NOMUS_ACCOUNTS_RECEIVABLE_PAGE_SIZE = 50;
@@ -55,12 +61,17 @@ export function pickAccountsReceivableArray(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
   const data = payload as Record<string, unknown>;
+  const nested = data.data as Record<string, unknown> | undefined;
   const candidates = [
     data.contasReceber,
+    data.contas_receber,
+    data.dados,
     data.data,
     data.results,
     data.items,
-    (data.data as Record<string, unknown> | undefined)?.contasReceber,
+    nested?.contasReceber,
+    nested?.contas_receber,
+    nested?.dados,
   ];
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) return candidate;
@@ -100,4 +111,26 @@ export function computePaginationPlan(options: AccountsReceivableSyncCliOptions)
   const firstPage = options.startPage;
   const lastPage = options.startPage + options.maxPages - 1;
   return { firstPage, lastPage };
+}
+
+export type AccountsReceivablePageEnv = NomusFinancialQueryEnv;
+
+/**
+ * Query params da página AR — alinhados à chamada funcional do Power BI
+ * (pagina, tamanhoPagina, dataInicio, dataFim, apenasPendentes, ordenacao).
+ * Delega ao helper financeiro compartilhado para AP e AR usarem a mesma estratégia.
+ */
+export function buildAccountsReceivablePageParams(
+  page: number,
+  pageSize: number,
+  env: AccountsReceivablePageEnv = process.env
+): Record<string, string> {
+  return buildNomusFinancialPageParams(page, pageSize, env);
+}
+
+/** Resolve o tamanho de página financeiro (default 1000) para Contas a Receber. */
+export function resolveAccountsReceivablePageSize(
+  env: NomusFinancialQueryEnv = process.env
+): number {
+  return resolveNomusFinancialPageSize(env);
 }

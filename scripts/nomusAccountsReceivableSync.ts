@@ -5,11 +5,12 @@ import {
   disconnectAccountsReceivableIntegrationPrisma,
 } from "@/src/lib/nomusAccountsReceivableIntegrationRun.js";
 import {
+  buildAccountsReceivablePageParams,
   computePaginationPlan,
   hasNextAccountsReceivablePage,
-  NOMUS_ACCOUNTS_RECEIVABLE_PAGE_SIZE,
   parseAccountsReceivableSyncCli,
   pickAccountsReceivableArray,
+  resolveAccountsReceivablePageSize,
   type JsonObject,
 } from "@/src/lib/nomusAccountsReceivableSyncLogic.js";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/src/lib/nomusAccountsReceivableMapper.js";
 import {
   buildNomusUrl,
+  describeNomusCredential,
   fetchNomusJson,
   redactHeadersForLog,
   redactNomusUrlForLog,
@@ -32,24 +34,16 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
-function toInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string") {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
 async function fetchAccountsReceivablePage(
   baseUrl: string,
   page: number,
   pageSize: number
 ): Promise<{ payload: unknown; items: JsonObject[] }> {
-  const url = buildNomusUrl(baseUrl, "contasReceber", {
-    pagina: String(page),
-    tamanhoPagina: String(pageSize),
-  });
+  const url = buildNomusUrl(
+    baseUrl,
+    "contasReceber",
+    buildAccountsReceivablePageParams(page, pageSize, process.env)
+  );
   const payload = await fetchNomusJson(url, { logPrefix: LOG_PREFIX });
   const items = pickAccountsReceivableArray(payload).filter(
     (item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item)
@@ -61,8 +55,7 @@ async function fetchAllPages(
   baseUrl: string,
   options: ReturnType<typeof parseAccountsReceivableSyncCli>
 ): Promise<{ pagesRead: number; recordsRead: number; rows: MappedNomusAccountsReceivable[]; errors: number }> {
-  const pageSize =
-    Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? NOMUS_ACCOUNTS_RECEIVABLE_PAGE_SIZE);
+  const pageSize = resolveAccountsReceivablePageSize(process.env);
   const { firstPage, lastPage } = computePaginationPlan(options);
 
   const rows: MappedNomusAccountsReceivable[] = [];
@@ -183,20 +176,28 @@ async function main(): Promise<void> {
   const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const runnerLogFile = (process.env.NOMUS_AR_RUNNER_LOG ?? "").trim() || null;
 
-  const headers = redactHeadersForLog(
+  const envForLog = redactHeadersForLog(
     Object.fromEntries(
       Object.entries(process.env)
-        .filter(([key]) => key.startsWith("NOMUS_") && !key.includes("VALUE") && !key.includes("TOKEN"))
+        .filter(([key]) => key.startsWith("NOMUS_"))
         .map(([key, value]) => [key, value ?? ""])
     )
   );
+  const pageSize = resolveAccountsReceivablePageSize(process.env);
 
   console.warn(
     `${LOG_PREFIX} modo=${options.mode} incremental=${options.incremental} strategy=${options.syncStrategy} startPage=${options.startPage} maxPages=${options.maxPages}`
   );
-  console.warn(`${LOG_PREFIX} auth headers (redigidos): ${JSON.stringify(headers)}`);
+  console.warn(`${LOG_PREFIX} env Nomus (redigido): ${JSON.stringify(envForLog)}`);
+  console.warn(
+    `${LOG_PREFIX} credencial: ${JSON.stringify(describeNomusCredential(process.env.NOMUS_AUTH_HEADER_VALUE || process.env.NOMUS_TOKEN))}`
+  );
 
-  const sampleUrl = buildNomusUrl(baseUrl, "contasReceber", { pagina: "1" });
+  const sampleUrl = buildNomusUrl(
+    baseUrl,
+    "contasReceber",
+    buildAccountsReceivablePageParams(1, pageSize, process.env)
+  );
   console.warn(`${LOG_PREFIX} endpoint=${redactNomusUrlForLog(sampleUrl)}`);
 
   let exitCode = 0;

@@ -8,9 +8,9 @@ import {
   buildAccountsPayablePageParams,
   computePaginationPlan,
   hasNextAccountsPayablePage,
-  NOMUS_ACCOUNTS_PAYABLE_PAGE_SIZE,
   parseAccountsPayableSyncCli,
   pickAccountsPayableArray,
+  resolveAccountsPayablePageSize,
   type JsonObject,
 } from "@/src/lib/nomusAccountsPayableSyncLogic.js";
 import {
@@ -19,6 +19,7 @@ import {
 } from "@/src/lib/nomusAccountsPayableMapper.js";
 import {
   buildNomusUrl,
+  describeNomusCredential,
   fetchNomusJson,
   redactHeadersForLog,
   redactNomusUrlForLog,
@@ -31,15 +32,6 @@ function getRequiredEnv(name: string): string {
   const value = (process.env[name] ?? "").trim();
   if (!value) throw new Error(`Variável obrigatória ausente: ${name}`);
   return value;
-}
-
-function toInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string") {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
 }
 
 async function fetchAccountsPayablePage(
@@ -63,8 +55,7 @@ async function fetchAllPages(
   baseUrl: string,
   options: ReturnType<typeof parseAccountsPayableSyncCli>
 ): Promise<{ pagesRead: number; recordsRead: number; rows: MappedNomusAccountsPayable[]; errors: number }> {
-  const pageSize =
-    Math.max(1, toInt(process.env.NOMUS_PAGE_SIZE) ?? NOMUS_ACCOUNTS_PAYABLE_PAGE_SIZE);
+  const pageSize = resolveAccountsPayablePageSize(process.env);
   const { firstPage, lastPage } = computePaginationPlan(options);
 
   const rows: MappedNomusAccountsPayable[] = [];
@@ -187,20 +178,28 @@ async function main(): Promise<void> {
   const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const runnerLogFile = (process.env.NOMUS_AP_RUNNER_LOG ?? "").trim() || null;
 
-  const headers = redactHeadersForLog(
+  const envForLog = redactHeadersForLog(
     Object.fromEntries(
       Object.entries(process.env)
-        .filter(([key]) => key.startsWith("NOMUS_") && !key.includes("VALUE") && !key.includes("TOKEN"))
+        .filter(([key]) => key.startsWith("NOMUS_"))
         .map(([key, value]) => [key, value ?? ""])
     )
   );
+  const pageSize = resolveAccountsPayablePageSize(process.env);
 
   console.warn(
     `${LOG_PREFIX} modo=${options.mode} incremental=${options.incremental} strategy=${options.syncStrategy} startPage=${options.startPage} maxPages=${options.maxPages}`
   );
-  console.warn(`${LOG_PREFIX} auth headers (redigidos): ${JSON.stringify(headers)}`);
+  console.warn(`${LOG_PREFIX} env Nomus (redigido): ${JSON.stringify(envForLog)}`);
+  console.warn(
+    `${LOG_PREFIX} credencial: ${JSON.stringify(describeNomusCredential(process.env.NOMUS_AUTH_HEADER_VALUE || process.env.NOMUS_TOKEN))}`
+  );
 
-  const sampleUrl = buildNomusUrl(baseUrl, "contasPagar", { pagina: "1" });
+  const sampleUrl = buildNomusUrl(
+    baseUrl,
+    "contasPagar",
+    buildAccountsPayablePageParams(1, pageSize, process.env)
+  );
   console.warn(`${LOG_PREFIX} endpoint=${redactNomusUrlForLog(sampleUrl)}`);
 
   let exitCode = 0;
