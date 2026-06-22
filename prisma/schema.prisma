@@ -1713,6 +1713,30 @@ model EngineeringSyncRun {
   @@index([createdAt])
 }
 
+/// Job/snapshot da revalidação read-only do painel auto-apply BOM (preview controlado).
+model NomusAutoApplyDashboardSnapshot {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status                  String    @default("RUNNING")
+  startedAt               DateTime  @default(now()) @db.Timestamptz(6)
+  finishedAt              DateTime? @db.Timestamptz(6)
+  generatedAt             DateTime? @db.Timestamptz(6)
+  totalProducts           Int       @default(0)
+  eligibleProducts        Int       @default(0)
+  processedProducts       Int       @default(0)
+  revalidatedProductCount Int       @default(0)
+  revalidationErrorCount  Int       @default(0)
+  currentParentCode       String?
+  resultJson              Json?
+  errorMessage            String?
+  createdByUserId         String?   @db.Uuid
+  createdAt               DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([status])
+  @@index([startedAt])
+  @@index([generatedAt])
+}
+
 enum EngineeringChangeEntityType {
   PRODUCT
   PRODUCT_BOM

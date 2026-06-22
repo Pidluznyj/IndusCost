@@ -263,10 +263,7 @@ import {
   listEngineeringChangeLog,
 } from "./src/lib/nomusEngineeringReconciliation.js";
 import { buildNomusEngineeringOperationsCockpit } from "./src/lib/nomusEngineeringOperationsCockpit.js";
-import {
-  buildNomusAutoApplyBomDashboard,
-  normalizeAutoApplyFilter,
-} from "./src/lib/nomusAutoApplyBomDashboard.js";
+import { registerNomusAutoApplyBomDashboardRoutes } from "./src/lib/nomusAutoApplyBomDashboardRoutes.js";
 import {
   applyNomusBomBatchFromDashboard,
   applyNomusBomFromDashboard,
@@ -5026,43 +5023,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   );
 
-  app.get(
-    "/api/nomus/auto-apply-bom-dashboard",
+  registerNomusAutoApplyBomDashboardRoutes(app, {
     requireAppAuth,
-    requireAnyPermission([
-      "products.view",
-      "products.tab.bom",
-      "products.tab.tree",
-      "products.tab.cost",
-      "products.edit",
-    ]),
-    async (req, res) => {
-      try {
-        const filter = normalizeAutoApplyFilter(
-          req.query.filter != null ? String(req.query.filter) : undefined
-        );
-        const search =
-          req.query.search != null && String(req.query.search).trim()
-            ? String(req.query.search).trim()
-            : undefined;
-
-        const revalidate =
-          req.query.revalidate == null || String(req.query.revalidate).trim() !== "0";
-        const result = await buildNomusAutoApplyBomDashboard({ filter, search, revalidateBlocked: revalidate });
-        return res.json(result);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Erro ao montar dashboard de auto apply BOM Nomus.";
-        console.error("GET /api/nomus/auto-apply-bom-dashboard", error);
-        return res.status(500).json({
-          error: "AUTO_APPLY_BOM_DASHBOARD_FAILED",
-          message,
-        });
-      }
-    }
-  );
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
 
   app.get(
     "/api/nomus/bom-auto-apply/products/apply-readiness",

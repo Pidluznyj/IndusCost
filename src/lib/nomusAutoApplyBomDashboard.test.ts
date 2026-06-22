@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  assembleAutoApplyBomDashboardResult,
   bucketBlockingReasons,
   buildNomusAutoApplyBomDashboard,
   classifyAutoApplyProduct,
@@ -20,6 +21,7 @@ import {
 } from "./nomusAutoApplyBomReportParser";
 import type { NomusBomAutoApplyProductResult } from "./nomusBomAutoApplyAfterSyncTypes";
 import type { AutoApplyBomDashboardProductRow } from "./nomusAutoApplyBomDashboardTypes";
+import type { ParsedAutoApplyReport } from "./nomusAutoApplyBomReportParser";
 
 const SAMPLE_TOTALS = {
   parentsInNomusStage: 876,
@@ -261,6 +263,51 @@ describe("nomusAutoApplyBomDashboardShared — busca e filtro", () => {
   });
 });
 
+describe("assembleAutoApplyBomDashboardResult — source", () => {
+  function minimalParsed(): ParsedAutoApplyReport {
+    return {
+      report: {
+        generatedAt: "2026-06-01T00:00:00.000Z",
+        mode: "APPLY",
+        startedAt: "2026-06-01T00:00:00.000Z",
+        finishedAt: "2026-06-01T00:00:00.000Z",
+        approvedBy: "test",
+        batchRunId: null,
+        reportMdPath: null,
+        reportJsonPath: null,
+        totals: SAMPLE_TOTALS,
+        products: [SAMPLE_308],
+      },
+      products: [SAMPLE_308],
+      totals: SAMPLE_TOTALS,
+      productListSource: "items",
+      hasProductList: true,
+    };
+  }
+
+  it("marca source REPORT_FILE quando parsed veio do arquivo", () => {
+    const fileReport = minimalParsed();
+    const result = assembleAutoApplyBomDashboardResult({
+      parsed: fileReport,
+      productsForRows: fileReport.products,
+      fileReport,
+      runFallback: null,
+    });
+    assert.equal(result.source, "REPORT_FILE");
+  });
+
+  it("marca source ENGINEERING_SYNC_RUN quando parsed veio do fallback de run", () => {
+    const runFallback = minimalParsed();
+    const result = assembleAutoApplyBomDashboardResult({
+      parsed: runFallback,
+      productsForRows: runFallback.products,
+      fileReport: null,
+      runFallback,
+    });
+    assert.equal(result.source, "ENGINEERING_SYNC_RUN");
+  });
+});
+
 describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
   it("endpoint retorna lista quando JSON usa items", async () => {
     const path = writeTempReport("nomus-auto-sync-bom-apply-report.json", {
@@ -276,6 +323,7 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
     const result = await buildNomusAutoApplyBomDashboard({
       reportPath: path,
       revalidateBlocked: false,
+      preferSnapshot: false,
     });
     assert.equal(result.hasProductList, true);
     assert.equal(result.needsReportRegeneration, false);
@@ -296,6 +344,7 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
     const result = await buildNomusAutoApplyBomDashboard({
       reportPath: path,
       revalidateBlocked: false,
+      preferSnapshot: false,
     });
     assert.equal(result.hasReport, true);
     assert.equal(result.hasProductList, false);
@@ -315,6 +364,7 @@ describe("buildNomusAutoApplyBomDashboard — leitura de arquivo", () => {
     const result = await buildNomusAutoApplyBomDashboard({
       reportPath: path,
       revalidateBlocked: false,
+      preferSnapshot: false,
     });
     assert.equal(result.products.length, 1);
     assert.equal(result.totals?.parentsEvaluated, 1);

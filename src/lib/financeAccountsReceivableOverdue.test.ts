@@ -548,6 +548,10 @@ describe("FinanceAccountsReceivableOverdue UI", () => {
       join(process.cwd(), "src/components/finance/FinanceAccountsReceivableOverduePrintDocument.tsx"),
       "utf8"
     );
+    const printCover = readFileSync(
+      join(process.cwd(), "src/components/finance/FinanceAccountsReceivableOverduePrintCover.tsx"),
+      "utf8"
+    );
     const printMeta = readFileSync(
       join(process.cwd(), "src/lib/financeAccountsReceivableOverduePrintMeta.ts"),
       "utf8"
@@ -566,6 +570,9 @@ describe("FinanceAccountsReceivableOverdue UI", () => {
     assert.ok(tab.includes("ar-overdue-no-print"));
     assert.ok(printMeta.includes("Relatório de Contas a Receber em Atraso"));
     assert.ok(printMeta.includes("Documento de apoio ao processo de cobrança"));
+    assert.ok(printDoc.includes("FinanceAccountsReceivableOverduePrintCover"));
+    assert.ok(printCover.includes("finance-ar-overdue-print-cover-page"));
+    assert.ok(printCover.includes("Conteúdo nas próximas páginas"));
     assert.ok(printDoc.includes("FINANCE_AR_OVERDUE_PRINT_TITLE"));
     assert.ok(printDoc.includes("Resumo executivo"));
     assert.ok(printDoc.includes("Clientes prioritários para cobrança"));
@@ -593,6 +600,8 @@ describe("FinanceAccountsReceivableOverdue UI", () => {
     assert.ok(printCss.includes("overflow: visible"));
     assert.ok(printCss.includes("ar-overdue-no-print"));
     assert.ok(printCss.includes("table-header-group"));
-    assert.ok(printCss.includes("table-layout: fixed"));
+    assert.ok(printCss.includes("finance-ar-overdue-print-cover-page"));
+    assert.ok(printCss.includes("page-break-after: always"));
+    assert.ok(printCss.includes("#root"));
   });
 });

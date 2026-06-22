@@ -31,7 +31,11 @@ import {
   fetchEngineeringRunsRecent,
   type EngineeringRunRecentItem,
 } from "@/src/lib/nomusEngineeringRunsRecentClient";
-import { fetchNomusAutoApplyBomDashboard } from "@/src/lib/nomusAutoApplyBomDashboardClient";
+import {
+  fetchNomusAutoApplyBomDashboard,
+  fetchNomusAutoApplyBomDashboardRevalidationStatus,
+  startNomusAutoApplyBomDashboardRevalidation,
+} from "@/src/lib/nomusAutoApplyBomDashboardClient";
 import {
   applyNomusBomProduct,
   applyNomusBomProductBatch,
@@ -48,6 +52,7 @@ import type {
   AutoApplyDashboardFilter,
 } from "@/src/lib/nomusAutoApplyBomDashboardTypes";
 import type { NomusMaintenanceTab } from "@/src/lib/nomusMaintenanceWorkspaceTypes";
+import type { NomusAutoApplyDashboardRevalidationStatus } from "@/src/lib/nomusAutoApplyDashboardRevalidationJobTypes";
 import type { MasterDataImportDiagnosticResult } from "@/src/lib/nomusMasterDataImportTypes";
 import type { EqualizePreviewResult } from "@/src/lib/nomusMasterDataEqualizeTypes";
 
@@ -172,8 +177,12 @@ export const NomusEngineeringStatusBoard: React.FC<{
   } | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyResultMessage, setApplyResultMessage] = useState<string | null>(null);
+  const [revalidationJob, setRevalidationJob] =
+    useState<NomusAutoApplyDashboardRevalidationStatus | null>(null);
+  const [pollJobId, setPollJobId] = useState<string | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, 300);
+  const revalidationRunning = revalidationJob?.status === "RUNNING";
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -182,7 +191,7 @@ export const NomusEngineeringStatusBoard: React.FC<{
       const [masterData, equalize, autoApply, runs] = await Promise.all([
         fetchMasterDataImportDiagnostic({ limit: 1, includeExisting: true }).catch(() => null),
         fetchMasterDataEqualizePreview({ limit: 1, scope: "ACTIONABLE" }).catch(() => null),
-        fetchNomusAutoApplyBomDashboard({ revalidate: true }).catch(() => null),
+        fetchNomusAutoApplyBomDashboard().catch(() => null),
         fetchEngineeringRunsRecent(30).catch(() => ({
           mode: "READ_ONLY" as const,
           generatedAt: new Date().toISOString(),
@@ -206,6 +215,119 @@ export const NomusEngineeringStatusBoard: React.FC<{
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const refreshEngineeringPanel = useCallback(async () => {
+    if (revalidationRunning) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [masterData, equalize, runs, status] = await Promise.all([
+        fetchMasterDataImportDiagnostic({ limit: 1, includeExisting: true }).catch(() => null),
+        fetchMasterDataEqualizePreview({ limit: 1, scope: "ACTIONABLE" }).catch(() => null),
+        fetchEngineeringRunsRecent(30).catch(() => ({
+          mode: "READ_ONLY" as const,
+          generatedAt: new Date().toISOString(),
+          items: [],
+        })),
+        fetchNomusAutoApplyBomDashboardRevalidationStatus().catch(() => null),
+      ]);
+
+      if (status?.status === "RUNNING" && status.jobId) {
+        setRevalidationJob(status);
+        setPollJobId(status.jobId);
+        setSnapshot((prev) => ({
+          masterData,
+          equalize,
+          autoApply: prev?.autoApply ?? null,
+          runs: runs?.items ?? [],
+          generatedAt: new Date().toISOString(),
+        }));
+        return;
+      }
+
+      const started = await startNomusAutoApplyBomDashboardRevalidation();
+      setRevalidationJob(started.job);
+      if (started.job.jobId) setPollJobId(started.job.jobId);
+      setSnapshot((prev) => ({
+        masterData,
+        equalize,
+        autoApply: prev?.autoApply ?? null,
+        runs: runs?.items ?? [],
+        generatedAt: new Date().toISOString(),
+      }));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? `${e.message} Tente novamente em alguns segundos.`
+          : "Erro ao iniciar atualização do painel da engenharia."
+      );
+      setLoading(false);
+    }
+  }, [revalidationRunning]);
+
+  useEffect(() => {
+    if (!pollJobId) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const status = await fetchNomusAutoApplyBomDashboardRevalidationStatus();
+        if (cancelled) return;
+        setRevalidationJob(status);
+
+        if (status.status === "RUNNING") return;
+
+        setPollJobId(null);
+        setLoading(false);
+
+        if (status.status === "FAILED") {
+          setError(
+            status.errorMessage ??
+              "Falha na revalidação do painel. O último snapshot válido foi mantido."
+          );
+        }
+
+        const autoApply = await fetchNomusAutoApplyBomDashboard();
+        if (cancelled) return;
+        setSnapshot((prev) =>
+          prev
+            ? { ...prev, autoApply, generatedAt: new Date().toISOString() }
+            : {
+                masterData: null,
+                equalize: null,
+                autoApply,
+                runs: [],
+                generatedAt: new Date().toISOString(),
+              }
+        );
+        setPage(0);
+      } catch (e) {
+        if (cancelled) return;
+        setPollJobId(null);
+        setLoading(false);
+        setError(e instanceof Error ? e.message : "Erro ao acompanhar revalidação.");
+      }
+    };
+
+    void tick();
+    const interval = window.setInterval(() => void tick(), 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [pollJobId]);
+
+  useEffect(() => {
+    void fetchNomusAutoApplyBomDashboardRevalidationStatus()
+      .then((status) => {
+        if (status.status === "RUNNING" && status.jobId) {
+          setRevalidationJob(status);
+          setPollJobId(status.jobId);
+          setLoading(true);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -440,17 +562,30 @@ export const NomusEngineeringStatusBoard: React.FC<{
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          disabled={disabled || loading}
-          onClick={() => void loadAll()}
+          disabled={disabled || loading || revalidationRunning}
+          onClick={() => void refreshEngineeringPanel()}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          {loading ? (
+          {loading || revalidationRunning ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
           Atualizar painel da engenharia
         </button>
+        {revalidationRunning && revalidationJob ? (
+          <div className="w-full rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-[11px] text-foreground space-y-1">
+            <p className="font-semibold">Atualização da engenharia em andamento</p>
+            <p>
+              {revalidationJob.processedProducts}/{revalidationJob.eligibleProducts} produtos
+              revalidados ({revalidationJob.progressPercent}%)
+              {revalidationJob.currentParentCode
+                ? ` · ${revalidationJob.currentParentCode}`
+                : ""}
+            </p>
+            <p className="text-muted-foreground">Não altera ProductBOM — preview read-only em lotes.</p>
+          </div>
+        ) : null}
         {snapshot ? (
           <span className="text-[10px] text-muted-foreground">
             Atualizado em {formatDateShort(snapshot.generatedAt)}

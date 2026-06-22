@@ -18,13 +18,21 @@
     padding: 0 !important;
   }
 
-  body.ar-overdue-print-route * {
-    visibility: hidden;
+  /* Isola o documento — evita página em branco antes da capa */
+  body.ar-overdue-print-route #root {
+    visibility: hidden !important;
   }
 
-  body.ar-overdue-print-route #ar-overdue-print-root,
+  body.ar-overdue-print-route #ar-overdue-print-root {
+    visibility: visible !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+  }
+
   body.ar-overdue-print-route #ar-overdue-print-root * {
-    visibility: visible;
+    visibility: visible !important;
   }
 
   .ar-overdue-no-print,
@@ -35,8 +43,20 @@
 
   body.ar-overdue-print-route .sold-products-no-print,
   body.ar-overdue-print-route nav,
-  body.ar-overdue-print-route aside {
+  body.ar-overdue-print-route aside,
+  body.ar-overdue-print-route .flex.h-screen > aside,
+  body.ar-overdue-print-route main > header {
     display: none !important;
+  }
+
+  body.ar-overdue-print-route .flex.h-screen,
+  body.ar-overdue-print-route .flex.h-screen > main,
+  body.ar-overdue-print-route main .flex-1.overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
   }
 
   #ar-overdue-print-root {
@@ -271,5 +291,154 @@
   #ar-overdue-print-root .finance-ar-overdue-print-footer-note {
     margin-top: 2px;
     font-style: italic;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-page {
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    min-height: 185mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 6mm 4mm;
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-inner {
+    width: 100%;
+    max-width: 270mm;
+    text-align: center;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 8px 0 4px;
+    color: #000;
+    letter-spacing: 0.02em;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-subtitle {
+    font-size: 11px;
+    color: #444;
+    margin: 0 0 14px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px 12px;
+    text-align: left;
+    margin-bottom: 12px;
+    font-size: 8px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-label {
+    font-size: 7px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #555;
+    margin: 0 0 2px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-value {
+    font-size: 9px;
+    font-weight: 600;
+    color: #111;
+    margin: 0;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-filters {
+    font-size: 8px;
+    color: #333;
+    text-align: left;
+    margin: 0 0 12px;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    background: #f9fafb;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-kpi-panel {
+    margin-bottom: 12px;
+    text-align: left;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-kpi-heading {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 8px;
+    color: #000;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-kpi-card {
+    border: 1px solid #bbb;
+    background: #f3f4f6;
+    padding: 8px 10px;
+    border-radius: 2px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-kpi-card--wide {
+    grid-column: span 3;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-kpi-label {
+    font-size: 7px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #555;
+    margin: 0 0 4px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-kpi-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: #000;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-aging {
+    text-align: left;
+    margin-bottom: 12px;
+    font-size: 8px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-aging-list {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    color: #222;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-contents {
+    text-align: left;
+    font-size: 8px;
+    border-top: 1px solid #ccc;
+    padding-top: 10px;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-cover-contents-list {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    columns: 2;
+    column-gap: 24px;
+    color: #222;
+  }
+
+  #ar-overdue-print-root .finance-ar-overdue-print-document {
+    break-before: auto;
+    page-break-before: auto;
   }
 }

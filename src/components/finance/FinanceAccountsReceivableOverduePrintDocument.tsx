@@ -19,6 +19,7 @@ import {
   groupArOverdueTitlesByCustomer,
   truncateArOverduePrintText,
 } from "@/src/lib/financeAccountsReceivableOverduePrintMeta";
+import { FinanceAccountsReceivableOverduePrintCover } from "@/src/components/finance/FinanceAccountsReceivableOverduePrintCover";
 import type {
   FinanceArOverduePayload,
   FinanceArOverdueUiFilters,
@@ -47,6 +48,12 @@ export function FinanceAccountsReceivableOverduePrintDocument({
 
   return (
     <div id="ar-overdue-print-root">
+      <FinanceAccountsReceivableOverduePrintCover
+        payload={payload}
+        globalFilters={globalFilters}
+        overdueFilters={overdueFilters}
+        emitterName={emitterName}
+      />
       <div className="finance-ar-overdue-print-document">
         <header className="finance-ar-overdue-print-doc-header">
           <div className="finance-ar-overdue-print-brand">

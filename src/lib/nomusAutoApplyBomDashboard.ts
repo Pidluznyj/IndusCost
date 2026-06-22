@@ -20,6 +20,7 @@ import {
 } from "@/src/lib/nomusAutoApplyBomReportParser";
 import { prisma } from "@/src/lib/prisma";
 import { revalidateAutoApplyDashboardProducts } from "@/src/lib/nomusAutoApplyDashboardRevalidation";
+import { getLatestSuccessfulAutoApplyDashboardSnapshot } from "@/src/lib/nomusAutoApplyDashboardRevalidationJob";
 
 const DEFAULT_REPORT_JSON = join(process.cwd(), "docs/generated/nomus-auto-sync-bom-apply-report.json");
 export const NOMUS_AUTO_APPLY_REGENERATE_COMMAND = "npm run sync:nomus:all:apply";
@@ -326,6 +327,43 @@ async function readLatestBatchRunReport(): Promise<ParsedAutoApplyReport | null>
   };
 }
 
+export type AutoApplyReportContext = {
+  parsed: ParsedAutoApplyReport | null;
+  fileReport: ParsedAutoApplyReport | null;
+  runFallback: ParsedAutoApplyReport | null;
+};
+
+export async function loadAutoApplyReportContextForDashboard(input?: {
+  reportPath?: string;
+}): Promise<AutoApplyReportContext> {
+  const explicitReportPath = input?.reportPath?.trim() || null;
+  const reportPath = explicitReportPath ?? DEFAULT_REPORT_JSON;
+
+  const fileReport = explicitReportPath
+    ? tryParseReportFile(explicitReportPath)
+    : readLatestReportFile(reportPath);
+  const runFallback =
+    explicitReportPath == null && fileReport == null
+      ? await readLatestBatchRunReport().catch(() => null)
+      : null;
+  const parsed = explicitReportPath
+    ? fileReport
+    : fileReport?.hasProductList
+      ? fileReport
+      : runFallback?.hasProductList
+        ? runFallback
+        : fileReport ?? runFallback;
+
+  return { parsed, fileReport, runFallback };
+}
+
+export async function loadParsedAutoApplyReportForDashboard(input?: {
+  reportPath?: string;
+}): Promise<ParsedAutoApplyReport | null> {
+  const context = await loadAutoApplyReportContextForDashboard(input);
+  return context.parsed;
+}
+
 function mapProductRows(products: NomusBomAutoApplyProductResult[]): AutoApplyBomDashboardProductRow[] {
   return products.map((raw) => {
     const product = reconcileReportProductStatus(raw);
@@ -354,34 +392,126 @@ function mapProductRows(products: NomusBomAutoApplyProductResult[]): AutoApplyBo
   });
 }
 
+export function assembleAutoApplyBomDashboardResult(input: {
+  parsed: ParsedAutoApplyReport;
+  productsForRows: NomusBomAutoApplyProductResult[];
+  filter?: AutoApplyDashboardFilter;
+  search?: string | null;
+  statusRevalidatedAt?: string | null;
+  revalidatedProductCount?: number;
+  revalidationErrorCount?: number;
+  fileReport?: ParsedAutoApplyReport | null;
+  runFallback?: ParsedAutoApplyReport | null;
+}): AutoApplyBomDashboardResult {
+  const filter = input.filter ?? "ALL";
+  const search = input.search?.trim() || null;
+  const statusRevalidatedAt = input.statusRevalidatedAt ?? null;
+  const revalidatedProductCount = input.revalidatedProductCount ?? 0;
+  const revalidationErrorCount = input.revalidationErrorCount ?? 0;
+  const parsed = input.parsed;
+  const productsForRows = input.productsForRows;
+  const report = parsed.report;
+
+  const allRows = mapProductRows(productsForRows);
+  const hasProductList = parsed.hasProductList && allRows.length > 0;
+  const needsReportRegeneration = !hasProductList && Boolean(parsed.totals);
+  const partialReportWarning = needsReportRegeneration
+    ? `Relatório parcial: totais disponíveis (${parsed.totals.parentsBlocked} bloqueados), mas a lista de produtos não foi encontrada no JSON. Regenerar com: ${NOMUS_AUTO_APPLY_REGENERATE_COMMAND}`
+    : null;
+
+  const filterCounts = computeFilterCounts(allRows);
+  const batchTotals = parsed.totals;
+  const liveTotals =
+    hasProductList && productsForRows.length > 0
+      ? computeAutoApplyStatusTotals(productsForRows, batchTotals)
+      : batchTotals;
+
+  const fileReport = input.fileReport;
+  const runFallback = input.runFallback;
+  const source: AutoApplyBomDashboardResult["source"] =
+    fileReport?.hasProductList && parsed === fileReport
+      ? "REPORT_FILE"
+      : runFallback?.hasProductList && parsed === runFallback
+        ? "ENGINEERING_SYNC_RUN"
+        : "REPORT_FILE";
+
+  const checklistMdPath = join(process.cwd(), "docs/generated/nomus-engineering-validation-checklist.md");
+  const checklistExists = existsSync(checklistMdPath);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    mode: "READ_ONLY",
+    source,
+    hasReport: true,
+    hasProductList,
+    needsReportRegeneration,
+    regenerateReportCommand: needsReportRegeneration ? NOMUS_AUTO_APPLY_REGENERATE_COMMAND : null,
+    productListSource: parsed.productListSource,
+    checklistMdPath: checklistExists ? checklistMdPath : null,
+    partialReportWarning,
+    emptyMessage: null,
+    lastRun: {
+      startedAt: report.startedAt,
+      finishedAt: report.finishedAt,
+      approvedBy: report.approvedBy,
+      batchRunId: report.batchRunId,
+      mode: report.mode,
+      reportJsonPath: report.reportJsonPath,
+      reportMdPath: report.reportMdPath,
+    },
+    totals: liveTotals,
+    batchTotals: statusRevalidatedAt != null && batchTotals != null ? batchTotals : null,
+    blockingReasonBuckets: bucketBlockingReasons(productsForRows),
+    products: allRows,
+    filterCounts,
+    totalProducts: allRows.length,
+    filter,
+    search,
+    matchedCount: allRows.length,
+    statusRevalidatedAt,
+    revalidatedProductCount,
+    revalidationErrorCount,
+    batchTotalsNote:
+      statusRevalidatedAt != null
+        ? "Cards e filtros refletem a lista revalidada (preview read-only). Totais da última execução batch APPLY aparecem abaixo quando diferentes."
+        : parsed.totals
+          ? "Status da lista conforme o último relatório batch salvo. Use Atualizar painel da engenharia para revalidar bloqueados com preview read-only em segundo plano."
+          : null,
+  };
+}
+
 export async function buildNomusAutoApplyBomDashboard(input: {
   filter?: AutoApplyDashboardFilter;
   search?: string;
   /** Caminho explícito: lê só esse arquivo (sem varrer docs/generated nem DB). */
   reportPath?: string;
-  /** Reavalia bloqueados/ignorados com preview read-only (não altera ProductBOM). */
+  /** Reavalia bloqueados/ignorados com preview read-only síncrono (evitar em GET — usar job). */
   revalidateBlocked?: boolean;
+  /** Retorna último snapshot SUCCESS persistido quando disponível. */
+  preferSnapshot?: boolean;
 } = {}): Promise<AutoApplyBomDashboardResult> {
   const filter = input.filter ?? "ALL";
   const search = input.search?.trim() || null;
-  const revalidateBlocked = input.revalidateBlocked !== false;
-  const explicitReportPath = input.reportPath?.trim() || null;
-  const reportPath = explicitReportPath ?? DEFAULT_REPORT_JSON;
+  const revalidateBlocked = input.revalidateBlocked === true;
+  const preferSnapshot = input.preferSnapshot !== false;
 
-  const fileReport = explicitReportPath
-    ? tryParseReportFile(explicitReportPath)
-    : readLatestReportFile(reportPath);
-  const runFallback =
-    explicitReportPath == null && fileReport == null
-      ? await readLatestBatchRunReport().catch(() => null)
-      : null;
-  const parsed = explicitReportPath
-    ? fileReport
-    : fileReport?.hasProductList
-      ? fileReport
-      : runFallback?.hasProductList
-        ? runFallback
-        : fileReport ?? runFallback;
+  if (preferSnapshot && !revalidateBlocked) {
+    const stored = await getLatestSuccessfulAutoApplyDashboardSnapshot();
+    if (stored?.result) {
+      return {
+        ...stored.result,
+        generatedAt: new Date().toISOString(),
+        filter,
+        search,
+        matchedCount: stored.result.totalProducts,
+      };
+    }
+  }
+
+  const explicitReportPath = input.reportPath?.trim() || null;
+  const { parsed, fileReport, runFallback } = await loadAutoApplyReportContextForDashboard({
+    reportPath: explicitReportPath ?? undefined,
+  });
 
   if (!parsed) {
     return {
@@ -424,7 +554,6 @@ export async function buildNomusAutoApplyBomDashboard(input: {
     };
   }
 
-  const report = parsed.report;
   let statusRevalidatedAt: string | null = null;
   let revalidatedProductCount = 0;
   let revalidationErrorCount = 0;
@@ -438,69 +567,15 @@ export async function buildNomusAutoApplyBomDashboard(input: {
     statusRevalidatedAt = new Date().toISOString();
   }
 
-  const allRows = mapProductRows(productsForRows);
-  const hasProductList = parsed.hasProductList && allRows.length > 0;
-  const needsReportRegeneration = !hasProductList && Boolean(parsed.totals);
-  const partialReportWarning = needsReportRegeneration
-    ? `Relatório parcial: totais disponíveis (${parsed.totals.parentsBlocked} bloqueados), mas a lista de produtos não foi encontrada no JSON. Regenerar com: ${NOMUS_AUTO_APPLY_REGENERATE_COMMAND}`
-    : null;
-
-  const filterCounts = computeFilterCounts(allRows);
-  const batchTotals = parsed.totals;
-  const liveTotals =
-    hasProductList && productsForRows.length > 0
-      ? computeAutoApplyStatusTotals(productsForRows, batchTotals)
-      : batchTotals;
-
-  const source: AutoApplyBomDashboardResult["source"] =
-    parsed === fileReport && fileReport?.hasProductList
-      ? "REPORT_FILE"
-      : parsed === runFallback
-        ? "ENGINEERING_SYNC_RUN"
-        : "REPORT_FILE";
-
-  const checklistMdPath = join(process.cwd(), "docs/generated/nomus-engineering-validation-checklist.md");
-  const checklistExists = existsSync(checklistMdPath);
-
-  return {
-    generatedAt: new Date().toISOString(),
-    mode: "READ_ONLY",
-    source,
-    hasReport: true,
-    hasProductList,
-    needsReportRegeneration,
-    regenerateReportCommand: needsReportRegeneration ? NOMUS_AUTO_APPLY_REGENERATE_COMMAND : null,
-    productListSource: parsed.productListSource,
-    checklistMdPath: checklistExists ? checklistMdPath : null,
-    partialReportWarning,
-    emptyMessage: null,
-    lastRun: {
-      startedAt: report.startedAt,
-      finishedAt: report.finishedAt,
-      approvedBy: report.approvedBy,
-      batchRunId: report.batchRunId,
-      mode: report.mode,
-      reportJsonPath: report.reportJsonPath,
-      reportMdPath: report.reportMdPath,
-    },
-    totals: liveTotals,
-    batchTotals:
-      statusRevalidatedAt != null && batchTotals != null ? batchTotals : null,
-    blockingReasonBuckets: bucketBlockingReasons(productsForRows),
-    products: allRows,
-    filterCounts,
-    totalProducts: allRows.length,
+  return assembleAutoApplyBomDashboardResult({
+    parsed,
+    productsForRows,
     filter,
     search,
-    matchedCount: allRows.length,
     statusRevalidatedAt,
     revalidatedProductCount,
     revalidationErrorCount,
-    batchTotalsNote:
-      statusRevalidatedAt != null
-        ? "Cards e filtros refletem a lista revalidada (preview read-only). Totais da última execução batch APPLY aparecem abaixo quando diferentes."
-        : parsed.totals
-          ? "Status da lista conforme o último relatório batch salvo. Clique em Atualizar para revalidar bloqueados com preview read-only."
-          : null,
-  };
+    fileReport,
+    runFallback,
+  });
 }
